@@ -19,7 +19,7 @@ name: 🚀 Release
 #   - package-extension: Build + attach browser extension zips (action: build-installers only)
 #   - generate-update-manifest: Publish latest.json for the auto-updater
 #   - update-cask: Pin the Homebrew cask to the built dmgs (version + per-arch sha256)
-#   - update-download-page: Sync apps/landing/download.html to the built installer URLs
+#   - update-download-page: Sync apps/landing/src/data/version.json to the built installer URLs
 #
 # How to release:
 #   1. Actions → "🚀 Release" → Run workflow → action: release
@@ -825,9 +825,9 @@ jobs:
 
   update-download-page:
     name: 🌐 Update Landing Download Page
-    # Pins the landing download page (apps/landing/download.html) to the just-built
+    # Pins the landing download page (apps/landing/src/data/version.json) to the just-built
     # installer assets — the versioned .dmg/.exe/.AppImage URLs only resolve once
-    # the build has uploaded them. It also commits apps/landing/download.html back to
+    # the build has uploaded them. It also commits apps/landing/src/data/version.json back to
     # main, so it must run AFTER update-cask (the other main-pushing job) — both
     # did a bare `git push HEAD:main` in parallel and raced ("fetch first" reject).
     # Serializing via needs makes cask push first, then this job checks out the
@@ -877,20 +877,20 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          echo "::group::Pinning apps/landing/download.html to $VERSION"
+          echo "::group::Pinning apps/landing/src/data/version.json to $VERSION"
           node scripts/sync-download-page.cjs "${VERSION#v}"
           echo "::endgroup::"
 
-      - name: 📤 Commit download page
+      - name: 📤 Commit download version data
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- apps/landing/download.html; then
-            echo "Download page already up to date."
+          if git diff --quiet -- apps/landing/src/data/version.json; then
+            echo "Download version data already up to date."
             exit 0
           fi
-          git add apps/landing/download.html
-          git commit -m "chore: sync landing download page to ${VERSION}"
+          git add apps/landing/src/data/version.json
+          git commit -m "chore: sync landing download version to ${VERSION}"
           git push git@github.com:saeedkolivand/ai-job-hunter-app.git HEAD:main

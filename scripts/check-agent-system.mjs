@@ -14,7 +14,7 @@
 //   3. Routes ↔ agents — every routed owner has an agent file (and the fallback exists).
 //   4. Agents ↔ CLAUDE.md — every agent appears in the project CLAUDE.md routing table.
 //   5. Author/critic pairs — each declared author + its independent critic both exist.
-//   6. Explainer complete — apps/landing/agent-system.html exists and has a card per agent.
+//   6. Explainer complete — apps/landing/public/agent-system.html exists and has a card per agent.
 //   7. AI configs → CLAUDE.md — each parallel rule file points at CLAUDE.md (single source).
 //   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
 //   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
@@ -35,7 +35,7 @@ const ADR_DIR = 'docs/knowledge/decision-records';
 const KNOWLEDGE_README = 'docs/knowledge/README.md';
 const CLAUDE_MD = 'CLAUDE.md';
 const ROUTES = '.claude/review-routes.json';
-const EXPLAINER = 'apps/landing/agent-system.html';
+const EXPLAINER = 'apps/landing/public/agent-system.html';
 
 // Author → its independent critic (the writer never approves its own work).
 const PAIRS = [
@@ -204,7 +204,7 @@ function checkPairs() {
 // ── Check 6: explainer complete ──────────────────────────────────────────────
 function checkExplainer() {
   if (!exists(EXPLAINER)) {
-    return fail('Explainer', EXPLAINER, 'apps/landing/agent-system.html does not exist yet');
+    return fail('Explainer', EXPLAINER, 'apps/landing/public/agent-system.html does not exist yet');
   }
   const html = read(EXPLAINER);
   for (const name of agentNames()) {

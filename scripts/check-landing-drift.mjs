@@ -20,18 +20,39 @@ import { join } from 'node:path';
 
 const ROOT = process.cwd();
 
-// Claim-bearing architecture diagrams (path/IPC/registry/denylist checks).
-const DIAGRAMS = ['apps/landing/architecture-map.html', 'apps/landing/how-it-works.html'];
+// Claim-bearing architecture diagrams (path/IPC/registry/denylist checks). The
+// architecture map is a passthrough dashboard under public/; how-it-works is now
+// a Next route whose authored body lives in src/content/. (PR2 will repoint these
+// at the TS sources once the dashboards are ported.)
+const DIAGRAMS = [
+  'apps/landing/public/architecture-map.html',
+  'apps/landing/src/content/how-it-works/body.html',
+];
 
-// Every landing page + embedded script (secret-scan only).
+// Every authored landing page + embedded script (secret-scan only) — the site is
+// public, so no committed token may ship. The ported pages' text now lives in
+// src/content/*/body.html and their former inline scripts in public/scripts/*.js;
+// the dashboards + benchmarks are public/ passthrough.
 const SECRET_SCAN_FILES = [
-  'apps/landing/architecture-map.html',
-  'apps/landing/how-it-works.html',
-  'apps/landing/ci-dashboard.html',
-  'apps/landing/index.html',
-  'apps/landing/download.html',
-  'apps/landing/benchmarks/index.html',
-  'apps/landing/benchmarks/data.js',
+  'apps/landing/public/agent-system.html',
+  'apps/landing/public/architecture-map.html',
+  'apps/landing/public/ci-dashboard.html',
+  'apps/landing/public/benchmarks/index.html',
+  'apps/landing/public/benchmarks/data.js',
+  'apps/landing/social-card.html',
+  'apps/landing/src/data/version.json',
+  ...['home', 'creature', 'download', 'how-it-works', 'privacy'].map(
+    (r) => `apps/landing/src/content/${r}/body.html`
+  ),
+  ...[
+    'home-0',
+    'creature-0',
+    'creature-1',
+    'download-0',
+    'how-it-works-0',
+    'how-it-works-1',
+    'privacy-0',
+  ].map((s) => `apps/landing/public/scripts/${s}.js`),
 ];
 
 const IPC_CONTRACTS_DIR = 'packages/shared/src/ipc/contracts';
