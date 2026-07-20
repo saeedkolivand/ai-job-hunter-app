@@ -2552,7 +2552,8 @@
         "rewriteSubjectAriaLabel": "Betreff mit KI umschreiben",
         "rewriteBodyAriaLabel": "E-Mail-Inhalt mit KI umschreiben",
         "openMailto": "Per E-Mail-Client senden",
-        "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren."
+        "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
+        "addResume": "Lebenslauf hinzufügen"
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",

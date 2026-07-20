@@ -6,6 +6,7 @@ import {
   type BoardScrapeSummary,
   type DATE_FILTER_OPTIONS,
 } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, ConfirmModal, Dropdown, Input, SegmentedControl, useNotification } from '@ajh/ui';
 
@@ -295,8 +296,15 @@ export function JobsPage() {
             matching the dashboard. Both the pinned header and the scroll area
             sit inside so they stay visually aligned. */}
         <div className="mx-auto flex w-full min-h-0 flex-1 flex-col max-w-6xl 2xl:max-w-7xl">
-          {/* Pinned header + scrape form; the list below owns the scroll. */}
-          <div className="shrink-0 px-10 pt-10">
+          {/* Header + scrape form. Bounded + self-scrolling so that selecting all
+              boards and opening the advanced grid can't push the Start button off
+              the bottom of the viewport (900x600 floor) — it caps at 55vh and
+              scrolls internally, leaving the results list as the primary scroll
+              owner below. Short content is unaffected (no scrollbar shown). */}
+          <div
+            data-testid={TEST_IDS.jobs.scrapeFormScroll}
+            className="max-h-[55vh] shrink-0 overflow-y-auto px-10 pt-10"
+          >
             <PageHeader
               title={t('jobs.title')}
               subtitle={t('jobs.subtitle')}

@@ -35,10 +35,30 @@ vi.mock('@/hooks/useDefaultResumeId', () => ({
   useDefaultResumeId: () => 'doc-1',
 }));
 
+// Router — the needsResume CTA calls useNavigate(); a bare hook throws without a
+// RouterProvider, so stub it and capture the navigation target.
+const navigateMock = vi.fn();
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigateMock,
+}));
+
+// Mutable service returns (same idiom as generateEmailMock) so each case can
+// drive the résumé text, contact profile, and URL-resolved job description
+// independently.
+const documentTextMock = vi.fn<() => { data: string; isLoading: boolean }>();
+const contactProfileMock = vi.fn<() => { data?: { fullName?: string } }>();
+const resolveJobUrlMock =
+  vi.fn<
+    (url: string, enabled?: boolean) => { data?: { description?: string }; isFetching: boolean }
+  >();
+
 vi.mock('@/services', () => ({
   useDocuments: () => ({ isLoading: false }),
-  useDocumentText: () => ({ data: 'My résumé text.', isLoading: false }),
+  useDocumentText: () => documentTextMock(),
   useUpdateApplication: () => ({ mutate: vi.fn() }),
+  useContactProfile: () => contactProfileMock(),
+  useResolveJobUrl: (url: string, enabled?: boolean) => resolveJobUrlMock(url, enabled),
 }));
 
 // Deterministic: no recipient auto-fill from the (empty) job description.
@@ -140,6 +160,13 @@ beforeEach(() => {
     p.onToken?.(EMAIL_RAW);
     return EMAIL_RAW;
   });
+  navigateMock.mockClear();
+  documentTextMock.mockReset();
+  documentTextMock.mockReturnValue({ data: 'My résumé text.', isLoading: false });
+  contactProfileMock.mockReset();
+  contactProfileMock.mockReturnValue({ data: { fullName: 'Jane Applicant' } });
+  resolveJobUrlMock.mockReset();
+  resolveJobUrlMock.mockReturnValue({ data: undefined, isFetching: false });
   window.getSelection()?.removeAllRanges();
 });
 
@@ -319,5 +346,108 @@ describe('ApplyByEmailTab — select-to-rewrite', () => {
       '_blank'
     );
     openSpy.mockRestore();
+  });
+});
+
+// ── standalone generation (no prior document generation) ─────────────────────
+
+describe('ApplyByEmailTab — standalone generation', () => {
+  /** Render, click Generate, and wait for the streamed draft to settle. */
+  async function generate(application: Application) {
+    render(<ApplyByEmailTab application={application} matchingGenerations={NO_GENERATIONS} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.generate' }));
+    });
+    await screen.findByText(BODY);
+  }
+
+  it('builds meta from the contact profile + application when there is no saved generation', async () => {
+    await generate(makeApp());
+
+    expect(generateEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          candidateName: 'Jane Applicant',
+          companyName: 'Acme',
+          jobTitle: 'Engineer',
+        }),
+      })
+    );
+    // The persisted JD is present, so the URL resolver is disabled.
+    expect(resolveJobUrlMock).toHaveBeenCalledWith('https://acme.com/job/1', false);
+  });
+
+  it('resolves the job description from the URL when the application has none', async () => {
+    const RESOLVED = 'Resolved job description fetched from the posting URL.';
+    resolveJobUrlMock.mockReturnValue({ data: { description: RESOLVED }, isFetching: false });
+
+    render(
+      <ApplyByEmailTab
+        application={makeApp({ jobDescription: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    // The resolver is enabled ONLY because the JD is empty.
+    expect(resolveJobUrlMock).toHaveBeenCalledWith('https://acme.com/job/1', true);
+
+    const generateBtn = screen.getByRole('button', {
+      name: 'applications.detail.email.generate',
+    });
+    expect(generateBtn).toBeEnabled();
+
+    await act(async () => {
+      fireEvent.click(generateBtn);
+    });
+    await screen.findByText(BODY);
+
+    expect(generateEmailMock).toHaveBeenCalledWith(expect.objectContaining({ jobAd: RESOLVED }));
+  });
+
+  it('shows the loading skeleton while the job URL is still resolving', () => {
+    // Empty JD + no saved generation → the URL resolver is enabled and in-flight.
+    resolveJobUrlMock.mockReturnValue({ data: undefined, isFetching: true });
+
+    const { container } = render(
+      <ApplyByEmailTab
+        application={makeApp({ jobDescription: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    // The loading gate short-circuits to the skeleton only...
+    expect(container.querySelector('.animate-skeleton')).not.toBeNull();
+    // ...so neither the Generate button nor the needsJob empty state has rendered.
+    expect(screen.queryByRole('button', { name: 'applications.detail.email.generate' })).toBeNull();
+    expect(screen.queryByText('applications.detail.email.needsJob')).toBeNull();
+  });
+
+  it('detects the target language from a German job description (real detectLanguage)', async () => {
+    const germanJd =
+      'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +
+      'Sie arbeiten an spannenden Projekten und stimmen sich eng mit dem Produktteam ab.';
+
+    await generate(makeApp({ jobDescription: germanJd }));
+
+    expect(generateEmailMock).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: expect.objectContaining({ targetLanguage: 'de' }) })
+    );
+  });
+
+  it('disables Generate and shows the needsResume empty state + CTA when no résumé exists', () => {
+    documentTextMock.mockReturnValue({ data: '', isLoading: false });
+
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    const generateBtn = screen.getByRole('button', {
+      name: 'applications.detail.email.generate',
+    });
+    expect(generateBtn).toBeDisabled();
+
+    expect(screen.getByText('applications.detail.email.needsResume')).toBeTruthy();
+
+    const cta = screen.getByRole('button', { name: 'applications.detail.email.addResume' });
+    fireEvent.click(cta);
+    expect(navigateMock).toHaveBeenCalledWith({ to: '/documents' });
   });
 });
