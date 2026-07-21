@@ -18,13 +18,23 @@ function setBody(html: string): void {
   document.body.innerHTML = html;
 }
 
+/** The fields that make a `<form>` read as a real application form rather than
+ *  a search box / newsletter signup (see `looksLikeApplicationForm`). */
+const APPLICATION_FIELDS = `
+  <input name="first_name" />
+  <input name="email" type="email" />
+  <input name="resume" type="file" />
+`;
+
 afterEach(() => {
   document.body.innerHTML = '';
 });
 
 describe('armSubmitWatch — real form submit', () => {
   it('posts once on a real form submit', () => {
-    setBody(`<form id="f"><button type="submit">Submit application</button></form>`);
+    setBody(
+      `<form id="f">${APPLICATION_FIELDS}<button type="submit">Submit application</button></form>`
+    );
     const post = vi.fn();
     armSubmitWatch(document, post);
 
@@ -36,8 +46,28 @@ describe('armSubmitWatch — real form submit', () => {
     expect(typeof post.mock.calls[0]?.[0]).toBe('string');
   });
 
+  it('does NOT post on a search / newsletter form submit', () => {
+    // The listener sees EVERY form on the page and reports only location.href,
+    // so an unscoped submit listener auto-marked the application "applied" when
+    // the user pressed Enter in the site's search box.
+    setBody(`
+      <form id="search"><input type="search" name="q" /><button type="submit">Search</button></form>
+      <form id="news"><input type="email" name="email" /><button type="submit">Subscribe</button></form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    for (const id of ['search', 'news']) {
+      (document.getElementById(id) as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true })
+      );
+    }
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('OBSERVES ONLY — never preventDefault on the submit', () => {
-    setBody(`<form id="f"><button type="submit">Apply</button></form>`);
+    setBody(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
     armSubmitWatch(document, vi.fn());
 
     const form = document.getElementById('f') as HTMLFormElement;
@@ -50,8 +80,8 @@ describe('armSubmitWatch — real form submit', () => {
 });
 
 describe('armSubmitWatch — apply-style click heuristic', () => {
-  it('posts on a click of an apply-style submit button', () => {
-    setBody(`<button type="submit">Apply now</button>`);
+  it('posts on a click of an apply-style submit button inside the application form', () => {
+    setBody(`<form>${APPLICATION_FIELDS}<button type="submit">Apply now</button></form>`);
     const post = vi.fn();
     armSubmitWatch(document, post);
 
@@ -60,6 +90,21 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
       .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT post on a bare "Apply now" that is not inside an application form', () => {
+    // On a job-listing page this control OPENS the application (often a modal);
+    // nothing has been submitted, so the app must not be marked applied.
+    setBody(`<button type="submit">Apply now</button><div role="button">Apply</div>`);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    document.querySelector('button')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document
+      .querySelector('[role="button"]')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('posts on a role="button" apply control (Easy-Apply / SPA, no native submit)', () => {
@@ -85,7 +130,9 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
   });
 
   it('resolves the control when the click lands on a child element', () => {
-    setBody(`<button type="submit"><span>Apply</span> now</button>`);
+    setBody(
+      `<form>${APPLICATION_FIELDS}<button type="submit"><span>Apply</span> now</button></form>`
+    );
     const post = vi.fn();
     armSubmitWatch(document, post);
 
@@ -95,6 +142,8 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
   });
 
   it('does NOT fire on a non-apply submit button (e.g. "Save draft")', () => {
+    // Formless, so only the click heuristic is in play — a submit button inside
+    // a form implicitly submits it, which is a separate (and legitimate) signal.
     setBody(`<button type="submit">Save draft</button>`);
     const post = vi.fn();
     armSubmitWatch(document, post);
@@ -105,7 +154,8 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
   });
 
   it('does NOT fire on a hidden (display:none) apply button — computed-style only', () => {
-    setBody(`<button type="submit" style="display:none">Apply</button>`);
+    // The text matches, so `isHidden` is the only thing keeping this quiet.
+    setBody(`<button type="submit" style="display:none">Submit application</button>`);
     const post = vi.fn();
     armSubmitWatch(document, post);
 
@@ -117,7 +167,7 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
 
 describe('armSubmitWatch — fire-once guard', () => {
   it('posts AT MOST ONCE when the apply click AND its submit both fire', () => {
-    setBody(`<form id="f"><button type="submit">Apply</button></form>`);
+    setBody(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
     const post = vi.fn();
     armSubmitWatch(document, post);
 
