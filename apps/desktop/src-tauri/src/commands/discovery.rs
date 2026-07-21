@@ -270,6 +270,14 @@ mod tests {
     /// typeahead like the scrape/autopilot/extension paths. `scrape_resolve_url` is
     /// `AppHandle`-bound (like `harvest_ats_refs`), so this drives the SAME pure
     /// `posting_to_ref` seam the command uses — no mock-app harness.
+    ///
+    /// COVERAGE GAP (honest): this pins the SEAM (URL → ref → store → search), NOT
+    /// the `scrape_resolve_url` call site (scrape.rs) that wires
+    /// `(posting.url, posting.company)` into it. A swapped/wrong arg order or a
+    /// dropped harvest call THERE would still pass this test — the call-site wiring
+    /// is `AppHandle` + network-bound (`resolve()`), unreachable without a mock-app
+    /// harness this crate deliberately doesn't build. What guards the call site is
+    /// code review + the argument names, not this test.
     #[test]
     fn single_resolve_harvests_the_resolved_postings_slug() {
         use crate::discovered::DiscoveredCompanyStore;
