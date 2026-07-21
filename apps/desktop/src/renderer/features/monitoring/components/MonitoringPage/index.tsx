@@ -39,8 +39,11 @@ export function MonitoringPage() {
 
   const last24h = useMemo(() => binLast24Hours(allJobs, Date.now()), [allJobs]);
 
+  // `id` is the stable identity: `label` is translated, so branching on it (as
+  // the pulse below used to) only ever holds in English.
   const metrics = [
     {
+      id: 'completed',
       label: t('monitoring.metrics.completed'),
       value: counters.completed,
       icon: CheckCircle2,
@@ -48,6 +51,7 @@ export function MonitoringPage() {
       bg: 'bg-emerald-500/10',
     },
     {
+      id: 'running',
       label: t('monitoring.metrics.running'),
       value: counters.running,
       icon: Loader2,
@@ -55,6 +59,7 @@ export function MonitoringPage() {
       bg: 'bg-blue-500/10',
     },
     {
+      id: 'failed',
       label: t('monitoring.metrics.failed'),
       value: counters.failed,
       icon: XCircle,
@@ -62,6 +67,7 @@ export function MonitoringPage() {
       bg: 'bg-amber-500/10',
     },
     {
+      id: 'successRate',
       label: t('monitoring.metrics.successRate'),
       value: `${successRate}%`,
       icon: Zap,
@@ -94,15 +100,15 @@ export function MonitoringPage() {
         />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {metrics.map(({ label, value, icon: Icon, color, bg }) => (
+          {metrics.map(({ id, label, value, icon: Icon, color, bg }) => (
             <MetricCard
-              key={label}
+              key={id}
               label={label}
               value={value}
               icon={Icon}
               color={color}
               bg={bg}
-              animate={label === 'Running' && counters.running > 0}
+              animate={id === 'running' && counters.running > 0}
             />
           ))}
         </div>
