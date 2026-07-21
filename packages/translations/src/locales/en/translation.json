@@ -1626,7 +1626,7 @@
           "label": "My watched ATS companies",
           "description": "Only scrape companies you've starred — resolved fresh on every run.",
           "emptyHint": "You haven't starred any companies yet. Star them from the jobs scrape form to watch them here.",
-          "unstar": "Unwatch company"
+          "unstar": "Unwatch {{company}}"
         }
       },
       "filter": {
@@ -1922,13 +1922,15 @@
     "companies": {
       "label": "Companies",
       "placeholder": "Type a company slug…",
-      "hint": "Company slugs for ATS boards.",
-      "remove": "Remove company"
+      "remove": "Remove {{company}}"
     },
     "discovery": {
       "slugHint": "A slug comes from a company's career-page URL. Once you scrape any job from an ATS company, its slug shows up here automatically — no need to type it by hand.",
-      "starToggle": "Watch company",
+      "starToggle": "Watch {{company}}",
       "curated": "curated",
+      "noMatches": "No matching companies",
+      "resultsCount_one": "{{count}} company found",
+      "resultsCount_other": "{{count}} companies found",
       "starFailed": "Couldn't update watched company. Please try again."
     },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed",

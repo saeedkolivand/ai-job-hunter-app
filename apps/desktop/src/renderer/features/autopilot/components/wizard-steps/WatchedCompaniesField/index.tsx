@@ -68,7 +68,9 @@ export function WatchedCompaniesField() {
                 <Button
                   variant="ghost"
                   aria-pressed={true}
-                  aria-label={t('autopilot.wizard.target.watched.unstar')}
+                  aria-label={t('autopilot.wizard.target.watched.unstar', {
+                    company: c.displayName || c.slug,
+                  })}
                   onClick={() => unstar(c.atsKind, c.slug)}
                   className="h-auto shrink-0 rounded p-1 text-amber-400 hover:text-amber-300"
                 >

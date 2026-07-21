@@ -1630,7 +1630,7 @@
           "label": "Meine beobachteten ATS-Unternehmen",
           "description": "Nur von Ihnen markierte Unternehmen scrapen — bei jedem Lauf frisch aufgelöst.",
           "emptyHint": "Sie haben noch keine Unternehmen markiert. Markieren Sie sie im Job-Scrape-Formular, um sie hier zu beobachten.",
-          "unstar": "Unternehmen nicht mehr beobachten"
+          "unstar": "{{company}} nicht mehr beobachten"
         }
       },
       "filter": {
@@ -1926,13 +1926,15 @@
     "companies": {
       "label": "Unternehmen",
       "placeholder": "Unternehmens-Slug eingeben…",
-      "hint": "Unternehmens-Slugs für ATS-Boards.",
-      "remove": "Unternehmen entfernen"
+      "remove": "{{company}} entfernen"
     },
     "discovery": {
       "slugHint": "Ein Slug stammt aus der Karriereseiten-URL eines Unternehmens. Sobald Sie einen Job eines ATS-Unternehmens scrapen, erscheint sein Slug hier automatisch — kein manuelles Eintippen nötig.",
-      "starToggle": "Unternehmen beobachten",
+      "starToggle": "{{company}} beobachten",
       "curated": "kuratiert",
+      "noMatches": "Keine passenden Unternehmen",
+      "resultsCount_one": "{{count}} Unternehmen gefunden",
+      "resultsCount_other": "{{count}} Unternehmen gefunden",
       "starFailed": "Beobachtetes Unternehmen konnte nicht aktualisiert werden. Bitte erneut versuchen."
     },
     "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen",

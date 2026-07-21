@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -26,12 +26,6 @@ import { WatchedCompaniesField } from './index';
 vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
-
-/** Narrow a possibly-null lookup to a definite value (no `!`). */
-function must<T>(value: T | null | undefined): T {
-  if (value == null) throw new Error('expected a value');
-  return value;
-}
 
 /** Shows the live form value so the toggle's effect is observable. */
 function Probe() {
@@ -115,11 +109,10 @@ describe('WatchedCompaniesField', () => {
       },
     });
 
-    const item = await screen.findByText('Stripe');
+    // Wait for the watched list, then click the unstar control by accessible name.
+    await screen.findByText('Stripe');
     await userEvent.click(
-      within(must(item.closest('li'))).getByRole('button', {
-        name: 'autopilot.wizard.target.watched.unstar',
-      })
+      screen.getByRole('button', { name: 'autopilot.wizard.target.watched.unstar' })
     );
 
     await waitFor(() =>
@@ -152,11 +145,10 @@ describe('WatchedCompaniesField', () => {
       },
     });
 
-    const item = await screen.findByText('Stripe');
+    // Wait for the watched list, then click the unstar control by accessible name.
+    await screen.findByText('Stripe');
     await userEvent.click(
-      within(must(item.closest('li'))).getByRole('button', {
-        name: 'autopilot.wizard.target.watched.unstar',
-      })
+      screen.getByRole('button', { name: 'autopilot.wizard.target.watched.unstar' })
     );
 
     expect(await screen.findByText('jobs.discovery.starFailed')).toBeInTheDocument();

@@ -40,12 +40,22 @@ export interface CompanyTypeaheadProps {
   loading?: boolean;
   disabled?: boolean;
   placeholder?: string;
-  /** Accessible name for the star toggle (state is conveyed by `aria-pressed`). */
-  starLabel: string;
-  /** Accessible name for a chip's remove button. */
-  removeLabel: string;
+  /**
+   * Accessible name for a row's star toggle — a FUNCTION so each row names its
+   * own company (rotor/voice-control users would otherwise meet N identical
+   * "Watch company" controls). State is conveyed separately by `aria-pressed`.
+   */
+  starLabel: (option: CompanyOption) => string;
+  /** Accessible name for a chip's remove button, per-company (see `starLabel`). */
+  removeLabel: (slug: string) => string;
   /** Subtle marker text shown on a curated-seed row. */
   curatedLabel?: string;
+  /**
+   * Visually-hidden `aria-live` text announcing the current result `count` while
+   * the panel is open — the results feedback a screen-reader user would get from
+   * a listbox popup, without reintroducing `role="option"` (Feature-A lesson).
+   */
+  resultsLabel?: (count: number) => string;
   /** Rendered inside the open panel when there are no suggestions (e.g. a hint). */
   emptyState?: ReactNode;
   className?: string;
@@ -83,6 +93,7 @@ export function CompanyTypeahead({
   starLabel,
   removeLabel,
   curatedLabel,
+  resultsLabel,
   emptyState,
   className,
   id,
@@ -108,12 +119,18 @@ export function CompanyTypeahead({
     return counts;
   }, [suggestions]);
 
-  const commit = (slug: string) => {
-    const value = slug.trim();
+  // Add a slug to the list and clear the query. `add` alone is used by
+  // blur-commit (focus is intentionally leaving); `commit` also refocuses the
+  // input for the stay-in-place paths (Enter / suggestion click).
+  const add = (raw: string) => {
+    const value = raw.trim();
     if (!value) return;
     onAdd(value);
     onQueryChange('');
     setActiveIndex(-1);
+  };
+  const commit = (raw: string) => {
+    add(raw);
     inputRef.current?.focus();
   };
 
@@ -145,12 +162,14 @@ export function CompanyTypeahead({
       className={className}
       onFocus={() => !disabled && setOpen(true)}
       onBlur={(e) => {
-        // Close only when focus leaves the whole widget (so tabbing to a row's
-        // star button keeps the panel open).
-        if (!containerRef.current?.contains(e.relatedTarget as Node | null)) {
-          setOpen(false);
-          setActiveIndex(-1);
-        }
+        // Keep the panel open while focus stays inside the widget (tabbing to a
+        // row's star button, or a mid-click on a suggestion/chip).
+        if (containerRef.current?.contains(e.relatedTarget as Node | null)) return;
+        // Focus truly left: flush a typed-but-uncommitted slug so Start Scrape
+        // can't silently drop it (mirrors the free-text Enter path).
+        if (query.trim()) add(query);
+        setOpen(false);
+        setActiveIndex(-1);
       }}
     >
       {/* Field: chips + the typing input, styled like an @ajh/ui Input. */}
@@ -172,7 +191,7 @@ export function CompanyTypeahead({
             <span className="max-w-[12rem] truncate">{slug}</span>
             <button
               type="button"
-              aria-label={removeLabel}
+              aria-label={removeLabel(slug)}
               disabled={disabled}
               onClick={() => onRemove(slug)}
               className="rounded p-0.5 text-brand-soft/70 hover:bg-brand/20 hover:text-brand-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
@@ -249,7 +268,7 @@ export function CompanyTypeahead({
                   <button
                     type="button"
                     data-testid={starTestId}
-                    aria-label={starLabel}
+                    aria-label={starLabel(s)}
                     aria-pressed={s.starred}
                     disabled={disabled}
                     onClick={() => onToggleStar(s)}
@@ -268,6 +287,15 @@ export function CompanyTypeahead({
               <div className="px-3 py-3 text-center text-[11px] text-foreground/25">…</div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Result-count feedback for assistive tech — a persistent live region (so
+          updates are announced) in place of a listbox popup's implicit count.
+          Only speaks during an active query so an empty focus stays quiet. */}
+      {resultsLabel && (
+        <div className="sr-only" role="status" aria-live="polite">
+          {open && query.trim() ? resultsLabel(suggestions.length) : ''}
         </div>
       )}
     </div>

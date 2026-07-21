@@ -43,6 +43,8 @@ export function mergeCompanyOptions(
 ): CompanyOption[] {
   const byKey = new Map<string, CompanyOption>();
   for (const d of discovered) {
+    // Key is lowercased for collision detection, but the ORIGINAL slug casing is
+    // preserved in the value — Ashby company tokens are case-sensitive.
     byKey.set(`${d.atsKind.toLowerCase()}:${d.slug.toLowerCase()}`, {
       atsKind: d.atsKind,
       slug: d.slug,
@@ -127,9 +129,12 @@ export function CompanySlugField({
       loading={isFetching}
       disabled={disabled}
       placeholder={t('jobs.companies.placeholder')}
-      starLabel={t('jobs.discovery.starToggle')}
-      removeLabel={t('jobs.companies.remove')}
+      starLabel={(o) => t('jobs.discovery.starToggle', { company: o.displayName || o.slug })}
+      removeLabel={(slug) => t('jobs.companies.remove', { company: slug })}
       curatedLabel={t('jobs.discovery.curated')}
+      resultsLabel={(n) =>
+        n === 0 ? t('jobs.discovery.noMatches') : t('jobs.discovery.resultsCount', { count: n })
+      }
       emptyState={<SetupHint message={t('jobs.discovery.slugHint')} />}
       inputTestId={TEST_IDS.jobs.companyTypeahead}
       suggestionTestId={TEST_IDS.jobs.companySuggestion}

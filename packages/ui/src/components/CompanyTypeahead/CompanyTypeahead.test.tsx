@@ -32,8 +32,11 @@ function setup(overrides: Partial<ComponentProps<typeof CompanyTypeahead>> = {})
     onQueryChange: vi.fn(),
     suggestions: SUGGESTIONS,
     onToggleStar: vi.fn(),
-    starLabel: 'Watch',
-    removeLabel: 'Remove',
+    // Per-company labels — a screen reader hears "Watch Stripe" / "Remove stripe"
+    // rather than N identical controls.
+    starLabel: (o: CompanyOption) => `Watch ${o.displayName || o.slug}`,
+    removeLabel: (slug: string) => `Remove ${slug}`,
+    resultsLabel: (n: number) => `${n} found`,
     curatedLabel: 'curated',
     placeholder: 'Type a slug…',
     inputTestId: 'ta-input',
@@ -46,12 +49,12 @@ function setup(overrides: Partial<ComponentProps<typeof CompanyTypeahead>> = {})
 }
 
 describe('CompanyTypeahead', () => {
-  it('renders a removable chip per selected slug', () => {
+  it('renders a removable chip per selected slug with a per-company label', () => {
     const onRemove = vi.fn();
     setup({ selected: ['stripe', 'ramp'], onRemove });
-    const chips = screen.getAllByTestId('ta-chip');
-    expect(chips).toHaveLength(2);
-    fireEvent.click(must(screen.getAllByRole('button', { name: 'Remove' })[0]));
+    expect(screen.getAllByTestId('ta-chip')).toHaveLength(2);
+    // Name-based, per-company: no positional [0] guess.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove stripe' }));
     expect(onRemove).toHaveBeenCalledWith('stripe');
   });
 
@@ -82,6 +85,30 @@ describe('CompanyTypeahead', () => {
     expect(onAdd).toHaveBeenCalledWith('unknownco');
   });
 
+  it('commits a typed-but-uncommitted slug on blur (no silent data loss on Start)', async () => {
+    const onAdd = vi.fn();
+    const onQueryChange = vi.fn();
+    setup({ query: 'acme', suggestions: [], onAdd, onQueryChange });
+    const input = screen.getByTestId('ta-input');
+    await userEvent.click(input);
+    // Focus leaves the widget entirely (e.g. onto Start Scrape).
+    fireEvent.focusOut(input, { relatedTarget: document.body });
+    expect(onAdd).toHaveBeenCalledWith('acme');
+    expect(onQueryChange).toHaveBeenCalledWith('');
+  });
+
+  it('does NOT commit the query when a suggestion is clicked (no double-add)', async () => {
+    const onAdd = vi.fn();
+    // query is 'str' (a filter fragment) — clicking a suggestion must add ONLY
+    // that suggestion, never also the typed fragment via a stray blur-commit.
+    setup({ query: 'str', onAdd });
+    await userEvent.click(screen.getByTestId('ta-input'));
+    const rows = screen.getAllByTestId('ta-row');
+    await userEvent.click(within(must(rows[0])).getByText('Stripe'));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onAdd).toHaveBeenCalledWith('stripe');
+  });
+
   it('ArrowDown then Enter commits the highlighted suggestion, not free-text', async () => {
     const onAdd = vi.fn();
     setup({ query: 'r', onAdd });
@@ -97,7 +124,7 @@ describe('CompanyTypeahead', () => {
     const onToggleStar = vi.fn();
     setup({ onToggleStar });
     await userEvent.click(screen.getByTestId('ta-input'));
-    fireEvent.click(must(screen.getAllByTestId('ta-star')[0]));
+    fireEvent.click(screen.getByRole('button', { name: 'Watch Stripe' }));
     expect(onToggleStar).toHaveBeenCalledWith(SUGGESTIONS[0]);
   });
 
@@ -107,14 +134,26 @@ describe('CompanyTypeahead', () => {
     expect(screen.getByText('what is a slug?')).toBeInTheDocument();
   });
 
+  it('announces the result count in an aria-live status region while searching', async () => {
+    setup({ query: 'st', suggestions: [must(SUGGESTIONS[0])] });
+    await userEvent.click(screen.getByTestId('ta-input'));
+    expect(screen.getByRole('status')).toHaveTextContent('1 found');
+  });
+
   it('does NOT use role=option (star buttons must not live inside an option — APG)', async () => {
     setup();
     await userEvent.click(screen.getByTestId('ta-input'));
     // Rows are plain buttons, so a screen reader never meets an option with an
-    // interactive child. Star is a real toggle with aria-pressed.
+    // interactive child. State is a real toggle button with aria-pressed.
     expect(screen.queryAllByRole('option')).toHaveLength(0);
-    expect(screen.getAllByTestId('ta-star')[0]).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getAllByTestId('ta-star')[1]).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Watch Stripe' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'Watch Ramp' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
   });
 
   it('backspace on an empty query removes the last chip', async () => {
