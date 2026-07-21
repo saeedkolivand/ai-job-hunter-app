@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
-const cardPath = join(root, 'apps', 'landing', 'social-card.html');
+const cardPath = join(root, 'scripts', 'assets', 'social-card.html');
 if (!existsSync(cardPath)) {
   console.error('missing', cardPath);
   process.exit(1);
