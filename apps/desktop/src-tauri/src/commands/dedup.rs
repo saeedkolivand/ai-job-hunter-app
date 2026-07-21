@@ -137,6 +137,62 @@ mod tests {
     }
 
     #[test]
+    fn clamp_collapses_duplicate_other_keys_preserving_first_seen_order() {
+        // The SAME key repeated (interleaved) collapses to ONE entry, and the
+        // surviving order is first-seen: `b` before `a` because `b` appears first.
+        let keys = vec![
+            "b".to_string(),
+            "a".to_string(),
+            "b".to_string(), // dup of the first-seen `b`
+            "a".to_string(), // dup of `a`
+            "c".to_string(),
+        ];
+        let (_, clamped) = clamp_split_request("member", &keys).expect("valid request");
+        assert_eq!(
+            clamped,
+            vec!["b".to_string(), "a".to_string(), "c".to_string()],
+            "duplicates collapse to one entry, first-seen order preserved"
+        );
+    }
+
+    #[test]
+    fn clamp_dedup_before_cap_yields_full_distinct_capacity() {
+        // 40 DISTINCT keys, with the first key hammered 20 extra times
+        // interleaved. De-dup runs BEFORE the 32-cap, so the repeats collapse and
+        // do NOT steal slots — the result is the FULL 32 distinct keys (d0..d31),
+        // not fewer.
+        let mut keys: Vec<String> = Vec::new();
+        for i in 0..40 {
+            keys.push(format!("d{i}"));
+            if i < 20 {
+                keys.push("d0".to_string()); // repeatedly hammer one key
+            }
+        }
+        let (_, clamped) = clamp_split_request("member", &keys).expect("valid request");
+        assert_eq!(
+            clamped.len(),
+            MAX_OTHER_KEYS,
+            "dedup-before-cap must yield the FULL 32 distinct slots, not fewer"
+        );
+        let unique: std::collections::HashSet<&String> = clamped.iter().collect();
+        assert_eq!(
+            unique.len(),
+            clamped.len(),
+            "all surviving keys are distinct"
+        );
+        // The cap keeps the first 32 DISTINCT keys in first-seen order.
+        assert_eq!(clamped.first().map(String::as_str), Some("d0"));
+        assert!(
+            clamped.contains(&"d31".to_string()),
+            "a distinct key up to the cap survives despite the repeats"
+        );
+        assert!(
+            !clamped.contains(&"d32".to_string()),
+            "distinct keys beyond the cap are dropped"
+        );
+    }
+
+    #[test]
     fn clamp_deduplicates_repeated_keys_before_the_cap() {
         // 33 entries where two are duplicates (k0 and k1 each appear twice) → 31
         // DISTINCT keys. De-dup runs BEFORE the 32-cap, so all 31 are kept
