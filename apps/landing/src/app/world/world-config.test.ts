@@ -14,12 +14,16 @@ describe('world-config data integrity', () => {
     expect(connectorsMobile.length).toBe(sections.length - 1);
   });
 
-  it('gives every section an id, still, clip, and title', () => {
+  it('gives every section required UI strings and media paths', () => {
     for (const section of sections) {
       expect(section.id).toBeTruthy();
       expect(section.still).toBeTruthy();
       expect(section.clip).toBeTruthy();
       expect(section.title).toBeTruthy();
+      expect(section.label).toBeTruthy();
+      expect(section.accent).toBeTruthy();
+      expect(section.eyebrow).toBeTruthy();
+      expect(section.body).toBeTruthy();
     }
   });
 
