@@ -417,6 +417,7 @@ Parser is now correct and handles the custom XML schema. Monitor the endpoint fo
 #### Current scraper
 
 - **URL:** `https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs?content=true`
+- **Posting-URL hosts:** `boards.greenhouse.io/{slug}`, `job-boards.greenhouse.io/{slug}`, `boards.eu.greenhouse.io/{slug}` (recognized by extractor)
 - **Mode:** HTTP (reqwest)
 - **Scope:** Company-scoped — **requires a company slug** (no free-text keyword search); scraper iterates `BoardSearchInput.companies[]` with per-company fan-out capped at 50 companies per scrape run
 - **Fields:** `jobs[].{id, title, absolute_url, location.name, content, updated_at}`

@@ -443,6 +443,38 @@ Browser extension single-job imports on SPA/list-view pages (`?currentJobId=…`
 
 **Canonical branch precedence:** SPA/list imports take three paths: (a) `resolve(canonical)` succeeds + usable → use it directly; (b) `resolve()` fails or description-less → try hint-scoped `job_root_generic_html()` to gap-fill title/description; (c) neither path yields a usable posting → fall through to stub/partial persist. Whole-document parse never runs for canonical URLs, only for direct page imports.
 
+## Passive ATS slug harvesting + watched companies (ADR-030, 2026-07-21)
+
+Company-scoped ATS boards require hand-typed slugs that users cannot know in advance. Slugs leak naturally in every posting URL (apply links, redirect chains). Passive harvesting extracts these at ingest/import time, persists them in a dedup store ranked by frequency, and surfaces them as a typeahead in the ScrapeForm. Starred discoveries become watched companies for autopilot targeting, resolved at run time (not frozen). Zero new network calls; pure URL parse-pass.
+
+**Extractor + store:**
+
+- **Pure extractor:** `scraping/ats_ref.rs::extract_ats_ref(url) -> Option<(AtsKind, slug)>` — reuses existing `scrape_url` URL parsers; matches posting-URL hosts (case-insensitive) for Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `boards.eu.greenhouse.io`), Lever, Ashby, SmartRecruiters, Personio, Recruitee, Workable, Breezy, BambooHR, Pinpoint, Rippling. Preserves slug casing exactly (Ashby).
+- **Store:** `discovered/mod.rs::DiscoveredCompanyStore` — SQLite table `discovered_companies(id, ats_kind, slug, display_name, first_seen_at, last_seen_at, seen_count, source, starred, UNIQUE(ats_kind, slug))`. Upserts on re-encounter bump `last_seen_at` + `seen_count`. Registered in `Resettable` reset registry (ADR-009) + `DataStore` backup bundle.
+- **Harvest sites:** `commands/discovery.rs::harvest_ats_refs` wired into two parse-only passes: (1) after engine scrape in `commands/scrape.rs`, (2) extension import in `extension_bridge/import_flow.rs`. Batch upserts per transaction.
+
+**Surfacing + watching:**
+
+- **Typeahead:** `packages/ui` CompanyTypeahead component (modeled on LocationInput) in ScrapeForm, backed by `discovery` IPC namespace (`search_ats_slugs`, `star_company`, `get_watched_companies`). Merges discovered rows with curated `ats_seed` (seeds are display-only unless starred).
+- **Watching:** Starred discoveries are user-watched companies. `AutopilotTargetSchema` gains optional `watchedCompaniesOnly?: boolean`. At run time, `autopilot_helpers/mod.rs::resolve_watched_companies` materializes the currently-starred set and fans out to per-company scrapers via `scraping/engine::scrape_boards_with_overrides` (per-board seeded-companies override). A board with no matching stars gets a clean needs-company skip.
+
+**Source pointers:**
+
+- Extractor: `scraping/ats_ref.rs::extract_ats_ref`
+- Store: `discovered/mod.rs::DiscoveredCompanyStore`
+- Harvest callers: `commands/discovery.rs::harvest_ats_refs`, `commands/scrape.rs`, `extension_bridge/import_flow.rs`
+- Runtime watching: `autopilot_helpers/mod.rs::resolve_watched_companies`, `scraping/engine::scrape_boards_with_overrides`
+- IPC contract: `packages/shared/src/ipc/contracts/discovery.ts`
+- UI typeahead: `packages/ui` CompanyTypeahead
+
+**Fast-follow work items (deferred, not blocking):**
+
+1. **Active slug prober** — HTTP 200/404 check on posting URLs to detect dead companies.
+2. **Extension-side ATS fingerprinting** — detect ATS flavor from page markup (e.g., Greenhouse form markers).
+3. **Community slug directory** — user-contributed slug mappings (federated or centralized).
+4. **Aggregate row-cap** — defense-in-depth: MAX_COMPANIES per ATS per board.
+5. **Consolidate useDebounced** — merge local `useDebounced` in CompanySlugField with shared `use-debounced-commit` hook.
+
 ## See also
 
 - `docs/SCRAPING_ENDPOINTS.md` — verified external endpoint reconnaissance (24 active boards, `aggregator` counted once among them; retired boards noted)
