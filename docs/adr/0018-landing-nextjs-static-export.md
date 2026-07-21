@@ -52,6 +52,8 @@ available"). No API call; the JSON is baked at build time and deployed with the 
    passthrough (benchmarks/dashboards/storybook), version.json release seam, check:parity gate.
 2. **PR2** (shipped): Docs-tier DocShell + `/mission-control` full-repo dashboard redesign with
    PAT sign-in + safe-tier write actions.
+   2b. **PR2b** (shipped): Architecture-map port from passthrough artifact to typed-data route
+   (`src/data/architecture-map.ts`; same URL `/architecture-map`; drift-guard repointed).
 3. **PR3** (shipped): OG template relocated from `apps/landing/social-card.html` to
    `scripts/assets/social-card.html` (beside its generator; no longer part of the app).
 4. **PR4** (pending): Nightly metrics-snapshot data plane (autonomous update of data.js + CI step).
@@ -93,11 +95,12 @@ The missio-control feature is now a Next.js typed-data route (`src/data/agent-fl
 for the agent-system route, and `/mission-control` from `src/app/`). Both are built by
 Next, not passthrough artifacts.
 
-**Architecture-map port deferred** (2026-07-20):
-The architecture-map SVG dashboard is still served as a passthrough artifact from `public/`.
-Porting it to a typed-data route (like `/agent-system` was ported) is deferred to a
-follow-up PR. Design intent and content are unchanged; it remains accessible via the
-existing URL.
+**Architecture-map port shipped** (2026-07-21, PR2b):
+The architecture-map SVG dashboard was ported from a passthrough artifact (`public/architecture-map.html`)
+to a typed-data route (`src/data/architecture-map.ts`). The URL (`/architecture-map`) and flat-file
+export (`.html` via static export) are unchanged. The data file replaces the hand-edited passthrough
+and is the source of truth for the drift-guard script (`check-landing-drift.mjs`). Design intent and
+content unchanged; the port is structural only.
 
 **SECURITY: Origin Invariant for Browser-Stored Tokens** (architectural constraint):
 GitHub Pages serves the landing site at `aijobhunter.app` with a meta CSP (`<meta
@@ -124,6 +127,11 @@ Verify on every landing page update that no external `<script src="https://…">
 `<link href="https://…" rel="stylesheet">` tags are present in the built HTML (the
 parity gate catches structural changes). This origin invariant is non-negotiable for
 browser-stored secrets.
+
+## Addendum: PR4 Metrics-snapshot data plane
+
+**Nightly metrics snapshot and GitHub API live fallback** (shipped 2026-07-21, PR4):
+The mission-control dashboard now fetches data from a nightly snapshot (`apps/landing/public/metrics/`) with live GitHub API fallback. A new `.github/workflows/metrics-snapshot.yml` runs nightly (03:17 UTC) and on manual dispatch: it bakes 7 GitHub REST API payloads into JSON files and commits them to main via SSH over the `RELEASE_DEPLOY_KEY` (the default `GITHUB_TOKEN` is not a ruleset bypass actor and its push to protected main is rejected). The `commits.json` snapshot is uniquely field-allowlisted (via jq) to strip git author/committer names and emails before public upload — the client consumes only sha, message, date, and login. Missing or stale snapshots degrade gracefully via per-key live fallback (dashboard shows an honest freshness line from `meta.json`). The push is marked `[skip ci]` + the pages.yml workflow is dispatched explicitly to keep the deploy intentional and avoid redundant CI runs. This approach trades real-time accuracy for load relief and reproducible dashboard renders across multiple deployments. The snapshot mode is transparent to users via a single `liveOrSnapshot` seam in mission-control's data source configuration (`dataSource: { mode: 'snapshot', snapshotBase: '/metrics' }`); the API data-fetch path remains available for client sign-in scenarios (users with fine-grained PATs can opt into live mode for latest data).
 
 ## References
 

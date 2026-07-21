@@ -2,7 +2,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MC_CONFIG } from './config';
-import { authHeaders, ghGet, ghWrite, liveOrSnapshot } from './github';
+import {
+  authHeaders,
+  fetchSnapshotStamp,
+  ghGet,
+  ghWrite,
+  liveOrSnapshot,
+  snapshotFreshnessLine,
+} from './github';
 
 const TOKEN = 'github_pat_11ABCDEFG_supersecretvalue0000';
 
@@ -160,5 +167,54 @@ describe('liveOrSnapshot (the data-source seam)', () => {
     const out = await liveOrSnapshot({ mode: 'snapshot', snapshotBase: '/mc-data' }, 'x', live);
     expect(out).toBe('LIVE');
     expect(live).toHaveBeenCalledOnce();
+  });
+});
+
+describe('fetchSnapshotStamp', () => {
+  it('returns null in live mode without any fetch', async () => {
+    const fetchMock = stubFetch(makeRes({ ok: true, body: { generatedAt: 'x' } }));
+    expect(await fetchSnapshotStamp({ mode: 'live' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reads generatedAt from the snapshot meta.json', async () => {
+    const fetchMock = stubFetch(
+      makeRes({ ok: true, body: { generatedAt: '2026-07-20T03:17:00Z' } })
+    );
+    const stamp = await fetchSnapshotStamp({ mode: 'snapshot', snapshotBase: '/metrics' });
+    expect(stamp).toBe('2026-07-20T03:17:00Z');
+    expect(lastUrl(fetchMock)).toBe('/metrics/meta.json');
+  });
+
+  it('returns null when the snapshot meta is absent (404)', async () => {
+    stubFetch(makeRes({ ok: false, status: 404 }));
+    expect(await fetchSnapshotStamp({ mode: 'snapshot', snapshotBase: '/metrics' })).toBeNull();
+  });
+
+  it('returns null when meta.json lacks a generatedAt', async () => {
+    stubFetch(makeRes({ ok: true, body: {} }));
+    expect(await fetchSnapshotStamp({ mode: 'snapshot', snapshotBase: '/metrics' })).toBeNull();
+  });
+});
+
+describe('snapshotFreshnessLine', () => {
+  const NOW = Date.parse('2026-07-20T12:00:00Z');
+
+  it('formats a recent snapshot as a muted relative-time line', () => {
+    const threeHoursAgo = new Date(NOW - 3 * 60 * 60 * 1000).toISOString();
+    expect(snapshotFreshnessLine(threeHoursAgo, NOW)).toBe(
+      'snapshot from 3 hours ago · data refreshes nightly'
+    );
+  });
+
+  it('formats a multi-day-old snapshot in days', () => {
+    const twoDaysAgo = new Date(NOW - 2 * 24 * 60 * 60 * 1000).toISOString();
+    expect(snapshotFreshnessLine(twoDaysAgo, NOW)).toBe(
+      'snapshot from 2 days ago · data refreshes nightly'
+    );
+  });
+
+  it('returns null for an unparseable timestamp', () => {
+    expect(snapshotFreshnessLine('not-a-date', NOW)).toBeNull();
   });
 });

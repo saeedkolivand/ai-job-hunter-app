@@ -11,6 +11,7 @@
 //   2. Every cited IPC contract namespace exists under packages/shared/src/ipc/contracts/.
 //   3. No reference to the removed auto-apply registry (APPLIERS / &dyn Applier).
 //   4. Forbidden-term denylist for the removed engine (anchored; the verb "applies" is fine).
+//   5. Every board-count claim matches the live SCRAPERS registry entry count.
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
 //
 // Read-only. Run via `pnpm check:landing-drift`; CI runs it in the Lint & Format job.
@@ -21,8 +22,10 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 
 // Claim-bearing architecture diagrams (path/IPC/registry/denylist checks). The
-// architecture map is a passthrough dashboard under public/; how-it-works is now
-// a Next route whose authored body lives in src/content/.
+// architecture map is now a Next route backed by a typed data module
+// (src/data/architecture-map.ts) whose nodes cite REAL file paths + IPC contract
+// names — exactly what this guard validates; how-it-works is a Next route whose
+// authored body lives in src/content/.
 //
 // NOTE: the agent-system page was ported to a typed data source
 // (src/data/agent-fleet.ts, PR2), but it is deliberately NOT in this path-checked
@@ -31,7 +34,7 @@ const ROOT = process.cwd();
 // below instead (see SECRET_SCAN_FILES). check-agent-system.mjs owns its name/roster
 // invariants.
 const DIAGRAMS = [
-  'apps/landing/public/architecture-map.html',
+  'apps/landing/src/data/architecture-map.ts',
   'apps/landing/src/content/how-it-works/body.html',
 ];
 
@@ -41,7 +44,7 @@ const DIAGRAMS = [
 // the dashboards + benchmarks are public/ passthrough.
 const SECRET_SCAN_FILES = [
   'apps/landing/src/data/agent-fleet.ts',
-  'apps/landing/public/architecture-map.html',
+  'apps/landing/src/data/architecture-map.ts',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
   'scripts/assets/social-card.html',
@@ -97,14 +100,26 @@ function validContractNames() {
   );
 }
 
-// `N('ct-apply', 'contract', 'apply.ts', …)` → the 3rd arg is the contract file.
-const CONTRACT_NODE_RE = /N\(\s*'[^']*'\s*,\s*'contract'\s*,\s*'([A-Za-z0-9]+)\.ts'/g;
+// A contract-cluster node names its contract file via `label: '<name>.ts'`. Rather
+// than assume property order or a restricted name charset (the old single regex
+// required `cluster:` immediately before `label:` and [A-Za-z0-9] names, so a
+// reordered property or an _/- name evaded it silently), scan each flat object
+// literal and, for blocks tagged `cluster: 'contract'`, read the label. The
+// serialized nodes nest no braces (arrays use []), so /\{[^{}]*?\}/ reliably
+// bounds one node; `[\w-]+` covers underscore/hyphen names.
+const CONTRACT_BLOCK_RE = /\{[^{}]*?\}/gs;
+const CONTRACT_CLUSTER_RE = /cluster:\s*['"]contract['"]/;
+const CONTRACT_LABEL_RE = /label:\s*['"]([\w-]+)\.ts['"]/;
 // Any explicit `…/ipc/contracts/<name>.ts` reference.
 const CONTRACT_PATH_RE = /ipc\/contracts\/([A-Za-z0-9]+)\.ts/g;
 
 function checkContracts(file, text, valid) {
   const cited = new Set();
-  for (const [, name] of text.matchAll(CONTRACT_NODE_RE)) cited.add(name);
+  for (const [block] of text.matchAll(CONTRACT_BLOCK_RE)) {
+    if (!CONTRACT_CLUSTER_RE.test(block)) continue;
+    const label = block.match(CONTRACT_LABEL_RE);
+    if (label) cited.add(label[1]); // non-.ts labels (schemas/, types/) don't match
+  }
   for (const [, name] of text.matchAll(CONTRACT_PATH_RE)) cited.add(name);
   for (const name of cited) {
     if (!valid.has(name)) {
@@ -162,6 +177,44 @@ function checkDeadTerms(file, text) {
   }
 }
 
+// ── Check 5: board-count claims match the SCRAPERS registry ─────────────────
+// The landing sources state the board count in human-readable spots (the scraper
+// cluster label, the FINDINGS prose, and the sidebar "N boards" line). The source
+// of truth is the `static SCRAPERS` array in mod.rs — count its entries and assert
+// every claim matches. NOTE: the sibling "8 AI providers" claim is intentionally
+// NOT derived here — it comes from the ProviderId registry, a different source and
+// out of scope for this guard.
+const BOARD_COUNT_FILES = [
+  'apps/landing/src/data/architecture-map.ts',
+  'apps/landing/src/components/architecture-map/ArchitectureMap.tsx',
+];
+const BOARD_CLAIM_RES = [
+  /SCRAPERS · (\d+)/g, // cluster label: "Scrapers (SCRAPERS · 24)"
+  /SCRAPERS \((\d+)\)/g, // FINDINGS prose: "SCRAPERS (24)"
+  /(\d+) boards/g, // node subs + sidebar: "24 boards"
+];
+
+// Entries of `static SCRAPERS: &[…] = &[ … ];` — one `&FooScraper,` per line.
+function countScrapers(text) {
+  const block = text.match(/static\s+SCRAPERS\b[^=]*=\s*&\[([\s\S]*?)\];/);
+  if (!block) return null;
+  return (block[1].match(/^\s*&\w+Scraper,\s*$/gm) ?? []).length;
+}
+
+function checkBoardCount(file, text, expected) {
+  for (const re of BOARD_CLAIM_RES) {
+    for (const [, n] of text.matchAll(re)) {
+      if (Number(n) !== expected) {
+        fail(
+          'Board-count drift',
+          file,
+          `claims ${n} boards but the SCRAPERS registry has ${expected} (${SCRAPERS_FILE})`
+        );
+      }
+    }
+  }
+}
+
 // ── Secret-scan: no committed GitHub token on the public site ───────────────
 const TOKEN_RE = /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
 
@@ -185,6 +238,21 @@ for (const file of DIAGRAMS) {
   checkContracts(file, text, validContracts);
   checkRegistry(file, text);
   checkDeadTerms(file, text);
+}
+
+if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
+  fail('Registry source moved', SCRAPERS_FILE, `expected SCRAPERS registry for board-count check`);
+} else {
+  const boardCount = countScrapers(read(SCRAPERS_FILE));
+  if (boardCount === null) {
+    fail(
+      'Registry source moved',
+      SCRAPERS_FILE,
+      'could not find the `static SCRAPERS` array to count'
+    );
+  } else {
+    for (const file of BOARD_COUNT_FILES) checkBoardCount(file, read(file), boardCount);
+  }
 }
 
 for (const file of SECRET_SCAN_FILES) {
