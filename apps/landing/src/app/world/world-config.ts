@@ -150,3 +150,19 @@ export const WORLD_CONFIG: WorldConfig = {
     '/world/vid/conn5-m.mp4',
   ],
 };
+
+const toAv1 = (path: string): string => path.replace(/\.mp4$/, '.av1.mp4');
+
+/**
+ * Returns a copy of `config` pointing desktop clips (section.clip, connectors)
+ * at their AV1 encode instead of H.264. Mobile stays H.264-only — untouched:
+ * clipMobile, connectorsMobile, still, and stillMobile. Pure — never mutates
+ * `config`; no DOM access (the AV1-support check lives in WorldClient.tsx).
+ */
+export function withAv1Sources(config: WorldConfig): WorldConfig {
+  return {
+    ...config,
+    sections: config.sections.map((section) => ({ ...section, clip: toAv1(section.clip) })),
+    connectors: config.connectors.map(toAv1),
+  };
+}

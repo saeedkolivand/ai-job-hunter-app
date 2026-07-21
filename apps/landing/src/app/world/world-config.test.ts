@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { WORLD_CONFIG } from './world-config';
+import { withAv1Sources, WORLD_CONFIG } from './world-config';
 
 // Typed-data invariants for the /world scroll-flight config. The media assets
 // themselves are rendered separately and land in public/world/ later — this
@@ -50,5 +50,37 @@ describe('world-config data integrity', () => {
     for (const path of [...connectors, ...connectorsMobile]) {
       expect(path.startsWith('/world/')).toBe(true);
     }
+  });
+});
+
+describe('withAv1Sources', () => {
+  it('rewrites every section clip and connector to the .av1.mp4 encode', () => {
+    const av1Config = withAv1Sources(WORLD_CONFIG);
+    expect(av1Config.sections.map((s) => s.clip)).toEqual(
+      WORLD_CONFIG.sections.map((s) => s.clip.replace(/\.mp4$/, '.av1.mp4'))
+    );
+    expect(av1Config.connectors).toEqual(
+      WORLD_CONFIG.connectors.map((c) => c.replace(/\.mp4$/, '.av1.mp4'))
+    );
+  });
+
+  it('leaves mobile clips, mobile connectors, and every still/poster untouched', () => {
+    const av1Config = withAv1Sources(WORLD_CONFIG);
+    expect(av1Config.sections.map((s) => s.clipMobile)).toEqual(
+      WORLD_CONFIG.sections.map((s) => s.clipMobile)
+    );
+    expect(av1Config.sections.map((s) => s.still)).toEqual(
+      WORLD_CONFIG.sections.map((s) => s.still)
+    );
+    expect(av1Config.sections.map((s) => s.stillMobile)).toEqual(
+      WORLD_CONFIG.sections.map((s) => s.stillMobile)
+    );
+    expect(av1Config.connectorsMobile).toEqual(WORLD_CONFIG.connectorsMobile);
+  });
+
+  it('does not mutate the input config', () => {
+    const snapshot = JSON.parse(JSON.stringify(WORLD_CONFIG));
+    withAv1Sources(WORLD_CONFIG);
+    expect(WORLD_CONFIG).toEqual(snapshot);
   });
 });

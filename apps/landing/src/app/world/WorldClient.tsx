@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 import { mountScrollWorld } from './scrub-engine';
-import { WORLD_CONFIG } from './world-config';
+import { withAv1Sources, WORLD_CONFIG } from './world-config';
 
 // Theme tokens the vendored engine reads off .sw-root/:root (see scrub-engine.js's
 // header comment). Page background matches --sw-bg so the still posters blend
@@ -42,7 +42,12 @@ export function WorldClient() {
     const container = containerRef.current;
     if (!container || mountedRef.current) return;
     mountedRef.current = true;
-    mountScrollWorld(container, WORLD_CONFIG);
+    // Desktop ships AV1 (~40% smaller at equal quality) with the H.264 files as
+    // the fallback for browsers without AV1 decode (older Safari); mobile stays
+    // H.264-only because phone software AV1 decode can't keep up with scrubbing.
+    const av1 =
+      document.createElement('video').canPlayType('video/mp4; codecs="av01.0.08M.08"') !== '';
+    mountScrollWorld(container, av1 ? withAv1Sources(WORLD_CONFIG) : WORLD_CONFIG);
   }, []);
 
   return (
