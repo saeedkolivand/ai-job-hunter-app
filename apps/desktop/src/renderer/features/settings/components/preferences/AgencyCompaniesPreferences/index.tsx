@@ -22,6 +22,10 @@ export function AgencyCompaniesPreferences() {
   const [inputValue, setInputValue] = useState('');
 
   const add = (raw: string) => {
+    // Guard the pre-load window: `jobPrefs` (and thus `list`) is undefined/[]
+    // until the query resolves, so an add here would replace the saved list with
+    // just this one entry (single-column setter, but still column data loss).
+    if (!jobPrefs) return;
     const value = raw.trim();
     if (!value) return;
     if (list.some((c) => c.toLowerCase() === value.toLowerCase())) {
@@ -32,7 +36,10 @@ export function AgencyCompaniesPreferences() {
     setInputValue('');
   };
 
-  const remove = (name: string) => setExtraAgencyCompanies.mutate(list.filter((c) => c !== name));
+  const remove = (name: string) => {
+    if (!jobPrefs) return;
+    setExtraAgencyCompanies.mutate(list.filter((c) => c !== name));
+  };
 
   return (
     <GlassCard>

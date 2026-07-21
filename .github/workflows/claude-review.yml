@@ -173,7 +173,7 @@ jobs:
             if (findings.length) {
               body = marker + '\n' + fs.readFileSync('review-comment.md', 'utf8');
             } else if (sticky) {
-              body = marker + '\n## 🤖 AI Review OK\n\n✓ Latest run found no findings — earlier findings are resolved or superseded.';
+              body = marker + '\n## 🤖 AI Review OK\n\n**Verdict: no blocking findings** — ✓ latest run found no findings; earlier findings are resolved or superseded.';
             }
             if (!body) return; // clean run and no prior sticky: stay silent
             if (sticky) {

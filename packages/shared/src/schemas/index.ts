@@ -514,8 +514,9 @@ export const JobPreferencesSchema = z.object({
   // Extra recruiting/staffing agency company names, merged with the built-in
   // const list when cross-board dedup flags a posting's `isAgency` (ADR-029 §i).
   // Free text; the Rust store clamps each entry + the list length at the write
-  // boundary (per the dedicated single-column setter, PR #695 pattern).
-  extraAgencyCompanies: z.array(z.string().trim().min(1)).optional(),
+  // boundary (per the dedicated single-column setter, PR #695 pattern). `.max`
+  // mirrors the Rust `MAX_EXTRA_AGENCY_COMPANIES` cap (same guard as otherKeys).
+  extraAgencyCompanies: z.array(z.string().trim().min(1)).max(500).optional(),
 });
 
 // Cross-board dedup "split" request (ADR-029 §h): mark `memberKey` as NOT a
