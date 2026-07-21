@@ -411,8 +411,39 @@ impl InteractionStore {
             return;
         }
         let records = self.records();
-        if let Ok(json) = serde_json::to_string_pretty(&records) {
-            std::fs::write(&self.data_file, json).ok();
+        let json = match serde_json::to_string_pretty(&records) {
+            Ok(json) => json,
+            Err(e) => {
+                log::error!(
+                    "[postings] save skipped: could not serialize {} interaction(s): {e}",
+                    records.len()
+                );
+                return;
+            }
+        };
+        // Write-then-rename, so the file is replaced atomically. `fs::write`
+        // truncates the target in place, so a crash mid-write left
+        // `interactions.json` truncated — and the discarded `Result` meant a
+        // failed write (disk full, read-only volume) still looked like a success
+        // to `upsert`/`import_bundle`, with the record living only in memory and
+        // silently lost on the next restart.
+        let tmp = self.data_file.with_extension("json.tmp");
+        if let Err(e) = std::fs::write(&tmp, &json) {
+            log::error!(
+                "[postings] failed to write {}: {e} — interaction NOT persisted",
+                tmp.display()
+            );
+            std::fs::remove_file(&tmp).ok();
+            return;
+        }
+        if let Err(e) = std::fs::rename(&tmp, &self.data_file) {
+            log::error!(
+                "[postings] failed to move {} onto {}: {e} — interaction NOT persisted \
+                 (the previous file is intact)",
+                tmp.display(),
+                self.data_file.display()
+            );
+            std::fs::remove_file(&tmp).ok();
         }
     }
 }
