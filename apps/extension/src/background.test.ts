@@ -97,15 +97,38 @@ const setBadgeTextMock = vi.mocked(browser.action.setBadgeText);
 const listener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls[0]?.[0] as
   | ((
       message: unknown,
-      sender: Browser.runtime.MessageSender
-    ) => Promise<PopupResponse> | undefined)
+      sender: Browser.runtime.MessageSender,
+      sendResponse: (response?: PopupResponse) => void
+    ) => true | undefined)
   | undefined;
 
+/**
+ * Drive the registered listener the way the browser does: hand it a
+ * `sendResponse` callback and resolve on the reply.
+ *
+ * The `kept === true` assertion is the point — Chromium keeps the message
+ * channel open for an async reply ONLY for a literal `true` return. Anything
+ * else (including a returned Promise, which is truthy but not `true`) closes it
+ * immediately and `sendMessage` resolves `undefined`, which the popup reports as
+ * "No response from the extension background."
+ */
 function send(req: PopupRequest): Promise<PopupResponse> {
   if (!listener) throw new Error('onMessage listener not registered');
-  return listener(req, {
-    id: EXTENSION_ID,
-  } as Browser.runtime.MessageSender) as Promise<PopupResponse>;
+  return new Promise<PopupResponse>((resolve, reject) => {
+    const kept = listener(
+      req,
+      { id: EXTENSION_ID } as Browser.runtime.MessageSender,
+      (response?: PopupResponse) => {
+        if (response) resolve(response);
+        else reject(new Error('listener called sendResponse with no response'));
+      }
+    );
+    if (kept !== true) {
+      reject(
+        new Error(`listener must return literal true to keep the channel open, got ${String(kept)}`)
+      );
+    }
+  });
 }
 
 /** Flush the fire-and-forget async work `handleRequest`/the raw listener kick
