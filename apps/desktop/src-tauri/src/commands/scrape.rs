@@ -195,12 +195,17 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 // the annotations are present when the renderer refetches).
                 recluster_postings_cache(&app_clone);
                 // Passively harvest ATS company slugs from every posting's URL
-                // (parse-only, zero network) — ADR-030 §c. Degrades on error.
-                crate::commands::discovery::harvest_ats_refs(
-                    &app_clone,
-                    postings.iter().map(|p| (p.url.clone(), p.company.clone())),
-                    "scrape",
-                );
+                // (parse-only, zero network) — ADR-030 §c. Resolve the store at this
+                // shell boundary; a missing store (startup failure) is a no-op.
+                if let Some(store) =
+                    app_clone.try_state::<crate::discovered::DiscoveredCompanyStore>()
+                {
+                    crate::discovered::harvest_ats_refs(
+                        store.inner(),
+                        postings.iter().map(|p| (p.url.clone(), p.company.clone())),
+                        "scrape",
+                    );
+                }
                 crate::commands::jobs::job_complete(
                     &app_clone,
                     &job_id_clone,
@@ -276,12 +281,17 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 // it, so a URL-imported job picks up its cross-board group too.
                 recluster_postings_cache(&app_clone);
                 // Passively harvest the ATS slug from the resolved posting's URL
-                // (parse-only, zero network) — ADR-030 §c.
-                crate::commands::discovery::harvest_ats_refs(
-                    &app_clone,
-                    std::iter::once((posting.url.clone(), posting.company.clone())),
-                    "scrape",
-                );
+                // (parse-only, zero network) — ADR-030 §c. Resolve the store at this
+                // shell boundary; a missing store (startup failure) is a no-op.
+                if let Some(store) =
+                    app_clone.try_state::<crate::discovered::DiscoveredCompanyStore>()
+                {
+                    crate::discovered::harvest_ats_refs(
+                        store.inner(),
+                        std::iter::once((posting.url.clone(), posting.company.clone())),
+                        "scrape",
+                    );
+                }
                 crate::commands::jobs::job_complete(
                     &app_clone,
                     &job_id_clone,
@@ -456,13 +466,16 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
             // the slug typeahead like the scrape/autopilot/extension paths. Harvest
             // the posting's FINAL/canonical `url` (what got stored on it — an
             // aggregator click-tracker resolves to the board's real posting url),
-            // not the raw request `url`, matching the other harvest sites. The seam
-            // degrades on error (missing store → no-op; upsert error → log::warn).
-            crate::commands::discovery::harvest_ats_refs(
-                &app,
-                std::iter::once((posting.url.clone(), posting.company.clone())),
-                "scrape",
-            );
+            // not the raw request `url`, matching the other harvest sites. Resolve
+            // the store at this shell boundary (missing store → no-op); the seam
+            // itself degrades on an upsert error via log::warn.
+            if let Some(store) = app.try_state::<crate::discovered::DiscoveredCompanyStore>() {
+                crate::discovered::harvest_ats_refs(
+                    store.inner(),
+                    std::iter::once((posting.url.clone(), posting.company.clone())),
+                    "scrape",
+                );
+            }
             serde_json::to_value(&posting).unwrap_or(json!(null))
         }
         _ => json!(null),
