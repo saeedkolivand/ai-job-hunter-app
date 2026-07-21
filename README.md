@@ -457,8 +457,7 @@ what each one does, its triggers, and whether it gates merges (only **✅ CI OK*
 Both are generated from the workflow files by `pnpm gen:workflows`.
 
 **[📊 Mission Control](https://aijobhunter.app/mission-control)** —
-a verdict-first, full-repo dashboard (delivery, work, quality, community) fetched live from the
-GitHub API in your browser, with an optional fine-grained-PAT sign-in for the safe write tier.
+a verdict-first, full-repo dashboard (delivery, work, quality, community) updated nightly from a GitHub API snapshot (with live fallback when signed in with a fine-grained PAT).
 
 <!-- workflows:badges:start -->
 
@@ -476,6 +475,7 @@ GitHub API in your browser, with an optional fine-grained-PAT sign-in for the sa
 [![📥 Downloads Badge](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/downloads-badge.yml)
 [![🎨 Format Guard](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/format-guard.yml)
 [![🏷️ PR Labeler](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/labeler.yml)
+[![📸 Mission Control Snapshot](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/metrics-snapshot.yml)
 [![🔎 Quality](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/quality.yml)
 [![🖥️ UI Checks](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/ui-checks.yml)
 [![🧹 Workflow Lint](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml/badge.svg)](https://github.com/saeedkolivand/ai-job-hunter-app/actions/workflows/workflow-lint.yml)
