@@ -67,18 +67,16 @@ function renderField(
 
 describe('CompanySlugField', () => {
   it('merges server-discovered rows with the selected boards curated seeds', async () => {
-    const searchCompanies = vi
-      .fn()
-      .mockResolvedValue([
-        {
-          atsKind: 'greenhouse',
-          slug: 'stripe',
-          displayName: 'Stripe',
-          seenCount: 5,
-          starred: false,
-          source: 'scrape',
-        },
-      ]);
+    const searchCompanies = vi.fn().mockResolvedValue([
+      {
+        atsKind: 'greenhouse',
+        slug: 'stripe',
+        displayName: 'Stripe',
+        seenCount: 5,
+        starred: false,
+        source: 'scrape',
+      },
+    ]);
     renderField({ seededBoards: [LEVER_BOARD] }, { 'discovery.searchCompanies': searchCompanies });
 
     await userEvent.click(screen.getByTestId(TEST_IDS.jobs.companyTypeahead));
@@ -101,18 +99,16 @@ describe('CompanySlugField', () => {
   });
 
   it('the per-row star toggle fires the setStarred mutation', async () => {
-    const searchCompanies = vi
-      .fn()
-      .mockResolvedValue([
-        {
-          atsKind: 'greenhouse',
-          slug: 'stripe',
-          displayName: 'Stripe',
-          seenCount: 5,
-          starred: false,
-          source: 'scrape',
-        },
-      ]);
+    const searchCompanies = vi.fn().mockResolvedValue([
+      {
+        atsKind: 'greenhouse',
+        slug: 'stripe',
+        displayName: 'Stripe',
+        seenCount: 5,
+        starred: false,
+        source: 'scrape',
+      },
+    ]);
     const setStarred = vi.fn().mockResolvedValue({ success: true });
     renderField(
       {},
@@ -130,6 +126,33 @@ describe('CompanySlugField', () => {
         starred: true,
       })
     );
+  });
+
+  it('shows an error toast when starring fails (the mutation throws)', async () => {
+    const searchCompanies = vi.fn().mockResolvedValue([
+      {
+        atsKind: 'greenhouse',
+        slug: 'stripe',
+        displayName: 'Stripe',
+        seenCount: 5,
+        starred: false,
+        source: 'scrape',
+      },
+    ]);
+    // The command RESOLVES an { error } union (never rejects), so useSetStarred
+    // narrows it and throws → the field's onError fires notify.error. Guards the
+    // silent-failure trap (#756): a failed star must surface, not be swallowed.
+    const setStarred = vi.fn().mockResolvedValue({ error: 'boom' });
+    renderField(
+      {},
+      { 'discovery.searchCompanies': searchCompanies, 'discovery.setStarred': setStarred }
+    );
+
+    await userEvent.click(screen.getByTestId(TEST_IDS.jobs.companyTypeahead));
+    const row = await screen.findByTestId(TEST_IDS.jobs.companySuggestion);
+    await userEvent.click(within(row).getByTestId(TEST_IDS.jobs.companyStarToggle));
+
+    expect(await screen.findByText('jobs.discovery.starFailed')).toBeInTheDocument();
   });
 
   it('renders the slug SetupHint when there are no suggestions', async () => {

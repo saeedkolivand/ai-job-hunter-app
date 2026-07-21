@@ -101,18 +101,16 @@ describe('WatchedCompaniesField', () => {
     renderField({
       defaultOnly: true,
       overrides: {
-        'discovery.watched': vi
-          .fn()
-          .mockResolvedValue([
-            {
-              atsKind: 'greenhouse',
-              slug: 'stripe',
-              displayName: 'Stripe',
-              seenCount: 5,
-              starred: true,
-              source: 'scrape',
-            },
-          ]),
+        'discovery.watched': vi.fn().mockResolvedValue([
+          {
+            atsKind: 'greenhouse',
+            slug: 'stripe',
+            displayName: 'Stripe',
+            seenCount: 5,
+            starred: true,
+            source: 'scrape',
+          },
+        ]),
         'discovery.setStarred': setStarred,
       },
     });
@@ -131,6 +129,37 @@ describe('WatchedCompaniesField', () => {
         starred: false,
       })
     );
+  });
+
+  it('shows an error toast when unstarring fails (the mutation throws)', async () => {
+    // The command RESOLVES an { error } union → useSetStarred narrows + throws →
+    // the field's onError fires notify.error (no silent failure — #756).
+    const setStarred = vi.fn().mockResolvedValue({ error: 'boom' });
+    renderField({
+      defaultOnly: true,
+      overrides: {
+        'discovery.watched': vi.fn().mockResolvedValue([
+          {
+            atsKind: 'greenhouse',
+            slug: 'stripe',
+            displayName: 'Stripe',
+            seenCount: 5,
+            starred: true,
+            source: 'scrape',
+          },
+        ]),
+        'discovery.setStarred': setStarred,
+      },
+    });
+
+    const item = await screen.findByText('Stripe');
+    await userEvent.click(
+      within(must(item.closest('li'))).getByRole('button', {
+        name: 'autopilot.wizard.target.watched.unstar',
+      })
+    );
+
+    expect(await screen.findByText('jobs.discovery.starFailed')).toBeInTheDocument();
   });
 
   it('carries the watched-companies test id for the wizard step', () => {

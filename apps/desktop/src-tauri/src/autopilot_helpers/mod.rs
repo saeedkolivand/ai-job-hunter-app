@@ -1353,4 +1353,40 @@ mod tests {
         let map = resolve_watched_companies(&[], &boards(&["greenhouse", "ashby"]));
         assert!(map.is_empty());
     }
+
+    /// Store→resolver seam (ADR-030 §e): stars in a REAL `DiscoveredCompanyStore`
+    /// (incl. one starred cold → materialized `source='seed'` row) resolve — via the
+    /// same `store.watched()` + registry `requires_company` filter `autopilot_scrape`
+    /// composes — into a per-board override map. The missing link between the store
+    /// tests (start from tuples) and the pure-resolver tests (hand-built `watched()`).
+    #[test]
+    fn watched_stars_resolve_from_the_store_into_per_board_targets() {
+        use crate::discovered::DiscoveredCompanyStore;
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = DiscoveredCompanyStore::open(dir.path()).unwrap();
+
+        let name = Some("Stripe".to_string());
+        store
+            .upsert_batch(&[("greenhouse".into(), "stripe".into(), name, "scrape".into())])
+            .unwrap();
+        store.set_starred("greenhouse", "stripe", true).unwrap();
+        store.set_starred("ashby", "Linear", true).unwrap(); // cold star → seed row
+        store.set_starred("lever", "spotify", true).unwrap(); // board not selected below
+
+        // Filter the selected boards to company-scoped ones via the SAME predicate.
+        let selected: Vec<String> = ["greenhouse", "ashby", "linkedin"]
+            .iter()
+            .filter(|b| crate::scraping::boards::get(b).is_some_and(|s| s.requires_company()))
+            .map(|s| s.to_string())
+            .collect();
+
+        let map = resolve_watched_companies(&store.watched(), &selected);
+
+        assert_eq!(map.get("greenhouse"), Some(&vec!["stripe".to_string()]));
+        // A cold-starred (materialized-seed) company still routes to its own board.
+        assert_eq!(map.get("ashby"), Some(&vec!["Linear".to_string()]));
+        // Non-company board filtered out; the unselected board's star is irrelevant.
+        assert!(!map.contains_key("linkedin"));
+        assert!(!map.contains_key("lever"));
+    }
 }

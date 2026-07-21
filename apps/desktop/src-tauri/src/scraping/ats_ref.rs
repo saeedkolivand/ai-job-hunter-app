@@ -361,6 +361,27 @@ mod tests {
     }
 
     #[test]
+    fn multi_level_subdomains_return_none() {
+        // A multi-level subdomain UNDER a real ATS suffix (e.g. a `careers.`/`jobs.`
+        // front on top of the company label) is NOT a company host — `subdomain_slug`
+        // only accepts the single label directly under the suffix. Pins the
+        // `label.contains('.')` branch so a future "take the first label" change can't
+        // silently harvest `careers` as the slug from `careers.acme.recruitee.com`.
+        for url in [
+            "https://careers.acme.recruitee.com/o/backend",
+            "https://jobs.acme.breezy.hr/p/xyz",
+            "https://careers.acme.bamboohr.com/careers/17",
+            "https://jobs.acme.pinpointhq.com/postings/1",
+        ] {
+            assert_eq!(
+                extract_ats_ref(url),
+                None,
+                "multi-level subdomain {url:?} must not extract a slug"
+            );
+        }
+    }
+
+    #[test]
     fn greenhouse_embed_without_for_is_none() {
         // The embed widget with no `for=` slug is unusable.
         assert_eq!(

@@ -151,4 +151,65 @@ mod tests {
         assert!(!watchable("aggregator"), "aggregator is not company-scoped");
         assert!(!watchable("not-a-real-board"), "unknown id is rejected");
     }
+
+    /// ADR-030 §c/§d acceptance: a mixed batch of realistic aggregator/board posting
+    /// URLs, run through the SAME production URL-shape authority the harvest call site
+    /// uses (`extract_ats_ref`) into a real `DiscoveredCompanyStore`, makes the
+    /// harvested slugs discoverable via `search` — the exact read the typeahead does.
+    ///
+    /// This crate has no `tauri::test` mock-app harness, so the test drives the two
+    /// production seams `harvest_ats_refs` composes (extract → upsert) directly rather
+    /// than the `AppHandle`-bound wrapper (whose only extra work is the store lookup).
+    /// The URL→(ats, slug) mapping is NEVER re-derived — it flows through
+    /// `extract_ats_ref` (per the ADR-029 shared-seam lesson).
+    #[test]
+    fn harvested_posting_urls_surface_their_slugs_in_search() {
+        use crate::discovered::DiscoveredCompanyStore;
+        use crate::scraping::ats_ref::extract_ats_ref;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = DiscoveredCompanyStore::open(dir.path()).unwrap();
+
+        // ATS apply/redirect URLs that leak a company slug, plus one non-ATS
+        // aggregator URL that must contribute nothing to the store.
+        let postings: &[(&str, &str)] = &[
+            ("https://boards.greenhouse.io/stripe/jobs/123", "Stripe"),
+            ("https://jobs.lever.co/spotify/abc", "Spotify"),
+            ("https://jobs.ashbyhq.com/Linear/uuid", "Linear Inc"),
+            ("https://acme.recruitee.com/o/backend", "Acme"),
+            ("https://example.com/jobs/42", "Random Co"), // non-ATS → ignored
+        ];
+
+        // Mirror ONLY the parse+display step of `harvest_ats_refs`; the slug itself
+        // comes from `extract_ats_ref`, never a hand-written mapping.
+        let refs: Vec<(String, String, Option<String>, String)> = postings
+            .iter()
+            .filter_map(|(url, company)| {
+                extract_ats_ref(url)
+                    .map(|r| (r.ats, r.slug, Some((*company).to_string()), "scrape".to_string()))
+            })
+            .collect();
+        store.upsert_batch(&refs).unwrap();
+
+        // The greenhouse slug is now offered by the typeahead search, name backfilled.
+        let stripe = store.search("stripe", 10);
+        assert_eq!(stripe.len(), 1, "the harvested greenhouse slug is searchable");
+        assert_eq!(stripe[0].ats_kind, "greenhouse");
+        assert_eq!(stripe[0].slug, "stripe");
+        assert_eq!(stripe[0].display_name.as_deref(), Some("Stripe"));
+
+        // Ashby's case-sensitive slug survives the whole URL → store → search chain.
+        let linear = store.search("Linear", 10);
+        assert_eq!(linear.len(), 1);
+        assert_eq!(linear[0].ats_kind, "ashby");
+        assert_eq!(linear[0].slug, "Linear", "ashby casing preserved end-to-end");
+
+        // Exactly the 4 ATS postings were harvested — the non-ATS URL added nothing.
+        assert_eq!(
+            store.search("", 50).len(),
+            4,
+            "only company-scoped ATS postings feed the typeahead"
+        );
+        assert!(store.search("example", 10).is_empty());
+    }
 }
