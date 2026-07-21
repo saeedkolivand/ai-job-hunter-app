@@ -52,6 +52,12 @@ vi.mock('./ScrapeFilters', () => ({
   ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
+// Stub the slug typeahead — its discovery service hooks need providers this
+// board-interaction suite doesn't wire (covered in CompanySlugField.test.tsx).
+vi.mock('./CompanySlugField', () => ({
+  CompanySlugField: () => <div data-testid={TEST_IDS.jobs.companyTypeahead} />,
+}));
+
 vi.mock('./BoardConnectChip', () => ({
   BoardConnectChip: ({ board }: { board: string }) => <span data-testid={`chip-${board}`} />,
 }));

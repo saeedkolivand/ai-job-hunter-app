@@ -16,9 +16,8 @@ Local-first **Tauri** desktop app. **Tauri is the shell** — Rust core does the
 - Always use repository-relative paths (`apps/desktop/src/main.rs`, not an absolute path).
 - Sanitize absolute paths in logs, stack traces, PRs, commits, and markdown.
 
-## Shell — prefix EVERY command with `rtk`
-`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src` · `rtk bat file.ts`.
-`rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat`. Always Bash, never PowerShell.
+## Shell
+`rg` not `grep` · `fd` not `find` · `bat` not `cat`. Always Bash, never PowerShell.
 Never `find -exec`. Git Bash paths: `/c/Users/...`.
 
 ## Monorepo packages (five workspace packages)

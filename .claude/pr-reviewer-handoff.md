@@ -34,8 +34,8 @@ push**: a generalist, tool-running, blast-radius, verification-gated reviewer.
 
 ## Why it's built this way (don't strip these — they're what make it out-catch a stock reviewer)
 
-1. **Runs the repo's own tools** and folds results in: `rtk pnpm typecheck`
-   (`tsc --noEmit`), `rtk pnpm lint:strict` (eslint, esp. `react-hooks/exhaustive-deps`),
+1. **Runs the repo's own tools** and folds results in: `pnpm typecheck`
+   (`tsc --noEmit`), `pnpm lint:strict` (eslint, esp. `react-hooks/exhaustive-deps`),
    `cargo clippy -D warnings`/`fmt --check`/targeted `cargo test`, `gen:ipc:check`,
    a secret scan, and tests covering touched files. This is the "40+ linters" layer
    pointed at OUR actual config. Don't replace tool output with the model re-deriving it.

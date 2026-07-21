@@ -13,6 +13,7 @@ pub mod credentials;
 pub mod data;
 pub mod dedup;
 pub mod dialog;
+pub mod discovery;
 pub mod documents;
 pub mod email_watch;
 pub mod extension_bridge;

@@ -36,7 +36,7 @@
     { "glob": "packages/translations/**", "owner": "frontend-reviewer" },
     { "glob": "packages/test-ids/**", "owner": "frontend-reviewer" },
     { "glob": "apps/desktop/src/**", "owner": "frontend-reviewer" },
-    { "glob": "apps/landing/**", "owner": "project-steward" },
+    { "glob": "apps/landing/**", "owner": "frontend-reviewer" },
     { "glob": "apps/desktop/src-tauri/src/**", "owner": "rust-backend-architect" },
     { "glob": "packages/shared/**", "owner": "rust-backend-architect" },
     { "glob": ".claude/hooks/**", "owner": "code-quality-reviewer" },
@@ -130,7 +130,7 @@
       "apps/desktop/src-tauri/src/credentials/**",
       "apps/desktop/src-tauri/src/commands/privacy.rs"
     ],
-    "frontend": ["apps/desktop/src/renderer/**", "packages/ui/**"],
+    "frontend": ["apps/desktop/src/renderer/**", "packages/ui/**", "apps/landing/**"],
     "rust": ["apps/desktop/src-tauri/src/**", "packages/shared/**"],
     "testing": ["**/*.test.*", "**/*.spec.*", "apps/desktop/src-tauri/tests/**"]
   }

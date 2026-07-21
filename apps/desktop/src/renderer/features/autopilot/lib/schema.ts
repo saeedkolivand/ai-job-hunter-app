@@ -34,6 +34,7 @@ export const autopilotWizardSchema = z.object({
   workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),
   amount: z.number().int().min(1).max(500),
   dateFilter: z.string(),
+  watchedCompaniesOnly: z.boolean(),
   minMatchScore: z.number().min(0).max(100),
   keywords: z.string(),
   excludeKeywords: z.string(),

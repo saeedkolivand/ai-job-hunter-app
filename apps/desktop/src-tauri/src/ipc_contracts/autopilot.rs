@@ -45,6 +45,8 @@ pub struct AutopilotCreateRequestTarget {
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watched_companies_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -107,6 +109,8 @@ pub struct AutopilotUpdateRequestTarget {
     pub pages: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watched_companies_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
