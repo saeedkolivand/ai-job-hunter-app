@@ -465,7 +465,7 @@ fn record_run_marks_the_run_completed() {
 
     // A run with no per-board problems (empty summaries) records a clean
     // `Completed` — preserving the pre-summaries behavior.
-    store.record_run(&ap.id, 3, 0, Vec::new(), Vec::new());
+    store.record_run(&ap.id, 3, 0, Vec::new(), Vec::new(), &no_tombstones(), &[]);
     assert_eq!(
         store.get(&ap.id).unwrap().run_status,
         Some(RunStatus::Completed)
@@ -594,7 +594,7 @@ fn record_run_persists_summaries_and_derives_status() {
         board_summary("greenhouse", 2, None, None, None),
         board_summary("aggregator", 0, Some("429 Too Many Requests"), None, None),
     ];
-    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries, &no_tombstones(), &[]);
 
     let reloaded = store.get(&ap.id).unwrap();
     assert_eq!(reloaded.run_status, Some(RunStatus::CompletedWithErrors));
@@ -623,7 +623,7 @@ fn fail_run_without_summaries_marks_failed_and_clears_stale_summaries() {
     // chip strip doesn't render the PRIOR run's per-board data as if it
     // belonged to the run that's about to fail outright.
     let summaries = vec![board_summary("greenhouse", 2, None, None, None)];
-    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries, &no_tombstones(), &[]);
     let seeded = store.get(&ap.id).unwrap();
     assert_eq!(seeded.run_status, Some(RunStatus::Completed));
     assert_eq!(seeded.last_run_summaries.len(), 1);
@@ -680,7 +680,7 @@ fn set_run_status_clearing_summaries_completed_clears_stale_summaries() {
     // Seed a prior successful run with real summaries — the stale state a
     // cancelled run must not inherit.
     let summaries = vec![board_summary("greenhouse", 2, None, None, None)];
-    store.record_run(&ap.id, 2, 0, Vec::new(), summaries);
+    store.record_run(&ap.id, 2, 0, Vec::new(), summaries, &no_tombstones(), &[]);
     let seeded = store.get(&ap.id).unwrap();
     assert_eq!(seeded.run_status, Some(RunStatus::Completed));
     assert_eq!(seeded.last_run_summaries.len(), 1);
@@ -1009,9 +1009,16 @@ fn target_country_code_round_trips_and_none_is_omitted() {
 // ── found_job helper ──────────────────────────────────────────────────────────
 
 fn found_job(url: &str, found_at: u64) -> FoundJob {
+    found_job_full(url, "Engineer", "Acme", found_at)
+}
+
+/// A [`FoundJob`] with an explicit title + company, so clustering-sensitive
+/// tests can control whether two rows share a block (same title+company → one
+/// cluster) or stay distinct.
+fn found_job_full(url: &str, title: &str, company: &str, found_at: u64) -> FoundJob {
     FoundJob {
-        title: "Engineer".into(),
-        company: "Acme".into(),
+        title: title.into(),
+        company: company.into(),
         url: url.into(),
         location: None,
         board: None,
@@ -1026,7 +1033,16 @@ fn found_job(url: &str, found_at: u64) -> FoundJob {
         applied: false,
         trust: None,
         assistant_notes: None,
+        cluster_id: None,
+        cluster_canonical: true,
+        cluster_members: Vec::new(),
+        is_agency: false,
     }
+}
+
+/// Empty tombstone set for record_run calls that don't exercise splits.
+fn no_tombstones() -> std::collections::HashSet<(String, String)> {
+    std::collections::HashSet::new()
 }
 
 #[test]
@@ -1214,16 +1230,37 @@ fn record_run_new_count_reflects_deduped_batch() {
     }));
     let id = ap.id;
 
-    // One logical job surfaced by two sources + one genuinely distinct job.
-    let dup_a = found_job("https://jobs.example.com/eng-1?utm_source=x", 1);
-    let dup_b = found_job("https://jobs.example.com/eng-1#frag", 2);
-    let other = found_job("https://jobs.example.com/eng-2", 3);
+    // One logical job surfaced by two sources (URL variants that canonicalize to
+    // the same key) + one genuinely distinct job at a DIFFERENT company. The two
+    // variants merge; the two distinct jobs sit in different clusters (distinct
+    // companies → different blocks), so the cluster count is 2.
+    let dup_a = found_job_full(
+        "https://jobs.example.com/eng-1?utm_source=x",
+        "Engineer",
+        "AcmeOne",
+        1,
+    );
+    let dup_b = found_job_full(
+        "https://jobs.example.com/eng-1#frag",
+        "Engineer",
+        "AcmeOne",
+        2,
+    );
+    let other = found_job_full("https://jobs.example.com/eng-2", "Engineer", "AcmeTwo", 3);
 
-    let new_count = store.record_run(&id, 3, 0, vec![dup_a, dup_b, other], Vec::new());
+    let new_count = store.record_run(
+        &id,
+        3,
+        0,
+        vec![dup_a, dup_b, other],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
 
     assert_eq!(
         new_count, 2,
-        "the 'N new jobs' count must reflect the DEDUPED batch (2 unique), not the raw 3"
+        "the 'N new jobs' count must reflect the DEDUPED batch as CLUSTERS (2 distinct), not the raw 3"
     );
 }
 
@@ -1241,14 +1278,20 @@ fn record_run_reports_only_newly_surfaced_jobs() {
     }));
     let id = ap.id;
 
+    // Distinct companies keep each url in its own cluster, so the cluster count
+    // tracks first-seen urls exactly (no accidental same-title merges).
+    let j = |url: &str, company: &str, at: u64| found_job_full(url, "Engineer", company, at);
+
     // First run — both URLs are brand new → drives a "2 new jobs" notification.
     assert_eq!(
         store.record_run(
             &id,
             2,
             0,
-            vec![found_job("u1", 1), found_job("u2", 2)],
-            Vec::new()
+            vec![j("u1", "Alpha", 1), j("u2", "Beta", 2)],
+            Vec::new(),
+            &no_tombstones(),
+            &[],
         ),
         2
     );
@@ -1258,21 +1301,170 @@ fn record_run_reports_only_newly_surfaced_jobs() {
             &id,
             3,
             0,
-            vec![found_job("u1", 9), found_job("u2", 9), found_job("u3", 9)],
-            Vec::new()
+            vec![j("u1", "Alpha", 9), j("u2", "Beta", 9), j("u3", "Gamma", 9)],
+            Vec::new(),
+            &no_tombstones(),
+            &[],
         ),
         1
     );
     // Nothing unseen → no notification.
     assert_eq!(
-        store.record_run(&id, 3, 0, vec![found_job("u1", 9)], Vec::new()),
+        store.record_run(
+            &id,
+            3,
+            0,
+            vec![j("u1", "Alpha", 9)],
+            Vec::new(),
+            &no_tombstones(),
+            &[]
+        ),
         0
     );
     // Unknown autopilot → 0 (no panic).
     assert_eq!(
-        store.record_run("missing", 5, 0, vec![found_job("x", 1)], Vec::new()),
+        store.record_run(
+            "missing",
+            5,
+            0,
+            vec![j("x", "Alpha", 1)],
+            Vec::new(),
+            &no_tombstones(),
+            &[]
+        ),
         0
     );
+}
+
+// ── Cross-board cluster counts + split survival (ADR-029 §f/§h) ───────────────
+
+/// One direct-board FoundJob with an explicit board id (source).
+fn board_job(url: &str, board: &str, at: u64) -> FoundJob {
+    FoundJob {
+        board: Some(board.into()),
+        ..found_job_full(url, "Rust Developer", "Acme", at)
+    }
+}
+
+fn manual_ap(store: &AutopilotStore) -> String {
+    store
+        .create(serde_json::json!({
+            "name": "AP",
+            "target": { "board": "linkedin", "query": "rust", "pages": 1 },
+            "filter": { "minMatchScore": 0.0 },
+            "schedule": "manual",
+        }))
+        .id
+}
+
+#[test]
+fn record_run_cluster_count_two_board_new_is_one() {
+    use tempfile::TempDir;
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let id = manual_ap(&store);
+
+    // The SAME job on two boards (same title+company, distinct urls/sources) →
+    // one cluster, all members new → the notification count is 1, not 2.
+    let a = board_job("https://a.example.com/1", "greenhouse", 1);
+    let b = board_job("https://b.example.com/2", "aggregator", 2);
+    let new_count = store.record_run(&id, 2, 0, vec![a, b], Vec::new(), &no_tombstones(), &[]);
+    assert_eq!(
+        new_count, 1,
+        "one job on two boards counts as ONE new cluster"
+    );
+}
+
+#[test]
+fn record_run_cluster_count_known_job_resurfacing_is_zero() {
+    use tempfile::TempDir;
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let id = manual_ap(&store);
+
+    // Run 1: the job is first seen on a direct board → 1 new.
+    let direct = board_job("https://a.example.com/1", "greenhouse", 1);
+    assert_eq!(
+        store.record_run(&id, 1, 0, vec![direct], Vec::new(), &no_tombstones(), &[]),
+        1
+    );
+
+    // Run 2: the SAME job resurfaces via the aggregator (new url) — it clusters
+    // with the known direct row, so the cluster is not all-new → 0.
+    let agg = board_job("https://b.example.com/2", "aggregator", 2);
+    assert_eq!(
+        store.record_run(&id, 2, 0, vec![agg], Vec::new(), &no_tombstones(), &[]),
+        0,
+        "a known job resurfacing on another board contributes 0 new"
+    );
+}
+
+#[test]
+fn split_survives_two_record_run_cycles() {
+    use tempfile::TempDir;
+    let temp = TempDir::new().unwrap();
+    let store = AutopilotStore::new(&temp.path().to_path_buf());
+    let id = manual_ap(&store);
+
+    let a = board_job("https://a.example.com/1", "greenhouse", 1);
+    let b = board_job("https://b.example.com/2", "lever", 2);
+
+    // Without a tombstone the two cluster together.
+    store.record_run(
+        &id,
+        2,
+        0,
+        vec![a.clone(), b.clone()],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
+    let jobs = store.get(&id).unwrap().found_jobs;
+    let cid_a = jobs
+        .iter()
+        .find(|j| j.url.contains("a.example"))
+        .and_then(|j| j.cluster_id.clone());
+    let cid_b = jobs
+        .iter()
+        .find(|j| j.url.contains("b.example"))
+        .and_then(|j| j.cluster_id.clone());
+    assert_eq!(cid_a, cid_b, "no tombstone → same cluster");
+
+    // Tombstone their canonical keys, then re-run TWICE — the split must hold.
+    let key_a = crate::scraping::boards::common::canonical_job_key(
+        "https://a.example.com/1",
+        "Rust Developer",
+        "Acme",
+    );
+    let key_b = crate::scraping::boards::common::canonical_job_key(
+        "https://b.example.com/2",
+        "Rust Developer",
+        "Acme",
+    );
+    let mut tombstones = std::collections::HashSet::new();
+    tombstones.insert(crate::dedup::DedupStore::pair(&key_a, &key_b));
+
+    for cycle in 0..2 {
+        store.record_run(
+            &id,
+            2,
+            0,
+            vec![a.clone(), b.clone()],
+            Vec::new(),
+            &tombstones,
+            &[],
+        );
+        let jobs = store.get(&id).unwrap().found_jobs;
+        let ca = jobs
+            .iter()
+            .find(|j| j.url.contains("a.example"))
+            .and_then(|j| j.cluster_id.clone());
+        let cb = jobs
+            .iter()
+            .find(|j| j.url.contains("b.example"))
+            .and_then(|j| j.cluster_id.clone());
+        assert_ne!(ca, cb, "tombstone split must survive cycle {cycle}");
+    }
 }
 
 #[test]

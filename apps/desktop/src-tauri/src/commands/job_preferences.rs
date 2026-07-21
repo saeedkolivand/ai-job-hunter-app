@@ -19,8 +19,26 @@ pub async fn job_preferences_set(app: AppHandle, prefs: Value) -> Value {
             country_code: None,
             tech_stack: None,
             salary_expectation: None,
+            extra_agency_companies: None,
         });
     match store.set(&job_prefs) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// Single-column extra-agency-companies write (ADR-029 §i) — mirrors
+/// `job_preferences_set_salary_expectation`: it delegates to
+/// `JobPreferencesStore::set_extra_agency_companies`, touching ONLY that column,
+/// so a Settings edit of the agency list can never NULL the user's saved
+/// location/tech stack/country/salary via a stale full-row payload (PR #695).
+#[tauri::command]
+pub async fn job_preferences_set_extra_agency_companies(
+    app: AppHandle,
+    companies: Option<Vec<String>>,
+) -> Value {
+    let store = app.state::<crate::job_preferences::JobPreferencesStore>();
+    match store.set_extra_agency_companies(companies) {
         Ok(()) => json!({ "success": true }),
         Err(e) => json!({ "error": e.to_string() }),
     }

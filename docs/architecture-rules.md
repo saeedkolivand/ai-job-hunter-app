@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-07-16
+Last updated: 2026-07-21
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of
@@ -20,12 +20,12 @@ a module under `src/`.
 L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research
-L1  Domain             scraping, extraction, export, documents, jobs, postings,
+L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
                        conversations, credentials, job_preferences, contact_profile, ai_generations,
                        spend, applications, referrals, profile_import, model, layout, measure,
                        validate,
                        locale, theme
-L0  Shared infra       error, observability, performance, db, data_store, net, platform, browser, limits
+L0  Shared infra       error, observability, performance, db, data_store, net, platform, browser, limits, vector
 ```
 
 > This list is the single source of truth and is duplicated verbatim as the `LAYER`
@@ -36,7 +36,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
 
 ## Per-layer contract
 
-### L0 — Shared infrastructure (`error`, `observability`, `performance`, `db`, `data_store`, `net`, `platform`, `browser`, `limits`)
+### L0 — Shared infrastructure (`error`, `observability`, `performance`, `db`, `data_store`, `net`, `platform`, `browser`, `limits`, `vector`)
 
 - **Allowed deps:** other L0 modules only.
 - **Forbidden deps:** L1, L2, L3. **No** `crate::commands`, `crate::scraping`, etc.

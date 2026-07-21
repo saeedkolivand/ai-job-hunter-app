@@ -62,6 +62,9 @@ vi.mock('@/features/settings/components/preferences/TechStackPreferences', () =>
 vi.mock('@/features/settings/components/preferences/AggregatorKeysSettings', () => ({
   AggregatorKeysSettings: () => <div data-testid={TEST_IDS.settings.aggregator} />,
 }));
+vi.mock('@/features/settings/components/preferences/AgencyCompaniesPreferences', () => ({
+  AgencyCompaniesPreferences: () => <div data-testid="agency-companies-preferences" />,
+}));
 vi.mock('@/features/settings/components/preferences/ResumePreferences', () => ({
   ResumePreferences: () => <div data-testid={TEST_IDS.settings.resumePrefs} />,
 }));

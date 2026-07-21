@@ -17,7 +17,10 @@ import userEvent from '@testing-library/user-event';
 // Must be hoisted before the component import so the factory runs first.
 
 const mockMutate = vi.fn();
-let mockJobPrefs: { techStack: { name: string; category: string }[] } = { techStack: [] };
+// `undefined` models the pre-load window (the query hasn't resolved yet).
+let mockJobPrefs: { techStack: { name: string; category: string }[] } | undefined = {
+  techStack: [],
+};
 
 vi.mock('@/services', () => ({
   useJobPreferences: () => ({ data: mockJobPrefs }),
@@ -160,6 +163,21 @@ describe('TechStackPreferences — empty / whitespace input', () => {
     const input = screen.getByRole('textbox');
     // userEvent.type types each character; spaces won't trigger enter.
     await user.type(input, '   {Enter}');
+
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe('TechStackPreferences — pre-load guard (CodeRabbit #756)', () => {
+  it('does not call the full-row mutate before job preferences have loaded', async () => {
+    // A `{...undefined, techStack}` write would NULL every other column
+    // (location, countryCode, salaryExpectation, extraAgencyCompanies).
+    mockJobPrefs = undefined;
+    const user = userEvent.setup();
+    renderComponent();
+
+    const input = screen.getByRole('textbox');
+    await user.type(input, 'Rust{Enter}');
 
     expect(mockMutate).not.toHaveBeenCalled();
   });

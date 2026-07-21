@@ -41,6 +41,10 @@ export function JobLocationPreferences() {
   );
 
   const handleAddLocation = (loc: string) => {
+    // Guard the pre-load window: `jobPrefs` is undefined until the query
+    // resolves, and a full-row `{...undefined, location}` write would NULL every
+    // other column (techStack, countryCode, salaryExpectation, extraAgencyCompanies).
+    if (!jobPrefs) return;
     setJobPreferences.mutate({
       ...jobPrefs,
       location: loc,
@@ -53,6 +57,7 @@ export function JobLocationPreferences() {
   };
 
   const handleRemoveLocation = () => {
+    if (!jobPrefs) return;
     setJobPreferences.mutate({
       ...jobPrefs,
       location: undefined,

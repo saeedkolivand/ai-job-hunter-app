@@ -1090,6 +1090,10 @@ mod tests {
             applied: false,
             trust: None,
             assistant_notes: None,
+            cluster_id: None,
+            cluster_canonical: true,
+            cluster_members: Vec::new(),
+            is_agency: false,
         }
     }
 
