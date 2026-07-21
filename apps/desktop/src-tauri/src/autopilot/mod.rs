@@ -5,11 +5,15 @@ use parking_lot::Mutex;
 /// All field names are serialised in camelCase to match the TypeScript schema
 /// (`#[serde(rename_all = "camelCase")]`).
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::scraping::cluster::{
+    assign_clusters, new_cluster_count, ClusterAssignment, ClusterInput, ClusterMemberRef,
+};
 
 // ── Back-compat deserializer: `board` (string) OR `boards` (array) → Vec<String> ──
 
@@ -186,6 +190,34 @@ pub struct FoundJob {
     /// `#[serde(default)]` so a job recorded before this field existed loads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_notes: Option<String>,
+    // ── Cross-board cluster annotations (ADR-029) ──────────────────────────────
+    // Recomputed at every `record_run` (and on a `dedup_mark_not_duplicate`
+    // split) by the pure `scraping::cluster` pass; never hand-set. All
+    // serde-defaulted so a record written before clustering existed loads
+    // unchanged (`cluster_id` None, `cluster_canonical` true = standalone,
+    // no members, not an agency).
+    /// The cluster this job belongs to (the canonical member's `merge_key`).
+    /// `None` only on a legacy record not yet re-clustered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cluster_id: Option<String>,
+    /// Whether this job is its cluster's canonical (displayed) member. Defaults
+    /// to `true` so a legacy/standalone job renders as its own canonical row.
+    #[serde(default = "default_true")]
+    pub cluster_canonical: bool,
+    /// Every member of this job's cluster (`{key, board?, url}`), so the renderer
+    /// can group + echo keys back to `dedup_mark_not_duplicate`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cluster_members: Vec<ClusterMemberRef>,
+    /// Whether the posting's company is a recruiting/staffing agency (ADR-029 §i),
+    /// computed at ingest from the built-in list + the user's extras.
+    #[serde(default)]
+    pub is_agency: bool,
+}
+
+/// Serde default for [`FoundJob::cluster_canonical`] — a job with no cluster
+/// annotation reads as its own canonical row.
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -563,6 +595,8 @@ impl AutopilotStore {
         total_applied: u32,
         found_jobs: Vec<FoundJob>,
         summaries: Vec<crate::scraping::BoardScrapeSummary>,
+        tombstones: &HashSet<(String, String)>,
+        extra_agency: &[String],
     ) -> u32 {
         let mut map = self.load();
         let mut new_count = 0u32;
@@ -571,8 +605,19 @@ impl AutopilotStore {
             ap.total_found = total_found;
             ap.total_applied = total_applied;
             ap.found_jobs = merge_found_jobs(&ap.found_jobs, found_jobs);
-            // `merge_found_jobs` flags only never-before-seen URLs as `is_new`.
-            new_count = ap.found_jobs.iter().filter(|j| j.is_new).count() as u32;
+            // Cross-board cluster the FULL merged list, write cluster annotations
+            // onto each row, and count clusters whose members are ALL first-seen
+            // this run (ADR-029 §f) — a known job resurfacing on another board no
+            // longer notifies. `merge_found_jobs` set `is_new` per canonical key;
+            // that set drives which clusters count as new.
+            let new_keys: HashSet<String> = ap
+                .found_jobs
+                .iter()
+                .filter(|j| j.is_new)
+                .map(merge_key)
+                .collect();
+            let assignments = cluster_found_jobs(&mut ap.found_jobs, tombstones, extra_agency);
+            new_count = new_cluster_count(&assignments, &new_keys);
             ap.run_status = Some(derive_run_status(&summaries));
             ap.last_run_summaries = summaries;
             ap.last_run_at = Some(now);
@@ -580,6 +625,28 @@ impl AutopilotStore {
         }
         self.save(map);
         new_count
+    }
+
+    /// Recompute + persist cluster annotations for ONE record's found-jobs after
+    /// a tombstone change (`dedup_mark_not_duplicate`), leaving counts/run status
+    /// untouched. No-op for an unknown id. The split takes effect immediately and
+    /// — because clustering is recomputed every run — survives future re-scrapes.
+    pub fn recompute_record_clusters(
+        &self,
+        id: &str,
+        tombstones: &HashSet<(String, String)>,
+        extra_agency: &[String],
+    ) {
+        let mut map = self.load();
+        let mut changed = false;
+        if let Some(ap) = map.get_mut(id) {
+            cluster_found_jobs(&mut ap.found_jobs, tombstones, extra_agency);
+            ap.updated_at = now_ms();
+            changed = true;
+        }
+        if changed {
+            self.save(map);
+        }
     }
 
     pub fn stamp_last_run(&self, id: &str) {
@@ -973,6 +1040,52 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
     merged.extend(refreshed_existing);
 
     merged
+}
+
+// ── Cross-board clustering (ADR-029) ────────────────────────────────────────
+
+/// Build [`ClusterInput`]s for a found-jobs list. `key` is the canonical
+/// [`merge_key`] (the identity tombstones + the renderer share). Vectors are
+/// always `None` on this path — a `FoundJob` has no posting id, so there is no
+/// cached embedding to look up (the string path is structurally primary here,
+/// ADR-029 §c). `pub(crate)` so the L3 retain pass reuses the exact projection.
+pub(crate) fn found_job_cluster_inputs(jobs: &[FoundJob]) -> Vec<ClusterInput> {
+    jobs.iter()
+        .map(|j| ClusterInput {
+            key: merge_key(j),
+            title: j.title.clone(),
+            company: j.company.clone(),
+            url: j.url.clone(),
+            source: j.board.clone(),
+            has_description: j
+                .description
+                .as_deref()
+                .is_some_and(|d| !d.trim().is_empty()),
+            seen_at: j.found_at,
+            vector: None,
+            space: None,
+        })
+        .collect()
+}
+
+/// Cluster a found-jobs list IN PLACE: run [`assign_clusters`] and write each
+/// verdict (`cluster_id`, `cluster_canonical`, `cluster_members`, `is_agency`)
+/// onto the matching row by index. Returns the assignments so the caller can
+/// derive the new-cluster count.
+fn cluster_found_jobs(
+    jobs: &mut [FoundJob],
+    tombstones: &HashSet<(String, String)>,
+    extra_agency: &[String],
+) -> Vec<ClusterAssignment> {
+    let inputs = found_job_cluster_inputs(jobs);
+    let assignments = assign_clusters(inputs, tombstones, extra_agency);
+    for (job, assignment) in jobs.iter_mut().zip(assignments.iter()) {
+        job.cluster_id = Some(assignment.cluster_id.clone());
+        job.cluster_canonical = assignment.canonical;
+        job.cluster_members = assignment.members.clone();
+        job.is_agency = assignment.is_agency;
+    }
+    assignments
 }
 
 impl crate::data_store::DataStore for AutopilotStore {

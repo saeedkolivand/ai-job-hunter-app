@@ -24,6 +24,7 @@ import { cliAgents } from './namespaces/cliAgents/index.js';
 import { contactProfile } from './namespaces/contactProfile/index.js';
 import { credentials } from './namespaces/credentials/index.js';
 import { data } from './namespaces/data/index.js';
+import { dedup } from './namespaces/dedup/index.js';
 import { dialog } from './namespaces/dialog/index.js';
 import { documents } from './namespaces/documents/index.js';
 import { emailWatch } from './namespaces/emailWatch/index.js';
@@ -77,5 +78,6 @@ export function createTauriInvokeClient(): AppClient {
     notifications: notifications as AppClient['notifications'],
     dialog: dialog as AppClient['dialog'],
     data: data as AppClient['data'],
+    dedup: dedup as AppClient['dedup'],
   } satisfies AppClient;
 }

@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -72,6 +72,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-026](decision-records/adr-026-retire-anti-bot-boards.md)                                | Retire self-scraping anti-bot boards; cover via aggregator; keep single-job import        |
 | [ADR-027](decision-records/adr-027-diagnostics-bundle-privacy-boundary.md)                   | Diagnostics-bundle privacy boundary (strict allowlist + redaction before public artifact) |
 | [ADR-028](decision-records/adr-028-additive-aggregator-merge-paid-provider-cost-controls.md) | Additive aggregator merge and paid-provider cost controls                                 |
+| [ADR-029](decision-records/adr-029-cross-board-job-clustering-recompute-at-ingest.md)        | Cross-board job clustering: recompute-at-ingest, pair tombstones only                     |
 
 **Newer numbered ADRs** live in `docs/adr/0001-0013` — see per-domain docs for cross-references (e.g., extension-domain.md for ADR-0009/0010, automation-domain.md for ADR-0013).
 

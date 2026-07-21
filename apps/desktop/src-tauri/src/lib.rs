@@ -23,6 +23,7 @@ pub mod cover_letter;
 pub mod credentials;
 pub mod data_store;
 pub mod db;
+pub mod dedup;
 pub mod deeplink;
 pub mod documents;
 pub mod email_watch;
@@ -55,6 +56,7 @@ pub mod theme;
 pub mod tray;
 pub mod updater;
 pub mod validate;
+pub mod vector;
 
 use parking_lot::Mutex;
 
@@ -703,6 +705,14 @@ pub fn run() {
                 Ok(cache) => manage_resettable(app, &mut reset_registry, "cache", cache),
                 Err(e) => log::warn!("[setup] pipeline cache failed to open (non-fatal): {e}"),
             }
+            // Cross-board dedup verdict store (ADR-029): the durable "not a
+            // duplicate" pair tombstones. Registered LAST so its label sits at the
+            // tail of `MANAGE_RESETTABLE_LABELS`, matching the order the boot
+            // assertion below pins. Holds only opaque canonical-key pairs.
+            match dedup::DedupStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "dedup_tombstones", store),
+                Err(e) => log::warn!("[setup] dedup store failed to open (non-fatal): {e}"),
+            }
 
             // Guard: the registry must contain exactly the labels the
             // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
@@ -852,6 +862,7 @@ pub fn run() {
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
             commands::job_preferences::job_preferences_set_salary_expectation,
+            commands::job_preferences::job_preferences_set_extra_agency_companies,
             // contact profile (header source of truth)
             commands::contact_profile::contact_profile_get,
             commands::contact_profile::contact_profile_set,
@@ -867,6 +878,8 @@ pub fn run() {
             // data backup / restore
             commands::data::data_export,
             commands::data::data_import,
+            // cross-board dedup (ADR-029 — split a wrongly-merged cluster)
+            commands::dedup::dedup_mark_not_duplicate,
             // match
             commands::match_resume::match_resume,
             commands::match_resume::resume_extract_text,

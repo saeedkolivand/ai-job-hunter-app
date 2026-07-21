@@ -62,6 +62,7 @@ describe('useSessionStore', () => {
       viewMode: 'split',
       selectedId: null,
       listScrollTop: 0,
+      hideAgency: false,
     });
 
     useSessionStore.getState().setResumes({ tab: 'activity' });

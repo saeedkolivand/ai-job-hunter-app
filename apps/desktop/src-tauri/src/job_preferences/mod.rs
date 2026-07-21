@@ -40,6 +40,17 @@ pub struct JobPreferences {
     /// never satisfy. Clamped to [`MAX_SALARY_EXPECTATION_BYTES`] in [`set`](Self::set).
     #[serde(skip_serializing_if = "Option::is_none", rename = "salaryExpectation")]
     pub salary_expectation: Option<String>,
+    /// User-supplied additional recruiting/staffing agency company names, merged
+    /// with the built-in const list when the cross-board clusterer flags a
+    /// posting's `isAgency` (ADR-029 §i). Free text — clamped in
+    /// [`set`](Self::set) / [`set_extra_agency_companies`](Self::set_extra_agency_companies)
+    /// the same way the salary field is (per-entry byte cap + list-length cap),
+    /// never trusted from the renderer's own (uncapped) zod `.optional()`.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "extraAgencyCompanies"
+    )]
+    pub extra_agency_companies: Option<Vec<String>>,
 }
 
 /// Byte cap on `salary_expectation` — this is free text, not a bounded enum,
@@ -48,6 +59,13 @@ pub struct JobPreferences {
 /// et al.), rather than trusting the renderer's own zod `.optional()` (no
 /// length cap there) to always be the one write path.
 const MAX_SALARY_EXPECTATION_BYTES: usize = 200;
+
+/// Per-entry byte cap on an extra agency company name (same discipline as
+/// [`MAX_SALARY_EXPECTATION_BYTES`]).
+const MAX_AGENCY_COMPANY_BYTES: usize = 200;
+/// Cap on how many extra agency company names are stored — bounds a
+/// looping/XSS'd renderer from ballooning the single JSON column.
+const MAX_EXTRA_AGENCY_COMPANIES: usize = 500;
 
 /// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary — same
 /// discipline as `extension_bridge::answers_suggest::clamp_bytes`.
@@ -61,6 +79,20 @@ fn clamp_bytes(mut s: String, max: usize) -> String {
     }
     s.truncate(end);
     s
+}
+
+/// Normalize an untrusted extra-agency list at the write boundary: drop blank
+/// entries, clamp each to [`MAX_AGENCY_COMPANY_BYTES`], and cap the list to
+/// [`MAX_EXTRA_AGENCY_COMPANIES`]. `None`/all-blank collapses to `None` so an
+/// empty list is stored as SQL NULL, not `"[]"`.
+fn clamp_agency_list(list: Option<Vec<String>>) -> Option<Vec<String>> {
+    let cleaned: Vec<String> = list?
+        .into_iter()
+        .map(|s| clamp_bytes(s.trim().to_string(), MAX_AGENCY_COMPANY_BYTES))
+        .filter(|s| !s.is_empty())
+        .take(MAX_EXTRA_AGENCY_COMPANIES)
+        .collect();
+    (!cleaned.is_empty()).then_some(cleaned)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -140,6 +172,18 @@ impl JobPreferencesStore {
                 Ok(())
             },
         },
+        // Extra agency company names for cross-board dedup's agency flag
+        // (ADR-029 §i) — stored as a JSON array in one TEXT column. Same safe
+        // `ADD COLUMN` shape as the two migrations above.
+        Migration {
+            name: "add_job_preferences_extra_agency_companies",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE job_preferences ADD COLUMN extra_agency_companies TEXT;",
+                )?;
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -155,17 +199,21 @@ impl JobPreferencesStore {
     pub fn get(&self) -> JobPreferences {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT location, tech_stack, country_code, salary_expectation
+            "SELECT location, tech_stack, country_code, salary_expectation, extra_agency_companies
              FROM job_preferences WHERE id = 1",
             [],
             |row| {
                 let tech_stack_json: Option<String> = row.get(1)?;
                 let tech_stack = tech_stack_json.and_then(|s| serde_json::from_str(&s).ok());
+                let agency_json: Option<String> = row.get(4)?;
+                let extra_agency_companies =
+                    agency_json.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(JobPreferences {
                     location: row.get(0)?,
                     country_code: row.get(2)?,
                     tech_stack,
                     salary_expectation: row.get(3)?,
+                    extra_agency_companies,
                 })
             },
         )
@@ -174,6 +222,7 @@ impl JobPreferencesStore {
             country_code: None,
             tech_stack: None,
             salary_expectation: None,
+            extra_agency_companies: None,
         })
     }
 
@@ -181,7 +230,7 @@ impl JobPreferencesStore {
     pub fn clear(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL, salary_expectation = NULL WHERE id = 1",
+            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL, salary_expectation = NULL, extra_agency_companies = NULL WHERE id = 1",
             [],
         )
         .map_err(|e| e.to_string())?;
@@ -200,17 +249,41 @@ impl JobPreferencesStore {
             .salary_expectation
             .clone()
             .map(|s| clamp_bytes(s, MAX_SALARY_EXPECTATION_BYTES));
+        let agency_json = clamp_agency_list(prefs.extra_agency_companies.clone())
+            .and_then(|list| serde_json::to_string(&list).ok());
 
         conn.execute(
             "UPDATE job_preferences
-             SET location = ?1, tech_stack = ?2, country_code = ?3, salary_expectation = ?4
+             SET location = ?1, tech_stack = ?2, country_code = ?3, salary_expectation = ?4,
+                 extra_agency_companies = ?5
              WHERE id = 1",
             params![
                 prefs.location,
                 tech_stack_json,
                 prefs.country_code,
-                salary_expectation
+                salary_expectation,
+                agency_json
             ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Update ONLY `extra_agency_companies` — a single-column `UPDATE`, unlike
+    /// [`set`](Self::set)'s full-row write, following the exact
+    /// [`set_salary_expectation`](Self::set_salary_expectation) pattern (PR #695):
+    /// a caller editing just the agency list (e.g. Settings) must never risk
+    /// NULL-ing `location`/`tech_stack`/`country_code`/`salary_expectation` by
+    /// spreading a stale/unloaded payload through `set()`. The list is clamped at
+    /// this boundary (per-entry byte cap + list-length cap); an empty/all-blank
+    /// list stores as SQL NULL.
+    pub fn set_extra_agency_companies(&self, list: Option<Vec<String>>) -> AppResult<()> {
+        let conn = self.conn.lock();
+        let agency_json =
+            clamp_agency_list(list).and_then(|list| serde_json::to_string(&list).ok());
+        conn.execute(
+            "UPDATE job_preferences SET extra_agency_companies = ?1 WHERE id = 1",
+            params![agency_json],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

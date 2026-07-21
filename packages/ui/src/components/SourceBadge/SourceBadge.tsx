@@ -36,7 +36,11 @@ export interface SourceBadgeProps {
 }
 
 export function SourceBadge({ source, url, className, children }: SourceBadgeProps) {
-  const config = PLATFORM_CONFIG[source.toLowerCase()] || {
+  // Own-property guard: a hostile `source` like `__proto__`/`constructor` must
+  // fall through to the generic fallback, not resolve an Object.prototype member
+  // (which would then crash on `config.icon`).
+  const key = source.toLowerCase();
+  const config = (Object.hasOwn(PLATFORM_CONFIG, key) ? PLATFORM_CONFIG[key] : undefined) ?? {
     icon: Globe,
     color: '#6366F1',
     label: source,

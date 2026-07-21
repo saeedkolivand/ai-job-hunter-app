@@ -890,6 +890,14 @@
       "searchPlaceholder": "Type any technology and press Enter…",
       "popular": "Popular"
     },
+    "agencyCompanies": {
+      "title": "Recruiting agencies",
+      "description": "Company names to treat as recruiting or staffing agencies, so their postings can be hidden on the Jobs page.",
+      "placeholder": "Add a company name and press Enter…",
+      "add": "Add",
+      "remove": "Remove {{name}}",
+      "empty": "No custom agencies yet."
+    },
     "ai": {
       "localLimits": {
         "title": "Generation limits",
@@ -1942,6 +1950,18 @@
     "viewMode": "View mode",
     "backToList": "Back to list",
     "selectAJob": "Select a job to see details",
+    "agencyChip": "Agency",
+    "filters": {
+      "hideAgency": "Hide agency posts"
+    },
+    "cluster": {
+      "alsoOn": "Also on",
+      "openOn": "Open on {{source}}",
+      "sources": "All sources",
+      "notDuplicate": "Not a duplicate",
+      "splitDone": "Postings separated",
+      "splitFailed": "Couldn't separate postings"
+    },
     "copyLinkError": "Failed to copy link",
     "loadingDescription": "Loading description…",
     "updatingDescription": "Updating…",

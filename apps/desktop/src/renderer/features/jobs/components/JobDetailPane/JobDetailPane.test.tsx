@@ -16,7 +16,9 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -92,10 +94,22 @@ vi.mock('@ajh/ui', () => ({
   Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   transition: { fast: {} },
   resolveTransition: (t: unknown) => t,
+  useNotification: () => mockNotify,
   variants: {
     fadeSlideUp: { initial: {}, animate: {}, exit: {} },
     fadeSlideDown: { initial: {}, animate: {}, exit: {} },
   },
+}));
+
+// ── cluster/agency chips — the header chips are covered in their own suites;
+//    stubbed here so this suite focuses on description/score/split behaviour ──
+
+vi.mock('@/components/job/ClusterSourceChips', () => ({
+  ClusterSourceChips: () => null,
+}));
+
+vi.mock('@/components/job/AgencyChip', () => ({
+  AgencyChip: () => null,
 }));
 
 // ── RowMatchScore ─────────────────────────────────────────────────────────────
@@ -145,9 +159,16 @@ function idleStub() {
 const mockUseResolveJobUrl = vi.fn().mockReturnValue(idleStub());
 const mockUpdateDescMutateAsync = vi.fn().mockResolvedValue(false);
 
+// Cluster split (ADR-029) + external-open spies + notification container.
+const mockSplitMutate = vi.fn();
+const mockOpenExternal = vi.fn();
+const mockNotify = { success: vi.fn(), error: vi.fn() };
+
 vi.mock('@/services', () => ({
   useResolveJobUrl: (...args: unknown[]) => mockUseResolveJobUrl(...args),
   useUpdatePostingDescription: () => ({ mutateAsync: mockUpdateDescMutateAsync }),
+  useMarkNotDuplicate: () => ({ mutate: mockSplitMutate, isPending: false }),
+  useOpenExternal: () => ({ mutate: mockOpenExternal }),
 }));
 
 // ── trackInteraction spy ──────────────────────────────────────────────────────
@@ -199,6 +220,12 @@ beforeEach(() => {
   mockRefetch.mockClear();
   mockUpdateDescMutateAsync.mockClear();
   mockScoreJob.mockClear();
+  // Reset (not just clear) so a per-test onError-invoking implementation can't
+  // leak into the plain call-args assertions.
+  mockSplitMutate.mockReset();
+  mockOpenExternal.mockClear();
+  mockNotify.success.mockClear();
+  mockNotify.error.mockClear();
   mockUseResolveJobUrl.mockReturnValue(idleStub());
 });
 
@@ -1055,5 +1082,98 @@ describe('JobDetailPane — RowMatchScore renders in detail header', () => {
   it('does NOT render RowMatchScore when posting is null (empty state)', () => {
     render(<JobDetailPane posting={null} formatRelativeTime={formatRelativeTime} />);
     expect(screen.queryByTestId('row-match-score')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-board cluster "All sources" + split (ADR-029)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('JobDetailPane — cross-board cluster split', () => {
+  function clustered(): Posting {
+    return makePosting('clustered', {
+      description: 'Full description.',
+      clusterId: 'k1',
+      clusterCanonical: true,
+      clusterMembers: [
+        { key: 'k1', board: 'linkedin', url: 'https://linkedin.com/job/1' },
+        { key: 'k2', board: 'indeed', url: 'https://indeed.com/job/2' },
+      ],
+    });
+  }
+
+  it('renders the All sources section with one split action (non-canonical member only)', async () => {
+    await act(async () => {
+      render(<JobDetailPane posting={clustered()} formatRelativeTime={formatRelativeTime} />);
+    });
+    expect(screen.getByTestId(TEST_IDS.jobs.clusterMembers)).toBeInTheDocument();
+    // k1 is canonical (no split); only k2 offers "Not a duplicate".
+    expect(screen.getAllByText('jobs.cluster.notDuplicate')).toHaveLength(1);
+  });
+
+  it('split fires markNotDuplicate with the member key + every OTHER member key', async () => {
+    await act(async () => {
+      render(<JobDetailPane posting={clustered()} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    await act(async () => {
+      screen.getByText('jobs.cluster.notDuplicate').click();
+    });
+
+    expect(mockSplitMutate).toHaveBeenCalledTimes(1);
+    const arg = mockSplitMutate.mock.calls[0]?.[0] as
+      { memberKey: string; otherKeys: string[] } | undefined;
+    expect(arg?.memberKey).toBe('k2');
+    expect(arg?.otherKeys).toEqual(['k1']);
+  });
+
+  it('shows the error toast (not the success toast) when the split fails', async () => {
+    // React Query calls the caller's onError when the mutation throws; the mock
+    // stands in for that so the toast wiring is exercised.
+    mockSplitMutate.mockImplementation((_req: unknown, opts?: { onError?: () => void }) =>
+      opts?.onError?.()
+    );
+    await act(async () => {
+      render(<JobDetailPane posting={clustered()} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    await act(async () => {
+      screen.getByText('jobs.cluster.notDuplicate').click();
+    });
+
+    expect(mockNotify.error).toHaveBeenCalledWith({ message: 'jobs.cluster.splitFailed' });
+    expect(mockNotify.success).not.toHaveBeenCalled();
+  });
+
+  it('renders the host fallback label (not the raw url) for a member with no board', async () => {
+    const posting = makePosting('nb', {
+      description: 'x',
+      clusterId: 'k1',
+      clusterCanonical: true,
+      clusterMembers: [
+        { key: 'k1', board: 'linkedin', url: 'https://example.com/job/nb' },
+        { key: 'kx', url: 'https://www.jobs.example.com/xyz' },
+      ],
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    const section = screen.getByTestId(TEST_IDS.jobs.clusterMembers);
+    // No board → hostOf(url): hostname minus a leading www., matching the chips.
+    expect(within(section).getByText('jobs.example.com')).toBeInTheDocument();
+    expect(within(section).queryByText('https://www.jobs.example.com/xyz')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render the All sources section for an unclustered posting', async () => {
+    await act(async () => {
+      render(
+        <JobDetailPane
+          posting={makePosting('solo', { description: 'x' })}
+          formatRelativeTime={formatRelativeTime}
+        />
+      );
+    });
+    expect(screen.queryByTestId(TEST_IDS.jobs.clusterMembers)).not.toBeInTheDocument();
   });
 });

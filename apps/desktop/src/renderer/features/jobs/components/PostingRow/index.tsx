@@ -14,6 +14,8 @@ import { motion } from 'motion/react';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, SourceBadge, Tag, transition } from '@ajh/ui';
 
+import { AgencyChip } from '@/components/job/AgencyChip';
+import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
@@ -78,8 +80,15 @@ export function PostingRow({ posting, formatRelativeTime }: PostingRowProps) {
             role="presentation"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
+            className="flex items-center gap-2"
           >
             <SourceBadge source={posting.source} url={posting.url} />
+            {posting.isAgency && <AgencyChip className={STATUS_TAG} />}
+            <ClusterSourceChips
+              members={posting.clusterMembers}
+              selfKey={posting.clusterId}
+              selfUrl={posting.url}
+            />
           </span>
           {posting.postedAt && (
             <span className="text-foreground/40">· {formatRelativeTime(posting.postedAt)}</span>

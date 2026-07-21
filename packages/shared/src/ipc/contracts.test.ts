@@ -21,6 +21,7 @@ describe('IPC_CHANNELS', () => {
         'cliAgents',
         'credentials',
         'data',
+        'dedup',
         'dialog',
         'documents',
         'emailWatch',

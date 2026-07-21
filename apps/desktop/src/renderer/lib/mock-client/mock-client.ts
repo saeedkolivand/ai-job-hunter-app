@@ -163,6 +163,11 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       get: async () => ({}),
       set: noop,
       setSalaryExpectation: noop,
+      setExtraAgencyCompanies: noop,
+    },
+
+    dedup: {
+      markNotDuplicate: async () => ({ success: true }),
     },
 
     contactProfile: {
