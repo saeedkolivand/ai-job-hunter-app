@@ -1907,7 +1907,8 @@
       "themuse": "The Muse",
       "wwr": "WWR",
       "ycombinator": "YC Jobs",
-      "aggregator": "Aggregator"
+      "aggregator": "Aggregator",
+      "url": "Web-Import"
     },
     "aggregatorKeyHint": "Fügen Sie Ihren kostenlosen Adzuna-Schlüssel in den Einstellungen hinzu, um die aggregierte Jobsuche zu aktivieren.",
     "disconnect": "Trennen",

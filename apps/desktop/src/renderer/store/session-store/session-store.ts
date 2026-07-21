@@ -21,6 +21,14 @@ type AIGenerateTarget = 'resume' | 'cover' | 'both';
 interface AIGenerateSlice {
   resume: string;
   jobAd: string;
+  /**
+   * URL-import provenance (ADR-031): set when the job ad came from a URL import,
+   * cleared on any manual edit/paste-over. Persisted into
+   * `AiGenerationSaveRequest.jobUrl`/`board` so URL-imported generations join
+   * applied-detection + cluster provenance. Absent for pasted/uploaded text.
+   */
+  jobUrl?: string;
+  board?: string;
   stage: AIGenerateStage;
   meta: GenerationMeta | null;
   mode: GenerationMode;

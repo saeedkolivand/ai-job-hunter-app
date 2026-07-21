@@ -41,6 +41,8 @@ export function AIGeneratePage() {
   const {
     resume,
     jobAd,
+    jobUrl,
+    board,
     stage,
     meta,
     mode,
@@ -57,7 +59,13 @@ export function AIGeneratePage() {
   } = aiGenerate;
 
   const setResume = (v: string) => setAIGenerate({ resume: v });
-  const setJobAd = (v: string) => setAIGenerate({ jobAd: v });
+  // A manual edit / paste-over / upload replaces the ad, so any URL-import
+  // provenance is now stale (ADR-031): clear it so a since-replaced job's url
+  // never persists onto this generation.
+  const setJobAd = (v: string) => setAIGenerate({ jobAd: v, jobUrl: undefined, board: undefined });
+  // URL-import fills the ad AND records its provenance atomically.
+  const setJobAdFromImport = (text: string, provenance: { url: string; board?: string }) =>
+    setAIGenerate({ jobAd: text, jobUrl: provenance.url, board: provenance.board });
   const setStage = (v: typeof stage) =>
     setAIGenerate(v === 'configuring' ? { stage: v, wizardStep: 0 } : { stage: v });
   const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
@@ -145,7 +153,9 @@ export function AIGeneratePage() {
     notify,
     researchCompany,
     locale,
-    emphasis
+    emphasis,
+    jobUrl,
+    board
   );
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
@@ -281,6 +291,7 @@ export function AIGeneratePage() {
           canProceed={canProceed}
           setResume={setResume}
           setJobAd={setJobAd}
+          onJobAdImport={setJobAdFromImport}
           setTemplateId={setTemplateId}
           setAtsMode={setAtsMode}
           setLocale={setLocale}
