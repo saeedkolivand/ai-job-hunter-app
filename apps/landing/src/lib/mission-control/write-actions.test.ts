@@ -27,6 +27,16 @@ describe('write-action registry', () => {
 });
 
 describe('performWriteAction — the confirm gate', () => {
+  it('refuses BEFORE confirm (throws) when a required ctx input is missing', async () => {
+    const request = vi.fn();
+    const confirm = vi.fn();
+    await expect(
+      performWriteAction(actionById('close-issue'), {}, { token: 't', confirm, request })
+    ).rejects.toThrow(/missing required input: issueNumber/);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('makes NO request when the user declines the confirm dialog', async () => {
     const request = vi.fn();
     const confirm = vi.fn().mockResolvedValue(false);

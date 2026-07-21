@@ -2,12 +2,9 @@ import type { Metadata } from 'next';
 
 import { AgentFleet } from '@/components/agent-system/AgentFleet';
 import { DocShell } from '@/components/DocShell';
-import { GoogleFonts } from '@/components/GoogleFonts';
+import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { readStyle } from '@/lib/styles';
-
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap';
 
 export const metadata: Metadata = {
   title: 'AI Job Hunter — The Agent Fleet',
@@ -33,7 +30,7 @@ export const metadata: Metadata = {
 export default function AgentSystemPage() {
   return (
     <>
-      <GoogleFonts href={FONTS} />
+      <Fonts />
       <PageStyle css={readStyle('agent-system.css')} />
       <DocShell>
         <AgentFleet />

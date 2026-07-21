@@ -32,6 +32,15 @@ function lastUrl(fetchMock: ReturnType<typeof vi.fn>): string {
 function lastHeaders(fetchMock: ReturnType<typeof vi.fn>): Record<string, string> {
   return (fetchMock.mock.calls.at(-1)?.[1] as { headers: Record<string, string> }).headers;
 }
+// Age a cached entry past the TTL so the next ghGet revalidates instead of serving it.
+function expireCache(path: string): void {
+  const key = MC_CONFIG.cachePrefix + path;
+  const raw = localStorage.getItem(key);
+  if (!raw) return;
+  const entry = JSON.parse(raw) as { ts: number };
+  entry.ts = Date.now() - MC_CONFIG.cacheTtlMs - 1000;
+  localStorage.setItem(key, JSON.stringify(entry));
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -68,12 +77,23 @@ describe('ghGet', () => {
     expect(lastUrl(fetchMock)).not.toContain('Bearer');
   });
 
-  it('returns the cached body on a 304 conditional response', async () => {
+  it('serves a within-TTL cache entry without any network hit', async () => {
+    stubFetch(makeRes({ body: { v: 1 }, headers: { ETag: 'W/"abc"' } }));
+    await ghGet<{ v: number }>('/repo', TOKEN); // primes the cache (fresh ts)
+
+    const fetchMock = stubFetch(makeRes({ body: { v: 2 } }));
+    const cachedHit = await ghGet<{ v: number }>('/repo', TOKEN);
+    expect(cachedHit.v).toBe(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('revalidates with If-None-Match and returns the cached body on a 304 past the TTL', async () => {
     stubFetch(makeRes({ body: { v: 1 }, headers: { ETag: 'W/"abc"' } }));
     const first = await ghGet<{ v: number }>('/repo', TOKEN);
     expect(first.v).toBe(1);
 
-    // Second call: 304, and the If-None-Match echoes the stored ETag.
+    // Age the cache past the TTL so the conditional request actually fires.
+    expireCache('/repo');
     const fetchMock = stubFetch(makeRes({ status: 304 }));
     const second = await ghGet<{ v: number }>('/repo', TOKEN);
     expect(second.v).toBe(1);
@@ -86,9 +106,19 @@ describe('ghGet', () => {
     await expect(ghGet('/pulls', TOKEN)).rejects.not.toThrow(new RegExp(TOKEN));
   });
 
-  it('surfaces a rate-limit hint on a 403 with no remaining quota', async () => {
+  it('surfaces a rate-limit hint on a 403 with no remaining quota and no cache', async () => {
     stubFetch(makeRes({ ok: false, status: 403, headers: { 'X-RateLimit-Remaining': '0' } }));
     await expect(ghGet('/x', '')).rejects.toThrow(/rate limit/i);
+  });
+
+  it('serves stale cache on a 403 rate-limit rather than throwing', async () => {
+    stubFetch(makeRes({ body: { v: 1 }, headers: { ETag: 'W/"e"' } }));
+    await ghGet('/repo', TOKEN); // prime
+    expireCache('/repo'); // past TTL → the next call revalidates and hits the 403
+
+    stubFetch(makeRes({ ok: false, status: 403, headers: { 'X-RateLimit-Remaining': '0' } }));
+    const out = await ghGet<{ v: number }>('/repo', TOKEN);
+    expect(out.v).toBe(1);
   });
 });
 

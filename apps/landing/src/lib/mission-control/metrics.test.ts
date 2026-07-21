@@ -150,6 +150,21 @@ describe('Delivery (DORA-lite)', () => {
     expect(health.sampled).toBe(0);
     expect(health.lastConclusion).toBeNull();
   });
+
+  it('excludes skipped/neutral from the pass-rate and reads past them for the verdict', () => {
+    const runs = [
+      run({ conclusion: 'skipped', id: 5 }),
+      run({ conclusion: 'success', id: 4 }),
+      run({ conclusion: 'neutral', id: 3 }),
+      run({ conclusion: 'failure', id: 2 }),
+    ];
+    const health = workflowHealth(runs, 'ci-pipeline.yml');
+    expect(health.sampled).toBe(2); // success + failure only
+    expect(health.successRate).toBe(0.5);
+    expect(health.lastConclusion).toBe('skipped'); // newest run's raw status
+    // latest DECISIVE gating conclusion looks past the leading skipped run
+    expect(latestGatingConclusion(runs, 'ci-pipeline.yml')).toBe('success');
+  });
 });
 
 describe('Work (PRs + issues)', () => {

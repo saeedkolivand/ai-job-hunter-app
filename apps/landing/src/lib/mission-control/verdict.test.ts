@@ -60,9 +60,10 @@ describe('isRedConclusion', () => {
     expect(isRedConclusion('cancelled')).toBe(true);
     expect(isRedConclusion('timed_out')).toBe(true);
   });
-  it('treats success/neutral/null (never ran) as not red', () => {
+  it('treats success/neutral/skipped/null as not red', () => {
     expect(isRedConclusion('success')).toBe(false);
     expect(isRedConclusion('neutral')).toBe(false);
+    expect(isRedConclusion('skipped')).toBe(false);
     expect(isRedConclusion(null)).toBe(false);
   });
 });

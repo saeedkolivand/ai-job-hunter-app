@@ -79,27 +79,36 @@ function gatingRuns(runs: readonly GhWorkflowRun[], gatingFile: string): GhWorkf
   );
 }
 
+// skipped/neutral aren't pass/fail signals (GitHub treats them as success-
+// equivalent for dependent checks), so they're excluded from the pass-rate
+// denominator — otherwise routine concurrency-skips would drag the rate down.
+function isScored(run: GhWorkflowRun): boolean {
+  return run.conclusion !== 'skipped' && run.conclusion !== 'neutral';
+}
+
 export function workflowHealth(
   runs: readonly GhWorkflowRun[],
   gatingFile: string,
   sample = 20
 ): { successRate: number | null; sampled: number; lastConclusion: string | null } {
-  const gating = gatingRuns(runs, gatingFile).slice(0, sample);
-  const success = gating.filter((r) => r.conclusion === 'success').length;
+  const recent = gatingRuns(runs, gatingFile).slice(0, sample);
+  const scored = recent.filter(isScored);
+  const success = scored.filter((r) => r.conclusion === 'success').length;
   return {
     // null on an empty sample — a "100% · last 0 runs" reads as false confidence.
-    successRate: gating.length > 0 ? success / gating.length : null,
-    sampled: gating.length,
-    lastConclusion: gating[0]?.conclusion ?? null,
+    successRate: scored.length > 0 ? success / scored.length : null,
+    sampled: scored.length,
+    lastConclusion: recent[0]?.conclusion ?? null,
   };
 }
 
-// The single most recent completed gating run on main (drives the verdict).
+// The most recent DECISIVE gating run on main (drives the verdict) — looks past
+// skipped/neutral runs so a concurrency-skip doesn't hide the real last result.
 export function latestGatingConclusion(
   runs: readonly GhWorkflowRun[],
   gatingFile: string
 ): string | null {
-  return gatingRuns(runs, gatingFile)[0]?.conclusion ?? null;
+  return gatingRuns(runs, gatingFile).find(isScored)?.conclusion ?? null;
 }
 
 // ── Work (PRs + issues) ──────────────────────────────────────────────────────

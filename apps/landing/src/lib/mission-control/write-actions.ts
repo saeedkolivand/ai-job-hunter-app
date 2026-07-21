@@ -112,6 +112,14 @@ export async function performWriteAction(
   ctx: WriteActionContext,
   deps: PerformDeps
 ): Promise<PerformOutcome> {
+  // Enforce the declared inputs BEFORE confirming: a missing field would otherwise
+  // interpolate `undefined` into the request path and fire a real request.
+  for (const need of action.needs) {
+    if (ctx[need] === undefined) {
+      throw new Error(`write action "${action.id}" is missing required input: ${need}`);
+    }
+  }
+
   const approved = await deps.confirm(action.confirmMessage(ctx));
   if (!approved) return { status: 'cancelled' };
 

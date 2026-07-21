@@ -72,6 +72,13 @@ function writeCache<T>(path: string, entry: CacheEntry<T>): void {
 // no error message ever leaks caller input, let alone the token.
 export async function ghGet<T>(path: string, token: string): Promise<T> {
   const cached = readCache<T>(path);
+
+  // Within the TTL, serve the cache with NO network hit at all — saves a
+  // rate-limit unit. Past the TTL we still revalidate cheaply via the ETag below.
+  if (cached && Date.now() - cached.ts < MC_CONFIG.cacheTtlMs) {
+    return cached.data;
+  }
+
   const headers = authHeaders(token, cached?.etag ? { 'If-None-Match': cached.etag } : undefined);
 
   let res: Response;
@@ -89,6 +96,9 @@ export async function ghGet<T>(path: string, token: string): Promise<T> {
     throw new Error('GitHub rejected the token (401). Check its scopes and sign in again.');
   }
   if (res.status === 403 && res.headers.get('X-RateLimit-Remaining') === '0') {
+    // Prefer stale cache over an error when rate-limited (same as the generic
+    // !res.ok path below) — only throw when there's nothing cached to serve.
+    if (cached) return cached.data;
     throw new Error(
       'GitHub API hourly rate limit reached. Sign in with a fine-grained token to raise it to 5,000/h.'
     );

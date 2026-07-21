@@ -1,19 +1,16 @@
 import type { Metadata } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
-import { GoogleFonts } from '@/components/GoogleFonts';
+import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { RawHtml } from '@/components/RawHtml';
 import { readContent } from '@/lib/content';
 import { readStyle } from '@/lib/styles';
 
-// Docs-tier reskin: load the shell fonts (Space Grotesk / Caveat / Space Mono) and
-// layer the shell palette over the original slate styles (docs-tokens → original
-// styles.css → shell override; last :root wins). The copy, the DOM the 55 KB
-// pipeline player queries, and the console egg are all unchanged.
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap';
-
+// Docs-tier reskin: the self-hosted shell fonts (Space Grotesk / Caveat / Space
+// Mono) layered with the shell palette over the original slate styles (docs-tokens
+// → original styles.css → shell override; last :root wins). The copy, the DOM the
+// 55 KB pipeline player queries, and the console egg are all unchanged.
 export const metadata: Metadata = {
   title: 'AI Job Hunter — How It Works (End to End)',
 };
@@ -21,7 +18,7 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <>
-      <GoogleFonts href={FONTS} />
+      <Fonts />
       <PageStyle css={readStyle('docs-tokens.css')} />
       <PageStyle css={readContent('how-it-works', 'styles.css')} />
       <PageStyle css={readStyle('how-it-works-shell.css')} />

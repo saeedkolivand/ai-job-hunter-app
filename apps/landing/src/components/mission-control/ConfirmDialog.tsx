@@ -28,6 +28,14 @@ export function ConfirmDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const restoreRef = useRef<Element | null>(null);
 
+  // Read onCancel through a ref so the trap effect can depend on [open] alone —
+  // otherwise a fresh onCancel closure each parent render re-subscribes the
+  // keydown listener and re-runs focus/restore while the dialog is open.
+  const onCancelRef = useRef(onCancel);
+  useEffect(() => {
+    onCancelRef.current = onCancel;
+  }, [onCancel]);
+
   useEffect(() => {
     if (!open) return;
     restoreRef.current = document.activeElement;
@@ -40,7 +48,7 @@ export function ConfirmDialog({
     function onKey(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onCancel();
+        onCancelRef.current();
         return;
       }
       if (event.key === 'Tab') {
@@ -60,7 +68,7 @@ export function ConfirmDialog({
       document.body.style.overflow = prevOverflow;
       if (restoreRef.current instanceof HTMLElement) restoreRef.current.focus();
     };
-  }, [open, onCancel]);
+  }, [open]);
 
   if (!open) return null;
 

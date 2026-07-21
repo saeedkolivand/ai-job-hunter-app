@@ -77,12 +77,11 @@ available"). No API call; the JSON is baked at build time and deployed with the 
 ## Addendum: PR2 Implementation
 
 **Next.js version and TypeScript constraint** (shipped 2026-07-20, PR2):
-The landing package uses **Next.js 16.2.10** (not 15). The root workspace TypeScript is held
-at ^6.0.3 (for ESLint + typescript-eslint 8.x compatibility), while the Next 16 build (and
-other app builds in desktop/extension) use ^7.0.2 via pnpm per-importer version resolution.
-Reason: TS 7 deprecates CommonJS exports in several APIs; Next 16's `verifyTypeScriptSetup`
-breaks under TS 7 in a root ESLint-only environment. See `package.json#pnpm` and
-`commitlint.config.mjs` for the split configuration. Pinning Next 16 is the stability
+The landing package uses **Next.js 16.2.10** (see `apps/landing/package.json`). The root workspace TypeScript is held
+at 6.x for ESLint + typescript-eslint 8.x compatibility (see root `package.json`), landing is pinned to 6.0.3 (see `apps/landing/package.json`),
+and other app builds in desktop/extension use 7.x via pnpm per-importer resolution (see respective manifests).
+Reason: Next 16's `verifyTypeScriptSetup`
+does not recognize TS 7's native-compiler package layout and crashes the build (documented in `apps/landing/package.json#//typescript`). See `pnpm-workspace.yaml` and per-importer `package.json` files for the split configuration. Pinning Next 16 is the stability
 anchor; any future upgrade should be gated by `pnpm check:parity` and tested against the
 TS 6/7 split constraint.
 
@@ -118,6 +117,8 @@ either:
 
 - Inline `<script>` (baked into the Next.js build output), or
 - Same-origin JS modules fetched from `/\_next/` (Next.js runtime).
+
+**The origin invariant extends to stylesheets:** all fonts and third-party styles are self-hosted from `public/fonts/` to prevent external stylesheet links.
 
 Verify on every landing page update that no external `<script src="https://…">` or
 `<link href="https://…" rel="stylesheet">` tags are present in the built HTML (the

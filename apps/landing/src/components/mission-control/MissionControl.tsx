@@ -635,8 +635,8 @@ export function MissionControl() {
                 </button>
                 <button
                   type="button"
-                  className="mc-btn"
-                  onClick={() => void runAction(actionById('dispatch-pages'), {})}
+                  className="mc-btn is-danger"
+                  onClick={() => void runAction(actionById('dispatch-pages'), {}, true)}
                 >
                   Dispatch pages deploy
                 </button>

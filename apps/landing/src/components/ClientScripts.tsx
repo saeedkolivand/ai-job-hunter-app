@@ -14,11 +14,26 @@ import { useEffect } from 'react';
 // same-origin `/scripts/*` file — NEVER a third-party URL. There is no
 // third-party JavaScript anywhere on this origin, ever: any foreign script on
 // any page can read the /mission-control PAT out of localStorage, and a per-page
-// CSP cannot protect it. See CspMeta.tsx.
+// CSP cannot protect it. See CspMeta.tsx. `isAllowedScriptSrc` enforces this
+// fail-closed at runtime, not by comment alone.
+export function isAllowedScriptSrc(src: string): boolean {
+  // Same-origin absolute path under /scripts/ only. Rejects third-party URLs,
+  // protocol-relative `//host`, and anything not rooted at /scripts/.
+  return src.startsWith('/scripts/');
+}
+
 export function ClientScripts({ srcs }: { srcs: readonly string[] }) {
   useEffect(() => {
     const appended: HTMLScriptElement[] = [];
     for (const src of srcs) {
+      if (!isAllowedScriptSrc(src)) {
+        // Dev: fail loudly so the mistake is caught in review/CI. Prod: skip the
+        // foreign src rather than execute it (the origin invariant is absolute).
+        if (process.env.NODE_ENV !== 'production') {
+          throw new Error(`ClientScripts refused a non-/scripts/ src: ${src}`);
+        }
+        continue;
+      }
       if (document.querySelector(`script[data-gag="${src}"]`)) continue;
       const el = document.createElement('script');
       el.src = src;

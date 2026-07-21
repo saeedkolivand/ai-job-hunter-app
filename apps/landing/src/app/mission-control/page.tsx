@@ -1,14 +1,11 @@
 import type { Metadata } from 'next';
 
 import { DocShell } from '@/components/DocShell';
-import { GoogleFonts } from '@/components/GoogleFonts';
+import { Fonts } from '@/components/Fonts';
 import { CspMeta } from '@/components/mission-control/CspMeta';
 import { MissionControl } from '@/components/mission-control/MissionControl';
 import { PageStyle } from '@/components/PageStyle';
 import { readStyle } from '@/lib/styles';
-
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap';
 
 // Internal ops dashboard on the marketing domain — keep it out of search, like
 // the ci-dashboard it replaces.
@@ -24,7 +21,7 @@ export default function MissionControlPage() {
   return (
     <>
       <CspMeta />
-      <GoogleFonts href={FONTS} />
+      <Fonts />
       <PageStyle css={readStyle('mission-control.css')} />
       <DocShell
         eyebrow="the whole repo, one screen"
