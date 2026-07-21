@@ -239,6 +239,35 @@ mod tests {
     }
 
     #[test]
+    fn import_with_a_malformed_row_errors_and_preserves_existing_rows() {
+        let (_dir, store) = open();
+        store.insert_pairs(&[("keep".into(), "me".into())]).unwrap();
+
+        // One well-formed row + one malformed (missing `keyB`). The store
+        // deserializes EVERY row before mutating, so the malformed row must fail
+        // the whole import BEFORE any DELETE/insert runs.
+        let bundle = serde_json::json!([
+            { "keyA": "a", "keyB": "b", "createdAt": 1 },
+            { "keyA": "x", "createdAt": 2 }
+        ]);
+        let result = store.import(&bundle);
+        assert!(result.is_err(), "a malformed row must fail the whole import");
+
+        // The pre-existing verdict survives untouched, and the well-formed row
+        // from the failed bundle was NOT partially inserted.
+        let pairs = store.all_pairs();
+        assert!(
+            pairs.contains(&("keep".into(), "me".into())),
+            "existing rows must survive a failed import (deserialize-all-before-mutate)"
+        );
+        assert!(
+            !pairs.contains(&("a".into(), "b".into())),
+            "no partial insert from the failed import"
+        );
+        assert_eq!(pairs.len(), 1, "the table is exactly the pre-import state");
+    }
+
+    #[test]
     fn import_replaces_existing_rows() {
         let (_dir, store) = open();
         store.insert_pairs(&[("old".into(), "row".into())]).unwrap();

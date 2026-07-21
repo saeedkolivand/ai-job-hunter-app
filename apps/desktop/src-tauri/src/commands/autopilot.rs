@@ -1003,6 +1003,29 @@ mod tests {
     }
 
     #[test]
+    fn mixed_cluster_with_below_bar_scored_representative_is_dropped_even_with_unscored_member() {
+        // Same job on two boards → ONE cluster. One copy scores 40 (below the 50
+        // bar); the other is unscored. Per ADR-029 §g the cluster representative
+        // is its best-SCORED member (40 < 50), so the WHOLE cluster is dropped —
+        // the unscored member does NOT rescue it. Keep-unscored only applies to a
+        // cluster with NO scored member at all.
+        let scored_below = FoundJob {
+            url: "https://a.example.com/job".into(),
+            score: Some(40.0),
+            ..found(None)
+        };
+        let unscored = FoundJob {
+            url: "https://b.example.com/job".into(),
+            ..found(None)
+        };
+        let kept = cluster_aware_retain(vec![scored_below, unscored], 50.0, &HashSet::new(), &[]);
+        assert!(
+            kept.is_empty(),
+            "a below-bar scored representative drops the whole cluster, unscored member included"
+        );
+    }
+
+    #[test]
     fn take_pending_focus_returns_buffered_id_then_clears() {
         let buf = crate::tray::PendingFocus(Mutex::new(Some("autopilot-123".to_string())));
         assert_eq!(take_pending_focus(&buf), Some("autopilot-123".to_string()));

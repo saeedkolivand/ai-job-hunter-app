@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::db::{new_job_id, now_ms};
 use crate::error::{AppError, AppResult};
 use crate::postings::{attach_interactions, InteractionRecord, InteractionStore, PostingsCache};
-use crate::scraping::cluster::{assign_clusters, ClusterAssignment, ClusterInput};
+use crate::scraping::cluster::{assign_clusters, posting_cluster_input, ClusterAssignment, ClusterInput};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -328,46 +328,29 @@ pub fn recluster_postings_cache(app: &AppHandle) {
     let mut ids: Vec<String> = Vec::with_capacity(items.len());
     let mut inputs: Vec<ClusterInput> = Vec::with_capacity(items.len());
     for item in &items {
-        let Some(id) = item.get("id").and_then(Value::as_str) else {
+        // The cache stores serialized `JobPosting`s; deserialize through the SAME
+        // type production ingests so the cluster-input mapping can't drift (the
+        // shared `posting_cluster_input` seam is also exercised by the aggregator
+        // acceptance test). A cache entry that isn't a well-formed posting — or
+        // carries no id to annotate — is skipped, never breaking the whole run.
+        let Ok(posting) = serde_json::from_value::<crate::scraping::JobPosting>(item.clone()) else {
             continue;
         };
-        let title = str_field(item, "title");
-        let company = str_field(item, "company");
-        let url = str_field(item, "url");
-        let source = item
-            .get("source")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string);
-        let has_description = item
-            .get("description")
-            .and_then(Value::as_str)
-            .is_some_and(|d| !d.trim().is_empty());
-        let seen_at = item.get("capturedAt").and_then(Value::as_u64).unwrap_or(0);
-        let key = crate::scraping::boards::common::canonical_job_key(&url, &title, &company);
+        if posting.id.trim().is_empty() {
+            continue;
+        }
 
         let (vector, space) = match (doc_store.as_ref(), active.as_ref()) {
             (Some(store), Some(cfg)) => store
-                .get_posting_vector(id)
+                .get_posting_vector(&posting.id)
                 .filter(|(v, _)| cfg.matches(&v.space))
                 .map(|(v, _)| (Some(v.values), Some(v.space.to_string())))
                 .unwrap_or((None, None)),
             _ => (None, None),
         };
 
-        ids.push(id.to_string());
-        inputs.push(ClusterInput {
-            key,
-            title,
-            company,
-            url,
-            source,
-            has_description,
-            seen_at,
-            vector,
-            space,
-        });
+        ids.push(posting.id.clone());
+        inputs.push(posting_cluster_input(&posting, vector, space));
     }
 
     let assignments = assign_clusters(inputs, &tombstones, &extra_agency);
@@ -379,14 +362,6 @@ pub fn recluster_postings_cache(app: &AppHandle) {
         .map(|(id, a)| (id, cluster_annotation_json(a)))
         .collect();
     cache.lock().apply_cluster_annotations(&by_id);
-}
-
-/// Read a string field from a cache item JSON object, defaulting to empty.
-fn str_field(item: &Value, key: &str) -> String {
-    item.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string()
 }
 
 /// Serialize a [`ClusterAssignment`] to the annotation object patched onto a

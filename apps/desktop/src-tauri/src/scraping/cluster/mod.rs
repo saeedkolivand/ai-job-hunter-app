@@ -71,11 +71,11 @@ pub struct ClusterMemberRef {
 }
 
 /// The clustering verdict for one input item (returned in INPUT order, one per
-/// item). `cluster_id` is the canonical member's `key`; `canonical` marks the
-/// canonical member itself; `members` lists every member of the cluster.
+/// item, so a caller zips it back onto its own rows by index). `cluster_id` is
+/// the canonical member's key; `canonical` marks the canonical member itself;
+/// `members` lists every member of the cluster.
 #[derive(Debug, Clone)]
 pub struct ClusterAssignment {
-    pub key: String,
     pub cluster_id: String,
     pub canonical: bool,
     pub is_agency: bool,
@@ -225,7 +225,6 @@ pub fn assign_clusters(
                 .remove(&idx)
                 .unwrap_or_else(|| (it.key.clone(), true, vec![member_ref(it)]));
             ClusterAssignment {
-                key: it.key.clone(),
                 cluster_id,
                 canonical,
                 is_agency: is_agency_with(&it.company, &normalized_extras),
@@ -316,6 +315,43 @@ fn member_ref(it: &ClusterInput) -> ClusterMemberRef {
         key: it.key.clone(),
         board: it.source.clone(),
         url: it.url.clone(),
+    }
+}
+
+/// Map a scraped [`JobPosting`](crate::scraping::JobPosting) (+ an optional
+/// active-space embedding) to a [`ClusterInput`] — the SINGLE production seam so
+/// the manual-scrape ingest (`commands::scrape::recluster_postings_cache`) and
+/// the cross-board acceptance test share ONE mapping and can't drift apart.
+/// `key` is the app-wide `canonical_job_key`, `source` is the trimmed board id
+/// (empty → `None`), `has_description` reflects non-blank text, and `seen_at`
+/// comes from `captured_at` (a negative timestamp clamps to 0). Autopilot maps
+/// from `FoundJob` (a different shape) via its own `found_job_cluster_inputs`.
+pub(crate) fn posting_cluster_input(
+    posting: &crate::scraping::JobPosting,
+    vector: Option<Vec<f64>>,
+    space: Option<String>,
+) -> ClusterInput {
+    let source = {
+        let s = posting.source.trim();
+        (!s.is_empty()).then(|| s.to_string())
+    };
+    ClusterInput {
+        key: crate::scraping::boards::common::canonical_job_key(
+            &posting.url,
+            &posting.title,
+            &posting.company,
+        ),
+        title: posting.title.clone(),
+        company: posting.company.clone(),
+        url: posting.url.clone(),
+        source,
+        has_description: posting
+            .description
+            .as_deref()
+            .is_some_and(|d| !d.trim().is_empty()),
+        seen_at: u64::try_from(posting.captured_at).unwrap_or(0),
+        vector,
+        space,
     }
 }
 
@@ -548,6 +584,71 @@ mod tests {
             new_cluster_count(&out, &new_keys),
             0,
             "a known job resurfacing must not count as a new cluster"
+        );
+    }
+
+    // ── threshold boundary pins (catch a value drift OR a `>=`→`>` slip) ──────
+
+    #[test]
+    fn similarity_thresholds_are_pinned() {
+        assert_eq!(CLUSTER_COSINE_MIN, 0.92);
+        assert_eq!(CLUSTER_TITLE_TRIGRAM_JACCARD_MIN, 0.90);
+    }
+
+    #[test]
+    fn cosine_join_is_inclusive_at_the_threshold() {
+        // `b` is constructed so `cosine([1,0], b)` == CLUSTER_COSINE_MIN EXACTLY
+        // (sqrt(1-min²) makes |b| = 1, verified bit-identical in f64). The
+        // production join uses `>=`, so this at-threshold pair must be `similar`;
+        // a future `>` slip would fail this test.
+        let min = CLUSTER_COSINE_MIN;
+        let va = vec![1.0, 0.0];
+        let vb = vec![min, (1.0 - min * min).sqrt()];
+        assert_eq!(
+            cosine(&va, &vb),
+            min,
+            "b must sit exactly on the cosine threshold"
+        );
+        let mut a = input("k1", "engineer", "co", "");
+        let mut b = input("k2", "engineer", "co", "");
+        a.vector = Some(va);
+        a.space = Some("space".into());
+        b.vector = Some(vb);
+        b.space = Some("space".into());
+        let items = vec![a, b];
+        let prepared = [
+            Prepared { idx: 0, norm_title: "engineer".into(), block: None },
+            Prepared { idx: 1, norm_title: "engineer".into(), block: None },
+        ];
+        assert!(
+            similar(&items, &prepared, 0, 1),
+            "cosine exactly at the threshold must join (inclusive `>=`)"
+        );
+    }
+
+    #[test]
+    fn trigram_join_is_inclusive_at_the_threshold() {
+        // A pair whose trigram-Jaccard is EXACTLY the threshold: 55 DISTINCT
+        // chars → 57 distinct trigrams; replacing the last char shares 54, each
+        // side 3 unique → union 60, 54/60 == 0.90 in f64 (verified). Both items
+        // lack vectors, forcing the trigram path; the production `>=` must join.
+        let base: String = ('a'..='z').chain('A'..='Z').chain('0'..='9').take(55).collect();
+        let mut other_chars: Vec<char> = base.chars().collect();
+        *other_chars.last_mut().unwrap() = '!';
+        let other: String = other_chars.into_iter().collect();
+        assert_eq!(
+            trigram_jaccard(&base, &other),
+            CLUSTER_TITLE_TRIGRAM_JACCARD_MIN,
+            "the pair must sit exactly on the trigram threshold"
+        );
+        let items = vec![input("k1", "x", "co", ""), input("k2", "y", "co", "")];
+        let prepared = [
+            Prepared { idx: 0, norm_title: base, block: None },
+            Prepared { idx: 1, norm_title: other, block: None },
+        ];
+        assert!(
+            similar(&items, &prepared, 0, 1),
+            "trigram exactly at the threshold must join (inclusive `>=`)"
         );
     }
 

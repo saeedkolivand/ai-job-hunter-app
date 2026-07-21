@@ -3338,29 +3338,6 @@ const ADZUNA_ACCEPTANCE_JSON: &str = r#"{
   ]
 }"#;
 
-/// Map a real parser's [`JobPosting`] to a clustering `ClusterInput`, mirroring
-/// `commands::scrape::recluster_postings_cache` and
-/// `autopilot::found_job_cluster_inputs` EXACTLY: `key` = `canonical_job_key`,
-/// `source` trimmed→`Option`, `has_description` from a non-empty description,
-/// `seen_at` from `capturedAt`, and no cached vectors at ingest.
-fn posting_to_cluster_input(p: &JobPosting) -> crate::scraping::cluster::ClusterInput {
-    let source = {
-        let s = p.source.trim();
-        (!s.is_empty()).then(|| s.to_string())
-    };
-    crate::scraping::cluster::ClusterInput {
-        key: crate::scraping::boards::common::canonical_job_key(&p.url, &p.title, &p.company),
-        title: p.title.clone(),
-        company: p.company.clone(),
-        url: p.url.clone(),
-        source,
-        has_description: p.description.as_deref().is_some_and(|d| !d.trim().is_empty()),
-        seen_at: p.captured_at.max(0) as u64,
-        vector: None,
-        space: None,
-    }
-}
-
 #[test]
 fn cross_board_same_job_from_gtj_feed_and_adzuna_json_forms_one_cluster() {
     let now = 1_700_000_000_000_i64;
@@ -3411,12 +3388,14 @@ fn cross_board_same_job_from_gtj_feed_and_adzuna_json_forms_one_cluster() {
         "distinct board urls must yield distinct canonical keys (fuzzy join, not exact dedup)"
     );
 
-    // Map exactly as the ingest sites do. The aggregator copy is placed FIRST so
-    // a passing canonical assertion proves the ADR-029 §e preference order ran,
-    // not mere input order.
+    // Map through the SAME production seam the manual-scrape ingest uses
+    // (`cluster::posting_cluster_input`) so a drift in that mapping is caught
+    // here too — no hand-rolled local copy. The aggregator copy is placed FIRST
+    // so a passing canonical assertion proves the ADR-029 §e preference order
+    // ran, not mere input order.
     let inputs = vec![
-        posting_to_cluster_input(&adz),
-        posting_to_cluster_input(&gtj),
+        crate::scraping::cluster::posting_cluster_input(&adz, None, None),
+        crate::scraping::cluster::posting_cluster_input(&gtj, None, None),
     ];
     let out = crate::scraping::cluster::assign_clusters(
         inputs,

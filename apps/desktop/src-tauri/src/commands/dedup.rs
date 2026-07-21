@@ -139,6 +139,32 @@ mod tests {
     }
 
     #[test]
+    fn clamp_byte_cap_cuts_on_a_utf8_char_boundary() {
+        // A multi-byte (UTF-8) key well over the cap must be truncated on a char
+        // boundary — never mid-codepoint (`String::truncate` would PANIC if the
+        // char-boundary walk-back in `clamp_bytes` regressed). Mirrors the
+        // salary-field clamp regression net (job_preferences/test.rs).
+        let euros = "€".repeat(150); // 150 × 3 bytes = 450 bytes, over the 200 cap
+        // member path
+        let (member, _) = clamp_split_request(&euros, &["distinct".to_string()])
+            .expect("a distinct other key keeps this a valid request");
+        assert!(member.len() <= MAX_DEDUP_KEY_BYTES, "member byte-clamped");
+        assert!(
+            member.is_char_boundary(member.len()),
+            "member clamp must cut on a char boundary (valid UTF-8)"
+        );
+        // other_keys path
+        let (_, clamped) =
+            clamp_split_request("member", &[euros]).expect("valid request");
+        assert_eq!(clamped.len(), 1);
+        assert!(clamped[0].len() <= MAX_DEDUP_KEY_BYTES, "other key byte-clamped");
+        assert!(
+            clamped[0].is_char_boundary(clamped[0].len()),
+            "other-key clamp must cut on a char boundary (valid UTF-8)"
+        );
+    }
+
+    #[test]
     fn clamp_rejects_empty_member_or_no_usable_others() {
         // Empty/whitespace member → nothing to record.
         assert!(clamp_split_request("   ", &["k".to_string()]).is_none());

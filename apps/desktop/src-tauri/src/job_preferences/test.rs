@@ -341,6 +341,26 @@ fn test_extra_agency_companies_clamps_and_drops_blanks() {
 }
 
 #[test]
+fn test_extra_agency_companies_list_length_is_capped() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // A list well over the length cap → truncated to MAX_EXTRA_AGENCY_COMPANIES,
+    // bounding the single JSON column against a looping/XSS'd renderer.
+    let many: Vec<String> = (0..MAX_EXTRA_AGENCY_COMPANIES + 25)
+        .map(|i| format!("agency{i}"))
+        .collect();
+    store.set_extra_agency_companies(Some(many)).unwrap();
+
+    let stored = store.get().extra_agency_companies.unwrap();
+    assert_eq!(
+        stored.len(),
+        MAX_EXTRA_AGENCY_COMPANIES,
+        "the extra-agency list must be capped at the server limit"
+    );
+}
+
+#[test]
 fn test_extra_agency_companies_empty_list_stores_as_none() {
     let temp_dir = TempDir::new().unwrap();
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();

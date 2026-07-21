@@ -202,15 +202,6 @@ pub fn is_agency_with(company: &str, normalized_extras: &HashSet<String>) -> boo
     norm.split_whitespace().any(|w| AGENCY_TOKENS.contains(&w))
 }
 
-/// Whether `company` is a recruiting/staffing agency, normalizing `extra` on the
-/// fly. A convenience wrapper over [`is_agency_with`] for one-off checks; a hot
-/// loop over many postings should normalize once via [`normalize_agency_extras`]
-/// and call [`is_agency_with`] instead. Extras let a user flag their region's
-/// agencies without a code change (ADR-029 §i).
-pub fn is_agency(company: &str, extra: &[String]) -> bool {
-    is_agency_with(company, &normalize_agency_extras(extra))
-}
-
 // ── Title ───────────────────────────────────────────────────────────────────
 
 /// Gender tags that may appear inside a `(m/w/d)`-family parenthetical or as a
@@ -421,18 +412,23 @@ mod tests {
 
     #[test]
     fn agency_matches_builtin_names_tokens_and_extras() {
+        // Exercise the production seam directly: normalize the extras once, then
+        // check each company against the pre-normalized set.
+        let check = |company: &str, extra: &[String]| {
+            is_agency_with(company, &normalize_agency_extras(extra))
+        };
         // Built-in company names.
-        assert!(is_agency("Hays", &[]));
-        assert!(is_agency("Michael Page", &[]));
-        assert!(is_agency("Randstad", &[]));
+        assert!(check("Hays", &[]));
+        assert!(check("Michael Page", &[]));
+        assert!(check("Randstad", &[]));
         // Token signal (German + English), even with a legal suffix present.
-        assert!(is_agency("Mustermann Personalberatung GmbH", &[]));
-        assert!(is_agency("Acme Recruiting", &[]));
+        assert!(check("Mustermann Personalberatung GmbH", &[]));
+        assert!(check("Acme Recruiting", &[]));
         // User-supplied extra, normalized the same way.
-        assert!(is_agency("Talent Partners AG", &["talent partners".to_string()]));
+        assert!(check("Talent Partners AG", &["talent partners".to_string()]));
         // A real employer is not an agency.
-        assert!(!is_agency("Acme", &[]));
-        assert!(!is_agency("", &[]));
+        assert!(!check("Acme", &[]));
+        assert!(!check("", &[]));
     }
 
     // ── normalize_title: gender tags ─────────────────────────────────────────
