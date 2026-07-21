@@ -51,29 +51,43 @@ if (!findings) {
   console.log(
     `::warning::AI review produced no parseable verdict (${FILE} missing/invalid) — infra fail-open; ci-ok, pre-push and CodeRabbit still gate.`
   );
-  summary('## 🤖 AI Review OK\n\n⚠ No parseable findings file — fail-open (infra).');
+  summary('## 🤖 AI Review OK\n\n**Verdict: fail-open (infra)** — ⚠ no parseable findings file.');
   writeSummaryFile();
   process.exit(0);
 }
 
-// markdown-table cell escape: backslashes FIRST, then pipes; newlines flattened
-const cell = (t) =>
-  String(t || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/\|/g, '\\|')
-    .replace(/\r?\n/g, ' ');
+// Presentation only — no table to pipe-escape for, just flatten embedded newlines.
+const flatten = (t) => String(t || '').replace(/\r?\n/g, ' ');
+
+// Expanded severity sections, in display order (LOW gets its own collapsed block below).
+const SEVERITY_SECTIONS = [
+  ['CRITICAL', '🔴 Critical'],
+  ['HIGH', '🟠 High'],
+  ['MEDIUM', '🟡 Medium'],
+];
+
 const blocking = blockingFindings(findings, 0.8);
 const c = countBySeverity(findings);
 summary(
-  `## 🤖 AI Review ${blocking.length ? 'FAILED' : 'OK'}\n\n${findings.length} finding(s) — critical ${c.critical} · high ${c.high} · medium ${c.medium} · low ${c.low}\n`
+  `## 🤖 AI Review ${blocking.length ? 'FAILED' : 'OK'}\n\n**Verdict: ${blocking.length ? `${blocking.length} blocking finding(s)` : 'no blocking findings'}** (blocking = HIGH/CRITICAL at confidence ≥ 0.8) — ${findings.length} finding(s): critical ${c.critical} · high ${c.high} · medium ${c.medium} · low ${c.low}.`
 );
-if (findings.length) {
-  summary('| severity | file:line | finding | fix |');
-  summary('|---|---|---|---|');
-  for (const f of findings)
+
+for (const [severity, heading] of SEVERITY_SECTIONS) {
+  const group = findings.filter((f) => f.severity === severity);
+  if (!group.length) continue;
+  summary(`\n### ${heading}\n`);
+  for (const f of group)
     summary(
-      `| ${f.severity}${blocking.includes(f) ? ' 🚫' : ''} | ${f.file}:${f.line} | ${cell(f.summary)} | ${cell(f.fix)} |`
+      `**\`${f.file}:${f.line}\`**${blocking.includes(f) ? ' 🚫' : ''} — ${flatten(f.summary)}\n**Fix:** ${flatten(f.fix)}\n`
     );
+}
+
+const low = findings.filter((f) => f.severity === 'LOW');
+if (low.length) {
+  summary(`\n<details><summary>⚪ Low (${low.length}, advisory)</summary>\n`);
+  for (const f of low)
+    summary(`- **\`${f.file}:${f.line}\`** — ${flatten(f.summary)}. _Fix:_ ${flatten(f.fix)}`);
+  summary('\n</details>');
 }
 writeSummaryFile();
 if (blocking.length) {
