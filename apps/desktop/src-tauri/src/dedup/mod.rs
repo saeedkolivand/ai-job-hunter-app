@@ -103,19 +103,34 @@ impl DedupStore {
 
     /// Every stored verdict as an unordered pair set (`key_a < key_b`), for the
     /// clustering pass's tombstone veto. A read failure yields an empty set —
-    /// clustering degrades to "no splits", never blocks ingest.
+    /// clustering degrades to "no splits", never blocks ingest — but the failure
+    /// is LOGGED: an empty set silently re-merges previously-split clusters on
+    /// the next ingest, so a transient DB error must not vanish without a trace.
     pub fn all_pairs(&self) -> HashSet<(String, String)> {
         let conn = self.conn.lock();
-        conn.prepare("SELECT key_a, key_b FROM dedup_tombstones")
-            .ok()
-            .and_then(|mut stmt| {
-                stmt.query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })
-                .ok()
-                .map(|rows| rows.filter_map(Result::ok).collect())
-            })
-            .unwrap_or_default()
+        let mut stmt = match conn.prepare("SELECT key_a, key_b FROM dedup_tombstones") {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                log::warn!(
+                    "[dedup] failed to prepare tombstone read ({e}); degrading to no \
+                     splits — previously-split clusters may re-merge this ingest"
+                );
+                return HashSet::new();
+            }
+        };
+        let rows = match stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }) {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!(
+                    "[dedup] failed to query tombstones ({e}); degrading to no splits \
+                     — previously-split clusters may re-merge this ingest"
+                );
+                return HashSet::new();
+            }
+        };
+        rows.filter_map(Result::ok).collect()
     }
 
     /// Wipe every verdict (factory reset).
