@@ -103,6 +103,18 @@ fn is_localhost_url_recognizes_common_local_forms() {
         "[::1]",
         // The bare (unbracketed) spelling the match arm below also accepts.
         "::1",
+        // Fully-expanded and IPv4-mapped IPv6 loopback spellings, bracketed
+        // (with/without a port) and bare — all the same free local call.
+        "http://[0:0:0:0:0:0:0:1]:1234/v1",
+        "http://[0:0:0:0:0:0:0:1]",
+        "0:0:0:0:0:0:0:1",
+        "http://[::ffff:127.0.0.1]:8080/v1",
+        "http://[::ffff:127.0.0.1]",
+        "::ffff:127.0.0.1",
+        // A `userinfo@` prefix must not defeat the host match.
+        "http://user@[::1]/v1",
+        "http://user:pass@[::1]:1234/v1",
+        "http://user@127.0.0.1:1234/v1",
     ] {
         assert!(is_localhost_url(url), "{url} should be recognized as local");
     }

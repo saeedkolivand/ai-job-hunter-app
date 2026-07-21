@@ -328,7 +328,13 @@ fn is_free_call(provider: &str, base_url: Option<&str>) -> bool {
 /// way. Both are loopbacks the caller means to treat as free.
 fn is_localhost_url(url: &str) -> bool {
     let without_scheme = url.rsplit_once("://").map_or(url, |(_, rest)| rest);
-    let host_and_port = without_scheme.split(['/', '?']).next().unwrap_or("");
+    let authority = without_scheme.split(['/', '?']).next().unwrap_or("");
+    // Strip an optional `userinfo@` prefix (`user@[::1]`, `user:pass@[::1]`) — a
+    // host can't contain `@`, so the segment after the last `@` is the host. Left
+    // in place, the userinfo defeated the bracket match below.
+    let host_and_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, rest)| rest);
     let host = if let Some(close) = host_and_port.find(']') {
         // Bracketed IPv6: the host is everything up to and including `]`.
         &host_and_port[..=close]
@@ -340,9 +346,21 @@ fn is_localhost_url(url: &str) -> bool {
             .split_once(':')
             .map_or(host_and_port, |(h, _)| h)
     };
+    // Literal spellings only — this is a cost/display gate, never routing or
+    // security, so an IP-parsing crate would be overkill. Both the `::1`
+    // shorthand and its fully-expanded (`0:0:0:0:0:0:0:1`) and IPv4-mapped
+    // (`::ffff:127.0.0.1`) forms count, bracketed or bare.
     matches!(
         host,
-        "localhost" | "127.0.0.1" | "0.0.0.0" | "::1" | "[::1]"
+        "localhost"
+            | "127.0.0.1"
+            | "0.0.0.0"
+            | "::1"
+            | "[::1]"
+            | "0:0:0:0:0:0:0:1"
+            | "[0:0:0:0:0:0:0:1]"
+            | "::ffff:127.0.0.1"
+            | "[::ffff:127.0.0.1]"
     )
 }
 
