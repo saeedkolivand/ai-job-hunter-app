@@ -1903,7 +1903,8 @@
       "themuse": "The Muse",
       "wwr": "WWR",
       "ycombinator": "YC Jobs",
-      "aggregator": "Aggregator"
+      "aggregator": "Aggregator",
+      "url": "Web import"
     },
     "aggregatorKeyHint": "Add your free Adzuna key in Settings to enable aggregated search.",
     "disconnect": "Disconnect",

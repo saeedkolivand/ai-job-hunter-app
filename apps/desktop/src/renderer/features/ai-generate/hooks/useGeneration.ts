@@ -52,7 +52,15 @@ export function useGeneration(
    */
   marketOverride = '',
   /** User-selected emphasis directives (#15), merged into meta at generate-time. */
-  emphasis: EmphasisId[] = []
+  emphasis: EmphasisId[] = [],
+  /**
+   * URL-import provenance (ADR-031): the source url + board when the job ad came
+   * from a URL import. Persisted onto the save request so the generation joins
+   * applied-detection + cluster provenance. Absent (undefined) for pasted or
+   * uploaded text — we never invent a url for text the user typed.
+   */
+  jobUrl?: string,
+  board?: string
 ) {
   const handleAnalyze = async () => {
     setError(null);
@@ -113,6 +121,10 @@ export function useGeneration(
         coverLetterText,
         jobAd,
         companyBrief,
+        // ADR-031: carry URL-import provenance ONLY when it exists — absent for
+        // pasted/uploaded text (never fabricate a url/board).
+        ...(jobUrl ? { jobUrl } : {}),
+        ...(board ? { board } : {}),
       });
 
     const onTok =

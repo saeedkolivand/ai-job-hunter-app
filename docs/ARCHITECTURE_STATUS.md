@@ -99,25 +99,26 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ## AI Generation (`apps/desktop/src/renderer/features/ai-generate/`)
 
-| Feature                    | Status | Notes                                                                                                                                                                                 |
-| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cover letter generation    | ✅     | Streaming                                                                                                                                                                             |
-| Resume generation          | ✅     | Streaming                                                                                                                                                                             |
-| Email generation           | ✅     |                                                                                                                                                                                       |
-| Summary generation         | ✅     |                                                                                                                                                                                       |
-| Bold keyword extraction    | ✅     | Post-processes output                                                                                                                                                                 |
-| DOCX export                | ✅     | `export/docx/` + `model_docx.rs` (docx-rs): real two-column table + native ATS; A4 + font fallback                                                                                    |
-| PDF export                 | ✅     | Typst engine (`export/typst_engine/`); Carlito + Inter + Source Serif 4 + Manrope vendored via `include_bytes!`; sets PDF Title/author/lang metadata; CJK deferred (tofu + UI notice) |
-| ATS-safe linearization     | ✅     | Two-column → single for ATS                                                                                                                                                           |
-| Universal thinking display | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                                                                                        |
-| Local model limits         | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only                                                                     |
-| Company research           | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced                                                               |
-| Application questions      | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                                                                                          |
-| Salary expectation helper  | ✅     | Paste-ready number from user expectation + market research (PRs #548, #549); grounds currency in job's country (ADR-0015)                                                             |
-| Locale-aware prompts       | ✅     | 11 languages                                                                                                                                                                          |
-| Humanized generation tone  | ✅     | Natural-voice LEXICAL/PROSE tiers + Output Tone wiring to escape adversarial AI-detection (PR #563)                                                                                   |
-| Template preview           | ✅     | OptionTile with live preview                                                                                                                                                          |
-| 12-template gallery        | ✅     | Multi-tier resume templates with Document accent + 3 letter layouts (PRs #590-#594)                                                                                                   |
+| Feature                         | Status | Notes                                                                                                                                                                                 |
+| ------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cover letter generation         | ✅     | Streaming                                                                                                                                                                             |
+| Resume generation               | ✅     | Streaming                                                                                                                                                                             |
+| Email generation                | ✅     |                                                                                                                                                                                       |
+| Summary generation              | ✅     |                                                                                                                                                                                       |
+| Bold keyword extraction         | ✅     | Post-processes output                                                                                                                                                                 |
+| DOCX export                     | ✅     | `export/docx/` + `model_docx.rs` (docx-rs): real two-column table + native ATS; A4 + font fallback                                                                                    |
+| PDF export                      | ✅     | Typst engine (`export/typst_engine/`); Carlito + Inter + Source Serif 4 + Manrope vendored via `include_bytes!`; sets PDF Title/author/lang metadata; CJK deferred (tofu + UI notice) |
+| ATS-safe linearization          | ✅     | Two-column → single for ATS                                                                                                                                                           |
+| Universal thinking display      | ✅     | All providers normalized via `think-split.ts`; `ThinkingBubble` UI (`ai-generate/components/`)                                                                                        |
+| Local model limits              | ✅     | `ai_inspect_model` IPC; `modelLimits` in preferences-store; `num_ctx`/`num_predict` on [Ollama][ollama] path only                                                                     |
+| Company research                | ✅     | `ai_research_company` IPC; opt-in; active provider's own web search (native tool / Ollama Web Search); untrusted-fenced                                                               |
+| Application questions           | ✅     | `APPLICATION_QUESTIONS` registry + grounded answer prompt; answers persist on per-job record                                                                                          |
+| Salary expectation helper       | ✅     | Paste-ready number from user expectation + market research (PRs #548, #549); grounds currency in job's country (ADR-0015)                                                             |
+| Locale-aware prompts            | ✅     | 11 languages                                                                                                                                                                          |
+| Humanized generation tone       | ✅     | Natural-voice LEXICAL/PROSE tiers + Output Tone wiring to escape adversarial AI-detection (PR #563)                                                                                   |
+| Template preview                | ✅     | OptionTile with live preview                                                                                                                                                          |
+| 12-template gallery             | ✅     | Multi-tier resume templates with Document accent + 3 letter layouts (PRs #590-#594)                                                                                                   |
+| URL import provenance + harvest | ✅     | jobUrl/board persisted on url-imported generations; resolves feed slug harvesting (ADR-031)                                                                                           |
 
 ---
 
@@ -291,24 +292,23 @@ Experience-gate machinery (ADR 0014) retired. Static site (now Next.js) remains 
 
 ## Planned / Backlog
 
-| Feature                                 | Priority | Notes                                                                                                                                                             |
-| --------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Cluster split undo (merge-back)         | Low      | Pair-tombstone delete + recompute; deferred from ADR-029                                                                                                          |
-| CJK font support in PDF/preview         | Medium   | Bundle Noto Sans CJK into Typst engine (`export/typst_engine/`) so zh/ja/ko render in PDF and live preview (generation + DOCX already work; currently shows tofu) |
-| URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
-| LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |
-| Advanced skill taxonomy                 | Medium   | Structured ontology for matching                                                                                                                                  |
-| Derive AUTH_BOARDS from catalog         | Low      | AUTH_BOARDS (renderer constants/auth/auth.ts) is hardcoded LinkedIn-only; derive from SCRAPERS board catalog (REQ-16630)                                          |
-| Wire `scrape:item` listener             | Low      | `scrape:item` emitted from autopilot_helpers but no renderer subscriber exists; `scrape:progress` wired in #564, complete the pair                                |
-| Persist Jobs ScrapeForm state           | Low      | ScrapeForm state (JobsPage-local useState) resets on navigation; unlike filter/sort persist, should survive route changes                                         |
-| Drop dead `totalApplied` counter        | Low      | Legacy persisted counter in packages/shared/src/types and Rust Autopilot struct (serde ignores it; remove both)                                                   |
-| Autopilot battery-awareness             | Low      | Pause heavy scraping on battery power; add battery/AC check + allow-on-battery preference (default: pause)                                                        |
-| i18n OllamaResourcesPanel               | Low      | RAM/VRAM labels and lag warnings hardcoded English in ai-settings/AISettingsTab/OllamaResourcesPanel.tsx                                                          |
-| Ai_provider module relocation           | Low      | Relocate ai_provider (~1,450 LOC) from commands/ai_provider/ to top-level src/ai_provider/ L1 module with thin wrappers in commands/ai.rs (architecture)          |
-| Burn down Tauri-coupling allowlist      | Low      | 8-entry R2 allowlist in tests/architecture.rs (tauri emit/Manager in non-shell modules); inject emitter/resource port per ADR-0025                                |
-| E2E data backup round-trip test         | Low      | REQ-13006: add verify/E2E test for export→re-import full bundle round-trip (only per-store unit tests exist; needs versioned bundle test)                         |
-| Cloud sync                              | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
-| Team/shared job tracking                | Low      | Would require cloud sync                                                                                                                                          |
+| Feature                            | Priority | Notes                                                                                                                                                             |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cluster split undo (merge-back)    | Low      | Pair-tombstone delete + recompute; deferred from ADR-029                                                                                                          |
+| CJK font support in PDF/preview    | Medium   | Bundle Noto Sans CJK into Typst engine (`export/typst_engine/`) so zh/ja/ko render in PDF and live preview (generation + DOCX already work; currently shows tofu) |
+| LinkedIn official API integration  | Medium   | Currently Playwright-only                                                                                                                                         |
+| Advanced skill taxonomy            | Medium   | Structured ontology for matching                                                                                                                                  |
+| Derive AUTH_BOARDS from catalog    | Low      | AUTH_BOARDS (renderer constants/auth/auth.ts) is hardcoded LinkedIn-only; derive from SCRAPERS board catalog (REQ-16630)                                          |
+| Wire `scrape:item` listener        | Low      | `scrape:item` emitted from autopilot_helpers but no renderer subscriber exists; `scrape:progress` wired in #564, complete the pair                                |
+| Persist Jobs ScrapeForm state      | Low      | ScrapeForm state (JobsPage-local useState) resets on navigation; unlike filter/sort persist, should survive route changes                                         |
+| Drop dead `totalApplied` counter   | Low      | Legacy persisted counter in packages/shared/src/types and Rust Autopilot struct (serde ignores it; remove both)                                                   |
+| Autopilot battery-awareness        | Low      | Pause heavy scraping on battery power; add battery/AC check + allow-on-battery preference (default: pause)                                                        |
+| i18n OllamaResourcesPanel          | Low      | RAM/VRAM labels and lag warnings hardcoded English in ai-settings/AISettingsTab/OllamaResourcesPanel.tsx                                                          |
+| Ai_provider module relocation      | Low      | Relocate ai_provider (~1,450 LOC) from commands/ai_provider/ to top-level src/ai_provider/ L1 module with thin wrappers in commands/ai.rs (architecture)          |
+| Burn down Tauri-coupling allowlist | Low      | 8-entry R2 allowlist in tests/architecture.rs (tauri emit/Manager in non-shell modules); inject emitter/resource port per ADR-0025                                |
+| E2E data backup round-trip test    | Low      | REQ-13006: add verify/E2E test for export→re-import full bundle round-trip (only per-store unit tests exist; needs versioned bundle test)                         |
+| Cloud sync                         | Low      | Deferred — needs a remote backend; the backup bundle + `DataStore` trait are the substrate                                                                        |
+| Team/shared job tracking           | Low      | Would require cloud sync                                                                                                                                          |
 
 [tauri]: https://tauri.app
 [pnpm]: https://pnpm.io

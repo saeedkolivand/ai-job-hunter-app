@@ -43,7 +43,7 @@ type Target = 'resume' | 'cover' | 'both';
  * `useGeneration` is a plain factory (no React hooks inside), but it is named
  * like a hook, so it is invoked via `renderHook` to satisfy rules-of-hooks.
  */
-function setup(target: Target) {
+function setup(target: Target, provenance?: { jobUrl?: string; board?: string }) {
   const m = {
     setStage: vi.fn(),
     setMeta: vi.fn(),
@@ -100,7 +100,12 @@ function setup(target: Target) {
       (k: string) => k,
       m.setStageLabel,
       m.setIsGenerating,
-      m.notify
+      m.notify,
+      false, // researchCompany
+      '', // marketOverride
+      [], // emphasis
+      provenance?.jobUrl,
+      provenance?.board
     )
   );
   return { handleGenerate: result.current.handleGenerate, m };
@@ -193,5 +198,36 @@ describe('useGeneration — single target', () => {
     expect(stageCalls(m)).toEqual(['generating', 'done']);
     expect(generateCoverLetter).not.toHaveBeenCalled();
     expect(m.notify.success).toHaveBeenCalledWith({ message: 'aiGenerate.toast.resumeReady' });
+  });
+});
+
+describe('useGeneration — URL-import provenance (ADR-031)', () => {
+  it('persists jobUrl + board when the ad came from a URL import', async () => {
+    const { handleGenerate, m } = setup('resume', {
+      jobUrl: 'https://boards.greenhouse.io/acme/jobs/1',
+      board: 'greenhouse',
+    });
+    await handleGenerate();
+
+    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobUrl: 'https://boards.greenhouse.io/acme/jobs/1',
+        board: 'greenhouse',
+      })
+    );
+  });
+
+  it('omits jobUrl + board for pasted text (never invents provenance)', async () => {
+    const { handleGenerate, m } = setup('resume');
+    await handleGenerate();
+
+    expect(m.saveAiGeneration.mutate).toHaveBeenCalled();
+    // No call carries provenance keys when the ad wasn't URL-imported.
+    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ jobUrl: expect.anything() })
+    );
+    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ board: expect.anything() })
+    );
   });
 });

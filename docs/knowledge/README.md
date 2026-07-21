@@ -74,6 +74,7 @@ Read the minimum; **stop at ~90% confidence**.
 | [ADR-028](decision-records/adr-028-additive-aggregator-merge-paid-provider-cost-controls.md) | Additive aggregator merge and paid-provider cost controls                                 |
 | [ADR-029](decision-records/adr-029-cross-board-job-clustering-recompute-at-ingest.md)        | Cross-board job clustering: recompute-at-ingest, pair tombstones only                     |
 | [ADR-030](decision-records/adr-030-passive-ats-slug-harvesting-and-watched-companies.md)     | Passive ATS slug harvesting and watched companies                                         |
+| [ADR-031](decision-records/adr-031-url-import-persists-provenance-and-harvests.md)           | URL import persists provenance and feeds slug harvesting                                  |
 
 **Newer numbered ADRs** live in `docs/adr/0001-0013` — see per-domain docs for cross-references (e.g., extension-domain.md for ADR-0009/0010, automation-domain.md for ADR-0013).
 
