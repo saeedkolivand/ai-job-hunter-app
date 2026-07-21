@@ -567,6 +567,11 @@ export default tseslint.config(
     rules: {
       'no-undef': 'off',
       'no-empty': 'off',
+      // Both variants off: a plain .js file is outside tseslint's ts/tsx-scoped
+      // config, so the ACTIVE rule here is core no-unused-vars (unscoped, from
+      // eslint.configs.recommended), not @typescript-eslint/no-unused-vars —
+      // kept off too as a harmless belt-and-suspenders in case that changes.
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
     },
   }
