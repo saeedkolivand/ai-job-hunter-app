@@ -21,6 +21,13 @@ vi.mock('@ajh/translations', () => ({
 
 const runMutateAsync = vi.fn();
 
+/** Captures the step handler the hook registers, so a test can deliver step
+ *  events the way the Tauri event bridge does. */
+const stepEvents = vi.hoisted(() => ({
+  handler: null as
+    ((event: { jobId: string; autopilotId: string; step: string; detail: string }) => void) | null,
+}));
+
 vi.mock('@/services', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return {
@@ -29,7 +36,9 @@ vi.mock('@/services', async (importActual) => {
     usePauseAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
     useResumeAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
     useRemoveAutopilot: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
-    useAutopilotStepEvents: () => {},
+    useAutopilotStepEvents: (cb: (event: never) => void) => {
+      stepEvents.handler = cb as unknown as typeof stepEvents.handler;
+    },
   };
 });
 
@@ -156,5 +165,27 @@ describe('useAutopilotRun — handleRun error-payload handling', () => {
 
     expect(result.current.runStates.ap7).toBe('done');
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe('useAutopilotRun — batched step events', () => {
+  it('keeps both step-log entries when two events for one autopilot land in the same batch', () => {
+    const { result } = renderHookWithClient(() => useAutopilotRun());
+    const deliver = stepEvents.handler;
+    expect(deliver, 'the hook must register a step handler').toBeTruthy();
+
+    // Two events for the SAME autopilotId inside ONE act() — i.e. one React
+    // batch, with no re-render in between. Patches computed from the render
+    // snapshot both start from the same base, so the second overwrites the
+    // first and the scrape_start line is lost.
+    act(() => {
+      deliver?.({ jobId: 'j1', autopilotId: 'ap-batch', step: 'scrape_start', detail: 'boards' });
+      deliver?.({ jobId: 'j1', autopilotId: 'ap-batch', step: 'scrape_done', detail: '12 jobs' });
+    });
+
+    const steps = (result.current.stepLogs['ap-batch'] ?? []).map((entry) => entry.step);
+    expect(steps).toEqual(['scrape_start', 'scrape_done']);
+    // The machine also advanced through BOTH transitions, not just the last.
+    expect(result.current.runStates['ap-batch']).toBe('ranking');
   });
 });
