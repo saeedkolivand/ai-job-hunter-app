@@ -7,7 +7,7 @@
     "apps/landing/public/**",
     "apps/landing/src/content/**"
   ],
-  "ignoreBinaries": ["rtk", "claude"],
+  "ignoreBinaries": ["claude"],
   "ignoreDependencies": [
     "semantic-release",
     "@semantic-release/exec",

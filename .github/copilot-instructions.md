@@ -27,11 +27,10 @@ ESLint `--max-warnings 0` in CI — every warning fails the build.
 
 ---
 
-## Shell — prefix EVERY command with `rtk`
+## Shell
 
-`rtk pnpm build` · `rtk git status` · `rtk rg foo` · `rtk fd src` · `rtk bat file.ts` — 60-90% token savings.
-Meta: `rtk gain` (stats) · `rtk discover` (missed opportunities). Always Bash, never PowerShell.
-Use `rtk rg` not `grep` · `rtk fd` not `find` · `rtk bat` not `cat` · `rtk pnpm` not `npm`/`yarn`.
+Always Bash, never PowerShell.
+Use `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`.
 Never `find -exec`, never PowerShell syntax. Git Bash paths: `/c/Users/...`
 
 ---
@@ -53,7 +52,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 **6. Imports** — `@ajh/ui` directly, not `@/components/ui/*`. Prefer `React.ComponentProps<typeof X>`.
 
-**7. Import order** (auto-fixed by `rtk pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
+**7. Import order** (auto-fixed by `pnpm lint:fix`) — `node:*` → external → `@ajh/*` → `@/*` → relative.
 
 **8. Type imports** — always `import type` for pure types. ESLint auto-fixes.
 
@@ -67,9 +66,9 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 
 ## Branch + PR workflow
 
-Never push to `main`. `rtk git checkout -b feat/name` → commit → `rtk git push -u origin <branch>` → `rtk gh pr create` → CI passes → user approves.
-Before starting: `rtk git fetch origin && rtk git branch -r | grep $(git branch --show-current)`.
-If branch gone: `rtk git checkout main && rtk git pull origin main`.
+Never push to `main`. `git checkout -b feat/name` → commit → `git push -u origin <branch>` → `gh pr create` → CI passes → user approves.
+Before starting: `git fetch origin && git branch -r | grep $(git branch --show-current)`.
+If branch gone: `git checkout main && git pull origin main`.
 
 ---
 
