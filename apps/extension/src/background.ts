@@ -1015,7 +1015,11 @@ async function handleRequest(req: PopupRequest): Promise<PopupResponse> {
 // ── wiring ────────────────────────────────────────────────────────────────────
 
 browser.runtime.onMessage.addListener(
-  (message: unknown, sender: Browser.runtime.MessageSender): Promise<PopupResponse> | undefined => {
+  (
+    message: unknown,
+    sender: Browser.runtime.MessageSender,
+    sendResponse: (response?: PopupResponse) => void
+  ): true | undefined => {
     // The injected submit-watcher posts a fire-and-forget `submitDetected` — it
     // is NOT a popup request and expects no response, so handle it out-of-band.
     if (isSubmitDetected(message)) {
@@ -1028,7 +1032,25 @@ browser.runtime.onMessage.addListener(
       }
       return undefined;
     }
-    return handleRequest(message as PopupRequest);
+    // Reply via `sendResponse` + a LITERAL `true`, never by returning a Promise.
+    // `@wxt-dev/browser` is a thin `browser ?? chrome` pass-through (its README
+    // says so explicitly — it is not `webextension-polyfill`), and Chromium's
+    // `chrome.runtime.onMessage` has never supported a Promise return value: it
+    // keeps the channel open only for a literal `true`. A returned Promise is
+    // truthy but not `true`, so the channel closed immediately, `sendMessage`
+    // resolved `undefined`, and every request/response action (import, fill,
+    // save, mark-applied, check-fit, status) came back as "No response from the
+    // extension background." — while the one-way background→popup pushes kept
+    // working, so the pill could still read "Connected".
+    //
+    // `sendResponse` + `return true` is the shape BOTH engines accept, so this
+    // is correct on Firefox regardless.
+    void handleRequest(message as PopupRequest).then(sendResponse, (err: unknown) => {
+      // A rejection here would otherwise leave the port open until it times out,
+      // which the popup surfaces as the same "No response" message.
+      sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    });
+    return true;
   }
 );
 
