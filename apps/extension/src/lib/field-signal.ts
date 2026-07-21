@@ -344,10 +344,22 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   // DE/ES/IT/PT/SV/DA/NO/PL; `telefoon` (NL) and `telephone` (FR/EN) differ.
   // `handy`/`mobil` stay `\b`-anchored (bare `handy` ⊂ "handyman", bare `mobil`
   // ⊂ "automobil…"), so the concatenated DE compounds are listed explicitly.
+  //
+  // `phone`/`mobile` are anchored on their LEADING side for the same reason the
+  // authors anchored `handy`/`mobil`: bare `phone` ⊂ "smartphone"/"iphone"/
+  // "microphone" and bare `mobile` ⊂ "automobile", so a "Smartphone model" field
+  // received the user's phone number — a mis-fill, which this module's contract
+  // forbids ("under-fills rather than mis-fills"). The known compound prefixes
+  // (`cell`/`home`/`work`/`day`/`tele`phone) are spelled out so they keep
+  // matching. The TRAILING side is deliberately left open — `_` is a word
+  // character, so a `\b`/trailing anchor would stop matching the very common
+  // `phone_number`, `phoneNumber` and `mobile_number` field names. `(?:^|[^a-z])`
+  // is used rather than a lookbehind because these patterns are only ever
+  // `.test()`ed, so consuming the boundary character is harmless.
   {
     key: 'phone',
     pattern:
-      /phone|mobile|telephone|telefon|telefoon|handynummer|handytelefon|mobilnummer|mobiltelefon|\bhandy\b|\bmobil\b|puhelin/,
+      /(?:^|[^a-z])(?:cell|home|work|day|tele)?phone|(?:^|[^a-z])mobile|telefon|telefoon|handynummer|handytelefon|mobilnummer|mobiltelefon|\bhandy\b|\bmobil\b|puhelin/,
   },
   // Combined full-name phrases — MUST precede first/last (see table doc): both
   // the "completo"-style forms AND the "first AND last" conjunction forms
@@ -371,12 +383,16 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
     pattern:
       /last name|surname|family name|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
   },
-  // `city`/`town` stay plain substrings (unchanged English behavior); the added
-  // EU city/place terms use `\b` where they are short/collision-prone.
+  // `city`/`town` are anchored on their LEADING side (see the `phone` note
+  // above): bare `city` ⊂ "ethnicity", so an EEO "Ethnicity" field was resolving
+  // to `location` and receiving the user's city. `hometown` is spelled out so it
+  // keeps matching. The trailing side stays open so `city_1` / `cityName` still
+  // match. The other EU city/place terms use `\b` where they are
+  // short/collision-prone, unchanged.
   {
     key: 'location',
     pattern:
-      /city|town|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
+      /(?:^|[^a-z])(?:home)?(?:city|town)|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
   },
 ];
 
