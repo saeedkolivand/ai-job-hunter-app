@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Job Hunter — social card</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='none' stroke='black' stroke-width='2'/><path d='M11 14 q2 2 4 0 M17 14 q2 2 4 0 M11 22 q5 -4 10 0' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/><ellipse cx='10' cy='18' rx='1.6' ry='2.8' fill='deepskyblue'/></svg>">
+<style>
+  @font-face{font-family:'Anton';font-style:normal;font-weight:400;src:url('../../apps/landing/public/fonts/anton-400-latin.woff2') format('woff2')}
+  @font-face{font-family:'Patrick Hand';font-style:normal;font-weight:400;src:url('../../apps/landing/public/fonts/patrick-hand-400-latin.woff2') format('woff2')}
+  @font-face{font-family:'Space Mono';font-style:normal;font-weight:400;src:url('../../apps/landing/public/fonts/space-mono-400-latin.woff2') format('woff2')}
+  @font-face{font-family:'Space Mono';font-style:normal;font-weight:700;src:url('../../apps/landing/public/fonts/space-mono-700-latin.woff2') format('woff2')}
+  :root{
+    --impact:'Anton', Impact, sans-serif;
+    --hand:'Patrick Hand', cursive;
+    --mono:'Space Mono', monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    width:100vw; height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    /* copied from index.html .beat3 .photo */
+    background:
+      repeating-conic-gradient(from 0deg at 50% 42%, rgba(255,255,255,.16) 0deg 5deg, rgba(255,210,0,0) 5deg 11deg),
+      radial-gradient(72% 72% at 50% 42%, #eec46c 0%, #d98e26 36%, #ad5b0d 70%, #6f2f05 100%);
+    filter:saturate(1.35) contrast(1.1) brightness(.9);
+    overflow:hidden;
+  }
+  .card{
+    /* generous safe padding so GitHub's preview crop never clips content */
+    padding:90px;
+    width:100%; height:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center;
+  }
+  .label{
+    font-family:var(--mono); text-transform:uppercase; letter-spacing:.32em;
+    font-size:22px; font-weight:700; color:#1c1812; margin:0 0 8px;
+  }
+  .dood{
+    width:150px; margin:0 auto 4px;
+    filter:drop-shadow(0 0 10px #ff00d4) drop-shadow(0 0 4px #00fff0);
+  }
+  /* copied from index.html .fried + .fried.huge */
+  .fried{
+    font-family:var(--impact); text-transform:uppercase; line-height:.92; letter-spacing:.01em;
+    color:#fff; -webkit-text-stroke:3px #000;
+    text-shadow:4px 4px 0 #ff00d4, -3px -3px 0 #00fff0, 0 0 26px #fff300;
+    margin:0;
+  }
+  .fried.huge{font-size:clamp(70px,9vw,92px)}
+  .subline{
+    font-family:var(--impact); text-transform:uppercase; letter-spacing:.02em;
+    color:#111; font-size:30px; margin:26px auto 0; max-width:30ch; line-height:1.25;
+    text-shadow:0 0 4px #fff, 1px 1px 0 #fff, -1px -1px 0 #fff;
+  }
+  /* a11y: focus-visible ring — dual-ring (white + black outer halo) for 3:1 contrast
+     against the full amber gradient range (WCAG 2.2 SC 1.4.11).
+     #ff00d4 magenta failed on mid-tone amber center (~1.3:1). */
+  a:focus-visible,
+  button:focus-visible,
+  [tabindex]:focus-visible,
+  [role="button"]:focus-visible{
+    outline:3px solid #fff;
+    outline-offset:2px;
+    box-shadow:0 0 0 5px #000;
+    border-radius:2px;
+  }
+  /* a11y: reduced motion — no keyframes on this page; suppress filter transitions defensively */
+  @media(prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+    /* preserve focus-visible outline (not a transition/animation) */
+    a:focus-visible,
+    button:focus-visible,
+    [tabindex]:focus-visible,
+    [role="button"]:focus-visible{
+      outline:3px solid #fff;
+      outline-offset:2px;
+      box-shadow:0 0 0 5px #000;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <p class="label">AI Job Hunter</p>
+    <svg class="dood" viewBox="0 0 260 240" aria-hidden="true">
+      <circle cx="130" cy="104" r="48" fill="none" stroke="#111" stroke-width="4"/>
+      <circle cx="110" cy="96" r="19" fill="#fff" stroke="#000" stroke-width="3"/>
+      <circle cx="150" cy="96" r="19" fill="#fff" stroke="#000" stroke-width="3"/>
+      <path d="M96 92 l8 6 m6 -10 l5 9 M152 92 l8 6 m-2 -10 l-3 10" stroke="#e24b4a" stroke-width="1.6"/>
+      <circle cx="112" cy="98" r="4.5" fill="#000"/><circle cx="148" cy="98" r="4.5" fill="#000"/>
+      <path d="M86 60 l-8 -12 M120 50 l-2 -14 M160 58 l10 -12" fill="none" stroke="#111" stroke-width="3"/>
+      <path d="M96 132 q34 40 68 0 q-34 14 -68 0 Z" fill="#fff" stroke="#000" stroke-width="3.4"/>
+      <path d="M108 138 v14 M124 141 v15 M140 141 v15 M152 138 v13" stroke="#000" stroke-width="2.4"/>
+      <path d="M130 152 L130 196" fill="none" stroke="#111" stroke-width="4"/>
+      <path d="M130 164 L96 150 M130 164 L164 150" fill="none" stroke="#111" stroke-width="4"/>
+      <path d="M130 196 L108 232 M130 196 L152 232" fill="none" stroke="#111" stroke-width="4"/>
+    </svg>
+    <h1 class="fried huge">IT DOES<br>EVERYTHING ELSE.</h1>
+    <p class="subline">covers 24 boards · writes your cover letters · does everything but hit submit</p>
+  </div>
+<script>
+/* console easter egg — devtools hello, deep-fried */
+(function(){try{
+  var head='color:#000;background:#fff300;font:700 20px/1.4 monospace;padding:8px 14px;text-shadow:1px 1px 0 #ff00d4';
+  var mag='color:#ff00d4;font:13px/1.7 monospace';
+  var cyan='color:#00fff0;font:13px/1.7 monospace';
+  console.log('%c IT DOES EVERYTHING ELSE. ', head);
+  console.log('%cyes, even this OG card. especially this OG card. 👉 https://github.com/saeedkolivand/ai-job-hunter-app', mag);
+  console.log('%c(deep-fried by hand. send help, or a job.)', cyan);
+}catch(e){}})();
+</script>
+</body>
+</html>
