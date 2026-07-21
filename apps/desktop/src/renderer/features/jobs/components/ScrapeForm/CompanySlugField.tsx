@@ -119,6 +119,11 @@ export function CompanySlugField({
   };
 
   const toggleStar = (option: CompanyOption) => {
+    // Ignore a rapid second click while a write is in flight — otherwise two
+    // clicks both fire off the SAME stale `option.starred` snapshot (the
+    // suggestion list hasn't re-rendered with the new state yet), doubling the
+    // write and flip-flopping the star.
+    if (setStarred.isPending) return;
     setStarred.mutate(
       { atsKind: option.atsKind, slug: option.slug, starred: !option.starred },
       { onError: () => notify.error({ message: t('jobs.discovery.starFailed') }) }

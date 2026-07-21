@@ -168,6 +168,44 @@ describe('CompanySlugField', () => {
     );
   });
 
+  it('guards a rapid double-click so an in-flight star write fires only once', async () => {
+    const searchCompanies = vi.fn().mockResolvedValue([
+      {
+        atsKind: 'greenhouse',
+        slug: 'stripe',
+        displayName: 'Stripe',
+        seenCount: 5,
+        starred: false,
+        source: 'scrape',
+      },
+    ]);
+    // A deferred promise keeps the mutation in flight across both clicks, so the
+    // second click hits the `isPending` guard instead of firing a stale write.
+    let resolveStar: () => void = () => {};
+    const setStarred = vi.fn(
+      () =>
+        new Promise<{ success: true }>((resolve) => {
+          resolveStar = () => resolve({ success: true });
+        })
+    );
+    renderField(
+      {},
+      { 'discovery.searchCompanies': searchCompanies, 'discovery.setStarred': setStarred }
+    );
+
+    await userEvent.click(screen.getByTestId(TEST_IDS.jobs.companyTypeahead));
+    const star = await screen.findByTestId(TEST_IDS.jobs.companyStarToggle);
+    await userEvent.click(star);
+    await userEvent.click(star); // in-flight → guarded, no second write
+
+    expect(setStarred).toHaveBeenCalledTimes(1);
+
+    // Settle the mutation so it doesn't leak into the next test.
+    await act(async () => {
+      resolveStar();
+    });
+  });
+
   it('shows an error toast when starring fails (the mutation throws)', async () => {
     const searchCompanies = vi.fn().mockResolvedValue([
       {
