@@ -210,9 +210,10 @@ _Avoid_: "component" (pages are full routes), "generated page" (they are hand-au
 
 **Passthrough artifact**:
 Third-party or CI-owned files served verbatim from `public/` at build time (copied unchanged
-by Next.js static export). Examples: benchmarks (index.html + data.js), ci-dashboard.html,
-agent-system.html, storybook (when present). Never built or transformed by Next, only deployed
-as-is. Distinct from **Authored pages** (hand-written routes).
+by Next.js static export). Examples: benchmarks (index.html + data.js), architecture-map
+(SVG dashboard, deferred port to route), storybook (when present). Never built or transformed by Next, only deployed
+as-is. Distinct from **Authored pages** (hand-written routes) and **Docs routes** (e.g., `/agent-system`,
+`/mission-control` — typed-data Next.js routes under the docs tier).
 _Avoid_: "static assets" (too generic), "public files" (ambiguous — could mean any `public/`
 content)
 
@@ -226,10 +227,11 @@ _Avoid_: "landing pages" / "public pages" / "web pages" (imprecise); using one t
 for the other
 
 **Mission control**:
-The planned `/mission-control` full-repo dashboard (PR2, ADR-0018): a single-page app that
-surfaces repo-wide metrics (releases, recent changes, health), accessible to signed-in users
-(PAT auth). Replaces the scattered `ci-dashboard.html` and `agent-system.html` with a unified
-docs-tier interface. Supports safe-tier write actions (e.g. manual workflow dispatch).
+The full-repo dashboard at `/mission-control` (PR2, ADR-0018): a single-page app that
+surfaces repo-wide metrics (releases, recent changes, DORA-lite health), accessible to signed-in users
+via GitHub PAT. Shipped in PR2; replaces the scattered `ci-dashboard.html` passthrough with a unified
+docs-tier interface. Supports safe-tier write actions (e.g. manual workflow dispatch). The old
+ci-dashboard URL is a clean rename with no redirect stub (owner decision).
 _Avoid_: "admin panel" (it is a dashboard, not an admin control), "metrics page" (it does more
 than metrics)
 

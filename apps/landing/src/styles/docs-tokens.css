@@ -1,0 +1,52 @@
+/* ── Docs-tier design tokens (ADR-0018 "docs tier") ──────────────────────────
+   A small CSS-variable palette for the docs tier: /mission-control + the ported
+   diagram pages. Modeled on the existing /agent-system look — a near-black,
+   hand-drawn / neon-outline surface with a handwriting display + mono body.
+
+   Marketing pages (home/creature/how-it-works/privacy) are NOT restyled by
+   these; they keep their own inlined :root vars. All names are `--doc-*` so the
+   two tiers never collide even though both inline their CSS per route.
+
+   Prefixed to make the intent explicit and keep marketing skins untouched. */
+:root {
+  /* surfaces — soft-dark, never pure #000 */
+  --doc-ink: #0d0f14; /* page base — near-black "ink" ground */
+  --doc-surface: #161922; /* card surface */
+  --doc-surface-2: #1d2230; /* raised / inset surface */
+  --doc-border: rgba(255, 255, 255, 0.1);
+  --doc-border-strong: rgba(255, 255, 255, 0.18);
+
+  /* text — light "paper" on the dark ground (both AA on --doc-ink) */
+  --doc-paper: #e6e9ef; /* primary text */
+  --doc-muted: #9aa3b2; /* secondary text */
+
+  /* accents */
+  --doc-accent: #e24b4a; /* red — primary accent */
+  --doc-accent-soft: rgba(226, 75, 74, 0.14);
+  --doc-accent-text: #f87171; /* lighter red for small text/badges — AA (5.7:1) on --doc-surface-2 */
+  --doc-green: #34d399; /* chalk-green — author / positive / pass */
+  --doc-green-soft: rgba(52, 211, 153, 0.14);
+  --doc-pink: #f472b6; /* critic / attention */
+  --doc-pink-soft: rgba(244, 114, 182, 0.14);
+  --doc-amber: #fbbf24; /* warn / neutral highlight */
+  --doc-amber-soft: rgba(251, 191, 36, 0.14);
+  --doc-chalk: #c7d1e3; /* hand-drawn ink stroke on dark */
+
+  /* desaturated series colors for hand-rolled sparklines on the dark palette */
+  --doc-series-1: #6ea8fe;
+  --doc-series-1-soft: rgba(110, 168, 254, 0.14);
+  --doc-series-2: #7ee2b8;
+  --doc-series-3: #e0a458;
+  --doc-series-4: #c58af0;
+
+  /* type — handwriting display + mono body */
+  --doc-font-display: 'Space Grotesk', system-ui, sans-serif;
+  --doc-font-hand: 'Caveat', cursive; /* handwriting display accents */
+  --doc-font-mono: 'Space Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* shape */
+  --doc-radius: 14px;
+  --doc-pill: 999px;
+  --doc-elev: 0 14px 38px -22px rgba(0, 0, 0, 0.8);
+  --doc-hair: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}

@@ -2,16 +2,13 @@ import type { Metadata, Viewport } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
 import { DownloadFreshness } from '@/components/DownloadFreshness';
-import { GoogleFonts } from '@/components/GoogleFonts';
+import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { RawHtml } from '@/components/RawHtml';
 import versionData from '@/data/version.json';
 import { readContent } from '@/lib/content';
 import { buildDownloadsHtml } from '@/lib/downloads';
 import type { VersionData } from '@/lib/version';
-
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Anton&family=Gloria+Hallelujah&family=Patrick+Hand&family=Space+Mono:wght@400;700&display=swap';
 
 export const metadata: Metadata = {
   title: 'AI Job Hunter — Download',
@@ -52,7 +49,7 @@ export default function DownloadPage() {
 
   return (
     <>
-      <GoogleFonts href={FONTS} />
+      <Fonts />
       <PageStyle css={readContent('download', 'styles.css')} />
       <RawHtml html={body} />
       <DownloadFreshness baked={data.version} />

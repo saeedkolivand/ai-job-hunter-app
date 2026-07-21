@@ -1,0 +1,1156 @@
+/* ── /agent-system page styles (ported from public/agent-system.html) ────────
+   The component styles are kept verbatim; the page's old :root palette, body,
+   links, .wrap, .top-back and footer are dropped — DocShell now provides the
+   ground, film grain, link styling, back-link and footer. This alias block maps
+   the page's local var names onto the shared --doc-* tokens so the rest of the
+   CSS is unchanged. Everything is scoped under .agent-fleet. */
+.agent-fleet {
+  --head: var(--doc-font-display);
+  --body: var(--doc-font-display);
+  --mono: var(--doc-font-mono);
+  --ink: var(--doc-font-hand);
+  --bg: var(--doc-ink);
+  --surface: var(--doc-surface);
+  --surface-2: var(--doc-surface-2);
+  --border: var(--doc-border);
+  --border-2: var(--doc-border-strong);
+  --text: var(--doc-paper);
+  --muted: var(--doc-muted);
+  --accent: var(--doc-accent);
+  --accent-soft: var(--doc-accent-soft);
+  --amber: var(--doc-amber);
+  --author: var(--doc-green);
+  --author-tint: var(--doc-green-soft);
+  --critic: var(--doc-pink);
+  --critic-tint: rgba(244, 114, 182, 0.12);
+  --chalk: var(--doc-chalk);
+  --r: var(--doc-radius);
+  --pill: var(--doc-pill);
+  --elev: var(--doc-elev);
+  --hair: var(--doc-hair);
+
+  font-family: var(--body);
+  line-height: 1.6;
+}
+.agent-fleet code {
+  font-family: var(--mono);
+  font-size: 0.82em;
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: 6px;
+  color: var(--text);
+}
+
+/* hand-drawn ink primitives — light chalk strokes on the dark base */
+.agent-fleet .ink {
+  fill: none;
+  stroke: var(--chalk);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.agent-fleet .ink-fill {
+  fill: var(--chalk);
+  stroke: none;
+}
+.agent-fleet .ink-g {
+  stroke: var(--author);
+}
+.agent-fleet .ink-p {
+  stroke: var(--critic);
+}
+.agent-fleet .ink-r {
+  stroke: var(--accent);
+}
+.agent-fleet .ink-a {
+  stroke: var(--amber);
+}
+.agent-fleet .glow {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+}
+
+/* click-to-copy command chip */
+.agent-fleet .copy-cmd {
+  cursor: pointer;
+  display: inline-block;
+  margin: 3px 0;
+  border-radius: 8px;
+  transition:
+    background 0.18s,
+    color 0.18s,
+    transform 0.18s;
+}
+.agent-fleet .copy-cmd:hover {
+  background: var(--surface-2);
+}
+.agent-fleet .copy-cmd:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.agent-fleet .copy-cmd.copied {
+  background: var(--author-tint);
+  color: var(--text);
+}
+.agent-fleet .copy-cmd.copied::after {
+  content: ' ✓';
+  font-weight: 700;
+  color: var(--author);
+}
+
+/* ink section headings */
+.agent-fleet .scrawl {
+  font-family: var(--ink);
+  font-weight: 700;
+  color: var(--accent);
+  font-size: clamp(20px, 4vw, 28px);
+  line-height: 1;
+  transform: rotate(-1.4deg);
+  display: inline-block;
+  margin: 0 0 2px;
+}
+.agent-fleet h1 {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: clamp(40px, 9vw, 76px);
+  line-height: 1;
+  margin: 0 0 8px;
+  letter-spacing: -0.025em;
+}
+.agent-fleet .lede {
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 18px 0 0;
+  max-width: 66ch;
+}
+.agent-fleet .lede b {
+  color: var(--text);
+  font-weight: 600;
+}
+.agent-fleet .tag {
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: clamp(22px, 4.4vw, 32px);
+  color: var(--text);
+  margin: 6px 0 0;
+  line-height: 1.25;
+  transform: rotate(-0.8deg);
+}
+.agent-fleet .tag em {
+  color: var(--critic);
+  font-style: normal;
+}
+.agent-fleet .count {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 16px 0 0;
+}
+.agent-fleet .count b {
+  color: var(--text);
+}
+.agent-fleet .count .num {
+  display: inline-block;
+  min-width: 2ch;
+  color: var(--author);
+  font-weight: 700;
+  font-size: 16px;
+}
+.agent-fleet h2.section {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: clamp(26px, 5vw, 42px);
+  letter-spacing: -0.02em;
+  margin: 0 0 4px;
+  line-height: 1.05;
+}
+.agent-fleet .section-sub {
+  font-size: clamp(15px, 2.6vw, 17px);
+  color: var(--muted);
+  margin: 0 0 22px;
+}
+.agent-fleet .divider {
+  height: 2px;
+  margin: 60px auto;
+  width: min(620px, 92%);
+  position: relative;
+  overflow: visible;
+}
+.agent-fleet .divider svg {
+  position: absolute;
+  left: 0;
+  top: -6px;
+  width: 100%;
+  height: 16px;
+  overflow: visible;
+}
+
+/* hero ink scene */
+.agent-fleet .hero-scene {
+  margin: 30px 0 6px;
+  max-width: 560px;
+}
+.agent-fleet .hero-scene svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.agent-fleet .scene-cap {
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: 20px;
+  fill: var(--muted);
+}
+.agent-fleet .scene-cap.a {
+  fill: var(--author);
+}
+.agent-fleet .scene-cap.c {
+  fill: var(--critic);
+}
+
+/* intake → delegation */
+.agent-fleet .intake {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 20px;
+  align-items: start;
+}
+.agent-fleet .issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-fleet .issue {
+  font-family: var(--body);
+  font-size: 15px;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--r);
+  box-shadow: var(--hair);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  transition:
+    transform 0.18s,
+    background 0.18s,
+    border-color 0.18s;
+}
+.agent-fleet .issue:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+  transform: translateY(-3px);
+}
+.agent-fleet .issue[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.agent-fleet .issue .gi {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+}
+.agent-fleet .route {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--elev), var(--hair);
+  padding: 20px 22px;
+  min-height: 230px;
+}
+.agent-fleet .route .placeholder {
+  color: var(--muted);
+  font-family: var(--ink);
+  font-size: 20px;
+}
+.agent-fleet .route h3 {
+  font-family: var(--head);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-size: 19px;
+  margin: 0 0 2px;
+  color: var(--text);
+}
+.agent-fleet .route .area {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+.agent-fleet .flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agent-fleet .flow li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+.agent-fleet .flow .lbl {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 78px;
+  flex: 0 0 78px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 1px;
+}
+.agent-fleet .flow .who {
+  font-size: 15px;
+}
+.agent-fleet .flow .who b {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 13px;
+  background: var(--surface-2);
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.agent-fleet .flow .who .crit {
+  background: var(--critic-tint);
+  border-color: rgba(244, 114, 182, 0.4);
+}
+.agent-fleet .flow .who .sec {
+  background: var(--author-tint);
+  border-color: rgba(52, 211, 153, 0.4);
+}
+.agent-fleet .flow .who .gate {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.agent-fleet .flow .why {
+  font-size: 14px;
+  color: var(--muted);
+  flex-basis: 100%;
+  margin-left: 88px;
+}
+.agent-fleet .flow li.area {
+  flex-wrap: nowrap;
+}
+.agent-fleet .flow li.area .why {
+  flex-basis: auto;
+  margin-left: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-fleet .route.swap h3,
+  .agent-fleet .route.swap .area,
+  .agent-fleet .route.swap .flow li {
+    animation: route-in 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  }
+  .agent-fleet .route.swap .area {
+    animation-delay: 0.05s;
+  }
+  .agent-fleet .route.swap .flow li {
+    animation-delay: 0.1s;
+  }
+  .agent-fleet .route.swap .flow li:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .agent-fleet .route.swap .flow li:nth-child(3) {
+    animation-delay: 0.2s;
+  }
+  .agent-fleet .route.swap .flow li:nth-child(4) {
+    animation-delay: 0.25s;
+  }
+  .agent-fleet .route.swap .flow li:nth-child(5) {
+    animation-delay: 0.3s;
+  }
+  @keyframes route-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* the assembly line */
+.agent-fleet .belt-section {
+  position: relative;
+  height: 340vh;
+}
+.agent-fleet .belt-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 0 8px;
+}
+.agent-fleet .belt-head {
+  text-align: center;
+  padding: 18px 22px 6px;
+}
+.agent-fleet .belt-head .scrawl {
+  color: var(--amber);
+}
+.agent-fleet .belt-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+.agent-fleet .belt-track {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 46px;
+  width: max-content;
+  padding: 0 50vw;
+  will-change: transform;
+}
+.agent-fleet .belt-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 64px;
+  height: 26px;
+  pointer-events: none;
+}
+.agent-fleet .belt-rail svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.agent-fleet .station {
+  position: relative;
+  width: 200px;
+  flex: 0 0 200px;
+  text-align: center;
+  padding-bottom: 90px;
+}
+.agent-fleet .station .machine {
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 12px;
+}
+.agent-fleet .station .machine svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.agent-fleet .station .sn {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.agent-fleet .station .st {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 15px;
+  margin: 2px 0 4px;
+  letter-spacing: -0.01em;
+}
+.agent-fleet .station .sd {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.agent-fleet .station .agent-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--chalk);
+  display: inline-block;
+  margin-top: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.agent-fleet .station.lit .machine {
+  filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.5));
+}
+.agent-fleet .station.lit .st {
+  color: var(--amber);
+}
+.agent-fleet .station .post {
+  position: absolute;
+  left: 50%;
+  bottom: 54px;
+  width: 2px;
+  height: 26px;
+  background: var(--border-2);
+  transform: translateX(-50%);
+}
+.agent-fleet .diff-token {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: 128px;
+  pointer-events: none;
+  transition: transform 0.25s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.agent-fleet .diff-card {
+  background: var(--surface);
+  border: 1.6px solid var(--border-2);
+  border-radius: 9px;
+  padding: 9px 11px;
+  box-shadow: 0 10px 26px -12px rgba(0, 0, 0, 0.9);
+  text-align: left;
+  position: relative;
+}
+.agent-fleet .diff-card .fn {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-fleet .diff-card .ln {
+  height: 4px;
+  border-radius: 2px;
+  margin: 3px 0;
+  background: var(--surface-2);
+}
+.agent-fleet .diff-card .ln.add {
+  background: rgba(52, 211, 153, 0.5);
+}
+.agent-fleet .diff-card .ln.del {
+  background: rgba(226, 75, 74, 0.45);
+}
+.agent-fleet .diff-stamp {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 13px;
+  background: var(--surface-2);
+  border: 1.6px solid var(--border-2);
+  color: var(--text);
+  transition:
+    transform 0.25s,
+    background 0.25s,
+    border-color 0.25s;
+}
+.agent-fleet .diff-token .label {
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--amber);
+  transform: rotate(-1deg);
+}
+.agent-fleet .belt-progress {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  padding: 6px 22px 2px;
+}
+.agent-fleet .belt-progress b {
+  color: var(--amber);
+}
+.agent-fleet .belt-hint {
+  text-align: center;
+  font-family: var(--ink);
+  font-size: 18px;
+  color: var(--muted);
+  padding: 0 22px 6px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-fleet .diff-token {
+    will-change: left;
+  }
+}
+
+/* vertical fallback for mobile + reduced-motion */
+.agent-fleet .belt-vert {
+  display: none;
+}
+.agent-fleet .belt-vert ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+.agent-fleet .belt-vert ol::before {
+  content: '';
+  position: absolute;
+  left: 35px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: repeating-linear-gradient(var(--border-2) 0 7px, transparent 7px 13px);
+}
+.agent-fleet .belt-vert li {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 0 0 22px;
+  position: relative;
+}
+.agent-fleet .belt-vert .vmachine {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  z-index: 1;
+}
+.agent-fleet .belt-vert .vmachine svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.agent-fleet .belt-vert .vbody {
+  flex: 1;
+  padding-top: 4px;
+}
+.agent-fleet .belt-vert .vn {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.agent-fleet .belt-vert .vt {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 16px;
+  margin: 1px 0 3px;
+}
+.agent-fleet .belt-vert .vd {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.agent-fleet .belt-vert .agent-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--chalk);
+  display: inline-block;
+  margin-top: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+/* fleet map = roster */
+.agent-fleet .map-wrap {
+  position: relative;
+}
+.agent-fleet .constellation {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 90px;
+  align-items: stretch;
+}
+.agent-fleet .col-head {
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: 22px;
+  transform: rotate(-1deg);
+}
+.agent-fleet .col-head.a {
+  color: var(--author);
+}
+.agent-fleet .col-head.c {
+  color: var(--critic);
+}
+.agent-fleet .map-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+.agent-fleet .map-links path {
+  fill: none;
+  stroke: var(--chalk);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  opacity: 0.32;
+  transition:
+    opacity 0.2s,
+    stroke 0.2s;
+}
+.agent-fleet .map-links path.risk {
+  stroke: var(--accent);
+  opacity: 0.3;
+  stroke-dasharray: 5 6;
+}
+.agent-fleet .map-links path.lit {
+  opacity: 1;
+  stroke-width: 2.6;
+  stroke: var(--text);
+}
+.agent-fleet .map-links path.risk.lit {
+  stroke: var(--accent);
+}
+.agent-fleet .pair-row {
+  display: contents;
+}
+.agent-fleet .node {
+  position: relative;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  transition:
+    transform 0.16s,
+    background 0.16s,
+    border-color 0.16s;
+  box-shadow: var(--hair);
+}
+.agent-fleet .node .ng {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+.agent-fleet .node.author {
+  border-color: rgba(52, 211, 153, 0.4);
+}
+.agent-fleet .node.author .ng {
+  color: var(--author);
+}
+.agent-fleet .node.critic {
+  border-color: rgba(244, 114, 182, 0.34);
+}
+.agent-fleet .node.critic .ng {
+  color: var(--critic);
+}
+.agent-fleet .node.cross {
+  border-color: var(--border-2);
+}
+.agent-fleet .node.cross .ng {
+  color: var(--amber);
+}
+.agent-fleet .node:hover,
+.agent-fleet .node.active {
+  transform: translateY(-2px);
+  background: var(--surface-2);
+  border-color: var(--text);
+}
+.agent-fleet .node[aria-expanded='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.agent-fleet .node-author {
+  justify-content: flex-end;
+  text-align: right;
+  flex-direction: row-reverse;
+}
+.agent-fleet .cross-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+.agent-fleet .cross-row .node {
+  flex: 0 1 auto;
+}
+.agent-fleet .cross-band {
+  grid-column: 1 / -1;
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--muted);
+  text-align: center;
+  margin: 18px 0 2px;
+  transform: rotate(-0.6deg);
+}
+.agent-fleet .detail {
+  margin-top: 22px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  box-shadow: var(--elev), var(--hair);
+  padding: 20px 22px;
+  min-height: 140px;
+}
+.agent-fleet .detail .placeholder {
+  color: var(--muted);
+  font-family: var(--ink);
+  font-size: 20px;
+}
+.agent-fleet .detail .d-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+}
+.agent-fleet .detail .role-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  border-radius: var(--pill);
+  border: 1px solid var(--border);
+}
+.agent-fleet .role-author {
+  background: rgba(52, 211, 153, 0.18);
+  border-color: rgba(52, 211, 153, 0.5);
+  color: var(--author);
+}
+.agent-fleet .role-critic {
+  background: rgba(244, 114, 182, 0.08);
+  border-color: rgba(244, 114, 182, 0.4);
+  color: var(--critic);
+}
+.agent-fleet .role-cross {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.agent-fleet .detail .d-name {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 16px;
+}
+.agent-fleet .detail .d-role {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+.agent-fleet .detail .d-meta {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 4px;
+}
+.agent-fleet .detail .d-meta b {
+  color: var(--text);
+  font-weight: 400;
+}
+.agent-fleet .detail .copy-cmd {
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  display: inline-block;
+  max-width: 100%;
+}
+.agent-fleet .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin: 18px 0 0;
+}
+.agent-fleet .legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.agent-fleet .sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  display: inline-block;
+}
+.agent-fleet .sw.author {
+  background: var(--author-tint);
+  border-color: var(--author);
+}
+.agent-fleet .sw.critic {
+  background: var(--critic-tint);
+  border-color: var(--critic);
+}
+.agent-fleet .sw.cross {
+  background: var(--surface-2);
+  border-color: var(--amber);
+}
+.agent-fleet .sw.line {
+  width: 18px;
+  height: 0;
+  border: none;
+  border-top: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0;
+}
+.agent-fleet .sw.line.risk {
+  border-top-color: var(--accent);
+  border-top-style: dashed;
+}
+
+/* work together */
+.agent-fleet .big-prompt {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--elev), var(--hair);
+  padding: 24px 26px;
+}
+.agent-fleet .big-prompt .copy-cmd {
+  display: block;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px 17px;
+  margin: 0 0 18px;
+}
+.agent-fleet .big-prompt .copy-cmd:hover {
+  background: var(--bg);
+  border-color: var(--accent);
+}
+.agent-fleet .big-prompt .copy-cmd.copied {
+  background: var(--author-tint);
+  color: var(--text);
+}
+.agent-fleet .teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.agent-fleet .team {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 15px 16px;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+}
+.agent-fleet .team:hover {
+  transform: translateY(-3px);
+  border-color: var(--border-2);
+}
+.agent-fleet .team h4 {
+  font-family: var(--ink);
+  font-weight: 700;
+  font-size: 19px;
+  margin: 0 0 8px;
+  color: var(--text);
+  transform: rotate(-0.6deg);
+}
+.agent-fleet .team ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+.agent-fleet .team code {
+  font-size: 0.8em;
+}
+
+/* with vs without */
+.agent-fleet .versus {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.agent-fleet .vcol {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--elev), var(--hair);
+  padding: 18px 20px;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+}
+.agent-fleet .vcol:hover {
+  transform: translateY(-3px);
+}
+.agent-fleet .vcol.without {
+  background: var(--surface-2);
+}
+.agent-fleet .vcol.with {
+  background: var(--surface);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+.agent-fleet .vcol h3 {
+  font-family: var(--head);
+  font-weight: 700;
+  font-size: 20px;
+  margin: 0 0 14px;
+}
+.agent-fleet .vcol h3 .ink-badge {
+  font-family: var(--ink);
+  font-size: 18px;
+  color: var(--author);
+  margin-left: 6px;
+}
+.agent-fleet .dim {
+  margin: 0 0 14px;
+}
+.agent-fleet .dim .k {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  display: block;
+  margin: 0 0 2px;
+}
+.agent-fleet .dim .v {
+  font-size: 15px;
+  line-height: 1.45;
+}
+.agent-fleet .dim .v b {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+.agent-fleet .illustrative {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  margin: 16px 0 0;
+  line-height: 1.7;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.agent-fleet .illustrative b {
+  color: var(--text);
+}
+
+/* scroll-driven draw-on + reveal */
+@media (prefers-reduced-motion: no-preference) {
+  .agent-fleet .draw path:not(.no-draw) {
+    stroke-dasharray: 1;
+    stroke-dashoffset: clamp(0, calc(1 - (var(--p, 1) - 0.1 - var(--d, 0)) / 0.5), 1);
+  }
+  .agent-fleet .draw path:nth-of-type(2) {
+    --d: 0.05;
+  }
+  .agent-fleet .draw path:nth-of-type(3) {
+    --d: 0.1;
+  }
+  .agent-fleet .draw path:nth-of-type(4) {
+    --d: 0.15;
+  }
+  .agent-fleet .draw path:nth-of-type(5) {
+    --d: 0.2;
+  }
+  .agent-fleet .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s ease;
+  }
+  .agent-fleet .reveal.in {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .agent-fleet .intake {
+    grid-template-columns: 1fr;
+  }
+  .agent-fleet .versus {
+    grid-template-columns: 1fr;
+  }
+  .agent-fleet .constellation {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .agent-fleet .map-links {
+    display: none;
+  }
+  .agent-fleet .col-head.a {
+    text-align: left;
+  }
+  .agent-fleet .node-author {
+    justify-content: flex-start;
+    text-align: left;
+    flex-direction: row;
+  }
+  .agent-fleet .belt-section {
+    height: auto;
+  }
+  .agent-fleet .belt-sticky {
+    position: static;
+    height: auto;
+    display: block;
+  }
+  .agent-fleet .belt-viewport,
+  .agent-fleet .belt-progress,
+  .agent-fleet .belt-hint {
+    display: none;
+  }
+  .agent-fleet .belt-vert {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-fleet .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .agent-fleet .belt-section {
+    height: auto;
+  }
+  .agent-fleet .belt-sticky {
+    position: static;
+    height: auto;
+    display: block;
+  }
+  .agent-fleet .belt-viewport,
+  .agent-fleet .belt-progress,
+  .agent-fleet .belt-hint {
+    display: none;
+  }
+  .agent-fleet .belt-vert {
+    display: block;
+  }
+  .agent-fleet .draw path {
+    stroke-dashoffset: 0 !important;
+  }
+}
