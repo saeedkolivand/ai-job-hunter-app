@@ -273,6 +273,68 @@ fn test_keywords_json_round_trip() {
     );
 }
 
+/// `import` used to call `clear_all()` — which wipes documents, vectors,
+/// posting_vectors and match_scores — BEFORE deserializing the rows, so a
+/// malformed row partway through destroyed the user's entire existing library
+/// and still returned Err, leaving nothing to restore from.
+#[test]
+fn import_of_a_malformed_bundle_leaves_the_existing_library_intact() {
+    use crate::data_store::DataStore;
+
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let existing = DocumentRecord {
+        id: "doc-keep".to_string(),
+        title: "Keep".to_string(),
+        name: "keep.pdf".to_string(),
+        locale: None,
+        text: "precious".to_string(),
+        pages: None,
+        created_at: now_ms(),
+        indexed: false,
+        is_default: true,
+        keywords_json: None,
+    };
+    store.insert(&existing).unwrap();
+    store
+        .upsert_vector("doc-keep", &ev(vec![0.4, 0.5, 0.6]))
+        .unwrap();
+
+    // Row 0 is well-formed; row 1 is not (`created_at` is a string, and `title`
+    // is missing) — the failure must be detected before anything is deleted.
+    let bundle = serde_json::json!([
+        {
+            "id": "doc-new",
+            "title": "New",
+            "name": "new.pdf",
+            "text": "fresh",
+            "createdAt": now_ms(),
+            "indexed": false,
+            "isDefault": false,
+        },
+        { "id": "doc-bad", "createdAt": "not-a-number" },
+    ]);
+
+    assert!(
+        store.import(&bundle).is_err(),
+        "a malformed row must fail the import"
+    );
+
+    let docs = store.list();
+    assert_eq!(
+        docs.len(),
+        1,
+        "the prior library must survive a failed import"
+    );
+    assert_eq!(docs[0].id, "doc-keep");
+    assert_eq!(
+        store.get_vector("doc-keep").map(|e| e.values),
+        Some(vec![0.4, 0.5, 0.6]),
+        "embeddings must survive a failed import"
+    );
+}
+
 #[test]
 fn test_data_store_export_import_round_trip() {
     use crate::data_store::DataStore;

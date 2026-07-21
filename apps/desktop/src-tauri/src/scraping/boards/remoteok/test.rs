@@ -1,5 +1,19 @@
 use super::*;
 
+/// RemoteOK sends `id` as a number for some rows and a string for others.
+/// `Value::to_string()` JSON-serialises, so the string variant used to come back
+/// WITH quotes and corrupt the posting id / external_id (the stable cache key).
+#[test]
+fn normalize_id_reads_the_value_per_variant() {
+    assert_eq!(normalize_id(Some(serde_json::json!(1234567))), "1234567");
+    assert_eq!(normalize_id(Some(serde_json::json!("1234567"))), "1234567");
+    assert_eq!(normalize_id(None), "");
+    // Anything that is neither a string nor an integer stays empty, so the
+    // caller's `id_str.is_empty()` guard drops the row as before.
+    assert_eq!(normalize_id(Some(serde_json::json!(null))), "");
+    assert_eq!(normalize_id(Some(serde_json::json!({}))), "");
+}
+
 #[test]
 fn test_remoteok_scraper_id() {
     let scraper = RemoteOkScraper;
