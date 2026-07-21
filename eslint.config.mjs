@@ -541,5 +541,17 @@ export default tseslint.config(
     rules: {
       'react/no-danger': 'off',
     },
+  },
+
+  // ── Architecture-map devtools easter egg — intentional styled console banner ──
+  // The interactive map prints a one-time %c-styled "you're reading the wiring"
+  // banner to the devtools console on mount (a faithful port of the original
+  // static page). console.log is the whole point, so no-console is scoped off for
+  // just this file — no other landing source may log.
+  {
+    files: ['apps/landing/src/components/architecture-map/ArchitectureMap.tsx'],
+    rules: {
+      'no-console': 'off',
+    },
   }
 );
