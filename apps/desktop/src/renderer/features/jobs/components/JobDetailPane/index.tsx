@@ -32,6 +32,7 @@ import {
 
 import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
+import { hostOf } from '@/components/job/host-of';
 import { PrepApplicationPanel } from '@/features/jobs/components/PrepApplicationPanel';
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
@@ -351,7 +352,7 @@ function DetailContent({
                 const boardId = m.board?.trim();
                 const label = boardId
                   ? t(`jobs.boards.${boardId}`, { defaultValue: boardId })
-                  : m.url;
+                  : hostOf(m.url);
                 return (
                   <li key={m.key} className="flex items-center justify-between gap-2">
                     <Button

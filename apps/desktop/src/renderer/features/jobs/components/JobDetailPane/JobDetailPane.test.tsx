@@ -16,7 +16,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -1143,6 +1143,26 @@ describe('JobDetailPane — cross-board cluster split', () => {
 
     expect(mockNotify.error).toHaveBeenCalledWith({ message: 'jobs.cluster.splitFailed' });
     expect(mockNotify.success).not.toHaveBeenCalled();
+  });
+
+  it('renders the host fallback label (not the raw url) for a member with no board', async () => {
+    const posting = makePosting('nb', {
+      description: 'x',
+      clusterId: 'k1',
+      clusterCanonical: true,
+      clusterMembers: [
+        { key: 'k1', board: 'linkedin', url: 'https://example.com/job/nb' },
+        { key: 'kx', url: 'https://www.jobs.example.com/xyz' },
+      ],
+    });
+    await act(async () => {
+      render(<JobDetailPane posting={posting} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    const section = screen.getByTestId(TEST_IDS.jobs.clusterMembers);
+    // No board → hostOf(url): hostname minus a leading www., matching the chips.
+    expect(within(section).getByText('jobs.example.com')).toBeInTheDocument();
+    expect(within(section).queryByText('https://www.jobs.example.com/xyz')).not.toBeInTheDocument();
   });
 
   it('does NOT render the All sources section for an unclustered posting', async () => {

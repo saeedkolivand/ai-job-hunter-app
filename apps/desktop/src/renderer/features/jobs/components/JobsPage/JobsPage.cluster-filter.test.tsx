@@ -198,6 +198,19 @@ describe('JobsPage — cross-board cluster filter', () => {
     expect(ids.has('collapsed')).toBe(false);
   });
 
+  it('count denominator is the distinct (cluster-collapsed) base, not raw postings', () => {
+    // 4 postings, 1 non-canonical collapsed → distinct base = 3; all 3 visible.
+    render(<JobsPage />);
+    expect(screen.getByText('3 / 3')).toBeInTheDocument();
+  });
+
+  it('hideAgency reduces only the numerator against the distinct denominator', () => {
+    jobsState.hideAgency = true;
+    render(<JobsPage />);
+    // Agency hidden → 2 visible; denominator stays the distinct base of 3.
+    expect(screen.getByText('2 / 3')).toBeInTheDocument();
+  });
+
   it('the hide-agency toggle writes hideAgency via setJobs', async () => {
     const user = userEvent.setup();
     render(<JobsPage />);

@@ -2,6 +2,7 @@ import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, SourceBadge } from '@ajh/ui';
 
+import { hostOf } from '@/components/job/host-of';
 import { useOpenExternal } from '@/services';
 
 /** A single cross-board cluster member (opaque key + its board + url). Mirrors
@@ -30,15 +31,6 @@ interface ClusterSourceChipsProps {
    */
   interactive?: boolean;
   className?: string;
-}
-
-/** Best-effort host label when a member carries no board id. */
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
 }
 
 /**

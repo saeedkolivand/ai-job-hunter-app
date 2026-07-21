@@ -35,7 +35,11 @@ export function TechStackPreferences() {
       !techStack.some((item: { name: string }) => item.name === tech.name)
   );
 
+  // Guard the pre-load window: `jobPrefs` is undefined until the query resolves,
+  // and a full-row `{...undefined, techStack}` write would NULL every other
+  // column (location, countryCode, salaryExpectation, extraAgencyCompanies).
   const handleAddTech = (name: string, category: string) => {
+    if (!jobPrefs) return;
     setJobPreferences.mutate({
       ...jobPrefs,
       techStack: [...techStack, { name, category }],
@@ -45,6 +49,7 @@ export function TechStackPreferences() {
   };
 
   const addTech = (raw: string) => {
+    if (!jobPrefs) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
     const isDup = techStack.some(
@@ -64,6 +69,7 @@ export function TechStackPreferences() {
   };
 
   const handleRemoveTech = (name: string) => {
+    if (!jobPrefs) return;
     setJobPreferences.mutate({
       ...jobPrefs,
       techStack: techStack.filter((item: { name: string }) => item.name !== name),

@@ -304,6 +304,15 @@ export function JobsPage() {
     return result;
   }, [allPostings, filter, sortBy, hideAgency]);
 
+  // Denominator for the "N / M" count = distinct jobs (clusters): rows that
+  // aren't a collapsed non-canonical duplicate. The numerator (`filtered`)
+  // reduces this by the text filter + hideAgency, so both count against
+  // distinct jobs, not raw postings.
+  const distinctCount = useMemo(
+    () => allPostings.filter((p) => p.clusterCanonical !== false).length,
+    [allPostings]
+  );
+
   const resumeId = useDefaultResumeId();
 
   return (
@@ -377,7 +386,7 @@ export function JobsPage() {
                     </Tag.CheckableTag>
                   </span>
                   <span className="text-[11px] text-foreground/40">
-                    {filtered.length} / {allPostings.length}
+                    {filtered.length} / {distinctCount}
                   </span>
                   {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
                   <SegmentedControl
