@@ -9,6 +9,7 @@ pub mod ai;
 pub mod applications;
 pub mod autopilot;
 pub mod date_filters;
+pub mod dedup;
 pub mod documents;
 pub mod event_payloads;
 #[cfg(test)]

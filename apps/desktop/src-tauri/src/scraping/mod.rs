@@ -1,5 +1,6 @@
 pub mod board_login;
 pub mod boards;
+pub mod cluster;
 pub mod engine;
 pub mod http;
 pub mod linkedin;

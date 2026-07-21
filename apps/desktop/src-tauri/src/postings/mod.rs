@@ -131,6 +131,32 @@ impl PostingsCache {
     pub fn clear_embeddings(&mut self) {
         self.embeddings.clear();
     }
+
+    /// Merge cross-board cluster annotations onto cached items IN PLACE, keyed by
+    /// posting `id` (ADR-029). Each `by_id` value is a JSON object of annotation
+    /// fields (`clusterId`, `clusterCanonical`, `clusterMembers` `[{key,board,url}]`,
+    /// `isAgency`) computed by `recluster_postings_cache`; every field is copied
+    /// onto the matching item. An id not in the cache is skipped (a cluster was
+    /// recomputed for a row a newer search already evicted) — no row is ever
+    /// created, matching the cache's ephemeral, upsert-by-id lifecycle.
+    pub fn apply_cluster_annotations(&mut self, by_id: &HashMap<String, Value>) {
+        if by_id.is_empty() {
+            return;
+        }
+        for item in &mut self.items {
+            let Some(id) = item.get("id").and_then(Value::as_str).map(str::to_string) else {
+                continue;
+            };
+            let Some(annotation) = by_id.get(&id).and_then(Value::as_object) else {
+                continue;
+            };
+            if let Some(obj) = item.as_object_mut() {
+                for (field, value) in annotation {
+                    obj.insert(field.clone(), value.clone());
+                }
+            }
+        }
+    }
 }
 
 /// Join the recorded interactions onto each cached posting so the jobs list can

@@ -11,6 +11,7 @@ pub mod cli_agents;
 pub mod contact_profile;
 pub mod credentials;
 pub mod data;
+pub mod dedup;
 pub mod dialog;
 pub mod documents;
 pub mod email_watch;

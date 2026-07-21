@@ -14,10 +14,20 @@ export interface JobPreferencesContract {
    * the spread source is stale or hasn't loaded yet.
    */
   setSalaryExpectation(salaryExpectation: string | undefined): Promise<void>;
+
+  /**
+   * Single-column extra-agency-companies write (ADR-029 §i) — like
+   * {@link setSalaryExpectation}, this NEVER touches the other columns, so an
+   * agency-list edit can't NULL the user's saved location/techStack/countryCode/
+   * salaryExpectation via a stale spread (PR #695 pattern). `undefined`/empty
+   * clears the list.
+   */
+  setExtraAgencyCompanies(companies: string[] | undefined): Promise<void>;
 }
 
 export const JOB_PREFERENCES_CHANNELS = {
   get: 'jobPreferences:get',
   set: 'jobPreferences:set',
   setSalaryExpectation: 'jobPreferences:setSalaryExpectation',
+  setExtraAgencyCompanies: 'jobPreferences:setExtraAgencyCompanies',
 } as const;

@@ -33,6 +33,7 @@ fn test_clear_resets_to_empty() {
                 category: "language".to_string(),
             }]),
             salary_expectation: Some("€75,000".to_string()),
+            extra_agency_companies: Some(vec!["Hays".to_string()]),
         })
         .unwrap();
     assert!(store.get().location.is_some());
@@ -42,6 +43,7 @@ fn test_clear_resets_to_empty() {
     assert_eq!(prefs.location, None);
     assert_eq!(prefs.tech_stack, None);
     assert_eq!(prefs.salary_expectation, None);
+    assert_eq!(prefs.extra_agency_companies, None);
 }
 
 #[test]
@@ -63,6 +65,7 @@ fn test_set_and_get() {
             },
         ]),
         salary_expectation: Some("€75,000".to_string()),
+        extra_agency_companies: None,
     };
 
     store.set(&prefs).unwrap();
@@ -87,6 +90,7 @@ fn test_tech_stack_serialization() {
             category: "language".to_string(),
         }]),
         salary_expectation: None,
+        extra_agency_companies: None,
     };
 
     store.set(&prefs).unwrap();
@@ -109,6 +113,7 @@ fn test_partial_update() {
             category: "language".to_string(),
         }]),
         salary_expectation: Some("€75,000".to_string()),
+        extra_agency_companies: None,
     };
     store.set(&prefs1).unwrap();
 
@@ -118,6 +123,7 @@ fn test_partial_update() {
         country_code: None,
         tech_stack: None,
         salary_expectation: None,
+        extra_agency_companies: None,
     };
     store.set(&prefs2).unwrap();
 
@@ -148,6 +154,7 @@ fn test_salary_expectation_round_trips() {
             country_code: None,
             tech_stack: None,
             salary_expectation: Some("80k DOE".to_string()),
+            extra_agency_companies: None,
         })
         .unwrap();
 
@@ -177,6 +184,7 @@ fn test_salary_expectation_is_byte_clamped() {
             country_code: None,
             tech_stack: None,
             salary_expectation: Some(oversized),
+            extra_agency_companies: None,
         })
         .unwrap();
 
@@ -212,6 +220,7 @@ fn test_set_salary_expectation_never_clears_other_fields() {
                 category: "language".to_string(),
             }]),
             salary_expectation: None,
+            extra_agency_companies: None,
         })
         .unwrap();
 
@@ -249,6 +258,7 @@ fn test_set_salary_expectation_can_clear_to_none_without_touching_other_fields()
             country_code: None,
             tech_stack: None,
             salary_expectation: Some("€75,000".to_string()),
+            extra_agency_companies: None,
         })
         .unwrap();
 
@@ -270,6 +280,116 @@ fn test_set_salary_expectation_is_byte_clamped() {
     let stored = store.get().salary_expectation.unwrap();
     assert!(stored.len() <= MAX_SALARY_EXPECTATION_BYTES);
     assert!(stored.is_char_boundary(stored.len()));
+}
+
+// ── extra_agency_companies (ADR-029 §i) ───────────────────────────────────────
+
+#[test]
+fn test_extra_agency_companies_round_trip() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: None,
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: None,
+            extra_agency_companies: Some(vec![
+                "Talent Partners".to_string(),
+                "Local Recruiters".to_string(),
+            ]),
+        })
+        .unwrap();
+
+    assert_eq!(
+        store.get().extra_agency_companies,
+        Some(vec![
+            "Talent Partners".to_string(),
+            "Local Recruiters".to_string()
+        ])
+    );
+}
+
+#[test]
+fn test_extra_agency_companies_clamps_and_drops_blanks() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let oversized = "€".repeat(150); // 300 bytes, over the per-entry cap
+    store
+        .set(&JobPreferences {
+            location: None,
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: None,
+            extra_agency_companies: Some(vec![
+                "  Padded Agency  ".to_string(), // trimmed
+                "   ".to_string(),               // blank → dropped
+                oversized,                       // byte-clamped
+            ]),
+        })
+        .unwrap();
+
+    let stored = store.get().extra_agency_companies.unwrap();
+    assert_eq!(stored.len(), 2, "blank entries must be dropped");
+    assert_eq!(stored[0], "Padded Agency", "entries are trimmed");
+    assert!(
+        stored[1].len() <= MAX_AGENCY_COMPANY_BYTES,
+        "oversized entry must be byte-clamped"
+    );
+}
+
+#[test]
+fn test_extra_agency_companies_empty_list_stores_as_none() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: None,
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: None,
+            extra_agency_companies: Some(vec!["   ".to_string()]),
+        })
+        .unwrap();
+
+    assert_eq!(
+        store.get().extra_agency_companies,
+        None,
+        "an all-blank list collapses to None (SQL NULL), not an empty array"
+    );
+}
+
+/// Single-column write must never clobber the other fields (PR #695 pattern).
+#[test]
+fn test_set_extra_agency_companies_never_clears_other_fields() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Berlin".to_string()),
+            country_code: Some("de".to_string()),
+            tech_stack: None,
+            salary_expectation: Some("€75,000".to_string()),
+            extra_agency_companies: None,
+        })
+        .unwrap();
+
+    store
+        .set_extra_agency_companies(Some(vec!["Hays".to_string()]))
+        .unwrap();
+
+    let retrieved = store.get();
+    assert_eq!(retrieved.location, Some("Berlin".to_string()));
+    assert_eq!(retrieved.country_code, Some("de".to_string()));
+    assert_eq!(retrieved.salary_expectation, Some("€75,000".to_string()));
+    assert_eq!(
+        retrieved.extra_agency_companies,
+        Some(vec!["Hays".to_string()])
+    );
 }
 
 // ── Migration: drop_unused_job_preferences_columns ────────────────────────────
@@ -307,7 +427,7 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         .unwrap();
     }
 
-    // Re-open through the store, which runs the pending v2 + v3 + v4 migrations.
+    // Re-open through the store, which runs the pending v2..v5 migrations.
     let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
     // Kept fields round-trip.
@@ -329,6 +449,12 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
     assert_eq!(
         prefs.salary_expectation, None,
         "salary_expectation must default to None on a legacy DB with no such column"
+    );
+    // v5 (`add_job_preferences_extra_agency_companies`) — same defaults-to-None
+    // discipline for a third brand-new column on the same legacy v1 DB.
+    assert_eq!(
+        prefs.extra_agency_companies, None,
+        "extra_agency_companies must default to None on a legacy DB with no such column"
     );
 
     // Dropped columns are gone from the schema.
@@ -371,5 +497,11 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         &conn,
         "job_preferences",
         "salary_expectation"
+    ));
+    // v5 column added on top of the same chain.
+    assert!(crate::db::column_exists(
+        &conn,
+        "job_preferences",
+        "extra_agency_companies"
     ));
 }

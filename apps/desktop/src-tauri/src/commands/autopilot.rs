@@ -319,14 +319,18 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
 
     let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
 
-    // Honour the autopilot's minimum match score: drop postings we *could*
-    // score that fell below the bar. The bar is compared against the
-    // keyword-coverage match % (same kernel as the Jobs ATS sub-score), not the
-    // Jobs combined %. Unscored postings (no resume set, or no description to
-    // compare) are always kept — the threshold only filters jobs we were actually
-    // able to rank. Until now `minMatchScore` was dead config.
+    // Snapshot the durable dedup verdicts + agency extras ONCE for this run —
+    // reused by the cluster-aware retention here and the annotation pass inside
+    // `record_run` below, so retention and the persisted groups agree (ADR-029).
+    let (tombstones, extra_agency) = snapshot_dedup_inputs(&app);
+
+    // Honour the autopilot's minimum match score, cluster-aware (ADR-029 §g): a
+    // cluster passes iff its best-scored member clears the bar, and a passing
+    // cluster keeps ALL its members (a below-bar copy still contributes a source
+    // chip + salary data). A fully-unscored cluster keeps today's keep-unscored
+    // behavior. Until PR E `minMatchScore` was per-row; it is now per-cluster.
     let threshold = filter.min_match_score;
-    found_jobs.retain(|j| passes_min_score(j, threshold));
+    found_jobs = cluster_aware_retain(found_jobs, threshold, &tombstones, &extra_agency);
     let kept = found_jobs.len();
     let dropped = total_found - kept;
 
@@ -420,10 +424,15 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // all-boards-failed run (`failed`) instead of reading the success-shaped
     // `{ found: 0 }` as "done".
     let run_status = crate::autopilot::derive_run_status(&summaries);
-    let new_count =
-        store(&app)
-            .lock()
-            .record_run(&autopilot_id, kept as u32, 0, found_jobs, summaries);
+    let new_count = store(&app).lock().record_run(
+        &autopilot_id,
+        kept as u32,
+        0,
+        found_jobs,
+        summaries,
+        &tombstones,
+        &extra_agency,
+    );
 
     // Surface genuinely-new finds while the user is away: a permission-gated
     // notification + a "New jobs: N" tray counter that jumps back to this run.
@@ -563,6 +572,12 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         // Set later by the AI-notes step (`generate_assistant_notes`) for the top
         // matches when the autopilot opted in; `None` on every fresh build.
         assistant_notes: None,
+        // Cluster annotations are computed + written by `record_run`'s clustering
+        // pass (and the retention pass), never at build time — defaults here.
+        cluster_id: None,
+        cluster_canonical: true,
+        cluster_members: Vec::new(),
+        is_agency: false,
     }
 }
 
@@ -611,6 +626,94 @@ fn matches_keyword_filters(posting: &JobPosting, filter: &AutopilotFilter) -> bo
 /// threshold only gates rankable jobs.
 fn passes_min_score(job: &FoundJob, min_match_score: f64) -> bool {
     job.score.is_none_or(|s| s >= min_match_score)
+}
+
+/// Snapshot the durable dedup verdicts + agency extras from app state — the two
+/// store-owned inputs every clustering call needs. Best-effort: a missing store
+/// yields empty inputs (clustering degrades to "no splits / built-in agencies
+/// only"), never a failure.
+pub(crate) fn snapshot_dedup_inputs(app: &AppHandle) -> (HashSet<(String, String)>, Vec<String>) {
+    let tombstones = app
+        .try_state::<crate::dedup::DedupStore>()
+        .map(|s| s.all_pairs())
+        .unwrap_or_default();
+    let extra_agency = app
+        .try_state::<crate::job_preferences::JobPreferencesStore>()
+        .map(|s| s.get().extra_agency_companies.unwrap_or_default())
+        .unwrap_or_default();
+    (tombstones, extra_agency)
+}
+
+/// Whether `a` is a better cluster representative than `b` for the min-score
+/// gate: a scored member always beats an unscored one, and a higher score beats
+/// a lower one. So a cluster's representative is its best-scored member, or (when
+/// none is scored) its first member — exactly what "best member passes" needs.
+fn is_better_representative(a: &FoundJob, b: &FoundJob) -> bool {
+    match (a.score, b.score) {
+        (Some(x), Some(y)) => x > y,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+/// Cluster-aware minimum-score retention (ADR-029 §g): cluster the batch with
+/// the SAME pass the annotation step uses, then keep EVERY member of a cluster
+/// whose representative (best-scored member) clears `threshold` via
+/// [`passes_min_score`]. A cluster with no scored member keeps today's
+/// keep-unscored behavior. So a below-bar copy survives when a cluster-mate
+/// scores well (it still carries a source chip + salary), and a weak member can
+/// now "hide" behind a strong one — a deliberate loosening.
+fn cluster_aware_retain(
+    found_jobs: Vec<FoundJob>,
+    threshold: f64,
+    tombstones: &HashSet<(String, String)>,
+    extra_agency: &[String],
+) -> Vec<FoundJob> {
+    if found_jobs.is_empty() {
+        return found_jobs;
+    }
+    let inputs = crate::autopilot::found_job_cluster_inputs(&found_jobs);
+    let assignments = crate::scraping::cluster::assign_clusters(inputs, tombstones, extra_agency);
+
+    // The representative (best) member index per cluster.
+    let mut rep_by_cluster: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::new();
+    for (i, assignment) in assignments.iter().enumerate() {
+        let cid = assignment.cluster_id.as_str();
+        match rep_by_cluster.get(cid).copied() {
+            Some(cur) if !is_better_representative(&found_jobs[i], &found_jobs[cur]) => {}
+            _ => {
+                rep_by_cluster.insert(cid, i);
+            }
+        }
+    }
+
+    // A cluster passes iff its representative passes the per-member gate.
+    let passing: HashSet<&str> = rep_by_cluster
+        .iter()
+        .filter(|(_, &idx)| passes_min_score(&found_jobs[idx], threshold))
+        .map(|(&cid, _)| cid)
+        .collect();
+
+    found_jobs
+        .into_iter()
+        .zip(assignments.iter())
+        .filter_map(|(job, assignment)| {
+            passing
+                .contains(assignment.cluster_id.as_str())
+                .then_some(job)
+        })
+        .collect()
+}
+
+/// Recompute + persist cluster annotations for one autopilot record after a
+/// dedup split (`dedup_mark_not_duplicate` with an `autopilotId`). Snapshots the
+/// current verdicts + extras and delegates to the store's per-record recompute.
+pub(crate) fn recluster_autopilot_record(app: &AppHandle, autopilot_id: &str) {
+    let (tombstones, extra_agency) = snapshot_dedup_inputs(app);
+    store(app)
+        .lock()
+        .recompute_record_clusters(autopilot_id, &tombstones, &extra_agency);
 }
 
 #[cfg(test)]
@@ -827,6 +930,10 @@ mod tests {
             applied: false,
             trust: None,
             assistant_notes: None,
+            cluster_id: None,
+            cluster_canonical: true,
+            cluster_members: Vec::new(),
+            is_agency: false,
         }
     }
 
@@ -842,6 +949,57 @@ mod tests {
         // No resume / no description → no score → never filtered out by the gate.
         assert!(passes_min_score(&found(None), 50.0));
         assert!(passes_min_score(&found(None), 100.0));
+    }
+
+    // ── cluster-aware retention (ADR-029 §g) ───────────────────────────────────
+
+    #[test]
+    fn cluster_aware_retain_keeps_below_bar_member_of_passing_cluster() {
+        // Two board copies of the SAME job (same title+company, different urls)
+        // form ONE cluster. The strong copy (80) clears the 50 bar, so the whole
+        // cluster — including the below-bar (40) copy — is retained.
+        let strong = FoundJob {
+            url: "https://a.example.com/job".into(),
+            score: Some(80.0),
+            ..found(None)
+        };
+        let weak = FoundJob {
+            url: "https://b.example.com/job".into(),
+            score: Some(40.0),
+            ..found(None)
+        };
+        let kept = cluster_aware_retain(vec![strong, weak], 50.0, &HashSet::new(), &[]);
+        assert_eq!(
+            kept.len(),
+            2,
+            "a below-bar member of a passing cluster must be kept"
+        );
+    }
+
+    #[test]
+    fn cluster_aware_retain_drops_a_failing_cluster() {
+        // A lone scored job below the bar → its cluster fails → dropped.
+        let weak = FoundJob {
+            url: "https://c.example.com/job".into(),
+            score: Some(40.0),
+            ..found(None)
+        };
+        let kept = cluster_aware_retain(vec![weak], 50.0, &HashSet::new(), &[]);
+        assert!(kept.is_empty(), "a below-bar singleton cluster is dropped");
+    }
+
+    #[test]
+    fn cluster_aware_retain_keeps_fully_unscored_cluster() {
+        let unscored = FoundJob {
+            url: "https://d.example.com/job".into(),
+            ..found(None)
+        };
+        let kept = cluster_aware_retain(vec![unscored], 50.0, &HashSet::new(), &[]);
+        assert_eq!(
+            kept.len(),
+            1,
+            "a fully-unscored cluster keeps the keep-unscored behavior"
+        );
     }
 
     #[test]

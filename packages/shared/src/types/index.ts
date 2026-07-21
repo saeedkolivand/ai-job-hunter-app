@@ -308,6 +308,17 @@ export interface AutopilotFoundJob {
    *  generated for the top matches when the autopilot has AI notes enabled.
    *  Absent for jobs not annotated. Read-only — never applied or submitted. */
   assistantNotes?: string;
+  /** Cross-board cluster id (the canonical member's key), recomputed at every
+   *  run (ADR-029). Absent only on a record not yet re-clustered. Opaque — the
+   *  renderer groups by it and echoes member keys back to `dedup.markNotDuplicate`. */
+  clusterId?: string;
+  /** Whether this job is its cluster's canonical (displayed) member. Absent →
+   *  treat as `true` (a standalone/legacy row is its own canonical). */
+  clusterCanonical?: boolean;
+  /** Every member of this job's cluster, so the renderer can group + split. */
+  clusterMembers?: Array<{ key: string; board?: string; url: string }>;
+  /** Whether the posting's company is a recruiting/staffing agency (ADR-029 §i). */
+  isAgency?: boolean;
 }
 
 /** Result record for a single autopilot run. */
