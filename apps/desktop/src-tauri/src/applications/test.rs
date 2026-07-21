@@ -2662,7 +2662,7 @@ fn upsert_and_merge_answers_race_never_loses_an_update() {
 }
 
 /// `update_fields` carried the SAME two-lock structure `upsert_internal` was
-/// fixed for: `get` took and released the mutex, then `write_row` retook it and
+/// fixed for: `get` took and released the mutex, then the write retook it and
 /// re-persisted EVERY column from the now-stale snapshot. A concurrent
 /// `merge_answers` (extension `answers.save`) commit landing in that gap was
 /// silently clobbered.
