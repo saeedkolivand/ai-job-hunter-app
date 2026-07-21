@@ -51,6 +51,7 @@ pub fn extract_ats_ref(url: &str) -> Option<AtsRef> {
         ("breezy", breezy_slug),
         ("bamboohr", bamboohr_slug),
         ("pinpoint", pinpoint_slug),
+        ("rippling", rippling_slug),
     ];
     for (ats, parse) in PARSERS {
         if let Some(slug) = parse(url) {
@@ -176,6 +177,22 @@ fn bamboohr_slug(url: &str) -> Option<String> {
 /// Pinpoint: `{slug}.pinpointhq.com`.
 fn pinpoint_slug(url: &str) -> Option<String> {
     subdomain_slug(url, ".pinpointhq.com")
+}
+
+/// Rippling: posting URLs are host-locked to `ats.rippling.com`
+/// (`ats.rippling.com/{slug}/jobs/{id}` — verified in `boards::rippling`'s
+/// `is_valid_rippling_job_url` guard + fixtures), company identifier = the first
+/// path segment. Casing preserved — Rippling board slugs are URL path segments,
+/// mixed case allowed (see `is_valid_rippling_slug`), NOT DNS labels. The API host
+/// `api.rippling.com` (whose first path segment is `platform`, not a slug) and the
+/// apex/look-alikes are rejected by the exact-host gate.
+fn rippling_slug(url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    if host != "ats.rippling.com" {
+        return None;
+    }
+    first_segment(&u)
 }
 
 #[cfg(test)]
@@ -315,6 +332,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rippling_positive_preserves_slug_casing() {
+        // Posting URLs are host-locked to `ats.rippling.com/{slug}/jobs/{id}` (the
+        // exact shape `boards::rippling` emits/guards). Slug = first path segment.
+        assert_ref(
+            "https://ats.rippling.com/acme/jobs/job-abc-123",
+            "rippling",
+            "acme",
+        );
+        // Rippling slugs are URL path segments, not DNS labels — mixed case kept.
+        assert_ref(
+            "https://ats.rippling.com/Acme-Corp/jobs/x",
+            "rippling",
+            "Acme-Corp",
+        );
+    }
+
     // ── Near-miss suite → None ───────────────────────────────────────────────────
 
     #[test]
@@ -335,6 +369,8 @@ mod tests {
             "https://ashbyhq.com",
             "https://smartrecruiters.com",
             "https://jobs.personio.de",
+            "https://rippling.com",
+            "https://ats.rippling.com", // bare host, no slug path segment
             // `www.` fronts on subdomain ATSes.
             "https://www.recruitee.com",
             "https://www.bamboohr.com",
@@ -343,6 +379,11 @@ mod tests {
             "https://acme.recruitee.com.attacker.tld",
             "https://jobs.smartrecruiters.com.attacker.tld/Acme/1",
             "https://evilrecruitee.com/acme",
+            "https://ats.rippling.com.attacker.tld/acme/jobs/1",
+            // Wrong rippling host: `api.rippling.com` is the API (first path
+            // segment is `platform`, never a slug), `www.rippling.com` is marketing.
+            "https://api.rippling.com/platform/api/ats/v1/board/acme/jobs",
+            "https://www.rippling.com/acme",
             // Wrong workable host (only apply.workable.com carries a slug).
             "https://www.workable.com/acme",
             // Completely unrelated hosts.
