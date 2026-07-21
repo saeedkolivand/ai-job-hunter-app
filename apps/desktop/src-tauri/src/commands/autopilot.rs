@@ -266,6 +266,16 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         }
     };
 
+    // Passively harvest ATS company slugs from EVERY scraped posting URL BEFORE any
+    // keyword/score filtering (ADR-030 §c "harvest every stored posting URL"),
+    // matching the manual-scrape harvest point. Parse-only, zero network; degrades
+    // on error.
+    crate::commands::discovery::harvest_ats_refs(
+        &app,
+        postings.iter().map(|p| (p.url.clone(), p.company.clone())),
+        "scrape",
+    );
+
     // Raw count BEFORE the keyword filter, so `scrape_done` can distinguish "no
     // board returned anything" from "boards returned jobs but your keyword filter
     // dropped them all" — the difference between a scraping problem and an
@@ -423,17 +433,6 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // same status the record persists, letting the renderer branch on an
     // all-boards-failed run (`failed`) instead of reading the success-shaped
     // `{ found: 0 }` as "done".
-    // Passively harvest ATS company slugs from the run's found jobs (parse-only,
-    // zero network) so the slug typeahead + watched-company targets populate from
-    // autopilot runs too — ADR-030 §c. Degrades on error.
-    crate::commands::discovery::harvest_ats_refs(
-        &app,
-        found_jobs
-            .iter()
-            .map(|j| (j.url.clone(), j.company.clone())),
-        "scrape",
-    );
-
     let run_status = crate::autopilot::derive_run_status(&summaries);
     let new_count = store(&app).lock().record_run(
         &autopilot_id,

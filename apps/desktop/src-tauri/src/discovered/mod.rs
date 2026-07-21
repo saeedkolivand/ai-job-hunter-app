@@ -238,6 +238,34 @@ impl DiscoveredCompanyStore {
         }
     }
 
+    /// Every watched (starred) company as full renderer rows, ranked most-seen
+    /// first. Unlike surfacing the starred prefix of `search("")`, this has NO
+    /// search-cap coupling — it returns the entire starred set. Backs the
+    /// `discovery.watched()` IPC read; the autopilot resolver uses the lighter
+    /// [`Self::watched`] `(ats, slug)` pairs.
+    pub fn watched_companies(&self) -> Vec<DiscoveredCompany> {
+        let conn = self.conn.lock();
+        let mut stmt = match conn.prepare(
+            "SELECT ats_kind, slug, display_name, seen_count, starred, source
+             FROM discovered_companies WHERE starred = 1
+             ORDER BY seen_count DESC, slug ASC",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("[discovered] watched_companies prepare failed ({e}); returning empty");
+                return Vec::new();
+            }
+        };
+        let rows = stmt.query_map([], Self::row_to_company);
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(e) => {
+                log::warn!("[discovered] watched_companies query failed ({e}); returning empty");
+                Vec::new()
+            }
+        }
+    }
+
     /// Wipe every discovered company (factory reset).
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
@@ -536,6 +564,28 @@ mod tests {
         // The pre-existing row survives untouched.
         assert_eq!(store.search("keep", 10).len(), 1);
         assert!(store.search("ok", 10).is_empty(), "no partial insert");
+    }
+
+    #[test]
+    fn watched_companies_returns_full_starred_rows_only() {
+        let (_dir, store) = open();
+        store
+            .upsert_batch(&[
+                r("greenhouse", "stripe", Some("Stripe"), "scrape"),
+                r("greenhouse", "stripe", None, "scrape"), // bump to seen_count 2
+                r("ashby", "Linear", None, "scrape"),
+            ])
+            .unwrap();
+        store.set_starred("greenhouse", "stripe", true).unwrap();
+
+        let watched = store.watched_companies();
+        assert_eq!(watched.len(), 1, "only the starred row is returned");
+        assert_eq!(watched[0].slug, "stripe");
+        assert_eq!(watched[0].display_name.as_deref(), Some("Stripe"));
+        assert_eq!(watched[0].seen_count, 2, "full row carries the seen_count");
+        assert!(watched[0].starred);
+        // The unstarred ashby row is excluded.
+        assert!(watched.iter().all(|c| c.slug != "Linear"));
     }
 
     #[test]
