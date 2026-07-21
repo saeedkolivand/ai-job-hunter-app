@@ -987,8 +987,10 @@ impl ApplicationStore {
         recipient_name: Option<String>,
         recipient_email: Option<String>,
     ) -> AppResult<()> {
-        let existing = self
-            .get(id)
+        // ONE lock spans lookup+write (`row_by_id_conn`, not self-locking `get`): the
+        // write rewrites EVERY column, so releasing it between let a commit be lost.
+        let conn = self.conn.lock();
+        let existing = Self::row_by_id_conn(&conn, id)?
             .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
         let app = Application {
             notes: notes.unwrap_or(existing.notes),
@@ -1007,7 +1009,7 @@ impl ApplicationStore {
             updated_at: now_ms(),
             ..existing
         };
-        self.write_row(&app)
+        Self::write_row_conn(&conn, &app)
     }
 
     /// Delete an Application and its status history. `keep_documents` is consumed
@@ -1025,11 +1027,6 @@ impl ApplicationStore {
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
-
-    fn write_row(&self, app: &Application) -> AppResult<()> {
-        let conn = self.conn.lock();
-        Self::write_row_conn(&conn, app)
-    }
 
     /// Connection-scoped row write, callable inside a transaction. `conn` may be a
     /// plain `&Connection` or a `&Transaction` (which derefs to `&Connection`).
