@@ -123,6 +123,34 @@ _Avoid_: auto-apply / auto-submit (autofill never submits — the human does), s
 (that's the inbound import path), "fills every field" (empty + unambiguous fields only;
 no file upload; complex ATS partial)
 
+**Agency posting**:
+A job posting whose company name matches one in the built-in or user-extended recruitment-agency list
+(personnel staffing, HR consulting, temp placement agencies). Filterable via a renderer session flag
+(`hideAgency` on `JobsSlice`). Distinct from a **normal posting** sourced directly from an employer or
+ATS board.
+_Avoid_: "staffing job", "recruiter posting" (agency posting is the precise domain term)
+
+**Canonical member**:
+The representative posting selected from a cluster to display as the single row. Chosen by a stable
+precedence rule (has-description > direct board > aggregator > newest > key ascending). Never persisted;
+recomputed at every ingest. The cluster's other members surface in the detail pane as "All sources" links.
+_Avoid_: "cluster representative", "primary posting" (canonical member is the standard term)
+
+**Cluster**:
+A recomputed grouping of postings judged to be the same real-world job across multiple boards. Membership
+is transient (never persisted, only displayed); clustering is deterministic and runs at every ingest after
+scrape or autopilot refresh. User "not a duplicate" verdicts persist as pair tombstones. Clusters never
+block results — a below-threshold cluster still displays all members.
+_Avoid_: "duplicate group", "posting group" (cluster is the standard domain term); persisting clusters
+in the database (they are recomputed on-demand)
+
+**Pair tombstone**:
+A persisted user verdict that two canonical job keys are NOT duplicates. Stored unordered as key pairs in
+`dedup.db` (with invariant `key_a < key_b`). Survives re-scrapes and is used to block cluster joins
+across the pair. Deletion and merge-back are deferred fast-follows.
+_Avoid_: "split verdict", "negative dedup" (pair tombstone is the standard architecture term);
+conflating with cluster membership (tombstones block joins, they don't define membership)
+
 **Pairing token**:
 The per-install shared secret that authenticates the browser extension to the local
 bridge. **In protocol v2 it is never transmitted** — it is used only as the
