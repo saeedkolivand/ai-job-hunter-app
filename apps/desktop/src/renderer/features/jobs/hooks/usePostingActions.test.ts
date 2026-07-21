@@ -327,7 +327,7 @@ describe('usePostingActions — handleView', () => {
 // The two score-presence variants below override via a fresh mock per test.
 
 describe('usePostingActions — handleTailor', () => {
-  it('tracks applied interaction (optimistic set) before awaiting the mutation', async () => {
+  it('tracks the applied interaction once the save has succeeded', async () => {
     const { result } = renderHook(() => usePostingActions(makePosting()));
     await act(async () => {
       await result.current.handleTailor();
@@ -336,6 +336,36 @@ describe('usePostingActions — handleTailor', () => {
     expect(mockPersistJobAsync).toHaveBeenCalledWith(
       expect.objectContaining({ interactionType: 'applied' })
     );
+  });
+
+  it('does NOT mark applied when saveFromPosting rejects', async () => {
+    // `trackInteraction` PERSISTS via persistJobMutation, and the failure paths
+    // return without reverting — so firing it up-front left the posting reading
+    // Applied for a Tailor that visibly failed.
+    mockSaveFromPostingAsync.mockRejectedValueOnce(new Error('backend down'));
+
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+    await act(async () => {
+      await result.current.handleTailor();
+    });
+
+    expect(notifyError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'jobs.tailorError' })
+    );
+    expect(mockPersistJobAsync).not.toHaveBeenCalled();
+    expect(result.current.has('applied')).toBe(false);
+  });
+
+  it('does NOT mark applied when saveFromPosting resolves without an id', async () => {
+    mockSaveFromPostingAsync.mockResolvedValueOnce({ id: null });
+
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+    await act(async () => {
+      await result.current.handleTailor();
+    });
+
+    expect(mockPersistJobAsync).not.toHaveBeenCalled();
+    expect(result.current.has('applied')).toBe(false);
   });
 
   it('forwards scraped salary fields to saveFromPosting when present', async () => {
