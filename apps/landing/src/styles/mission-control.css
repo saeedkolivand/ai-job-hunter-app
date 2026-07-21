@@ -1,0 +1,411 @@
+/* ── /mission-control dashboard skin ─────────────────────────────────────────
+   Verdict-first, biggest-number-first hierarchy on the docs-tier shell. Consumes
+   the --doc-* tokens; hand-rolled SVG sparklines, desaturated series colors,
+   breathing room. Route-scoped (rendered only inside <DocShell> on this page). */
+
+.mc {
+  font-family: var(--doc-font-mono);
+}
+
+/* toolbar: refresh + rate-limit + auth status */
+.mc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin: 0 0 22px;
+  font-size: 12.5px;
+  color: var(--doc-muted);
+}
+.mc-toolbar .mc-grow {
+  flex: 1 1 auto;
+}
+
+/* generic button (landing has no shared primitive library) */
+.mc-btn {
+  font-family: var(--doc-font-mono);
+  font-size: 12.5px;
+  color: var(--doc-paper);
+  background: var(--doc-surface-2);
+  border: 1px solid var(--doc-border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition:
+    background 0.16s,
+    border-color 0.16s,
+    transform 0.16s;
+}
+.mc-btn:hover {
+  background: var(--doc-surface);
+  border-color: var(--doc-border-strong);
+}
+.mc-btn:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
+}
+.mc-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mc-btn.is-primary {
+  background: var(--doc-accent-soft);
+  border-color: var(--doc-accent);
+  color: var(--doc-paper);
+}
+.mc-btn.is-danger {
+  border-color: rgba(226, 75, 74, 0.5);
+}
+
+/* ── verdict hero ── */
+.mc-verdict {
+  border: 1.5px solid var(--doc-border-strong);
+  border-radius: var(--doc-radius);
+  background: var(--doc-surface);
+  box-shadow: var(--doc-elev), var(--doc-hair);
+  padding: 24px 26px;
+  margin: 0 0 34px;
+}
+/* Tone reads through a full neon-outline (the shell's node-border language) +
+   a soft glow — not a left side-tab. */
+.mc-verdict.is-ok {
+  border-color: var(--doc-green);
+  box-shadow:
+    var(--doc-elev),
+    0 0 0 1px var(--doc-green-soft);
+}
+.mc-verdict.is-warn {
+  border-color: var(--doc-amber);
+  box-shadow:
+    var(--doc-elev),
+    0 0 0 1px rgba(251, 191, 36, 0.18);
+}
+.mc-verdict.is-bad {
+  border-color: var(--doc-accent);
+  box-shadow:
+    var(--doc-elev),
+    0 0 0 1px var(--doc-accent-soft);
+}
+.mc-verdict__eyebrow {
+  font-family: var(--doc-font-hand);
+  font-weight: 700;
+  font-size: 22px;
+  margin: 0 0 4px;
+  transform: rotate(-1deg);
+  color: var(--doc-muted);
+}
+.mc-verdict__line {
+  font-family: var(--doc-font-display);
+  font-weight: 700;
+  font-size: clamp(22px, 4vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--doc-paper);
+}
+.mc-verdict.is-ok .mc-verdict__line {
+  color: var(--doc-green);
+}
+.mc-verdict.is-warn .mc-verdict__line {
+  color: var(--doc-amber);
+}
+.mc-verdict.is-bad .mc-verdict__line {
+  color: var(--doc-accent);
+}
+.mc-verdict__sub {
+  font-size: 13px;
+  color: var(--doc-muted);
+  margin: 10px 0 0;
+}
+
+/* ── sections ── */
+.mc-section {
+  margin: 0 0 40px;
+}
+.mc-section__eyebrow {
+  font-family: var(--doc-font-hand);
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--doc-accent);
+  transform: rotate(-1deg);
+  display: inline-block;
+  margin: 0 0 2px;
+}
+.mc-section__title {
+  font-family: var(--doc-font-display);
+  font-weight: 700;
+  font-size: clamp(22px, 4vw, 30px);
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+  color: var(--doc-paper);
+}
+
+.mc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.mc-card {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  box-shadow: var(--doc-hair);
+  padding: 18px 20px;
+}
+.mc-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+/* biggest-number-first stat */
+.mc-stat__num {
+  font-family: var(--doc-font-display);
+  font-weight: 700;
+  font-size: clamp(30px, 6vw, 46px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--doc-paper);
+}
+.mc-stat__unit {
+  font-size: 15px;
+  color: var(--doc-muted);
+  margin-left: 6px;
+}
+.mc-stat__label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--doc-muted);
+  margin: 8px 0 0;
+}
+.mc-stat__sub {
+  font-size: 12.5px;
+  color: var(--doc-muted);
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+
+/* sparkline */
+.mc-spark {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 10px;
+  overflow: visible;
+}
+
+/* lists (PRs / issues / releases) */
+.mc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  background: var(--doc-surface-2);
+  border: 1px solid var(--doc-border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.mc-row__title {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.mc-row__meta {
+  color: var(--doc-muted);
+  font-size: 12px;
+}
+
+.mc-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--doc-pill);
+  border: 1px solid var(--doc-border);
+  color: var(--doc-muted);
+  white-space: nowrap;
+}
+.mc-badge.is-review {
+  color: var(--doc-amber);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.mc-badge.is-draft {
+  color: var(--doc-muted);
+}
+.mc-badge.is-stale {
+  /* lighter red text-variant clears AA (5.7:1) on the --doc-surface-2 row bg;
+     plain --doc-accent (#e24b4a) was only 4.03:1 at 11px. */
+  color: var(--doc-accent-text);
+  border-color: rgba(226, 75, 74, 0.45);
+}
+
+.mc-row__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mc-row__actions .mc-btn {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+
+/* ── sign-in / maintainer panel ── */
+.mc-signin {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  padding: 18px 20px;
+  margin: 0 0 26px;
+}
+.mc-signin__title {
+  font-family: var(--doc-font-display);
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.mc-banner {
+  font-size: 12px;
+  color: var(--doc-amber);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.mc-scopes {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--doc-muted);
+  display: grid;
+  gap: 4px;
+}
+.mc-scopes b {
+  color: var(--doc-paper);
+  font-weight: 400;
+}
+.mc-input {
+  font-family: var(--doc-font-mono);
+  font-size: 13px;
+  width: 100%;
+  color: var(--doc-paper);
+  background: var(--doc-surface-2);
+  border: 1px solid var(--doc-border);
+  border-radius: 8px;
+  padding: 9px 11px;
+}
+.mc-input:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 1px;
+}
+.mc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.mc-field label {
+  font-size: 12px;
+  color: var(--doc-muted);
+}
+.mc-maintainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ── confirm dialog ── */
+.mc-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(3, 5, 10, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+}
+.mc-dialog {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border-strong);
+  border-radius: var(--doc-radius);
+  box-shadow: var(--doc-elev);
+  padding: 22px 24px;
+  max-width: 440px;
+  width: 100%;
+}
+.mc-dialog__title {
+  font-family: var(--doc-font-display);
+  font-weight: 700;
+  font-size: 19px;
+  margin: 0 0 8px;
+}
+.mc-dialog__msg {
+  font-size: 13.5px;
+  color: var(--doc-paper);
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+.mc-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.mc-status {
+  font-size: 12.5px;
+  color: var(--doc-muted);
+  margin: 10px 0 0;
+}
+.mc-status.is-error {
+  color: var(--doc-accent);
+}
+.mc-empty {
+  font-family: var(--doc-font-hand);
+  font-size: 18px;
+  color: var(--doc-muted);
+}
+
+/* advisory scope note under the sign-in panel */
+.mc-scope-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--doc-muted);
+  margin: 0 0 12px;
+}
+.mc-scope-note b {
+  color: var(--doc-amber);
+}
+
+/* ── first-load skeletons ── */
+.mc-skel {
+  background: var(--doc-surface-2);
+  border-radius: 6px;
+}
+@keyframes mc-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mc-skeleton .mc-skel {
+    animation: mc-pulse 1.4s ease-in-out infinite;
+  }
+}

@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-import { ClientScripts } from './ClientScripts';
+import { ClientScripts, isAllowedScriptSrc } from './ClientScripts';
 
 const SRCS = ['/scripts/a.js', '/scripts/b.js'];
 
@@ -34,5 +34,13 @@ describe('ClientScripts', () => {
     unmount();
 
     expect(gagScripts()).toHaveLength(0);
+  });
+
+  it('fail-closes the origin invariant: only same-origin /scripts/* is allowed', () => {
+    expect(isAllowedScriptSrc('/scripts/home-0.js')).toBe(true);
+    expect(isAllowedScriptSrc('https://evil.example/x.js')).toBe(false);
+    expect(isAllowedScriptSrc('//evil.example/x.js')).toBe(false);
+    expect(isAllowedScriptSrc('http://localhost/scripts/x.js')).toBe(false);
+    expect(isAllowedScriptSrc('/other/x.js')).toBe(false);
   });
 });

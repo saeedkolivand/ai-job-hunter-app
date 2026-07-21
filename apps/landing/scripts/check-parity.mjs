@@ -143,7 +143,6 @@ const REQUIRED_FILES = [
   'og-card.jpg',
   'agent-system.html',
   'architecture-map.html',
-  'ci-dashboard.html',
   'benchmarks/index.html',
 ];
 for (const rel of REQUIRED_FILES) {
