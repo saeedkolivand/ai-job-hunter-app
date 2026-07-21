@@ -60,5 +60,5 @@ The Rust `scrape_resolve_url` command (in `commands/scrape.rs`) calls the ADR-03
 - `apps/desktop/src/renderer/components/job/JobUrlImport`
 - `apps/desktop/src/renderer/features/ai-generate/hooks/useGeneration.ts` (`persist` function)
 - `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`)
-- `apps/desktop/src-tauri/src/commands/discovery.rs` (harvest seam: `posting_to_ref`, `HarvestSource`)
+- `apps/desktop/src-tauri/src/commands/discovery.rs` (harvest seam: `posting_to_ref`)
 - `packages/shared/src/ipc/contracts` (`AiGenerationSaveRequest` fields: `jobUrl`, `board`)
