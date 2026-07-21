@@ -128,6 +128,13 @@ vi.mock('@/features/autopilot/components/wizard-steps/WizardField', () => ({
   }) => <>{children}</>,
 }));
 
+// WatchedCompaniesField pulls in the discovery service hooks (React Query +
+// AppClient), which this focused StepTarget suite doesn't wire — stub it out; it
+// has its own colocated test.
+vi.mock('@/features/autopilot/components/wizard-steps/WatchedCompaniesField', () => ({
+  WatchedCompaniesField: () => null,
+}));
+
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
 function makeForm(overrides: Partial<WizardState> = {}): WizardState {
@@ -139,6 +146,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     workType: 'any',
     amount: 50,
     dateFilter: '24h',
+    watchedCompaniesOnly: false,
     minMatchScore: 50,
     keywords: '',
     excludeKeywords: '',

@@ -1625,6 +1625,12 @@
           "hint": "Durchsucht eine kuratierte Liste von Unternehmen:",
           "more_one": ", +{{count}} weitere",
           "more_other": ", +{{count}} weitere"
+        },
+        "watched": {
+          "label": "Meine beobachteten ATS-Unternehmen",
+          "description": "Nur von Ihnen markierte Unternehmen scrapen — bei jedem Lauf frisch aufgelöst.",
+          "emptyHint": "Sie haben noch keine Unternehmen markiert. Markieren Sie sie im Job-Scrape-Formular, um sie hier zu beobachten.",
+          "unstar": "Unternehmen nicht mehr beobachten"
         }
       },
       "filter": {
@@ -1919,8 +1925,15 @@
     "locationFilterHint": "Ort lokal gefiltert:",
     "companies": {
       "label": "Unternehmen",
-      "placeholder": "z. B. stripe, airbnb",
-      "hint": "Kommagetrennte Unternehmens-Slugs für ATS-Boards."
+      "placeholder": "Unternehmens-Slug eingeben…",
+      "hint": "Unternehmens-Slugs für ATS-Boards.",
+      "remove": "Unternehmen entfernen"
+    },
+    "discovery": {
+      "slugHint": "Ein Slug stammt aus der Karriereseiten-URL eines Unternehmens. Sobald Sie einen Job eines ATS-Unternehmens scrapen, erscheint sein Slug hier automatisch — kein manuelles Eintippen nötig.",
+      "starToggle": "Unternehmen beobachten",
+      "curated": "kuratiert",
+      "starFailed": "Beobachtetes Unternehmen konnte nicht aktualisiert werden. Bitte erneut versuchen."
     },
     "partialScrapeNote": "{{done}} von {{total}} Boards · {{failed}} fehlgeschlagen",
     "lastScrapeFailed": "Letzter Scrape fehlgeschlagen: {{reason}}",

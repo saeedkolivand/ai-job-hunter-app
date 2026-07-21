@@ -12,6 +12,12 @@ export interface WizardState {
   /** Target number of jobs to fetch; converted to scraper pages on save (mirrors the jobs page). */
   amount: number;
   dateFilter: string;
+  /**
+   * Watched-companies-only mode (ADR-030 §e): when true, the run resolves the
+   * user's currently-starred discovered companies at run time instead of the
+   * curated seed. Additive + optional so old autopilots load unchanged.
+   */
+  watchedCompaniesOnly: boolean;
   // Step 2 — Filter
   minMatchScore: number;
   keywords: string;
