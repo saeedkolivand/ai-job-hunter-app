@@ -1,0 +1,532 @@
+/* ── /architecture-map page styles (ported from the former public passthrough) ─
+   The interactive map keeps its OWN palette (the per-cluster colors are load-
+   bearing for the visualization) and its verbatim component styles. The page's
+   old html/body/#app full-viewport rules are dropped — DocShell now provides the
+   ground, film grain, back-link and footer. Everything is scoped under .arch-map
+   so it never reaches the docs chrome, and the whole map is sized to a tall
+   in-shell stage instead of the whole screen. */
+.arch-map {
+  --bg: #0f0f0f;
+  --panel: #161616;
+  --panel-2: #1c1c1c;
+  --border: #2a2a2a;
+  --text: #e8e8e8;
+  --muted: #8a8a8a;
+  --client: #4ea1ff;
+  --hooks: #7bd389;
+  --prompts: #f5b942;
+  --contract: #c792ea;
+  --command: #ff7a45;
+  --domain: #5ec8c8;
+  --scraper: #7bd389;
+  --provider: #c792ea;
+  --data: #ffb86b;
+  --external: #ff6b9d;
+  --infra: #9aa7b3;
+  --critical: #ff3860;
+  --api: #ff7a45;
+  --db: #ffb86b;
+  --mount: #4ea1ff;
+  --normal: #3a3a3a;
+  --accent: #f5b942;
+  --faint: #cfcfcf;
+
+  display: flex;
+  flex-direction: column;
+  height: min(80vh, 900px);
+  min-height: 520px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  font:
+    13px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+.arch-map *,
+.arch-map *::before,
+.arch-map *::after {
+  box-sizing: border-box;
+}
+.arch-map header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.arch-map header h1 {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text);
+}
+.arch-map header .meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.arch-map .chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.arch-map .chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11.5px;
+  user-select: none;
+  white-space: nowrap;
+}
+.arch-map .chip:hover {
+  border-color: #3d3d3d;
+  color: var(--text);
+}
+.arch-map .chip.active {
+  background: var(--accent);
+  color: #161616;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.arch-map .chip.bugchip.active {
+  background: var(--critical);
+  color: #fff;
+  border-color: var(--critical);
+}
+.arch-map main {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+.arch-map #stage {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  cursor: grab;
+  background: radial-gradient(circle at 30% 20%, #141414 0, var(--bg) 60%);
+}
+.arch-map #stage.panning {
+  cursor: grabbing;
+}
+.arch-map #svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.arch-map .clusterBox {
+  fill-opacity: 0.05;
+  stroke-opacity: 0.3;
+  stroke-width: 1.2;
+  rx: 14;
+}
+.arch-map .clusterLabel {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.arch-map .clusterLabel.count {
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.arch-map .node {
+  cursor: pointer;
+}
+.arch-map .node rect.box {
+  fill: var(--panel);
+  stroke-width: 1.4;
+  rx: 8;
+  transition: opacity 0.12s;
+}
+.arch-map .node.crit rect.box {
+  stroke-width: 2.4;
+}
+.arch-map .node:focus {
+  outline: none;
+}
+.arch-map .node:focus-visible rect.box {
+  stroke: var(--accent);
+  stroke-width: 3.2;
+}
+.arch-map .node text.lbl {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.arch-map .node text.sub {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.arch-map .node text.dead {
+  fill: var(--critical);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.arch-map .edge {
+  fill: none;
+  stroke-width: 1.4;
+}
+.arch-map .edge.kind-critical {
+  stroke: var(--critical);
+  stroke-width: 2.2;
+}
+.arch-map .edge.kind-api {
+  stroke: var(--api);
+  stroke-dasharray: 1 0;
+}
+.arch-map .edge.kind-db {
+  stroke: var(--db);
+}
+.arch-map .edge.kind-mount {
+  stroke: var(--mount);
+  stroke-opacity: 0.7;
+}
+.arch-map .edge.kind-normal {
+  stroke: var(--normal);
+}
+.arch-map .edgeLabel {
+  fill: #9b9b9b;
+  font-size: 9.5px;
+}
+.arch-map .edgeLabel.crit {
+  fill: #ff8095;
+}
+.arch-map .badge text {
+  font-size: 9px;
+  font-weight: 700;
+  fill: #0c0c0c;
+}
+.arch-map .dim {
+  opacity: 0.12 !important;
+}
+.arch-map .hide {
+  display: none;
+}
+.arch-map #kbd-help {
+  position: absolute;
+  right: 14px;
+  bottom: 56px;
+  z-index: 30;
+  max-width: 240px;
+  padding: 12px 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+.arch-map #kbd-help[hidden] {
+  display: none;
+}
+.arch-map #kbd-help .kbd-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+.arch-map #kbd-help-close {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.arch-map #kbd-help-close:hover {
+  color: var(--text);
+  border-color: #444;
+}
+.arch-map #kbd-help-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+.arch-map #kbd-help ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.arch-map #kbd-help kbd {
+  display: inline-block;
+  min-width: 12px;
+  padding: 1px 5px;
+  margin-right: 2px;
+  font: inherit;
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+/* sidebar */
+.arch-map #side {
+  flex: 0 0 360px;
+  max-width: 42vw;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  overflow: auto;
+  padding: 16px 16px 40px;
+}
+.arch-map #side h2 {
+  font-size: 14px;
+  margin: 0 0 2px;
+  color: var(--text);
+}
+.arch-map #side .role {
+  color: var(--text);
+  margin: 6px 0;
+}
+.arch-map #side .plain {
+  color: #bfd7c9;
+  background: #13261c;
+  border: 1px solid #1d3a2a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+.arch-map #side .path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #8fb8e6;
+  word-break: break-all;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.arch-map #side .k {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  margin: 14px 0 4px;
+}
+.arch-map #side ul {
+  margin: 4px 0;
+  padding-left: 16px;
+}
+.arch-map #side li {
+  margin: 2px 0;
+  color: #cfcfcf;
+}
+.arch-map #side .tag {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin: 2px 4px 2px 0;
+}
+.arch-map #side .fix,
+.arch-map #side .bug {
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.arch-map #side .fix {
+  background: #10240f;
+  border: 1px solid #1f3d1d;
+  color: #bfe6b5;
+}
+.arch-map #side .bug {
+  background: #2a1014;
+  border: 1px solid #4a1c24;
+  color: #ffb3c0;
+}
+.arch-map #side .sev {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  margin-right: 6px;
+}
+.arch-map #side .edgepair {
+  font-size: 11.5px;
+  color: #cfcfcf;
+  margin: 2px 0;
+}
+.arch-map #side .edgepair b {
+  color: #fff;
+  font-weight: 600;
+}
+.arch-map #side .findings li {
+  margin: 6px 0;
+}
+.arch-map .controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.arch-map .controls button {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+}
+.arch-map .controls button:hover {
+  border-color: #444;
+}
+.arch-map .controls button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.arch-map .legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  background: rgba(20, 20, 20, 0.82);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.arch-map .legend .row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 0;
+}
+.arch-map .legend .sw {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid;
+  display: inline-block;
+}
+.arch-map .legend .dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+  border: 1.4px solid;
+}
+/* legend swatch colors — moved off inline hex so the JSX stays token-only */
+.arch-map .legend .sw-critical {
+  border-color: var(--critical);
+}
+.arch-map .legend .sw-api {
+  border-color: var(--api);
+}
+.arch-map .legend .sw-db {
+  border-color: var(--db);
+}
+.arch-map .legend .sw-mount {
+  border-color: var(--mount);
+}
+.arch-map .legend .dot-fix {
+  border-color: #5fd96b;
+  background: #10240f;
+}
+.arch-map .legend .dot-bug {
+  border-color: #ff4d6a;
+  background: #2a1014;
+}
+
+/* ── Responsive layout ─────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .arch-map #side {
+    flex: 0 0 240px;
+    max-width: 55vw;
+    font-size: 12px;
+    padding: 12px 10px 32px;
+  }
+  .arch-map header h1 {
+    font-size: 13px;
+  }
+  .arch-map .chips {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .arch-map #side {
+    display: none;
+  }
+  .arch-map .controls {
+    bottom: 10px;
+    right: 10px;
+  }
+  .arch-map .legend {
+    display: none;
+  }
+}
+
+/* ── Focus-visible rings (AA keyboard navigation) ──────────────────────────── */
+.arch-map a:focus-visible,
+.arch-map button:focus-visible,
+.arch-map [tabindex]:focus-visible,
+.arch-map [role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Chip buttons have pill shape */
+.arch-map .chip:focus-visible {
+  border-radius: 999px;
+}
+/* SVG node focus ring is the stroke variant — suppress outline there */
+.arch-map .node:focus-visible {
+  outline: none;
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* Kill transitions on non-focus elements; preserve the focus-visible outline
+     so keyboard users keep the ring */
+  .arch-map .node rect.box {
+    transition: none;
+  }
+  .arch-map *,
+  .arch-map *::before,
+  .arch-map *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .arch-map a:focus-visible,
+  .arch-map button:focus-visible,
+  .arch-map [tabindex]:focus-visible,
+  .arch-map [role='button']:focus-visible {
+    transition: outline-color 0s;
+  }
+}

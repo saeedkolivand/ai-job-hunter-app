@@ -21,8 +21,10 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 
 // Claim-bearing architecture diagrams (path/IPC/registry/denylist checks). The
-// architecture map is a passthrough dashboard under public/; how-it-works is now
-// a Next route whose authored body lives in src/content/.
+// architecture map is now a Next route backed by a typed data module
+// (src/data/architecture-map.ts) whose nodes cite REAL file paths + IPC contract
+// names — exactly what this guard validates; how-it-works is a Next route whose
+// authored body lives in src/content/.
 //
 // NOTE: the agent-system page was ported to a typed data source
 // (src/data/agent-fleet.ts, PR2), but it is deliberately NOT in this path-checked
@@ -31,7 +33,7 @@ const ROOT = process.cwd();
 // below instead (see SECRET_SCAN_FILES). check-agent-system.mjs owns its name/roster
 // invariants.
 const DIAGRAMS = [
-  'apps/landing/public/architecture-map.html',
+  'apps/landing/src/data/architecture-map.ts',
   'apps/landing/src/content/how-it-works/body.html',
 ];
 
@@ -41,7 +43,7 @@ const DIAGRAMS = [
 // the dashboards + benchmarks are public/ passthrough.
 const SECRET_SCAN_FILES = [
   'apps/landing/src/data/agent-fleet.ts',
-  'apps/landing/public/architecture-map.html',
+  'apps/landing/src/data/architecture-map.ts',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
   'scripts/assets/social-card.html',
@@ -97,8 +99,9 @@ function validContractNames() {
   );
 }
 
-// `N('ct-apply', 'contract', 'apply.ts', …)` → the 3rd arg is the contract file.
-const CONTRACT_NODE_RE = /N\(\s*'[^']*'\s*,\s*'contract'\s*,\s*'([A-Za-z0-9]+)\.ts'/g;
+// A contract-cluster node `{ … cluster: 'contract', label: 'ai.ts', … }` → the
+// `label` names the contract file. (Non-.ts labels like `schemas/` are skipped.)
+const CONTRACT_NODE_RE = /cluster:\s*['"]contract['"]\s*,\s*label:\s*['"]([A-Za-z0-9]+)\.ts['"]/g;
 // Any explicit `…/ipc/contracts/<name>.ts` reference.
 const CONTRACT_PATH_RE = /ipc\/contracts\/([A-Za-z0-9]+)\.ts/g;
 
