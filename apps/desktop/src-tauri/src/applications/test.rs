@@ -2660,3 +2660,90 @@ fn upsert_and_merge_answers_race_never_loses_an_update() {
         "no answer from either concurrent writer may be dropped"
     );
 }
+
+/// `update_fields` carried the SAME two-lock structure `upsert_internal` was
+/// fixed for: `get` took and released the mutex, then `write_row` retook it and
+/// re-persisted EVERY column from the now-stale snapshot. A concurrent
+/// `merge_answers` (extension `answers.save`) commit landing in that gap was
+/// silently clobbered.
+///
+/// Same honest proxy as the test above — hammer one Application from two
+/// threads, one appending an individually-traceable answer per iteration, the
+/// other patching an unrelated field — and assert every answer survives.
+#[test]
+fn update_fields_and_merge_answers_race_never_loses_an_answer() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(ApplicationStore::open(dir.path()).unwrap());
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/update-race",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    const ITERS: usize = 40;
+
+    let merge_store = store.clone();
+    let merge_id = id.clone();
+    let merge_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            merge_store
+                .merge_answers(
+                    &merge_id,
+                    vec![ApplicationAnswer {
+                        id: String::new(),
+                        question: format!("merge-question-{i}"),
+                        answer: format!("merge-answer-{i}"),
+                    }],
+                )
+                .unwrap();
+        }
+    });
+
+    let update_store = store.clone();
+    let update_id = id.clone();
+    let update_thread = std::thread::spawn(move || {
+        for i in 0..ITERS {
+            update_store
+                .update_fields(
+                    &update_id,
+                    Some(format!("note-{i}")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+        }
+    });
+
+    merge_thread.join().unwrap();
+    update_thread.join().unwrap();
+
+    let app = store.get(&id).unwrap();
+    for i in 0..ITERS {
+        assert!(
+            app.answers
+                .iter()
+                .any(|a| a.question == format!("merge-question-{i}")),
+            "merge_answers entry {i} was lost to a concurrent update_fields"
+        );
+    }
+    assert_eq!(
+        app.answers.len(),
+        ITERS,
+        "no answer may be dropped by a concurrent update_fields"
+    );
+    assert!(
+        app.notes.starts_with("note-"),
+        "the last update_fields patch must survive, got {:?}",
+        app.notes
+    );
+}

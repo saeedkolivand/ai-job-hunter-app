@@ -987,8 +987,15 @@ impl ApplicationStore {
         recipient_name: Option<String>,
         recipient_email: Option<String>,
     ) -> AppResult<()> {
-        let existing = self
-            .get(id)
+        // Lookup + write share ONE lock/transaction (`row_by_id_conn`, not the
+        // self-locking `get`). `write_row_conn` re-persists EVERY column from the
+        // snapshot read here, so the old released-then-retaken lock left a gap in
+        // which a concurrent commit — the extension's `answers.save`/
+        // `merge_answers`, or `set_status` — was silently clobbered by this stale
+        // full-row write. Same fix `upsert_internal` already carries.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let existing = Self::row_by_id_conn(&tx, id)?
             .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
         let app = Application {
             notes: notes.unwrap_or(existing.notes),
@@ -1007,7 +1014,9 @@ impl ApplicationStore {
             updated_at: now_ms(),
             ..existing
         };
-        self.write_row(&app)
+        Self::write_row_conn(&tx, &app)?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Delete an Application and its status history. `keep_documents` is consumed
