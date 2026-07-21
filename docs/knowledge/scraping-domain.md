@@ -455,7 +455,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 **Surfacing + watching:**
 
-- **Typeahead:** `packages/ui` CompanyTypeahead component (modeled on LocationInput) in ScrapeForm, backed by `discovery` IPC namespace (`search_ats_slugs`, `star_company`, `get_watched_companies`). Merges discovered rows with curated `ats_seed` (seeds are display-only unless starred).
+- **Typeahead:** `packages/ui` CompanyTypeahead component (modeled on LocationInput) in ScrapeForm, backed by `discovery` IPC namespace (see `packages/shared/src/ipc/contracts/discovery.ts` for canonical method shapes). Merges discovered rows with curated `ats_seed` (seeds are display-only unless starred).
 - **Watching:** Starred discoveries are user-watched companies. `AutopilotTargetSchema` gains optional `watchedCompaniesOnly?: boolean`. At run time, `autopilot_helpers/mod.rs::resolve_watched_companies` materializes the currently-starred set and fans out to per-company scrapers via `scraping/engine::scrape_boards_with_overrides` (per-board seeded-companies override). A board with no matching stars gets a clean needs-company skip.
 
 **Source pointers:**

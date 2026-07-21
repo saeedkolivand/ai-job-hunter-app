@@ -32,7 +32,7 @@ Starred discoveries are user-watched companies. Autopilot's board step gains an 
 
 ### (f) IPC via standard 5 touchpoints
 
-Add discovery contract to `packages/shared/src/ipc/contracts/discovery.ts`: `search_ats_slugs { query: string } -> DiscoveredCompany[]`, `star_company { atsKind, slug, starred: bool }`, and `get_watched_companies { }`. Implement handlers in `commands/discovery.rs`. Add new query key to `services/query-client.ts`. Wire service hooks in `apps/desktop/src/renderer/services/discovery.ts`. Generate IPC bindings via `pnpm gen:ipc` and commit output.
+Add discovery contract to `packages/shared/src/ipc/contracts/discovery.ts` with `searchCompanies`, `setStarred`, and `watched` methods (channels: `discovery:searchCompanies|setStarred|watched`). Implement handlers in `commands/discovery.rs`. Wire service hooks in `renderer/services/use-discovery/`. Generate IPC bindings via `pnpm gen:ipc` and commit output. See the contract file for the canonical method shapes and query-key registrations.
 
 ## Alternatives rejected
 
