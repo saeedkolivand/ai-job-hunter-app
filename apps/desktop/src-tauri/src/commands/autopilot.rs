@@ -196,6 +196,33 @@ pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
     json!(null)
 }
 
+/// Finalize a user-cancelled autopilot run identically at both cancel sites (a
+/// Stop caught in the scrape `Err` arm, and a Stop caught before we record
+/// results). Clears the live run status AND the prior run's stale summaries
+/// (this run never reached `record_run`, so a lingering chip strip would render
+/// stale board data as if it belonged to this cancelled run), marks the job
+/// cancelled, ends the `span` with the site-specific `span_msg`, and returns the
+/// cancelled payload. Extracted so the two sites can't drift.
+///
+/// The engine cancel token is unregistered by each caller at its own point (the
+/// scrape `Err` arm has already done so before reaching here; the pre-record
+/// site does it inline just before the call), so that is deliberately NOT part
+/// of this helper.
+fn finish_cancelled(
+    app: &AppHandle,
+    span: &crate::observability::Span,
+    autopilot_id: &str,
+    job_id: &str,
+    span_msg: &str,
+) -> Value {
+    store(app)
+        .lock()
+        .set_run_status_clearing_summaries(autopilot_id, RunStatus::Completed);
+    crate::commands::jobs::job_cancel(app, job_id);
+    span.end_with(span_msg, false);
+    json!({ "jobId": job_id, "cancelled": true })
+}
+
 #[tauri::command]
 pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // Concurrent-run guard: a double-invoke of the SAME autopilot must not
@@ -262,12 +289,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             // `outcome_failed` true, which re-runs the very scrape they stopped.
             // Mirrors the Ok-path cancel handler below.
             if cancel_token.is_cancelled() {
-                store(&app)
-                    .lock()
-                    .set_run_status_clearing_summaries(&autopilot_id, RunStatus::Completed);
-                crate::commands::jobs::job_cancel(&app, &job_id);
-                span.end_with("cancelled during scrape", false);
-                return json!({ "jobId": job_id, "cancelled": true });
+                return finish_cancelled(
+                    &app,
+                    &span,
+                    &autopilot_id,
+                    &job_id,
+                    "cancelled during scrape",
+                );
             }
             // Whole-batch failure never reached `record_run`, so there are no
             // fresh summaries for this run — clear the PRIOR run's, or a later
@@ -430,17 +458,13 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // not overwrites, the slot), so cancels during scrape land here too.
     if cancel_token.is_cancelled() {
         engine.unregister_token(&job_id).await;
-        // User-initiated stop, not a failure or crash — clear the live status so
-        // it isn't later reconciled to "interrupted". This run never reached
-        // `record_run`, so it has no fresh summaries either — clear the PRIOR
-        // run's `last_run_summaries` too, or a future chip strip would render
-        // stale board data as if it belonged to this cancelled run.
-        store(&app)
-            .lock()
-            .set_run_status_clearing_summaries(&autopilot_id, RunStatus::Completed);
-        crate::commands::jobs::job_cancel(&app, &job_id);
-        span.end_with("cancelled before recording results", false);
-        return json!({ "jobId": job_id, "cancelled": true });
+        return finish_cancelled(
+            &app,
+            &span,
+            &autopilot_id,
+            &job_id,
+            "cancelled before recording results",
+        );
     }
 
     // Derive the honest run outcome from the per-board summaries BEFORE they are
