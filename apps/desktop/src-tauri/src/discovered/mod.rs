@@ -284,7 +284,9 @@ impl DiscoveredCompanyStore {
             ats_kind: row.get(0)?,
             slug: row.get(1)?,
             display_name: row.get::<_, Option<String>>(2)?,
-            seen_count: ts_from_db(row.get::<_, i64>(3)?),
+            // `seen_count` is a plain count, not a timestamp — clamp a stray
+            // negative to 0 (never written) without borrowing the epoch-ms helpers.
+            seen_count: u64::try_from(row.get::<_, i64>(3)?).unwrap_or(0),
             starred: row.get::<_, i64>(4)? != 0,
             source: row.get(5)?,
         })
@@ -307,7 +309,8 @@ impl DiscoveredCompanyStore {
                     display_name: row.get::<_, Option<String>>(2)?,
                     first_seen_at: ts_from_db(row.get::<_, i64>(3)?),
                     last_seen_at: ts_from_db(row.get::<_, i64>(4)?),
-                    seen_count: ts_from_db(row.get::<_, i64>(5)?),
+                    // Plain count cast (not a timestamp) — clamp a stray negative to 0.
+                    seen_count: u64::try_from(row.get::<_, i64>(5)?).unwrap_or(0),
                     source: row.get(6)?,
                     starred: row.get::<_, i64>(7)? != 0,
                 })
@@ -371,7 +374,8 @@ impl DataStore for DiscoveredCompanyStore {
                     display,
                     ts_to_db(row.first_seen_at),
                     ts_to_db(row.last_seen_at),
-                    ts_to_db(row.seen_count),
+                    // Plain count cast (not a timestamp) — saturate at i64::MAX.
+                    i64::try_from(row.seen_count).unwrap_or(i64::MAX),
                     clamp_field(&row.source),
                     row.starred as i64,
                 ],

@@ -2943,6 +2943,48 @@ async fn watched_overrides_keep_each_board_list_pure_no_foreign_crowding() {
     );
 }
 
+/// A watched override whose entry is PRESENT but EMPTY (`{"greenhouse": []}`) must
+/// be treated as absent — the board is skipped `needs-company` and never fetched.
+/// Pins the empty-vec branch of the `overrides.get(id).map(|s| !s.is_empty())
+/// .unwrap_or(false)` skip gate (engine/mod.rs), distinct from a MISSING key.
+#[tokio::test]
+async fn watched_override_present_but_empty_is_treated_as_absent() {
+    static GH: std::sync::LazyLock<SeedCapturingScraper> =
+        std::sync::LazyLock::new(|| SeedCapturingScraper::ats("greenhouse"));
+
+    let engine = ScraperEngine::new();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    // Present key, EMPTY slug list — must NOT run greenhouse.
+    let mut overrides: HashMap<String, Vec<String>> = HashMap::new();
+    overrides.insert("greenhouse".to_string(), Vec::new());
+
+    let (_postings, summaries) = engine
+        .scrape_boards_with_resolver_and_overrides(
+            &["greenhouse".to_string()],
+            fake_input(5),
+            "job-watched-empty-override".to_string(),
+            None,
+            None,
+            tmp.path(),
+            |_id| Ok(&*GH as &'static dyn Scraper),
+            Some(&overrides),
+        )
+        .await
+        .expect("run must return Ok");
+
+    assert!(
+        GH.captured.lock().unwrap().is_none(),
+        "greenhouse must NOT be fetched when its override entry is present-but-empty"
+    );
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(
+        summaries[0].skipped.as_deref(),
+        Some("needs-company"),
+        "a present-but-empty override entry is treated as absent (needs-company skip)"
+    );
+    assert_eq!(summaries[0].count, 0);
+}
+
 /// A non-ATS board's `companies` field must be untouched by the seed
 /// auto-population, and running it alongside a seeded ATS board must not
 /// disturb result ordering or summary/count assembly.

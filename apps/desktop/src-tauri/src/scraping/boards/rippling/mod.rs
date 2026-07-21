@@ -26,7 +26,11 @@ const MAX_COMPANIES: usize = 50;
 /// label — so mixed case is allowed, unlike the DNS-label boards). Rejects
 /// anything that could carry a path-traversal or query-string payload; the
 /// slug is also percent-encoded before use, defence in depth.
-fn is_valid_rippling_slug(slug: &str) -> bool {
+///
+/// `pub(crate)` so the ATS URL-shape extractor (`scraping::ats_ref::rippling_slug`)
+/// validates a harvested first-path-segment slug against the SAME shape this board
+/// enforces — the store never persists a slug the board would later refuse.
+pub(crate) fn is_valid_rippling_slug(slug: &str) -> bool {
     if slug.is_empty() || slug.len() > 63 {
         return false;
     }

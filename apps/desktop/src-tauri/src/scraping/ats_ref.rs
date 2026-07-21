@@ -192,7 +192,11 @@ fn rippling_slug(url: &str) -> Option<String> {
     if host != "ats.rippling.com" {
         return None;
     }
-    first_segment(&u)
+    let slug = first_segment(&u)?;
+    // Validate against the SAME shape the board enforces (`is_valid_rippling_slug`)
+    // so we never persist a slug `boards::rippling` would later refuse — e.g. a
+    // path-traversal/query-bearing or over-length first segment.
+    crate::scraping::boards::rippling::is_valid_rippling_slug(&slug).then_some(slug)
 }
 
 #[cfg(test)]
@@ -347,6 +351,28 @@ mod tests {
             "rippling",
             "Acme-Corp",
         );
+    }
+
+    #[test]
+    fn rippling_invalid_slug_shape_returns_none() {
+        // A first path segment whose SHAPE the board's `is_valid_rippling_slug`
+        // rejects (dot, leading/trailing hyphen, underscore, over-length) must not
+        // be harvested — the store must never hold a slug the board would refuse.
+        for url in [
+            "https://ats.rippling.com/acme.corp/jobs/1", // dot
+            "https://ats.rippling.com/-acme/jobs/1",     // leading hyphen
+            "https://ats.rippling.com/acme-/jobs/1",     // trailing hyphen
+            "https://ats.rippling.com/acme_corp/jobs/1", // underscore
+        ] {
+            assert_eq!(
+                extract_ats_ref(url),
+                None,
+                "an invalid-shape rippling slug must not extract: {url}"
+            );
+        }
+        // A 64-char first segment (board cap is 63) is also refused.
+        let too_long = format!("https://ats.rippling.com/{}/jobs/1", "a".repeat(64));
+        assert_eq!(extract_ats_ref(&too_long), None, "over-length slug refused");
     }
 
     // ── Near-miss suite → None ───────────────────────────────────────────────────
