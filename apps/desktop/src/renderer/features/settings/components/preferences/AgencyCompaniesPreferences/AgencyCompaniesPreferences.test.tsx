@@ -114,4 +114,18 @@ describe('AgencyCompaniesPreferences', () => {
     render(<AgencyCompaniesPreferences />);
     expect(screen.getByText('settings.agencyCompanies.empty')).toBeInTheDocument();
   });
+
+  it('does not call the setter before job preferences have loaded (pre-load guard)', async () => {
+    // prefs.data stays undefined (beforeEach default) — the query hasn't
+    // resolved, so adding would replace the saved list with just this entry.
+    const user = userEvent.setup();
+    render(<AgencyCompaniesPreferences />);
+
+    await user.type(
+      screen.getByPlaceholderText('settings.agencyCompanies.placeholder'),
+      'Hays{Enter}'
+    );
+
+    expect(mockSetExtra).not.toHaveBeenCalled();
+  });
 });

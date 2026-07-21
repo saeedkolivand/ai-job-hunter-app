@@ -301,6 +301,8 @@ Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at 
 4. **LinkedIn card shape extraction** — extract a pure `parse_job_cards(html)` seam from LinkedIn `search_guest` so acceptance fixtures can use real card shape (currently uses GermanTechJobs feed parser).
 5. **Batch-level deferrals** — active slug prober, extension-side ATS fingerprinting, community slug directory, cross-user analytics (shared with other deferred post-launch batch work).
 6. **Split-view selection re-point** — when a selected live-streamed row becomes non-canonical at completion, `JobsResults` falls back to top-of-list instead of the row's cluster canonical; `absorbedInto` doesn't cover cluster collapses. Narrow UX gap: re-point via clusterId.
+7. **Precompute trigram sets in blocking** — per-item trigram set computed once in `resolve_block` instead of per-comparison; bounded perf nit (AI review gate, low priority).
+8. **Tighten bare dash-tail location heuristic** — consider restricting `normalize_title` dash-tail strip to closed place-name list or parenthetical-only if team-suffix merges (Platform vs Payments) annoy users in practice.
 
 ## Jobs-page diagnostics surface (PR C, 2026-07-10)
 
