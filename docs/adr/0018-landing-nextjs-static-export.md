@@ -74,9 +74,60 @@ available"). No API call; the JSON is baked at build time and deployed with the 
   If true server features become necessary, a separate backend (or a Tauri localhost bridge) is
   the only option — this app never becomes a full-stack Next deployment.
 
+## Addendum: PR2 Implementation
+
+**Next.js version and TypeScript constraint** (shipped 2026-07-20, PR2):
+The landing package uses **Next.js 16.2.10** (see `apps/landing/package.json`). The root workspace TypeScript is held
+at 6.x for ESLint + typescript-eslint 8.x compatibility (see root `package.json`), landing is pinned to 6.0.3 (see `apps/landing/package.json`),
+and other app builds in desktop/extension use 7.x via pnpm per-importer resolution (see respective manifests).
+Reason: Next 16's `verifyTypeScriptSetup`
+does not recognize TS 7's native-compiler package layout and crashes the build (documented in `apps/landing/package.json#//typescript`). See `pnpm-workspace.yaml` and per-importer `package.json` files for the split configuration. Pinning Next 16 is the stability
+anchor; any future upgrade should be gated by `pnpm check:parity` and tested against the
+TS 6/7 split constraint.
+
+**Mission control clean rename** (shipped 2026-07-20, PR2):
+The `/mission-control` full-repo dashboard replaced the passthrough `ci-dashboard.html`
+artifact from `public/`. The old URL path is a **clean rename with no redirect stub** — a
+direct owner decision. Future requests to `aijobhunter.app/ci-dashboard/` return 404.
+The missio-control feature is now a Next.js typed-data route (`src/data/agent-fleet.ts`
+for the agent-system route, and `/mission-control` from `src/app/`). Both are built by
+Next, not passthrough artifacts.
+
+**Architecture-map port deferred** (2026-07-20):
+The architecture-map SVG dashboard is still served as a passthrough artifact from `public/`.
+Porting it to a typed-data route (like `/agent-system` was ported) is deferred to a
+follow-up PR. Design intent and content are unchanged; it remains accessible via the
+existing URL.
+
+**SECURITY: Origin Invariant for Browser-Stored Tokens** (architectural constraint):
+GitHub Pages serves the landing site at `aijobhunter.app` with a meta CSP (`<meta
+http-equiv="Content-Security-Policy" ...>`). **Meta CSP has a known limitation: the
+`frame-ancestors`, `report-uri`, and `sandbox` directives are inert in meta tags** (they
+only work in HTTP headers). This means framing attacks _cannot_ be mitigated by meta CSP.
+**Mitigation:** A frame-buster script (inline `<script>` in the page's HTML) tests
+`window.self !== window.top` and navigates to `self` if framed — this stops clickjacking
+on Pages even when frame-ancestors is ignored.
+
+**Hard constraint:** No third-party JavaScript must ever be allowed on the `aijobhunter.app`
+origin. Any foreign script (a polyfill from a CDN, a third-party widget, an analytics
+snippet) can read `localStorage`, and the mission-control dashboard stores a GitHub PAT
+in localStorage for signed-in users. Because meta CSP cannot enforce script-src, **the
+only protection is the absence of third-party script tags in the HTML**. All scripts are
+either:
+
+- Inline `<script>` (baked into the Next.js build output), or
+- Same-origin JS modules fetched from `/\_next/` (Next.js runtime).
+
+**The origin invariant extends to stylesheets:** all fonts and third-party styles are self-hosted from `public/fonts/` to prevent external stylesheet links.
+
+Verify on every landing page update that no external `<script src="https://…">` or
+`<link href="https://…" rel="stylesheet">` tags are present in the built HTML (the
+parity gate catches structural changes). This origin invariant is non-negotiable for
+browser-stored secrets.
+
 ## References
 
 - Supersedes-parts-of: `docs/adr/0017-landing-consolidation-static-site.md` (the no-build-step
   property; the directory consolidation is reaffirmed).
 - Related: `.github/workflows/pages.yml` (deploy step), `apps/landing/next.config.ts`
-  (static-export config), `apps/landing/scripts/check-parity.mjs` (parity gate).
+  (static-export config), `apps/landing/scripts/check-parity.mjs` (parity gate), `apps/landing/src/data/agent-fleet.ts` (typed-data routes).

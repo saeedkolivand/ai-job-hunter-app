@@ -1,13 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
-import { GoogleFonts } from '@/components/GoogleFonts';
+import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { RawHtml } from '@/components/RawHtml';
 import { readContent } from '@/lib/content';
-
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Anton&family=Gloria+Hallelujah&family=Patrick+Hand&family=Space+Mono:wght@400;700&display=swap';
 
 export const metadata: Metadata = {
   title: 'AI Job Hunter — Privacy Policy',
@@ -34,7 +31,7 @@ export const viewport: Viewport = { themeColor: '#f4ecdc' };
 export default function PrivacyPage() {
   return (
     <>
-      <GoogleFonts href={FONTS} />
+      <Fonts />
       <PageStyle css={readContent('privacy', 'styles.css')} />
       <RawHtml html={readContent('privacy', 'body.html')} />
       <ClientScripts srcs={['/scripts/privacy-0.js']} />

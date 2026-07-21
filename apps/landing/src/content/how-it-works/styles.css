@@ -59,29 +59,29 @@
         font-family: var(--mono);
         font-size: 0.82em;
         color: var(--brand);
-        background: rgba(110, 168, 254, 0.1);
+        background: var(--doc-accent-soft);
         padding: 1px 6px;
         border-radius: 6px;
-        border: 1px solid rgba(110, 168, 254, 0.18);
+        border: 1px solid var(--doc-accent-soft);
         white-space: nowrap;
       }
       .chan {
         font-family: var(--mono);
         font-size: 0.82em;
         color: var(--brand2);
-        background: rgba(139, 123, 255, 0.12);
+        background: var(--doc-pink-soft);
         padding: 1px 6px;
         border-radius: 6px;
-        border: 1px solid rgba(139, 123, 255, 0.22);
+        border: 1px solid var(--doc-pink-soft);
       }
       .cmd {
         font-family: var(--mono);
         font-size: 0.82em;
         color: var(--rust);
-        background: rgba(255, 157, 92, 0.1);
+        background: var(--doc-amber-soft);
         padding: 1px 6px;
         border-radius: 6px;
-        border: 1px solid rgba(255, 157, 92, 0.2);
+        border: 1px solid var(--doc-amber-soft);
       }
 
       /* Sidebar */
@@ -115,7 +115,7 @@
         font-weight: 800;
         color: #0b1020;
         font-size: 18px;
-        box-shadow: 0 6px 20px rgba(110, 168, 254, 0.35);
+        box-shadow: 0 6px 20px rgba(226, 75, 74, 0.35);
       }
       .brand h1 {
         font-size: 14px;
@@ -341,7 +341,7 @@
       }
       .node.sel {
         outline: 2px solid var(--brand);
-        background: rgba(110, 168, 254, 0.14);
+        background: var(--doc-accent-soft);
       }
       .L-ui {
         border-top: 3px solid var(--ui);
@@ -360,7 +360,7 @@
         border: 1px dashed var(--line2);
         border-radius: var(--radius);
         padding: 18px;
-        background: linear-gradient(180deg, rgba(110, 168, 254, 0.06), transparent);
+        background: linear-gradient(180deg, var(--doc-accent-soft), transparent);
         min-height: 90px;
       }
       .detail h4 {
@@ -466,10 +466,10 @@
         background: rgba(110, 168, 254, 0.16);
       }
       .strip .lane.on.ipc {
-        background: rgba(139, 123, 255, 0.16);
+        background: var(--doc-pink-soft);
       }
       .strip .lane.on.rust {
-        background: rgba(255, 157, 92, 0.14);
+        background: var(--doc-amber-soft);
       }
       .strip .lane.on.ext {
         background: rgba(55, 211, 155, 0.14);
@@ -735,7 +735,7 @@
       }
       .note {
         border-left: 3px solid var(--brand);
-        background: rgba(110, 168, 254, 0.07);
+        background: var(--doc-accent-soft);
         padding: 12px 16px;
         border-radius: 0 10px 10px 0;
         margin: 16px 0;
@@ -765,36 +765,40 @@
         color: var(--dim);
         font-size: 12px;
       }
-      /* Full-width footer spanning both grid columns */
-      body > footer {
+      /* Full-width footer spanning both grid columns. Descendant (not `> footer`)
+         combinator: in the Next port the body is wrapped in a display:contents
+         <div> (RawHtml), so the footer is a grid item of <body> but NOT its direct
+         DOM child — `body > footer` would not match and the footer would squeeze
+         into the 248px sidebar column. */
+      body footer {
         grid-column: 1 / -1;
         border-top: 1px solid var(--line);
         margin-top: 60px;
         text-align: center;
         padding: 24px 16px 28px;
       }
-      body > footer .byline {
+      body footer .byline {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         font-size: 15px;
         color: var(--muted);
         display: block;
         margin: 0 0 10px;
       }
-      body > footer .foot-links {
+      body footer .foot-links {
         font-family: var(--mono);
         font-size: 13px;
         color: var(--muted);
         margin-top: 10px;
       }
-      body > footer .foot-links a {
+      body footer .foot-links a {
         color: var(--muted);
         border: none;
         transition: color .2s;
       }
-      body > footer .foot-links a:hover {
+      body footer .foot-links a:hover {
         color: var(--txt);
       }
-      body > footer .foot-links a:focus-visible {
+      body footer .foot-links a:focus-visible {
         outline: 2px solid var(--brand);
         outline-offset: 2px;
         border-radius: 2px;
