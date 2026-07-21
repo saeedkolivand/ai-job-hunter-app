@@ -175,7 +175,16 @@ export function awaitAiStream(
           off();
           splitter.flush();
           cleanup();
-          resolve(buffer || job.result?.text || '');
+          // This poll exists because streamed deltas can be dropped, so the
+          // buffer is exactly the value that cannot be trusted to be complete.
+          // `buffer || job.result?.text` only consulted the persisted text when
+          // the buffer was EMPTY — a dropped INTERIOR delta leaves a truncated
+          // but truthy prefix, which was then resolved as the finished document
+          // and persisted. Take whichever is longer, so a partial stream can
+          // never win over the authoritative persisted result (and a missing
+          // `result.text` still falls back to whatever did stream).
+          const persisted = job.result?.text ?? '';
+          resolve(persisted.length > buffer.length ? persisted : buffer);
         }
       })().finally(() => {
         pollInFlight = false;
