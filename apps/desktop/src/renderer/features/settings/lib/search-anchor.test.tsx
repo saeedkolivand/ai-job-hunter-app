@@ -68,6 +68,7 @@ vi.mock('@/services', () => ({
   useSetContactProfile: () => ({ mutate: vi.fn(), isPending: false }),
   useJobPreferences: () => ({ data: undefined }),
   useSetJobPreferences: () => ({ mutate: vi.fn(), isPending: false }),
+  useSetExtraAgencyCompanies: () => ({ mutate: vi.fn(), isPending: false }),
   // AccountsSettingsTab
   useCredentialsAvailable: () => ({ data: true }),
   useBoardSession: () => ({ data: undefined }),

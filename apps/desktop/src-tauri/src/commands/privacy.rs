@@ -12,6 +12,7 @@ use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
 use crate::credentials::CredentialStore;
 use crate::data_store::Resettable;
+use crate::dedup::DedupStore;
 use crate::documents::DocumentStore;
 use crate::email_watch::EmailWatchStore;
 use crate::job_preferences::JobPreferencesStore;
@@ -75,6 +76,13 @@ impl Resettable for ApplicationStore {
 impl Resettable for JobPreferencesStore {
     fn reset(&self) {
         let _ = self.clear();
+    }
+}
+impl Resettable for DedupStore {
+    fn reset(&self) {
+        // Wipe every "not a duplicate" verdict — after a factory reset the
+        // clusterer starts from a clean slate (ADR-029).
+        self.clear_all();
     }
 }
 impl Resettable for ContactProfileStore {
@@ -141,6 +149,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "spend",
     "email_watch",
     "cache",
+    "dedup_tombstones",
 ];
 
 /// Registry of factory-reset actions, populated as stores are managed and
@@ -429,6 +438,7 @@ mod tests {
                     category: "backend".into(),
                 }]),
                 salary_expectation: Some("€75,000".into()),
+                extra_agency_companies: Some(vec!["Hays".into()]),
             })
             .unwrap();
         let before = store.get();
@@ -454,6 +464,10 @@ mod tests {
         assert!(
             after.salary_expectation.is_none(),
             "salary_expectation must also be None after reset"
+        );
+        assert!(
+            after.extra_agency_companies.is_none(),
+            "extra_agency_companies must also be None after reset"
         );
     }
 
@@ -517,6 +531,7 @@ mod tests {
         reg.register::<SpendStore>("spend");
         reg.register::<EmailWatchStore>("email_watch");
         reg.register::<KvCache>("cache");
+        reg.register::<DedupStore>("dedup_tombstones");
 
         let labels = reg.labels();
         for label in expected {

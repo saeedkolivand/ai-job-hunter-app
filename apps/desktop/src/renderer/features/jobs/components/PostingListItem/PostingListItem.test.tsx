@@ -14,8 +14,10 @@
 
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+import { TEST_IDS } from '@ajh/test-ids';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,23 @@ vi.mock('@ajh/ui', () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
   transition: { spring: {} },
   resolveTransition: (t: unknown) => t,
+  // Real chips render through these — SourceBadge/Tag are non-focusable spans so
+  // the "no focusable descendants" assertion reflects production semantics.
+  SourceBadge: ({ source }: { source: string }) => <span>{source}</span>,
+  Tag: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  Button: ({ children, onClick }: { children?: React.ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+}));
+
+// ── Real cluster/agency chips render here (the broken non-interactive path is
+//    what we assert), so ClusterSourceChips' useOpenExternal needs a stub — the
+//    only provider dependency (no AppClient/QueryClient tree required). ────────
+
+vi.mock('@/services', () => ({
+  useOpenExternal: () => ({ mutate: vi.fn() }),
 }));
 
 // ── CompanyAvatar — renders company initials via passthrough ──────────────────
@@ -621,5 +640,61 @@ describe('PostingListItem — no match score in list row', () => {
       />
     );
     expect(screen.queryByTestId('match-band')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-board cluster chips are NON-INTERACTIVE inside the listbox option
+// (ADR-029 + APG active-descendant): role="option" with tabIndex=-1 must not
+// contain focusable descendants — chips render as presentational badges only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('PostingListItem — cluster/agency chips are non-interactive', () => {
+  function clustered(overrides: Partial<Posting> = {}): Posting {
+    return makePosting({
+      clusterId: 'k1',
+      clusterCanonical: true,
+      clusterMembers: [
+        { key: 'k1', board: 'linkedin', url: 'https://example.com/job/1' },
+        { key: 'k2', board: 'indeed', url: 'https://indeed.com/job/2' },
+      ],
+      ...overrides,
+    });
+  }
+
+  it('renders source + agency chips with ZERO focusable descendants in the option row', () => {
+    render(
+      <PostingListItem
+        posting={clustered({ isAgency: true })}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={vi.fn()}
+      />
+    );
+    const row = screen.getByRole('option');
+    // Active-descendant pattern: the option must add no tab stops.
+    expect(within(row).queryAllByRole('button')).toHaveLength(0);
+    expect(within(row).queryAllByRole('link')).toHaveLength(0);
+    // The non-self source still renders — as a presentational badge, not a control.
+    const chips = within(row).getAllByTestId(TEST_IDS.jobs.clusterSourceChip);
+    expect(chips).toHaveLength(1);
+    expect(within(row).getByText('indeed')).toBeInTheDocument();
+  });
+
+  it('a chip click selects the row once — no double action, no separate handler', () => {
+    const onSelect = vi.fn();
+    render(
+      <PostingListItem
+        posting={clustered()}
+        selected={false}
+        formatRelativeTime={formatRelativeTime}
+        onSelect={onSelect}
+      />
+    );
+    const chip = within(screen.getByRole('option')).getByTestId(TEST_IDS.jobs.clusterSourceChip);
+    fireEvent.click(chip);
+    // The chip has no own click handler; the click bubbles to the row and
+    // selects exactly once (no chip-level second action).
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 });

@@ -31,6 +31,10 @@ const L0: &[&str] = &[
     "platform",
     // Process-local anti-abuse limiter (in-memory rate/concurrency); depends only on `error`.
     "limits",
+    // Pure vector math (cosine similarity), shared by `commands::ai_provider`
+    // (embedding compare) and `scraping::cluster` (cross-board dedup) so the L1
+    // cluster module reuses it without an upward import (R7). Depends on nothing.
+    "vector",
 ];
 const L1: &[&str] = &[
     "scraping",
@@ -39,6 +43,10 @@ const L1: &[&str] = &[
     "documents",
     "jobs",
     "postings",
+    // Cross-board dedup verdict store (ADR-029): a per-domain SQLite store of
+    // user "not a duplicate" pair tombstones. Tauri-free; imports only db/error/
+    // data_store (L0), same posture as the other L1 stores.
+    "dedup",
     "credentials",
     "job_preferences",
     "contact_profile",
@@ -351,6 +359,7 @@ const R3_ALLOW: &[&str] = &[
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
     "referrals/mod.rs",
+    "dedup/mod.rs",
     "email_watch/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",

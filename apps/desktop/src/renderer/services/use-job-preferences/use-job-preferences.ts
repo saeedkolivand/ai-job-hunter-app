@@ -46,6 +46,23 @@ export const useSetSalaryExpectation = () => {
 };
 
 /**
+ * Write-through for `extraAgencyCompanies` only (ADR-029 §i) — a single-column
+ * backend write via `setExtraAgencyCompanies`, NEVER the full-row `set()` merged
+ * with a possibly-stale/not-yet-loaded cache (same PR #695 foot-gun as
+ * {@link useSetSalaryExpectation}). Invalidates the shared `jobPreferences`
+ * query on success.
+ */
+export const useSetExtraAgencyCompanies = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (companies: string[] | undefined) =>
+      api.jobPreferences.setExtraAgencyCompanies(companies),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.jobPreferences.all }),
+  });
+};
+
+/**
  * Boot-time push of the renderer-only `applicant.salaryExpectation` onto the
  * backend-owned `job_preferences` store (Task #30) — the bridge's
  * `answers.suggest` reads it from there for the synthetic salary-question row

@@ -711,3 +711,58 @@ fn test_interaction_store_import_bundle() {
     let imported = store.import_bundle(records);
     assert_eq!(imported, 1);
 }
+
+// ── PostingsCache::apply_cluster_annotations (ADR-029) ────────────────────────
+
+#[test]
+fn apply_cluster_annotations_patches_matching_items_by_id_and_skips_others() {
+    let mut cache = PostingsCache::default();
+    cache.add(json!({ "id": "j1", "title": "Rust Developer" }));
+    cache.add(json!({ "id": "j2", "title": "Sales Manager" }));
+
+    let mut by_id = std::collections::HashMap::new();
+    by_id.insert(
+        "j1".to_string(),
+        json!({
+            "clusterId": "j1",
+            "clusterCanonical": true,
+            "clusterMembers": [{ "key": "j1", "url": "https://x/1" }],
+            "isAgency": false,
+        }),
+    );
+    // An annotation for an id NOT in the cache must be a no-op (no row created).
+    by_id.insert("gone".to_string(), json!({ "clusterId": "gone" }));
+
+    cache.apply_cluster_annotations(&by_id);
+
+    let items = cache.get_all();
+    assert_eq!(items.len(), 2, "no row is created for a missing id");
+    let j1 = items
+        .iter()
+        .find(|i| i.get("id") == Some(&json!("j1")))
+        .unwrap();
+    assert_eq!(
+        j1.get("clusterId"),
+        Some(&json!("j1")),
+        "j1 gets its annotation"
+    );
+    assert_eq!(j1.get("clusterCanonical"), Some(&json!(true)));
+    // The untouched item carries no cluster fields.
+    let j2 = items
+        .iter()
+        .find(|i| i.get("id") == Some(&json!("j2")))
+        .unwrap();
+    assert!(
+        j2.get("clusterId").is_none(),
+        "an un-annotated item is left alone"
+    );
+}
+
+#[test]
+fn apply_cluster_annotations_empty_map_is_a_noop() {
+    let mut cache = PostingsCache::default();
+    cache.add(json!({ "id": "j1", "title": "Rust Developer" }));
+    cache.apply_cluster_annotations(&std::collections::HashMap::new());
+    let j1 = &cache.get_all()[0];
+    assert!(j1.get("clusterId").is_none());
+}

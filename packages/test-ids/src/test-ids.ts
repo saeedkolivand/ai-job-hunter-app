@@ -31,6 +31,16 @@ export const TEST_IDS = {
     jobsResults: 'jobs-results',
     jobsList: 'jobs-list',
     postingRow: 'posting-row',
+    /** Cross-board cluster (ADR-029): one chip per non-self member source. */
+    clusterSourceChip: 'cluster-source-chip',
+    /** "All sources" section in the detail pane listing every cluster member. */
+    clusterMembers: 'cluster-members',
+    /** "Not a duplicate" split action on a non-canonical cluster member. */
+    clusterSplitButton: 'cluster-split-button',
+    /** Muted chip marking a recruiting/staffing-agency posting. */
+    agencyChip: 'agency-chip',
+    /** Filter toggle that hides agency postings from the list. */
+    hideAgencyToggle: 'hide-agency-toggle',
   },
 
   /** Settings feature */

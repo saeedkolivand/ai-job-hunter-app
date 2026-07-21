@@ -64,34 +64,35 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
 
-| Board                              | Status  | Notes                                                                                                             |
-| ---------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| Aggregator (Adzuna/JSearch/Jooble) | ✅      | Bring-your-own-key; Jooble is third-tier fallback (~67 countries); covers Indeed/StepStone/Xing/Workday/Glassdoor |
-| LinkedIn                           | ✅      | Session cookie required for higher rate limits                                                                    |
-| Greenhouse                         | ✅      | ATS platform; company-scoped                                                                                      |
-| Lever                              | ✅      | ATS platform; company-scoped                                                                                      |
-| Ashby                              | ✅      | ATS platform; company-scoped                                                                                      |
-| SmartRecruiters                    | ✅      | Company-scoped                                                                                                    |
-| Recruitee                          | ✅      | Company-scoped                                                                                                    |
-| Personio                           | ✅      | Company-scoped                                                                                                    |
-| BambooHR                           | ✅      | Company-scoped                                                                                                    |
-| Breezy HR                          | ✅      | Company-scoped                                                                                                    |
-| Pinpoint                           | ✅      | Company-scoped                                                                                                    |
-| Rippling                           | ✅      | Company-scoped                                                                                                    |
-| RemoteOK                           | ✅      |                                                                                                                   |
-| Remotive                           | ✅      |                                                                                                                   |
-| Arbeitsagentur                     | ✅      | German federal job agency                                                                                         |
-| BerlinStartupJobs                  | ✅      |                                                                                                                   |
-| GermanTechJobs                     | ✅      |                                                                                                                   |
-| ArbeitNow                          | ✅      |                                                                                                                   |
-| The Muse                           | ✅      | Keyword aggregator; no server-side search, client-side filter                                                     |
-| YCombinator (Work at a Startup)    | ✅      |                                                                                                                   |
-| We Work Remotely                   | ✅      | RSS feed                                                                                                          |
-| Indeed                             | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                  |
-| StepStone                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                  |
-| Xing                               | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                  |
-| Workday                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                  |
-| Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                  |
+| Board                              | Status  | Notes                                                                                                                                 |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Aggregator (Adzuna/JSearch/Jooble) | ✅      | Bring-your-own-key; Jooble is third-tier fallback (~67 countries); covers Indeed/StepStone/Xing/Workday/Glassdoor                     |
+| LinkedIn                           | ✅      | Session cookie required for higher rate limits                                                                                        |
+| Greenhouse                         | ✅      | ATS platform; company-scoped                                                                                                          |
+| Lever                              | ✅      | ATS platform; company-scoped                                                                                                          |
+| Ashby                              | ✅      | ATS platform; company-scoped                                                                                                          |
+| SmartRecruiters                    | ✅      | Company-scoped                                                                                                                        |
+| Recruitee                          | ✅      | Company-scoped                                                                                                                        |
+| Personio                           | ✅      | Company-scoped                                                                                                                        |
+| BambooHR                           | ✅      | Company-scoped                                                                                                                        |
+| Breezy HR                          | ✅      | Company-scoped                                                                                                                        |
+| Pinpoint                           | ✅      | Company-scoped                                                                                                                        |
+| Rippling                           | ✅      | Company-scoped                                                                                                                        |
+| RemoteOK                           | ✅      |                                                                                                                                       |
+| Remotive                           | ✅      |                                                                                                                                       |
+| Arbeitsagentur                     | ✅      | German federal job agency                                                                                                             |
+| BerlinStartupJobs                  | ✅      |                                                                                                                                       |
+| GermanTechJobs                     | ✅      |                                                                                                                                       |
+| ArbeitNow                          | ✅      |                                                                                                                                       |
+| The Muse                           | ✅      | Keyword aggregator; no server-side search, client-side filter                                                                         |
+| YCombinator (Work at a Startup)    | ✅      |                                                                                                                                       |
+| We Work Remotely                   | ✅      | RSS feed                                                                                                                              |
+| Indeed                             | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
+| StepStone                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
+| Xing                               | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
+| Workday                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
+| Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
+| Cross-board clustering             | ✅      | Fuzzy recompute-at-ingest, pair tombstones in `dedup.db`, canonical member selection, source chips, "not a duplicate" split (ADR-029) |
 
 ---
 
@@ -135,26 +136,26 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 
 ## Autopilot (`apps/desktop/src-tauri/src/autopilot/`)
 
-| Feature                      | Status | Notes                                                                                                                                                                            |
-| ---------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workflow definition wizard   | ✅     | 3-step UI                                                                                                                                                                        |
-| Workflow persistence         | ✅     | [SQLite][sqlite]                                                                                                                                                                 |
-| Manual trigger               | ✅     |                                                                                                                                                                                  |
-| Scheduled execution          | ✅     | Cron-like scheduler                                                                                                                                                              |
-| Real-time step events        | ✅     | autopilot:step stream                                                                                                                                                            |
-| Pause / resume               | ✅     |                                                                                                                                                                                  |
-| Found-job dedup + tracking   | ✅     | `merge_found_jobs` dedup by URL; `FoundJob.is_new`; `applied` derived from `ai_generations.job_url`                                                                              |
-| Generation-session store     | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Tailor modal uses it                                                                             |
-| `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)                                                                   |
-| `run_status` + status badge  | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup                                                                 |
-| OS notification on new jobs  | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                                                                                            |
-| Tray module                  | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/desktop/src-tauri/src/tray/`                                                                                              |
-| Deep-link focus guard        | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                                                                                    |
-| Startup catch-up sweep       | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                                                                                  |
-| `minMatchScore` enforcement  | ✅     | Scorable postings below threshold dropped before `record_run`; unscored postings kept                                                                                            |
-| Cancellation token reuse     | ✅     | Tray/UI cancel reaches the running token across the whole run                                                                                                                    |
-| Launch-at-login              | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                                                                                              |
-| Ranking via keyword-coverage | ✅     | Unified on `documents::keywords::coverage_score` (embedding-free, pure keyword stemming + matching); relabeled "Keyword Coverage %" to distinguish from Jobs "Match %" (ADR-020) |
+| Feature                      | Status | Notes                                                                                                                                                                                                       |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workflow definition wizard   | ✅     | 3-step UI                                                                                                                                                                                                   |
+| Workflow persistence         | ✅     | [SQLite][sqlite]                                                                                                                                                                                            |
+| Manual trigger               | ✅     |                                                                                                                                                                                                             |
+| Scheduled execution          | ✅     | Cron-like scheduler                                                                                                                                                                                         |
+| Real-time step events        | ✅     | autopilot:step stream                                                                                                                                                                                       |
+| Pause / resume               | ✅     |                                                                                                                                                                                                             |
+| Found-job dedup + tracking   | ✅     | `merge_found_jobs` dedup by URL; cluster-aware dedup via canonical key (ADR-029); `FoundJob.is_new`; new-cluster notification count; `applied` derived from `ai_generations.job_url`                        |
+| Generation-session store     | ✅     | `store/generation-store/` — app-wide, keyed by context id, survives navigation; Tailor modal uses it                                                                                                        |
+| `ai_generations` aggregate   | ✅     | `job_url`, `board`, `application_answers`, `company_brief` columns; per-job merge-upsert (`merge_application`)                                                                                              |
+| `run_status` + status badge  | ✅     | `inProgress\|completed\|failed\|interrupted`; amber/red chip on `AutopilotCard`; crash reconciliation on startup                                                                                            |
+| OS notification on new jobs  | ✅     | Permission-gated; clicking the notification navigates to `/autopilot`                                                                                                                                       |
+| Tray module                  | ✅     | Dynamic "New jobs: N" click→focus; "Pause all" — `apps/desktop/src-tauri/src/tray/`                                                                                                                         |
+| Deep-link focus guard        | ✅     | `ajh://autopilot/<id>` validated against strict allowlist; registered OS scheme — `deeplink/`                                                                                                               |
+| Startup catch-up sweep       | ✅     | Fires ~5 s after launch instead of waiting a full tick interval                                                                                                                                             |
+| `minMatchScore` enforcement  | ✅     | Cluster-aware: passes iff best member passes; all members of passing cluster kept. Fully-unscored clusters retain old behavior. Mixed clusters with below-bar scored representative dropped whole (ADR-029) |
+| Cancellation token reuse     | ✅     | Tray/UI cancel reaches the running token across the whole run                                                                                                                                               |
+| Launch-at-login              | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                                                                                                                         |
+| Ranking via keyword-coverage | ✅     | Unified on `documents::keywords::coverage_score` (embedding-free, pure keyword stemming + matching); relabeled "Keyword Coverage %" to distinguish from Jobs "Match %" (ADR-020)                            |
 
 ---
 
@@ -280,6 +281,7 @@ Experience-gate machinery (ADR 0014) retired. Static site (now Next.js) remains 
 
 | Feature                                 | Priority | Notes                                                                                                                                                             |
 | --------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cluster split undo (merge-back)         | Low      | Pair-tombstone delete + recompute; deferred from ADR-029                                                                                                          |
 | CJK font support in PDF/preview         | Medium   | Bundle Noto Sans CJK into Typst engine (`export/typst_engine/`) so zh/ja/ko render in PDF and live preview (generation + DOCX already work; currently shows tofu) |
 | URL-to-job-ad extraction in AI Generate | Medium   | `scrape.url` IPC contract exists; UI input not yet wired                                                                                                          |
 | LinkedIn official API integration       | Medium   | Currently Playwright-only                                                                                                                                         |

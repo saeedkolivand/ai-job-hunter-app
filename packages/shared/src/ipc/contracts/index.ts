@@ -26,6 +26,7 @@ import { CLI_AGENTS_CHANNELS, type CliAgentsContract } from './cliAgents.js';
 import { CONTACT_PROFILE_CHANNELS, type ContactProfileContract } from './contactProfile.js';
 import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 import { DATA_CHANNELS, type DataContract } from './data.js';
+import { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
 import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
@@ -78,6 +79,7 @@ export interface IpcContract {
   updater: UpdaterContract;
   dialog: DialogContract;
   data: DataContract;
+  dedup: DedupContract;
 }
 
 // Combine all channel constants into the original IPC_CHANNELS object
@@ -111,6 +113,7 @@ export const IPC_CHANNELS = {
   updater: UPDATER_CHANNELS,
   dialog: DIALOG_CHANNELS,
   data: DATA_CHANNELS,
+  dedup: DEDUP_CHANNELS,
 } as const;
 
 // Union type of all channel strings
@@ -195,6 +198,7 @@ export {
 } from './contactProfile.js';
 export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js';
 export { DATA_CHANNELS, type DataContract } from './data.js';
+export { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 export {
   type BaseExportRequest,

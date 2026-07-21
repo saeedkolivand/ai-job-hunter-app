@@ -8,7 +8,15 @@ import {
 } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, ConfirmModal, Dropdown, Input, SegmentedControl, useNotification } from '@ajh/ui';
+import {
+  Button,
+  ConfirmModal,
+  Dropdown,
+  Input,
+  SegmentedControl,
+  Tag,
+  useNotification,
+} from '@ajh/ui';
 
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
@@ -45,7 +53,7 @@ export function JobsPage() {
   const invalidatePostings = useInvalidatePostings();
 
   const { jobs, setJobs } = useSessionStore();
-  const { filter, sortBy, viewMode } = jobs;
+  const { filter, sortBy, viewMode, hideAgency } = jobs;
   const setFilter = (v: string) => setJobs({ filter: v });
   const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
   const [showScrapeForm, setShowScrapeForm] = useState(false);
@@ -260,6 +268,15 @@ export function JobsPage() {
       );
     }
 
+    // Cross-board clustering (ADR-029): show one row per cluster — the canonical
+    // member. Non-canonical members (clusterCanonical === false) collapse into
+    // it; unannotated rows (no clusterId → clusterCanonical undefined) ALWAYS
+    // show — live-streamed rows are unclustered until the completion refetch.
+    result = result.filter((p) => p.clusterCanonical !== false);
+
+    // Optional agency filter — hide recruiting/staffing-agency postings.
+    if (hideAgency) result = result.filter((p) => !p.isAgency);
+
     // Stable, deterministic ordering (audit quick win 8): an `id` tiebreak so
     // equal timestamps never reorder between renders (nondeterministic order
     // reads as flakiness), and — for the date sorts — undated postings (no
@@ -285,7 +302,16 @@ export function JobsPage() {
     });
 
     return result;
-  }, [allPostings, filter, sortBy]);
+  }, [allPostings, filter, sortBy, hideAgency]);
+
+  // Denominator for the "N / M" count = distinct jobs (clusters): rows that
+  // aren't a collapsed non-canonical duplicate. The numerator (`filtered`)
+  // reduces this by the text filter + hideAgency, so both count against
+  // distinct jobs, not raw postings.
+  const distinctCount = useMemo(
+    () => allPostings.filter((p) => p.clusterCanonical !== false).length,
+    [allPostings]
+  );
 
   const resumeId = useDefaultResumeId();
 
@@ -351,8 +377,16 @@ export function JobsPage() {
                     onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'company')}
                     placeholder={t('jobs.sort')}
                   />
+                  <span data-testid={TEST_IDS.jobs.hideAgencyToggle} className="inline-flex">
+                    <Tag.CheckableTag
+                      checked={hideAgency}
+                      onChange={(v) => setJobs({ hideAgency: v })}
+                    >
+                      {t('jobs.filters.hideAgency')}
+                    </Tag.CheckableTag>
+                  </span>
                   <span className="text-[11px] text-foreground/40">
-                    {filtered.length} / {allPostings.length}
+                    {filtered.length} / {distinctCount}
                   </span>
                   {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
                   <SegmentedControl

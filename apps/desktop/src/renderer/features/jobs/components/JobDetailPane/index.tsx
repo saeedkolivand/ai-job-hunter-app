@@ -15,6 +15,7 @@ import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 import { AGGREGATOR_BOARD_ID } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
@@ -25,16 +26,25 @@ import {
   SourceBadge,
   Tag,
   transition,
+  useNotification,
   variants,
 } from '@ajh/ui';
 
+import { AgencyChip } from '@/components/job/AgencyChip';
+import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
+import { hostOf } from '@/components/job/host-of';
 import { PrepApplicationPanel } from '@/features/jobs/components/PrepApplicationPanel';
 import { RowMatchScore } from '@/features/jobs/components/RowMatchScore';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import { useMatchScores } from '@/features/jobs/providers';
 import type { Posting } from '@/features/jobs/types';
 import { TrustBadge } from '@/lib/trust-badge';
-import { useResolveJobUrl, useUpdatePostingDescription } from '@/services';
+import {
+  useMarkNotDuplicate,
+  useOpenExternal,
+  useResolveJobUrl,
+  useUpdatePostingDescription,
+} from '@/services';
 
 // ponytail: heuristic threshold — Adzuna search snippets are ~200–500 chars;
 // anything under 700 chars for aggregator postings gets an on-demand resolve.
@@ -67,6 +77,36 @@ function DetailContent({
     saved,
     pending,
   } = usePostingActions(posting);
+
+  const notify = useNotification();
+  const openExternal = useOpenExternal();
+  const split = useMarkNotDuplicate();
+
+  // Cross-board cluster members (ADR-029) — canonical first for the "All
+  // sources" list; a member is self when it shares the row's key or url.
+  const clusterMembers = posting.clusterMembers ?? [];
+  const hasCluster = clusterMembers.length > 1;
+  const canonicalKey = posting.clusterId;
+  const orderedMembers = hasCluster
+    ? [...clusterMembers].sort((a, b) =>
+        a.key === canonicalKey ? -1 : b.key === canonicalKey ? 1 : 0
+      )
+    : [];
+
+  // Split a wrongly-merged member out of the cluster: tombstone it against every
+  // OTHER member so it survives re-scrapes (ADR-029 §h). Success is surfaced only
+  // after the mutation resolves.
+  const handleSplit = (member: { key: string }) => {
+    const otherKeys = clusterMembers.filter((m) => m.key !== member.key).map((m) => m.key);
+    if (otherKeys.length === 0) return;
+    split.mutate(
+      { memberKey: member.key, otherKeys },
+      {
+        onSuccess: () => notify.success({ message: t('jobs.cluster.splitDone') }),
+        onError: () => notify.error({ message: t('jobs.cluster.splitFailed') }),
+      }
+    );
+  };
 
   // On-demand resolve gate:
   //   1. Always resolve when description is empty (original behaviour).
@@ -218,6 +258,12 @@ function DetailContent({
               <span role="presentation">
                 <SourceBadge source={posting.source} url={posting.url} />
               </span>
+              {posting.isAgency && <AgencyChip className={statusTagCls} />}
+              <ClusterSourceChips
+                members={posting.clusterMembers}
+                selfKey={posting.clusterId}
+                selfUrl={posting.url}
+              />
               {posting.postedAt && <span>· {formatRelativeTime(posting.postedAt)}</span>}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -288,6 +334,53 @@ function DetailContent({
         <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
           {announced ? t('jobs.fullDescriptionLoaded') : ''}
         </span>
+
+        {/* Cross-board cluster "All sources" (ADR-029): every member of this
+            cluster, canonical first. A non-canonical member can be split out via
+            "Not a duplicate" — the tombstone survives every re-scrape. */}
+        {hasCluster && (
+          <section
+            data-testid={TEST_IDS.jobs.clusterMembers}
+            className="mb-4 rounded-lg border border-[var(--border-clear)] p-3"
+          >
+            <h3 className="mb-2 text-fine-print uppercase tracking-wider text-muted-foreground">
+              {t('jobs.cluster.sources')}
+            </h3>
+            <ul className="space-y-1.5">
+              {orderedMembers.map((m) => {
+                const canonical = m.key === canonicalKey || m.url === posting.url;
+                const boardId = m.board?.trim();
+                const label = boardId
+                  ? t(`jobs.boards.${boardId}`, { defaultValue: boardId })
+                  : hostOf(m.url);
+                return (
+                  <li key={m.key} className="flex items-center justify-between gap-2">
+                    <Button
+                      variant="unstyled"
+                      onClick={() => openExternal.mutate(m.url)}
+                      title={t('jobs.cluster.openOn', { source: label })}
+                      className="flex min-w-0 items-center gap-1.5 text-left text-caption text-foreground/75 hover:text-foreground focus-visible:ring-offset-1"
+                    >
+                      <ExternalLink size={11} className="shrink-0 text-foreground/40" />
+                      <span className="truncate">{label}</span>
+                    </Button>
+                    {!canonical && (
+                      <Button
+                        variant="ghost"
+                        data-testid={TEST_IDS.jobs.clusterSplitButton}
+                        onClick={() => handleSplit(m)}
+                        disabled={split.isPending}
+                        className="shrink-0 text-[11px]"
+                      >
+                        {t('jobs.cluster.notDuplicate')}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
 
         {/* "About the job" section label */}
         <h3 className="mb-3 text-fine-print uppercase tracking-wider text-muted-foreground">

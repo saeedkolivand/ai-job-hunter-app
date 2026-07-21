@@ -209,6 +209,9 @@ vi.mock('@ajh/ui', () => ({
     segmentedControlContainer.onChange = onChange ?? null;
     return null;
   },
+  Tag: Object.assign(({ children }: { children: ReactNode }) => <span>{children}</span>, {
+    CheckableTag: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  }),
   useNotification: () => notifyMock,
 }));
 
