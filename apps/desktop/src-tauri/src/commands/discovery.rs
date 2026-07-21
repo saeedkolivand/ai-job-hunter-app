@@ -90,15 +90,7 @@ where
 {
     let refs: Vec<(String, String, Option<String>, String)> = items
         .into_iter()
-        .filter_map(|(url, company)| {
-            crate::scraping::ats_ref::extract_ats_ref(&url).map(|r| {
-                let display = r.display_name.or_else(|| {
-                    let c = company.trim();
-                    (!c.is_empty()).then(|| c.to_string())
-                });
-                (r.ats, r.slug, display, source.to_string())
-            })
-        })
+        .filter_map(|(url, company)| posting_to_ref(&url, &company, source))
         .collect();
     if refs.is_empty() {
         return;
@@ -109,6 +101,29 @@ where
     if let Err(e) = store.upsert_batch(&refs) {
         log::warn!("[discovered] harvest upsert failed ({e}); slugs not recorded this ingest");
     }
+}
+
+/// Pure per-posting mapping: `(url, company)` → the store's upsert tuple
+/// `(ats, slug, display_name, source)`, or `None` when the URL is not a recognised
+/// ATS posting. The display name is the posting's `company` ONLY when non-empty
+/// after trimming (the URL itself never carries one today), so an empty/whitespace
+/// company yields `None` — never an empty display name. The slug is ALWAYS from
+/// `extract_ats_ref`, never a hand-written mapping. Pure (no `AppHandle`) so BOTH
+/// [`harvest_ats_refs`] and its acceptance test exercise the SAME fallback (the
+/// ADR-029 shared-seam lesson — a test that re-implements this branch tests
+/// nothing).
+fn posting_to_ref(
+    url: &str,
+    company: &str,
+    source: &str,
+) -> Option<(String, String, Option<String>, String)> {
+    crate::scraping::ats_ref::extract_ats_ref(url).map(|r| {
+        let display = r.display_name.or_else(|| {
+            let c = company.trim();
+            (!c.is_empty()).then(|| c.to_string())
+        });
+        (r.ats, r.slug, display, source.to_string())
+    })
 }
 
 /// Every watched (starred) company, as full rows for the renderer — via the
@@ -124,7 +139,7 @@ pub fn discovery_watched(app: AppHandle) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_bytes, MAX_QUERY_BYTES};
+    use super::{clamp_bytes, posting_to_ref, MAX_QUERY_BYTES};
 
     #[test]
     fn clamp_trims_and_byte_caps_on_char_boundary() {
@@ -165,7 +180,6 @@ mod tests {
     #[test]
     fn harvested_posting_urls_surface_their_slugs_in_search() {
         use crate::discovered::DiscoveredCompanyStore;
-        use crate::scraping::ats_ref::extract_ats_ref;
 
         let dir = tempfile::TempDir::new().unwrap();
         let store = DiscoveredCompanyStore::open(dir.path()).unwrap();
@@ -180,20 +194,11 @@ mod tests {
             ("https://example.com/jobs/42", "Random Co"), // non-ATS → ignored
         ];
 
-        // Mirror ONLY the parse+display step of `harvest_ats_refs`; the slug itself
-        // comes from `extract_ats_ref`, never a hand-written mapping.
+        // Drive the SAME pure mapping `harvest_ats_refs` uses (extract + display
+        // fallback) — never a re-implemented mapping (ADR-029 shared-seam lesson).
         let refs: Vec<(String, String, Option<String>, String)> = postings
             .iter()
-            .filter_map(|(url, company)| {
-                extract_ats_ref(url).map(|r| {
-                    (
-                        r.ats,
-                        r.slug,
-                        Some((*company).to_string()),
-                        "scrape".to_string(),
-                    )
-                })
-            })
+            .filter_map(|(url, company)| posting_to_ref(url, company, "scrape"))
             .collect();
         store.upsert_batch(&refs).unwrap();
 
@@ -224,5 +229,37 @@ mod tests {
             "only company-scoped ATS postings feed the typeahead"
         );
         assert!(store.search("example", 10).is_empty());
+    }
+
+    /// The display-name fallback in `posting_to_ref` (shared by `harvest_ats_refs`):
+    /// a real company name is kept, but an EMPTY/whitespace-only company yields
+    /// `None` — never an empty display name (the branch the acceptance test above
+    /// can't reach). A non-ATS URL maps to `None` regardless of the company.
+    #[test]
+    fn posting_to_ref_display_name_falls_back_and_drops_empty_company() {
+        // Real company name → becomes the display name.
+        let (ats, slug, name, source) = posting_to_ref(
+            "https://boards.greenhouse.io/stripe/jobs/1",
+            "Stripe",
+            "scrape",
+        )
+        .expect("greenhouse URL must map");
+        assert_eq!((ats.as_str(), slug.as_str()), ("greenhouse", "stripe"));
+        assert_eq!(name.as_deref(), Some("Stripe"));
+        assert_eq!(source, "scrape");
+
+        // Empty / whitespace-only company → display_name None (never "").
+        for empty in ["", "   ", "\t\n"] {
+            let (_, _, name, _) =
+                posting_to_ref("https://jobs.lever.co/spotify/x", empty, "scrape")
+                    .expect("lever URL must map");
+            assert_eq!(
+                name, None,
+                "empty/whitespace company must yield no display name: {empty:?}"
+            );
+        }
+
+        // Non-ATS URL → None regardless of the company.
+        assert!(posting_to_ref("https://example.com/jobs/1", "Random Co", "scrape").is_none());
     }
 }
