@@ -70,7 +70,6 @@ export function usePostingActions(posting: Posting) {
   };
 
   const handleTailor = async () => {
-    void trackInteraction('applied');
     let res;
     try {
       res = await saveFromPostingMutation.mutateAsync({
@@ -91,6 +90,13 @@ export function usePostingActions(posting: Posting) {
       notify.error({ message: t('jobs.tailorError') });
       return;
     }
+    // Mark `applied` only once the save actually succeeded. Firing it up-front
+    // was optimistic with no rollback: `trackInteraction` persists via
+    // `persistJobMutation`, and both failure paths above `return` without
+    // reverting, so a failed Tailor left the posting reading Applied — badge and
+    // stored interaction — for something the user never applied to. `handleSave`
+    // below already marks `bookmarked` only after success.
+    void trackInteraction('applied');
     setApplicationApply({
       applyForId: res.id,
       applySeedResume: null,
