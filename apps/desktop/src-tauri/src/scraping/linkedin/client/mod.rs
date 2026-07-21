@@ -53,9 +53,15 @@ impl LinkedInHttpClient {
             reqwest::header::ACCEPT_LANGUAGE,
             HeaderValue::from_static("en-US,en;q=0.9,de;q=0.8"),
         );
+        // Advertise ONLY what `get_html` can actually decode. `reqwest` is built
+        // with `default-features = false` and no gzip/brotli/deflate feature, so
+        // it never auto-decompresses; the manual decode below handles the gzip
+        // magic bytes and nothing else. Asking for `br`/`deflate` let the edge
+        // answer with a body we then fed to `String::from_utf8`, failing the
+        // whole board with a misleading "response was not valid UTF-8".
         headers.insert(
             reqwest::header::ACCEPT_ENCODING,
-            HeaderValue::from_static("gzip, deflate, br"),
+            HeaderValue::from_static("gzip"),
         );
         headers.insert("DNT", HeaderValue::from_static("1"));
         headers.insert(
