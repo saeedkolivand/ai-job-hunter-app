@@ -152,18 +152,32 @@ fn rtf_to_text(rtf: &str) -> String {
                         i += 2;
                     }
                     b'\'' => {
-                        // \'xx hex byte (Windows-1252).
+                        // \'xx hex byte (Windows-1252). The two digits are read out
+                        // of `bytes`, NOT out of `rtf`: `i` is a byte index, so
+                        // `&rtf[i + 2..i + 4]` PANICS ("byte index is not a char
+                        // boundary") whenever a multi-byte scalar starts at `i + 3`
+                        // — e.g. `\'€`. The length guard cannot rule that out.
                         if i + 3 < n {
-                            if let Ok(v) = u8::from_str_radix(&rtf[i + 2..i + 4], 16) {
-                                if !skipping {
-                                    if to_swallow > 0 {
-                                        to_swallow -= 1;
-                                    } else {
-                                        out.push(win1252(v));
+                            let value = Some(&bytes[i + 2..i + 4])
+                                .filter(|d| d.iter().all(u8::is_ascii_hexdigit))
+                                .and_then(|d| std::str::from_utf8(d).ok())
+                                .and_then(|s| u8::from_str_radix(s, 16).ok());
+                            match value {
+                                Some(v) => {
+                                    if !skipping {
+                                        if to_swallow > 0 {
+                                            to_swallow -= 1;
+                                        } else {
+                                            out.push(win1252(v));
+                                        }
                                     }
+                                    i += 4;
                                 }
+                                // Not a well-formed escape: drop only the `\'` and
+                                // resume at the following character, so its bytes
+                                // are not sliced in half.
+                                None => i += 2,
                             }
-                            i += 4;
                         } else {
                             i = n;
                         }
@@ -282,6 +296,29 @@ fn normalize(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `\'` followed by a multi-byte character used to slice the `str` mid-scalar
+    /// (`&rtf[i + 2..i + 4]`) and panic "byte index is not a char boundary",
+    /// aborting extraction of the whole résumé.
+    #[test]
+    fn hex_escape_before_a_multibyte_char_does_not_panic() {
+        let text = rtf_to_text("{\\rtf1\\ansi Jane\\'€ Doe\\par}");
+        assert!(text.contains("Jane"), "got: {text:?}");
+        assert!(text.contains("Doe"), "got: {text:?}");
+    }
+
+    /// A `\'` escape at the very end of the input is truncated, not a panic.
+    #[test]
+    fn truncated_hex_escape_at_end_of_input_does_not_panic() {
+        assert!(!rtf_to_text("{\\rtf1\\ansi Jane\\'e").contains("HYPERLINK"));
+        assert!(!rtf_to_text("{\\rtf1\\ansi Jane\\'").is_empty());
+    }
+
+    /// A well-formed escape still decodes through the Windows-1252 table.
+    #[test]
+    fn well_formed_hex_escape_still_decodes() {
+        assert!(rtf_to_text(r"{\rtf1\ansi Jos\'e9}").contains("José"));
+    }
 
     #[test]
     fn extracts_paragraph_text() {
