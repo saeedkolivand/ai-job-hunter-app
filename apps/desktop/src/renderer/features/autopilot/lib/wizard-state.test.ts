@@ -123,6 +123,10 @@ describe('buildDefaults()', () => {
     expect(state.assistantModel).toBeUndefined();
     expect(state.assistantBaseUrl).toBeUndefined();
   });
+
+  it('defaults watchedCompaniesOnly to false (ADR-030 §e)', () => {
+    expect(buildDefaults().watchedCompaniesOnly).toBe(false);
+  });
 });
 
 // ── autopilotToWizardState ────────────────────────────────────────────────────
@@ -229,6 +233,18 @@ describe('autopilotToWizardState()', () => {
     const state = autopilotToWizardState(BASE_AUTOPILOT);
     expect(state.assistant).toBe(false);
   });
+
+  it('round-trips watchedCompaniesOnly: true from the target (ADR-030 §e)', () => {
+    const ap: Autopilot = {
+      ...BASE_AUTOPILOT,
+      target: { ...BASE_AUTOPILOT.target, watchedCompaniesOnly: true },
+    };
+    expect(autopilotToWizardState(ap).watchedCompaniesOnly).toBe(true);
+  });
+
+  it('falls back to watchedCompaniesOnly: false when absent (legacy record)', () => {
+    expect(autopilotToWizardState(BASE_AUTOPILOT).watchedCompaniesOnly).toBe(false);
+  });
 });
 
 // ── wizardStateToPayload ──────────────────────────────────────────────────────
@@ -242,6 +258,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     workType: 'remote',
     amount: 75,
     dateFilter: '24h',
+    watchedCompaniesOnly: false,
     minMatchScore: 70,
     keywords: 'rust, tokio',
     excludeKeywords: 'php',
@@ -371,6 +388,18 @@ describe('wizardStateToPayload()', () => {
       // falsy and dropped. The payload must carry 0 as-is.
       const payload = wizardStateToPayload(makeForm({ minMatchScore: 0 }));
       expect(payload.filter.minMatchScore).toBe(0);
+    });
+  });
+
+  describe('watchedCompaniesOnly forwarding (ADR-030 §e)', () => {
+    it('forwards watchedCompaniesOnly: true to the target', () => {
+      const payload = wizardStateToPayload(makeForm({ watchedCompaniesOnly: true }));
+      expect(payload.target.watchedCompaniesOnly).toBe(true);
+    });
+
+    it('collapses watchedCompaniesOnly: false to undefined (old autopilots stay clean)', () => {
+      const payload = wizardStateToPayload(makeForm({ watchedCompaniesOnly: false }));
+      expect(payload.target.watchedCompaniesOnly).toBeUndefined();
     });
   });
 

@@ -250,31 +250,22 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
 }
 
 fn parse_greenhouse_url(url: &str) -> Option<(String, String)> {
-    let u = reqwest::Url::parse(url).ok()?;
-    let host = u.host_str()?;
-    if !host.ends_with("greenhouse.io") {
-        return None;
-    }
-    let segments: Vec<&str> = u.path_segments()?.collect();
-    // Patterns:
+    // Company slug via the single ATS URL-shape authority (`ats_ref`); this fn
+    // layers the job id on top for single-job resolution. Patterns:
     //  /<company>/jobs/<id>            (boards.greenhouse.io)
     //  /embed/job_app?for=<company>&token=<id>
-    if segments.len() >= 3 && segments[1] == "jobs" {
-        return Some((segments[0].to_string(), segments[2].to_string()));
-    }
+    let company = crate::scraping::ats_ref::greenhouse_slug(url)?;
+    let u = reqwest::Url::parse(url).ok()?;
+    let segments: Vec<&str> = u.path_segments()?.collect();
     if segments.first() == Some(&"embed") {
-        let mut company = None;
-        let mut token = None;
-        for (k, v) in u.query_pairs() {
-            match k.as_ref() {
-                "for" => company = Some(v.into_owned()),
-                "token" => token = Some(v.into_owned()),
-                _ => {}
-            }
-        }
-        if let (Some(c), Some(t)) = (company, token) {
-            return Some((c, t));
-        }
+        let token = u
+            .query_pairs()
+            .find(|(k, _)| k == "token")
+            .map(|(_, v)| v.into_owned())?;
+        return Some((company, token));
+    }
+    if segments.len() >= 3 && segments[1] == "jobs" {
+        return Some((company, segments[2].to_string()));
     }
     None
 }
@@ -343,14 +334,13 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
 }
 
 fn parse_lever_url(url: &str) -> Option<(String, String)> {
+    // Company slug via the single ATS URL-shape authority (`ats_ref`); the job id
+    // is the second path segment (`jobs.lever.co/<company>/<id>`).
+    let company = crate::scraping::ats_ref::lever_slug(url)?;
     let u = reqwest::Url::parse(url).ok()?;
-    let host = u.host_str()?;
-    if !host.ends_with("lever.co") {
-        return None;
-    }
     let segments: Vec<&str> = u.path_segments()?.collect();
     if segments.len() >= 2 {
-        return Some((segments[0].to_string(), segments[1].to_string()));
+        return Some((company, segments[1].to_string()));
     }
     None
 }
@@ -360,26 +350,25 @@ fn parse_lever_url(url: &str) -> Option<(String, String)> {
 // URL: https://jobs.ashbyhq.com/<company>/<id>
 
 async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
+    // Company slug via the single ATS URL-shape authority (`ats_ref`, which owns
+    // the host gate); the job id is the second path segment (a bare careers page
+    // with no id can't resolve a single posting). Slug casing is preserved —
+    // Ashby's board tokens are case-sensitive.
+    let company = match crate::scraping::ats_ref::ashby_slug(url) {
+        Some(c) => c,
+        None => return Ok(None),
+    };
     let u = match reqwest::Url::parse(url) {
         Ok(u) => u,
         Err(_) => return Ok(None),
     };
-    let host = match u.host_str() {
-        Some(h) => h,
-        None => return Ok(None),
+    let job_id = match u.path_segments().and_then(|mut s| {
+        s.next();
+        s.next()
+    }) {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => return Ok(None),
     };
-    if !host.ends_with("ashbyhq.com") {
-        return Ok(None);
-    }
-    let segments: Vec<&str> = match u.path_segments().map(|s| s.collect()) {
-        Some(v) => v,
-        None => return Ok(None),
-    };
-    if segments.len() < 2 {
-        return Ok(None);
-    }
-    let company = segments[0].to_string();
-    let job_id = segments[1].to_string();
 
     // Public GraphQL endpoint for a single posting.
     let body = serde_json::json!({
@@ -1188,25 +1177,23 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
 // API: https://api.smartrecruiters.com/v1/companies/<company>/postings/<id>
 
 async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
+    // Company slug via the single ATS URL-shape authority (`ats_ref`, which owns
+    // the `*.smartrecruiters.com` host gate — the suffix match rejects the
+    // redirect-resolved look-alike hosts this handler may be re-dispatched on);
+    // the job id is the second path segment.
+    let company = match crate::scraping::ats_ref::smartrecruiters_slug(url) {
+        Some(c) => c,
+        None => return Ok(None),
+    };
     let u = match reqwest::Url::parse(url) {
         Ok(u) => u,
         Err(_) => return Ok(None),
     };
-    let host = match u.host_str() {
-        Some(h) => h,
-        None => return Ok(None),
-    };
-    // Exact/suffix match only — same rationale as the Workday gate above:
-    // re-dispatch runs this handler on redirect-resolved, attacker-influenceable
-    // URLs, so a substring gate widens the surface.
-    if host != "smartrecruiters.com" && !host.ends_with(".smartrecruiters.com") {
-        return Ok(None);
-    }
     let segments: Vec<&str> = u.path_segments().map(|s| s.collect()).unwrap_or_default();
     if segments.len() < 2 {
         return Ok(None);
     }
-    let company = segments[0];
+    let company = company.as_str();
     let job_id = segments[1];
 
     let api = format!(

@@ -23,6 +23,7 @@ import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
+import { NotificationProvider } from '@ajh/ui';
 
 import type { WizardState } from '@/features/autopilot/types';
 
@@ -128,6 +129,16 @@ vi.mock('@/features/autopilot/components/wizard-steps/WizardField', () => ({
   }) => <>{children}</>,
 }));
 
+// Render the REAL WatchedCompaniesField so its insertion into the target step is
+// actually asserted — but stub the discovery SERVICE hooks so no React Query /
+// AppClient wiring is needed (its own behavior is covered in
+// WatchedCompaniesField.test.tsx). `useNotification` still needs a provider,
+// added in renderStep.
+vi.mock('@/services/use-discovery', () => ({
+  useWatchedCompanies: () => ({ data: [] }),
+  useSetStarred: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
 function makeForm(overrides: Partial<WizardState> = {}): WizardState {
@@ -139,6 +150,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     workType: 'any',
     amount: 50,
     dateFilter: '24h',
+    watchedCompaniesOnly: false,
     minMatchScore: 50,
     keywords: '',
     excludeKeywords: '',
@@ -162,10 +174,12 @@ function renderStep(overrides: Partial<WizardState> = {}) {
   function Host() {
     const methods = useForm<WizardState>({ defaultValues: makeForm(overrides) });
     return (
-      <FormProvider {...methods}>
-        <StepTarget prefilled={{ location: false }} />
-        <Probe />
-      </FormProvider>
+      <NotificationProvider>
+        <FormProvider {...methods}>
+          <StepTarget prefilled={{ location: false }} />
+          <Probe />
+        </FormProvider>
+      </NotificationProvider>
     );
   }
   return render(<Host />);
@@ -317,5 +331,17 @@ describe('StepTarget — seeded companies disclosure (#621 integration)', () => 
     renderStep({ boards: ['greenhouse'] });
 
     expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});
+
+// ── WatchedCompaniesField integration (ADR-030 §e) ──────────────────────────
+// The REAL WatchedCompaniesField is rendered (discovery service hooks stubbed),
+// so its insertion into the target step is actually asserted — a wrong/removed
+// call site fails here instead of passing silently.
+
+describe('StepTarget — watched-companies target (ADR-030 integration)', () => {
+  it('renders the watched-companies toggle in the target step', () => {
+    renderStep({ boards: ['aggregator'] });
+    expect(screen.getByTestId(TEST_IDS.autopilot.watchedCompaniesToggle)).toBeInTheDocument();
   });
 });

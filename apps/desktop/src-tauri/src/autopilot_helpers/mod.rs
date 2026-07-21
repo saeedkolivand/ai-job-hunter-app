@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::flows::AUTOPILOT_NOTE_SYSTEM;
@@ -52,14 +52,46 @@ pub async fn autopilot_scrape(
         latitude: None,
         longitude: None,
         radius_km: None,
-        // Autopilot has no per-company target, so it passes no explicit
-        // companies here. Company-scoped ATS boards (greenhouse, lever, ashby,
-        // smartrecruiters, recruitee, personio, workable) don't no-op on that —
-        // the engine (`scraping/engine/mod.rs`) falls back to the curated
-        // `ats_seed` directory for them when the list is empty. Non-company
-        // boards are unaffected.
+        // Autopilot has no per-company target by default, so it passes no explicit
+        // companies here (the `watchedCompaniesOnly` block below may fill them).
+        // Company-scoped ATS boards (greenhouse, lever, ashby, smartrecruiters,
+        // recruitee, personio, workable) don't no-op on an empty list — the engine
+        // (`scraping/engine/mod.rs`) falls back to the curated `ats_seed` directory
+        // for them. Non-company boards are unaffected.
         companies: Vec::new(),
     };
+
+    // Watched-companies-only resolution (ADR-030 §e): when the flag is set, resolve
+    // the user's currently-starred companies at RUN TIME into a PER-BOARD override
+    // map ({ board id → slugs starred under THAT ATS }) and route it through the
+    // engine's existing per-board `seeded_companies` path (input.companies stays
+    // empty). A selected company-scoped board with no matching star is absent from
+    // the map, so the engine skips it `needs-company` — never fetched with a
+    // foreign ATS's slugs, and never falling back to the curated seed. `None` on a
+    // normal run keeps today's `ats_seed` behavior.
+    let company_overrides: Option<HashMap<String, Vec<String>>> =
+        if target.watched_companies_only.unwrap_or(false) {
+            let watched = app
+                .try_state::<crate::discovered::DiscoveredCompanyStore>()
+                .map(|s| s.watched())
+                .unwrap_or_default();
+            let selected_company_boards: Vec<String> = target
+                .boards
+                .iter()
+                .filter(|b| {
+                    crate::scraping::boards::get(b)
+                        .map(|s| s.requires_company())
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect();
+            Some(resolve_watched_companies(
+                &watched,
+                &selected_company_boards,
+            ))
+        } else {
+            None
+        };
 
     let app_progress = app.clone();
     let job_id_progress = job_id.to_string();
@@ -84,17 +116,20 @@ pub async fn autopilot_scrape(
         });
 
     let result = engine
-        .scrape_boards(
+        .scrape_boards_with_overrides(
             &target.boards,
             input,
             job_id.to_string(),
             Some(on_progress),
             Some(on_item),
+            company_overrides.as_ref(),
         )
         .await;
 
     // Log any skipped or errored boards so operators can diagnose unexpected empty
-    // runs, AND return the summaries so the run can surface *why* it found zero.
+    // runs, AND return the summaries so the run can surface *why* it found zero. In
+    // watched mode a board with no matching star is surfaced by the engine as a
+    // `needs-company` skip summary — no separate append needed.
     result
         .map(|(postings, summaries)| {
             for s in &summaries {
@@ -112,6 +147,33 @@ pub async fn autopilot_scrape(
             (postings, summaries)
         })
         .map_err(AppError::from)
+}
+
+/// Resolve the watched `(ats, slug)` set into a PER-BOARD company-slug map for a
+/// `watchedCompaniesOnly` run: each selected company-scoped board maps to the
+/// slugs starred UNDER THAT SAME ATS (deduped, first-seen order). A board with no
+/// matching star is ABSENT from the map, so the engine skips it `needs-company`
+/// (never fed a foreign ATS's slug). Pure (no store / `AppHandle`) so it is
+/// unit-tested directly.
+fn resolve_watched_companies(
+    watched: &[(String, String)],
+    selected_company_boards: &[String],
+) -> HashMap<String, Vec<String>> {
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    for (ats, slug) in watched {
+        if !selected_company_boards.iter().any(|b| b == ats) {
+            continue; // a star for an unselected/foreign ATS is irrelevant here
+        }
+        let slug = slug.trim();
+        if slug.is_empty() {
+            continue;
+        }
+        let entry = map.entry(ats.clone()).or_default();
+        if !entry.iter().any(|s| s == slug) {
+            entry.push(slug.to_string());
+        }
+    }
+    map
 }
 
 /// Max length of a single board's sanitized reason in the user-visible step log.
@@ -1227,5 +1289,104 @@ mod tests {
         .await;
         assert_eq!(generated, 0);
         assert!(jobs[0].assistant_notes.is_none());
+    }
+
+    // ── watched-companies resolution (ADR-030 §e) ──────────────────────────────
+
+    fn watched(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(a, s)| (a.to_string(), s.to_string()))
+            .collect()
+    }
+
+    fn boards(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn watched_resolution_maps_each_ats_to_its_own_slugs() {
+        // Stars for greenhouse + ashby, both boards selected → each board maps to
+        // ONLY its own ATS's slugs (no cross-ATS mixing).
+        let map = resolve_watched_companies(
+            &watched(&[
+                ("greenhouse", "stripe"),
+                ("ashby", "Linear"),
+                ("greenhouse", "airbnb"),
+            ]),
+            &boards(&["greenhouse", "ashby"]),
+        );
+        assert_eq!(
+            map.get("greenhouse"),
+            Some(&vec!["stripe".to_string(), "airbnb".to_string()])
+        );
+        assert_eq!(map.get("ashby"), Some(&vec!["Linear".to_string()]));
+    }
+
+    #[test]
+    fn watched_resolution_dedups_within_an_ats_preserving_order() {
+        let map = resolve_watched_companies(
+            &watched(&[("greenhouse", "acme"), ("greenhouse", "acme")]),
+            &boards(&["greenhouse"]),
+        );
+        assert_eq!(map.get("greenhouse"), Some(&vec!["acme".to_string()]));
+    }
+
+    #[test]
+    fn watched_resolution_omits_boards_with_no_matching_star() {
+        // A lever star and a greenhouse star, but the run selected greenhouse+ashby:
+        // greenhouse maps to its slug; ashby is ABSENT (skipped by the engine); the
+        // lever star is irrelevant (not a selected board).
+        let map = resolve_watched_companies(
+            &watched(&[("lever", "spotify"), ("greenhouse", "stripe")]),
+            &boards(&["greenhouse", "ashby"]),
+        );
+        assert_eq!(map.get("greenhouse"), Some(&vec!["stripe".to_string()]));
+        assert!(!map.contains_key("ashby"), "ashby has no star → absent");
+        assert!(!map.contains_key("lever"), "lever isn't a selected board");
+    }
+
+    #[test]
+    fn watched_resolution_empty_star_set_yields_empty_map() {
+        // Flag on but nothing starred → empty map → the engine skips every
+        // company-scoped board `needs-company` (never the curated seed).
+        let map = resolve_watched_companies(&[], &boards(&["greenhouse", "ashby"]));
+        assert!(map.is_empty());
+    }
+
+    /// Store→resolver seam (ADR-030 §e): stars in a REAL `DiscoveredCompanyStore`
+    /// (incl. one starred cold → materialized `source='seed'` row) resolve — via the
+    /// same `store.watched()` + registry `requires_company` filter `autopilot_scrape`
+    /// composes — into a per-board override map. The missing link between the store
+    /// tests (start from tuples) and the pure-resolver tests (hand-built `watched()`).
+    #[test]
+    fn watched_stars_resolve_from_the_store_into_per_board_targets() {
+        use crate::discovered::DiscoveredCompanyStore;
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = DiscoveredCompanyStore::open(dir.path()).unwrap();
+
+        let name = Some("Stripe".to_string());
+        store
+            .upsert_batch(&[("greenhouse".into(), "stripe".into(), name, "scrape".into())])
+            .unwrap();
+        store.set_starred("greenhouse", "stripe", true).unwrap();
+        store.set_starred("ashby", "Linear", true).unwrap(); // cold star → seed row
+        store.set_starred("lever", "spotify", true).unwrap(); // board not selected below
+
+        // Filter the selected boards to company-scoped ones via the SAME predicate.
+        let selected: Vec<String> = ["greenhouse", "ashby", "linkedin"]
+            .iter()
+            .filter(|b| crate::scraping::boards::get(b).is_some_and(|s| s.requires_company()))
+            .map(|s| s.to_string())
+            .collect();
+
+        let map = resolve_watched_companies(&store.watched(), &selected);
+
+        assert_eq!(map.get("greenhouse"), Some(&vec!["stripe".to_string()]));
+        // A cold-starred (materialized-seed) company still routes to its own board.
+        assert_eq!(map.get("ashby"), Some(&vec!["Linear".to_string()]));
+        // Non-company board filtered out; the unselected board's star is irrelevant.
+        assert!(!map.contains_key("linkedin"));
+        assert!(!map.contains_key("lever"));
     }
 }

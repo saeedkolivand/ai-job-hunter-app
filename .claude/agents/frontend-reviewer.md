@@ -1,6 +1,6 @@
 ---
 name: frontend-reviewer
-description: Primary reviewer for the React renderer ONLY — UI components, routes/pages, UI state, design-system compliance, accessibility, and localization. Use for changes under apps/desktop/src/renderer/**, components/**, pages/**. Does NOT activate for ATS scoring, AI providers, Rust services, export pipelines, scraping, or backend logic.
+description: Primary reviewer for the React renderer AND the Next.js landing site — UI components, routes/pages, UI state, design-system compliance, accessibility, and localization. Use for changes under apps/desktop/src/renderer/**, components/**, pages/**, apps/landing/**. Does NOT activate for ATS scoring, AI providers, Rust services, export pipelines, scraping, or backend logic.
 tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: sonnet
 ---
@@ -22,7 +22,18 @@ You are the **frontend-reviewer** — primary review authority for the React ren
 
 ## Primary paths
 
-`apps/desktop/src/renderer/**`, `components/**`, `pages/**`, UI state (`store/`, `lib/machines/`), a11y, i18n. **NOT** backend/export/scraping/ai/ATS.
+`apps/desktop/src/renderer/**`, `components/**`, `pages/**`, UI state (`store/`, `lib/machines/`), a11y, i18n, and the landing site `apps/landing/**`. **NOT** backend/export/scraping/ai/ATS.
+
+## Next.js landing lens (apps/landing — Next.js 16 App Router, STATIC EXPORT)
+
+`apps/landing` is `output: 'export'` — static HTML in `out/`, **no server at runtime**. Review accordingly:
+
+- **Flag any server-only construct as a defect**: middleware/`proxy.ts`, Server Actions, ISR/`revalidate`, dynamic Route Handlers, `headers()`/`cookies()`, `use cache`/Cache Components — none of them run under static export. Equally: never _recommend_ a server-only fix there (that's a false positive on you).
+- **Next 16 async params**: `params`/`searchParams` are Promises — un-awaited sync access is a bug; dynamic routes without `generateStaticParams` break the export build.
+- **`next/image`**: must remain `unoptimized` (or the configured loader) — a change assuming the optimization server is a defect.
+- **Desktop-renderer rules do NOT apply there**: no `@ajh/ui`/service-hook/IPC enforcement in apps/landing (it is self-contained); enforce the landing's own conventions instead. The i18n completeness gate below applies to the DESKTOP renderer only.
+- **Gates**: `pnpm check:landing-drift` + the build/copy-link parity check must stay green; verify content edits didn't drop legacy links.
+- GL fleet remains dormant (ADR-0017); GL diffs route to `webgl-reviewer`, not you.
 
 ## Design-system rules (ESLint-enforced — flag early)
 

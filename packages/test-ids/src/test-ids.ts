@@ -41,6 +41,14 @@ export const TEST_IDS = {
     agencyChip: 'agency-chip',
     /** Filter toggle that hides agency postings from the list. */
     hideAgencyToggle: 'hide-agency-toggle',
+    /** ATS slug typeahead (ADR-030): the text input users type company slugs into. */
+    companyTypeahead: 'company-typeahead',
+    /** One suggestion row in the slug typeahead. */
+    companySuggestion: 'company-suggestion',
+    /** Per-row star (watch) toggle in the slug typeahead. */
+    companyStarToggle: 'company-star-toggle',
+    /** A selected-company chip feeding the scrape `companies` array. */
+    companyChip: 'company-chip',
   },
 
   /** Settings feature */
@@ -69,6 +77,8 @@ export const TEST_IDS = {
     emptyState: 'autopilot-empty-state',
     /** StepSchedule probe — used in wizard step test */
     probe: 'probe',
+    /** Watched-companies-only target toggle (ADR-030) in the wizard board step. */
+    watchedCompaniesToggle: 'watched-companies-toggle',
   },
 
   /** Applications (tracker) feature */

@@ -1621,6 +1621,12 @@
           "hint": "Searches a curated set of companies:",
           "more_one": ", +{{count}} more",
           "more_other": ", +{{count}} more"
+        },
+        "watched": {
+          "label": "My watched ATS companies",
+          "description": "Only scrape companies you've starred — resolved fresh on every run.",
+          "emptyHint": "You haven't starred any companies yet. Star them from the jobs scrape form to watch them here.",
+          "unstar": "Unwatch {{company}}"
         }
       },
       "filter": {
@@ -1915,8 +1921,17 @@
     "locationFilterHint": "Location filtered locally:",
     "companies": {
       "label": "Companies",
-      "placeholder": "e.g. stripe, airbnb",
-      "hint": "Comma-separated company slugs for ATS boards."
+      "placeholder": "Type a company slug…",
+      "remove": "Remove {{company}}"
+    },
+    "discovery": {
+      "slugHint": "A slug comes from a company's career-page URL. Once you scrape any job from an ATS company, its slug shows up here automatically — no need to type it by hand.",
+      "starToggle": "Watch {{company}}",
+      "curated": "curated",
+      "noMatches": "No matching companies",
+      "resultsCount_one": "{{count}} company found",
+      "resultsCount_other": "{{count}} companies found",
+      "starFailed": "Couldn't update watched company. Please try again."
     },
     "partialScrapeNote": "{{done}} of {{total}} boards · {{failed}} failed",
     "lastScrapeFailed": "Last scrape failed: {{reason}}",

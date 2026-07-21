@@ -23,6 +23,7 @@ describe('IPC_CHANNELS', () => {
         'data',
         'dedup',
         'dialog',
+        'discovery',
         'documents',
         'emailWatch',
         'extensionBridge',

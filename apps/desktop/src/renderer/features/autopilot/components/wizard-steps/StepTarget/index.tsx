@@ -16,6 +16,7 @@ import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog } from '@/services/use-boards';
 
 import { PrefilledBadge } from '../PrefilledBadge';
+import { WatchedCompaniesField } from '../WatchedCompaniesField';
 import { WizardField } from '../WizardField';
 
 const fieldCls = 'h-9 w-full text-xs shadow-none';
@@ -173,6 +174,10 @@ export function StepTarget({ prefilled }: StepTargetProps) {
           );
         }}
       />
+
+      {/* Watched-companies target (ADR-030 §e) — resolve the user's starred
+          companies at run time instead of the curated seed. */}
+      <WatchedCompaniesField />
 
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
