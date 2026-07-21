@@ -144,6 +144,7 @@ const REQUIRED_FILES = [
   'agent-system.html',
   'architecture-map.html',
   'benchmarks/index.html',
+  'world.html',
 ];
 for (const rel of REQUIRED_FILES) {
   if (!existsSync(join(outDir, rel))) errors.push(`passthrough file missing from out/: ${rel}`);
