@@ -11,6 +11,11 @@
  * Invariants:
  *  - NEVER blocks or alters the submit: no `preventDefault`/`stopPropagation`,
  *    so the real form submission proceeds untouched.
+ *  - UNDER-reports rather than over-reports. The message auto-advances a saved
+ *    application to `applied`, so a false positive silently lies about what the
+ *    user did; a false negative just leaves them to mark it by hand. Hence the
+ *    {@link looksLikeApplicationForm} gate on the submit path and the strict
+ *    text requirement for a control with no form around it.
  *  - Fires AT MOST ONCE per arming — a click on the apply button AND the submit
  *    it triggers post a single message, not two (the `fired` closure guard).
  *  - Reads `location.href` SYNCHRONOUSLY in the handler, so a full-page-nav
@@ -37,8 +42,51 @@ import { isHidden } from './field-signal';
 export const SUBMIT_DETECTED_MSG = 'submitDetected';
 
 /** Visible text that marks a control as a real "send the application" action
- *  (an apply/submit/finish button), not a "save draft"/"add another" control. */
+ *  (an apply/submit/finish button), not a "save draft"/"add another" control.
+ *  Only trusted for a control that sits inside an application form — see
+ *  {@link STRICT_APPLY_TEXT_RE}. */
 const APPLY_TEXT_RE = /apply|submit application|send application|finish/i;
+
+/** The subset of {@link APPLY_TEXT_RE} trusted with NO surrounding form to
+ *  corroborate it (a pure SPA control). A bare "Apply"/"Apply now" is excluded:
+ *  outside a form it is overwhelmingly the button that OPENS the application,
+ *  not the one that sends it. */
+const STRICT_APPLY_TEXT_RE =
+  /submit\s+(?:your|my|the)?\s*application|send\s+(?:your|my|the)?\s*application|finish/i;
+
+/** Minimum number of visible, fillable fields for a `<form>` to be treated as an
+ *  application form. A site search box, a newsletter signup and a login form all
+ *  have one or two; a real application form has more (and usually a résumé file
+ *  input, which short-circuits this check outright). */
+const MIN_APPLICATION_FIELDS = 3;
+
+/**
+ * Whether `form` looks like the application form rather than incidental page
+ * furniture (search box, filter, newsletter signup, login).
+ *
+ * The `submit` event fires for EVERY form on the page, and the watcher has no
+ * other way to tell them apart — it only reports `location.href`, so a search
+ * submit was indistinguishable from sending the application.
+ */
+function looksLikeApplicationForm(form: HTMLFormElement): boolean {
+  const fields = Array.from(form.querySelectorAll('input, textarea, select')).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && !isHidden(el)
+  );
+  const fillable = fields.filter((el) => {
+    const type = (el.getAttribute('type') ?? '').toLowerCase();
+    return !['hidden', 'submit', 'button', 'image', 'reset', 'search'].includes(type);
+  });
+  // A file input is the résumé upload — decisive on its own.
+  if (fillable.some((el) => (el.getAttribute('type') ?? '').toLowerCase() === 'file')) return true;
+  return fillable.length >= MIN_APPLICATION_FIELDS;
+}
+
+/** The application form this control belongs to, if any — `form` for a native
+ *  submit control, otherwise the nearest `<form>` ancestor (SPA `role=button`). */
+function applicationFormFor(el: HTMLElement): HTMLFormElement | null {
+  const form = (el as HTMLButtonElement | HTMLInputElement).form ?? el.closest?.('form') ?? null;
+  return form instanceof HTMLFormElement ? form : null;
+}
 
 /**
  * True when `el` is an apply-style control worth treating as a submit: a real
@@ -58,7 +106,13 @@ function isApplyControl(el: Element): boolean {
     el instanceof HTMLInputElement
       ? el.value
       : `${el.textContent ?? ''} ${el.getAttribute('aria-label') ?? ''}`;
-  return APPLY_TEXT_RE.test(text);
+  // Inside an application form the surrounding structure corroborates the text,
+  // so the broad pattern is trusted. With no form to corroborate it, only an
+  // explicit send verb counts — a bare "Apply now" out there is the button that
+  // OPENS the application.
+  const form = el instanceof HTMLElement ? applicationFormFor(el) : null;
+  if (form) return looksLikeApplicationForm(form) && APPLY_TEXT_RE.test(text);
+  return STRICT_APPLY_TEXT_RE.test(text);
 }
 
 /**
@@ -76,8 +130,19 @@ export function armSubmitWatch(doc: Document, post: (url: string) => void): void
     post(doc.defaultView?.location?.href ?? '');
   };
 
-  // Real form submit — any submit path that fires the native event.
-  doc.addEventListener('submit', () => fire(), true);
+  // Real form submit — but ONLY for a form that looks like the application form.
+  // The listener sees every form on the page and reports nothing but
+  // `location.href`, so without this check a search box, filter or newsletter
+  // signup submit was indistinguishable from sending the application.
+  doc.addEventListener(
+    'submit',
+    (ev) => {
+      const form = ev.target;
+      if (!(form instanceof HTMLFormElement) || !looksLikeApplicationForm(form)) return;
+      fire();
+    },
+    true
+  );
 
   // Apply-style click — backstop for role=button / JS-driven submits that never
   // fire a native `submit`. The click can land on a child (an icon/span), so
