@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.128.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.127.0...v0.128.0) (2026-07-21)
+
+### ✨ Features
+
+* add jobicy keyless remote-jobs board with full descriptions ([#700](https://github.com/saeedkolivand/ai-job-hunter-app/issues/700)) ([1a7559a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1a7559a48f528ba4e7b5f1e7dc7c6be698e6e9db))
+* **ai:** persist url import provenance and harvest from resolves (adr-031) ([#761](https://github.com/saeedkolivand/ai-job-hunter-app/issues/761)) ([420ba60](https://github.com/saeedkolivand/ai-job-hunter-app/commit/420ba60427f15bba3a86e323799bd871fdd84ebb))
+* **extension:** match autofill fields labeled in major eu languages ([#738](https://github.com/saeedkolivand/ai-job-hunter-app/issues/738)) ([1e9d466](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1e9d466df09fc2c4d2523dd6c855a3f401a95dc8))
+* landing docs tier — docshell, mission control, agent-system route, next 16 ([#742](https://github.com/saeedkolivand/ai-job-hunter-app/issues/742)) ([774468e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/774468eb5a736e37134117a734920c093f585ccb))
+* landing gl p4 - deep fried set-piece and godmode rise ([#708](https://github.com/saeedkolivand/ai-job-hunter-app/issues/708)) ([16b2994](https://github.com/saeedkolivand/ai-job-hunter-app/commit/16b2994656a0601bf0fed6fb3b2d331ef003bd8b))
+* landing gl takeover p0 - app skeleton + semantic parity port ([#702](https://github.com/saeedkolivand/ai-job-hunter-app/issues/702)) ([03a4ac6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/03a4ac6bdfbee0506b81f9ae4bb039c390d0b36d))
+* landing gl takeover p1 - engine spine ([#703](https://github.com/saeedkolivand/ai-job-hunter-app/issues/703)) ([46d1a44](https://github.com/saeedkolivand/ai-job-hunter-app/commit/46d1a44e0b0210a63978ee59e628d27d374f477b))
+* landing gl takeover p2 - ink strokes, self-hosted fonts, gl text ([#705](https://github.com/saeedkolivand/ai-job-hunter-app/issues/705)) ([10533df](https://github.com/saeedkolivand/ai-job-hunter-app/commit/10533df95c6d7568517bcbeaae08a28437cd44db))
+* landing gl takeover p3 - slump and descent beats ([#706](https://github.com/saeedkolivand/ai-job-hunter-app/issues/706)) ([e80cdb8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e80cdb8658242cb304b6bce8963a3d9b5cb7249c))
+* landing gl takeover p5 - the skeleton completes ([#709](https://github.com/saeedkolivand/ai-job-hunter-app/issues/709)) ([66c36c6](https://github.com/saeedkolivand/ai-job-hunter-app/commit/66c36c68899974446454a6c2e7766c2cfa4c14ad))
+* migrate landing to next.js static export with real routes ([#740](https://github.com/saeedkolivand/ai-job-hunter-app/issues/740)) ([408d0dc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/408d0dc30eebd6fc308d64705ccc78604ad80bbf))
+* nightly metrics snapshot data plane for mission control ([#759](https://github.com/saeedkolivand/ai-job-hunter-app/issues/759)) ([4f6684b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4f6684b15ce52dc2b6c34ff112aef42e205b52af))
+* ripbook m1 - notebook shell and rip rig proof ([#713](https://github.com/saeedkolivand/ai-job-hunter-app/issues/713)) ([f6e0936](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f6e0936bab077dc82a88405de9c11856703de54b))
+* ripbook m2 - kraft paper material system ([#714](https://github.com/saeedkolivand/ai-job-hunter-app/issues/714)) ([d833486](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d833486463d506b4e9ae5a085800ff95bea899d4))
+* **scraping:** cluster cross-board duplicate jobs with source chips and split (adr-029) ([#756](https://github.com/saeedkolivand/ai-job-hunter-app/issues/756)) ([d435455](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d4354552e572d4d862781f654abea1f36504fe61))
+* **scraping:** harvest ats slugs passively with watched-company autopilot targets (adr-030) ([#760](https://github.com/saeedkolivand/ai-job-hunter-app/issues/760)) ([ccaddb3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ccaddb3a6b750e43ca05c5d6bd2920e32237d0e2))
+* terminal velocity m1 — scroll rig, playhead, semantic layer parity ([#720](https://github.com/saeedkolivand/ai-job-hunter-app/issues/720)) ([3db3540](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3db3540183e39862bd674ee4d9eb0caa31f4203d))
+* terminal velocity m2 — tower canyon and paper storm ([#721](https://github.com/saeedkolivand/ai-job-hunter-app/issues/721)) ([407559c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/407559cf88f4dbc1241aac662e865d15f614b7db))
+* terminal velocity m3 — water, splash vat, deep and blackout ([#722](https://github.com/saeedkolivand/ai-job-hunter-app/issues/722)) ([bd87e89](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bd87e89bf0ab77bf85f88371e82a6fce27087d88))
+* use dom_smoothie readability pass in scrape_url generic extraction fallback ([#699](https://github.com/saeedkolivand/ai-job-hunter-app/issues/699)) ([026baa5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/026baa51d7e4c5588c5b229d702c9ac438b311d3))
+
+### 🐛 Bug Fixes
+
+* **analyze:** drop false language mismatch when a language is empty string ([#731](https://github.com/saeedkolivand/ai-job-hunter-app/issues/731)) (@thejesh23) ([d46fac5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d46fac53134620f3d1a3677eb64f4a89fc8232dd))
+* **applications:** standalone apply-by-email generation and scrollable jobs scrape form ([#736](https://github.com/saeedkolivand/ai-job-hunter-app/issues/736)) ([b8d4f22](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b8d4f227cb06a1bc2a682471521f58e4ae9135bc))
+* **export:** keep applicant name out of recipient block and prefer profile casing for signature ([#735](https://github.com/saeedkolivand/ai-job-hunter-app/issues/735)) ([921e723](https://github.com/saeedkolivand/ai-job-hunter-app/commit/921e7238af6e768d531746b9b269b79ca50b5cd4))
+* **export:** keep Unicode letters in exported filenames ([#729](https://github.com/saeedkolivand/ai-job-hunter-app/issues/729)) (@thejesh23) ([3a3c9fa](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3a3c9fa073a0fcc51169f436ffd9a9176cf49681))
+* **extension:** parse linkedin job ad from captured page dom instead of authwalled refetch ([#741](https://github.com/saeedkolivand/ai-job-hunter-app/issues/741)) ([b91a5d1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b91a5d1cae12cfc3c6577582694ae24089dd3c79))
+* hold the gl experience behind a pre-launch gate until the production flip ([#707](https://github.com/saeedkolivand/ai-job-hunter-app/issues/707)) ([8b42603](https://github.com/saeedkolivand/ai-job-hunter-app/commit/8b426036414e1307d4ba1706a9f44b81501ee507))
+* **jobs:** post-756 review findings and ai review sticky restyle ([#758](https://github.com/saeedkolivand/ai-job-hunter-app/issues/758)) ([a023089](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a0230890dfbfe85f8444fe1a9554cc734ea19d59)), closes [Post-#756](https://github.com/saeedkolivand/Post-/issues/756)
+* **language-detection:** return 'unknown' for codes outside the map ([#727](https://github.com/saeedkolivand/ai-job-hunter-app/issues/727)) (@thejesh23) ([bf2aab1](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bf2aab12f26597d1ee6939b765e138d610ad275c))
+* **links:** capture markdown urls containing balanced parens ([#733](https://github.com/saeedkolivand/ai-job-hunter-app/issues/733)) (@thejesh23) ([0879044](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0879044006430dedc248f0995b964f43aa27fc98))
+* **prompts:** omit company lines instead of emitting placeholders when company unknown ([#734](https://github.com/saeedkolivand/ai-job-hunter-app/issues/734)) ([c0ff9cb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c0ff9cbe8ae1835bfe564d0cfe7284b313988619))
+* **referral:** pass iso code instead of display name to locale ([#725](https://github.com/saeedkolivand/ai-job-hunter-app/issues/725)) (@thejesh23) ([d37aff2](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d37aff25746cf7d5f5953bd6792e44be66e996b5))
+
+### ♻️ Refactors
+
+* consolidate static landing into apps/landing and retire the scroll-film app ([#737](https://github.com/saeedkolivand/ai-job-hunter-app/issues/737)) ([4faf353](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4faf353f1725bc844293ec7e8b3148d418e2209f))
+* port architecture-map passthrough to typed-data next route ([#757](https://github.com/saeedkolivand/ai-job-hunter-app/issues/757)) ([be4477c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/be4477ccab00aea9718984eb9606bdbb8f09839b))
+
+### 📚 Documentation
+
+* add the critic contract and seed the miss ledger ([#716](https://github.com/saeedkolivand/ai-job-hunter-app/issues/716)) ([bf59ca3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bf59ca3516903f543a188f16b217be847b37ab1a))
+* adopt the ripbook notebook landing plan ([#711](https://github.com/saeedkolivand/ai-job-hunter-app/issues/711)) ([3019ca0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3019ca04e8791cf66db25b80a670f55b0807eddc))
+* adr-0016 — terminal velocity scroll-film supersedes ripbook ([#718](https://github.com/saeedkolivand/ai-job-hunter-app/issues/718)) ([332aa7a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/332aa7a0e79af2c0bd7f15a01848535d33ba12e2))
+* bump board count to 24 and document the jobicy board ([#701](https://github.com/saeedkolivand/ai-job-hunter-app/issues/701)) ([add0d7e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/add0d7e012b6b7999abb85576ea7724e75a9b577)), closes [698-#700](https://github.com/saeedkolivand/698-/issues/700) [#700](https://github.com/saeedkolivand/ai-job-hunter-app/issues/700)
+* cache-bust the contributors image so new contributors show ([a5a9322](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a5a93229f1a685444366ff73864efc382d88581a))
+* dedupe fleet map critics and de-concept gl agent descriptions ([#723](https://github.com/saeedkolivand/ai-job-hunter-app/issues/723)) ([e6fb785](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e6fb7853e7d5c7580ad34234ebde7a87e39369bd))
+* refresh readme + landing (12 templates, 23 boards, http linkedin) and unify footers ([#698](https://github.com/saeedkolivand/ai-job-hunter-app/issues/698)) ([289dedc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/289dedcdebd28738f4bd83a5fae8bf4dc28cfbb3))
+* rewrite webgl-standards and gate-audit skills for terminal velocity ([#719](https://github.com/saeedkolivand/ai-job-hunter-app/issues/719)) ([562b582](https://github.com/saeedkolivand/ai-job-hunter-app/commit/562b58203cff92be500c0f96bb740089a5654752))
+
 ## [0.127.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.126.0...v0.127.0) (2026-07-17)
 
 ### ✨ Features
