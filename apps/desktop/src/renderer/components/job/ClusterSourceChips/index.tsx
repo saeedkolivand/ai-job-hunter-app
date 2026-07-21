@@ -20,6 +20,15 @@ interface ClusterSourceChipsProps {
   /** The canonical row's own url — a second self-match signal (Posting rows
    *  carry no member key of their own). */
   selfUrl?: string;
+  /**
+   * When `false`, render pure presentational badges with NO focusable Button and
+   * NO click handler. Required inside the split-view listbox row, which is
+   * `role="option"` with `tabIndex={-1}` (active-descendant pattern): an option
+   * must not contain focusable descendants, and virtualized rows unmounting a
+   * focused chip would drop focus. The interactive "open other source" affordance
+   * still lives in the detail pane's "All sources" section. Default `true`.
+   */
+  interactive?: boolean;
   className?: string;
 }
 
@@ -45,6 +54,7 @@ export function ClusterSourceChips({
   members,
   selfKey,
   selfUrl,
+  interactive = true,
   className,
 }: ClusterSourceChipsProps) {
   const { t } = useTranslation();
@@ -61,6 +71,18 @@ export function ClusterSourceChips({
         const label = boardId
           ? t(`jobs.boards.${boardId}`, { defaultValue: boardId })
           : hostOf(m.url);
+        const badge = <SourceBadge source={boardId ?? label} />;
+
+        // Presentational-only inside a listbox option: no Button, no click, so
+        // the row stays a single tab stop (see the `interactive` doc above).
+        if (!interactive) {
+          return (
+            <span key={m.key} data-testid={TEST_IDS.jobs.clusterSourceChip} className="inline-flex">
+              {badge}
+            </span>
+          );
+        }
+
         return (
           <Button
             key={m.key}
@@ -71,7 +93,7 @@ export function ClusterSourceChips({
             title={t('jobs.cluster.openOn', { source: label })}
             className="rounded-full focus-visible:ring-offset-1"
           >
-            <SourceBadge source={boardId ?? label} />
+            {badge}
           </Button>
         );
       })}

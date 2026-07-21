@@ -105,4 +105,19 @@ describe('ClusterSourceChips', () => {
     const { container } = render(<ClusterSourceChips selfUrl="https://x.com/1" />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('interactive={false} renders presentational badges with NO focusable buttons', () => {
+    render(
+      <ClusterSourceChips
+        members={MEMBERS}
+        selfKey="k1"
+        selfUrl="https://linkedin.com/job/1"
+        interactive={false}
+      />
+    );
+    // Same chips render (k2 + k3)…
+    expect(screen.getAllByTestId(TEST_IDS.jobs.clusterSourceChip)).toHaveLength(2);
+    // …but as badges, not buttons — zero tab stops for the listbox-option row.
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
 });

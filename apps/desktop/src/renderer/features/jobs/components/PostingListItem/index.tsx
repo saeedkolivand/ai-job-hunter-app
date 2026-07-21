@@ -122,11 +122,15 @@ export function PostingListItem({
               <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
             )}
             {posting.isAgency && <AgencyChip className="shrink-0 px-1 py-0 text-[9px]" />}
+            {/* interactive={false}: this row is a role="option" with tabIndex=-1
+                (active-descendant listbox) — chips must add no tab stops. The
+                "open other source" action lives in the detail pane instead. */}
             <ClusterSourceChips
               className="shrink-0"
               members={posting.clusterMembers}
               selfKey={posting.clusterId}
               selfUrl={posting.url}
+              interactive={false}
             />
             {/* Status markers — decorative (aria-hidden); SR summary above.
                 TrustBadge is `interactive={false}` here: rows are never real tab
