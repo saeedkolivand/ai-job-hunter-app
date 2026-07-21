@@ -124,7 +124,11 @@ mod tests {
             "  real  ".to_string(),
         ];
         let (_, clamped) = clamp_split_request("member", &mixed).expect("valid request");
-        assert_eq!(clamped, vec!["real".to_string()], "trimmed, blank + self dropped");
+        assert_eq!(
+            clamped,
+            vec!["real".to_string()],
+            "trimmed, blank + self dropped"
+        );
     }
 
     #[test]
@@ -133,9 +137,15 @@ mod tests {
         let big_other = "o".repeat(500);
         let (member, clamped) =
             clamp_split_request(&big_member, &[big_other]).expect("valid request");
-        assert!(member.len() <= MAX_DEDUP_KEY_BYTES, "member is byte-clamped");
+        assert!(
+            member.len() <= MAX_DEDUP_KEY_BYTES,
+            "member is byte-clamped"
+        );
         assert_eq!(clamped.len(), 1);
-        assert!(clamped[0].len() <= MAX_DEDUP_KEY_BYTES, "other key is byte-clamped");
+        assert!(
+            clamped[0].len() <= MAX_DEDUP_KEY_BYTES,
+            "other key is byte-clamped"
+        );
     }
 
     #[test]
@@ -145,7 +155,7 @@ mod tests {
         // char-boundary walk-back in `clamp_bytes` regressed). Mirrors the
         // salary-field clamp regression net (job_preferences/test.rs).
         let euros = "€".repeat(150); // 150 × 3 bytes = 450 bytes, over the 200 cap
-        // member path
+                                     // member path
         let (member, _) = clamp_split_request(&euros, &["distinct".to_string()])
             .expect("a distinct other key keeps this a valid request");
         assert!(member.len() <= MAX_DEDUP_KEY_BYTES, "member byte-clamped");
@@ -154,10 +164,12 @@ mod tests {
             "member clamp must cut on a char boundary (valid UTF-8)"
         );
         // other_keys path
-        let (_, clamped) =
-            clamp_split_request("member", &[euros]).expect("valid request");
+        let (_, clamped) = clamp_split_request("member", &[euros]).expect("valid request");
         assert_eq!(clamped.len(), 1);
-        assert!(clamped[0].len() <= MAX_DEDUP_KEY_BYTES, "other key byte-clamped");
+        assert!(
+            clamped[0].len() <= MAX_DEDUP_KEY_BYTES,
+            "other key byte-clamped"
+        );
         assert!(
             clamped[0].is_char_boundary(clamped[0].len()),
             "other-key clamp must cut on a char boundary (valid UTF-8)"

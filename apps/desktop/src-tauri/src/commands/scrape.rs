@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use crate::db::{new_job_id, now_ms};
 use crate::error::{AppError, AppResult};
 use crate::postings::{attach_interactions, InteractionRecord, InteractionStore, PostingsCache};
-use crate::scraping::cluster::{assign_clusters, posting_cluster_input, ClusterAssignment, ClusterInput};
+use crate::scraping::cluster::{
+    assign_clusters, posting_cluster_input, ClusterAssignment, ClusterInput,
+};
 use crate::scraping::{BoardSearchInput, ScraperEngine};
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -333,7 +335,8 @@ pub fn recluster_postings_cache(app: &AppHandle) {
         // shared `posting_cluster_input` seam is also exercised by the aggregator
         // acceptance test). A cache entry that isn't a well-formed posting — or
         // carries no id to annotate — is skipped, never breaking the whole run.
-        let Ok(posting) = serde_json::from_value::<crate::scraping::JobPosting>(item.clone()) else {
+        let Ok(posting) = serde_json::from_value::<crate::scraping::JobPosting>(item.clone())
+        else {
             continue;
         };
         if posting.id.trim().is_empty() {

@@ -3368,7 +3368,9 @@ fn cross_board_same_job_from_gtj_feed_and_adzuna_json_forms_one_cluster() {
     // board with full text vs an aggregator copy with none.
     assert_eq!(gtj.source, "germantechjobs");
     assert!(
-        gtj.description.as_deref().is_some_and(|d| !d.trim().is_empty()),
+        gtj.description
+            .as_deref()
+            .is_some_and(|d| !d.trim().is_empty()),
         "the direct-board posting must carry a description"
     );
     assert_eq!(adz.source, "aggregator");
@@ -3397,11 +3399,8 @@ fn cross_board_same_job_from_gtj_feed_and_adzuna_json_forms_one_cluster() {
         crate::scraping::cluster::posting_cluster_input(&adz, None, None),
         crate::scraping::cluster::posting_cluster_input(&gtj, None, None),
     ];
-    let out = crate::scraping::cluster::assign_clusters(
-        inputs,
-        &std::collections::HashSet::new(),
-        &[],
-    );
+    let out =
+        crate::scraping::cluster::assign_clusters(inputs, &std::collections::HashSet::new(), &[]);
 
     // 3a) One cluster, two source refs.
     assert_eq!(

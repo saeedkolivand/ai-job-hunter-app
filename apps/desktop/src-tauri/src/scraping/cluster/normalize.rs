@@ -425,7 +425,10 @@ mod tests {
         assert!(check("Mustermann Personalberatung GmbH", &[]));
         assert!(check("Acme Recruiting", &[]));
         // User-supplied extra, normalized the same way.
-        assert!(check("Talent Partners AG", &["talent partners".to_string()]));
+        assert!(check(
+            "Talent Partners AG",
+            &["talent partners".to_string()]
+        ));
         // A real employer is not an agency.
         assert!(!check("Acme", &[]));
         assert!(!check("", &[]));
@@ -457,7 +460,10 @@ mod tests {
         // A parenthetical role qualifier is NOT a gender tag and NOT a remote
         // marker, so it is preserved — dropping it would merge distinct roles
         // ("(Backend)" vs "(Frontend)") at the same company.
-        assert_eq!(normalize_title("Developer (Backend)"), "developer (backend)");
+        assert_eq!(
+            normalize_title("Developer (Backend)"),
+            "developer (backend)"
+        );
         // But an explicit remote-marker parenthetical is stripped.
         assert_eq!(normalize_title("Developer (Remote)"), "developer");
     }
@@ -466,8 +472,14 @@ mod tests {
 
     #[test]
     fn title_keeps_seniority_words() {
-        assert_eq!(normalize_title("Senior Rust Developer"), "senior rust developer");
-        assert_eq!(normalize_title("Junior Rust Developer"), "junior rust developer");
+        assert_eq!(
+            normalize_title("Senior Rust Developer"),
+            "senior rust developer"
+        );
+        assert_eq!(
+            normalize_title("Junior Rust Developer"),
+            "junior rust developer"
+        );
         // A seniority word in a trailing segment is never stripped.
         assert_eq!(
             normalize_title("Rust Developer - Senior Team"),
@@ -481,9 +493,15 @@ mod tests {
             normalize_title("Senior Rust Developer (m/w/d) – Berlin"),
             "senior rust developer"
         );
-        assert_eq!(normalize_title("Backend Engineer | Remote"), "backend engineer");
+        assert_eq!(
+            normalize_title("Backend Engineer | Remote"),
+            "backend engineer"
+        );
         assert_eq!(normalize_title("Data Engineer (Remote)"), "data engineer");
-        assert_eq!(normalize_title("Platform Engineer - Home Office"), "platform engineer");
+        assert_eq!(
+            normalize_title("Platform Engineer - Home Office"),
+            "platform engineer"
+        );
     }
 
     #[test]

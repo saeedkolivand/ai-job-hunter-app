@@ -283,8 +283,11 @@ fn resolve_block(
 
     for cluster in &clusters {
         let cluster_id = items[cluster.seed].key.clone();
-        let members: Vec<ClusterMemberRef> =
-            cluster.members.iter().map(|&m| member_ref(&items[m])).collect();
+        let members: Vec<ClusterMemberRef> = cluster
+            .members
+            .iter()
+            .map(|&m| member_ref(&items[m]))
+            .collect();
         for &m in &cluster.members {
             cluster_of.insert(m, (cluster_id.clone(), m == cluster.seed, members.clone()));
         }
@@ -297,7 +300,9 @@ fn similar(items: &[ClusterInput], prepared: &[Prepared], a: usize, b: usize) ->
     let ia = &items[a];
     let ib = &items[b];
     match (&ia.vector, &ib.vector, &ia.space, &ib.space) {
-        (Some(va), Some(vb), Some(sa), Some(sb)) if sa == sb => cosine(va, vb) >= CLUSTER_COSINE_MIN,
+        (Some(va), Some(vb), Some(sa), Some(sb)) if sa == sb => {
+            cosine(va, vb) >= CLUSTER_COSINE_MIN
+        }
         _ => {
             trigram_jaccard(&prepared[a].norm_title, &prepared[b].norm_title)
                 >= CLUSTER_TITLE_TRIGRAM_JACCARD_MIN
@@ -359,10 +364,7 @@ pub(crate) fn posting_cluster_input(
 /// "New jobs: N" count (ADR-029 §f). A known job resurfacing on another board
 /// makes its cluster non-all-new, contributing 0. `new_keys` holds the
 /// `canonical_job_key`s the caller considers new.
-pub fn new_cluster_count(
-    assignments: &[ClusterAssignment],
-    new_keys: &HashSet<String>,
-) -> u32 {
+pub fn new_cluster_count(assignments: &[ClusterAssignment], new_keys: &HashSet<String>) -> u32 {
     let mut counted: HashSet<&str> = HashSet::new();
     let mut count = 0u32;
     for a in assignments {
@@ -421,11 +423,19 @@ mod tests {
     #[test]
     fn acme_gmbh_and_acme_cluster_via_string_path() {
         let items = vec![
-            input("k1", "Senior Rust Developer (m/w/d) – Berlin", "Acme GmbH", "greenhouse"),
+            input(
+                "k1",
+                "Senior Rust Developer (m/w/d) – Berlin",
+                "Acme GmbH",
+                "greenhouse",
+            ),
             input("k2", "Senior Rust Developer", "Acme", "aggregator"),
         ];
         let out = assign_clusters(items, &no_tombstones(), &[]);
-        assert_eq!(out[0].cluster_id, out[1].cluster_id, "both must share a cluster");
+        assert_eq!(
+            out[0].cluster_id, out[1].cluster_id,
+            "both must share a cluster"
+        );
         // The direct full-text board (has no aggregator flag) is canonical over
         // the aggregator copy.
         assert_eq!(out[0].cluster_id, "k1");
@@ -462,7 +472,10 @@ mod tests {
         b.vector = Some(vec![0.999, 0.001, 0.0]);
         b.space = Some("ollama/nomic@3".to_string());
         let out = assign_clusters(vec![a, b], &no_tombstones(), &[]);
-        assert_eq!(out[0].cluster_id, out[1].cluster_id, "cosine must join near-identical vectors");
+        assert_eq!(
+            out[0].cluster_id, out[1].cluster_id,
+            "cosine must join near-identical vectors"
+        );
     }
 
     #[test]
@@ -519,8 +532,14 @@ mod tests {
         let mut tombstones = HashSet::new();
         tombstones.insert(ordered_pair("k2", "k3"));
         let out = assign_clusters(items, &tombstones, &[]);
-        assert_eq!(out[0].cluster_id, out[1].cluster_id, "k1 and k2 still cluster");
-        assert_ne!(out[2].cluster_id, out[0].cluster_id, "k3 vetoed against member k2");
+        assert_eq!(
+            out[0].cluster_id, out[1].cluster_id,
+            "k1 and k2 still cluster"
+        );
+        assert_ne!(
+            out[2].cluster_id, out[0].cluster_id,
+            "k3 vetoed against member k2"
+        );
     }
 
     // ── canonical preference order ────────────────────────────────────────────
@@ -536,7 +555,10 @@ mod tests {
         k_dir.seen_at = 1;
         let out = assign_clusters(vec![k_agg, k_dir], &no_tombstones(), &[]);
         assert_eq!(out[0].cluster_id, "k_dir");
-        assert!(out[1].canonical, "the described direct-board row is canonical");
+        assert!(
+            out[1].canonical,
+            "the described direct-board row is canonical"
+        );
     }
 
     // ── deterministic cluster_id across identical inputs ──────────────────────
@@ -617,8 +639,16 @@ mod tests {
         b.space = Some("space".into());
         let items = vec![a, b];
         let prepared = [
-            Prepared { idx: 0, norm_title: "engineer".into(), block: None },
-            Prepared { idx: 1, norm_title: "engineer".into(), block: None },
+            Prepared {
+                idx: 0,
+                norm_title: "engineer".into(),
+                block: None,
+            },
+            Prepared {
+                idx: 1,
+                norm_title: "engineer".into(),
+                block: None,
+            },
         ];
         assert!(
             similar(&items, &prepared, 0, 1),
@@ -632,7 +662,11 @@ mod tests {
         // chars → 57 distinct trigrams; replacing the last char shares 54, each
         // side 3 unique → union 60, 54/60 == 0.90 in f64 (verified). Both items
         // lack vectors, forcing the trigram path; the production `>=` must join.
-        let base: String = ('a'..='z').chain('A'..='Z').chain('0'..='9').take(55).collect();
+        let base: String = ('a'..='z')
+            .chain('A'..='Z')
+            .chain('0'..='9')
+            .take(55)
+            .collect();
         let mut other_chars: Vec<char> = base.chars().collect();
         *other_chars.last_mut().unwrap() = '!';
         let other: String = other_chars.into_iter().collect();
@@ -643,8 +677,16 @@ mod tests {
         );
         let items = vec![input("k1", "x", "co", ""), input("k2", "y", "co", "")];
         let prepared = [
-            Prepared { idx: 0, norm_title: base, block: None },
-            Prepared { idx: 1, norm_title: other, block: None },
+            Prepared {
+                idx: 0,
+                norm_title: base,
+                block: None,
+            },
+            Prepared {
+                idx: 1,
+                norm_title: other,
+                block: None,
+            },
         ];
         assert!(
             similar(&items, &prepared, 0, 1),

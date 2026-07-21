@@ -1234,12 +1234,29 @@ fn record_run_new_count_reflects_deduped_batch() {
     // the same key) + one genuinely distinct job at a DIFFERENT company. The two
     // variants merge; the two distinct jobs sit in different clusters (distinct
     // companies → different blocks), so the cluster count is 2.
-    let dup_a = found_job_full("https://jobs.example.com/eng-1?utm_source=x", "Engineer", "AcmeOne", 1);
-    let dup_b = found_job_full("https://jobs.example.com/eng-1#frag", "Engineer", "AcmeOne", 2);
+    let dup_a = found_job_full(
+        "https://jobs.example.com/eng-1?utm_source=x",
+        "Engineer",
+        "AcmeOne",
+        1,
+    );
+    let dup_b = found_job_full(
+        "https://jobs.example.com/eng-1#frag",
+        "Engineer",
+        "AcmeOne",
+        2,
+    );
     let other = found_job_full("https://jobs.example.com/eng-2", "Engineer", "AcmeTwo", 3);
 
-    let new_count =
-        store.record_run(&id, 3, 0, vec![dup_a, dup_b, other], Vec::new(), &no_tombstones(), &[]);
+    let new_count = store.record_run(
+        &id,
+        3,
+        0,
+        vec![dup_a, dup_b, other],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
 
     assert_eq!(
         new_count, 2,
@@ -1293,12 +1310,28 @@ fn record_run_reports_only_newly_surfaced_jobs() {
     );
     // Nothing unseen → no notification.
     assert_eq!(
-        store.record_run(&id, 3, 0, vec![j("u1", "Alpha", 9)], Vec::new(), &no_tombstones(), &[]),
+        store.record_run(
+            &id,
+            3,
+            0,
+            vec![j("u1", "Alpha", 9)],
+            Vec::new(),
+            &no_tombstones(),
+            &[]
+        ),
         0
     );
     // Unknown autopilot → 0 (no panic).
     assert_eq!(
-        store.record_run("missing", 5, 0, vec![j("x", "Alpha", 1)], Vec::new(), &no_tombstones(), &[]),
+        store.record_run(
+            "missing",
+            5,
+            0,
+            vec![j("x", "Alpha", 1)],
+            Vec::new(),
+            &no_tombstones(),
+            &[]
+        ),
         0
     );
 }
@@ -1336,7 +1369,10 @@ fn record_run_cluster_count_two_board_new_is_one() {
     let a = board_job("https://a.example.com/1", "greenhouse", 1);
     let b = board_job("https://b.example.com/2", "aggregator", 2);
     let new_count = store.record_run(&id, 2, 0, vec![a, b], Vec::new(), &no_tombstones(), &[]);
-    assert_eq!(new_count, 1, "one job on two boards counts as ONE new cluster");
+    assert_eq!(
+        new_count, 1,
+        "one job on two boards counts as ONE new cluster"
+    );
 }
 
 #[test]
@@ -1374,7 +1410,15 @@ fn split_survives_two_record_run_cycles() {
     let b = board_job("https://b.example.com/2", "lever", 2);
 
     // Without a tombstone the two cluster together.
-    store.record_run(&id, 2, 0, vec![a.clone(), b.clone()], Vec::new(), &no_tombstones(), &[]);
+    store.record_run(
+        &id,
+        2,
+        0,
+        vec![a.clone(), b.clone()],
+        Vec::new(),
+        &no_tombstones(),
+        &[],
+    );
     let jobs = store.get(&id).unwrap().found_jobs;
     let cid_a = jobs
         .iter()
@@ -1401,7 +1445,15 @@ fn split_survives_two_record_run_cycles() {
     tombstones.insert(crate::dedup::DedupStore::pair(&key_a, &key_b));
 
     for cycle in 0..2 {
-        store.record_run(&id, 2, 0, vec![a.clone(), b.clone()], Vec::new(), &tombstones, &[]);
+        store.record_run(
+            &id,
+            2,
+            0,
+            vec![a.clone(), b.clone()],
+            Vec::new(),
+            &tombstones,
+            &[],
+        );
         let jobs = store.get(&id).unwrap().found_jobs;
         let ca = jobs
             .iter()

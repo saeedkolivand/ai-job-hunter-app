@@ -737,12 +737,25 @@ fn apply_cluster_annotations_patches_matching_items_by_id_and_skips_others() {
 
     let items = cache.get_all();
     assert_eq!(items.len(), 2, "no row is created for a missing id");
-    let j1 = items.iter().find(|i| i.get("id") == Some(&json!("j1"))).unwrap();
-    assert_eq!(j1.get("clusterId"), Some(&json!("j1")), "j1 gets its annotation");
+    let j1 = items
+        .iter()
+        .find(|i| i.get("id") == Some(&json!("j1")))
+        .unwrap();
+    assert_eq!(
+        j1.get("clusterId"),
+        Some(&json!("j1")),
+        "j1 gets its annotation"
+    );
     assert_eq!(j1.get("clusterCanonical"), Some(&json!(true)));
     // The untouched item carries no cluster fields.
-    let j2 = items.iter().find(|i| i.get("id") == Some(&json!("j2"))).unwrap();
-    assert!(j2.get("clusterId").is_none(), "an un-annotated item is left alone");
+    let j2 = items
+        .iter()
+        .find(|i| i.get("id") == Some(&json!("j2")))
+        .unwrap();
+    assert!(
+        j2.get("clusterId").is_none(),
+        "an un-annotated item is left alone"
+    );
 }
 
 #[test]

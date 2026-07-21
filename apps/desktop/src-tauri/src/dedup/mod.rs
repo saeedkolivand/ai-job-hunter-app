@@ -127,22 +127,20 @@ impl DedupStore {
     /// Snapshot all rows (deterministic order) for export.
     fn rows(&self) -> Vec<TombstoneRow> {
         let conn = self.conn.lock();
-        conn.prepare(
-            "SELECT key_a, key_b, created_at FROM dedup_tombstones ORDER BY key_a, key_b",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                Ok(TombstoneRow {
-                    key_a: row.get(0)?,
-                    key_b: row.get(1)?,
-                    created_at: ts_from_db(row.get::<_, i64>(2)?),
-                })
-            })
+        conn.prepare("SELECT key_a, key_b, created_at FROM dedup_tombstones ORDER BY key_a, key_b")
             .ok()
-            .map(|rows| rows.filter_map(Result::ok).collect())
-        })
-        .unwrap_or_default()
+            .and_then(|mut stmt| {
+                stmt.query_map([], |row| {
+                    Ok(TombstoneRow {
+                        key_a: row.get(0)?,
+                        key_b: row.get(1)?,
+                        created_at: ts_from_db(row.get::<_, i64>(2)?),
+                    })
+                })
+                .ok()
+                .map(|rows| rows.filter_map(Result::ok).collect())
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -156,9 +154,9 @@ impl DataStore for DedupStore {
     }
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
-        let items = data
-            .as_array()
-            .ok_or_else(|| AppError::Validation("dedupTombstones: expected an array".to_string()))?;
+        let items = data.as_array().ok_or_else(|| {
+            AppError::Validation("dedupTombstones: expected an array".to_string())
+        })?;
         // Deserialize EVERY row before mutating, so a malformed row aborts the
         // import without having cleared the table (mirrors the other stores).
         let rows: Vec<TombstoneRow> = items
@@ -219,7 +217,10 @@ mod tests {
     fn self_pairs_are_ignored() {
         let (_dir, store) = open();
         store.insert_pairs(&[("a".into(), "a".into())]).unwrap();
-        assert!(store.all_pairs().is_empty(), "a key can't be a dup of itself");
+        assert!(
+            store.all_pairs().is_empty(),
+            "a key can't be a dup of itself"
+        );
     }
 
     #[test]
@@ -251,7 +252,10 @@ mod tests {
             { "keyA": "x", "createdAt": 2 }
         ]);
         let result = store.import(&bundle);
-        assert!(result.is_err(), "a malformed row must fail the whole import");
+        assert!(
+            result.is_err(),
+            "a malformed row must fail the whole import"
+        );
 
         // The pre-existing verdict survives untouched, and the well-formed row
         // from the failed bundle was NOT partially inserted.
