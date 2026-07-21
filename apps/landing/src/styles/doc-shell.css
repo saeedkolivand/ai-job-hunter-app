@@ -4,6 +4,22 @@
    Consumes the --doc-* tokens (docs-tokens.css). Route-scoped: only docs-tier
    routes render <DocShell>, so these element/utility selectors never reach the
    marketing pages. */
+
+/* Base reset for the docs tier. DocShell inlines this stylesheet on exactly the
+   routes that render it (agent-system / architecture-map / mission-control), so
+   the html/body rules reach only those routes — the marketing tier (which styles
+   its own body) is untouched. Without this, body keeps the UA-default 8px margin
+   and html/body stay transparent, so the near-black .doc-shell (min-height:100vh)
+   floats on a white canvas (the 8px gutter + any overscroll). Paint both the ink
+   ground and zero the margin so the page is edge-to-edge dark. */
+html {
+  background: var(--doc-ink);
+}
+body {
+  margin: 0;
+  background: var(--doc-ink);
+}
+
 .doc-shell {
   min-height: 100vh;
   background: var(--doc-ink);

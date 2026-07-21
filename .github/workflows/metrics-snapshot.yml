@@ -1,0 +1,146 @@
+name: 📸 Mission Control Snapshot
+
+# ──────────────────────────────────────────────────────────────────────
+# Mission Control — nightly metrics snapshot
+# ──────────────────────────────────────────────────────────────────────
+# Purpose: Bake the /mission-control GitHub data into static nightly JSON and
+#          commit it to main, so the dashboard reads pre-baked data instead of
+#          the live REST API.
+# Triggers: nightly schedule (03:17 UTC, off-peak) + manual dispatch.
+# Data:    apps/landing/public/metrics/ — one file per client REST call (raw
+#          response body, single page — never --paginate) plus meta.json with a
+#          generatedAt stamp. Mirrors MissionControl's loadAll() exactly.
+# Auth:    default GITHUB_TOKEN only (no PAT/secrets). contents:write pushes the
+#          [skip ci] commit; actions:write dispatches pages.yml. The commit is
+#          [skip ci] because the deploy is kicked explicitly (never auto).
+# ──────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+# File-level least privilege; the snapshot job widens this.
+permissions:
+  contents: read
+
+# One snapshot at a time — a queued run waits rather than racing the push to main.
+concurrency:
+  group: metrics-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: 📸 Bake & publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # The push to main goes over SSH with the RELEASE_DEPLOY_KEY (a ruleset
+      # bypass actor — github-actions[bot] is NOT one), so the GITHUB_TOKEN needs
+      # no contents:write. These scopes cover the read-only gh api bake + dispatch.
+      contents: read # checkout + repos/releases/commits reads
+      actions: write # read actions/runs + dispatch the Pages deploy (workflow_dispatch)
+      pull-requests: read # pulls reads
+      issues: read # issues reads
+    steps:
+      # This job holds the RELEASE_DEPLOY_KEY in the runner env, so egress
+      # hardening matters more here than on the audit-only benchmark job — `block`
+      # is the goal. Block mode needs an allowed-endpoints list, and this job's
+      # real egress is small: github.com:22 + github.com:443 (checkout + push over
+      # SSH), api.github.com:443 (gh api). Its harden-runner infra endpoints (the
+      # Actions control-plane + telemetry), though, can only be pinned confidently
+      # from a real run's step-security network insights, and no block-mode
+      # workflow exists in this repo to crib that set from — shipping a guessed
+      # allowlist risks a nightly-red push job. So stay on `audit` (still records
+      # all egress to the Security dashboard) until one audit run yields the exact
+      # infra set. TODO: flip to `block` + allowed-endpoints from those insights.
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Full history + the RELEASE_DEPLOY_KEY so the snapshot commit can rebase
+      # onto the latest main and push over SSH. main's protection ruleset requires
+      # PRs and its bypass_actors are DeployKey + admin only — github-actions[bot]
+      # (the GITHUB_TOKEN identity) is NOT one, so a token push is policy-rejected.
+      # The deploy key IS a bypass actor (same credential as the benchmark job in
+      # quality.yml). No PR code runs here (scheduled on main), so exposing the key
+      # to this job is safe. checkout rewrites `origin` to the SSH URL.
+      - name: 📥 Checkout Repository (deploy key — push bypasses the ruleset)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+      # Each file mirrors exactly one of MissionControl loadAll()'s REST calls —
+      # raw response body, no transformation, a single page (NEVER --paginate, the
+      # client expects these exact page sizes). runs.json keeps the API wrapper
+      # object ({ total_count, workflow_runs }) verbatim.
+      - name: 📸 Bake snapshot JSON
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          dir="apps/landing/public/metrics"
+          mkdir -p "$dir"
+          gh api "repos/$REPO" > "$dir/repo.json"
+          gh api "repos/$REPO/releases?per_page=30" > "$dir/releases.json"
+          # commits.json is trimmed to the exact fields the client (GhCommit in
+          # types.ts) consumes — sha, commit.message, commit.author.date,
+          # author.login — dropping the git author/committer name+email so a real
+          # personal address is never baked to a public, indexable URL.
+          gh api "repos/$REPO/commits?per_page=100" \
+            | jq 'map({ sha, commit: { message: .commit.message, author: { date: .commit.author.date } }, author: (if .author == null then null else { login: .author.login } end) })' \
+            > "$dir/commits.json"
+          gh api "repos/$REPO/pulls?state=open&per_page=50" > "$dir/open-pulls.json"
+          gh api "repos/$REPO/pulls?state=closed&per_page=50&sort=updated&direction=desc" > "$dir/closed-pulls.json"
+          gh api "repos/$REPO/issues?state=open&per_page=100" > "$dir/issues.json"
+          gh api "repos/$REPO/actions/runs?per_page=50&branch=main" > "$dir/runs.json"
+          jq -n --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{ generatedAt: $t }' > "$dir/meta.json"
+
+      # Mirror the benchmark-data commit idiom: no-changes guard, then rebase the
+      # single [skip ci] commit onto origin/main and retry the push a few times
+      # (origin/main can advance between checkout and push). Push to the SSH remote
+      # so the RELEASE_DEPLOY_KEY (a ruleset bypass actor) authorizes it.
+      - name: 📤 Commit & push snapshot
+        id: commit
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/landing/public/metrics
+          if git diff --cached --quiet; then
+            echo "Snapshot data unchanged — nothing to commit."
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore: update mission-control snapshot data [skip ci]"
+          remote="git@github.com:$REPO.git"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "::error::snapshot commit failed to rebase onto origin/main"
+              exit 1
+            fi
+            if git push "$remote" HEAD:main; then
+              echo "committed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt/5) — origin/main moved, retrying after backoff"
+            sleep $((attempt * 5))
+          done
+          echo "::error::failed to push snapshot data to main after 5 attempts"
+          exit 1
+
+      # Explicit deploy — the [skip ci] commit above suppresses the push-triggered
+      # pages run, so kick it here (workflow_dispatch is exempt from the
+      # GITHUB_TOKEN no-recursion rule, so actions:write is enough).
+      - name: 🚀 Trigger Pages deploy
+        if: steps.commit.outputs.committed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
