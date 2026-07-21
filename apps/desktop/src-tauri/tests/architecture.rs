@@ -47,6 +47,11 @@ const L1: &[&str] = &[
     // user "not a duplicate" pair tombstones. Tauri-free; imports only db/error/
     // data_store (L0), same posture as the other L1 stores.
     "dedup",
+    // Passively-harvested ATS company slug store (ADR-030): a per-domain SQLite
+    // store of discovered `(ats, slug)` refs + watched-company stars. Tauri-free
+    // (the AppHandle-touching `harvest_ats_refs` lives in `commands::discovery`),
+    // same posture as `dedup` and the other L1 stores.
+    "discovered",
     "credentials",
     "job_preferences",
     "contact_profile",
@@ -360,6 +365,7 @@ const R3_ALLOW: &[&str] = &[
     "ai_config/mod.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",
+    "discovered/mod.rs",
     "email_watch/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",

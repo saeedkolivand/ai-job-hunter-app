@@ -225,6 +225,12 @@ export interface Autopilot {
     workType?: 'remote' | 'hybrid' | 'on-site';
     pages: number;
     dateFilter?: string;
+    /**
+     * Watched-companies-only mode (ADR-030 §e): when true, a run resolves the
+     * user's currently-starred discovered companies at run time instead of the
+     * curated seed. Additive + optional so pre-ADR-030 records read unchanged.
+     */
+    watchedCompaniesOnly?: boolean;
   };
   filter: {
     minMatchScore: number;

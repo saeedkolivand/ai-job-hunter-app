@@ -32,7 +32,7 @@ Spawn `tauri-security-reviewer` over the same scope (or invoke `/review-security
 
 ## 4. Run the tools ONCE, then the ensemble
 
-Run the repo's real tools yourself, ONCE, scoped to what the diff touches: `rtk pnpm typecheck`, `rtk pnpm lint:strict`, cargo suite if `src-tauri/**` changed, `rtk pnpm gen:ipc:check` if `packages/shared/**` changed, targeted tests. Paste the outputs (or "clean") into every ensemble prompt — the pr-reviewer agents are instructed to use provided tool outputs and not re-run them.
+Run the repo's real tools yourself, ONCE, scoped to what the diff touches: `pnpm typecheck`, `pnpm lint:strict`, cargo suite if `src-tauri/**` changed, `pnpm gen:ipc:check` if `packages/shared/**` changed, targeted tests. Paste the outputs (or "clean") into every ensemble prompt — the pr-reviewer agents are instructed to use provided tool outputs and not re-run them.
 
 Spawn the ensemble **in parallel** (one Agent call per pass, per the tier). Research: ~93% of real defects are found by exactly one reviewer of several, and a 3-pass union beats one frontier pass — diversity is the point. Give each pass a different file-order note (e.g. "review files in reverse path order" / "start from the test files") so the passes don't anchor identically. Each pass runs the full pr-reviewer agent and ends with its schema-1 findings JSON.
 

@@ -266,6 +266,16 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         }
     };
 
+    // Passively harvest ATS company slugs from EVERY scraped posting URL BEFORE any
+    // keyword/score filtering (ADR-030 §c "harvest every stored posting URL"),
+    // matching the manual-scrape harvest point. Parse-only, zero network; degrades
+    // on error.
+    crate::commands::discovery::harvest_ats_refs(
+        &app,
+        postings.iter().map(|p| (p.url.clone(), p.company.clone())),
+        "scrape",
+    );
+
     // Raw count BEFORE the keyword filter, so `scrape_done` can distinguish "no
     // board returned anything" from "boards returned jobs but your keyword filter
     // dropped them all" — the difference between a scraping problem and an

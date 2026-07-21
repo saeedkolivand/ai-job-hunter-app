@@ -25,6 +25,7 @@ pub mod data_store;
 pub mod db;
 pub mod dedup;
 pub mod deeplink;
+pub mod discovered;
 pub mod documents;
 pub mod email_watch;
 pub mod email_watch_scheduler;
@@ -713,6 +714,16 @@ pub fn run() {
                 Ok(store) => manage_resettable(app, &mut reset_registry, "dedup_tombstones", store),
                 Err(e) => log::warn!("[setup] dedup store failed to open (non-fatal): {e}"),
             }
+            // Passively-harvested ATS company slugs (ADR-030): the slug typeahead +
+            // watched-company autopilot targets. Holds only public ATS slugs +
+            // display names — no secrets. Registered after dedup so its label sits
+            // at the tail of `MANAGE_RESETTABLE_LABELS`.
+            match discovered::DiscoveredCompanyStore::open(&data_dir) {
+                Ok(store) => {
+                    manage_resettable(app, &mut reset_registry, "discovered_companies", store)
+                }
+                Err(e) => log::warn!("[setup] discovered store failed to open (non-fatal): {e}"),
+            }
 
             // Guard: the registry must contain exactly the labels the
             // completeness test pins (`MANAGE_RESETTABLE_LABELS`) before the
@@ -880,6 +891,10 @@ pub fn run() {
             commands::data::data_import,
             // cross-board dedup (ADR-029 — split a wrongly-merged cluster)
             commands::dedup::dedup_mark_not_duplicate,
+            // discovery (ADR-030 — passively-harvested ATS company slugs)
+            commands::discovery::discovery_search_companies,
+            commands::discovery::discovery_set_starred,
+            commands::discovery::discovery_watched,
             // match
             commands::match_resume::match_resume,
             commands::match_resume::resume_extract_text,

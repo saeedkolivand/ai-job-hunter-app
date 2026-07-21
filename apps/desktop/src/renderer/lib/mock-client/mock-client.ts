@@ -170,6 +170,12 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       markNotDuplicate: async () => ({ success: true }),
     },
 
+    discovery: {
+      searchCompanies: emptyList,
+      setStarred: async () => ({ success: true }),
+      watched: emptyList,
+    },
+
     contactProfile: {
       get: async () => ({}),
       set: async () => ({ success: true }),

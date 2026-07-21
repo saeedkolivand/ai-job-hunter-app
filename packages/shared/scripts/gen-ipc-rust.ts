@@ -30,6 +30,8 @@ import {
   AutopilotUpdateSchema,
   DATE_FILTER_OPTIONS,
   DedupMarkNotDuplicateRequestSchema,
+  DiscoverySearchRequestSchema,
+  DiscoveryStarRequestSchema,
   DocumentImportRequestSchema,
   EmbedRequestSchema,
   JobEventSchema,
@@ -122,6 +124,13 @@ const MODULES: ModuleSpec[] = [
     outFile: 'apps/desktop/src-tauri/src/ipc_contracts/dedup.rs',
     structs: [
       { rustName: 'DedupMarkNotDuplicateRequest', schema: DedupMarkNotDuplicateRequestSchema },
+    ],
+  },
+  {
+    outFile: 'apps/desktop/src-tauri/src/ipc_contracts/discovery.rs',
+    structs: [
+      { rustName: 'DiscoverySearchRequest', schema: DiscoverySearchRequestSchema },
+      { rustName: 'DiscoveryStarRequest', schema: DiscoveryStarRequestSchema },
     ],
   },
   {

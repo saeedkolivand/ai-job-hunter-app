@@ -21,4 +21,4 @@ You implement browser-extension + bridge changes. **First `Read` `.claude/skills
 - **Store policy** — Chrome Web Store + AMO single-purpose, honest metadata, privacy/data disclosure, native-messaging disclosure. Run the pre-submission checklist in `extension-standards`.
 - **Protocol lockstep** — a new message type/field is added to the shared TS constants AND the Rust `msg` module in the same change; the envelope shape stays identical on both sides.
 
-Validate before done: `rtk pnpm -F <extension pkg> typecheck` + `test` for the extension/shared, and `rtk cargo test` (+ `clippy`) for the bridge. Write the handoff, hand the diff to `extension-reviewer` (+ `tauri-security-reviewer` on auth/permission/data risk).
+Validate before done: `pnpm -F <extension pkg> typecheck` + `test` for the extension/shared, and `cargo test` (+ `clippy`) for the bridge. Write the handoff, hand the diff to `extension-reviewer` (+ `tauri-security-reviewer` on auth/permission/data risk).

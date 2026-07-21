@@ -194,6 +194,13 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 // BEFORE completion, so the jobs list renders grouped rows (and
                 // the annotations are present when the renderer refetches).
                 recluster_postings_cache(&app_clone);
+                // Passively harvest ATS company slugs from every posting's URL
+                // (parse-only, zero network) — ADR-030 §c. Degrades on error.
+                crate::commands::discovery::harvest_ats_refs(
+                    &app_clone,
+                    postings.iter().map(|p| (p.url.clone(), p.company.clone())),
+                    "scrape",
+                );
                 crate::commands::jobs::job_complete(
                     &app_clone,
                     &job_id_clone,
@@ -268,6 +275,13 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
                 // Re-cluster the cache now that the single resolved posting is in
                 // it, so a URL-imported job picks up its cross-board group too.
                 recluster_postings_cache(&app_clone);
+                // Passively harvest the ATS slug from the resolved posting's URL
+                // (parse-only, zero network) — ADR-030 §c.
+                crate::commands::discovery::harvest_ats_refs(
+                    &app_clone,
+                    std::iter::once((posting.url.clone(), posting.company.clone())),
+                    "scrape",
+                );
                 crate::commands::jobs::job_complete(
                     &app_clone,
                     &job_id_clone,

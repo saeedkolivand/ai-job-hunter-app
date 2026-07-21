@@ -293,6 +293,15 @@ pub(super) async fn handle_import(app: &AppHandle, payload: Value) -> AppResult<
         (stub, true)
     };
 
+    // Passively harvest the ATS company slug from the imported posting's URL
+    // (parse-only, zero network) — ADR-030 §c, source='extension'. Best-effort:
+    // degrades on a missing store / error, never blocks the import.
+    crate::commands::discovery::harvest_ats_refs(
+        app,
+        std::iter::once((posting.url.clone(), posting.company.clone())),
+        "extension",
+    );
+
     // An import is a deliberate pursuit, NOT a discovery: it creates only the
     // status-bearing Application below. It is intentionally NOT added to the
     // in-memory postings cache (the Jobs/discovery feed via

@@ -187,6 +187,29 @@ preferred when the extension can supply the DOM (no auth wall); URL mode is the 
 for link-only saves or when the extension can't intercept the HTML.
 _Avoid_: conflating with the headless scraper (which is the impl detail of URL mode)
 
+## Domain — Scraping
+
+**Discovered company**:
+An (ats, slug) pair harvested passively from posting URLs at ingest/import time. Persisted in
+`discovered_companies` store with frequency counts and source tracking. Ranked by seen-count in
+the slug typeahead and merged with curated seeds. A user may star a discovered company to watch it.
+See ADR-030.
+_Avoid_: company slug (the slug is the identifier; the pair is discovered), discovered slug
+
+**Watched company**:
+A starred discovered company. Watched companies are resolved at run time from the current
+starred set and used by autopilot to fan out to per-company ATS scrapers. Distinct from a frozen
+list — star changes propagate immediately without re-editing the autopilot. See ADR-030.
+_Avoid_: starred company (technically correct but verbose), pinned company (watching is distinct
+from UI pinning in the nav)
+
+**Company slug**:
+The ATS-specific company identifier embedded in career-page URLs. Examples: `greenhouse.io/boards/{slug}`,
+`lever.co/v0/postings/{slug}`, `{slug}.personio.de`. URL-encoded for path-position boards; DNS-label-validated
+for subdomain-position boards. Exact casing matters for some ATS platforms (Ashby). See ADR-030.
+_Avoid_: company id (slugs are distinct from numeric database ids), board slug (the slug is
+company-specific, not board-wide)
+
 ## Domain — Export & templates
 
 **Document accent**:

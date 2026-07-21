@@ -36,6 +36,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     workType: 'remote',
     amount: 50,
     dateFilter: '24h',
+    watchedCompaniesOnly: false,
     minMatchScore: 50,
     keywords: '',
     excludeKeywords: '',
