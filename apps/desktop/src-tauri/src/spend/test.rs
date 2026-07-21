@@ -95,6 +95,14 @@ fn is_localhost_url_recognizes_common_local_forms() {
         "https://localhost/v1",
         "localhost:11434",
         "http://[::1]:1234/v1",
+        // IPv6 loopback WITHOUT a port: the last colon is an internal one, so
+        // splitting on it used to cut the host down to "[:" and bill a free
+        // local call at the unknown-model DEFAULT_RATE.
+        "http://[::1]/v1",
+        "http://[::1]",
+        "[::1]",
+        // The bare (unbracketed) spelling the match arm below also accepts.
+        "::1",
     ] {
         assert!(is_localhost_url(url), "{url} should be recognized as local");
     }
@@ -117,6 +125,8 @@ fn is_free_call_treats_openai_compatible_localhost_as_free() {
         "openai-compatible",
         Some("http://127.0.0.1:8080")
     ));
+    // A port-less IPv6 loopback is just as free as its ported form.
+    assert!(is_free_call("openai-compatible", Some("http://[::1]/v1")));
 }
 
 #[test]
