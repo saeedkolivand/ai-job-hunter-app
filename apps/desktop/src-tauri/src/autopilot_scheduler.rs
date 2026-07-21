@@ -403,6 +403,7 @@ mod test {
                 pages: 1,
                 date_filter: None,
                 top_n: 3,
+                watched_companies_only: None,
             },
             filter: AutopilotFilter {
                 min_match_score: 0.0,

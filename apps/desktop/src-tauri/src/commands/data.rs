@@ -16,6 +16,7 @@ use crate::contact_profile::ContactProfileStore;
 use crate::data_store::DataStore;
 use crate::db::now_ms;
 use crate::dedup::DedupStore;
+use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::postings::{InteractionRecord, InteractionStore};
@@ -63,6 +64,7 @@ fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
         "interactions",
         "spend",
         "dedupTombstones",
+        "discoveredCompanies",
     ];
     // Sections whose export is a single JSON object (single-row settings stores).
     const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile", "aiProviderConfig"];
@@ -129,6 +131,11 @@ fn build_bundle(app: &AppHandle) -> Value {
     // Cross-board dedup "not a duplicate" verdicts (ADR-029). Holds no secrets —
     // opaque `canonical_job_key` pairs — so it round-trips through backups.
     if let Some(s) = app.try_state::<DedupStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    // Passively-harvested ATS company slugs + watched-company stars (ADR-030).
+    // Public slugs + display names only — no secrets — so it round-trips.
+    if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
 
@@ -270,6 +277,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<DedupStore>() {
         import_into("dedupTombstones", s.inner());
+    }
+    if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
+        import_into("discoveredCompanies", s.inner());
     }
     // `import_into` (the `imported`/`had_error`-capturing closure) is never
     // called again after this point, so NLL can end its borrow here — letting

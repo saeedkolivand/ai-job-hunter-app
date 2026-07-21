@@ -423,6 +423,17 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // same status the record persists, letting the renderer branch on an
     // all-boards-failed run (`failed`) instead of reading the success-shaped
     // `{ found: 0 }` as "done".
+    // Passively harvest ATS company slugs from the run's found jobs (parse-only,
+    // zero network) so the slug typeahead + watched-company targets populate from
+    // autopilot runs too — ADR-030 §c. Degrades on error.
+    crate::commands::discovery::harvest_ats_refs(
+        &app,
+        found_jobs
+            .iter()
+            .map(|j| (j.url.clone(), j.company.clone())),
+        "scrape",
+    );
+
     let run_status = crate::autopilot::derive_run_status(&summaries);
     let new_count = store(&app).lock().record_run(
         &autopilot_id,

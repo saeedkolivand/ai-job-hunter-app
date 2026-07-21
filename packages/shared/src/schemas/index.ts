@@ -442,6 +442,11 @@ export const AutopilotTargetSchema = z.object({
   workType: z.enum(['remote', 'hybrid', 'on-site']).optional(),
   pages: z.number().int().min(1).max(10).default(2),
   dateFilter: z.string().optional(),
+  // Watched-companies-only mode (ADR-030 §e): when true, a run resolves the
+  // user's currently-starred discovered companies at run time and scrapes only
+  // those per-ATS company slugs (instead of the curated seed). Additive +
+  // optional so old autopilots deserialize unchanged.
+  watchedCompaniesOnly: z.boolean().optional(),
 });
 
 export const AutopilotFilterSchema = z.object({
@@ -528,6 +533,28 @@ export const DedupMarkNotDuplicateRequestSchema = z.object({
   otherKeys: z.array(z.string().trim().min(1)).min(1).max(32),
   autopilotId: z.string().optional(),
 });
+
+// ─── Discovery (passively-harvested ATS company slugs) — ADR-030 §f ───────────
+
+// Typeahead search over discovered/seeded company slugs + display names. The
+// query may be empty (returns the top rows); the ~100-char ceiling is a generous
+// sanity bound — the Rust command re-clamps server-side (renderer Zod is not a
+// trust boundary). `atsKind` optionally scopes to a single ATS (unused today).
+export const DiscoverySearchRequestSchema = z.object({
+  query: z.string().trim().min(0).max(100),
+  atsKind: z.string().optional(),
+});
+
+// Star / unstar a discovered (or curated-seed) company — the user's "watched
+// companies" set that a `watchedCompaniesOnly` autopilot resolves at run time.
+export const DiscoveryStarRequestSchema = z.object({
+  atsKind: z.string().trim().min(1),
+  slug: z.string().trim().min(1),
+  starred: z.boolean(),
+});
+
+export type DiscoverySearchRequest = z.infer<typeof DiscoverySearchRequestSchema>;
+export type DiscoveryStarRequest = z.infer<typeof DiscoveryStarRequestSchema>;
 
 export type AutopilotCreate = z.infer<typeof AutopilotCreateSchema>;
 export type AutopilotUpdate = z.infer<typeof AutopilotUpdateSchema>;

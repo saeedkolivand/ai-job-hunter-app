@@ -26,6 +26,7 @@ import { credentials } from './namespaces/credentials/index.js';
 import { data } from './namespaces/data/index.js';
 import { dedup } from './namespaces/dedup/index.js';
 import { dialog } from './namespaces/dialog/index.js';
+import { discovery } from './namespaces/discovery/index.js';
 import { documents } from './namespaces/documents/index.js';
 import { emailWatch } from './namespaces/emailWatch/index.js';
 import { extensionBridge } from './namespaces/extensionBridge/index.js';
@@ -79,5 +80,6 @@ export function createTauriInvokeClient(): AppClient {
     dialog: dialog as AppClient['dialog'],
     data: data as AppClient['data'],
     dedup: dedup as AppClient['dedup'],
+    discovery: discovery as AppClient['discovery'],
   } satisfies AppClient;
 }

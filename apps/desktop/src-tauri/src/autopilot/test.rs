@@ -22,6 +22,7 @@ fn test_autopilot_target_serialization() {
         pages: 5,
         date_filter: None,
         top_n: 3,
+        watched_companies_only: None,
     };
     let json = serde_json::to_string(&target);
     assert!(json.is_ok());
@@ -928,6 +929,7 @@ fn target_round_trips_as_boards_array() {
         pages: 2,
         date_filter: None,
         top_n: 3,
+        watched_companies_only: None,
     };
     let serialized = serde_json::to_string(&target).unwrap();
     assert!(
@@ -978,6 +980,7 @@ fn target_country_code_round_trips_and_none_is_omitted() {
         pages: 1,
         date_filter: None,
         top_n: 3,
+        watched_companies_only: None,
     };
     let json = serde_json::to_string(&with_code).unwrap();
     // camelCase rename_all means the field is "countryCode" on the wire.
@@ -998,6 +1001,7 @@ fn target_country_code_round_trips_and_none_is_omitted() {
         pages: 1,
         date_filter: None,
         top_n: 3,
+        watched_companies_only: None,
     };
     let json_none = serde_json::to_string(&without_code).unwrap();
     assert!(
@@ -1670,6 +1674,7 @@ fn base_autopilot() -> Autopilot {
             pages: 1,
             date_filter: Some("24h".into()),
             top_n: 3,
+            watched_companies_only: None,
         },
         filter: AutopilotFilter {
             min_match_score: 50.0,
