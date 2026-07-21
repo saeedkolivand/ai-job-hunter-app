@@ -7,6 +7,11 @@ import { franc } from 'franc';
 
 /**
  * ISO 639-1 language code mapping from franc's ISO 639-3 codes.
+ *
+ * franc emits the **individual** ISO 639-3 code, never the macrolanguage one —
+ * `cmn` (Mandarin) not `zho`, `arb` (Standard Arabic) not `ara`, `nob`/`nno`
+ * (Bokmål/Nynorsk) not `nor`. Keying on the macrolanguage codes leaves the entry
+ * dead and `detectLanguage` falls through to `'unknown'`.
  */
 const LANGUAGE_MAP: Record<string, string> = {
   eng: 'en',
@@ -16,16 +21,17 @@ const LANGUAGE_MAP: Record<string, string> = {
   ita: 'it',
   por: 'pt',
   rus: 'ru',
-  zho: 'zh',
+  cmn: 'zh',
   jpn: 'ja',
   kor: 'ko',
-  ara: 'ar',
+  arb: 'ar',
   hin: 'hi',
   tur: 'tr',
   nld: 'nl',
   pol: 'pl',
   swe: 'sv',
-  nor: 'no',
+  nob: 'no',
+  nno: 'no',
   dan: 'da',
   fin: 'fi',
   ces: 'cs',

@@ -14,6 +14,15 @@ const GERMAN =
   'Erfahrener Softwareentwickler mit fundierten Kenntnissen in der Entwicklung skalierbarer Webanwendungen und verteilter Backend-Systeme für große Unternehmen.';
 const FRENCH =
   "Ingénieur logiciel expérimenté possédant une solide expérience dans la création d'applications web évolutives et de systèmes backend distribués pour de grandes organisations.";
+// franc emits the INDIVIDUAL ISO 639-3 code for these — cmn / arb / nob — never
+// the macrolanguage zho / ara / nor, so mapping on the macrolanguage code left
+// the entry dead and every one of these resolved to 'unknown'.
+const CHINESE =
+  '我们正在寻找一位经验丰富的软件工程师加入我们的团队。您将负责设计和开发高质量的后端服务，与产品经理和设计师紧密合作，推动项目按时交付。';
+const ARABIC =
+  'نبحث عن مهندس برمجيات ذي خبرة للانضمام إلى فريقنا. ستكون مسؤولاً عن تصميم وتطوير خدمات خلفية عالية الجودة والعمل بشكل وثيق مع مديري المنتجات والمصممين لتسليم المشاريع في الوقت المحدد.';
+const NORWEGIAN =
+  'Vi ser etter en erfaren programvareutvikler som vil bli med i teamet vårt. Du vil ha ansvaret for å designe og utvikle backend-tjenester av høy kvalitet, og samarbeide tett med produktsjefer og designere.';
 
 describe('detectLanguage', () => {
   it('returns "unknown" for empty or very short text', () => {
@@ -32,6 +41,12 @@ describe('detectLanguage', () => {
 
   it('detects French', () => {
     expect(detectLanguage(FRENCH)).toBe('fr');
+  });
+
+  it('detects Chinese, Arabic and Norwegian (franc emits cmn/arb/nob)', () => {
+    expect(detectLanguage(CHINESE)).toBe('zh');
+    expect(detectLanguage(ARABIC)).toBe('ar');
+    expect(detectLanguage(NORWEGIAN)).toBe('no');
   });
 });
 
