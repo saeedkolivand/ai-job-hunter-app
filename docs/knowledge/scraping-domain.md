@@ -287,7 +287,7 @@ Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at 
 **Source pointers:**
 
 - Normalization + clustering engine: `apps/desktop/src-tauri/src/scraping/cluster/{mod,normalize}.rs`
-- Pair-tombstone store: `apps/desktop/src-tauri/src/scraping/dedup/mod.rs` (`DedupStore`)
+- Pair-tombstone store: `apps/desktop/src-tauri/src/dedup/mod.rs` (`DedupStore`)
 - Engine wiring (manual-scrape + single-import): `apps/desktop/src-tauri/src/commands/scrape.rs:recluster_postings_cache`
 - Autopilot wiring (batch clustering, minMatchScore awareness): `apps/desktop/src-tauri/src/autopilot/mod.rs:record_run`
 - IPC split command: `apps/desktop/src-tauri/src/commands/dedup.rs:dedup_mark_not_duplicate`
@@ -300,6 +300,7 @@ Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at 
 3. **Agency-list growth** — expand built-in six + token list; add user-extensible company matching for recruitment agencies beyond the static bootstrap.
 4. **LinkedIn card shape extraction** — extract a pure `parse_job_cards(html)` seam from LinkedIn `search_guest` so acceptance fixtures can use real card shape (currently uses GermanTechJobs feed parser).
 5. **Batch-level deferrals** — active slug prober, extension-side ATS fingerprinting, community slug directory, cross-user analytics (shared with other deferred post-launch batch work).
+6. **Split-view selection re-point** — when a selected live-streamed row becomes non-canonical at completion, `JobsResults` falls back to top-of-list instead of the row's cluster canonical; `absorbedInto` doesn't cover cluster collapses. Narrow UX gap: re-point via clusterId.
 
 ## Jobs-page diagnostics surface (PR C, 2026-07-10)
 
