@@ -30,6 +30,14 @@ export function WorldClient() {
   // cleanup return, is what actually prevents that.
   const mountedRef = useRef(false);
 
+  // The vendored engine has NO teardown API: it registers window scroll/
+  // resize/orientationchange/pointer listeners plus an unbounded rAF loop, and
+  // never revokes the blob object URLs it creates per clip (intentional —
+  // clips must stay seekable for the page's whole lifetime; don't "fix" that
+  // upstream). mountedRef only guards StrictMode's double-invoke, not a route
+  // remount, so /world must only be entered via a full navigation (raw <a>,
+  // as the home body.html link is) — never an in-app Next <Link>, which would
+  // stack a second listener set + rAF loop over the first render's detached DOM.
   useEffect(() => {
     const container = containerRef.current;
     if (!container || mountedRef.current) return;
