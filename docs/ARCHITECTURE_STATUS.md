@@ -268,7 +268,7 @@ Next.js static-export workspace package serving brand, download links, and docum
 | Docs tier (PR2)            | ✅     | `/mission-control` full-repo dashboard shipped (clean URL rename, no redirect stub); PAT sign-in + safe-tier writes                            |
 | DocShell + tokens (PR2)    | ✅     | Unified docs-tier visual language (dark hand-drawn look); typed-data route for agent-system (`src/data/agent-fleet.ts`)                        |
 | /how-it-works reskin (PR2) | ✅     | Ported to DocShell; visual consistency with mission-control                                                                                    |
-| Architecture-map port      | ✅     | Typed-data route (`src/data/architecture-map.ts`, 11 clusters, 142 nodes, 128 edges); ArchitectureMap component (SVG + pan/zoom engine)        |
+| Architecture-map port      | ✅     | Typed-data route (`apps/landing/src/data/architecture-map.ts`); ArchitectureMap component (static SVG + pan/zoom engine); drift-guarded        |
 | OG template (PR3)          | ✅     | `social-card.html` relocated to `scripts/assets/` beside its generator; no longer app content                                                  |
 
 **Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.
