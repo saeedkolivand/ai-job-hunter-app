@@ -1,11 +1,20 @@
 import { Info, Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 
 import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
+import {
+  Button,
+  CardSkeleton,
+  cn,
+  type CompanyTypeaheadHandle,
+  GlassCard,
+  Input,
+  transition,
+} from '@ajh/ui';
 
 import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
@@ -51,6 +60,9 @@ export function ScrapeForm({
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Tracks keyboard-focus position independently of the selection set (multi-select pattern).
   const focusedBoardIdx = useRef<number>(0);
+  // Lets the submit path flush a typed-but-unentered company slug deterministically
+  // (blur-independent — WebKit doesn't reliably blur on a sibling-button click).
+  const companyFieldRef = useRef<CompanyTypeaheadHandle>(null);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -125,6 +137,15 @@ export function ScrapeForm({
   );
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
+  // Flush a typed-but-unentered company slug BEFORE starting, synchronously, so
+  // `onStart` reads a `companies` array that already includes it. `flushSync`
+  // forces the parent re-render before the scrape captures state (the guard the
+  // old comma-input carried); blur-commit alone is not reliable on WebKit.
+  const handleStart = () => {
+    if (showCompanyInput) flushSync(() => companyFieldRef.current?.commitPending());
+    onStart();
+  };
+
   const handleSelectAll = () => {
     onFormChange({ boards: listedBoards.map((e) => e.id) });
   };
@@ -190,7 +211,7 @@ export function ScrapeForm({
                     form.query.trim()
                   ) {
                     e.preventDefault();
-                    onStart();
+                    handleStart();
                   }
                 }}
                 placeholder={t('jobs.queryPlaceholder')}
@@ -337,6 +358,7 @@ export function ScrapeForm({
                   {t('jobs.companies.label')}
                 </label>
                 <CompanySlugField
+                  ref={companyFieldRef}
                   companies={form.companies}
                   onChange={(companies) => onFormChange({ companies })}
                   seededBoards={selectedListedBoards}
@@ -400,7 +422,7 @@ export function ScrapeForm({
               )}
               <Button
                 variant="primary"
-                onClick={onStart}
+                onClick={handleStart}
                 disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
                 loading={scraping}
                 aria-describedby={

@@ -1,13 +1,21 @@
-import { useEffect, useState } from 'react';
+import { type Ref, useEffect, useState } from 'react';
 
 import type { BoardCatalogEntry, DiscoveredCompany } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { type CompanyOption, CompanyTypeahead, SetupHint, useNotification } from '@ajh/ui';
+import {
+  type CompanyOption,
+  CompanyTypeahead,
+  type CompanyTypeaheadHandle,
+  SetupHint,
+  useNotification,
+} from '@ajh/ui';
 
 import { useCompanySearch, useSetStarred } from '@/services/use-discovery';
 
 interface CompanySlugFieldProps {
+  /** Forwarded to the typeahead so the scrape submit path can flush a pending slug. */
+  ref?: Ref<CompanyTypeaheadHandle>;
   /** Current slug list submitted to the scrape (the form's `companies`). */
   companies: string[];
   onChange: (companies: string[]) => void;
@@ -83,6 +91,7 @@ export function mergeCompanyOptions(
  * toggle. Free-text is always addable so an unknown slug is never a dead end.
  */
 export function CompanySlugField({
+  ref,
   companies,
   onChange,
   seededBoards,
@@ -118,6 +127,7 @@ export function CompanySlugField({
 
   return (
     <CompanyTypeahead
+      ref={ref}
       id="scrape-companies"
       selected={companies}
       onAdd={addCompany}

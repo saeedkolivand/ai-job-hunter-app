@@ -31,6 +31,7 @@ export {
 export {
   type CompanyOption,
   CompanyTypeahead,
+  type CompanyTypeaheadHandle,
   type CompanyTypeaheadProps,
 } from './components/CompanyTypeahead/index';
 export { Dropdown, type DropdownOption, type DropdownProps } from './components/Dropdown/index';

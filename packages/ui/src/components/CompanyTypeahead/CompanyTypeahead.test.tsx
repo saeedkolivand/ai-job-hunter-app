@@ -1,9 +1,13 @@
-import type { ComponentProps } from 'react';
+import { type ComponentProps, createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { type CompanyOption, CompanyTypeahead } from './CompanyTypeahead';
+import {
+  type CompanyOption,
+  CompanyTypeahead,
+  type CompanyTypeaheadHandle,
+} from './CompanyTypeahead';
 
 /** Narrow a possibly-undefined indexed access to a definite value (no `!`). */
 function must<T>(value: T | null | undefined): T {
@@ -83,6 +87,31 @@ describe('CompanyTypeahead', () => {
     await userEvent.click(input);
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onAdd).toHaveBeenCalledWith('unknownco');
+  });
+
+  it('commitPending() via ref commits the pending query synchronously and is idempotent', () => {
+    const ref = createRef<CompanyTypeaheadHandle>();
+    const onAdd = vi.fn();
+    const onQueryChange = vi.fn();
+    const { props, rerender } = setup({
+      query: 'acme',
+      suggestions: [],
+      onAdd,
+      onQueryChange,
+      ref,
+    });
+
+    act(() => ref.current?.commitPending());
+    // Synchronous: onAdd ran inside commitPending, not on a later tick.
+    expect(onAdd).toHaveBeenCalledWith('acme');
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onQueryChange).toHaveBeenCalledWith('');
+
+    // Once the parent has cleared the query, a repeat flush is a no-op — so it's
+    // safe to run alongside the blur-commit (no double-add).
+    rerender(<CompanyTypeahead {...props} query="" ref={ref} />);
+    act(() => ref.current?.commitPending());
+    expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
   it('commits a typed-but-uncommitted slug on blur (no silent data loss on Start)', async () => {

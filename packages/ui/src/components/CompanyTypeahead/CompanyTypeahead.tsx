@@ -1,5 +1,13 @@
 import { Plus, Search, Sparkles, Star, X } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useMemo, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { cn } from '../../lib/cn';
 
@@ -25,7 +33,20 @@ export interface CompanyOption {
   curated?: boolean;
 }
 
+/**
+ * Imperative handle for a blur-independent flush. `onBlur` add-on-blur is not
+ * reliable on every engine (WebKit WKWebView / WebKitGTK don't consistently
+ * blur a focused input when a sibling button is clicked), so a submit path must
+ * be able to flush a typed-but-unentered slug deterministically.
+ */
+export interface CompanyTypeaheadHandle {
+  /** Synchronously add a non-empty pending query as a chip; idempotent once cleared. */
+  commitPending: () => void;
+}
+
 export interface CompanyTypeaheadProps {
+  /** Imperative handle exposing {@link CompanyTypeaheadHandle.commitPending}. */
+  ref?: Ref<CompanyTypeaheadHandle>;
   /** Currently-selected company slugs — rendered as removable chips. */
   selected: string[];
   onAdd: (slug: string) => void;
@@ -80,6 +101,7 @@ export interface CompanyTypeaheadProps {
  * listbox lesson) — a listbox option must not contain its own button.
  */
 export function CompanyTypeahead({
+  ref,
   selected,
   onAdd,
   onRemove,
@@ -133,6 +155,15 @@ export function CompanyTypeahead({
     add(raw);
     inputRef.current?.focus();
   };
+
+  // Blur-independent flush for the submit path (see CompanyTypeaheadHandle). No
+  // deps array so the closure always reads the latest `query`; once `add` clears
+  // the query a repeat call is a no-op, so it's safe alongside the blur-commit.
+  useImperativeHandle(ref, () => ({
+    commitPending() {
+      if (query.trim()) add(query);
+    },
+  }));
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {

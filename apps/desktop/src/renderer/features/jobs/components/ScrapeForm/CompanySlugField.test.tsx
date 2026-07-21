@@ -9,15 +9,15 @@
  *   - empty state renders the "what is a slug?" SetupHint
  *   - removing a chip updates the submitted companies array
  */
-import type { ComponentProps, ReactElement } from 'react';
+import { type ComponentProps, createRef, type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { BoardCatalogEntry } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
-import { NotificationProvider } from '@ajh/ui';
+import { type CompanyTypeaheadHandle, NotificationProvider } from '@ajh/ui';
 
 import { AppClientProvider } from '@/providers/AppClientProvider';
 import { createMockClient, makeQueryClient } from '@/test-support';
@@ -47,6 +47,7 @@ function renderField(
   const queryClient = makeQueryClient();
   const ui: ReactElement = (
     <CompanySlugField
+      ref={props.ref}
       companies={props.companies ?? []}
       onChange={props.onChange ?? vi.fn()}
       seededBoards={props.seededBoards ?? []}
@@ -107,6 +108,33 @@ describe('CompanySlugField', () => {
     // Focus leaves the typeahead entirely (e.g. clicking Start Scrape).
     fireEvent.focusOut(input, { relatedTarget: document.body });
 
+    expect(onChange).toHaveBeenCalledWith(['acme']);
+  });
+
+  it('flushes a pending slug via commitPending() with NO blur and NO Enter (WebKit-safe)', async () => {
+    // The Start-Scrape correctness backstop: WebKit may not blur the input on a
+    // sibling-button click, so the submit path calls commitPending() directly.
+    const onChange = vi.fn();
+    const ref = createRef<CompanyTypeaheadHandle>();
+    renderField({ onChange, ref }, { 'discovery.searchCompanies': vi.fn().mockResolvedValue([]) });
+
+    await userEvent.type(screen.getByTestId(TEST_IDS.jobs.companyTypeahead), 'acme');
+    act(() => ref.current?.commitPending());
+
+    expect(onChange).toHaveBeenCalledWith(['acme']);
+  });
+
+  it('does not double-add when blur AND commitPending both run (idempotent)', async () => {
+    const onChange = vi.fn();
+    const ref = createRef<CompanyTypeaheadHandle>();
+    renderField({ onChange, ref }, { 'discovery.searchCompanies': vi.fn().mockResolvedValue([]) });
+
+    const input = screen.getByTestId(TEST_IDS.jobs.companyTypeahead);
+    await userEvent.type(input, 'acme');
+    fireEvent.focusOut(input, { relatedTarget: document.body }); // blur-commit clears the query
+    act(() => ref.current?.commitPending()); // query already empty → no-op
+
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(['acme']);
   });
 
