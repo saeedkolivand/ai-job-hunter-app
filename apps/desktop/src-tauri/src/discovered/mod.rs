@@ -27,6 +27,12 @@ use crate::error::{AppError, AppResult};
 /// boundary. A real ATS slug/company sits well under this.
 const MAX_FIELD_BYTES: usize = 200;
 
+/// Upper bound on rows returned by the watched-company queries (CWE-770), in the
+/// same query-discipline spirit as `search`'s `limit.clamp(1, 100)`. Generous over
+/// any real starred set (a user watching hundreds of companies is already
+/// implausible), while capping an unbounded read + the per-run autopilot fan-out.
+const WATCHED_LIMIT: i64 = 500;
+
 /// The renderer-facing row shape — matches `DiscoveredCompany` in
 /// `packages/shared`. `search`/`watched` never expose the raw timestamps.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -214,11 +220,12 @@ impl DiscoveredCompanyStore {
     /// Every watched (starred) company as `(ats_kind, slug)` — the runtime-resolved
     /// input for a `watchedCompaniesOnly` autopilot run (ADR-030 §e). Ranked stably
     /// (most-seen first) so a per-board company cap keeps the most-relevant slugs.
+    /// Bounded to [`WATCHED_LIMIT`] (CWE-770), same query discipline as `search`.
     pub fn watched(&self) -> Vec<(String, String)> {
         let conn = self.conn.lock();
         let mut stmt = match conn.prepare(
             "SELECT ats_kind, slug FROM discovered_companies
-             WHERE starred = 1 ORDER BY seen_count DESC, slug ASC",
+             WHERE starred = 1 ORDER BY seen_count DESC, slug ASC LIMIT ?1",
         ) {
             Ok(s) => s,
             Err(e) => {
@@ -226,7 +233,7 @@ impl DiscoveredCompanyStore {
                 return Vec::new();
             }
         };
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![WATCHED_LIMIT], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         });
         match rows {
@@ -240,15 +247,15 @@ impl DiscoveredCompanyStore {
 
     /// Every watched (starred) company as full renderer rows, ranked most-seen
     /// first. Unlike surfacing the starred prefix of `search("")`, this has NO
-    /// search-cap coupling — it returns the entire starred set. Backs the
-    /// `discovery.watched()` IPC read; the autopilot resolver uses the lighter
-    /// [`Self::watched`] `(ats, slug)` pairs.
+    /// search-cap coupling — it returns the whole starred set up to
+    /// [`WATCHED_LIMIT`] (CWE-770). Backs the `discovery.watched()` IPC read; the
+    /// autopilot resolver uses the lighter [`Self::watched`] `(ats, slug)` pairs.
     pub fn watched_companies(&self) -> Vec<DiscoveredCompany> {
         let conn = self.conn.lock();
         let mut stmt = match conn.prepare(
             "SELECT ats_kind, slug, display_name, seen_count, starred, source
              FROM discovered_companies WHERE starred = 1
-             ORDER BY seen_count DESC, slug ASC",
+             ORDER BY seen_count DESC, slug ASC LIMIT ?1",
         ) {
             Ok(s) => s,
             Err(e) => {
@@ -256,7 +263,7 @@ impl DiscoveredCompanyStore {
                 return Vec::new();
             }
         };
-        let rows = stmt.query_map([], Self::row_to_company);
+        let rows = stmt.query_map(params![WATCHED_LIMIT], Self::row_to_company);
         match rows {
             Ok(rows) => rows.filter_map(Result::ok).collect(),
             Err(e) => {
@@ -586,6 +593,29 @@ mod tests {
         assert!(watched[0].starred);
         // The unstarred ashby row is excluded.
         assert!(watched.iter().all(|c| c.slug != "Linear"));
+    }
+
+    #[test]
+    fn watched_queries_are_bounded_to_the_limit() {
+        let (_dir, store) = open();
+        // Star WATCHED_LIMIT + 1 companies (a pathological/hostile set) — both
+        // watched queries must cap at WATCHED_LIMIT (CWE-770), never read them all.
+        let over = (WATCHED_LIMIT + 1) as usize;
+        for i in 0..over {
+            store
+                .set_starred("greenhouse", &format!("co-{i}"), true)
+                .unwrap();
+        }
+        assert_eq!(
+            store.watched().len() as i64,
+            WATCHED_LIMIT,
+            "watched() (pairs) must be bounded to WATCHED_LIMIT"
+        );
+        assert_eq!(
+            store.watched_companies().len() as i64,
+            WATCHED_LIMIT,
+            "watched_companies() (full rows) must be bounded to WATCHED_LIMIT"
+        );
     }
 
     #[test]
