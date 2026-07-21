@@ -12,7 +12,7 @@ Company-scoped ATS scrapers (Greenhouse, Lever, Personio, Workable, Ashby, Recru
 
 ### (a) Pure extractor, single source of truth
 
-Add `extract_ats_ref(url) -> Option<(AtsKind, slug)>` as a new pure module under `scraping/` that REUSES (hoists if needed) the existing `scrape_url` URL parsers rather than duplicating shapes. Extend existing parsers to cover Workable, Recruitee, Breezy, BambooHR, Pinpoint per documented endpoint shapes in `docs/SCRAPING_ENDPOINTS.md`. `AtsKind` aligns with existing registry board IDs (no parallel enum divergence). Near-miss URLs (e.g., Greenhouse blog pages) return None. Host matching is case-insensitive; slug casing is preserved exactly (Ashby has strict casing requirements).
+Add `extract_ats_ref(url) -> Option<AtsRef>` as a new pure module under `scraping/` that REUSES (hoists if needed) the existing `scrape_url` URL parsers rather than duplicating shapes. Extend existing parsers to cover Workable, Recruitee, Breezy, BambooHR, Pinpoint per documented endpoint shapes in `docs/SCRAPING_ENDPOINTS.md`. Board coverage aligns with existing registry board IDs (no parallel enum divergence). Near-miss URLs (e.g., Greenhouse blog pages) return None. Host matching is case-insensitive; slug casing is preserved exactly (Ashby has strict casing requirements).
 
 ### (b) Store: `DiscoveredCompanyStore` with transactional migrations
 

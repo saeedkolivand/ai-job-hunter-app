@@ -449,8 +449,8 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 **Extractor + store:**
 
-- **Pure extractor:** `scraping/ats_ref.rs::extract_ats_ref(url) -> Option<(AtsKind, slug)>` — reuses existing `scrape_url` URL parsers; matches posting-URL hosts (case-insensitive) for Greenhouse (`boards.greenhouse.io`, `job-boards.greenhouse.io`, `boards.eu.greenhouse.io`), Lever, Ashby, SmartRecruiters, Personio, Recruitee, Workable, Breezy, BambooHR, Pinpoint, Rippling. Preserves slug casing exactly (Ashby).
-- **Store:** `discovered/mod.rs::DiscoveredCompanyStore` — SQLite table `discovered_companies(id, ats_kind, slug, display_name, first_seen_at, last_seen_at, seen_count, source, starred, UNIQUE(ats_kind, slug))`. Upserts on re-encounter bump `last_seen_at` + `seen_count`. Registered in `Resettable` reset registry (ADR-009) + `DataStore` backup bundle.
+- **Pure extractor:** `scraping/ats_ref.rs::extract_ats_ref(url) -> Option<AtsRef>` — reuses existing `scrape_url` URL parsers; matches posting-URL hosts for all company-scoped boards registered in `scraping/ats_ref.rs::PARSERS` (case-insensitive host matching; casing preserved on slugs).
+- **Store:** `discovered/mod.rs::DiscoveredCompanyStore` — persisted SQLite table (see the source file for schema and migrations). Registered in `Resettable` reset registry (ADR-009) + `DataStore` backup bundle.
 - **Harvest sites:** `commands/discovery.rs::harvest_ats_refs` wired into two parse-only passes: (1) after engine scrape in `commands/scrape.rs`, (2) extension import in `extension_bridge/import_flow.rs`. Batch upserts per transaction.
 
 **Surfacing + watching:**
