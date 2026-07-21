@@ -14,8 +14,15 @@ export interface DedupContract {
    * pair tombstones persist, so the split survives every re-scrape. Pass
    * `autopilotId` when splitting within an autopilot found-jobs view so that
    * record's annotations are recomputed too.
+   *
+   * The command RESOLVES (never rejects) an `{ error }` union on failure — Tauri
+   * turns the backend's `json!({"error": ...})` into a resolved value — so the
+   * renderer must narrow this union and throw (see `useMarkNotDuplicate`),
+   * mirroring `AiContract.setActiveProvider`.
    */
-  markNotDuplicate(req: DedupMarkNotDuplicateRequest): Promise<{ success: boolean }>;
+  markNotDuplicate(
+    req: DedupMarkNotDuplicateRequest
+  ): Promise<{ success: true } | { error: string }>;
 }
 
 export const DEDUP_CHANNELS = {

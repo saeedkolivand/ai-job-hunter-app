@@ -1963,7 +1963,8 @@
       "openOn": "Auf {{source}} öffnen",
       "sources": "Alle Quellen",
       "notDuplicate": "Kein Duplikat",
-      "splitDone": "Anzeigen getrennt"
+      "splitDone": "Anzeigen getrennt",
+      "splitFailed": "Anzeigen konnten nicht getrennt werden"
     },
     "copyLinkError": "Link konnte nicht kopiert werden",
     "loadingDescription": "Beschreibung wird geladen…",

@@ -11,12 +11,21 @@ import { keys } from '../query-client';
  * duplicate of the given other members. On success, invalidates the live
  * postings list and the autopilot queries so the now-ungrouped rows re-render
  * with the recomputed cluster annotations from the backend.
+ *
+ * The command RESOLVES (never rejects) an `{ error }` union on failure, so we
+ * narrow it and throw — otherwise React Query fires `onSuccess` and the caller
+ * shows a false "Postings separated" toast on a silent failure (mirrors
+ * `useSetActiveProvider`).
  */
 export const useMarkNotDuplicate = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: DedupMarkNotDuplicateRequest) => api.dedup.markNotDuplicate(req),
+    mutationFn: async (req: DedupMarkNotDuplicateRequest) => {
+      const result = await api.dedup.markNotDuplicate(req);
+      if ('error' in result) throw new Error(result.error);
+      return result;
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.postings.all });
       void qc.invalidateQueries({ queryKey: keys.autopilot.all });

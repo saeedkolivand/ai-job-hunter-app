@@ -220,9 +220,12 @@ beforeEach(() => {
   mockRefetch.mockClear();
   mockUpdateDescMutateAsync.mockClear();
   mockScoreJob.mockClear();
-  mockSplitMutate.mockClear();
+  // Reset (not just clear) so a per-test onError-invoking implementation can't
+  // leak into the plain call-args assertions.
+  mockSplitMutate.mockReset();
   mockOpenExternal.mockClear();
   mockNotify.success.mockClear();
+  mockNotify.error.mockClear();
   mockUseResolveJobUrl.mockReturnValue(idleStub());
 });
 
@@ -1122,6 +1125,24 @@ describe('JobDetailPane — cross-board cluster split', () => {
       { memberKey: string; otherKeys: string[] } | undefined;
     expect(arg?.memberKey).toBe('k2');
     expect(arg?.otherKeys).toEqual(['k1']);
+  });
+
+  it('shows the error toast (not the success toast) when the split fails', async () => {
+    // React Query calls the caller's onError when the mutation throws; the mock
+    // stands in for that so the toast wiring is exercised.
+    mockSplitMutate.mockImplementation((_req: unknown, opts?: { onError?: () => void }) =>
+      opts?.onError?.()
+    );
+    await act(async () => {
+      render(<JobDetailPane posting={clustered()} formatRelativeTime={formatRelativeTime} />);
+    });
+
+    await act(async () => {
+      screen.getByText('jobs.cluster.notDuplicate').click();
+    });
+
+    expect(mockNotify.error).toHaveBeenCalledWith({ message: 'jobs.cluster.splitFailed' });
+    expect(mockNotify.success).not.toHaveBeenCalled();
   });
 
   it('does NOT render the All sources section for an unclustered posting', async () => {

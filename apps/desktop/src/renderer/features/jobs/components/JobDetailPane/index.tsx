@@ -100,7 +100,10 @@ function DetailContent({
     if (otherKeys.length === 0) return;
     split.mutate(
       { memberKey: member.key, otherKeys },
-      { onSuccess: () => notify.success({ message: t('jobs.cluster.splitDone') }) }
+      {
+        onSuccess: () => notify.success({ message: t('jobs.cluster.splitDone') }),
+        onError: () => notify.error({ message: t('jobs.cluster.splitFailed') }),
+      }
     );
   };
 

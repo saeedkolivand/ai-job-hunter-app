@@ -1959,7 +1959,8 @@
       "openOn": "Open on {{source}}",
       "sources": "All sources",
       "notDuplicate": "Not a duplicate",
-      "splitDone": "Postings separated"
+      "splitDone": "Postings separated",
+      "splitFailed": "Couldn't separate postings"
     },
     "copyLinkError": "Failed to copy link",
     "loadingDescription": "Loading description…",

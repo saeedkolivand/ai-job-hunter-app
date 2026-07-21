@@ -86,6 +86,39 @@ describe('useMarkNotDuplicate — postings invalidation', () => {
   });
 
   /**
+   * The real Tauri failure mode: the command RESOLVES `json!({"error": ...})` as
+   * a value (it never rejects), so a naive mutationFn would fire `onSuccess` and
+   * show a false success toast. The hook must narrow the `{ error }` union and
+   * throw — so no invalidation runs.
+   */
+  it('errors and does NOT invalidate when the command RESOLVES an { error } payload', async () => {
+    const listPostings = vi.fn().mockResolvedValue([]);
+    const markNotDuplicate = vi.fn().mockResolvedValue({ error: 'boom' });
+
+    const client = createMockClient({
+      'scrape.listPostings': listPostings,
+      'dedup.markNotDuplicate': markNotDuplicate,
+    });
+
+    const { result } = renderHookWithClient(
+      () => ({ postings: usePostings(), split: useMarkNotDuplicate() }),
+      { client }
+    );
+
+    await waitFor(() => expect(result.current.postings.isSuccess).toBe(true));
+    const callCountBefore = listPostings.mock.calls.length;
+
+    await act(async () => {
+      await expect(
+        result.current.split.mutateAsync({ memberKey: 'k1', otherKeys: ['k2'] })
+      ).rejects.toThrow('boom');
+    });
+
+    // onSuccess never fired → no postings refetch.
+    expect(listPostings.mock.calls.length).toBe(callCountBefore);
+  });
+
+  /**
    * Both invalidations matter: a split recomputes the autopilot found-jobs too
    * (ADR-029 §h), so a dropped `keys.autopilot.all` invalidate would leave the
    * AutopilotCard rows stale. Spy on the QueryClient to assert BOTH keys fire.
