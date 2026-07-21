@@ -142,6 +142,30 @@ describe('GenerationCard — delete confirmation', () => {
   });
 });
 
+// ── Board chip labeling (ADR-031 follow-up) ───────────────────────────────────
+
+describe('GenerationCard — board chip', () => {
+  // t() returns the raw key here, so a chip routed through the boards map reads
+  // `jobs.boards.<board>` — proving it's the i18n map, not the raw `gen.board`
+  // (which would render "linkedin" / "url" verbatim, e.g. a literal "URL" badge).
+  it('labels a known board via the jobs.boards map', () => {
+    render(<GenerationCard gen={{ ...GEN, board: 'linkedin' }} />);
+    expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
+  });
+
+  it('labels a URL-imported generation (source "url") via the boards map, not raw', () => {
+    render(<GenerationCard gen={{ ...GEN, board: 'url' }} />);
+    expect(screen.getByText('jobs.boards.url')).toBeInTheDocument();
+    // The raw source string is never rendered as the badge.
+    expect(screen.queryByText('url')).not.toBeInTheDocument();
+  });
+
+  it('renders no board chip when the generation has no board (pasted text)', () => {
+    render(<GenerationCard gen={{ ...GEN, board: '' }} />);
+    expect(screen.queryByText(/^jobs\.boards\./)).not.toBeInTheDocument();
+  });
+});
+
 // ── Debounced persist (F1 edit-before-export) ─────────────────────────────────
 
 describe('GenerationCard — debounced persist', () => {
