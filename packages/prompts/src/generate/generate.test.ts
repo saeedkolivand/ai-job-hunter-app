@@ -1298,10 +1298,23 @@ describe('extractPlainText', () => {
     expect(out).toContain('body');
   });
 
-  it('reduces emphasis markers (triple/single asterisks collapse)', () => {
-    // The single-italic pass also unwraps the inner pair of a bold run.
-    expect(extractPlainText('***strong***')).toBe('*strong*');
+  it('reduces emphasis markers (triple collapses to bold, single italic is stripped)', () => {
+    expect(extractPlainText('***strong***')).toBe('**strong**');
     expect(extractPlainText('an *italic* word')).toBe('an italic word');
+  });
+
+  it('leaves **bold** keyword markup intact', () => {
+    // The italic pass used to match the INNER pair of a bold run, downgrading
+    // `**bold**` to `*bold*`; and since `[^*]+` matches spaces and commas, two
+    // adjacent bold spans paired up across each other and swallowed the text
+    // between them. The prompts ask for 2-3 `**keyword**` bolds per bullet, so
+    // this corrupted essentially every generated document.
+    expect(extractPlainText('**bold**')).toBe('**bold**');
+    expect(extractPlainText('Skills: **Python**, **Go**, **Kubernetes**')).toBe(
+      'Skills: **Python**, **Go**, **Kubernetes**'
+    );
+    // Bold and italic in the same line: only the italic is stripped.
+    expect(extractPlainText('**a** and *b*')).toBe('**a** and b');
   });
 
   it('removes a fenced code block entirely (no orphaned backticks or code leak)', () => {
