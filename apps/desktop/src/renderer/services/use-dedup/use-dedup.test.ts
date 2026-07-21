@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
-import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
+import {
+  createMockClient,
+  exerciseServiceHooks,
+  makeQueryClient,
+  renderHookWithClient,
+} from '@/test-support';
 
 import { usePostings } from '../use-postings';
 import * as mod from './use-dedup';
@@ -78,5 +83,29 @@ describe('useMarkNotDuplicate — postings invalidation', () => {
 
     // onSuccess must NOT have fired — call count unchanged.
     expect(listPostings.mock.calls.length).toBe(callCountBefore);
+  });
+
+  /**
+   * Both invalidations matter: a split recomputes the autopilot found-jobs too
+   * (ADR-029 §h), so a dropped `keys.autopilot.all` invalidate would leave the
+   * AutopilotCard rows stale. Spy on the QueryClient to assert BOTH keys fire.
+   */
+  it('invalidates BOTH the postings and autopilot query keys on success', async () => {
+    const markNotDuplicate = vi.fn().mockResolvedValue({ success: true });
+    const client = createMockClient({ 'dedup.markNotDuplicate': markNotDuplicate });
+    const queryClient = makeQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHookWithClient(() => useMarkNotDuplicate(), { client, queryClient });
+
+    await act(async () => {
+      await result.current.mutateAsync({ memberKey: 'k1', otherKeys: ['k2'] });
+    });
+
+    const invalidatedKeys = invalidateSpy.mock.calls.map(
+      (call) => (call[0] as { queryKey?: unknown } | undefined)?.queryKey
+    );
+    expect(invalidatedKeys).toContainEqual(['postings']);
+    expect(invalidatedKeys).toContainEqual(['autopilot']);
   });
 });

@@ -18,6 +18,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { Autopilot, AutopilotFoundJob, BoardScrapeSummary } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import type * as MatchBandModule from '@/lib/match-band';
 
@@ -92,6 +93,7 @@ vi.mock('@ajh/ui', () => ({
     'aria-label': ariaLabel,
     title,
     'data-degraded': dataDegraded,
+    'data-testid': dataTestId,
   }: {
     children?: React.ReactNode;
     onClick?: () => void;
@@ -99,15 +101,24 @@ vi.mock('@ajh/ui', () => ({
     'aria-label'?: string;
     title?: string;
     'data-degraded'?: boolean;
+    'data-testid'?: string;
   }) =>
     // Use createElement to avoid the JSXOpeningElement[name="button"] lint rule.
     // A native <button> is required so disabled + keyboard behavior are real.
     // `data-degraded` is forwarded (not the raw className) as the seam for the
     // amber-tone assertion — a data-* seam over a Tailwind class string, per the
-    // jsdom-CSS-parsing lesson.
+    // jsdom-CSS-parsing lesson. `data-testid` is forwarded so the cluster split
+    // button is queryable.
     React.createElement(
       'button',
-      { onClick, 'aria-label': ariaLabel, title, disabled, 'data-degraded': dataDegraded },
+      {
+        onClick,
+        'aria-label': ariaLabel,
+        title,
+        disabled,
+        'data-degraded': dataDegraded,
+        'data-testid': dataTestId,
+      },
       children
     ),
   ConfirmModal: () => null,
@@ -1008,5 +1019,36 @@ describe('AutopilotCard — cross-board clustering', () => {
 
     expect(screen.getByText('Legacy role')).toBeInTheDocument();
     expect(screen.getByText('autopilot.foundJobs · 1')).toBeInTheDocument();
+  });
+
+  it('split action fires markNotDuplicate with memberKey, otherKeys AND autopilotId', async () => {
+    const user = userEvent.setup();
+    const job: AutopilotFoundJob = {
+      title: 'Clustered role',
+      company: 'Acme',
+      url: 'https://a.com/1',
+      foundAt: 0,
+      clusterCanonical: true,
+      clusterId: 'k1',
+      clusterMembers: [
+        { key: 'k1', board: 'linkedin', url: 'https://a.com/1' },
+        { key: 'k2', board: 'indeed', url: 'https://b.com/2' },
+      ],
+    };
+    // makeAutopilot fixes _id: 'ap-1' — the autopilotId the split must carry.
+    renderCard(makeAutopilot([job]));
+
+    // Expand the found-jobs panel so the cluster sub-row (with the split) mounts.
+    const headerDiv = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(headerDiv);
+
+    await user.click(screen.getByTestId(TEST_IDS.jobs.clusterSplitButton));
+
+    expect(mockSplitMutate).toHaveBeenCalledTimes(1);
+    const arg = mockSplitMutate.mock.calls[0]?.[0] as
+      { memberKey: string; otherKeys: string[]; autopilotId?: string } | undefined;
+    // memberKey = canonical key; otherKeys = the rest; autopilotId scopes the
+    // per-record recompute (ADR-029 §h — only this call site sends it).
+    expect(arg).toEqual({ memberKey: 'k1', otherKeys: ['k2'], autopilotId: 'ap-1' });
   });
 });

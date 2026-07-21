@@ -6,7 +6,7 @@ import { useOpenExternal } from '@/services';
 
 /** A single cross-board cluster member (opaque key + its board + url). Mirrors
  *  the backend-attached shape on `Posting`/`AutopilotFoundJob` (ADR-029). */
-export interface ClusterMember {
+interface ClusterMember {
   key: string;
   board?: string;
   url: string;

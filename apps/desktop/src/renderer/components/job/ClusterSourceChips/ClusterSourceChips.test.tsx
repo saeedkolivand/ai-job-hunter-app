@@ -106,6 +106,21 @@ describe('ClusterSourceChips', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('renders the host fallback label when a member has no board', () => {
+    render(
+      <ClusterSourceChips
+        members={[
+          { key: 'self', board: 'linkedin', url: 'https://linkedin.com/job/1' },
+          { key: 'nb', url: 'https://www.jobs.example.com/xyz' },
+        ]}
+        selfKey="self"
+        selfUrl="https://linkedin.com/job/1"
+      />
+    );
+    // No board → label falls back to hostOf(url): hostname minus a leading www.
+    expect(screen.getByText('jobs.example.com')).toBeInTheDocument();
+  });
+
   it('interactive={false} renders presentational badges with NO focusable buttons', () => {
     render(
       <ClusterSourceChips
