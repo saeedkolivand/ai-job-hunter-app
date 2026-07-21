@@ -136,8 +136,12 @@ vi.mock('@/lib/match-level', () => ({
 // ── IPC services — all mutations are no-ops ───────────────────────────────────
 
 vi.mock('@/services', () => ({
-  useOpenExternal: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  useOpenExternal: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+  }),
   usePersistJob: () => ({ mutateAsync: vi.fn().mockResolvedValue(undefined) }),
+  useMarkNotDuplicate: () => ({ mutate: vi.fn(), isPending: false }),
   useResolveJobUrl: () => ({
     data: undefined,
     isLoading: false,
@@ -147,6 +151,15 @@ vi.mock('@/services', () => ({
     refetch: vi.fn().mockResolvedValue(undefined),
   }),
   useUpdatePostingDescription: () => ({ mutateAsync: vi.fn().mockResolvedValue(false) }),
+}));
+
+// Cluster/agency header chips — stubbed (fixtures carry no cluster/agency data).
+vi.mock('@/components/job/ClusterSourceChips', () => ({
+  ClusterSourceChips: () => null,
+}));
+
+vi.mock('@/components/job/AgencyChip', () => ({
+  AgencyChip: () => null,
 }));
 
 vi.mock('@/services/use-applications', () => ({

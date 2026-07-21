@@ -9,6 +9,7 @@ import { AISettingsTab } from '@/features/settings/components/ai-settings/AISett
 import { ContactProfileTab } from '@/features/settings/components/contact/ContactProfileTab';
 import { GeneralSection } from '@/features/settings/components/general-section';
 import { AppearanceCard } from '@/features/settings/components/general-section/AppearanceCard';
+import { AgencyCompaniesPreferences } from '@/features/settings/components/preferences/AgencyCompaniesPreferences';
 import { AggregatorKeysSettings } from '@/features/settings/components/preferences/AggregatorKeysSettings';
 import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
@@ -81,6 +82,9 @@ export function SettingsContent({
         </div>
         <div data-settings-anchor="job-aggregator">
           <AggregatorKeysSettings />
+        </div>
+        <div data-settings-anchor="job-agency">
+          <AgencyCompaniesPreferences />
         </div>
       </>
     ),

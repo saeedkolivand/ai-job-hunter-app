@@ -69,6 +69,8 @@ interface JobsSlice {
   selectedId: string | null;
   /** Persisted scroll offset of the virtualizer list container — restored on remount. */
   listScrollTop: number;
+  /** Hide postings flagged as recruiting/staffing agencies (ADR-029 §i). */
+  hideAgency: boolean;
 }
 
 type ResumesTab = 'resumes' | 'coverLetters' | 'activity';
@@ -262,6 +264,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     viewMode: 'split',
     selectedId: null,
     listScrollTop: 0,
+    hideAgency: false,
   },
   resumes: { tab: 'resumes', filter: '' },
   settings: { activeSection: 'general' },

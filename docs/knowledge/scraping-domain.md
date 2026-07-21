@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -279,6 +279,28 @@ The 5 Rust truth-table test cases (same URL across boards, url-less title+compan
 - Autopilot merge: `apps/desktop/src-tauri/src/autopilot/mod.rs:merge_found_jobs` (delegates `merge_key` to the shared canonical key)
 - Canonical key (TS mirror): `apps/desktop/src/renderer/features/jobs/lib/canonical-job-key.ts`
 - Renderer dedup: `apps/desktop/src/renderer/features/jobs/lib/merge-postings.ts:mergePostings`
+
+## Cross-board clustering (ADR-029, 2026-07-21)
+
+Beyond exact canonical_job_key matching, a fuzzy clustering layer recomputed at every ingest groups postings likely to be the same real-world job across boards. Deterministic normalized company + title prefix blocking (no cross-block comparison) combined with trigram-Jaccard thresholds (see `CLUSTER_TITLE_TRIGRAM_JACCARD_MIN` in `scraping/cluster/mod.rs`) on titles or cosine similarity (see `CLUSTER_COSINE_MIN`) on posting vectors (when cached). Cluster membership is never persisted; only user "not a duplicate" verdicts survive as unordered key pairs in `dedup.db` (pair-tombstone pattern, wired per ADR-022 + ADR-009). Canonical member selection (has-description > direct board > aggregator > newest) ensures stable row identity. The renderer lists cluster members non-destructively in the detail pane, plus agency flag filtering (company matches built-in and user-extended lists in `AGENCY_COMPANIES` / `AGENCY_TOKENS`, see `scraping/cluster/normalize.rs`) and split/merge UI.
+
+**Source pointers:**
+
+- Normalization + clustering engine: `apps/desktop/src-tauri/src/scraping/cluster/{mod,normalize}.rs`
+- Pair-tombstone store: `apps/desktop/src-tauri/src/dedup/mod.rs` (`DedupStore`)
+- Engine wiring (manual-scrape + single-import): `apps/desktop/src-tauri/src/commands/scrape.rs:recluster_postings_cache`
+- Autopilot wiring (batch clustering, minMatchScore awareness): `apps/desktop/src-tauri/src/autopilot/mod.rs:record_run`
+- IPC split command: `apps/desktop/src-tauri/src/commands/dedup.rs:dedup_mark_not_duplicate`
+- UI cluster chips + filters: `apps/desktop/src/renderer/components/job/ClusterSourceChips`, `hideAgency` session filter
+
+**Fast-follow work items (deferred, not blocking):**
+
+1. **Cluster split undo (merge-back)** — pair-tombstone delete + recompute; preserves user UX for correction.
+2. **Ingest-time embeddings** — populate posting vectors at scrape time, making the cosine path primary and reducing dependence on the trigram heuristic.
+3. **Agency-list growth** — expand built-in six + token list; add user-extensible company matching for recruitment agencies beyond the static bootstrap.
+4. **LinkedIn card shape extraction** — extract a pure `parse_job_cards(html)` seam from LinkedIn `search_guest` so acceptance fixtures can use real card shape (currently uses GermanTechJobs feed parser).
+5. **Batch-level deferrals** — active slug prober, extension-side ATS fingerprinting, community slug directory, cross-user analytics (shared with other deferred post-launch batch work).
+6. **Split-view selection re-point** — when a selected live-streamed row becomes non-canonical at completion, `JobsResults` falls back to top-of-list instead of the row's cluster canonical; `absorbedInto` doesn't cover cluster collapses. Narrow UX gap: re-point via clusterId.
 
 ## Jobs-page diagnostics surface (PR C, 2026-07-10)
 

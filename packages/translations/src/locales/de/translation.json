@@ -890,6 +890,14 @@
       "searchPlaceholder": "Beliebige Technologie eingeben und Enter drücken…",
       "popular": "Beliebt"
     },
+    "agencyCompanies": {
+      "title": "Personalvermittler",
+      "description": "Firmennamen, die als Personal- oder Vermittlungsagenturen gelten sollen, damit deren Anzeigen auf der Jobs-Seite ausgeblendet werden können.",
+      "placeholder": "Firmennamen eingeben und Enter drücken…",
+      "add": "Hinzufügen",
+      "remove": "{{name}} entfernen",
+      "empty": "Noch keine eigenen Vermittler."
+    },
     "ai": {
       "localLimits": {
         "title": "Generierungslimits",
@@ -1946,6 +1954,18 @@
     "viewMode": "Ansichtsmodus",
     "backToList": "Zurück zur Liste",
     "selectAJob": "Job auswählen, um Details anzuzeigen",
+    "agencyChip": "Personalvermittler",
+    "filters": {
+      "hideAgency": "Vermittleranzeigen ausblenden"
+    },
+    "cluster": {
+      "alsoOn": "Auch auf",
+      "openOn": "Auf {{source}} öffnen",
+      "sources": "Alle Quellen",
+      "notDuplicate": "Kein Duplikat",
+      "splitDone": "Anzeigen getrennt",
+      "splitFailed": "Anzeigen konnten nicht getrennt werden"
+    },
     "copyLinkError": "Link konnte nicht kopiert werden",
     "loadingDescription": "Beschreibung wird geladen…",
     "updatingDescription": "Wird aktualisiert…",

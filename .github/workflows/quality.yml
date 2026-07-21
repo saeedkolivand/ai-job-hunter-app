@@ -6,7 +6,8 @@ name: 🔎 Quality
 #   JS/docs (PR): typos · links (lychee) · knip (dead code) · i18n key drift · jsx-a11y
 #   Rust   (PR): cargo-hack (each-feature) · cargo-mutants (--in-diff)
 #   Perf        : criterion export-render benchmark — records the baseline on
-#                 push-to-main, comments on regressions on Rust PRs.
+#                 push-to-main (Rust changes only); never runs on PRs — opt in
+#                 per branch via workflow_dispatch.
 # The benchmark job is the ONLY one with elevated permissions (contents: write +
 # the deploy key + the Pages PAT); per-job `permissions:`/`if:` keep every other
 # job least-privilege and PR-scoped. A `changes` gate preserves the Rust-only
@@ -307,14 +308,16 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # ── Perf benchmark — push-to-main baseline + PR regression comment ───────────
+  # ── Perf benchmark — push-to-main baseline; opt-in elsewhere ─────────────────
   # The ONLY elevated job: commits the refreshed dashboard back to main (deploy
-  # key) and kicks the Pages deploy (PAT). Runs on push/dispatch, and on PRs only
-  # when Rust changed (the `changes` gate).
+  # key) and kicks the Pages deploy (PAT). Runs on push-to-main when Rust changed
+  # (the `changes` gate) and on manual dispatch. NEVER on pull_request events —
+  # to benchmark a PR, run this workflow via workflow_dispatch on the PR branch
+  # (Actions → Quality → Run workflow).
   benchmark:
     name: 📈 Export render
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.rust == 'true'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.changes.outputs.rust == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

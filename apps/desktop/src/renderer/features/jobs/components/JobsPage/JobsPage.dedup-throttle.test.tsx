@@ -156,6 +156,9 @@ vi.mock('@ajh/ui', () => ({
   Dropdown: () => null,
   Input: () => null,
   SegmentedControl: () => null,
+  Tag: Object.assign(({ children }: { children: ReactNode }) => <span>{children}</span>, {
+    CheckableTag: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  }),
   useNotification: () => ({ error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }));
 

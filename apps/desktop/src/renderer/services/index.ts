@@ -24,6 +24,7 @@ export * from './use-company-logo';
 export * from './use-contact-profile';
 export * from './use-credentials';
 export * from './use-data';
+export * from './use-dedup';
 export * from './use-documents';
 export * from './use-email-watch';
 export * from './use-extension-bridge';

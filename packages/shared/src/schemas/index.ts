@@ -511,11 +511,27 @@ export const JobPreferencesSchema = z.object({
   // it (~200 bytes) at the write boundary, matching every other
   // renderer-supplied string in this contract.
   salaryExpectation: z.string().optional(),
+  // Extra recruiting/staffing agency company names, merged with the built-in
+  // const list when cross-board dedup flags a posting's `isAgency` (ADR-029 §i).
+  // Free text; the Rust store clamps each entry + the list length at the write
+  // boundary (per the dedicated single-column setter, PR #695 pattern).
+  extraAgencyCompanies: z.array(z.string().trim().min(1)).optional(),
+});
+
+// Cross-board dedup "split" request (ADR-029 §h): mark `memberKey` as NOT a
+// duplicate of each of `otherKeys` (opaque canonical job keys the renderer
+// echoes back from a cluster's members). `autopilotId` scopes an autopilot
+// found-jobs split so that record's annotations are recomputed too.
+export const DedupMarkNotDuplicateRequestSchema = z.object({
+  memberKey: z.string().trim().min(1),
+  otherKeys: z.array(z.string().trim().min(1)).min(1).max(32),
+  autopilotId: z.string().optional(),
 });
 
 export type AutopilotCreate = z.infer<typeof AutopilotCreateSchema>;
 export type AutopilotUpdate = z.infer<typeof AutopilotUpdateSchema>;
 export type JobPreferences = z.infer<typeof JobPreferencesSchema>;
+export type DedupMarkNotDuplicateRequest = z.infer<typeof DedupMarkNotDuplicateRequestSchema>;
 
 export type AiGenerateRequest = z.infer<typeof AiGenerateRequestSchema>;
 export type ModelInspectResult = z.infer<typeof ModelInspectResultSchema>;

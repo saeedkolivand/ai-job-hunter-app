@@ -32,4 +32,11 @@ describe('SourceBadge', () => {
     await userEvent.click(screen.getByText('XING'));
     expect(open).not.toHaveBeenCalled();
   });
+
+  it('treats a prototype-polluting source as unknown (no crash, generic fallback)', () => {
+    // Without the own-property guard, `PLATFORM_CONFIG['__proto__']` resolves an
+    // Object.prototype member whose `.icon` is undefined → render crash.
+    expect(() => render(<SourceBadge source="__proto__" />)).not.toThrow();
+    expect(screen.getByText('__proto__')).toBeInTheDocument();
+  });
 });

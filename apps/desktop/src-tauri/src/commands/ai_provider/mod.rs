@@ -779,20 +779,12 @@ pub fn compare(a: &EmbeddingVector, b: &EmbeddingVector) -> AppResult<f64> {
     Ok(cosine(&a.values, &b.values))
 }
 
-/// Raw cosine similarity. Prefer [`compare`] for stored vectors so spaces are checked.
-pub fn cosine(a: &[f64], b: &[f64]) -> f64 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let norm_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 {
-        0.0
-    } else {
-        dot / (norm_a * norm_b)
-    }
-}
+/// Raw cosine similarity — re-exported from the shared L0 [`crate::vector`]
+/// module so `compare` and every existing `ai_provider::cosine` caller keep the
+/// same path, while `scraping::cluster` reuses the SAME implementation for
+/// cross-board dedup without an upward layer import (architecture rule R7).
+/// Prefer [`compare`] for stored vectors so embedding spaces are checked first.
+pub use crate::vector::cosine;
 
 // ── Request tracing ─────────────────────────────────────────────────────────────
 
