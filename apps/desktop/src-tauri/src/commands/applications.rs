@@ -60,9 +60,19 @@ fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
         None => Ok(None),
         Some(Value::Null) => Ok(Some(None)),
         Some(other) => other.as_u64().map(|ms| Some(Some(ms))).ok_or_else(|| {
-            AppError::Validation(
-                "next_action_at must be null or a non-negative integer timestamp in ms".into(),
-            )
+            // Echo the offending JSON type so a renderer sending the wrong shape
+            // (a string, a negative/fractional number, an object) sees why.
+            let kind = match &other {
+                Value::Null => "null",
+                Value::Bool(_) => "a boolean",
+                Value::Number(_) => "a non-integer or out-of-range number",
+                Value::String(_) => "a string",
+                Value::Array(_) => "an array",
+                Value::Object(_) => "an object",
+            };
+            AppError::Validation(format!(
+                "next_action_at must be null or a non-negative integer epoch-ms, got {kind}"
+            ))
         }),
     }
 }
