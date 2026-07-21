@@ -1,0 +1,74 @@
+/* ── how-it-works · docs-tier reskin ─────────────────────────────────────────
+   Layered AFTER the page's original styles.css (with docs-tokens.css injected
+   first), so these :root redefinitions win and re-skin the whole walkthrough onto
+   the shell palette — generic slate → near-black shell with the chalk/accent
+   tokens, handwriting display + the "back to the chaos" chrome. The parity-checked
+   copy, the DOM the 55 KB player queries, and the console egg are all untouched;
+   this is a pure palette + font + chrome swap. (The page keeps its own 2-column
+   sidebar layout — it does not nest in <DocShell>'s centered column — but adopts
+   the shell's visual language.) */
+:root {
+  --bg: var(--doc-ink);
+  --bg2: var(--doc-surface);
+  --panel: var(--doc-surface);
+  --panel2: var(--doc-surface-2);
+  --line: var(--doc-border);
+  --line2: var(--doc-border-strong);
+  --txt: var(--doc-paper);
+  --muted: var(--doc-muted);
+  --dim: var(--doc-muted);
+  --brand: var(--doc-accent);
+  --brand2: var(--doc-pink);
+  --ok: var(--doc-green);
+  --warn: var(--doc-amber);
+  --bad: var(--doc-accent);
+  /* the four architecture layers keep four distinct hues, on the shell palette */
+  --ui: var(--doc-series-1);
+  --ipc: var(--doc-pink);
+  --rust: var(--doc-amber);
+  --ext: var(--doc-green);
+  --sans: var(--doc-font-display);
+  --mono: var(--doc-font-mono);
+}
+
+/* swap the slate blue/purple ambient glows for the shell's accent + green */
+body {
+  background:
+    radial-gradient(1200px 700px at 12% -10%, rgba(226, 75, 74, 0.1), transparent 60%),
+    radial-gradient(1100px 700px at 110% 0%, rgba(52, 211, 153, 0.08), transparent 55%),
+    var(--doc-ink) !important;
+}
+
+/* handwriting/display voice for the eyebrows + big headings */
+.eyebrow {
+  font-family: var(--doc-font-hand) !important;
+  color: var(--doc-accent) !important;
+  font-size: 1.05rem;
+}
+.title {
+  font-family: var(--doc-font-display) !important;
+  letter-spacing: -0.02em;
+}
+
+/* "back to the chaos" shell chrome, prepended to the sidebar */
+aside .top-back {
+  display: inline-block;
+  font-family: var(--doc-font-mono);
+  font-size: 12px;
+  color: var(--doc-muted);
+  border: none;
+  margin: 0 0 16px;
+  transition:
+    color 0.2s,
+    transform 0.2s;
+}
+aside .top-back:hover {
+  color: var(--doc-paper);
+  transform: translateX(-3px);
+}
+aside .top-back:focus-visible {
+  outline: 2px solid var(--doc-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+  color: var(--doc-paper);
+}

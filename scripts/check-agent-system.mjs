@@ -14,7 +14,7 @@
 //   3. Routes ↔ agents — every routed owner has an agent file (and the fallback exists).
 //   4. Agents ↔ CLAUDE.md — every agent appears in the project CLAUDE.md routing table.
 //   5. Author/critic pairs — each declared author + its independent critic both exist.
-//   6. Explainer complete — apps/landing/public/agent-system.html exists and has a card per agent.
+//   6. Explainer complete — apps/landing/src/data/agent-fleet.ts exists and names every agent.
 //   7. AI configs → CLAUDE.md — each parallel rule file points at CLAUDE.md (single source).
 //   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
 //   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
@@ -35,7 +35,11 @@ const ADR_DIR = 'docs/knowledge/decision-records';
 const KNOWLEDGE_README = 'docs/knowledge/README.md';
 const CLAUDE_MD = 'CLAUDE.md';
 const ROUTES = '.claude/review-routes.json';
-const EXPLAINER = 'apps/landing/public/agent-system.html';
+// The agent-system explainer is now the typed data source behind the /agent-system
+// route (ported from the former public/agent-system.html in PR2). Every agent name
+// must still appear here (check 6), and its roster tuples feed the reverse-check
+// (check 9).
+const EXPLAINER = 'apps/landing/src/data/agent-fleet.ts';
 
 // Author → its independent critic (the writer never approves its own work).
 const PAIRS = [
@@ -204,11 +208,11 @@ function checkPairs() {
 // ── Check 6: explainer complete ──────────────────────────────────────────────
 function checkExplainer() {
   if (!exists(EXPLAINER)) {
-    return fail('Explainer', EXPLAINER, 'apps/landing/public/agent-system.html does not exist yet');
+    return fail('Explainer', EXPLAINER, `${EXPLAINER} does not exist yet`);
   }
-  const html = read(EXPLAINER);
+  const source = read(EXPLAINER);
   for (const name of agentNames()) {
-    if (!html.includes(name)) {
+    if (!source.includes(name)) {
       fail('Explainer card', EXPLAINER, `no card/mention for agent '${name}'`);
     }
   }
@@ -274,9 +278,11 @@ function checkReferencedAgents() {
     }
   }
   if (exists(EXPLAINER)) {
-    // the AGENTS roster entries: ['name','author'|'critic'|'cross', ...]
+    // the AGENT roster tuples: ['name', 'author'|'critic'|'cross', …]. The source
+    // is now a prettier-formatted TS module, so tolerate the whitespace prettier
+    // inserts around the array separators (the old HTML was space-free).
     for (const [, name] of read(EXPLAINER).matchAll(
-      /\['([a-z][a-z0-9-]+)','(?:author|critic|cross)'/g
+      /\[\s*'([a-z][a-z0-9-]+)'\s*,\s*'(?:author|critic|cross)'/g
     )) {
       record(name, EXPLAINER);
     }

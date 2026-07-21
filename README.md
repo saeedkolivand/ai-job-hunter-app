@@ -456,9 +456,9 @@ Live status of every GitHub Actions workflow. See
 what each one does, its triggers, and whether it gates merges (only **✅ CI OK** does).
 Both are generated from the workflow files by `pnpm gen:workflows`.
 
-**[📊 Live CI dashboard](https://aijobhunter.app/ci-dashboard)** —
-at-a-glance status of every workflow, grouped by role, fetched live from the Actions API
-(selectable auto-refresh — off/1/5/15 min — plus a **Refresh now** button).
+**[📊 Mission Control](https://aijobhunter.app/mission-control)** —
+a verdict-first, full-repo dashboard (delivery, work, quality, community) fetched live from the
+GitHub API in your browser, with an optional fine-grained-PAT sign-in for the safe write tier.
 
 <!-- workflows:badges:start -->
 

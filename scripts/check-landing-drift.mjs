@@ -22,8 +22,14 @@ const ROOT = process.cwd();
 
 // Claim-bearing architecture diagrams (path/IPC/registry/denylist checks). The
 // architecture map is a passthrough dashboard under public/; how-it-works is now
-// a Next route whose authored body lives in src/content/. (PR2 will repoint these
-// at the TS sources once the dashboards are ported.)
+// a Next route whose authored body lives in src/content/.
+//
+// NOTE: the agent-system page was ported to a typed data source
+// (src/data/agent-fleet.ts, PR2), but it is deliberately NOT in this path-checked
+// set: its `paths` fields cite GLOB patterns (e.g. `apps/desktop/src-tauri/src/**`)
+// that never resolve under the literal existsSync in checkPaths. It is secret-scanned
+// below instead (see SECRET_SCAN_FILES). check-agent-system.mjs owns its name/roster
+// invariants.
 const DIAGRAMS = [
   'apps/landing/public/architecture-map.html',
   'apps/landing/src/content/how-it-works/body.html',
@@ -34,12 +40,11 @@ const DIAGRAMS = [
 // src/content/*/body.html and their former inline scripts in public/scripts/*.js;
 // the dashboards + benchmarks are public/ passthrough.
 const SECRET_SCAN_FILES = [
-  'apps/landing/public/agent-system.html',
+  'apps/landing/src/data/agent-fleet.ts',
   'apps/landing/public/architecture-map.html',
-  'apps/landing/public/ci-dashboard.html',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
-  'apps/landing/social-card.html',
+  'scripts/assets/social-card.html',
   'apps/landing/src/data/version.json',
   ...['home', 'creature', 'download', 'how-it-works', 'privacy'].map(
     (r) => `apps/landing/src/content/${r}/body.html`

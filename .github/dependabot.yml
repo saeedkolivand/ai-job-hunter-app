@@ -1,6 +1,11 @@
 version: 2
 
 updates:
+  # The single root npm entry covers EVERY pnpm workspace member manifest via
+  # the shared root pnpm-lock.yaml — apps/desktop, apps/extension, apps/landing
+  # (rejoined the workspace in #740), and packages/*. Do NOT add per-member npm
+  # entries: workspace members have no own lockfile, so a directory entry for
+  # one would duplicate or fail.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -29,7 +34,10 @@ updates:
     # 8.64 still caps there). The ROOT typescript stays on 6 so eslint's parser
     # works; apps/packages pin 7 themselves (real TS 7). Block major bumps so a
     # dependabot PR can't re-collapse that split by bumping root 6 -> 7 (#660).
-    # Drop this once typescript-eslint supports TS 7.
+    # apps/landing ALSO pins TS 6 for its own reason: Next 16's
+    # verifyTypeScriptSetup breaks under TS 7's package layout (see the
+    # "//typescript" note in apps/landing/package.json) — this same ignore
+    # protects that pin too. Drop only when BOTH constraints clear.
     ignore:
       - dependency-name: typescript
         update-types:
