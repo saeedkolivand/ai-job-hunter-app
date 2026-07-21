@@ -185,15 +185,25 @@ mod tests {
         let refs: Vec<(String, String, Option<String>, String)> = postings
             .iter()
             .filter_map(|(url, company)| {
-                extract_ats_ref(url)
-                    .map(|r| (r.ats, r.slug, Some((*company).to_string()), "scrape".to_string()))
+                extract_ats_ref(url).map(|r| {
+                    (
+                        r.ats,
+                        r.slug,
+                        Some((*company).to_string()),
+                        "scrape".to_string(),
+                    )
+                })
             })
             .collect();
         store.upsert_batch(&refs).unwrap();
 
         // The greenhouse slug is now offered by the typeahead search, name backfilled.
         let stripe = store.search("stripe", 10);
-        assert_eq!(stripe.len(), 1, "the harvested greenhouse slug is searchable");
+        assert_eq!(
+            stripe.len(),
+            1,
+            "the harvested greenhouse slug is searchable"
+        );
         assert_eq!(stripe[0].ats_kind, "greenhouse");
         assert_eq!(stripe[0].slug, "stripe");
         assert_eq!(stripe[0].display_name.as_deref(), Some("Stripe"));
@@ -202,7 +212,10 @@ mod tests {
         let linear = store.search("Linear", 10);
         assert_eq!(linear.len(), 1);
         assert_eq!(linear[0].ats_kind, "ashby");
-        assert_eq!(linear[0].slug, "Linear", "ashby casing preserved end-to-end");
+        assert_eq!(
+            linear[0].slug, "Linear",
+            "ashby casing preserved end-to-end"
+        );
 
         // Exactly the 4 ATS postings were harvested — the non-ATS URL added nothing.
         assert_eq!(
