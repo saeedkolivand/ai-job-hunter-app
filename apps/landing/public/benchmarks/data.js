@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784589448881,
+  "lastUpdate": 1784610911136,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5201,6 +5201,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287702,
             "range": "± 6067",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a0230890dfbfe85f8444fe1a9554cc734ea19d59",
+          "message": "fix(jobs): post-756 review findings and ai review sticky restyle (#758)\n\n* docs: broaden adr-029 dash-tail risk note and log review fast-follows\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): dedupe split request keys before the count cap\n\nclamp_split_request trimmed/blank-filtered/byte-capped other_keys but did not\nde-duplicate before .take(MAX_OTHER_KEYS), so a repeated key wasted one of the\n32 slots (the insert is idempotent anyway). De-dup first-seen order preserved\nvia a HashSet seen-check before the cap; self-pairs equal to the clamped\nmember_key are already dropped. Extended the clamp tests with a 33-entry,\n2-duplicate case → 31 distinct pairs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard agency list edits pre-load and cap the zod schema\n\nPost-#756 AI-review-gate findings:\n\n- AgencyCompaniesPreferences add()/remove() early-return when useJobPreferences\n  is still undefined (pre-load) — otherwise a quick add builds the next list from\n  an empty [] and replaces the user's saved agency list with just that one entry\n  (single-column setter, but still column data loss). Mirrors the sibling-panel\n  guards in 92e5302b, with a regression test asserting no mutate fires pre-load.\n- JobPreferencesSchema.extraAgencyCompanies gains .max(500) to mirror the Rust\n  MAX_EXTRA_AGENCY_COMPANIES cap (same pattern as otherKeys' .max(32)); IPC\n  codegen unchanged (gen:ipc --check green).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): pin split-request dedup collapse and full cap capacity\n\nThe Stop review-gate asked for two explicit cases on clamp_split_request:\n- duplicate other_keys collapse to ONE entry, first-seen order preserved;\n- de-dup runs BEFORE the count cap, so repeats never steal slots — >32 distinct\n  keys with one key hammered still yields the FULL 32 distinct keys, not fewer.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: restyle ai review sticky comment into severity sections\n\nReplace the cramped one-table sticky body with a claude-review-style\nlayout — bold verdict line, expanded Critical/High/Medium sections with\nper-finding anchors, and a collapsed Low details block. Presentation\nonly: validateFindings/blockingFindings/exit-code logic (ADR-0008) is\nunchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-21T07:04:28+02:00",
+          "tree_id": "ebfe5327a600f3ab123e1d3b9c5739f18e4f4952",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a0230890dfbfe85f8444fe1a9554cc734ea19d59"
+        },
+        "date": 1784610910889,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2119936,
+            "range": "± 46834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2558016,
+            "range": "± 27490",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287045,
+            "range": "± 6853",
             "unit": "ns/iter"
           }
         ]
