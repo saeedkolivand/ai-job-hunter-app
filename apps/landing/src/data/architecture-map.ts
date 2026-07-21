@@ -88,7 +88,7 @@ export const clusters: readonly Cluster[] = [
   { id: 'domain', label: 'Rust Domains', x: 1420, y: 20, w: 250, h: 1120, color: 'domain' },
   {
     id: 'scraper',
-    label: 'Scrapers (SCRAPERS · 20)',
+    label: 'Scrapers (SCRAPERS · 24)',
     x: 1700,
     y: 20,
     w: 472,
@@ -3154,7 +3154,7 @@ export const KNOWN_BUGS: Readonly<Record<string, readonly Bug[]>> = {
 export const FINDINGS: readonly string[] = [
   'Code↔doc mismatch: the resume-job <b>matcher</b> is a Rust stub, though it was ✅ in the old TypeScript and the status doc still lists features as done (ARCHITECTURE_STATUS.md:47-50). Flagged red on cmd-match.',
   'Heaviest hot path: <b>AI generation</b> fans through packages/prompts (resume/cover builders + context-manager truncation + ProviderProfile + validators) before a single token streams — the red spine.',
-  'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus two registries — SCRAPERS (20), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
+  'Strong seam: a single-owner <b>platform band</b> (platform::config, net::http, error::AppError, observability::Span) plus two registries — SCRAPERS (24), ProviderId (8). Adding a board/provider is one module + one line; CI arch tests enforce ownership.',
   'No silent fallback: ai_provider::resolve() routes strictly by ProviderId — an unknown/mismatched provider is a hard error, never a quiet switch to Ollama.',
   'God nodes (edges intentionally not all drawn): cn() ~191, useAppClient() ~167, Button ~97. They touch nearly everything in their layer.',
   'tauri-client is a folder module (apps/desktop/src/tauri-client/index.ts); CLAUDE.md still cites the old single-file path.',

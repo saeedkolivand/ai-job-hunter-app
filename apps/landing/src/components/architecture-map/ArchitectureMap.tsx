@@ -18,6 +18,11 @@ import {
 // original `byId` in the passthrough dashboard.
 const byId = new Map(nodes.map((n) => [n.id, n]));
 
+// Fixed authoring canvas — the single source of truth for both the static
+// <svg viewBox> (no-JS baseline) and fit()'s pixel-space scale math, so the two
+// can never drift apart.
+const CANVAS = { w: 3060, h: 1330 };
+
 // ── deterministic geometry (ported verbatim from the original render engine) ──
 // Edge paths are a pure function of the two nodes' fixed coordinates, so they are
 // computed once here and rendered as static <path> markup (prerendered at build).
@@ -372,12 +377,14 @@ export function ArchitectureMap() {
       cleanups.push(() => target.removeEventListener(type, handler, opts));
     };
 
-    // element lookups (built once from the prerendered DOM)
+    // element lookups (built once from the prerendered DOM) — one pass over all
+    // .node groups keyed by data-id, so we never interpolate an id into a CSS
+    // selector (robust to ids that would need escaping).
     const nodeEls = new Map<string, SVGGElement>();
-    for (const n of nodes) {
-      const g = root.querySelector<SVGGElement>(`.node[data-id="${n.id}"]`);
-      if (g) nodeEls.set(n.id, g);
-    }
+    root.querySelectorAll<SVGGElement>('.node').forEach((g) => {
+      const id = g.dataset.id;
+      if (id) nodeEls.set(id, g);
+    });
     const edgeEls: Array<{
       e: (typeof edges)[number];
       path: SVGPathElement;
@@ -437,6 +444,14 @@ export function ArchitectureMap() {
     const renderSidebar = (id: string | null) =>
       setPanel(id ? { kind: 'node', id } : { kind: 'default' });
 
+    // Screen-reader announcements — scoped to a tiny status line so ONLY
+    // deliberate actions (pin/unpin, filter, clear) are spoken. The sidebar
+    // itself is no longer a live region, so hover/focus sweeps stay silent.
+    const statusEl = root.querySelector<HTMLElement>('#a11y-status');
+    const announce = (msg: string) => {
+      if (statusEl) statusEl.textContent = msg;
+    };
+
     // ── pan + zoom (imperative transform on the #vp group) ──────────────────────
     let tx = 0;
     let ty = 0;
@@ -444,11 +459,10 @@ export function ArchitectureMap() {
     const applyTransform = () =>
       vp.setAttribute('transform', `translate(${tx} ${ty}) scale(${scale})`);
     const fit = () => {
-      const vb = { w: 3060, h: 1330 };
       const r = stage.getBoundingClientRect();
-      scale = Math.min(r.width / vb.w, r.height / vb.h) * 0.98;
-      tx = (r.width - vb.w * scale) / 2;
-      ty = (r.height - vb.h * scale) / 2;
+      scale = Math.min(r.width / CANVAS.w, r.height / CANVAS.h) * 0.98;
+      tx = (r.width - CANVAS.w * scale) / 2;
+      ty = (r.height - CANVAS.h * scale) / 2;
       applyTransform();
     };
     const screenToVB = (px: number, py: number) => {
@@ -505,6 +519,7 @@ export function ArchitectureMap() {
         hover = null;
         applyView();
         renderSidebar(pinned);
+        announce(pinned ? `${n.label} selected` : 'Selection cleared');
       });
       on(g, 'focus', () => {
         hover = n.id;
@@ -524,6 +539,7 @@ export function ArchitectureMap() {
           pinned = pinned === n.id ? null : n.id;
           applyView();
           renderSidebar(pinned);
+          announce(pinned ? `${n.label} selected` : 'Selection cleared');
         }
       });
     }
@@ -543,6 +559,7 @@ export function ArchitectureMap() {
         }
         renderSidebar(null);
         applyView();
+        announce(`Filter: ${b.textContent?.trim() ?? id}`);
       });
     }
 
@@ -602,10 +619,12 @@ export function ArchitectureMap() {
       }
       const target = ev.target as Element;
       if (target === stage || target === svg || target.id === 'vp') {
+        const hadSelection = pinned !== null;
         pinned = null;
         hover = null;
         renderSidebar(null);
         applyView();
+        if (hadSelection) announce('Selection cleared');
       }
     });
 
@@ -724,14 +743,17 @@ export function ArchitectureMap() {
           toggleHelp();
           ke.preventDefault();
           break;
-        case 'Escape':
+        case 'Escape': {
+          const hadSelection = pinned !== null;
           pinned = null;
           hover = null;
           if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
           renderSidebar(null);
           applyView();
+          if (hadSelection) announce('Selection cleared');
           ke.preventDefault();
           break;
+        }
       }
     });
 
@@ -794,7 +816,7 @@ export function ArchitectureMap() {
       </header>
       <main>
         <div id="stage">
-          <svg id="svg" viewBox="0 0 3060 1330" preserveAspectRatio="xMidYMid meet">
+          <svg id="svg" viewBox={`0 0 ${CANVAS.w} ${CANVAS.h}`} preserveAspectRatio="xMidYMid meet">
             <defs>
               <marker
                 id="ar-critical"
@@ -932,10 +954,19 @@ export function ArchitectureMap() {
             </ul>
           </div>
         </div>
-        <aside id="side" aria-live="polite" aria-atomic="false">
+        <aside id="side">
           <Sidebar panel={panel} />
         </aside>
       </main>
+      {/* Scoped live region — announces only deliberate actions (pin/unpin,
+          filter, clear), so screen readers don't narrate every hover/focus. */}
+      <div
+        id="a11y-status"
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      />
     </div>
   );
 }
