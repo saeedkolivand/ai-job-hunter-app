@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-17
+Last updated: 2026-07-20
 
 Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -406,6 +406,18 @@ When a board achieves partial success (some companies reached, some invalid slug
 3. **LinkedIn soft-block telemetry** — verify the 200-zero-cards soft-block detector against real LinkedIn changes; currently unverified post-launch (unlike the verified 200-zero-cards claim in the code comments).
 4. **Per-posting truncation signal** — forwarding a per-posting `truncated` flag from scrapers (for JSearch vs Adzuna distinction in Autopilot) enables smarter provisional-score derivation; currently the flag keys on `source=="aggregator"` (conservative, flags JSearch as provisional). Deferred to avoid a schema change in Scope A.
 5. **Thundering-herd jitter** — add random jitter to `RETRY_BACKOFF` and daily-schedule retry delays to prevent multiple Autopilots retry-firing in lock-step; currently both retry at exactly `12min` / `00:00 UTC`. Low priority (most users have 1 Autopilot).
+
+## Extension-import canonical-URL seam
+
+Browser extension single-job imports on SPA/list-view pages (`?currentJobId=…`) resolve via `canonical_job_url()` to the job's own detail page. When that server-fetch comes back with no description (LinkedIn's anonymous-fetch authwall is the common trigger), the bridge gap-fills from the extension's captured `[data-ajh-job-root]` hint subtree only — never whole-document `parse_from_html()`, which would risk importing title/description from an unrelated job in the list-shell's own SEO markup.
+
+**Seam points:**
+
+- **Content script:** `apps/extension/src/content.ts` `markLikelyJobNode()` tries detail-pane containers (`[class*="job-details"]`, `[class*="jobs-details"]`, `[class*="jobs-description"]`) before `main`, with visibility gates (no `display:none` or `visibility:hidden` decoys), to mark the correct pane.
+- **Bridge:** `apps/desktop/src-tauri/src/extension_bridge/import_flow.rs` `merge_resolve_with_hint()` — merge strategy: `resolve()`'s non-empty title/description fields win; empty fields are filled from the hint only (never clobbered).
+- **Hint extraction:** `apps/desktop/src-tauri/src/scraping/scrape_url/mod.rs` `job_root_generic_html()` (exposed `pub(crate)` for canonical branch) — reads ONLY the hinted subtree, never document-level JSON-LD/`__NEXT_DATA__`/structural heuristics.
+
+**Canonical branch precedence:** SPA/list imports take three paths: (a) `resolve(canonical)` succeeds + usable → use it directly; (b) `resolve()` fails or description-less → try hint-scoped `job_root_generic_html()` to gap-fill title/description; (c) neither path yields a usable posting → fall through to stub/partial persist. Whole-document parse never runs for canonical URLs, only for direct page imports.
 
 ## See also
 

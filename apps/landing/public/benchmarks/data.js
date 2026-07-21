@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784573751905,
+  "lastUpdate": 1784589448881,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5117,6 +5117,90 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291163,
             "range": "± 3866",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "408d0dc30eebd6fc308d64705ccc78604ad80bbf",
+          "message": "feat: migrate landing to next.js static export with real routes (#740)\n\n* feat: migrate landing to next.js static export with real routes\n\napps/landing becomes a Next 15 static-export workspace app: the 5 authored pages\nare real routes (faithful port, verbatim CSS/HTML slices + client gag scripts),\ndashboards/benchmarks/storybook stay public/ passthrough, flat export keeps every\nlegacy URL working. Adds the version.json release seam with a client freshness\ncheck (tested, incl. injection regression), resurrects check:parity as a permanent\ngate, rewires pages/ci/quality/release workflows + lint/knip/vitest, and lands\nADR-0018 (amends ADR-0017's no-build-step; directory consolidation stands).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: excise unrelated extension wip from migration commit and drop stray turbo input\n\nThe six extension/scrape_url files belonged to a concurrent branch's in-progress\nwork and entered the previous commit via a blanket git add of a shared working\ntree; restored byte-for-byte to origin/main. That work ships on its own branch.\nAlso removes the nonexistent data/** turbo input (review finding).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-21T00:11:51+02:00",
+          "tree_id": "41fd07414345066dc5f8fc18f52318e3d005d230",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/408d0dc30eebd6fc308d64705ccc78604ad80bbf"
+        },
+        "date": 1784586769901,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2152850,
+            "range": "± 114280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2530622,
+            "range": "± 23272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 286340,
+            "range": "± 9706",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b91a5d1cae12cfc3c6577582694ae24089dd3c79",
+          "message": "fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch (#741)\n\n* fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch\n\nthe canonical (spa/list-view) import branch discarded the extension's captured html and\nserver-fetched /jobs/view/<id>, which linkedin authwalls — imports lost the description.\nresolve(canonical) stays primary; on an unusable or description-less result the bridge now\ngap-fills title/description from the hint-scoped detail pane only (whole-document json-ld\nis ignored so a list shell can never import the wrong job). the content-script hint tries\nvisible job-detail-pane containers before main.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: update extension-import canonical-url seam after fix 2d6a7eda\n\ndocument the list-shell JSON-LD scope safeguard: canonical branch never\ncalls parse_from_html() on captured list-shell DOM; only the hint-scoped\njob_root_generic_html() extraction may gap-fill when resolve() fails.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): walk ancestor chain in job-node visibility gate\n\nisHiddenByStyle only checked the matched element's own computed\ndisplay, which does not inherit; reuse field-signal.ts's isHidden\n(ancestor-walk) instead, built via content.ts's own isolated\nRollup pass so the import stays classic-script-safe.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-21T01:08:02+02:00",
+          "tree_id": "b53f58b48d7005f3acede33a33747d7543ed0792",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b91a5d1cae12cfc3c6577582694ae24089dd3c79"
+        },
+        "date": 1784589448743,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2208501,
+            "range": "± 16430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2633551,
+            "range": "± 14462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287702,
+            "range": "± 6067",
             "unit": "ns/iter"
           }
         ]
