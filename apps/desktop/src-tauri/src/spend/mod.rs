@@ -319,14 +319,27 @@ fn is_free_call(provider: &str, base_url: Option<&str>) -> bool {
 }
 
 /// Crude host check — good enough for a cost gate, never used for routing or
-/// security. Tolerates a scheme, a trailing path/query, and a `:port` (found
-/// via the LAST `:`, so a bracketed IPv6 host's internal colons stay intact).
+/// security. Tolerates a scheme, a trailing path/query, and an optional `:port`.
+///
+/// The port is stripped structurally rather than by "split on the last colon":
+/// an IPv6 host carries colons of its own, so for a bracketed host with NO port
+/// (`http://[::1]/v1`) the last colon is an *internal* one and the old rule cut
+/// the host down to `"[:"`, matching nothing. A bare `::1` collapsed the same
+/// way. Both are loopbacks the caller means to treat as free.
 fn is_localhost_url(url: &str) -> bool {
     let without_scheme = url.rsplit_once("://").map_or(url, |(_, rest)| rest);
     let host_and_port = without_scheme.split(['/', '?']).next().unwrap_or("");
-    let host = host_and_port
-        .rsplit_once(':')
-        .map_or(host_and_port, |(h, _)| h);
+    let host = if let Some(close) = host_and_port.find(']') {
+        // Bracketed IPv6: the host is everything up to and including `]`.
+        &host_and_port[..=close]
+    } else if host_and_port.matches(':').count() > 1 {
+        // Bare IPv6 — a port cannot be appended unambiguously, so keep it whole.
+        host_and_port
+    } else {
+        host_and_port
+            .split_once(':')
+            .map_or(host_and_port, |(h, _)| h)
+    };
     matches!(
         host,
         "localhost" | "127.0.0.1" | "0.0.0.0" | "::1" | "[::1]"
