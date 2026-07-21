@@ -113,7 +113,7 @@ records load unchanged). Live-stream rows remain unclustered until the completio
 strong cluster mate. The same rule also tightens one edge: a cluster whose best-scored member is
 below the bar is dropped whole even if it contains an unscored member (previously the unscored copy
 survived); this is intended and locked by test `mixed_cluster_with_below_bar_scored_representative_is_dropped_even_with_unscored_member`.
-Cosine path is dormant until vectors exist at ingest time — making embeddings
+Normalization trade-off: the bare dash-tail strip (trailing segments after a dash) means same-company titles differing only by a single trailing word (team/department/tech qualifiers — e.g. Platform vs Payments suffix) normalize identically and cluster together; recovery is the user split (pair tombstone verdict). Cosine path is dormant until vectors exist at ingest time — making embeddings
 primary would require ingest-time `ai_provider` calls, explicitly out of scope. Fast-follows
 (recorded in `docs/knowledge/scraping-domain.md` at feature close): split-undo, ingest-time embeddings,
 agency-list growth.
