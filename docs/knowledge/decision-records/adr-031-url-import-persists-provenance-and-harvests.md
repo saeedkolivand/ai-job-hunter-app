@@ -30,13 +30,13 @@ When a generation originates from a URL import, the renderer's job-ad state hold
 
 ### (c) Rust core feeds the harvest seam
 
-The Rust `scrape_resolve_url` command (in `commands/scrape.rs`) calls the ADR-030 harvest entry point (`commands/discovery.rs::posting_to_ref/harvest` seam, source 'scrape') on a successful resolve. This is one call site reusing the existing pure extractor; zero new network calls, no retry logic duplication.
+The Rust `scrape_resolve_url` command (in `commands/scrape.rs`) calls the ADR-030 harvest entry point (`discovered::harvest::harvest_ats_refs`, re-exported from `crate::discovered` in `apps/desktop/src-tauri/src/discovered/harvest.rs`, source 'scrape') on a successful resolve. This is one call site reusing the existing pure extractor; zero new network calls, no retry logic duplication.
 
 ### (d) Failure path respects the never-a-dead-end contract
 
 - Unreachable/unparseable URL displays the existing `jobUrlImport.*` i18n error inline.
 - Manual paste fallback remains usable.
-- Rate-limit (429) respects the existing backoff path.
+- Rate-limit (429) responses collapse to null and display the same generic inline error; distinct 429/backoff surfacing is a recorded fast-follow.
 - English + German parity verified.
 - Keyboard-only flow tested.
 
@@ -60,5 +60,5 @@ The Rust `scrape_resolve_url` command (in `commands/scrape.rs`) calls the ADR-03
 - `apps/desktop/src/renderer/components/job/JobUrlImport`
 - `apps/desktop/src/renderer/features/ai-generate/hooks/useGeneration.ts` (`persist` function)
 - `apps/desktop/src-tauri/src/commands/scrape.rs` (`scrape_resolve_url`)
-- `apps/desktop/src-tauri/src/commands/discovery.rs` (harvest seam: `posting_to_ref`)
+- `apps/desktop/src-tauri/src/discovered/harvest.rs` (harvest seam: `harvest_ats_refs`, private helper: `posting_to_ref`)
 - `packages/shared/src/ipc/contracts` (`AiGenerationSaveRequest` fields: `jobUrl`, `board`)
