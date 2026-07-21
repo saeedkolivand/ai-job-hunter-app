@@ -256,6 +256,19 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         Ok(out) => out,
         Err(e) => {
             engine.unregister_token(&job_id).await;
+            // A Stop before any item streamed surfaces as `Err("scrape cancelled")`
+            // from the engine, so check the token FIRST — otherwise a run the user
+            // stopped is persisted `Failed`, and the `{error}` payload makes
+            // `outcome_failed` true, which re-runs the very scrape they stopped.
+            // Mirrors the Ok-path cancel handler below.
+            if cancel_token.is_cancelled() {
+                store(&app)
+                    .lock()
+                    .set_run_status_clearing_summaries(&autopilot_id, RunStatus::Completed);
+                crate::commands::jobs::job_cancel(&app, &job_id);
+                span.end_with("cancelled during scrape", false);
+                return json!({ "jobId": job_id, "cancelled": true });
+            }
             // Whole-batch failure never reached `record_run`, so there are no
             // fresh summaries for this run — clear the PRIOR run's, or a later
             // chip strip would render stale board data as if it were this run's.
