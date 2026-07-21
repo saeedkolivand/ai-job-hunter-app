@@ -67,7 +67,7 @@ Exception: `<input type="range|file|checkbox|radio|hidden">`.
 ## Branch + PR workflow
 
 Never push to `main`. `git checkout -b feat/name` → commit → `git push -u origin <branch>` → `gh pr create` → CI passes → user approves.
-Before starting: `git fetch origin && git branch -r | grep $(git branch --show-current)`.
+Before starting: `git fetch origin && git branch -r | rg $(git branch --show-current)`.
 If branch gone: `git checkout main && git pull origin main`.
 
 ---
