@@ -263,10 +263,11 @@ Next.js static-export workspace package serving brand, download links, and docum
 | Parity gate                | ✅     | `pnpm check:parity` ensures byte-shape parity with legacy static layout (permanent, non-optional pre-push/CI gate)                             |
 | GitHub Pages deployment    | ✅     | `pages.yml` publishes Next.js export output (`out/`) directly to Pages                                                                         |
 | Release seam               | ✅     | `src/data/version.json` baked at build time; `/download` and homepage read for client-side freshness checks                                    |
-| Brand tokens               | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets; marketing tier                            |
+| Brand tokens               | ✅     | Paper/ink/red palette, self-hosted fonts (`public/fonts/`, PR2), film-grain overlay; shared with extension store assets; marketing tier        |
 | Docs tier (PR2)            | ✅     | `/mission-control` full-repo dashboard shipped (clean URL rename, no redirect stub); PAT sign-in + safe-tier writes                            |
 | DocShell + tokens (PR2)    | ✅     | Unified docs-tier visual language (dark hand-drawn look); typed-data route for agent-system (`src/data/agent-fleet.ts`)                        |
 | /how-it-works reskin (PR2) | ✅     | Ported to DocShell; visual consistency with mission-control                                                                                    |
+| OG template (PR3)          | ✅     | `social-card.html` relocated to `scripts/assets/` beside its generator; no longer app content                                                  |
 | Architecture-map port      | ⬜     | Deferred to follow-up PR (remains passthrough artifact); design intent unchanged                                                               |
 
 **Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.

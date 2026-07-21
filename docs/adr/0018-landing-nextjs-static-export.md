@@ -48,12 +48,12 @@ available"). No API call; the JSON is baked at build time and deployed with the 
 
 **Delivery chain (four PRs):**
 
-1. **PR1** (current): Next.js workspace package, 5 authored pages, static export, public/
+1. **PR1** (shipped): Next.js workspace package, 5 authored pages, static export, public/
    passthrough (benchmarks/dashboards/storybook), version.json release seam, check:parity gate.
-2. **PR2** (pending): Docs-tier DocShell + `/mission-control` full-repo dashboard redesign with
+2. **PR2** (shipped): Docs-tier DocShell + `/mission-control` full-repo dashboard redesign with
    PAT sign-in + safe-tier write actions.
-3. **PR3** (pending): OG template relocation (marketing tier's og-card.jpg or docs tier's dynamic
-   og-image).
+3. **PR3** (shipped): OG template relocated from `apps/landing/social-card.html` to
+   `scripts/assets/social-card.html` (beside its generator; no longer part of the app).
 4. **PR4** (pending): Nightly metrics-snapshot data plane (autonomous update of data.js + CI step).
 
 ## Consequences

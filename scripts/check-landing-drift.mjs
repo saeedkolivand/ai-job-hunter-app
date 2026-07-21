@@ -44,7 +44,7 @@ const SECRET_SCAN_FILES = [
   'apps/landing/public/architecture-map.html',
   'apps/landing/public/benchmarks/index.html',
   'apps/landing/public/benchmarks/data.js',
-  'apps/landing/social-card.html',
+  'scripts/assets/social-card.html',
   'apps/landing/src/data/version.json',
   ...['home', 'creature', 'download', 'how-it-works', 'privacy'].map(
     (r) => `apps/landing/src/content/${r}/body.html`
