@@ -450,7 +450,21 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
         Err(_) => return json!(null),
     };
     match crate::scraping::scrape_url::resolve(&url).await {
-        Ok(Some(posting)) => serde_json::to_value(&posting).unwrap_or(json!(null)),
+        Ok(Some(posting)) => {
+            // ADR-031 §c: feed the resolved posting into the ADR-030 slug-harvest
+            // seam (parse-only, zero new network) so a single-URL import populates
+            // the slug typeahead like the scrape/autopilot/extension paths. Harvest
+            // the posting's FINAL/canonical `url` (what got stored on it — an
+            // aggregator click-tracker resolves to the board's real posting url),
+            // not the raw request `url`, matching the other harvest sites. The seam
+            // degrades on error (missing store → no-op; upsert error → log::warn).
+            crate::commands::discovery::harvest_ats_refs(
+                &app,
+                std::iter::once((posting.url.clone(), posting.company.clone())),
+                "scrape",
+            );
+            serde_json::to_value(&posting).unwrap_or(json!(null))
+        }
         _ => json!(null),
     }
 }

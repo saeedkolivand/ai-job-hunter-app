@@ -262,4 +262,38 @@ mod tests {
         // Non-ATS URL → None regardless of the company.
         assert!(posting_to_ref("https://example.com/jobs/1", "Random Co", "scrape").is_none());
     }
+
+    /// ADR-031 §c: a successful single-URL resolve (`scrape_resolve_url`) feeds the
+    /// harvest seam with the RESOLVED posting's final/canonical `url` (what the
+    /// command stores on the posting — an aggregator click-tracker resolves to the
+    /// board's real posting url) + its company, so the slug surfaces in the
+    /// typeahead like the scrape/autopilot/extension paths. `scrape_resolve_url` is
+    /// `AppHandle`-bound (like `harvest_ats_refs`), so this drives the SAME pure
+    /// `posting_to_ref` seam the command uses — no mock-app harness.
+    #[test]
+    fn single_resolve_harvests_the_resolved_postings_slug() {
+        use crate::discovered::DiscoveredCompanyStore;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = DiscoveredCompanyStore::open(dir.path()).unwrap();
+
+        // A resolved posting's canonical url + company (personio subdomain shape —
+        // distinct from the multi-URL acceptance test above).
+        let posting_url = "https://acme.jobs.personio.de/job/42";
+        let company = "Acme GmbH";
+
+        let ats_ref = posting_to_ref(posting_url, company, "scrape")
+            .expect("a personio posting url must map to a ref");
+        store.upsert_batch(&[ats_ref]).unwrap();
+
+        let hits = store.search("acme", 10);
+        assert_eq!(hits.len(), 1, "the resolved posting's slug is searchable");
+        assert_eq!(hits[0].ats_kind, "personio");
+        assert_eq!(hits[0].slug, "acme");
+        assert_eq!(hits[0].display_name.as_deref(), Some("Acme GmbH"));
+        assert_eq!(
+            hits[0].source, "scrape",
+            "a single-resolve harvest is source 'scrape'"
+        );
+    }
 }
