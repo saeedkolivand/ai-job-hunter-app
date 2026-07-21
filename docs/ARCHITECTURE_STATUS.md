@@ -260,7 +260,7 @@ Next.js static-export workspace package serving brand, download links, and docum
 | Next.js static export      | ✅     | `apps/landing/` is a Next.js 16.2.10 package (`output: 'export'`); flat files (no server runtime); PR1 delivered                               |
 | TypeScript version pairing | ✅     | TypeScript 6.0.3 pinned to root + apps/landing (Next 16's verifyTypeScriptSetup incompatible with 7.x); desktop/extension use 7.x per-importer |
 | Authored pages as routes   | ✅     | 5 pages: home, creature, how-it-works, privacy, download (all `src/app/`); faithful port of legacy static site                                 |
-| Passthrough artifacts      | ✅     | Benchmarks, storybook copied verbatim from `public/` (CI-owned, not built by Next); architecture-map port deferred                             |
+| Passthrough artifacts      | ✅     | Benchmarks, storybook copied verbatim from `public/` (CI-owned, not built by Next)                                                             |
 | Parity gate                | ✅     | `pnpm check:parity` ensures byte-shape parity with legacy static layout (permanent, non-optional pre-push/CI gate)                             |
 | GitHub Pages deployment    | ✅     | `pages.yml` publishes Next.js export output (`out/`) directly to Pages                                                                         |
 | Release seam               | ✅     | `src/data/version.json` baked at build time; `/download` and homepage read for client-side freshness checks                                    |
@@ -268,8 +268,8 @@ Next.js static-export workspace package serving brand, download links, and docum
 | Docs tier (PR2)            | ✅     | `/mission-control` full-repo dashboard shipped (clean URL rename, no redirect stub); PAT sign-in + safe-tier writes                            |
 | DocShell + tokens (PR2)    | ✅     | Unified docs-tier visual language (dark hand-drawn look); typed-data route for agent-system (`src/data/agent-fleet.ts`)                        |
 | /how-it-works reskin (PR2) | ✅     | Ported to DocShell; visual consistency with mission-control                                                                                    |
+| Architecture-map port      | ✅     | Typed-data route (`apps/landing/src/data/architecture-map.ts`); ArchitectureMap component (static SVG + pan/zoom engine); drift-guarded        |
 | OG template (PR3)          | ✅     | `social-card.html` relocated to `scripts/assets/` beside its generator; no longer app content                                                  |
-| Architecture-map port      | ⬜     | Deferred to follow-up PR (remains passthrough artifact); design intent unchanged                                                               |
 
 **Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.
 All film concepts (playhead, scroll-film, scenes, quality governor, VAT shaders) and

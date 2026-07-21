@@ -238,10 +238,9 @@ _Avoid_: "component" (pages are full routes), "generated page" (they are hand-au
 
 **Passthrough artifact**:
 Third-party or CI-owned files served verbatim from `public/` at build time (copied unchanged
-by Next.js static export). Examples: benchmarks (index.html + data.js), architecture-map
-(SVG dashboard, deferred port to route), storybook (when present). Never built or transformed by Next, only deployed
+by Next.js static export). Examples: benchmarks (index.html + data.js), storybook (when present). Never built or transformed by Next, only deployed
 as-is. Distinct from **Authored pages** (hand-written routes) and **Docs routes** (e.g., `/agent-system`,
-`/mission-control` — typed-data Next.js routes under the docs tier).
+`/mission-control`, `/architecture-map` — typed-data Next.js routes under the docs tier).
 _Avoid_: "static assets" (too generic), "public files" (ambiguous — could mean any `public/`
 content)
 
