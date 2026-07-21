@@ -4,6 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
 import { JobAdField } from '@/components/job/JobAdField';
+import type { JobAdProvenance } from '@/components/job/JobUrlImport';
 import { ResumeInputCard } from '@/components/resume/ResumeInputCard';
 import { AiSetupHint } from '@/components/ui/AiSetupHint';
 import { ModelSelector } from '@/components/ui/ModelSelector';
@@ -30,6 +31,8 @@ interface Props {
   canProceed: boolean;
   setResume: (v: string) => void;
   setJobAd: (v: string) => void;
+  /** URL-import sink (ADR-031): sets the job ad AND its persisted provenance. */
+  onJobAdImport: (text: string, provenance: JobAdProvenance) => void;
   setTemplateId: (v: TemplateId) => void;
   setAtsMode: (v: boolean) => void;
   setLocale: (v: string) => void;
@@ -52,6 +55,7 @@ export function LeftPanel({
   canProceed,
   setResume,
   setJobAd,
+  onJobAdImport,
   setTemplateId,
   setAtsMode,
   setLocale,
@@ -110,6 +114,7 @@ export function LeftPanel({
           label={t('aiGenerate.jobAdLabel')}
           value={jobAd}
           onChange={setJobAd}
+          onImport={onJobAdImport}
           uploading={uploading === 'jobAd'}
           onUpload={(f: File) => onUpload('jobAd', f)}
           placeholder={t('aiGenerate.placeholder').replace('…', '')}

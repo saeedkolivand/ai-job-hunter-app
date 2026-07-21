@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
+import type * as AjhTranslations from '@ajh/translations';
 import type * as AjhUi from '@ajh/ui';
 
 import type * as Generate from '@/lib/generate';
@@ -14,6 +15,11 @@ import { GenerationCard } from './index';
 // mutate spy to prove deletion only fires *after* confirmation.
 const mockMutate = vi.fn();
 const mockUpdateMutate = vi.fn();
+
+// Translation resolver seam. Defaults to identity (raw key) so the delete +
+// debounced-persist blocks assert on keys; the board-chip block swaps in the REAL
+// en resolver (beforeAll/afterAll) so it verifies actual localized strings.
+let mockTranslate: (key: string, opts?: { defaultValue?: string }) => string = (key) => key;
 
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: vi.fn() }),
@@ -60,9 +66,12 @@ vi.mock('@ajh/ui', async (importOriginal) => {
   };
 });
 
-// Translate to the raw key so assertions don't depend on locale resolution.
+// t() delegates to a swappable resolver — identity by default (raw key), the real
+// en resolver inside the board-chip block. See mockTranslate above.
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (k: string) => k }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { defaultValue?: string }) => mockTranslate(key, opts),
+  }),
 }));
 
 // Export helpers reach for Tauri IPC — stub them so tests stay offline.
@@ -139,6 +148,49 @@ describe('GenerationCard — delete confirmation', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     expect(mockMutate).not.toHaveBeenCalled();
+  });
+});
+
+// ── Board chip labeling (ADR-031 follow-up) ───────────────────────────────────
+
+// These render through the REAL en resources (not the identity mock) so they
+// verify the actual localized strings — a missing or mistranslated `jobs.boards.*`
+// entry fails here, which the raw-key assertions could not catch.
+describe('GenerationCard — board chip', () => {
+  beforeAll(async () => {
+    const actual = await vi.importActual<typeof AjhTranslations>('@ajh/translations');
+    const realT = actual.default.getFixedT('en');
+    mockTranslate = (key, opts) => String(realT(key, opts));
+  });
+
+  afterAll(() => {
+    // Restore identity so the debounced-persist block keeps asserting on raw keys.
+    mockTranslate = (key) => key;
+  });
+
+  it('labels a known board with its localized name (jobs.boards.linkedin → "LinkedIn")', () => {
+    render(<GenerationCard gen={{ ...GEN, board: 'linkedin' }} />);
+    expect(screen.getByText('LinkedIn')).toBeInTheDocument();
+  });
+
+  it('labels a URL-imported generation with the localized web-import name (jobs.boards.url → "Web import")', () => {
+    render(<GenerationCard gen={{ ...GEN, board: 'url' }} />);
+    expect(screen.getByText('Web import')).toBeInTheDocument();
+    // The raw source id is never rendered as the badge.
+    expect(screen.queryByText('url')).not.toBeInTheDocument();
+  });
+
+  it('renders the raw board id when no jobs.boards.<id> resource exists (defaultValue fallback)', () => {
+    render(<GenerationCard gen={{ ...GEN, board: 'totally-unknown-board' }} />);
+    expect(screen.getByText('totally-unknown-board')).toBeInTheDocument();
+  });
+
+  it('renders no board chip when the generation has no board (pasted text)', () => {
+    const { container } = render(<GenerationCard gen={{ ...GEN, board: '' }} />);
+    // Only the always-present mode chip occupies the uppercase-chip row — the
+    // empty board yields no chip (not an empty one).
+    expect(container.querySelectorAll('.uppercase')).toHaveLength(1);
+    expect(screen.getByText('ats')).toBeInTheDocument();
   });
 });
 
