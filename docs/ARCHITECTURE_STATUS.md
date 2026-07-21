@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-07-20 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
+Last updated: 2026-07-21 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
 
 ---
 
@@ -252,18 +252,22 @@ MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; br
 
 ## Landing & Public Site
 
-Next.js 15 static-export workspace package serving brand, download links, and documentation.
+Next.js static-export workspace package serving brand, download links, and documentation.
 
-| Feature                  | Status | Notes                                                                                                               |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------- |
-| Next.js static export    | ✅     | `apps/landing/` is a Next.js 15 package (`output: 'export'`); flat files (no server runtime); PR1 delivered         |
-| Authored pages as routes | ✅     | 5 pages: home, creature, how-it-works, privacy, download (all `src/app/`); faithful port of legacy static site      |
-| Passthrough artifacts    | ✅     | Benchmarks, dashboards, storybook copied verbatim from `public/` (CI-owned, not built by Next)                      |
-| Parity gate              | ✅     | `pnpm check:parity` ensures byte-shape parity with legacy static layout (permanent, non-optional pre-push/CI gate)  |
-| GitHub Pages deployment  | ✅     | `pages.yml` publishes Next.js export output (`out/`) directly to Pages                                              |
-| Release seam             | ✅     | `src/data/version.json` baked at build time; `/download` and homepage read for client-side freshness checks         |
-| Brand tokens             | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets; marketing tier |
-| Docs tier (PR2–PR4)      | 🚧     | `/mission-control` full-repo dashboard + unified docs pages (separate visual skin; PAT auth; safe-tier writes)      |
+| Feature                    | Status | Notes                                                                                                                   |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Next.js static export      | ✅     | `apps/landing/` is a Next.js 16.2.10 package (`output: 'export'`); flat files (no server runtime); PR1 delivered        |
+| TypeScript version pairing | ✅     | Root TypeScript held at 6.x for ESLint/typescript-eslint 8.x compatibility; Next 16 build uses 7.x via per-importer     |
+| Authored pages as routes   | ✅     | 5 pages: home, creature, how-it-works, privacy, download (all `src/app/`); faithful port of legacy static site          |
+| Passthrough artifacts      | ✅     | Benchmarks, storybook copied verbatim from `public/` (CI-owned, not built by Next); architecture-map port deferred      |
+| Parity gate                | ✅     | `pnpm check:parity` ensures byte-shape parity with legacy static layout (permanent, non-optional pre-push/CI gate)      |
+| GitHub Pages deployment    | ✅     | `pages.yml` publishes Next.js export output (`out/`) directly to Pages                                                  |
+| Release seam               | ✅     | `src/data/version.json` baked at build time; `/download` and homepage read for client-side freshness checks             |
+| Brand tokens               | ✅     | Paper/ink/red palette, fonts (Google Fonts), film-grain overlay; shared with extension store assets; marketing tier     |
+| Docs tier (PR2)            | ✅     | `/mission-control` full-repo dashboard shipped (clean URL rename, no redirect stub); PAT sign-in + safe-tier writes     |
+| DocShell + tokens (PR2)    | ✅     | Unified docs-tier visual language (dark hand-drawn look); typed-data route for agent-system (`src/data/agent-fleet.ts`) |
+| /how-it-works reskin (PR2) | ✅     | Ported to DocShell; visual consistency with mission-control                                                             |
+| Architecture-map port      | ⬜     | Deferred to follow-up PR (remains passthrough artifact); design intent unchanged                                        |
 
 **Note:** TERMINAL VELOCITY scroll-film (ADR 0016, merged M1–M3) abandoned 2026-07-20 mid-M4.
 All film concepts (playhead, scroll-film, scenes, quality governor, VAT shaders) and

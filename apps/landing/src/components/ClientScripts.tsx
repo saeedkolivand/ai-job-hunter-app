@@ -9,6 +9,12 @@ import { useEffect } from 'react';
 // preserves source order. Kept as external files (not typechecked TS) so the
 // legacy JS — including one intentionally-preserved broken console egg on
 // how-it-works — ships byte-identical.
+//
+// ORIGIN INVARIANT (load-bearing): every `src` here MUST be a first-party,
+// same-origin `/scripts/*` file — NEVER a third-party URL. There is no
+// third-party JavaScript anywhere on this origin, ever: any foreign script on
+// any page can read the /mission-control PAT out of localStorage, and a per-page
+// CSP cannot protect it. See CspMeta.tsx.
 export function ClientScripts({ srcs }: { srcs: readonly string[] }) {
   useEffect(() => {
     const appended: HTMLScriptElement[] = [];

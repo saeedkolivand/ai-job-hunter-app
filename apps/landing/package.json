@@ -11,10 +11,11 @@
     "check:parity": "node scripts/check-parity.mjs"
   },
   "dependencies": {
-    "next": "15.5.20",
+    "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
+  "//typescript": "Pinned to 6.x (newest working): Next 16's build-time verifyTypeScriptSetup does not recognize TS 7's native-compiler package layout — it tries to auto-install typescript and crashes the build worker. Revisit when Next supports the TS 7 compiler.",
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
     "@types/node": "26.1.1",
@@ -23,7 +24,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^29.1.1",
     "typescript": "6.0.3",
-    "vite": "^8.1.4",
+    "vite": "^8.1.5",
     "vitest": "^4.1.10"
   }
 }
