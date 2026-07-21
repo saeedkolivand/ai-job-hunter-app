@@ -462,7 +462,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 
 - Extractor: `scraping/ats_ref.rs::extract_ats_ref`
 - Store: `discovered/mod.rs::DiscoveredCompanyStore`
-- Harvest callers: `commands/discovery.rs::harvest_ats_refs`, `commands/scrape.rs`, `extension_bridge/import_flow.rs`
+- Harvest callers: `commands/discovery.rs::harvest_ats_refs`, `commands/scrape.rs::scrape_resolve_url`, `extension_bridge/import_flow.rs`
 - Runtime watching: `autopilot_helpers/mod.rs::resolve_watched_companies`, `scraping/engine::scrape_boards_with_overrides`
 - IPC contract: `packages/shared/src/ipc/contracts/discovery.ts`
 - UI typeahead: `packages/ui` CompanyTypeahead
@@ -474,6 +474,7 @@ Company-scoped ATS boards require hand-typed slugs that users cannot know in adv
 3. **Community slug directory** — user-contributed slug mappings (federated or centralized).
 4. **Aggregate row-cap** — defense-in-depth: MAX_COMPANIES per ATS per board.
 5. **Consolidate useDebounced** — merge local `useDebounced` in CompanySlugField with shared `use-debounced-commit` hook.
+6. **Distinct rate-limit/error union for `scrape_resolve_url`** — currently returns null for all failures (no distinct rate-limit shape); a dedicated error union would enable specialized UI feedback (ADR-031 addendum).
 
 ## See also
 
