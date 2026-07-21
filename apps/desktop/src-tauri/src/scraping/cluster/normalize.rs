@@ -12,6 +12,7 @@
 //! the renderer echoes opaque `clusterId`/member keys only (ADR-029 §e), so
 //! there is no TypeScript mirror of this logic.
 
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -170,11 +171,24 @@ const AGENCY_COMPANIES: &[&str] = &[
 /// normalized words contain any of these reads as an agency.
 const AGENCY_TOKENS: &[&str] = &["personalberatung", "recruiting", "staffing"];
 
-/// Whether `company` is a recruiting/staffing agency: its normalized form equals
-/// a built-in (or a user-supplied `extra`, normalized the SAME way) agency name,
-/// or one of its whole words is an agency signal token. Extras let a user flag
-/// their region's agencies without a code change (ADR-029 §i).
-pub fn is_agency(company: &str, extra: &[String]) -> bool {
+/// Pre-normalize the user's extra agency company names ONCE (blanks + empties
+/// dropped), so a per-posting agency check over many postings is O(1) set
+/// lookups instead of re-normalizing the whole extras list each time. Callers
+/// clustering N postings normalize the extras once and reuse the result via
+/// [`is_agency_with`] (see `super::assign_clusters`).
+pub fn normalize_agency_extras(extra: &[String]) -> HashSet<String> {
+    extra
+        .iter()
+        .map(|e| normalize_company(e))
+        .filter(|e| !e.is_empty())
+        .collect()
+}
+
+/// Whether `company` is a recruiting/staffing agency, checked against a
+/// PRE-NORMALIZED extras set (from [`normalize_agency_extras`]): its normalized
+/// form equals a built-in or extra agency name, or one of its whole words is an
+/// agency signal token.
+pub fn is_agency_with(company: &str, normalized_extras: &HashSet<String>) -> bool {
     let norm = normalize_company(company);
     if norm.is_empty() {
         return false;
@@ -182,13 +196,19 @@ pub fn is_agency(company: &str, extra: &[String]) -> bool {
     if AGENCY_COMPANIES.contains(&norm.as_str()) {
         return true;
     }
-    if extra
-        .iter()
-        .any(|e| !e.trim().is_empty() && normalize_company(e) == norm)
-    {
+    if normalized_extras.contains(&norm) {
         return true;
     }
     norm.split_whitespace().any(|w| AGENCY_TOKENS.contains(&w))
+}
+
+/// Whether `company` is a recruiting/staffing agency, normalizing `extra` on the
+/// fly. A convenience wrapper over [`is_agency_with`] for one-off checks; a hot
+/// loop over many postings should normalize once via [`normalize_agency_extras`]
+/// and call [`is_agency_with`] instead. Extras let a user flag their region's
+/// agencies without a code change (ADR-029 §i).
+pub fn is_agency(company: &str, extra: &[String]) -> bool {
+    is_agency_with(company, &normalize_agency_extras(extra))
 }
 
 // ── Title ───────────────────────────────────────────────────────────────────

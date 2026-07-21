@@ -26,7 +26,9 @@ use serde::{Deserialize, Serialize};
 use crate::scraping::boards::aggregator::AGGREGATOR_BOARD_ID;
 use crate::vector::cosine;
 
-use normalize::{is_agency, normalize_company, normalize_title, title_first_token};
+use normalize::{
+    is_agency_with, normalize_agency_extras, normalize_company, normalize_title, title_first_token,
+};
 
 /// Cosine floor for the embedding-similarity join path (ADR-029 §c).
 pub const CLUSTER_COSINE_MIN: f64 = 0.92;
@@ -211,7 +213,10 @@ pub fn assign_clusters(
         cluster_of.insert(idx, (items[idx].key.clone(), true, vec![member]));
     }
 
-    // 4) Emit assignments in input order.
+    // 4) Emit assignments in input order. The agency extras are normalized ONCE
+    //    here and reused for every posting's `is_agency` check (O(N) instead of
+    //    re-normalizing the whole extras list per posting).
+    let normalized_extras = normalize_agency_extras(extra_agency);
     items
         .iter()
         .enumerate()
@@ -223,7 +228,7 @@ pub fn assign_clusters(
                 key: it.key.clone(),
                 cluster_id,
                 canonical,
-                is_agency: is_agency(&it.company, extra_agency),
+                is_agency: is_agency_with(&it.company, &normalized_extras),
                 members,
             }
         })
