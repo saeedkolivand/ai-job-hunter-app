@@ -115,4 +115,9 @@ export const keys = {
   notifications: { all: ['notifications'] as const },
   boards: { catalog: ['boards', 'catalog'] as const },
   scrapingSettings: { all: ['scrapingSettings'] as const },
+  discovery: {
+    all: ['discovery'] as const,
+    search: (query: string) => ['discovery', 'search', query] as const,
+    watched: ['discovery', 'watched'] as const,
+  },
 } as const;

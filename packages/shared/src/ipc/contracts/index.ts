@@ -28,6 +28,7 @@ import { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js
 import { DATA_CHANNELS, type DataContract } from './data.js';
 import { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
+import { DISCOVERY_CHANNELS, type DiscoveryContract } from './discovery.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
 import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
 import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
@@ -80,6 +81,7 @@ export interface IpcContract {
   dialog: DialogContract;
   data: DataContract;
   dedup: DedupContract;
+  discovery: DiscoveryContract;
 }
 
 // Combine all channel constants into the original IPC_CHANNELS object
@@ -114,6 +116,7 @@ export const IPC_CHANNELS = {
   dialog: DIALOG_CHANNELS,
   data: DATA_CHANNELS,
   dedup: DEDUP_CHANNELS,
+  discovery: DISCOVERY_CHANNELS,
 } as const;
 
 // Union type of all channel strings
@@ -200,6 +203,7 @@ export { CREDENTIALS_CHANNELS, type CredentialsContract } from './credentials.js
 export { DATA_CHANNELS, type DataContract } from './data.js';
 export { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 export { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
+export { type DiscoveredCompany, DISCOVERY_CHANNELS, type DiscoveryContract } from './discovery.js';
 export {
   type BaseExportRequest,
   type ConfidenceLevel,

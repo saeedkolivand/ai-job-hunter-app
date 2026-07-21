@@ -47,6 +47,13 @@ vi.mock('./ScrapeFilters', () => ({
   ScrapeFilters: () => <div data-testid={TEST_IDS.jobs.scrapeFilters} />,
 }));
 
+// Stub the slug typeahead — it pulls the discovery service hooks (React Query +
+// AppClient + NotificationProvider) this focused suite doesn't wire. Its own
+// behavior is covered in CompanySlugField.test.tsx.
+vi.mock('./CompanySlugField', () => ({
+  CompanySlugField: () => <div data-testid={TEST_IDS.jobs.companyTypeahead} />,
+}));
+
 // Stub BoardConnectChip — not under test here
 vi.mock('./BoardConnectChip', () => ({
   BoardConnectChip: ({ board }: { board: string }) => <span data-testid={`chip-${board}`} />,

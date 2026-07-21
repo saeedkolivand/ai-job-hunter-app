@@ -1,12 +1,20 @@
 import { Info, Loader2, Search, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
 import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, cn, GlassCard, Input, transition } from '@ajh/ui';
+import {
+  Button,
+  CardSkeleton,
+  cn,
+  type CompanyTypeaheadHandle,
+  GlassCard,
+  Input,
+  transition,
+} from '@ajh/ui';
 
 import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
@@ -16,6 +24,7 @@ import { useHasProviderKey } from '@/services/use-ai-provider';
 import { useBoardsCatalog, useBoardStatuses } from '@/services/use-boards';
 
 import { BoardConnectChip } from './BoardConnectChip';
+import { CompanySlugField } from './CompanySlugField';
 import type { ScrapeFormState } from './constants';
 import { ScrapeFilters } from './ScrapeFilters';
 
@@ -36,14 +45,6 @@ function toggleBoard(boards: string[], id: string): string[] {
   return boards.includes(id) ? boards.filter((b) => b !== id) : [...boards, id];
 }
 
-/** Parse a comma-separated companies string into a trimmed, non-empty string[]. */
-function parseCompanies(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export function ScrapeForm({
   show,
   form,
@@ -59,9 +60,9 @@ export function ScrapeForm({
   const boardRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // Tracks keyboard-focus position independently of the selection set (multi-select pattern).
   const focusedBoardIdx = useRef<number>(0);
-  // Raw string buffer for the companies input. Parse to string[] only on blur so
-  // mid-typing state (e.g. "stripe, ") is never clobbered by join(', ').
-  const [rawCompanies, setRawCompanies] = useState(() => (form.companies ?? []).join(', '));
+  // Lets the submit path flush a typed-but-unentered company slug deterministically
+  // (blur-independent — WebKit doesn't reliably blur on a sibling-button click).
+  const companyFieldRef = useRef<CompanyTypeaheadHandle>(null);
 
   const { data: catalogRaw, isLoading: catalogLoading } = useBoardsCatalog();
   const listedBoards: BoardCatalogEntry[] = (catalogRaw ?? []).filter((e) => e.listed);
@@ -107,7 +108,6 @@ export function ScrapeForm({
     const wasShowing = prevShowCompanyRef.current;
     prevShowCompanyRef.current = showCompanyInput;
     if (showCompanyInput || !wasShowing) return; // still visible, or never was
-    setRawCompanies('');
     onFormChangeRef.current({ companies: [] });
   }, [showCompanyInput]);
 
@@ -136,6 +136,15 @@ export function ScrapeForm({
     aggregatorSelected
   );
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
+
+  // Flush a typed-but-unentered company slug BEFORE starting, synchronously, so
+  // `onStart` reads a `companies` array that already includes it. `flushSync`
+  // forces the parent re-render before the scrape captures state (the guard the
+  // old comma-input carried); blur-commit alone is not reliable on WebKit.
+  const handleStart = () => {
+    if (showCompanyInput) flushSync(() => companyFieldRef.current?.commitPending());
+    onStart();
+  };
 
   const handleSelectAll = () => {
     onFormChange({ boards: listedBoards.map((e) => e.id) });
@@ -202,12 +211,7 @@ export function ScrapeForm({
                     form.query.trim()
                   ) {
                     e.preventDefault();
-                    if (showCompanyInput) {
-                      flushSync(() => {
-                        onFormChange({ companies: parseCompanies(rawCompanies) });
-                      });
-                    }
-                    onStart();
+                    handleStart();
                   }
                 }}
                 placeholder={t('jobs.queryPlaceholder')}
@@ -341,7 +345,10 @@ export function ScrapeForm({
               </p>
             )}
 
-            {/* Companies input — only shown when an ATS board (requiresCompany) is selected */}
+            {/* Companies typeahead — only shown when an ATS board (requiresCompany)
+                is selected. Slugs are added as chips feeding form.companies; the
+                suggestions merge passively-harvested slugs (ADR-030) with the
+                selected boards' curated seeds. */}
             {showCompanyInput && (
               <div className="mb-4">
                 <label
@@ -350,25 +357,13 @@ export function ScrapeForm({
                 >
                   {t('jobs.companies.label')}
                 </label>
-                <Input
-                  id="scrape-companies"
-                  aria-describedby="scrape-companies-hint"
-                  type="text"
-                  value={rawCompanies}
-                  onChange={(e) => setRawCompanies(e.target.value)}
-                  onBlur={(e) => {
-                    // Parse to string[] only on blur so mid-typing state
-                    // (e.g. "stripe, ") is never snapped back by join(', ').
-                    onFormChange({ companies: parseCompanies(e.target.value) });
-                  }}
-                  placeholder={t('jobs.companies.placeholder')}
+                <CompanySlugField
+                  ref={companyFieldRef}
+                  companies={form.companies}
+                  onChange={(companies) => onFormChange({ companies })}
+                  seededBoards={selectedListedBoards}
                   disabled={scraping}
-                  allowClear
-                  className="w-full bg-field shadow-none text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
                 />
-                <p id="scrape-companies-hint" className="mt-1 text-[10px] text-foreground/40">
-                  {t('jobs.companies.hint')}
-                </p>
               </div>
             )}
 
@@ -427,18 +422,7 @@ export function ScrapeForm({
               )}
               <Button
                 variant="primary"
-                onClick={() => {
-                  if (showCompanyInput) {
-                    // Flush the raw buffer before starting — guarantees an
-                    // un-blurred entry is not lost (React 18 batches state
-                    // updates so flushSync forces the parent to re-render with
-                    // the parsed companies before startScrape captures them).
-                    flushSync(() => {
-                      onFormChange({ companies: parseCompanies(rawCompanies) });
-                    });
-                  }
-                  onStart();
-                }}
+                onClick={handleStart}
                 disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
                 loading={scraping}
                 aria-describedby={

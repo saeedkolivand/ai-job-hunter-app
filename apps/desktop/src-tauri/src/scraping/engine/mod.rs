@@ -486,10 +486,42 @@ impl ScraperEngine {
         .await
     }
 
+    /// Watched-companies variant (ADR-030 §e): like [`scrape_boards`] but routes an
+    /// explicit PER-BOARD company override into the engine's existing per-board
+    /// `seeded_companies` path. `None` = today's behavior (curated `ats_seed`
+    /// fallback for a company-scoped board with an empty `companies` list).
+    /// `Some(map)` = watched mode: a company-scoped board runs ONLY with its own
+    /// slugs (`map[board]`) — the `ats_seed` fallback is bypassed and a board with
+    /// no (or empty) entry is skipped `needs-company`, so it is NEVER fetched with a
+    /// foreign ATS's slugs. Callers pass an empty `input.companies` in this mode.
+    pub async fn scrape_boards_with_overrides(
+        &self,
+        boards: &[String],
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        company_overrides: Option<&HashMap<String, Vec<String>>>,
+    ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
+        self.scrape_boards_with_resolver_and_overrides(
+            boards,
+            input,
+            job_id,
+            on_progress,
+            on_item,
+            &crate::platform::config::data_dir(),
+            |id| super::boards::get(id).ok_or_else(|| anyhow::anyhow!("Unknown board: {id}")),
+            company_overrides,
+        )
+        .await
+    }
+
     /// Test-only resolver seam: identical to `scrape_boards` but accepts a
     /// caller-supplied `resolve` function and an explicit `data_dir` so tests
     /// can inject fake scrapers and an isolated tempdir without touching the
     /// real `boards::get` registry or `crate::platform::config::data_dir()`.
+    /// Signature preserved (no `company_overrides`) so existing engine tests are
+    /// untouched; delegates with `None` (curated `ats_seed` behavior).
     #[doc(hidden)]
     pub(crate) async fn scrape_boards_with_resolver<F>(
         &self,
@@ -500,6 +532,40 @@ impl ScraperEngine {
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
         data_dir: &std::path::Path,
         resolve: F,
+    ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)>
+    where
+        F: Fn(&str) -> anyhow::Result<&'static dyn Scraper>,
+    {
+        self.scrape_boards_with_resolver_and_overrides(
+            boards,
+            input,
+            job_id,
+            on_progress,
+            on_item,
+            data_dir,
+            resolve,
+            None,
+        )
+        .await
+    }
+
+    /// Core impl behind [`scrape_boards_with_resolver`] +
+    /// [`scrape_boards_with_overrides`]. `company_overrides` routes watched-company
+    /// per-board slugs through the existing `seeded_companies` path (see
+    /// [`scrape_boards_with_overrides`]); `None` keeps the curated `ats_seed`
+    /// fallback. `pub(crate)` so the per-board routing is directly testable.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn scrape_boards_with_resolver_and_overrides<F>(
+        &self,
+        boards: &[String],
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        data_dir: &std::path::Path,
+        resolve: F,
+        company_overrides: Option<&HashMap<String, Vec<String>>>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)>
     where
         F: Fn(&str) -> anyhow::Result<&'static dyn Scraper>,
@@ -609,17 +675,35 @@ impl ScraperEngine {
                 // Skip 2: ATS board that requires a company slug but none usable.
                 // Treats whitespace-only entries (e.g. [" ", "\t"]) the same as
                 // an empty list — they are trimmed-and-dropped by ATS scrapers.
-                // Exception: a board with a curated `ats_seed` entry still runs —
-                // the engine auto-populates `input.companies` from the seed right
-                // before `run_boards` (see `seeded_companies` below), so skipping
-                // here would strand those seeded slugs unused. Keyed on `s.id()`
-                // (the Scraper trait id the seed's `ats` field matches), NOT the
-                // caller-supplied board-list string (`id`), which can differ.
-                if s.requires_company()
-                    && !has_usable_company
-                    && super::boards::ats_seed::by_ats(s.id()).next().is_none()
-                {
-                    return Some("needs-company");
+                if s.requires_company() {
+                    match company_overrides {
+                        // Watched mode (ADR-030 §e): run ONLY when this board has a
+                        // non-empty per-board override; a board with no watched slug
+                        // is skipped `needs-company` — never fetched with a foreign
+                        // ATS's slugs, and the `ats_seed` fallback is bypassed.
+                        Some(overrides) => {
+                            let has_watched = overrides
+                                .get(&id)
+                                .map(|slugs| !slugs.is_empty())
+                                .unwrap_or(false);
+                            if !has_watched {
+                                return Some("needs-company");
+                            }
+                        }
+                        // Normal mode: a board with a curated `ats_seed` entry still
+                        // runs — the engine auto-populates `input.companies` from the
+                        // seed right before `run_boards` (see `seeded_companies`
+                        // below), so skipping here would strand those seeded slugs.
+                        // Keyed on `s.id()` (the Scraper trait id the seed's `ats`
+                        // field matches), NOT the board-list string (`id`).
+                        None => {
+                            if !has_usable_company
+                                && super::boards::ats_seed::by_ats(s.id()).next().is_none()
+                            {
+                                return Some("needs-company");
+                            }
+                        }
+                    }
                 }
                 // Skip 3: key-backed board (e.g. the aggregator) with no API keys
                 // configured. Surfaces "needs-keys" so the UI can prompt the user
@@ -699,25 +783,47 @@ impl ScraperEngine {
             f
         });
 
-        // Auto-populate ATS boards' company filter from the curated `ats_seed`
-        // table when the user left the global company field blank — gives the
-        // company-scoped ATS scrapers real slugs to fetch without hand-typed
-        // input. Only when `companies` is globally empty so an explicit user
-        // list always wins (never overridden). Keyed on the caller-supplied
-        // board-list id (`run_boards`'s `name` param), matching how `runnable`
-        // is keyed — NOT on `s.id()` (used above for the seed lookup itself).
+        // Per-board company slugs for the company-scoped ATS scrapers. Keyed on the
+        // caller-supplied board-list id (`run_boards`'s `name` param), matching how
+        // `runnable` is keyed — NOT on `s.id()`.
+        //
+        // Watched mode (ADR-030 §e): use the explicit per-board override verbatim
+        // (boards without a non-empty entry were already skipped `needs-company`
+        // above); the curated `ats_seed` fallback is bypassed so no board is ever
+        // fed a foreign ATS's slug.
+        //
+        // Normal mode: auto-populate from the curated `ats_seed` table when the user
+        // left the global company field blank (an explicit user `companies` list
+        // always wins — this only fills when `companies` is globally empty).
         let mut seeded_companies: HashMap<String, Vec<String>> = HashMap::new();
-        if !has_usable_company {
-            for (id, scraper) in &runnable {
-                let Ok(s) = scraper else { continue };
-                if !s.requires_company() {
-                    continue;
+        match company_overrides {
+            Some(overrides) => {
+                for (id, scraper) in &runnable {
+                    let Ok(s) = scraper else { continue };
+                    if !s.requires_company() {
+                        continue;
+                    }
+                    if let Some(slugs) = overrides.get(id) {
+                        if !slugs.is_empty() {
+                            seeded_companies.insert(id.clone(), slugs.clone());
+                        }
+                    }
                 }
-                let slugs: Vec<String> = super::boards::ats_seed::by_ats(s.id())
-                    .map(|e| e.slug.to_string())
-                    .collect();
-                if !slugs.is_empty() {
-                    seeded_companies.insert(id.clone(), slugs);
+            }
+            None => {
+                if !has_usable_company {
+                    for (id, scraper) in &runnable {
+                        let Ok(s) = scraper else { continue };
+                        if !s.requires_company() {
+                            continue;
+                        }
+                        let slugs: Vec<String> = super::boards::ats_seed::by_ats(s.id())
+                            .map(|e| e.slug.to_string())
+                            .collect();
+                        if !slugs.is_empty() {
+                            seeded_companies.insert(id.clone(), slugs);
+                        }
+                    }
                 }
             }
         }

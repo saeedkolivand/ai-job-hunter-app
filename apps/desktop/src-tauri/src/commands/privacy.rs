@@ -13,6 +13,7 @@ use crate::contact_profile::ContactProfileStore;
 use crate::credentials::CredentialStore;
 use crate::data_store::Resettable;
 use crate::dedup::DedupStore;
+use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::email_watch::EmailWatchStore;
 use crate::job_preferences::JobPreferencesStore;
@@ -85,6 +86,12 @@ impl Resettable for DedupStore {
         self.clear_all();
     }
 }
+impl Resettable for DiscoveredCompanyStore {
+    fn reset(&self) {
+        // Wipe every passively-harvested ATS slug + watched-company star (ADR-030).
+        self.clear_all();
+    }
+}
 impl Resettable for ContactProfileStore {
     fn reset(&self) {
         let _ = self.clear();
@@ -150,6 +157,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "email_watch",
     "cache",
     "dedup_tombstones",
+    "discovered_companies",
 ];
 
 /// Registry of factory-reset actions, populated as stores are managed and
@@ -532,6 +540,7 @@ mod tests {
         reg.register::<EmailWatchStore>("email_watch");
         reg.register::<KvCache>("cache");
         reg.register::<DedupStore>("dedup_tombstones");
+        reg.register::<DiscoveredCompanyStore>("discovered_companies");
 
         let labels = reg.labels();
         for label in expected {

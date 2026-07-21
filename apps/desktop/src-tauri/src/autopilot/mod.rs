@@ -107,6 +107,12 @@ pub struct AutopilotTarget {
     /// Defaults to 3 when absent.
     #[serde(default = "default_top_n")]
     pub top_n: u32,
+    /// Watched-companies-only mode (ADR-030 §e): when `Some(true)`, a run resolves
+    /// the user's currently-starred discovered companies at run time and scrapes
+    /// only those per-ATS company slugs (instead of the curated seed). Additive +
+    /// optional so old records deserialize unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watched_companies_only: Option<bool>,
 }
 
 fn default_top_n() -> u32 {
@@ -398,6 +404,7 @@ impl AutopilotStore {
                     pages: 1,
                     date_filter: None,
                     top_n: default_top_n(),
+                    watched_companies_only: None,
                 }
             }),
             filter: serde_json::from_value(input["filter"].clone()).unwrap_or({

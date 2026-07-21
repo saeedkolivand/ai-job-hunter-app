@@ -93,6 +93,7 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | Workday                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
 | Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
 | Cross-board clustering             | ✅      | Fuzzy recompute-at-ingest, pair tombstones in `dedup.db`, canonical member selection, source chips, "not a duplicate" split (ADR-029) |
+| ATS slug harvesting                | ✅      | Passive extract_ats_ref over posting urls at ingest/import; discovered_companies store (dedup per ADR-022/009); ADR-030               |
 
 ---
 
@@ -156,6 +157,7 @@ Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glass
 | Cancellation token reuse     | ✅     | Tray/UI cancel reaches the running token across the whole run                                                                                                                                               |
 | Launch-at-login              | ✅     | Opt-in (default OFF); `system_get/set_launch_at_login` via `tauri-plugin-autostart`                                                                                                                         |
 | Ranking via keyword-coverage | ✅     | Unified on `documents::keywords::coverage_score` (embedding-free, pure keyword stemming + matching); relabeled "Keyword Coverage %" to distinguish from Jobs "Match %" (ADR-020)                            |
+| Watched-companies target     | ✅     | Starred discoveries resolved at run time via per-board engine overrides; ADR-030                                                                                                                            |
 
 ---
 
@@ -205,6 +207,14 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 | Visible focus rings       | ✅     | Global `:focus-visible` ring; `ModalShell` `aria-labelledby`; `role="switch"` toggles                                                                                                           |
 | Optimistic delete         | ✅     | `onMutate` snapshot+filter / `onError` rollback on generations + autopilots                                                                                                                     |
 | macOS window vibrancy     | ⬜     | Deferred — requires a Mac-capable dev session (`window-vibrancy` crate)                                                                                                                         |
+
+---
+
+## Jobs UI
+
+| Feature            | Status | Notes                                                                         |
+| ------------------ | ------ | ----------------------------------------------------------------------------- |
+| ATS slug typeahead | ✅     | CompanyTypeahead (packages/ui) + discovery IPC; curated seeds merged; ADR-030 |
 
 ---
 

@@ -47,6 +47,8 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       workType: form.workType !== 'any' ? form.workType : undefined,
       pages: itemsToPages(form.amount),
       dateFilter: form.dateFilter || undefined,
+      // Off collapses to undefined so an old autopilot stays free of the field.
+      watchedCompaniesOnly: form.watchedCompaniesOnly || undefined,
     },
     filter: {
       minMatchScore: form.minMatchScore,
@@ -82,6 +84,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     workType: 'any',
     amount: 50,
     dateFilter: '',
+    watchedCompaniesOnly: false,
     minMatchScore: 0,
     keywords: '',
     excludeKeywords: '',
@@ -107,6 +110,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     // Stored as pages; surface back as an approximate item count for editing.
     amount: target.pages * PAGE_SIZE,
     dateFilter: target.dateFilter ?? '',
+    watchedCompaniesOnly: target.watchedCompaniesOnly ?? false,
     minMatchScore: ap.filter.minMatchScore,
     keywords: ap.filter.keywords?.join(', ') ?? '',
     excludeKeywords: ap.filter.excludeKeywords?.join(', ') ?? '',
