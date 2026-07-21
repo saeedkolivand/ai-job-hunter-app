@@ -42,12 +42,16 @@ function makeRes(init: FakeInit = {}) {
 }
 
 function routeGet(url: string): unknown {
-  if (url.includes('/issues?state=open')) return [staleIssue];
-  if (url.includes('/actions/runs')) return { workflow_runs: [] };
-  if (url.includes('/releases')) return [];
-  if (url.includes('/commits')) return [];
-  if (url.includes('/pulls')) return [];
-  // The primary repo call (path '') → apiBase exactly.
+  // Match a substring shared by the live REST path and the snapshot filename
+  // (e.g. '/issues?state=open' and '/metrics/issues.json' both contain 'issues')
+  // so these fixtures serve both data-source modes.
+  if (url.includes('meta.json')) return { generatedAt: new Date().toISOString() };
+  if (url.includes('issues')) return [staleIssue];
+  if (url.includes('runs')) return { workflow_runs: [] };
+  if (url.includes('releases')) return [];
+  if (url.includes('commits')) return [];
+  if (url.includes('pulls')) return [];
+  // The primary repo call (live '' → apiBase exactly; snapshot '/metrics/repo.json').
   return { stargazers_count: 12, forks_count: 3, subscribers_count: 4, open_issues_count: 1 };
 }
 

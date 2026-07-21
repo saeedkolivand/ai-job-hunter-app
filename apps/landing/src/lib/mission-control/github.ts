@@ -1,9 +1,10 @@
 import { MC_CONFIG } from './config';
 
 // ── The data-source seam ─────────────────────────────────────────────────────
-// Every widget reads through `liveOrSnapshot`. Today it always goes live; PR4's
-// nightly snapshot plane flips `MC_CONFIG.dataSource.mode` to 'snapshot' and the
-// same call reads pre-baked JSON from `snapshotBase` — config change, no rewrite.
+// Every widget reads through `liveOrSnapshot`. In 'snapshot' mode (PR4) the same
+// call reads pre-baked nightly JSON from `snapshotBase` (baked by
+// metrics-snapshot.yml), falling through to the live API on any miss — config
+// change, no rewrite.
 type DataSourceMode = 'live' | 'snapshot';
 export interface DataSource {
   mode: DataSourceMode;
@@ -24,6 +25,50 @@ export async function liveOrSnapshot<T>(
     }
   }
   return live();
+}
+
+// ── Snapshot freshness (honest-UI: never present nightly data as live) ────────
+// metrics-snapshot.yml writes `<snapshotBase>/meta.json` with a `generatedAt` ISO
+// stamp. `fetchSnapshotStamp` returns it, or null in live mode / when the snapshot
+// is absent (a 404 before the first nightly run). Kept out of the verdict logic —
+// it only describes data provenance.
+export async function fetchSnapshotStamp(source: DataSource): Promise<string | null> {
+  if (source.mode !== 'snapshot' || !source.snapshotBase) return null;
+  try {
+    const res = await fetch(`${source.snapshotBase}/meta.json`);
+    if (!res.ok) return null;
+    const meta = (await res.json()) as { generatedAt?: unknown };
+    return typeof meta.generatedAt === 'string' ? meta.generatedAt : null;
+  } catch {
+    return null;
+  }
+}
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const FRESHNESS_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['day', DAY_MS],
+  ['hour', HOUR_MS],
+  ['minute', MINUTE_MS],
+];
+
+// Pure: the muted line "snapshot from <relative time> · data refreshes nightly",
+// or null for an unparseable timestamp (render nothing). Locale pinned to 'en' so
+// the copy is stable regardless of the runner/browser locale.
+export function snapshotFreshnessLine(generatedAt: string, nowMs: number): string | null {
+  const ts = Date.parse(generatedAt);
+  if (Number.isNaN(ts)) return null;
+  const diffMs = ts - nowMs; // negative → in the past
+  const [unit, unitMs] = FRESHNESS_UNITS.find(([, ms]) => Math.abs(diffMs) >= ms) ?? [
+    'minute',
+    MINUTE_MS,
+  ];
+  const rel = new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+    Math.round(diffMs / unitMs),
+    unit
+  );
+  return `snapshot from ${rel} · data refreshes nightly`;
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
