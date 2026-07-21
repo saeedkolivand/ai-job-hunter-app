@@ -43,6 +43,30 @@ fn reject_oversized_job_description(jd: Option<&str>) -> AppResult<()> {
     Ok(())
 }
 
+/// Map the inbound `nextActionAt` onto the store's `Option<Option<u64>>` patch shape.
+///
+/// The field is nullable+optional, so it is generated as `Option<serde_json::Value>`:
+/// - absent (`None`) → `Ok(None)` (leave the reminder unchanged);
+/// - explicit JSON `null` → `Ok(Some(None))` (clear the reminder);
+/// - a `u64` number → `Ok(Some(Some(ms)))` (set it).
+///
+/// Anything else — a negative, fractional or oversized number, a string, an
+/// object — is a caller bug and is REJECTED. It used to be mapped through
+/// `Value::as_u64()`, which yields `None` for all of those and therefore produced
+/// the same `Some(None)` that means "clear": a caller trying to *set* a bad-typed
+/// reminder silently *cleared* it instead, with no error anywhere.
+fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
+    match raw {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(other) => other.as_u64().map(|ms| Some(Some(ms))).ok_or_else(|| {
+            AppError::Validation(
+                "next_action_at must be null or a non-negative integer timestamp in ms".into(),
+            )
+        }),
+    }
+}
+
 /// Validate and normalise an inbound recipient email address (the apply-by-email sink).
 ///
 /// - `None` → `Ok(None)` (field absent — leave unchanged in the store).
@@ -132,10 +156,13 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
     // `nextActionAt` is nullable+optional → generated as `Option<serde_json::Value>`.
     // Absent (None) = leave unchanged; explicit JSON `null` = clear the reminder;
     // a number = set it. Map that to the store's `Option<Option<u64>>` patch shape.
-    let next_action_at: Option<Option<u64>> = req.next_action_at.map(|v| match v {
-        serde_json::Value::Null => None,
-        other => other.as_u64(),
-    });
+    let next_action_at = match parse_next_action_at(req.next_action_at) {
+        Ok(v) => v,
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
     // Server-side recipient_email validation: trim, whitespace-only → clear,
     // bad format → Validation error. This is the apply-by-email sink — a bad
     // address must never be stored.
@@ -286,6 +313,42 @@ pub async fn applications_save_from_posting(app: AppHandle, req: ApplicationTrac
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_next_action_at_maps_absent_null_and_valid_numbers() {
+        // Absent → leave the stored reminder untouched.
+        assert_eq!(parse_next_action_at(None).unwrap(), None);
+        // Explicit null → clear it.
+        assert_eq!(parse_next_action_at(Some(Value::Null)).unwrap(), Some(None));
+        // A real timestamp → set it. Zero is a legitimate epoch value.
+        assert_eq!(
+            parse_next_action_at(Some(json!(1_767_225_600_000u64))).unwrap(),
+            Some(Some(1_767_225_600_000))
+        );
+        assert_eq!(parse_next_action_at(Some(json!(0))).unwrap(), Some(Some(0)));
+    }
+
+    #[test]
+    fn parse_next_action_at_rejects_a_non_u64_instead_of_clearing() {
+        // `Value::as_u64()` returns None for every one of these, which used to be
+        // indistinguishable from an explicit null — so a caller trying to SET a
+        // bad-typed reminder silently CLEARED it. They must be errors, not clears.
+        for bad in [
+            json!(-1),
+            json!(1.5),
+            json!(u64::MAX as f64 * 2.0),
+            json!("1767225600000"),
+            json!({}),
+            json!([]),
+        ] {
+            let err = parse_next_action_at(Some(bad.clone()))
+                .expect_err(&format!("{bad} must be rejected, not treated as a clear"));
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{bad} must fail validation, got {err:?}"
+            );
+        }
+    }
 
     #[test]
     fn none_description_is_accepted() {
