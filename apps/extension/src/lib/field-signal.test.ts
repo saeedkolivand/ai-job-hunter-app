@@ -12,7 +12,54 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { matchNamedKey } from './field-signal';
+import { isAmbiguousSignal, matchNamedKey } from './field-signal';
+
+describe('isAmbiguousSignal', () => {
+  it('still skips the genuinely ambiguous / sensitive fields', () => {
+    for (const signal of [
+      'referral source',
+      'referrer',
+      'job_referral',
+      'professional references',
+      'reference_name',
+      'site search',
+      'job_search',
+      'emergency contact',
+      'confirm password',
+      'company name',
+      'recruiter',
+      'ssn',
+      'passport number',
+      // \b-anchored short terms, unchanged
+      'dni',
+      "contact d'urgence",
+    ]) {
+      expect(isAmbiguousSignal(signal), signal).toBe(true);
+    }
+  });
+
+  it('does not skip a field that merely CONTAINS a denylist term', () => {
+    // `referr` ⊂ "preferred", `search` ⊂ "research", `reference` ⊂ "preferences".
+    // These were skipped entirely — never filled AND never captured.
+    for (const signal of [
+      'preferred first name',
+      'preferred name',
+      'preferred pronouns',
+      'research experience',
+      'research interests',
+      'work preferences',
+      'notification preferences',
+    ]) {
+      expect(isAmbiguousSignal(signal), signal).toBe(false);
+    }
+  });
+
+  it('lets a freed-up field resolve to its real key', () => {
+    // "Preferred first name" is ubiquitous on ATS forms; once it is no longer
+    // treated as ambiguous it fills as a first name.
+    expect(matchNamedKey('preferred first name')).toBe('firstName');
+  });
+});
 
 describe('matchNamedKey — phone', () => {
   it('matches real phone fields, including the separator-less compounds', () => {
