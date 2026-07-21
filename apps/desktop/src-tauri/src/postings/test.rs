@@ -441,6 +441,35 @@ fn test_interaction_record_serialization() {
     assert_eq!(deserialized.interaction_type, record.interaction_type);
 }
 
+/// `save` writes to `interactions.json.tmp` and renames it over the real file,
+/// so the on-disk copy is replaced atomically instead of being truncated in
+/// place. The temp file must never be left behind on the happy path.
+#[test]
+fn save_replaces_the_file_atomically_and_leaves_no_temp_file() {
+    let dir = TempDir::new().unwrap();
+    let data_dir = dir.path().to_path_buf();
+    let mut store = InteractionStore::new(&data_dir);
+
+    store.upsert(interaction("job-1", "viewed"));
+    store.upsert(interaction("job-2", "applied"));
+
+    let data_file = data_dir.join("interactions.json");
+    assert!(data_file.exists(), "the interactions file must be written");
+    assert!(
+        !data_dir.join("interactions.json.tmp").exists(),
+        "the temp file must be renamed away, not left behind"
+    );
+
+    // The file is complete and parses — a truncated write would not.
+    let on_disk: Vec<InteractionRecord> =
+        serde_json::from_str(&std::fs::read_to_string(&data_file).unwrap()).unwrap();
+    assert_eq!(on_disk.len(), 2);
+
+    // A fresh store hydrating from that file sees both interactions.
+    let mut reopened = InteractionStore::new(&data_dir);
+    assert_eq!(reopened.list(None).len(), 2);
+}
+
 #[test]
 fn test_interaction_store_new() {
     let dir = TempDir::new().unwrap();
