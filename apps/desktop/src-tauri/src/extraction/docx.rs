@@ -113,15 +113,16 @@ fn parse_document(xml: &str, rels: &HashMap<String, String>) -> (String, Vec<Lin
 /// every paragraph TWICE for the bare form (the `"<w:p "` split matched nothing
 /// and returned the whole document as a single boundary-less element), so scan
 /// for the tag instead. The byte after `<w:p` must be `' '` or `'>'` — that is
-/// what keeps `<w:pPr>`/`<w:pict>` from being mistaken for a paragraph.
+/// what keeps `<w:pPr>`/`<w:pict>` from being mistaken for a paragraph. A
+/// self-closing `<w:p/>` is likewise not a start: it carries no runs, so it
+/// contributes no text either way, and the old splits ignored it too.
 fn paragraph_slices(xml: &str) -> Vec<&str> {
-    let bytes = xml.as_bytes();
     let mut starts: Vec<usize> = Vec::new();
     let mut from = 0usize;
     while let Some(rel) = xml[from..].find("<w:p") {
         let at = from + rel;
         let after = at + "<w:p".len();
-        if matches!(bytes.get(after), Some(b' ') | Some(b'>')) {
+        if matches!(xml.as_bytes().get(after), Some(b' ') | Some(b'>')) {
             starts.push(at);
         }
         from = after;
@@ -288,6 +289,20 @@ mod tests {
         ));
         let (text, _) = parse_document(&xml, &HashMap::new());
         assert_eq!(text, "Alpha\nBeta\nGamma");
+    }
+
+    /// A self-closing `<w:p/>` (an empty paragraph) is folded into the previous
+    /// slice rather than opening its own. It carries no runs, so it contributes
+    /// no text either way — pinning the boundary so the behaviour is on record.
+    #[test]
+    fn self_closing_empty_paragraph_neither_splits_nor_duplicates() {
+        let xml = body(&format!(
+            "{}<w:p/>{}",
+            para("<w:p>", "A"),
+            para("<w:p>", "B")
+        ));
+        let (text, _) = parse_document(&xml, &HashMap::new());
+        assert_eq!(text, "A\nB");
     }
 
     /// `<w:pPr>` (paragraph properties) starts with `<w:p` but is not a
