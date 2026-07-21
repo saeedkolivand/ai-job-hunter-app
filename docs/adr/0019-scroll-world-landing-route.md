@@ -31,19 +31,20 @@ Six dive scenes tell the story (slump → doomscroll → workshop → robot engi
 ### Media pipeline (local, zero cost)
 
 - **Stills**: Codex CLI image_gen (gpt-image-2, subscription-billed).
-- **Video**: Local ComfyUI on the owner's RTX 4090. Workflow: WanImageToVideo for dive clips (2.2 I2V A14B fp8 + lightning 4-step LoRAs), WanFirstLastFrameToVideo for connectors (frame-locked endpoints matching the dives' rendered frames). Output: SeedVR2 3B temporal upscale to ~1080p. Encode: ffmpeg with denoise (hqdn3d) pre-processing, x264 crf27 (desktop) / crf28 (mobile), `-g 4` GOP (mobile seeks smoother with tiny keyframe stride).
+- **Video**: Local ComfyUI on the owner's RTX 4090. Renders (1024x576 desktop / 576x1024 portrait), then SeedVR2 3B temporal upscale to 1920x1080-class. Workflow: WanImageToVideo for dive clips (2.2 I2V A14B fp8 + lightning 4-step LoRAs), WanFirstLastFrameToVideo for connectors (frame-locked endpoints matching the dives' rendered frames). Encode: ffmpeg with denoise (hqdn3d) pre-processing, then dual-codec primary+fallback strategy: **desktop receives AV1 primary** (libsvtav1, 1440w, crf 38) plus **H.264 fallback** (1104w, crf 27) selected at runtime via canPlayType check in WorldClient (withAv1Sources in world-config.ts); **mobile H.264 only** (720w, crf 28) because phone software AV1 decode cannot sustain scrubbing; `-g 4` GOP for mobile seeks smoother with tiny keyframe stride.
 - **Masters and encodes**: Pre-rendered; all clips are committed as plainly versioned assets in `apps/landing/public/world/`.
 - **Reproducibility**: The local pipeline (ComfyUI workflow graphs, ffmpeg commands) is documented and preserved in this session's scratchpad (scroll-world skill session files). To regenerate any scene, follow the documented method. The committed video masters are the source of truth — there is no build-time generation step.
 
 ### Weight policy (owner decision)
 
-- **Hard budget**: ~20 MB per device variant (desktop + mobile target, separately).
+- **Hard budget**: ~20 MB per delivered set (visitors stream one codec set, not both desktop variants).
 - **Final achieved**:
-  - Desktop: 11 clips (6 dives + 5 connectors) at 960px width, crf27, denoised = **~18 MB**.
-  - Mobile: 11 clips at 720px width, crf28, denoised = **~19 MB**.
+  - Desktop AV1 primary: 11 clips at 1440w, crf 38, denoised = **~23 MB**.
+  - Desktop H.264 fallback: 11 clips at 1104w, crf 27, denoised = **~20 MB**.
+  - Mobile H.264 only: 11 clips at 720w, crf 28, denoised = **~17 MB**.
   - Stills (posters): ~4 MB.
-  - **Total in `apps/landing/public/world/`**: ~41 MB committed to git.
-- **Why git, not LFS?** The owner's CI checkout bandwidth quota and LFS complexity outweighed the repo size. Denoise (hqdn3d) before x264 makes the papercraft grain highly compressible; at these crf values and resolutions, plain git is simpler and faster.
+  - **Total in `apps/landing/public/world/`**: ~64 MB committed to git (all codec variants stored; each visitor loads one set).
+- **Why git, not LFS?** The owner's CI checkout bandwidth quota and LFS complexity outweighed the repo size. Denoise (hqdn3d) before x264/AV1 makes the papercraft grain highly compressible; at these crf values and resolutions, plain git is simpler and faster. Dropping the H.264 fallback set is the future lever if AV1 support becomes universal.
 
 ### Route integration
 
@@ -58,7 +59,7 @@ All media is same-origin (`apps/landing/public/world/`). The scrub-engine inject
 
 ## Consequences
 
-- **Repo size**: `+41 MB` in committed video assets (total landing `public/` grows by ~41 MB).
+- **Repo size**: `+64 MB` in committed video assets (all codec variants stored; each visitor loads one set per their browser capability). Hqdn3d denoise pre-x264/AV1 is what makes the papercraft grain compressible at these crf values; dropping the H.264 fallback set when AV1 becomes universal is the future size-reduction lever.
 - **Deploy**: Via existing `pages.yml` workflow — no new deploy steps.
 - **Regeneration**: Requires the local ComfyUI pipeline (documented in scroll-world session skill files). The scripts are preserved and method is clear; the committed encodes are final.
 - **Type safety**: Vendored `scrub-engine.js` is a `.js` file (not `.ts`); the engine's config type is documented in JSDoc comments at the top of the file. Consumers (e.g., `world-config.ts`) must import the engine and infer types from usage — the engine itself is not strict-typed.
