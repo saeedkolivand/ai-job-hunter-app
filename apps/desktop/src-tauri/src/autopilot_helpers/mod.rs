@@ -453,8 +453,8 @@ impl NoteEnv for LiveNoteEnv<'_> {
     }
 }
 
-/// The pure(ish) notes loop: for each job whose `url` is genuinely new (∉
-/// `prior_urls`), request one note through `env`, honoring — every iteration — the
+/// The pure(ish) notes loop: for each job whose merge key is genuinely new (∉
+/// `prior_keys`), request one note through `env`, honoring — every iteration — the
 /// top-N call ceiling, the run's cancellation token, and the shared daily-ceiling
 /// charge. Split from [`generate_assistant_notes`] (mirroring
 /// `agent::controller::run_agent`'s split from its `AgentEnv`) so a fake `env`
@@ -468,7 +468,7 @@ async fn run_notes_loop(
     env: &dyn NoteEnv,
     resume_fence: &str,
     found_jobs: &mut [FoundJob],
-    prior_urls: &HashSet<&str>,
+    prior_keys: &HashSet<String>,
     cancel: &CancellationToken,
 ) -> usize {
     // `calls` bounds *provider calls* (the real cost) to ≤ ASSISTANT_NOTES_MAX,
@@ -479,7 +479,12 @@ async fn run_notes_loop(
         if calls >= ASSISTANT_NOTES_MAX {
             break; // top-N call ceiling reached — hard cost bound
         }
-        if prior_urls.contains(job.url.as_str()) {
+        // Key on the merge's own identity (`canonical_job_key`): comparing raw URLs
+        // re-paid for a job re-surfacing under new tracking params, and the merge
+        // then discarded the note.
+        let key =
+            crate::scraping::boards::common::canonical_job_key(&job.url, &job.title, &job.company);
+        if prior_keys.contains(&key) {
             continue; // re-surfaced: keeps its prior note via merge, don't re-pay
         }
         if cancel.is_cancelled() {
@@ -532,8 +537,8 @@ async fn run_notes_loop(
 /// Write, no agent loop, no confirm gate. Cost is triple-bounded — the top-N *call*
 /// ceiling, the shared per-provider daily charge (stop on exceed; the discovery run
 /// still completes), and the run's cancellation token (stop immediately, even
-/// mid-call — see [`run_notes_loop`]). Only genuinely-new matches (`url` ∉
-/// `prior_urls`) are annotated: a re-surfaced job keeps its earlier note for free
+/// mid-call — see [`run_notes_loop`]). Only genuinely-new matches (whose
+/// `canonical_job_key` ∉ `prior_keys`) are annotated: a re-surfaced job keeps its earlier note for free
 /// via the store merge, so re-generating would just burn a call whose result the
 /// merge discards — in steady state (nothing new) this makes ZERO provider calls.
 /// `completer` is `None` when the caller's [`Completer::from_active`] found no
@@ -549,7 +554,7 @@ pub(crate) async fn generate_assistant_notes(
     limiter: Arc<Limiter>,
     autopilot: &Autopilot,
     found_jobs: &mut [FoundJob],
-    prior_urls: &HashSet<&str>,
+    prior_keys: &HashSet<String>,
     cancel: &CancellationToken,
 ) -> usize {
     if !notes_enabled(autopilot.assistant, autopilot.resume_text.as_deref()) {
@@ -579,7 +584,7 @@ pub(crate) async fn generate_assistant_notes(
     // cosmetic tradeoff for a notification that is never blocked unboundedly.
     match tokio::time::timeout(
         NOTES_STEP_TIMEOUT,
-        run_notes_loop(&env, &resume_fence, found_jobs, prior_urls, cancel),
+        run_notes_loop(&env, &resume_fence, found_jobs, prior_keys, cancel),
     )
     .await
     {
@@ -1167,7 +1172,7 @@ mod tests {
         let mut jobs: Vec<FoundJob> = (0..5)
             .map(|i| stub_job(&format!("https://acme.example/{i}")))
             .collect();
-        let prior: HashSet<&str> = HashSet::new();
+        let prior: HashSet<String> = HashSet::new();
         let generated = run_notes_loop(
             &env,
             "<candidate_resume>\nr\n</candidate_resume>",
@@ -1187,16 +1192,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn jobs_all_in_prior_urls_make_zero_calls() {
+    async fn jobs_already_seen_make_zero_calls_even_under_new_tracking_params() {
         // Every match already surfaced in a prior run → the merge preserves its
         // earlier note for free; re-generating would just burn a call for nothing.
         let env = FakeNoteEnv::ok("note");
+        // Re-surfaced under new tracking params: same job to the merge.
         let mut jobs = vec![
-            stub_job("https://acme.example/1"),
-            stub_job("https://acme.example/2"),
+            stub_job("https://acme.example/1?utm_source=indeed"),
+            stub_job("https://acme.example/2#apply"),
         ];
-        let prior: HashSet<&str> = ["https://acme.example/1", "https://acme.example/2"]
+        let prior: HashSet<String> = ["https://acme.example/1", "https://acme.example/2"]
             .into_iter()
+            .map(|u| crate::scraping::boards::common::canonical_job_key(u, "Engineer", "Acme"))
             .collect();
         let generated = run_notes_loop(
             &env,
@@ -1225,7 +1232,7 @@ mod tests {
             stub_job("https://acme.example/2"),
             stub_job("https://acme.example/3"),
         ];
-        let prior: HashSet<&str> = HashSet::new();
+        let prior: HashSet<String> = HashSet::new();
         let generated = run_notes_loop(
             &env,
             "<candidate_resume>\nr\n</candidate_resume>",
@@ -1272,7 +1279,7 @@ mod tests {
         }
 
         let mut jobs = vec![stub_job("https://acme.example/1")];
-        let prior: HashSet<&str> = HashSet::new();
+        let prior: HashSet<String> = HashSet::new();
         let cancel = CancellationToken::new();
         let cancel_task = cancel.clone();
         tokio::spawn(async move {
