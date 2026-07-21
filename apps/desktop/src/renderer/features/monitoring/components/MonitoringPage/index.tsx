@@ -13,6 +13,7 @@ import { Sparkline } from '@/features/monitoring/components/Sparkline';
 import { StatusDot } from '@/features/monitoring/components/StatusDot';
 import { useActivityFeed } from '@/features/monitoring/hooks/useActivityFeed';
 import { useJobMetrics } from '@/features/monitoring/hooks/useJobMetrics';
+import { binLast24Hours } from '@/features/monitoring/lib/last-24-hours';
 import type { JobRecord } from '@/features/monitoring/types';
 import { useKindLabelMap } from '@/hooks/use-kind-label-map';
 import { useAppVersion, useJobQueue, useSystemHealth } from '@/services';
@@ -36,17 +37,7 @@ export function MonitoringPage() {
   const { activeJobs, counters, successRate } = useJobMetrics(allJobs);
   const { activity } = useActivityFeed(allJobs, KIND_LABEL_MAP);
 
-  const last24h = useMemo(() => {
-    const bins = Array.from({ length: 24 }, () => 0);
-    allJobs
-      .filter((j) => j.status === 'completed')
-      .forEach((j) => {
-        const ts = j.finishedAt ?? j.updatedAt;
-        const h = new Date(ts).getHours();
-        if (h >= 0 && h < 24) bins[h] = (bins[h] ?? 0) + 1;
-      });
-    return bins;
-  }, [allJobs]);
+  const last24h = useMemo(() => binLast24Hours(allJobs, Date.now()), [allJobs]);
 
   const metrics = [
     {

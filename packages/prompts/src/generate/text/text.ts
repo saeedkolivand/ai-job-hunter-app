@@ -14,7 +14,14 @@ export function extractPlainText(raw: string): string {
       .replace(/<\/?leakage_check>/gi, '') // stray unclosed tags
       .replace(/^#{1,6}\s/gm, '')
       .replace(/\*\*\*(.+?)\*\*\*/g, '**$1**') // triple → double (preserve bold)
-      .replace(/\*([^*]+)\*/g, '$1') // single italic → plain
+      // Single italic → plain, but ONLY a `*` that is not part of a `**` run.
+      // Without the guards this pass ate bold too: the leftmost match inside
+      // `**bold**` is the inner `*bold*`, leaving `*bold*` — and because
+      // `[^*]+` also matches spaces and commas, two adjacent bold spans paired
+      // up ACROSS each other, so `**Python**, **Go**` collapsed to
+      // `*Python, Go*`. The prompts ask for 2-3 `**keyword**` bolds per bullet,
+      // so this ran on essentially every generated document.
+      .replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, '$1')
       // Fenced blocks first — otherwise the inline-backtick pass below consumes
       // the ``` fence markers, orphaning them so the fenced regex no longer
       // matches and the code body leaks into the plain text.

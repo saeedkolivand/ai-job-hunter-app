@@ -53,7 +53,17 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
 
   // Merge live (top) with historical (deduped)
   const activity = useMemo(() => {
-    const liveJobIds = new Set(liveActivity.map((a) => a.id.split('-')[0]));
+    // A live item's id is `${event.jobId}-${event.ts}` and a job id is itself
+    // `job-<uuid>`, so `split('-')[0]` was ALWAYS the literal "job": the set held
+    // one useless entry, no historical id ever matched it, and every completed
+    // job rendered twice (different React keys, so nothing else caught it).
+    // Strip only the trailing `-<ts>` to recover the real job id.
+    const liveJobIds = new Set(
+      liveActivity.map((a) => {
+        const cut = a.id.lastIndexOf('-');
+        return cut > 0 ? a.id.slice(0, cut) : a.id;
+      })
+    );
     return [...liveActivity, ...historicalActivity.filter((a) => !liveJobIds.has(a.id))].slice(
       0,
       40
