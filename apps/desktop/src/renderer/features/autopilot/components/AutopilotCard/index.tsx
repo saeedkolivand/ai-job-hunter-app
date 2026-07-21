@@ -17,6 +17,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Autopilot, AutopilotFoundJob, AutopilotRunStatus } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import {
   ActionMenu,
@@ -28,14 +29,17 @@ import {
   HoverPopover,
   Tag,
   transition,
+  useNotification,
 } from '@ajh/ui';
 
+import { AgencyChip } from '@/components/job/AgencyChip';
+import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
 import { MatchBand } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
 import { TrustBadge } from '@/lib/trust-badge';
-import { useInteractions, useOpenExternal, usePersistJob } from '@/services';
+import { useInteractions, useMarkNotDuplicate, useOpenExternal, usePersistJob } from '@/services';
 
 interface StepLog {
   step: string;
@@ -132,11 +136,20 @@ export function AutopilotCard({
   const { t, i18n } = useTranslation();
   const openExternal = useOpenExternal();
   const persistJob = usePersistJob();
+  const split = useMarkNotDuplicate();
+  const notify = useNotification();
   const [showFound, setShowFound] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
-  const foundJobs = ap.foundJobs ?? [];
+  // Cross-board clustering (ADR-029): render one row per cluster — the canonical
+  // member. Non-canonical members (clusterCanonical === false) collapse into it;
+  // unclustered/legacy rows always show. Every "Found · N" count below reads off
+  // this list, so the counts track visible clusters, not raw postings.
+  const foundJobs = useMemo(
+    () => (ap.foundJobs ?? []).filter((j) => j.clusterCanonical !== false),
+    [ap.foundJobs]
+  );
   // Persisted per-board outcome of the most recent run (PR B). Unlike the live
   // step log (below), this survives the run ending, so a zero/partial/failed
   // result stays explainable. Empty for the happy path + pre-summaries records.
@@ -300,6 +313,21 @@ export function AutopilotCard({
     } catch {
       // non-fatal: badge already shows optimistically via viewedUrls query refetch
     }
+  };
+
+  // Split this canonical job out of its cluster (ADR-029 §h): tombstone the
+  // canonical member against every other member. `autopilotId` scopes the
+  // recompute to this record. Success surfaced only after the mutation resolves.
+  const handleSplitCluster = (job: AutopilotFoundJob) => {
+    const members = job.clusterMembers ?? [];
+    const canonicalKey = job.clusterId;
+    if (!canonicalKey || members.length < 2) return;
+    const otherKeys = members.filter((m) => m.key !== canonicalKey).map((m) => m.key);
+    if (otherKeys.length === 0) return;
+    split.mutate(
+      { memberKey: canonicalKey, otherKeys, autopilotId: ap._id },
+      { onSuccess: () => notify.success({ message: t('jobs.cluster.splitDone') }) }
+    );
   };
 
   return (
@@ -629,6 +657,33 @@ export function AutopilotCard({
                         <Wand2 size={10} /> {t('autopilot.applyJob')}
                       </Button>
                     </div>
+
+                    {/* Cross-board cluster row (ADR-029) — agency marker, source
+                        chips for other boards, and a split action. Kept OUTSIDE
+                        the row's main <Button> above (interactive chips + split
+                        would be invalid button-in-button HTML otherwise). */}
+                    {(job.isAgency || (job.clusterMembers?.length ?? 0) > 1) && (
+                      <div className="flex flex-wrap items-center gap-1.5 pl-0.5">
+                        {job.isAgency && <AgencyChip className="px-1 py-0 text-[9px]" />}
+                        <ClusterSourceChips
+                          members={job.clusterMembers}
+                          selfKey={job.clusterId}
+                          selfUrl={job.url}
+                        />
+                        {(job.clusterMembers?.length ?? 0) > 1 && (
+                          <Button
+                            variant="unstyled"
+                            data-testid={TEST_IDS.jobs.clusterSplitButton}
+                            onClick={() => handleSplitCluster(job)}
+                            disabled={split.isPending}
+                            className="rounded px-1.5 py-0.5 text-[10px] text-foreground/50 transition-colors hover:text-foreground/80 focus-visible:ring-offset-1"
+                          >
+                            {t('jobs.cluster.notDuplicate')}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
                     {/* LLM-generated — always rendered as plain text, never markdown/HTML.
                         Visible "AI note" label (not just the aria-label) so sighted users get
                         the same "AI-generated, not fact" cue as the icon-only Sparkles gives

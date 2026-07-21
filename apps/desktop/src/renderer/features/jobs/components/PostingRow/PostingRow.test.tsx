@@ -85,6 +85,17 @@ vi.mock('@/features/jobs/components/CompanyAvatar', () => ({
   CompanyAvatar: () => null,
 }));
 
+// ── Cluster/agency chips — covered by their own suites; stubbed here (fixtures
+//    carry no cluster/agency data). ──────────────────────────────────────────
+
+vi.mock('@/components/job/ClusterSourceChips', () => ({
+  ClusterSourceChips: () => null,
+}));
+
+vi.mock('@/components/job/AgencyChip', () => ({
+  AgencyChip: () => null,
+}));
+
 // ── useRowMatchScore (via usePostingActions → MatchScoresProvider) ────────────
 // PostingRow no longer renders RowMatchScore directly, but usePostingActions
 // still calls useRowMatchScore internally. Mock the provider to avoid the

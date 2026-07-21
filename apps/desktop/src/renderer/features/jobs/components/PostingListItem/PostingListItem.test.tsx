@@ -55,6 +55,18 @@ vi.mock('@ajh/ui', () => ({
   resolveTransition: (t: unknown) => t,
 }));
 
+// ── Cluster/agency chips — isolated in their own suites; stubbed here so this
+//    suite needs no AppClient/QueryClient providers (ClusterSourceChips calls
+//    useOpenExternal). Fixtures carry no cluster/agency data anyway. ──────────
+
+vi.mock('@/components/job/ClusterSourceChips', () => ({
+  ClusterSourceChips: () => null,
+}));
+
+vi.mock('@/components/job/AgencyChip', () => ({
+  AgencyChip: () => null,
+}));
+
 // ── CompanyAvatar — renders company initials via passthrough ──────────────────
 
 vi.mock('@/features/jobs/components/CompanyAvatar', () => ({

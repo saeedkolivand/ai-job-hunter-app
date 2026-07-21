@@ -4,6 +4,8 @@ import { motion } from 'motion/react';
 import { useTranslation } from '@ajh/translations';
 import { cn, resolveTransition, transition } from '@ajh/ui';
 
+import { AgencyChip } from '@/components/job/AgencyChip';
+import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { CompanyAvatar } from '@/features/jobs/components/CompanyAvatar';
 import type { Posting } from '@/features/jobs/types';
 import { TrustBadge } from '@/lib/trust-badge';
@@ -119,6 +121,13 @@ export function PostingListItem({
             {posting.postedAt && (
               <span className="shrink-0">· {formatRelativeTime(posting.postedAt)}</span>
             )}
+            {posting.isAgency && <AgencyChip className="shrink-0 px-1 py-0 text-[9px]" />}
+            <ClusterSourceChips
+              className="shrink-0"
+              members={posting.clusterMembers}
+              selfKey={posting.clusterId}
+              selfUrl={posting.url}
+            />
             {/* Status markers — decorative (aria-hidden); SR summary above.
                 TrustBadge is `interactive={false}` here: rows are never real tab
                 stops (active-descendant pattern below) — a focusable popover

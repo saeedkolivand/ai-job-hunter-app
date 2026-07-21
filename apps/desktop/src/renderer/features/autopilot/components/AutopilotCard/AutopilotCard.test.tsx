@@ -133,6 +133,7 @@ vi.mock('@ajh/ui', () => ({
   ),
   cn: (...args: string[]) => args.filter(Boolean).join(' '),
   transition: { fast: {}, normal: {} },
+  useNotification: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
 // ── MatchBand stub ────────────────────────────────────────────────────────────
@@ -189,6 +190,7 @@ vi.mock('@/lib/machines/autopilot-run.machine', () => ({
 
 const mockOpenExternal = vi.fn().mockResolvedValue(undefined);
 const mockPersistJobAsync = vi.fn().mockResolvedValue(undefined);
+const mockSplitMutate = vi.fn();
 
 // viewedData / openedData are controlled via these refs.
 let stubbedViewedData: { url?: string }[] = [];
@@ -197,9 +199,20 @@ let stubbedOpenedData: { url?: string }[] = [];
 vi.mock('@/services', () => ({
   useOpenExternal: () => ({ mutate: mockOpenExternal, mutateAsync: mockOpenExternal }),
   usePersistJob: () => ({ mutateAsync: mockPersistJobAsync }),
+  useMarkNotDuplicate: () => ({ mutate: mockSplitMutate, isPending: false }),
   useInteractions: (type: string) => ({
     data: type === 'viewed' ? stubbedViewedData : stubbedOpenedData,
   }),
+}));
+
+// Cluster/agency chips are covered in their own suites; stubbed here so this
+// suite's fixtures (no cluster data) don't need extra provider wiring.
+vi.mock('@/components/job/ClusterSourceChips', () => ({
+  ClusterSourceChips: () => null,
+}));
+
+vi.mock('@/components/job/AgencyChip', () => ({
+  AgencyChip: () => null,
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -270,6 +283,7 @@ function renderCard(autopilot: Autopilot, extraProps = {}) {
 beforeEach(() => {
   mockOpenExternal.mockClear();
   mockPersistJobAsync.mockClear();
+  mockSplitMutate.mockClear();
   stubbedViewedData = [];
   stubbedOpenedData = [];
 });
@@ -946,5 +960,53 @@ describe('AutopilotCard — persisted per-board chips', () => {
     expect(
       screen.getByRole('button', { name: 'autopilot.boardResults.infoLabel' })
     ).toHaveAttribute('data-degraded', 'false');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-board clustering (ADR-029) — one rendered row per cluster
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — cross-board clustering', () => {
+  it('renders one row per cluster — the non-canonical member is hidden', async () => {
+    const user = userEvent.setup();
+    const jobs: AutopilotFoundJob[] = [
+      {
+        title: 'Canonical role',
+        company: 'Acme',
+        url: 'https://a.com/1',
+        foundAt: 0,
+        clusterCanonical: true,
+      },
+      {
+        title: 'Hidden duplicate',
+        company: 'Acme',
+        url: 'https://b.com/2',
+        foundAt: 0,
+        clusterCanonical: false,
+      },
+    ];
+    renderCard(makeAutopilot(jobs));
+
+    const headerDiv = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(headerDiv);
+
+    // Only the canonical member is listed; the found-count reflects clusters (1).
+    expect(screen.getByText('Canonical role')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden duplicate')).not.toBeInTheDocument();
+    expect(screen.getByText('autopilot.foundJobs · 1')).toBeInTheDocument();
+  });
+
+  it('always shows unclustered (legacy) rows — no cluster annotation', async () => {
+    const user = userEvent.setup();
+    renderCard(
+      makeAutopilot([{ title: 'Legacy role', company: 'Acme', url: 'https://a.com/1', foundAt: 0 }])
+    );
+
+    const headerDiv = document.querySelector('[aria-expanded]') as HTMLElement;
+    await user.click(headerDiv);
+
+    expect(screen.getByText('Legacy role')).toBeInTheDocument();
+    expect(screen.getByText('autopilot.foundJobs · 1')).toBeInTheDocument();
   });
 });
