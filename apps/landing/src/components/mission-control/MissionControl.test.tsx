@@ -133,4 +133,28 @@ describe('MissionControl', () => {
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Dispatch release/i })).toBeNull();
   });
+
+  it('renders the snapshot freshness line from meta.json', async () => {
+    // routeGet serves /metrics/meta.json with a generatedAt stamp, so the muted
+    // provenance line appears once the snapshot-mode load path resolves it.
+    render(<MissionControl />);
+    const line = await screen.findByText((t) => t.includes('data refreshes nightly'));
+    expect(line.className).toContain('mc-status');
+    expect(line.textContent).toMatch(/^snapshot from .+ · data refreshes nightly$/);
+  });
+
+  it('shows no freshness line when meta.json 404s', async () => {
+    // Serve every read normally but 404 the snapshot meta → the line is absent.
+    fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method !== 'GET') return Promise.resolve(makeRes({ ok: true, status: 200 }));
+      if (url.includes('meta.json')) return Promise.resolve(makeRes({ ok: false, status: 404 }));
+      return Promise.resolve(makeRes({ body: routeGet(url) }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<MissionControl />);
+    await waitFor(() => expect(screen.getByLabelText('Repository verdict')).toBeTruthy());
+    expect(screen.queryByText((t) => t.includes('data refreshes nightly'))).toBeNull();
+  });
 });

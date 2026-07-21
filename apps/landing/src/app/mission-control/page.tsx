@@ -30,8 +30,8 @@ export default function MissionControlPage() {
           <>
             Everything the robot&rsquo;s repo is doing right now — delivery, open work, quality, and
             community — served in your browser from a nightly snapshot, with the live GitHub API as
-            the fallback. Sign in with a token to unlock the safe tier of write actions and a higher
-            live rate limit.
+            the fallback. Sign in with a token to unlock the safe tier of write actions — and a
+            higher rate limit whenever reads fall back to the live API.
           </>
         }
         wide

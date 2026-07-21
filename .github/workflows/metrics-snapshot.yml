@@ -43,6 +43,17 @@ jobs:
       pull-requests: read # pulls reads
       issues: read # issues reads
     steps:
+      # This job holds the RELEASE_DEPLOY_KEY in the runner env, so egress
+      # hardening matters more here than on the audit-only benchmark job — `block`
+      # is the goal. Block mode needs an allowed-endpoints list, and this job's
+      # real egress is small: github.com:22 + github.com:443 (checkout + push over
+      # SSH), api.github.com:443 (gh api). Its harden-runner infra endpoints (the
+      # Actions control-plane + telemetry), though, can only be pinned confidently
+      # from a real run's step-security network insights, and no block-mode
+      # workflow exists in this repo to crib that set from — shipping a guessed
+      # allowlist risks a nightly-red push job. So stay on `audit` (still records
+      # all egress to the Security dashboard) until one audit run yields the exact
+      # infra set. TODO: flip to `block` + allowed-endpoints from those insights.
       - name: 🛡️ Harden Runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
