@@ -95,7 +95,7 @@ impl Scraper for RemoteOkScraper {
                     RemoteOkItem::Legend { .. } => continue, // skip legend entry
                 };
 
-            let id_str = id.map(|i| i.to_string()).unwrap_or_else(|| "".to_string());
+            let id_str = normalize_id(id);
             if id_str.is_empty() || position.is_none() {
                 continue;
             }
@@ -153,6 +153,24 @@ impl Scraper for RemoteOkScraper {
 
         Ok(out)
     }
+}
+
+/// RemoteOK's `id` arrives as either a JSON number or a JSON string, so read it
+/// per variant instead of via `Value::to_string()`.
+///
+/// `to_string()` JSON-*serialises*: `Value::String("1234567")` becomes
+/// `"\"1234567\""`, quotes included. Those quotes ended up inside
+/// `posting.id` (`remoteok:"1234567"`) and `external_id`, corrupting the stable
+/// PostingsCache key that dedup and interaction tracking rely on. Only the
+/// `Number` variant happened to serialise cleanly.
+fn normalize_id(id: Option<serde_json::Value>) -> String {
+    id.and_then(|i| {
+        i.as_str()
+            .map(str::to_string)
+            .or_else(|| i.as_i64().map(|n| n.to_string()))
+            .or_else(|| i.as_u64().map(|n| n.to_string()))
+    })
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
