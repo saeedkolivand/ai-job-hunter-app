@@ -278,7 +278,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
                 </span>
                 {gen.board && (
                   <span className="rounded-full border border-[var(--border-clear)] bg-muted px-2 py-0.5 text-[9px] uppercase tracking-wider text-foreground/55">
-                    {gen.board}
+                    {t(`jobs.boards.${gen.board}`, { defaultValue: gen.board })}
                   </span>
                 )}
                 {/* A linked job means this generation was an application. */}

@@ -49,8 +49,9 @@ const L1: &[&str] = &[
     "dedup",
     // Passively-harvested ATS company slug store (ADR-030): a per-domain SQLite
     // store of discovered `(ats, slug)` refs + watched-company stars. Tauri-free
-    // (the AppHandle-touching `harvest_ats_refs` lives in `commands::discovery`),
-    // same posture as `dedup` and the other L1 stores.
+    // (its `harvest_ats_refs` seam is AppHandle-free — the L3 command handlers
+    // resolve the store via `try_state` and pass it in), same posture as `dedup`
+    // and the other L1 stores.
     "discovered",
     "credentials",
     "job_preferences",

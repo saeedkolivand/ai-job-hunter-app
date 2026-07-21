@@ -22,6 +22,9 @@ use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
+mod harvest;
+pub use harvest::harvest_ats_refs;
+
 /// Per-field byte cap on any stored string — the same ~200-byte convention as
 /// `job_preferences`/`dedup` clamp untrusted renderer/scrape input at the write
 /// boundary. A real ATS slug/company sits well under this.
