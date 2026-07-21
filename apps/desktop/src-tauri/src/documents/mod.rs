@@ -1031,6 +1031,48 @@ pub fn make_doc_id() -> String {
     format!("doc-{}-{}", now_ms(), &Uuid::new_v4().to_string()[..8])
 }
 
+/// Read an exported document's optional embedding vector out of its JSON row.
+///
+/// Legacy exports carry no `vectorSpace` — they predate cloud embeddings and were
+/// all Ollama/nomic-embed-text, which is what the fallback records.
+fn parse_exported_vector(item: &serde_json::Value) -> Option<EmbeddingVector> {
+    let values: Vec<f64> = item
+        .get("vector")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_f64())
+        .collect();
+    if values.is_empty() {
+        return None;
+    }
+    let dim = values.len();
+    let space = item
+        .get("vectorSpace")
+        .map(|s| EmbeddingSpace {
+            provider: s
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ollama")
+                .to_string(),
+            model: s
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("nomic-embed-text")
+                .to_string(),
+            dim: s
+                .get("dim")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize)
+                .unwrap_or(dim),
+        })
+        .unwrap_or_else(|| EmbeddingSpace {
+            provider: "ollama".to_string(),
+            model: "nomic-embed-text".to_string(),
+            dim,
+        });
+    Some(EmbeddingVector { values, space })
+}
+
 impl DataStore for DocumentStore {
     fn key(&self) -> &'static str {
         "documents"
@@ -1058,48 +1100,32 @@ impl DataStore for DocumentStore {
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {
         let items = data.as_array().ok_or("documents: expected an array")?;
+        // Deserialize EVERY row before mutating the store. `clear_all` wipes
+        // documents, vectors, posting_vectors AND match_scores, so a malformed
+        // row (hand-edited bundle, newer schema, corruption) reached after that
+        // call used to destroy the user's whole document library + embeddings and
+        // still return Err — nothing left to restore from. The sibling stores
+        // (applications, ai_generations, dedup, discovered) all validate up-front
+        // for exactly this reason; documents was the lone outlier.
+        let parsed: Vec<(DocumentRecord, Option<EmbeddingVector>)> = items
+            .iter()
+            .map(|item| {
+                let record: DocumentRecord =
+                    serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
+                Ok((record, parse_exported_vector(item)))
+            })
+            .collect::<AppResult<_>>()?;
+
         self.clear_all();
         let mut count = 0;
         let mut default_id: Option<String> = None;
-        for item in items {
-            let record: DocumentRecord =
-                serde_json::from_value(item.clone()).map_err(|e| e.to_string())?;
+        for (record, vector) in &parsed {
             if record.is_default {
                 default_id = Some(record.id.clone());
             }
-            self.insert(&record)?;
-            if let Some(vector) = item.get("vector").and_then(|v| v.as_array()) {
-                let vec: Vec<f64> = vector.iter().filter_map(|v| v.as_f64()).collect();
-                if !vec.is_empty() {
-                    // Restore the vector's space if present; legacy exports without
-                    // it predate cloud embeddings and were all Ollama/nomic-embed-text.
-                    let dim = vec.len();
-                    let space = item
-                        .get("vectorSpace")
-                        .map(|s| EmbeddingSpace {
-                            provider: s
-                                .get("provider")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("ollama")
-                                .to_string(),
-                            model: s
-                                .get("model")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("nomic-embed-text")
-                                .to_string(),
-                            dim: s
-                                .get("dim")
-                                .and_then(|v| v.as_u64())
-                                .map(|d| d as usize)
-                                .unwrap_or(dim),
-                        })
-                        .unwrap_or_else(|| EmbeddingSpace {
-                            provider: "ollama".to_string(),
-                            model: "nomic-embed-text".to_string(),
-                            dim,
-                        });
-                    self.upsert_vector(&record.id, &EmbeddingVector { values: vec, space })?;
-                }
+            self.insert(record)?;
+            if let Some(vector) = vector {
+                self.upsert_vector(&record.id, vector)?;
             }
             count += 1;
         }
