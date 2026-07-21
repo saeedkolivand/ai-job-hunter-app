@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784629158290,
+  "lastUpdate": 1784663495994,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5285,6 +5285,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288543,
             "range": "± 15128",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "420ba60427f15bba3a86e323799bd871fdd84ebb",
+          "message": "feat(ai): persist url import provenance and harvest from resolves (adr-031) (#761)\n\n* feat(scraping): harvest ats refs from single url resolves\n\nADR-031 §c: on a successful `scrape_resolve_url` (the single-posting synchronous\nresolve behind JobUrlImport), feed the resolved posting into the ADR-030 slug-\nharvest seam (source 'scrape'), so a URL import populates the slug typeahead like\nthe scrape/autopilot/extension paths. One call site reusing the existing pure\nextractor — zero new network. Harvests the posting's FINAL/canonical `url` (what\ngets stored on it — an aggregator click-tracker resolves to the board's real\nposting url), matching the other harvest sites, and degrades-not-fails via the\nseam's established log::warn. Seam-level test (resolved-posting-shaped input →\nstore contains the ref) drives the same pure `posting_to_ref` seam the\nAppHandle-bound command uses (no mock-app harness).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ai): persist job url provenance from url imports\n\nADR-031 renderer half: a URL-imported job ad now carries its provenance\nend-to-end so the generation joins applied-detection + cluster provenance.\n\n- JobUrlImport surfaces the resolved posting's canonical url + board alongside\n  the composed text via onImport(text, { url, board }).\n- JobAdField routes a URL import to a new optional onImport sink (falls back to\n  onChange for the Resume Analyzer, which doesn't persist provenance).\n- AIGeneratePage records provenance in the ai-generate session slice on import\n  and CLEARS it on any manual edit / paste-over / upload (stale-url foot-gun),\n  then threads jobUrl + board into useGeneration.persist(), which populates the\n  existing AiGenerationSaveRequest.jobUrl/board only when present.\n\nFailure path unchanged and audited (ADR d): scrape_resolve_url returns\njson!(null) for every failure (no distinct rate-limit union to surface), so an\nunresolvable url shows the inline jobUrlImport error with the field still\nusable; the Enter keyboard flow works. en+de parity preserved (no new keys).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record url import provenance (adr-031) and close the backlog row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: drop phantom harvestsource type from adr-031 owning symbols\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): document the resolve call-site coverage gap\n\n`single_resolve_harvests_the_resolved_postings_slug` pins the pure harvest seam\n(URL → ref → store → search) but NOT the `scrape_resolve_url` call site that\nwires `(posting.url, posting.company)` into it — a swapped arg order or a dropped\nharvest call there would still pass. Extend the test's header docstring to state\nthis explicitly (the call-site wiring is AppHandle + network-bound, unreachable\nwithout a mock-app harness this crate deliberately avoids; review + arg names\nguard it), mirroring the sibling acceptance test's honest-comment style. No code\nchange.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ui): label generation board chips via the boards i18n map\n\nThe GenerationCard board chip rendered gen.board raw, so a URL-imported\ngeneration whose generic-fallback resolve sets source 'url' showed a literal\nuppercase 'URL' badge. Route it through t('jobs.boards.${gen.board}', {\ndefaultValue }) like the jobs list, and add a jobs.boards.url pair\n(Web import / Web-Import) so the fallback reads humanely.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: move ats harvest seam below commands into discovered harvest module\n\ndrops the l3-to-l3 peer import flagged in review: harvest_ats_refs + posting_to_ref move from\ncommands/discovery.rs to discovered/harvest.rs, apphandle-free (take the store directly). all 5 call\nsites (scrape x3, autopilot, extension import) resolve the store at the shell boundary and pass it\ndown; missing store stays a graceful no-op. the moved tests now drive the real harvest fn, pinning\nthe (url, company) arg order the review found unguarded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: assert localized board chip labels and unknown-board fallback\n\nboard-chip tests now render through the real en resources (getFixedT) instead of a key-echo mock, so\na missing jobs.boards.url resource fails; adds the unknown-board defaultvalue-fallback case.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: cite the moved harvest symbols and correct the adr-031 rate-limit claim\n\nadr-031 now points at discovered::harvest::harvest_ats_refs (both occurrences) and describes the\nreal 429 behavior: failures collapse to null with the generic inline error; distinct backoff\nsurfacing stays a fast-follow.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-21T21:32:29+02:00",
+          "tree_id": "fd01ff259fd4c7ab6b6be82a503eccef9b9d39ce",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/420ba60427f15bba3a86e323799bd871fdd84ebb"
+        },
+        "date": 1784663494394,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2017225,
+            "range": "± 69349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2485931,
+            "range": "± 102596",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 230664,
+            "range": "± 8227",
             "unit": "ns/iter"
           }
         ]
