@@ -128,6 +128,11 @@ Verify on every landing page update that no external `<script src="https://…">
 parity gate catches structural changes). This origin invariant is non-negotiable for
 browser-stored secrets.
 
+## Addendum: PR4 Metrics-snapshot data plane
+
+**Nightly metrics snapshot and GitHub API live fallback** (shipped 2026-07-21, PR4):
+The mission-control dashboard now fetches data from a nightly snapshot (`apps/landing/public/metrics/`) with live GitHub API fallback. A new `.github/workflows/metrics-snapshot.yml` runs nightly (03:17 UTC) and on manual dispatch: it bakes 7 GitHub REST API payloads into JSON files and commits them to main via SSH over the `RELEASE_DEPLOY_KEY` (the default `GITHUB_TOKEN` is not a ruleset bypass actor and its push to protected main is rejected). The `commits.json` snapshot is uniquely field-allowlisted (via jq) to strip git author/committer names and emails before public upload — the client consumes only sha, message, date, and login. Missing or stale snapshots degrade gracefully via per-key live fallback (dashboard shows an honest freshness line from `meta.json`). The push is marked `[skip ci]` + the pages.yml workflow is dispatched explicitly to keep the deploy intentional and avoid redundant CI runs. This approach trades real-time accuracy for load relief and reproducible dashboard renders across multiple deployments. The snapshot mode is transparent to users via a single `liveOrSnapshot` seam in mission-control's data source configuration (`dataSource: { mode: 'snapshot', snapshotBase: '/metrics' }`); the API data-fetch path remains available for client sign-in scenarios (users with fine-grained PATs can opt into live mode for latest data).
+
 ## References
 
 - Supersedes-parts-of: `docs/adr/0017-landing-consolidation-static-site.md` (the no-build-step

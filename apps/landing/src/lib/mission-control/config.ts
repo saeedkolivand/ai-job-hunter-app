@@ -25,8 +25,9 @@ export const MC_CONFIG = {
   releaseWorkflow: 'release.yml',
   pagesWorkflow: 'pages.yml',
   criticalLabels: ['critical', 'p0', 'priority: critical', 'severity: critical'],
-  // The single data-source seam (ADR-0018 PR4): flip `mode` to 'snapshot' with a
-  // `snapshotBase` and every widget reads pre-baked nightly JSON instead of the
-  // live API — config change, not a rewrite. Ships 'live' in PR2.
-  dataSource: { mode: 'live' } as DataSource,
+  // The single data-source seam (ADR-0018 PR4): every widget reads pre-baked
+  // nightly JSON from `snapshotBase` (produced by metrics-snapshot.yml) instead
+  // of the live API — config change, not a rewrite. liveOrSnapshot falls back to
+  // the live API per-key on any snapshot miss (e.g. before the first nightly run).
+  dataSource: { mode: 'snapshot', snapshotBase: '/metrics' } as DataSource,
 } as const;

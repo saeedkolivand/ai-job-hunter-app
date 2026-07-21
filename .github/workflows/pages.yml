@@ -51,6 +51,18 @@ jobs:
       - name: 📦 Setup Node + pnpm
         uses: ./.github/actions/setup-node-pnpm
 
+      # Persist Next.js's incremental build cache across deploys (silences the
+      # "No build cache found" warning — nextjs.org/docs/messages/no-cache). The
+      # key busts on dep or landing-source changes; restore-keys falls back to the
+      # newest lockfile-scoped cache so an incremental rebuild still starts warm.
+      - name: ♻️ Cache Next.js build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: apps/landing/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/landing/src/**', 'apps/landing/public/**') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: 🏗️ Build landing (static export)
         run: pnpm --filter @ajh/landing build
 

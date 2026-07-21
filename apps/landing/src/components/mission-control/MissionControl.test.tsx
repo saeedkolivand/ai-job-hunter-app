@@ -42,12 +42,16 @@ function makeRes(init: FakeInit = {}) {
 }
 
 function routeGet(url: string): unknown {
-  if (url.includes('/issues?state=open')) return [staleIssue];
-  if (url.includes('/actions/runs')) return { workflow_runs: [] };
-  if (url.includes('/releases')) return [];
-  if (url.includes('/commits')) return [];
-  if (url.includes('/pulls')) return [];
-  // The primary repo call (path '') → apiBase exactly.
+  // Match a substring shared by the live REST path and the snapshot filename
+  // (e.g. '/issues?state=open' and '/metrics/issues.json' both contain 'issues')
+  // so these fixtures serve both data-source modes.
+  if (url.includes('meta.json')) return { generatedAt: new Date().toISOString() };
+  if (url.includes('issues')) return [staleIssue];
+  if (url.includes('runs')) return { workflow_runs: [] };
+  if (url.includes('releases')) return [];
+  if (url.includes('commits')) return [];
+  if (url.includes('pulls')) return [];
+  // The primary repo call (live '' → apiBase exactly; snapshot '/metrics/repo.json').
   return { stargazers_count: 12, forks_count: 3, subscribers_count: 4, open_issues_count: 1 };
 }
 
@@ -128,5 +132,29 @@ describe('MissionControl', () => {
     await waitFor(() => expect(screen.getByLabelText('Repository verdict')).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Dispatch release/i })).toBeNull();
+  });
+
+  it('renders the snapshot freshness line from meta.json', async () => {
+    // routeGet serves /metrics/meta.json with a generatedAt stamp, so the muted
+    // provenance line appears once the snapshot-mode load path resolves it.
+    render(<MissionControl />);
+    const line = await screen.findByText((t) => t.includes('data refreshes nightly'));
+    expect(line.className).toContain('mc-status');
+    expect(line.textContent).toMatch(/^snapshot from .+ · data refreshes nightly$/);
+  });
+
+  it('shows no freshness line when meta.json 404s', async () => {
+    // Serve every read normally but 404 the snapshot meta → the line is absent.
+    fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method !== 'GET') return Promise.resolve(makeRes({ ok: true, status: 200 }));
+      if (url.includes('meta.json')) return Promise.resolve(makeRes({ ok: false, status: 404 }));
+      return Promise.resolve(makeRes({ body: routeGet(url) }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<MissionControl />);
+    await waitFor(() => expect(screen.getByLabelText('Repository verdict')).toBeTruthy());
+    expect(screen.queryByText((t) => t.includes('data refreshes nightly'))).toBeNull();
   });
 });

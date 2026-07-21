@@ -3,7 +3,12 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MC_CONFIG } from '@/lib/mission-control/config';
-import { ghGet, liveOrSnapshot } from '@/lib/mission-control/github';
+import {
+  fetchSnapshotStamp,
+  ghGet,
+  liveOrSnapshot,
+  snapshotFreshnessLine,
+} from '@/lib/mission-control/github';
 import {
   type BenchRun,
   chaossHealth,
@@ -242,6 +247,7 @@ export function MissionControl() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [freshness, setFreshness] = useState<string | null>(null);
   const [bench, setBench] = useState<Record<string, BenchRun[]> | null>(null);
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [pending, setPending] = useState<{
@@ -283,6 +289,11 @@ export function MissionControl() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    // Honest-UI: stamp the snapshot's age when one is present. Renders nothing in
+    // live mode or before the first nightly snapshot exists (meta.json 404s).
+    void fetchSnapshotStamp(MC_CONFIG.dataSource).then((stamp) => {
+      if (!cancelled) setFreshness(stamp);
+    });
     return () => {
       cancelled = true;
     };
@@ -330,6 +341,10 @@ export function MissionControl() {
   );
 
   const model = useMemo<Model | null>(() => (data ? buildModel(data) : null), [data]);
+  const freshnessLine = useMemo(
+    () => (freshness ? snapshotFreshnessLine(freshness, Date.now()) : null),
+    [freshness]
+  );
   const benchSummaries = useMemo(() => (bench ? summarizeBenchmarks(bench) : []), [bench]);
   const signedIn = token.length > 0;
 
@@ -663,6 +678,8 @@ export function MissionControl() {
         // On a hard failure the role="alert" above is the single message (U10).
         <p className="mc-empty">Could not load the dashboard. Try Refresh.</p>
       )}
+
+      {freshnessLine ? <p className="mc-status">{freshnessLine}</p> : null}
 
       <ConfirmDialog
         open={pending !== null}
