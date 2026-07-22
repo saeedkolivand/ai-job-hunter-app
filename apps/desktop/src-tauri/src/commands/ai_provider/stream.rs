@@ -210,6 +210,52 @@ pub(super) fn strip_think_blocks(text: &str) -> String {
     out
 }
 
+/// Append one transport read to `buf` as UTF-8, holding back an incomplete
+/// trailing sequence in `carry` for the next read.
+///
+/// `reqwest::Response::chunk` splits the body at arbitrary byte offsets — a
+/// chunked-transfer body surfaces as the socket reads land, and h2 DATA frames
+/// are cut wherever the server flushed. So one multi-byte character (an em dash,
+/// a curly quote, an accented letter, an emoji) routinely straddles two reads.
+/// Decoding each read on its own with `String::from_utf8_lossy` replaced BOTH
+/// halves with `U+FFFD`, and since a replacement char is legal inside a JSON
+/// string the frame still parsed — the mojibake was forwarded to the renderer
+/// and persisted as the finished document, with no error anywhere.
+///
+/// Genuinely invalid bytes (a corrupt transfer, never a provider) still collapse
+/// to a single `U+FFFD` and are skipped, so a malformed stream can never stall
+/// the loop.
+pub(super) fn push_utf8(buf: &mut String, carry: &mut Vec<u8>, bytes: &[u8]) {
+    carry.extend_from_slice(bytes);
+    loop {
+        match std::str::from_utf8(carry) {
+            Ok(text) => {
+                buf.push_str(text);
+                carry.clear();
+                return;
+            }
+            Err(e) => {
+                let valid = e.valid_up_to();
+                // `valid_up_to()` is by definition a valid UTF-8 prefix.
+                buf.push_str(std::str::from_utf8(&carry[..valid]).unwrap_or_default());
+                match e.error_len() {
+                    // A truly invalid sequence: emit one replacement char, skip
+                    // it, and keep decoding the rest of this read.
+                    Some(n) => {
+                        buf.push(char::REPLACEMENT_CHARACTER);
+                        carry.drain(..valid + n);
+                    }
+                    // An incomplete tail: hold it back for the next read.
+                    None => {
+                        carry.drain(..valid);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Whether `job_id` has been cancelled.
 fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
     app.state::<Mutex<JobTracker>>()
@@ -278,6 +324,8 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
     P: FnMut(&mut String) -> Vec<StreamPiece>,
 {
     let mut buf = String::new();
+    // Bytes from a read that ended mid-UTF-8-sequence — see `push_utf8`.
+    let mut carry: Vec<u8> = Vec::new();
     let mut usage = Usage::default();
     let mut answer = String::new();
     loop {
@@ -287,7 +335,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
         }
         match next_chunk().await {
             Ok(Some(bytes)) => {
-                buf.push_str(&String::from_utf8_lossy(bytes.as_ref()));
+                push_utf8(&mut buf, &mut carry, bytes.as_ref());
                 for piece in parse(&mut buf) {
                     if let Some(u) = piece.usage {
                         usage = u;
@@ -370,6 +418,8 @@ where
     F: FnMut(&mut String) -> Vec<StreamPiece> + Send,
 {
     let mut buf = String::new();
+    // Bytes from a read that ended mid-UTF-8-sequence — see `push_utf8`.
+    let mut carry: Vec<u8> = Vec::new();
     let mut usage = Usage::default();
     // The full completed answer, accumulated from non-thinking deltas only —
     // the same shape the renderer buffers — persisted by `finish` so a dropped
@@ -414,7 +464,7 @@ where
 
         match response.chunk().await {
             Ok(Some(bytes)) => {
-                buf.push_str(&String::from_utf8_lossy(&bytes));
+                push_utf8(&mut buf, &mut carry, &bytes);
                 for piece in parse(&mut buf) {
                     if let Some(u) = piece.usage {
                         usage = u;
@@ -566,6 +616,93 @@ mod tests {
                 Act::Emit("hello".to_string(), false),
                 Act::Emit("world".to_string(), false),
                 Act::Complete(Usage::default(), "helloworld".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_multibyte_char_split_across_reads_is_not_corrupted() {
+        // `response.chunk()` cuts the body at arbitrary byte offsets, so one
+        // multi-byte char routinely straddles two reads. Decoding each read on
+        // its own turned BOTH halves into U+FFFD, and the mojibake was persisted
+        // as the finished document. The em dash here is E2 80 94, cut 1|2.
+        let acts = run(
+            vec![
+                Ok(Some(vec![b'a', 0xE2])),
+                Ok(Some(vec![0x80, 0x94, b'b', b'\n'])),
+                Ok(None),
+            ],
+            None,
+            line_parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("a\u{2014}b".to_string(), false),
+                Act::Complete(Usage::default(), "a\u{2014}b".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_multibyte_char_split_2_1_and_across_three_reads_is_not_corrupted() {
+        // Same char cut 2|1, plus a 4-byte emoji (F0 9F 9A 80) dribbled one byte
+        // per read — the carry must survive an arbitrary number of empty-yield
+        // reads, not just one.
+        let acts = run(
+            vec![
+                Ok(Some(vec![0xE2, 0x80])),
+                Ok(Some(vec![0x94])),
+                Ok(Some(vec![0xF0])),
+                Ok(Some(vec![0x9F])),
+                Ok(Some(vec![0x9A])),
+                Ok(Some(vec![0x80, b'\n'])),
+                Ok(None),
+            ],
+            None,
+            line_parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("\u{2014}\u{1F680}".to_string(), false),
+                Act::Complete(Usage::default(), "\u{2014}\u{1F680}".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn genuinely_invalid_bytes_still_collapse_to_one_replacement_char() {
+        // A corrupt transfer (never a provider) must not stall the loop: an
+        // invalid sequence becomes exactly one U+FFFD and decoding continues.
+        let acts = run(
+            vec![Ok(Some(vec![b'a', 0xFF, b'b', b'\n'])), Ok(None)],
+            None,
+            line_parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("a\u{FFFD}b".to_string(), false),
+                Act::Complete(Usage::default(), "a\u{FFFD}b".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_incomplete_trailing_sequence_at_end_of_body_does_not_hang() {
+        // The body ends mid-character: the held-back bytes are simply dropped and
+        // the loop still completes exactly once.
+        let acts = run(
+            vec![Ok(Some(vec![b'a', b'\n', 0xE2])), Ok(None)],
+            None,
+            line_parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("a".to_string(), false),
+                Act::Complete(Usage::default(), "a".to_string()),
             ]
         );
     }

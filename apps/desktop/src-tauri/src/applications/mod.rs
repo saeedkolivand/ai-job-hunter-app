@@ -1280,13 +1280,16 @@ pub fn normalize_job_url(url: &str) -> String {
 
 /// Per-host allowlist of *identifying* query params that must survive normalization
 /// (every other query param — utm_*, ref, tracking — is dropped, and hosts absent
-/// here drop the entire query). Keep in sync with the canonical URL builders in
-/// `scraping::scrape_url` that place a job id in the query string: currently only
-/// Indeed (`/viewjob?jk=<id>`). LinkedIn et al. put the id in the PATH, so they need
-/// no entry here and normalize exactly as before.
+/// here drop the entire query, so a host whose id lives in the QUERY collapses to
+/// one key for every job). Keep in sync with every canonical URL builder that does
+/// that: Indeed (`/viewjob?jk=<id>`) and Hacker News (`/item?id=<id>`, built by
+/// `boards::ycombinator` when a job story has no external url). Path-based ids
+/// (LinkedIn et al.) need no entry.
 fn identifying_query_params(host: &str) -> &'static [&'static str] {
     if host == "indeed.com" || host.ends_with(".indeed.com") {
         &["jk"]
+    } else if host == "news.ycombinator.com" {
+        &["id"]
     } else {
         &[]
     }
