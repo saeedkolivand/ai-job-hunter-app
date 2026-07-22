@@ -261,6 +261,69 @@ fn save_application_inserts_separate_rows_when_unlinked() {
     );
 }
 
+// ── unique-aggregate index (#816 follow-up) ────────────────────────────────────
+
+/// The UNIQUE(job_url) partial index rejects a second row for the same non-empty
+/// job — the DB-level guarantee that a concurrent double-insert can't fork the
+/// aggregate. `save_application` recovers from this by merging (see the
+/// concurrency test); a raw `insert` surfaces the error.
+#[test]
+fn unique_index_rejects_a_direct_duplicate_job_url() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let url = "https://acme.com/job/unique";
+    store.insert(&record("g1", url)).unwrap();
+    assert!(
+        store.insert(&record("g2", url)).is_err(),
+        "a second row for one non-empty job_url must be rejected"
+    );
+    assert_eq!(store.list().len(), 1, "only the first row persists");
+}
+
+/// The index is PARTIAL (`WHERE job_url != ''`): unusable raw urls normalize to
+/// '' and are deliberately stored as separate unlinked rows, so many empty-url
+/// rows must coexist without tripping the constraint.
+#[test]
+fn empty_job_url_rows_survive_the_unique_index() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store.insert(&record("g1", "")).unwrap();
+    store.insert(&record("g2", "")).unwrap();
+    store.insert(&record("g3", "")).unwrap();
+    assert_eq!(store.list().len(), 3, "empty-url rows are not collapsed");
+}
+
+/// Many concurrent saves for the SAME job: each may miss `find_by_job_url` and
+/// race to insert, but the UNIQUE index turns every loser's insert into a
+/// conflict `save_application` recovers from by merging. Exactly one aggregate
+/// survives and every call succeeds (the `.unwrap()`s).
+#[test]
+fn concurrent_saves_for_one_job_keep_a_single_aggregate() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(AiGenerationStore::open(&dir.path().to_path_buf()).unwrap());
+    let url = "https://acme.com/job/concurrent";
+
+    let threads: Vec<_> = (0..6)
+        .map(|i| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                store
+                    .save_application(record(&format!("g{i}"), url))
+                    .unwrap();
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+
+    assert_eq!(
+        store.list().len(),
+        1,
+        "concurrent saves for one job must not fork the aggregate"
+    );
+}
+
 // ── remove_many tests ─────────────────────────────────────────────────────────
 
 #[test]

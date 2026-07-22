@@ -744,8 +744,7 @@ impl ApplicationStore {
         // otherwise a crash between them leaves the status changed with no
         // history row — and reading through a separately-released lock let a
         // concurrent transition land in the gap, so `from_status` below recorded
-        // a status this row no longer had. `.transaction()` needs
-        // `&mut Connection`, so call on `&mut *guard`.
+        // a status this row no longer had.
         let mut guard = self.conn.lock();
         let tx = guard.transaction()?;
         let existing = Self::row_by_id_conn(&tx, id)?
