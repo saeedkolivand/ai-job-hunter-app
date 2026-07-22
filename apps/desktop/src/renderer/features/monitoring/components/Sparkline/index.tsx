@@ -4,7 +4,9 @@ interface Props {
 
 export function Sparkline({ data }: Props) {
   const max = Math.max(1, ...data);
-  const now = new Date().getHours();
+  // The data is hours-ago indexed (bin 23 = the most recent hour), so the "now"
+  // bar is the last bucket — not `new Date().getHours()`, which mislabeled every tick.
+  const nowIndex = data.length - 1;
 
   return (
     <div className="relative">
@@ -41,14 +43,15 @@ export function Sparkline({ data }: Props) {
               width={w}
               height={h}
               rx={2}
-              fill={i === now ? 'url(#bar-fill-now)' : 'url(#bar-fill)'}
+              fill={i === nowIndex ? 'url(#bar-fill-now)' : 'url(#bar-fill)'}
             />
           );
         })}
       </svg>
-      {/* Hour labels */}
+      {/* Relative-time axis: leftmost bar ≈24h ago, rightmost is the current hour.
+          Compact notation kept language-neutral, matching the prior hardcoded labels. */}
       <div className="mt-1 flex justify-between text-[9px] text-foreground/25 px-0.5">
-        {['12am', '3am', '6am', '9am', '12pm', '3pm', '6pm', '9pm'].map((l) => (
+        {['-24h', '-18h', '-12h', '-6h', 'now'].map((l) => (
           <span key={l}>{l}</span>
         ))}
       </div>
