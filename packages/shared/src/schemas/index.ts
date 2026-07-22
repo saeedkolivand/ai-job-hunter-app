@@ -387,7 +387,10 @@ export type ApplicationTrackRequest = z.infer<typeof ApplicationTrackSchema>;
 export const ApplicationUpdateSchema = z.object({
   id: z.string().min(1),
   notes: z.string().optional(),
-  nextActionAt: z.number().int().nullable().optional(),
+  // Non-negative: the server-side guard (`parse_next_action_at`) rejects a
+  // negative epoch-ms, so the wire contract mirrors it rather than silently
+  // clearing the reminder on a bad value.
+  nextActionAt: z.number().int().min(0).nullable().optional(),
   comp: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),

@@ -23,6 +23,11 @@ const ARABIC =
   'نبحث عن مهندس برمجيات ذي خبرة للانضمام إلى فريقنا. ستكون مسؤولاً عن تصميم وتطوير خدمات خلفية عالية الجودة والعمل بشكل وثيق مع مديري المنتجات والمصممين لتسليم المشاريع في الوقت المحدد.';
 const NORWEGIAN =
   'Vi ser etter en erfaren programvareutvikler som vil bli med i teamet vårt. Du vil ha ansvaret for å designe og utvikle backend-tjenester av høy kvalitet, og samarbeide tett med produktsjefer og designere.';
+// Nynorsk — franc emits the INDIVIDUAL code `nno` (never the macrolanguage
+// `nor`), a different franc code from Bokmål's `nob` above, so this exercises the
+// separate `nno` map entry rather than the `nob` one.
+const NYNORSK =
+  'Me søkjer ein erfaren programvareutviklar som vil bli med i teamet vårt. Du vil ha ansvaret for å designe og utvikle backend-tenester av høg kvalitet, og samarbeide tett med produktsjefar og designarar for å levere prosjekt til rett tid.';
 
 describe('detectLanguage', () => {
   it('returns "unknown" for empty or very short text', () => {
@@ -47,6 +52,10 @@ describe('detectLanguage', () => {
     expect(detectLanguage(CHINESE)).toBe('zh');
     expect(detectLanguage(ARABIC)).toBe('ar');
     expect(detectLanguage(NORWEGIAN)).toBe('no');
+  });
+
+  it('detects Nynorsk (franc emits nno, distinct from Bokmål nob) and maps to no', () => {
+    expect(detectLanguage(NYNORSK)).toBe('no');
   });
 });
 
