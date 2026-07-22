@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784663495994,
+  "lastUpdate": 1784687439006,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5327,6 +5327,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 230664,
             "range": "± 8227",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5c4453e00f8dd58687e970b1d934a10c234dfa40",
+          "message": "fix: persist completed stream text so the poll fallback works (#828)\n\n* fix(ai): persist the completed stream text for the poll fallback\n\nThe renderer's poll fallback (awaitAiStream) recovers a dropped stream frame or a\nmissed `done` event by reading `result.text` from the completed job, but the backend\npersisted only `{ done: true }` — so PR #802's longer-wins fix was a runtime no-op.\n\nAccumulate the completed answer (non-thinking deltas only) in the provider-agnostic\nstreaming completion path (`stream::finish`, shared by openai/anthropic/gemini/ollama)\nand in the CLI-agent path (`cli_agent::emit_done`), and persist it as `result.text`.\nBoth strip inline `<think>…</think>` via a shared `strip_think_blocks` mirroring the\nrenderer's think-splitter, so the persisted text is the SAME shape the renderer buffers:\nthe poll's `persisted.length > buffer.length` compares like-for-like and can never\nresolve reasoning markup into the final document.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(generate): align the stream poll test with the real job contract\n\nThe prior mock returned `{ status: 'completed', result: { text } }`, a shape the\nbackend never produced, so the regression test proved nothing. Mirror the real\ncontract (`result: { done: true, text }`, text think-stripped) and add a case pinning\nthat a recovered persisted result can never surface `<think>` markup.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-22T04:10:06+02:00",
+          "tree_id": "556b2f988245c9acb062abe20fc3d132e5a1e6d0",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5c4453e00f8dd58687e970b1d934a10c234dfa40"
+        },
+        "date": 1784687437989,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2244132,
+            "range": "± 19353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2688114,
+            "range": "± 33514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 299189,
+            "range": "± 14333",
             "unit": "ns/iter"
           }
         ]
