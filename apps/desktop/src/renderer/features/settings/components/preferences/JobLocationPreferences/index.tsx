@@ -1,6 +1,6 @@
 import { MapPin, Plus, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { useTranslation } from '@ajh/translations';
@@ -35,6 +35,19 @@ export function JobLocationPreferences() {
     left: number;
     width: number;
   } | null>(null);
+
+  // The blur-hide and position-measure both run on a timer that calls setState.
+  // Keep their ids so a mid-timeout unmount can cancel them — a stray setState
+  // after jsdom teardown throws `window is not defined` and fails the whole run.
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const positionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+      if (positionTimerRef.current) clearTimeout(positionTimerRef.current);
+    },
+    []
+  );
 
   const filteredSuggestions = COMMON_LOCATIONS.filter(
     (loc) => loc.toLowerCase().includes(inputValue.toLowerCase()) && inputValue.length > 0
@@ -115,7 +128,8 @@ export function JobLocationPreferences() {
               setInputValue(e.target.value);
               setShowSuggestions(e.target.value.length > 0);
               if (e.target.value.length > 0) {
-                setTimeout(updateDropdownPosition, 0);
+                if (positionTimerRef.current) clearTimeout(positionTimerRef.current);
+                positionTimerRef.current = setTimeout(updateDropdownPosition, 0);
               }
             }}
             onFocus={() => {
@@ -124,7 +138,11 @@ export function JobLocationPreferences() {
                 updateDropdownPosition();
               }
             }}
-            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            onBlur={() => {
+              // 150ms delay so a click on a suggestion registers before the
+              // dropdown hides; the ref lets an unmount cancel the pending hide.
+              blurTimerRef.current = setTimeout(() => setShowSuggestions(false), 150);
+            }}
             placeholder={t('settings.location.searchPlaceholder')}
             className="flex-1"
           />
