@@ -1128,10 +1128,17 @@ fn delete_keep_documents_false_removes_child_generations() {
         )
         .unwrap();
 
-    // Pre-link two generation rows to this Application (simulates what a
-    // live session would have after the FK write-back).
+    // Pre-link two generation rows to this Application (simulates what a live
+    // session would have after the FK write-back). They carry DISTINCT urls: the
+    // per-job UNIQUE(job_url) index forbids two rows sharing one non-empty url,
+    // and `remove_for_application` must still delete every linked row regardless.
     insert_gen_with_app_id(&gen_conn, "gen-a", "https://acme.com/job/99", Some(&app_id));
-    insert_gen_with_app_id(&gen_conn, "gen-b", "https://acme.com/job/99", Some(&app_id));
+    insert_gen_with_app_id(
+        &gen_conn,
+        "gen-b",
+        "https://acme.com/job/99b",
+        Some(&app_id),
+    );
 
     assert_eq!(
         gen_count_for_app(&gen_conn, &app_id),
@@ -1191,6 +1198,8 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
         )
         .unwrap();
 
+    // Distinct urls per the per-job UNIQUE(job_url) index (see the sibling test);
+    // `detach_application` must still null the FK on every linked row.
     insert_gen_with_app_id(
         &gen_conn,
         "gen-c",
@@ -1200,7 +1209,7 @@ fn delete_keep_documents_true_detaches_child_generations_but_keeps_rows() {
     insert_gen_with_app_id(
         &gen_conn,
         "gen-d",
-        "https://acme.com/job/100",
+        "https://acme.com/job/100b",
         Some(&app_id),
     );
 

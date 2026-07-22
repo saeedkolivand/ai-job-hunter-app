@@ -165,6 +165,43 @@ impl AiGenerationStore {
                 )
             },
         },
+        // #816 follow-up: enforce ONE aggregate row per job. Two concurrent
+        // `save_application` calls for the same job could each miss
+        // `find_by_job_url` (the lock is released between the read and the insert)
+        // and both insert, forking the per-job aggregate. The write path now
+        // recovers from the resulting constraint error by merging instead.
+        //
+        // PARTIAL (`WHERE job_url != ''`): an unusable raw url normalizes to '' and
+        // is deliberately stored as a separate, unlinked manual generation — the
+        // constraint must NOT collapse those into one.
+        //
+        // Forward-safe against a DB that ALREADY forked: collapse each duplicate
+        // non-empty job_url to a single row BEFORE creating the unique index, or
+        // the CREATE would fail. Keep the row linked to an Application if any, else
+        // the newest — the runtime merge already prefers newest content, so this
+        // drops only the rarer partial fork.
+        Migration {
+            name: "unique_job_url_aggregate",
+            up: |conn| {
+                conn.execute_batch(
+                    "DELETE FROM ai_generations
+                       WHERE job_url != ''
+                         AND id NOT IN (
+                           SELECT id FROM (
+                             SELECT id, ROW_NUMBER() OVER (
+                                      PARTITION BY job_url
+                                      ORDER BY (application_id IS NOT NULL) DESC,
+                                               created_at DESC, rowid DESC
+                                    ) AS rn
+                             FROM ai_generations
+                             WHERE job_url != ''
+                           ) WHERE rn = 1
+                         );
+                     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_generations_job_url_unique
+                         ON ai_generations(job_url) WHERE job_url != '';",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -328,7 +365,25 @@ impl AiGenerationStore {
             return Ok(id);
         }
         let id = incoming.id.clone();
-        self.insert(&incoming)?;
+        if let Err(insert_err) = self.insert(&incoming) {
+            // A concurrent writer inserted this job_url between our
+            // `find_by_job_url` above and here; the UNIQUE(job_url) index rejects
+            // our duplicate. Recover by merging into the row that now exists, so
+            // exactly one aggregate per job survives instead of a fork. (Empty
+            // job_url is exempt from the partial index, so an error there is never
+            // this race — surface it. A non-race insert failure also finds no row
+            // and surfaces below.)
+            if incoming.job_url.is_empty() {
+                return Err(insert_err);
+            }
+            let Some(existing) = self.find_by_job_url(&incoming.job_url) else {
+                return Err(insert_err);
+            };
+            let merged = merge_application(existing, incoming);
+            let merged_id = merged.id.clone();
+            self.update(&merged)?;
+            return Ok(merged_id);
+        }
         Ok(id)
     }
 
