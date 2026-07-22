@@ -63,7 +63,11 @@ export function useFormatRelativeTime(t: TFunction, nsPrefix: string = 'jobs') {
     if (minutes < 60) return t(keys.minutesAgo, { m: minutes });
     if (hours < 24) return t(keys.hoursAgo, { h: hours });
     if (days < 7) return t(keys.daysAgo, { d: days });
-    if (weeks < 4) return t(keys.weeksAgo, { w: weeks });
+    // Hand over to the month tier at the same 30-day boundary `months` is
+    // floored on. `weeks < 4` ended the week tier at day 28, so days 28–29 fell
+    // through to `monthsAgo` with `months = floor(days / 30) = 0` — rendering
+    // "0mo ago" for a month-old posting.
+    if (days < 30) return t(keys.weeksAgo, { w: weeks });
     return t(keys.monthsAgo, { m: months });
   };
 }
