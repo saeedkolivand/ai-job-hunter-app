@@ -120,4 +120,19 @@ describe('canonicalJobKey — URL normalization details (mirror normalize_job_ur
     // Same input twice must key identically (determinism, not just no-crash).
     expect(canonicalJobKey('https:///path', 'Engineer', 'Acme')).toBe(key);
   });
+
+  it('keeps distinct Hacker News job ids apart', () => {
+    // `boards::ycombinator` builds `news.ycombinator.com/item?id=<id>` when an HN
+    // job story has no external link, so the id lives in the query — which is
+    // dropped for any host without an allowlist entry.
+    const a = canonicalJobKey('https://news.ycombinator.com/item?id=44100001', 'BE', 'Acme');
+    const b = canonicalJobKey('https://news.ycombinator.com/item?id=44100002', 'FE', 'Beta');
+    expect(a).not.toBe(b);
+    expect(a).toBe('https://news.ycombinator.com/item?id=44100001');
+
+    // Tracking params on the same id still collapse, in either order.
+    expect(
+      canonicalJobKey('https://news.ycombinator.com/item?utm_source=x&id=44100001', 'BE', 'Acme')
+    ).toBe(a);
+  });
 });
