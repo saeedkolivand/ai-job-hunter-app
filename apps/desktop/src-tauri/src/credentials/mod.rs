@@ -112,17 +112,16 @@ impl CredentialStore {
             .set_password(password)
             .map_err(|e| format!("keyring set error: {e}"))?;
 
-        let mut meta = self.load_meta();
-        meta.insert(
-            board_id.to_string(),
-            CredentialMeta {
-                board_id: board_id.to_string(),
-                username: username.to_string(),
-                saved_at: now_ms(),
-            },
-        );
-        self.save_meta(meta)?;
-        Ok(())
+        self.mutate_meta(|meta| {
+            meta.insert(
+                board_id.to_string(),
+                CredentialMeta {
+                    board_id: board_id.to_string(),
+                    username: username.to_string(),
+                    saved_at: now_ms(),
+                },
+            );
+        })
     }
 
     pub fn remove(&self, board_id: &str) -> AppResult<()> {
@@ -131,10 +130,9 @@ impl CredentialStore {
             // entry if the keychain was cleared externally.
             entry.delete_credential().ok();
         }
-        let mut meta = self.load_meta();
-        meta.remove(board_id);
-        self.save_meta(meta)?;
-        Ok(())
+        self.mutate_meta(|meta| {
+            meta.remove(board_id);
+        })
     }
 
     /// Remove every stored credential — board passwords and all AI/provider keys
@@ -158,25 +156,62 @@ impl CredentialStore {
 
     // ── Meta persistence ──────────────────────────────────────────────────────
 
+    /// Read the index off disk, distinguishing "no file yet" (first run — an empty
+    /// index) from "the file is there but unreadable or corrupt" (an error).
+    ///
+    /// The difference matters because [`Self::mutate_meta`] writes the WHOLE map:
+    /// treating a corrupt read as empty would make the next `set` persist only its
+    /// own entry and orphan every previously saved credential from the index. The
+    /// keychain secrets survive, but nothing can find them again.
+    fn read_meta_file(&self) -> AppResult<HashMap<String, CredentialMeta>> {
+        match std::fs::read_to_string(&self.meta_file) {
+            Ok(s) => serde_json::from_str(&s)
+                .map_err(|e| AppError::Parse(format!("parse credential metadata: {e}"))),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HashMap::new()),
+            Err(e) => Err(AppError::Storage(format!("read credential metadata: {e}"))),
+        }
+    }
+
     fn load_meta(&self) -> HashMap<String, CredentialMeta> {
         let mut guard = self.cache.lock();
         if let Some(ref c) = guard.0 {
             return c.clone();
         }
-        let loaded: HashMap<String, CredentialMeta> = std::fs::read_to_string(&self.meta_file)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
-        guard.0 = Some(loaded.clone());
-        loaded
+        match self.read_meta_file() {
+            Ok(loaded) => {
+                guard.0 = Some(loaded.clone());
+                loaded
+            }
+            // Report empty to this read-only caller, but do NOT cache it — a later
+            // `set` must not mistake an unreadable index for an empty one.
+            Err(e) => {
+                log::error!("[credentials] {e}");
+                HashMap::new()
+            }
+        }
     }
 
-    fn save_meta(&self, meta: HashMap<String, CredentialMeta>) -> AppResult<()> {
+    /// Apply `f` to the index and persist it, holding the cache lock across the
+    /// whole read-modify-write.
+    ///
+    /// `set`/`remove` used to `load_meta()` (locking, then RELEASING) and only then
+    /// `save_meta()` (locking again), so two concurrent writers could both start
+    /// from the same snapshot and the second would drop the first's entry.
+    fn mutate_meta<F>(&self, f: F) -> AppResult<()>
+    where
+        F: FnOnce(&mut HashMap<String, CredentialMeta>),
+    {
+        let mut guard = self.cache.lock();
+        let mut meta = match guard.0 {
+            Some(ref c) => c.clone(),
+            None => self.read_meta_file()?,
+        };
+        f(&mut meta);
         let json = serde_json::to_string_pretty(&meta)
             .map_err(|e| AppError::Parse(format!("serialize credential metadata: {e}")))?;
         std::fs::write(&self.meta_file, json)
             .map_err(|e| AppError::Storage(format!("write credential metadata: {e}")))?;
-        self.cache.lock().0 = Some(meta);
+        guard.0 = Some(meta);
         Ok(())
     }
 }
