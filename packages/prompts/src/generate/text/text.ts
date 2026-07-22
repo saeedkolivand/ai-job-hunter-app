@@ -21,7 +21,10 @@ export function extractPlainText(raw: string): string {
       // up ACROSS each other, so `**Python**, **Go**` collapsed to
       // `*Python, Go*`. The prompts ask for 2-3 `**keyword**` bolds per bullet,
       // so this ran on essentially every generated document.
-      .replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, '$1')
+      // `[^*\n]` (not `[^*]`) keeps the class inside one line — otherwise a
+      // `* apple\n* banana` markdown bullet list pairs the two leading list
+      // stars across the newline, eating them and leaving ` apple\n banana`.
+      .replace(/(?<!\*)\*(?!\*)([^*\n]+)\*(?!\*)/g, '$1')
       // Fenced blocks first — otherwise the inline-backtick pass below consumes
       // the ``` fence markers, orphaning them so the fenced regex no longer
       // matches and the code body leaks into the plain text.
