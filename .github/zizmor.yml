@@ -24,3 +24,11 @@ rules:
   cache-poisoning:
     ignore:
       - release.yml
+  # labeler.yml deliberately uses pull_request_target so fork PRs get labeled:
+  # the workflow never checks out or executes PR code (actions/labeler reads
+  # the diff via the API), and both the workflow file and .github/labeler.yml
+  # are read from the base branch. The header comment in labeler.yml forbids
+  # ever adding a PR-head checkout there.
+  dangerous-triggers:
+    ignore:
+      - labeler.yml
