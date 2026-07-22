@@ -58,12 +58,7 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
     // one useless entry, no historical id ever matched it, and every completed
     // job rendered twice (different React keys, so nothing else caught it).
     // Strip only the trailing `-<ts>` to recover the real job id.
-    const liveJobIds = new Set(
-      liveActivity.map((a) => {
-        const cut = a.id.lastIndexOf('-');
-        return cut > 0 ? a.id.slice(0, cut) : a.id;
-      })
-    );
+    const liveJobIds = new Set(liveActivity.map((a) => a.id.slice(0, a.id.lastIndexOf('-'))));
     return [...liveActivity, ...historicalActivity.filter((a) => !liveJobIds.has(a.id))].slice(
       0,
       40

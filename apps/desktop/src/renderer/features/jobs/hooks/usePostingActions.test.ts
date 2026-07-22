@@ -338,6 +338,38 @@ describe('usePostingActions — handleTailor', () => {
     );
   });
 
+  it('fires persistJob(applied) only AFTER saveFromPosting resolves', async () => {
+    // Deferred save: hold the promise open so we can prove the applied
+    // interaction is not persisted until the save settles (the #796 guarantee).
+    let resolveSave: (value: { id: string }) => void = () => {};
+    mockSaveFromPostingAsync.mockReturnValueOnce(
+      new Promise<{ id: string }>((resolve) => {
+        resolveSave = resolve;
+      })
+    );
+
+    const { result } = renderHook(() => usePostingActions(makePosting()));
+
+    let tailorDone: Promise<void> = Promise.resolve();
+    act(() => {
+      tailorDone = result.current.handleTailor();
+    });
+
+    // Save is in flight but unresolved — applied must NOT be tracked yet.
+    expect(mockSaveFromPostingAsync).toHaveBeenCalledTimes(1);
+    expect(mockPersistJobAsync).not.toHaveBeenCalled();
+
+    // Resolve the save; only now may the applied interaction persist.
+    await act(async () => {
+      resolveSave({ id: 'app-1' });
+      await tailorDone;
+    });
+
+    expect(mockPersistJobAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ interactionType: 'applied' })
+    );
+  });
+
   it('does NOT mark applied when saveFromPosting rejects', async () => {
     // `trackInteraction` PERSISTS via persistJobMutation, and the failure paths
     // return without reverting — so firing it up-front left the posting reading
