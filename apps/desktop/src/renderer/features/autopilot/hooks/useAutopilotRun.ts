@@ -60,10 +60,14 @@ export function useAutopilotRun() {
         ),
       }));
     }
+    // Read the clock at dispatch time, not inside the reducer body: under
+    // StrictMode dev double-invocation the reducer runs twice from the same base,
+    // and `Date.now()` there would produce two different timestamps (impure).
+    const ts = Date.now();
     setStepLogs((prev) => ({
       [event.autopilotId]: [
         ...(prev[event.autopilotId] ?? []).slice(-49),
-        { step: event.step, detail: event.detail, ts: Date.now() },
+        { step: event.step, detail: event.detail, ts },
       ],
     }));
   }, []);
