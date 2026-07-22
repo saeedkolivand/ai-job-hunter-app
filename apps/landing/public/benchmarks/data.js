@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784695148957,
+  "lastUpdate": 1784756076494,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5411,6 +5411,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 288456,
             "range": "± 11471",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0eebbcbfceb446412760147d592ca442a0b0063",
+          "message": "chore: bump uuid from 1.23.5 to 1.24.0 in /apps/desktop/src-tauri (#871)\n\nBumps [uuid](https://github.com/uuid-rs/uuid) from 1.23.5 to 1.24.0.\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/v1.23.5...v1.24.0)\n\n---\nupdated-dependencies:\n- dependency-name: uuid\n  dependency-version: 1.24.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-07-22T23:08:06+02:00",
+          "tree_id": "ccb98cc7dcbd0cf12d8616f0ddb9a96a34aad20d",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/e0eebbcbfceb446412760147d592ca442a0b0063"
+        },
+        "date": 1784756075335,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2156873,
+            "range": "± 22140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2592760,
+            "range": "± 34304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 302271,
+            "range": "± 17168",
             "unit": "ns/iter"
           }
         ]
