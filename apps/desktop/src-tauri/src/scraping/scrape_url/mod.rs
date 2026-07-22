@@ -15,6 +15,11 @@ use anyhow::Result;
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 
+/// Byte cap for a generic-HTML body read here — the same 8 MB the board fetch
+/// path applies. A job page that legitimately exceeds this is not something the
+/// generic extractor could make sense of anyway.
+const SCRAPE_URL_MAX_BYTES: usize = 8 * 1024 * 1024;
+
 /// Try every named-board handler on `url` in order; return the first match.
 /// Returns `Ok(None)` when no board recognises the URL (without making any
 /// network request beyond the board-pattern parse — each handler does an early
@@ -100,7 +105,14 @@ async fn resolve_uncached(url: &str) -> Result<Option<JobPosting>> {
     // Pass 4: generic HTML fallback on the already-fetched body — no second
     // fetch. The body was fetched through the guarded client so the host is
     // already validated; parse it directly.
-    let html = match res.text().await {
+    //
+    // Read it through the SAME byte cap the board path uses. This URL is
+    // attacker-influenced (that is why it goes through `get_guarded*`), and
+    // `Response::text()` buffers the whole body — a hostile host could stream an
+    // arbitrarily large one and drive us into OOM. The 20s timeout bounds how
+    // LONG we read, not how MUCH. Going through `fetch_text` instead is not an
+    // option here: it uses the shared client and would drop the SSRF guard.
+    let html = match crate::scraping::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
         Ok(h) => h,
         Err(_) => return Ok(None),
     };
