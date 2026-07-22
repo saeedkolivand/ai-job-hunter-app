@@ -26,10 +26,12 @@
 //! - **Prompt injection can REQUEST but never EXECUTE.** Hostile job/résumé text can
 //!   make the model *ask* for a write; it can never satisfy the gate on the user's
 //!   behalf — only a real `agent_confirm` IPC call (or a `resolve` in a test) can.
-//! - **Display/edit fidelity.** Confirm-request args are clamped to the LARGER of
-//!   [`COVER_LETTER_CAP`] and [`SAVED_RESUME_CAP`] (each gated Write tool's own
-//!   content cap), not an arbitrarily smaller number — the renderer shows/edits
-//!   exactly what will be persisted, never a truncated preview.
+//! - **Display/edit fidelity.** Confirm-request args are clamped to the CALLED
+//!   tool's own content cap ([`display_cap_for`]) — [`COVER_LETTER_CAP`] for
+//!   `save_cover_letter`, [`SAVED_RESUME_CAP`] for `save_resume` — so the renderer
+//!   shows/edits exactly what will be persisted: never a truncated preview, and
+//!   never more than the tool will keep. An unknown tool falls back to the larger
+//!   of the two, which preserves the never-show-less half of the guarantee.
 //!
 //! [`ToolKind::Write`]: super::tools::ToolKind
 //! [`ToolContext`]: super::tools::ToolContext
@@ -139,6 +141,26 @@ const ARGS_DISPLAY_CAP: usize = if COVER_LETTER_CAP > SAVED_RESUME_CAP {
 } else {
     SAVED_RESUME_CAP
 };
+
+/// The display/edit clamp for a specific tool: that tool's OWN content cap.
+///
+/// [`ARGS_DISPLAY_CAP`] is the max across both gated Write tools (40k, from
+/// `save_resume`), which guarantees we never show LESS than what gets saved — but
+/// for the tool with the SMALLER cap it shows MORE. `save_cover_letter` truncates
+/// at [`COVER_LETTER_CAP`] (20k), so a 20k–40k letter was displayed and edited in
+/// full and then silently clipped on save: the user approves text that is not the
+/// text that gets persisted.
+///
+/// Clamping per tool closes the gap from the other side. An unknown/future tool
+/// falls back to the max, keeping the "never show less than is saved" guarantee
+/// as the safe default.
+fn display_cap_for(tool: &str) -> usize {
+    match tool {
+        "save_cover_letter" => COVER_LETTER_CAP,
+        "save_resume" => SAVED_RESUME_CAP,
+        _ => ARGS_DISPLAY_CAP,
+    }
+}
 
 /// The trusted routing/egress + job-identity fields that live ONLY in
 /// [`ToolContext`] and may NEVER be supplied (or overridden) through tool args —
@@ -337,7 +359,7 @@ pub(super) async fn resolve_write(
         confirm: Some(ConfirmRequest {
             call_id: call_id.clone(),
             tool: call.name.clone(),
-            args: clamp_json_strings(&call.args, ARGS_DISPLAY_CAP),
+            args: clamp_json_strings(&call.args, display_cap_for(&call.name)),
         }),
     });
 
@@ -1085,5 +1107,37 @@ mod tests {
         assert!(got.ends_with('…'));
         // Short, structured values pass through unchanged.
         assert_eq!(clamped["nested"]["k"], "short");
+    }
+
+    /// The confirm step must show what the tool will actually PERSIST. The shared
+    /// ARGS_DISPLAY_CAP is the max across both Write tools (40k), so a cover letter
+    /// between 20k and 40k chars was shown and edited in full and then silently
+    /// clipped to COVER_LETTER_CAP on save.
+    #[test]
+    fn display_cap_matches_each_write_tool_own_content_cap() {
+        // The two caps really do differ — otherwise this per-tool split is a no-op.
+        // Compile-time, so it also fails the build if they are ever equalised.
+        const _: () = assert!(COVER_LETTER_CAP < SAVED_RESUME_CAP);
+
+        assert_eq!(display_cap_for("save_cover_letter"), COVER_LETTER_CAP);
+        assert_eq!(display_cap_for("save_resume"), SAVED_RESUME_CAP);
+        // An unknown/future tool keeps the safe default: never show LESS than the
+        // largest thing any Write tool can persist.
+        assert_eq!(display_cap_for("some_future_writer"), ARGS_DISPLAY_CAP);
+    }
+
+    /// A letter longer than the save cap is clamped for display to exactly what
+    /// `save_cover_letter` would keep — no more.
+    #[test]
+    fn a_long_cover_letter_is_displayed_at_the_save_cap() {
+        let long = "z".repeat(SAVED_RESUME_CAP);
+        let v = json!({ "coverLetterText": long });
+        let clamped = clamp_json_strings(&v, display_cap_for("save_cover_letter"));
+        let got = clamped["coverLetterText"].as_str().unwrap();
+        assert_eq!(
+            got.chars().count(),
+            COVER_LETTER_CAP + 1,
+            "shown at the cover-letter save cap (plus the ellipsis), not the resume cap"
+        );
     }
 }
