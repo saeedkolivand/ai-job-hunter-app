@@ -1317,6 +1317,19 @@ describe('extractPlainText', () => {
     expect(extractPlainText('**a** and *b*')).toBe('**a** and b');
   });
 
+  it('preserves a markdown `*`-bullet list across lines', () => {
+    // Regression: `[^*]+` in the italic-strip pass spanned newlines, so the
+    // leading `*` of one bullet paired with the leading `*` of the NEXT
+    // bullet (matching across the `\n`) and both list markers were eaten,
+    // leaving ` apple\n banana`.
+    const out = extractPlainText('* apple\n* banana');
+    expect(out).toBe('* apple\n* banana');
+  });
+
+  it('still strips a single-line italic span', () => {
+    expect(extractPlainText('This is *italic* text.')).toBe('This is italic text.');
+  });
+
   it('removes a fenced code block entirely (no orphaned backticks or code leak)', () => {
     // Regression: the inline-backtick pass used to consume the ``` fence markers
     // first, so the fenced regex could not match and the code body leaked.
