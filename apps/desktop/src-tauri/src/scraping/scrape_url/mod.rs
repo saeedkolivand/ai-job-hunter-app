@@ -1337,7 +1337,13 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let xml = res.text().await?;
+    // Same unbounded-body risk as the generic-HTML fallback above: this host is
+    // attacker-influenced, and `Response::text()` buffers the whole body with no
+    // limit. Read it through the shared cap instead.
+    let xml = match crate::scraping::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
+        Ok(x) => x,
+        Err(_) => return Ok(None),
+    };
 
     // Shared feed parser (regex set + capture loop) lives in the Personio board.
     // Here we pick the single position whose id matches the URL query and map it
