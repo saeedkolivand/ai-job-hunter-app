@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { type Editor, EditorContent, useEditor } from '@tiptap/react';
 
 import { cn } from '../../lib/cn';
@@ -106,6 +107,11 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     // The held-out trailing link-reference block for the current `value`.
     const tailRef = useRef<string>(splitPreserved(value).tail);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+    // The document awaiting a debounced emit, captured synchronously in `onUpdate`.
+    // A ProseMirror node is immutable, so this is just a pointer copy — and it lets
+    // the unmount flush serialize the pending edit without reading an editor Tiptap
+    // may already have destroyed by the time this component's cleanup runs.
+    const pendingDocRef = useRef<PMNode | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
     const onSelectionChangeRef = useRef(onSelectionChange);
@@ -117,12 +123,13 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
     const extensions = useMemo(() => buildEditorExtensions(), []);
 
-    const emit = useCallback((editor: Editor) => {
-      const body = docToMarkdown(editor.state.doc);
-      const md = joinPreserved(body, tailRef.current);
+    const emitDoc = useCallback((doc: PMNode) => {
+      const md = joinPreserved(docToMarkdown(doc), tailRef.current);
       lastEmittedRef.current = md;
       onChangeRef.current(md);
     }, []);
+
+    const emit = useCallback((editor: Editor) => emitDoc(editor.state.doc), [emitDoc]);
 
     const editor = useEditor({
       extensions,
@@ -151,8 +158,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
       },
       onUpdate: ({ editor: ed }) => {
         setIsEmpty(ed.isEmpty);
+        pendingDocRef.current = ed.state.doc;
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => emit(ed), ONCHANGE_DEBOUNCE_MS);
+        debounceRef.current = setTimeout(() => {
+          debounceRef.current = undefined;
+          const doc = pendingDocRef.current;
+          pendingDocRef.current = null;
+          if (doc) emitDoc(doc);
+        }, ONCHANGE_DEBOUNCE_MS);
       },
       onSelectionUpdate: ({ editor: ed }) => {
         const { from, to } = ed.state.selection;
@@ -188,11 +201,19 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }, [editor, linkResolutions]);
 
     // Flush any pending debounce on unmount so the last edit is never lost.
+    // This component is rendered conditionally (Preview / Edit / Source), so
+    // switching view unmounts it — merely clearing the timer silently discarded
+    // everything typed in the last ONCHANGE_DEBOUNCE_MS.
     useEffect(() => {
       return () => {
-        if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (!debounceRef.current) return;
+        clearTimeout(debounceRef.current);
+        debounceRef.current = undefined;
+        const doc = pendingDocRef.current;
+        pendingDocRef.current = null;
+        if (doc) emitDoc(doc);
       };
-    }, []);
+    }, [emitDoc]);
 
     useImperativeHandle(
       ref,
