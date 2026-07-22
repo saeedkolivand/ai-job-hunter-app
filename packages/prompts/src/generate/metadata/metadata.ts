@@ -46,18 +46,35 @@ Return ONLY the JSON object.`,
   };
 }
 
+/** A model-supplied language code, coerced to the `'en'` default. `??` alone is
+ *  not enough: the model routinely answers with an EMPTY STRING rather than
+ *  omitting the key, and `'' ?? 'en'` is `''`. */
+function toLanguage(v: unknown): string {
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : 'en';
+}
+
 export function validateMetadata(raw: string): GenerationMeta | null {
   try {
     const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
     const parsed = JSON.parse(jsonStr);
+    // Coerce FIRST, then decide `mismatch` from the coerced values — the same
+    // order `analyze/validate.ts` and `@ajh/shared`'s `detectLanguages` use.
+    const resumeLanguage = toLanguage(parsed.resumeLanguage);
+    const jobAdLanguage = toLanguage(parsed.jobAdLanguage);
     return {
       candidateName: parsed.candidateName ?? '',
       jobTitle: parsed.jobTitle ?? '',
       companyName: parsed.companyName ?? '',
-      resumeLanguage: parsed.resumeLanguage ?? 'en',
-      jobAdLanguage: parsed.jobAdLanguage ?? 'en',
-      mismatch: (parsed.resumeLanguage ?? 'en') !== (parsed.jobAdLanguage ?? 'en'),
-      targetLanguage: parsed.jobAdLanguage ?? parsed.resumeLanguage ?? 'en',
+      resumeLanguage,
+      jobAdLanguage,
+      // Only a mismatch when BOTH sides are known and actually differ. Without
+      // the `'unknown'` guard, an undetected side raised a spurious
+      // "rewrite entirely / do not translate" instruction in the prompt.
+      mismatch:
+        resumeLanguage !== 'unknown' &&
+        jobAdLanguage !== 'unknown' &&
+        resumeLanguage !== jobAdLanguage,
+      targetLanguage: jobAdLanguage,
       topRequirements: Array.isArray(parsed.topRequirements) ? parsed.topRequirements : [],
       jobLocation: typeof parsed.jobLocation === 'string' ? parsed.jobLocation : '',
       // Normalize to an upper-case 2-letter code; drop anything that isn't one.
