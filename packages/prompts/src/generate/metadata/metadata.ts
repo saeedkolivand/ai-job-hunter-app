@@ -53,6 +53,15 @@ function toLanguage(v: unknown): string {
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : 'en';
 }
 
+/** Whether a raw (pre-`toLanguage`) language field was blank/missing.
+ *  `toLanguage()` defaults a blank value to `'en'` for downstream prompting,
+ *  which would otherwise masquerade as a genuine "en" detection and falsely
+ *  trip the mismatch guard below (e.g. resume "de" vs a blank jobAd reading
+ *  as "de" vs "en"). */
+function isBlank(v: unknown): boolean {
+  return typeof v !== 'string' || v.trim() === '';
+}
+
 export function validateMetadata(raw: string): GenerationMeta | null {
   try {
     const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
@@ -69,8 +78,13 @@ export function validateMetadata(raw: string): GenerationMeta | null {
       jobAdLanguage,
       // Only a mismatch when BOTH sides are known and actually differ. Without
       // the `'unknown'` guard, an undetected side raised a spurious
-      // "rewrite entirely / do not translate" instruction in the prompt.
+      // "rewrite entirely / do not translate" instruction in the prompt. The
+      // blank check must run against the RAW value — `toLanguage()` already
+      // defaulted a blank side to 'en' above, so checking the normalized
+      // value here would miss e.g. resume "de" vs a blank jobAd.
       mismatch:
+        !isBlank(parsed.resumeLanguage) &&
+        !isBlank(parsed.jobAdLanguage) &&
         resumeLanguage !== 'unknown' &&
         jobAdLanguage !== 'unknown' &&
         resumeLanguage !== jobAdLanguage,
