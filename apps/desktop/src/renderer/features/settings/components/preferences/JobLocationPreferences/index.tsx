@@ -141,6 +141,9 @@ export function JobLocationPreferences() {
             onBlur={() => {
               // 150ms delay so a click on a suggestion registers before the
               // dropdown hides; the ref lets an unmount cancel the pending hide.
+              // Clear any prior pending hide before re-arming so a blur → refocus
+              // → blur burst can't orphan a timer that unmount cleanup then misses.
+              if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
               blurTimerRef.current = setTimeout(() => setShowSuggestions(false), 150);
             }}
             placeholder={t('settings.location.searchPlaceholder')}
