@@ -2725,7 +2725,14 @@ fn set_status_records_a_consistent_history_chain_under_contention() {
         .map(|r| r.unwrap())
         .collect();
 
-    assert!(events.len() >= ITERS, "expected every transition to record");
+    // Two threads × ITERS unconditional transitions each append exactly one
+    // event (ITERS * 2), plus the single seed event from the Application's
+    // creation above.
+    assert_eq!(
+        events.len(),
+        ITERS * 2 + 1,
+        "every transition records exactly one event (+1 creation seed)"
+    );
     for (i, (from, _to)) in events.iter().enumerate().skip(1) {
         assert_eq!(
             from,
