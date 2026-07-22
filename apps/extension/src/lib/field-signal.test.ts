@@ -73,6 +73,9 @@ describe('matchNamedKey — phone', () => {
       'cell phone',
       'cellphone',
       'work phone',
+      // camelCase compound flattens to `workphone`; `work` is an enumerated
+      // prefix, so it still resolves to phone (see NAMED_KEY_PATTERNS note).
+      'workphone',
       'home phone',
       'mobile',
       'mobile_number',
@@ -88,8 +91,16 @@ describe('matchNamedKey — phone', () => {
 
   it('does not match a word that merely CONTAINS phone/mobile', () => {
     // Bare `phone`/`mobile` were unanchored substrings, so a "Smartphone model"
-    // field resolved to `phone` and received the user's phone number.
-    for (const signal of ['smartphone', 'smartphone model', 'iphone', 'microphone', 'automobile']) {
+    // field resolved to `phone` and received the user's phone number. `headphone`
+    // has a non-enumerated `head` prefix, so it stays a non-match too.
+    for (const signal of [
+      'smartphone',
+      'smartphone model',
+      'iphone',
+      'microphone',
+      'headphone',
+      'automobile',
+    ]) {
       expect(matchNamedKey(signal), signal).not.toBe('phone');
     }
   });
@@ -104,6 +115,10 @@ describe('matchNamedKey — location', () => {
       'candidate_city',
       'city_1',
       'current city',
+      // camelCase compounds flatten to `workcity` / `homecity`; `home`/`work` are
+      // enumerated prefixes, so they resolve to location (see NAMED_KEY_PATTERNS).
+      'workcity',
+      'homecity',
       'town',
       'hometown',
       'location',
