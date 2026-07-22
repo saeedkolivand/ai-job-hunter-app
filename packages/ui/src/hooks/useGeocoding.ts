@@ -62,6 +62,15 @@ export function useGeocoding(
 
   // Debounced fetch
   useEffect(() => {
+    // Marks this run superseded. The debounce only bounds when a request
+    // STARTS — once one is in flight nothing cancels it — so a slow older
+    // request could resolve after a faster newer one and overwrite the list
+    // with suggestions for a query the user has already typed past (and reset
+    // `activeIndex`, dropping their keyboard selection mid-interaction).
+    // React always runs the previous cleanup before the next effect run, so a
+    // superseded request is flagged even when the new run takes the
+    // `< 2 chars` early return. Also prevents a setState after unmount.
+    let cancelled = false;
     const trimmed = query.trim();
     if (trimmed.length < 2) {
       setSuggestions([]);
@@ -72,12 +81,14 @@ export function useGeocoding(
       fetchRef
         .current(trimmed)
         .then((s) => {
+          if (cancelled) return;
           setSuggestions(s);
           setActiveIndex(-1);
         })
         .catch(() => {});
     }, 300);
     return () => {
+      cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [query]);
