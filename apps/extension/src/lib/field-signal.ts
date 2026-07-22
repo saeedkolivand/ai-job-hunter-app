@@ -75,7 +75,7 @@ const AMBIGUOUS = [
   // matches the generic `\bname\b` catch-all in `matchNamedKey` and mis-fills
   // with the applicant's OWN name. All are long, distinctive substrings with no
   // English-word collision (the short/collision-prone ones live in
-  // {@link AMBIGUOUS_WORDS} below).
+  // {@link AMBIGUOUS_WORDS} / {@link AMBIGUOUS_PREFIXED} below).
   'ansprechpartner', // DE contact person
   'notfall', // DE emergency (covers notfallkontakt/notfallnummer)
   'referenz', // DE reference (covers referenzperson/referenznummer)
