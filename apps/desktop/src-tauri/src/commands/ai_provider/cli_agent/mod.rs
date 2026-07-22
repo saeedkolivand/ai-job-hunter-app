@@ -525,6 +525,12 @@ async fn run_stream(
     // Whether a non-blank content delta has streamed yet — gates leading-blank
     // suppression so plain-text agents don't emit a stray newline before the answer.
     let mut seen_content = false;
+    // The full completed answer, accumulated from the exact non-thinking deltas
+    // we stream (post leading-blank suppression) — the same shape the renderer
+    // buffers. Persisted by `emit_done` so a renderer that missed frames or the
+    // terminal `done` event recovers it by polling, exactly like the cloud
+    // `stream::finish` path.
+    let mut answer = String::new();
 
     loop {
         // Race the next line read against a cancel poll so a cancellation mid-line
@@ -594,6 +600,7 @@ async fn run_stream(
                     }
                     seen_content = true;
                 }
+                answer.push_str(&text);
                 emit_event(
                     app,
                     AI_STREAM,
@@ -660,7 +667,7 @@ async fn run_stream(
     // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
     // zero usage for any provider (like this one) that doesn't override it.
     super::record_usage(app, backend.id().as_str(), model, 0, 0, None);
-    emit_done(app, job_id);
+    emit_done(app, job_id, &answer);
     trace.end(status.and_then(|s| s.code()).map(|c| c as u16), true);
     Ok(())
 }
@@ -848,7 +855,12 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn emit_done(app: &AppHandle, job_id: &str) {
+/// Emit the terminal `ai:stream` event and mark the job complete, persisting the
+/// completed `answer` as `result.text` (think-stripped via the shared
+/// [`super::stream::strip_think_blocks`]) so a CLI-agent generation's poll
+/// fallback recovers the finished document just like the cloud `stream::finish`
+/// path — the poll contract is provider-agnostic.
+fn emit_done(app: &AppHandle, job_id: &str, answer: &str) {
     emit_event(
         app,
         AI_STREAM,
@@ -860,7 +872,11 @@ fn emit_done(app: &AppHandle, job_id: &str) {
             thinking: None,
         },
     );
-    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
+    crate::commands::jobs::job_complete(
+        app,
+        job_id,
+        json!({ "done": true, "text": super::stream::strip_think_blocks(answer) }),
+    );
 }
 
 /// All `system` message content, joined — passed to the agent as its system prompt.
