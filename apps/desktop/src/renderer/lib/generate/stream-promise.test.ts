@@ -4,6 +4,15 @@
  * The poll exists precisely because streamed deltas can be dropped (a missed
  * `done`, or a lost chunk mid-stream), so what it resolves must not trust the
  * streamed buffer over the persisted job result.
+ *
+ * The mock below mirrors the REAL backend contract: on a streamed generation's
+ * completion, `finish` (apps/desktop/src-tauri/src/commands/ai_provider/stream.rs)
+ * persists `result = { done: true, text }`, where `text` is the full completed
+ * answer with inline `<think>…</think>` reasoning already stripped backend-side
+ * (`strip_think_blocks`, mirroring `think-split.ts`). The renderer trusts that
+ * text verbatim — it does NOT re-strip — so the no-markup guarantee lives in the
+ * backend. Before this backend change the result was `{ done: true }` with no
+ * `text`, which made this poll fallback a runtime no-op (PR #802 review finding).
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -18,8 +27,12 @@ interface StreamChunk {
   thinking?: boolean;
 }
 
-/** A minimal `AppClient` whose stream can be driven by hand and whose job
- *  status reports `completed` with the given persisted text. */
+/** A minimal `AppClient` whose stream can be driven by hand and whose
+ *  `jobs.get` reports `completed` with the REAL persisted result shape the
+ *  backend produces: `{ done: true, text }` (see `finish` in stream.rs).
+ *  `persisted === undefined` models an older/other backend whose completed
+ *  result carries `done` but no `text` — the poll must then fall back to the
+ *  streamed buffer. */
 function makeApi(persisted: string | undefined) {
   let onChunk: ((chunk: StreamChunk) => void) | null = null;
   const api = {
@@ -36,8 +49,8 @@ function makeApi(persisted: string | undefined) {
         .fn()
         .mockResolvedValue(
           persisted === undefined
-            ? { status: 'completed' }
-            : { status: 'completed', result: { text: persisted } }
+            ? { status: 'completed', result: { done: true } }
+            : { status: 'completed', result: { done: true, text: persisted } }
         ),
       cancel: vi.fn().mockResolvedValue(undefined),
     },
@@ -60,8 +73,8 @@ describe('awaitAiStream — poll fallback', () => {
   });
 
   it('keeps the streamed buffer when it is the longer of the two', async () => {
-    // The persisted text is missing/empty (older backend, or a result shape
-    // without `text`) — the streamed answer is all there is.
+    // The completed result carries `done` but no `text` (older/other backend) —
+    // the streamed answer is all there is, so the buffer must win.
     const { api, push } = makeApi(undefined);
 
     const promise = awaitAiStream(api, 'job-2', { pollIntervalMs: 1 });
@@ -77,5 +90,25 @@ describe('awaitAiStream — poll fallback', () => {
     push({ jobId: 'job-3', delta: 'complete answer', done: true });
 
     await expect(promise).resolves.toBe('complete answer');
+  });
+
+  it('recovered persisted text never contains reasoning markup', async () => {
+    // The local model reasoned inline (`<think>…</think>`), but the backend's
+    // `finish` strips it before persisting `result.text` (see `strip_think_blocks`
+    // in stream.rs), so the poll's longer-wins branch resolves a clean document.
+    // This pins the end-to-end guarantee: because the persisted contract is
+    // think-stripped, a persisted result can never leak reasoning markup into the
+    // resolved text — even though the renderer trusts `result.text` verbatim.
+    const clean = 'Dear hiring manager, I am a strong fit for this role. Sincerely, Jane.';
+    const { api, push } = makeApi(clean);
+
+    const promise = awaitAiStream(api, 'job-4', { pollIntervalMs: 1 });
+    // Only a truncated prefix streamed; no `done` chunk ever lands.
+    push({ jobId: 'job-4', delta: 'Dear hiring manager, ', done: false });
+
+    const resolved = await promise;
+    expect(resolved).toBe(clean);
+    expect(resolved).not.toContain('<think>');
+    expect(resolved).not.toContain('</think>');
   });
 });

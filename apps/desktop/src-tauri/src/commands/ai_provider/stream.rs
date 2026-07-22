@@ -109,6 +109,22 @@ fn emit_delta(app: &AppHandle, job_id: &str, delta: &str, thinking: bool) {
 /// never reported any) against today's AI spend. `base_url` is passed through
 /// to the free/paid cost gate — only meaningful for `openai-compatible`
 /// (LM Studio/vLLM/OpenRouter/…), ignored for every other provider.
+///
+/// `answer` is the full completed text accumulated from this stream's
+/// **non-thinking** deltas (see `stream_response`'s loop) — exactly what the
+/// renderer feeds its `<think>` splitter. It is persisted into the job result
+/// as `result.text` so a renderer that missed stream frames (or the terminal
+/// `done` event) can recover the finished document by polling `jobs_get`
+/// instead of resolving a truncated stream buffer. This is provider-agnostic:
+/// every provider routes through here, so a new adapter inherits the behavior
+/// for free. Before persisting, inline `<think>…</think>` reasoning is stripped
+/// via [`strip_think_blocks`] so the persisted text is the SAME think-stripped
+/// shape the renderer assembles — critical because the renderer's poll fallback
+/// prefers the LONGER of {persisted, streamed buffer}, and its streamed buffer
+/// is already think-stripped. Persisting raw `<think>` markup would make the
+/// persisted side spuriously longer AND leak reasoning markup into the final
+/// document; stripping here keeps both sides of that length comparison in the
+/// same shape.
 #[allow(clippy::too_many_arguments)]
 fn finish(
     app: &AppHandle,
@@ -119,6 +135,7 @@ fn finish(
     model: &str,
     base_url: &str,
     usage: Usage,
+    answer: &str,
 ) {
     emit_event(
         app,
@@ -131,7 +148,11 @@ fn finish(
             thinking: None,
         },
     );
-    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true }));
+    crate::commands::jobs::job_complete(
+        app,
+        job_id,
+        json!({ "done": true, "text": strip_think_blocks(answer) }),
+    );
     trace.end(Some(status), true);
     super::record_usage(
         app,
@@ -141,6 +162,52 @@ fn finish(
         usage.output_tokens,
         Some(base_url),
     );
+}
+
+/// Remove inline `<think>…</think>` reasoning blocks, mirroring the renderer's
+/// `createThinkSplitter` (`renderer/lib/generate/think-split.ts`) so the
+/// persisted answer text is byte-for-byte the shape the renderer assembles from
+/// the live stream. Local reasoning models (DeepSeek-R1, Qwen3, …) embed the
+/// tags directly in their answer content; cloud providers flag reasoning
+/// structurally (those deltas never reach `answer` in the first place, since the
+/// loop only accumulates non-thinking deltas), so for them this is a no-op.
+///
+/// Semantics match the splitter's final output exactly: text outside a block is
+/// kept, text inside a `<think>…</think>` pair is dropped, and an UNTERMINATED
+/// `<think>` (no closing tag) discards everything from that tag onward — the
+/// splitter drops an unterminated block at `flush()`. Because the whole answer
+/// is stripped in one pass here (not incrementally across deltas), a `</think>`
+/// split across two stream frames — which the renderer's streaming splitter can
+/// mis-handle — is resolved correctly, so the persisted text can only ever be
+/// equal-or-more-correct than the buffer, and never contains reasoning markup.
+///
+/// Shared with the CLI-agent streaming path (`cli_agent::run_stream`), which has
+/// its own subprocess transport but persists the completed answer the SAME way,
+/// so a CLI-agent generation's poll fallback works too and no provider path can
+/// leak `<think>` markup.
+pub(super) fn strip_think_blocks(text: &str) -> String {
+    const OPEN: &str = "<think>";
+    const CLOSE: &str = "</think>";
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    loop {
+        match rest.find(OPEN) {
+            Some(open) => {
+                out.push_str(&rest[..open]);
+                let after = &rest[open + OPEN.len()..];
+                match after.find(CLOSE) {
+                    Some(close) => rest = &after[close + CLOSE.len()..],
+                    // Unterminated block — the renderer discards it at flush; drop the rest.
+                    None => break,
+                }
+            }
+            None => {
+                out.push_str(rest);
+                break;
+            }
+        }
+    }
+    out
 }
 
 /// Whether `job_id` has been cancelled.
@@ -164,8 +231,11 @@ enum StreamSink {
     /// Provider's end-of-stream sentinel — emit terminal event + complete +
     /// record spend. Carries the LATEST [`Usage`] seen across the whole
     /// stream (mirroring `stream_response`/`finish`'s "last write wins" +
-    /// "record once, at completion" behavior).
-    Complete(Usage),
+    /// "record once, at completion" behavior) AND the accumulated answer text
+    /// (only non-thinking deltas — exactly what the renderer buffers) that
+    /// [`finish`] think-strips via [`strip_think_blocks`] and persists into the
+    /// job result as `result.text`.
+    Complete(Usage, String),
     /// Cancelled mid-stream — fail with `"Job cancelled"`, no terminal event
     /// (mirroring production: no `job_complete`), but STILL carrying
     /// whatever [`Usage`] was last seen before the cancel, so it can be
@@ -209,6 +279,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
 {
     let mut buf = String::new();
     let mut usage = Usage::default();
+    let mut answer = String::new();
     loop {
         if cancelled() {
             on(StreamSink::Cancelled(usage));
@@ -222,13 +293,16 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
                         usage = u;
                     }
                     if !piece.delta.is_empty() {
+                        if !piece.thinking {
+                            answer.push_str(&piece.delta);
+                        }
                         on(StreamSink::Emit {
                             delta: piece.delta,
                             thinking: piece.thinking,
                         });
                     }
                     if piece.done {
-                        on(StreamSink::Complete(usage));
+                        on(StreamSink::Complete(usage, std::mem::take(&mut answer)));
                         return;
                     }
                 }
@@ -240,7 +314,7 @@ async fn drive_stream<Cancel, Next, Fut, B, P>(
             }
         }
     }
-    on(StreamSink::Complete(usage));
+    on(StreamSink::Complete(usage, answer));
 }
 
 /// Drive a provider's streaming response to completion.
@@ -297,6 +371,13 @@ where
 {
     let mut buf = String::new();
     let mut usage = Usage::default();
+    // The full completed answer, accumulated from non-thinking deltas only —
+    // the same shape the renderer buffers — persisted by `finish` so a dropped
+    // frame or missed `done` event can be recovered by polling. A cancel/error
+    // never reaches `finish`, so the partial answer is intentionally discarded
+    // on those paths (the renderer fails the run rather than persisting a
+    // truncated result).
+    let mut answer = String::new();
     loop {
         if is_cancelled(app, job_id) {
             drop(response);
@@ -339,10 +420,15 @@ where
                         usage = u;
                     }
                     if !piece.delta.is_empty() {
+                        if !piece.thinking {
+                            answer.push_str(&piece.delta);
+                        }
                         emit_delta(app, job_id, &piece.delta, piece.thinking);
                     }
                     if piece.done {
-                        finish(app, job_id, trace, status, provider, model, base_url, usage);
+                        finish(
+                            app, job_id, trace, status, provider, model, base_url, usage, &answer,
+                        );
                         return Ok(());
                     }
                 }
@@ -369,7 +455,9 @@ where
         }
     }
 
-    finish(app, job_id, trace, status, provider, model, base_url, usage);
+    finish(
+        app, job_id, trace, status, provider, model, base_url, usage, &answer,
+    );
     Ok(())
 }
 
@@ -396,11 +484,13 @@ mod tests {
 
     /// Collect the sink actions `drive_stream` produces for a canned chunk list.
     /// Each piece is identified by `(emit:delta/thinking, complete, cancelled, error)`.
-    /// `Complete` carries the final [`Usage`] — see the usage-tracking tests below.
+    /// `Complete` carries the final [`Usage`] AND the accumulated answer text
+    /// (non-thinking deltas only) that `finish` persists — see the usage- and
+    /// answer-tracking tests below.
     #[derive(Debug, PartialEq)]
     enum Act {
         Emit(String, bool),
-        Complete(Usage),
+        Complete(Usage, String),
         Cancelled(Usage),
         Error(String, Usage),
     }
@@ -432,7 +522,7 @@ mod tests {
             |sink| {
                 let act = match sink {
                     StreamSink::Emit { delta, thinking } => Act::Emit(delta, thinking),
-                    StreamSink::Complete(usage) => Act::Complete(usage),
+                    StreamSink::Complete(usage, answer) => Act::Complete(usage, answer),
                     StreamSink::Cancelled(usage) => Act::Cancelled(usage),
                     StreamSink::Error(e, usage) => Act::Error(e.to_string(), usage),
                 };
@@ -475,7 +565,7 @@ mod tests {
             vec![
                 Act::Emit("hello".to_string(), false),
                 Act::Emit("world".to_string(), false),
-                Act::Complete(Usage::default()),
+                Act::Complete(Usage::default(), "helloworld".to_string()),
             ]
         );
     }
@@ -493,7 +583,7 @@ mod tests {
             vec![
                 Act::Emit("a".to_string(), false),
                 Act::Emit("b".to_string(), false),
-                Act::Complete(Usage::default()),
+                Act::Complete(Usage::default(), "ab".to_string()),
             ]
         );
     }
@@ -562,7 +652,7 @@ mod tests {
             acts,
             vec![
                 Act::Emit("tail".to_string(), false),
-                Act::Complete(Usage::default())
+                Act::Complete(Usage::default(), "tail".to_string())
             ]
         );
     }
@@ -605,10 +695,15 @@ mod tests {
         );
         assert_eq!(
             acts,
-            vec![Act::Complete(Usage {
-                input_tokens: 10,
-                output_tokens: 99,
-            })],
+            vec![Act::Complete(
+                Usage {
+                    input_tokens: 10,
+                    output_tokens: 99,
+                },
+                // Usage-only pieces carry no visible delta, so the persisted
+                // answer is empty here.
+                String::new(),
+            )],
             "only the LAST usage piece must be recorded, not the first or a sum"
         );
     }
@@ -685,5 +780,162 @@ mod tests {
             "a transport error must still carry the REAL usage already seen, never fabricated \
              but never silently dropped either"
         );
+    }
+
+    // ── Persisted answer text (the poll-fallback contract) ─────────────────────
+    //
+    // `finish` persists the accumulated answer as `result.text` so a renderer
+    // that missed stream frames or the terminal `done` event recovers the
+    // finished document by polling `jobs_get`. These tests pin the two
+    // properties that make that safe: (1) only NON-thinking deltas contribute
+    // (reasoning is never persisted), and (2) inline `<think>…</think>` markup
+    // is stripped, so the poll fallback's longer-wins branch can never resolve
+    // reasoning markup into the final document.
+
+    #[test]
+    fn complete_carries_only_non_thinking_answer_text() {
+        // A parser marking `T:`-prefixed lines as reasoning; everything else is
+        // answer. The `Complete` sink (what `finish` persists) must carry ONLY
+        // the answer deltas — reasoning is excluded, exactly as the renderer
+        // routes provider-flagged `thinking` chunks away from its answer buffer.
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let mut out = Vec::new();
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim().to_string();
+                *buf = buf[nl + 1..].to_string();
+                if line == "END" {
+                    out.push(StreamPiece::done(""));
+                } else if let Some(reason) = line.strip_prefix("T:") {
+                    out.push(StreamPiece::thinking(reason.to_string()));
+                } else if !line.is_empty() {
+                    out.push(StreamPiece::text(line));
+                }
+            }
+            out
+        };
+        let acts = run(
+            vec![Ok(Some(
+                b"Dear team,\nT:they want speed\nI apply.\nEND\n".to_vec(),
+            ))],
+            None,
+            parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("Dear team,".to_string(), false),
+                Act::Emit("they want speed".to_string(), true),
+                Act::Emit("I apply.".to_string(), false),
+                Act::Complete(Usage::default(), "Dear team,I apply.".to_string()),
+            ],
+            "the persisted answer must exclude provider-flagged reasoning deltas"
+        );
+    }
+
+    #[test]
+    fn persisted_answer_strips_inline_think_markup_it_never_leaks() {
+        // A local reasoning model embeds <think>…</think> inline in a single
+        // answer delta (thinking:false — the renderer's splitter, not the
+        // provider, separates it). The loop accumulates the RAW delta...
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let s = std::mem::take(buf);
+            if s.is_empty() {
+                vec![]
+            } else {
+                vec![StreamPiece::done(s)]
+            }
+        };
+        let raw = "Dear team,<think>they want speed, be brief</think> I apply now.";
+        let acts = run(vec![Ok(Some(raw.as_bytes().to_vec()))], None, parser);
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit(raw.to_string(), false),
+                Act::Complete(Usage::default(), raw.to_string()),
+            ],
+            "the accumulated answer is the raw stream; stripping happens in `finish`"
+        );
+        // ...but `finish` persists the THINK-STRIPPED text, so reasoning markup
+        // can never reach the final document via the poll fallback.
+        let persisted = strip_think_blocks(raw);
+        assert_eq!(persisted, "Dear team, I apply now.");
+        assert!(
+            !persisted.contains("<think>") && !persisted.contains("</think>"),
+            "persisted text must never contain reasoning markup"
+        );
+    }
+
+    #[test]
+    fn a_close_tag_split_across_frames_still_strips_clean() {
+        // `</think>` arrives split across two frames. The renderer's STREAMING
+        // splitter can mis-handle this, but the persisted answer accumulates the
+        // whole stream first and strips in one pass — so the persisted text is
+        // strictly equal-or-more-correct and never leaks markup.
+        let passthrough = |buf: &mut String| -> Vec<StreamPiece> {
+            let s = std::mem::take(buf);
+            if s.is_empty() {
+                vec![]
+            } else {
+                vec![StreamPiece::text(s)]
+            }
+        };
+        let acts = run(
+            vec![
+                Ok(Some(b"a<think>b</thi".to_vec())),
+                Ok(Some(b"nk>c".to_vec())),
+                Ok(None),
+            ],
+            None,
+            passthrough,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("a<think>b</thi".to_string(), false),
+                Act::Emit("nk>c".to_string(), false),
+                Act::Complete(Usage::default(), "a<think>b</think>c".to_string()),
+            ]
+        );
+        assert_eq!(
+            strip_think_blocks("a<think>b</think>c"),
+            "ac",
+            "a </think> split across two stream frames still strips clean once the full \
+             answer is accumulated"
+        );
+    }
+
+    #[test]
+    fn strip_think_blocks_matches_the_renderer_splitter() {
+        // Plain text is untouched.
+        assert_eq!(strip_think_blocks("hello world"), "hello world");
+        // A single block is removed, surrounding text kept.
+        assert_eq!(
+            strip_think_blocks("answer<think>reasoning</think>more"),
+            "answermore"
+        );
+        // Multiple blocks.
+        assert_eq!(
+            strip_think_blocks("a<think>x</think>b<think>y</think>c"),
+            "abc"
+        );
+        // A leading block.
+        assert_eq!(strip_think_blocks("<think>r</think>visible"), "visible");
+        // An empty block.
+        assert_eq!(strip_think_blocks("a<think></think>b"), "ab");
+        // An UNTERMINATED block discards everything from the tag onward — the
+        // renderer's splitter drops an unterminated block at flush().
+        assert_eq!(strip_think_blocks("keep<think>dropped forever"), "keep");
+        // Whatever the input, the output can never contain reasoning markup.
+        for s in [
+            "answer<think>reasoning</think>more",
+            "<think>r</think>visible",
+            "keep<think>dropped forever",
+        ] {
+            let out = strip_think_blocks(s);
+            assert!(
+                !out.contains("<think>") && !out.contains("</think>"),
+                "{s:?} leaked markup"
+            );
+        }
     }
 }
