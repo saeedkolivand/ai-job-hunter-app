@@ -2661,6 +2661,73 @@ fn upsert_and_merge_answers_race_never_loses_an_update() {
     );
 }
 
+/// `set_status` read the row through a lock it then RELEASED before opening the
+/// write transaction, so a concurrent transition could land in the gap and the
+/// `status_events` row it appended recorded a `from_status` the row no longer
+/// had — a history chain that never happened.
+///
+/// Two threads drive the same Application between two statuses. Ordered by
+/// `rowid` (insert order under the shared connection, so commit order), the
+/// events must form an unbroken chain: each `from_status` is the previous
+/// event's `to_status`. `at` is millisecond-resolution and ties freely, which is
+/// why this reads `rowid` directly rather than going through `events()`.
+#[test]
+fn set_status_records_a_consistent_history_chain_under_contention() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(ApplicationStore::open(dir.path()).unwrap());
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/status-race",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Saved,
+            None,
+        )
+        .unwrap();
+
+    const ITERS: usize = 60;
+
+    let threads: Vec<_> = [ApplicationStatus::Applied, ApplicationStatus::Saved]
+        .into_iter()
+        .map(|to| {
+            let store = store.clone();
+            let id = id.clone();
+            std::thread::spawn(move || {
+                for _ in 0..ITERS {
+                    store.set_status(&id, to, "").unwrap();
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+
+    let conn = store.conn.lock();
+    let mut stmt = conn
+        .prepare(
+            "SELECT from_status, to_status FROM status_events
+             WHERE application_id = ?1 ORDER BY rowid",
+        )
+        .unwrap();
+    let events: Vec<(String, String)> = stmt
+        .query_map(params![id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+
+    assert!(events.len() >= ITERS, "expected every transition to record");
+    for (i, (from, _to)) in events.iter().enumerate().skip(1) {
+        assert_eq!(
+            from,
+            &events[i - 1].1,
+            "event {i} records from_status {from:?}, but the previous event moved the row to {:?} \
+             — the read happened outside the write's transaction",
+            events[i - 1].1
+        );
+    }
+}
+
 /// `update_fields` carried the SAME two-lock structure `upsert_internal` was
 /// fixed for: `get` took and released the mutex, then the write retook it and
 /// re-persisted EVERY column from the now-stale snapshot. A concurrent
