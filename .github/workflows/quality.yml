@@ -81,7 +81,7 @@ jobs:
       - name: 🧰 Install typos
         id: install-typos
         continue-on-error: true
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
         with:
           tool: typos
       # Advisory: run typos ourselves so the findings land in the job Summary
@@ -255,7 +255,7 @@ jobs:
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-hack
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
         with:
           tool: cargo-hack
       - name: 🦀 Check each feature (advisory)
@@ -280,7 +280,7 @@ jobs:
       - name: 🦀 Setup Rust (Tauri)
         uses: ./.github/actions/setup-rust
       - name: 🧰 Install cargo-mutants
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
         with:
           tool: cargo-mutants
       - name: 🦀 Mutation testing on the diff (advisory)
