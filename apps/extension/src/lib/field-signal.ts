@@ -32,9 +32,6 @@
  * bank/IBAN, visa status).
  */
 const AMBIGUOUS = [
-  'referr',
-  'referral',
-  'reference',
   'emergency',
   'confirm',
   'manager',
@@ -46,7 +43,6 @@ const AMBIGUOUS = [
   'organization',
   'organisation',
   'recruiter',
-  'search',
   'username',
   'user name',
   'password',
@@ -134,14 +130,37 @@ const AMBIGUOUS = [
 const AMBIGUOUS_WORDS = /\b(?:dni|bsn|urgence)\b/;
 
 /**
+ * Denylist terms that must not match INSIDE a longer word, anchored on their
+ * LEADING side only.
+ *
+ * As plain substrings these silently skipped extremely common fields:
+ * `referr` ⊂ "**preferr**ed" (→ "Preferred first name", "Preferred pronouns"),
+ * `search` ⊂ "re**search**" (→ "Research experience"), and `reference` ⊂
+ * "p**reference**s" (→ "Work preferences"). Skipping is doubly costly here: such
+ * a field is neither filled by autofill NOR captured by answers-capture, so the
+ * answer is lost rather than merely deferred.
+ *
+ * Only the leading side is anchored, for the same two reasons as
+ * {@link NAMED_KEY_PATTERNS}: `_` is a regex word character, so `\b` would stop
+ * matching `job_search` / `reference_name`, and the trailing side must stay open
+ * for `referral`, `referrer`, `references` and `searchTerm`.
+ */
+const AMBIGUOUS_PREFIXED = /(?:^|[^a-z])(?:referr|reference|search)/;
+
+/**
  * True when a field's {@link textSignal} is ambiguous or sensitive and must be
  * SKIPPED by both autofill ({@link textSignal} → `isCandidateField`) and
  * answers-capture (`isCapturable`). Combines the plain-substring {@link AMBIGUOUS}
- * denylist with the word-anchored {@link AMBIGUOUS_WORDS} one, so the two
- * consumers can never disagree on what counts as ambiguous.
+ * denylist with the word-anchored {@link AMBIGUOUS_WORDS} and the
+ * leading-anchored {@link AMBIGUOUS_PREFIXED} ones, so the two consumers can
+ * never disagree on what counts as ambiguous.
  */
 export function isAmbiguousSignal(signal: string): boolean {
-  return AMBIGUOUS.some((w) => signal.includes(w)) || AMBIGUOUS_WORDS.test(signal);
+  return (
+    AMBIGUOUS.some((w) => signal.includes(w)) ||
+    AMBIGUOUS_WORDS.test(signal) ||
+    AMBIGUOUS_PREFIXED.test(signal)
+  );
 }
 
 /**
