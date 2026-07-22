@@ -8990,9 +8990,9 @@ dependencies = [
 
 [[package]]
 name = "typst-pdf"
-version = "0.15.0"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd7b33bcabc3357480768f6c78dda99a838d621c71b4738b25e09ac30ac063c9"
+checksum = "3aef841ff3e606542f3057ce5dd0ff264d53a439e00ed4a91ec00ec8568b3b7f"
 dependencies = [
  "az",
  "bytemuck",
