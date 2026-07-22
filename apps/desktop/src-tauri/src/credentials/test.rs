@@ -336,3 +336,89 @@ fn read_credential_non_no_entry_error_returns_storage_err() {
         "non-NoEntry keyring error must map to AppError::Storage; got {result:?}"
     );
 }
+
+/// A corrupt `credential-meta.json` must never be treated as an EMPTY index.
+///
+/// `load_meta` used to map any read/parse failure to `unwrap_or_default()` AND
+/// cache it, so the next write — which persists the whole map — would have kept
+/// only its own entry and orphaned every previously saved credential from the
+/// index (the keychain secrets survive, but nothing can find them again).
+#[test]
+fn a_corrupt_meta_file_is_not_cached_as_empty() {
+    let dir = TempDir::new().unwrap();
+    let meta_path = dir.path().join("credential-meta.json");
+    std::fs::write(&meta_path, "{ this is not json").unwrap();
+    let store = CredentialStore::new(&dir.path().to_path_buf());
+
+    // The read-only path degrades to empty (it has nothing better to report)…
+    assert!(store.list().is_empty());
+
+    // …but the failure must not have been cached as authoritative: a write still
+    // reads the file, fails, and refuses rather than silently replacing the index.
+    let err = store
+        .remove("greenhouse")
+        .expect_err("a write must not proceed on an unreadable index");
+    assert!(
+        format!("{err}").contains("credential metadata"),
+        "expected a credential-metadata error, got: {err}"
+    );
+
+    // The user's file is untouched, so it can still be recovered by hand.
+    assert_eq!(
+        std::fs::read_to_string(&meta_path).unwrap(),
+        "{ this is not json"
+    );
+}
+
+/// Two writers must not lose each other's entry — `set`/`remove` now hold the
+/// cache lock across the whole read-modify-write.
+#[test]
+fn concurrent_meta_writes_do_not_lose_an_entry() {
+    let dir = TempDir::new().unwrap();
+    let store = std::sync::Arc::new(write_meta_direct(
+        dir.path(),
+        &[("seed", "seed@example.com", 1)],
+    ));
+
+    const ITERS: usize = 40;
+    let threads: Vec<_> = ["alpha", "beta"]
+        .into_iter()
+        .map(|prefix| {
+            let store = store.clone();
+            std::thread::spawn(move || {
+                for i in 0..ITERS {
+                    store
+                        .mutate_meta(|meta| {
+                            let id = format!("{prefix}-{i}");
+                            meta.insert(
+                                id.clone(),
+                                CredentialMeta {
+                                    board_id: id,
+                                    username: "u".into(),
+                                    saved_at: 0,
+                                },
+                            );
+                        })
+                        .unwrap();
+                }
+            })
+        })
+        .collect();
+    for t in threads {
+        t.join().unwrap();
+    }
+
+    // Re-read from disk (fresh store, no cache) — every entry must have landed.
+    let reloaded = CredentialStore::new(&dir.path().to_path_buf());
+    let ids: std::collections::HashSet<String> =
+        reloaded.list().into_iter().map(|m| m.board_id).collect();
+    for prefix in ["alpha", "beta"] {
+        for i in 0..ITERS {
+            assert!(
+                ids.contains(&format!("{prefix}-{i}")),
+                "{prefix}-{i} was lost to a concurrent write"
+            );
+        }
+    }
+    assert!(ids.contains("seed"), "the pre-existing entry must survive");
+}
