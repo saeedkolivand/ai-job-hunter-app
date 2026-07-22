@@ -154,7 +154,7 @@ typst-layout = "=0.15.1"
 # the preview command returns per-page SVG strings shown via <img> in the UI.
 # Exact pin matches typst/typst-pdf. typst is already a runtime dep, so this is a
 # small surface add over the existing Typst stack.
-typst-svg = "=0.15.0"
+typst-svg = "=0.15.1"
 image = "=0.25.10"
 
 # ATS keyword matching: language-aware stemming + language detection (match_resume).
