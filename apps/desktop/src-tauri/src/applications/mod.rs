@@ -739,8 +739,16 @@ impl ApplicationStore {
     /// Transition an Application's status, appending one history event and bumping
     /// `updated_at`. Sets `applied_at` the first time it leaves `saved`.
     pub fn set_status(&self, id: &str, to: ApplicationStatus, note: &str) -> AppResult<()> {
-        let existing = self
-            .get(id)
+        // The READ joins the same transaction as the two writes. The row UPDATE
+        // and its append-only status event must land together or not at all —
+        // otherwise a crash between them leaves the status changed with no
+        // history row — and reading through a separately-released lock let a
+        // concurrent transition land in the gap, so `from_status` below recorded
+        // a status this row no longer had. `.transaction()` needs
+        // `&mut Connection`, so call on `&mut *guard`.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let existing = Self::row_by_id_conn(&tx, id)?
             .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
         let now = now_ms();
         let applied_at = if existing.applied_at.is_none() && !to.is_pre_apply() {
@@ -748,12 +756,6 @@ impl ApplicationStore {
         } else {
             existing.applied_at
         };
-        // The row UPDATE and its append-only status event must land together or
-        // not at all — otherwise a crash between them leaves the status changed
-        // with no history row (or vice-versa). One transaction; `.transaction()`
-        // needs `&mut Connection`, so call on `&mut *guard`.
-        let mut guard = self.conn.lock();
-        let tx = guard.transaction()?;
         tx.execute(
             "UPDATE applications SET status = ?2, applied_at = ?3, updated_at = ?4 WHERE id = ?1",
             params![id, to.as_id(), applied_at.map(ts_to_db), ts_to_db(now)],
