@@ -1,5 +1,653 @@
 [
   {
+    "sha": "aa00c75e7516edb1c9be1152b19c465bcbdc9661",
+    "commit": {
+      "message": "chore: sync landing download version to v0.129.0",
+      "author": {
+        "date": "2026-07-22T05:38:54Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "11a06d0d17ffae5b15523b0db952e5e12f20cf4f",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.129.0 [skip ci]",
+      "author": {
+        "date": "2026-07-22T05:38:19Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "14aea14714feaf549201de7ae669525202d9c0ae",
+    "commit": {
+      "message": "chore(release): 0.129.0 [skip ci]",
+      "author": {
+        "date": "2026-07-22T05:03:42Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "b83418d05bff2cc43f60fcd058ef32ca314401ff",
+    "commit": {
+      "message": "fix(prompts): never flag a mismatch against a blank language side (#831)\n\ntoLanguage() defaults a blank/missing language to 'en' for prompting, which\nmasqueraded as a genuine detection and let a known non-en side (e.g. \"de\")\nfalsely read as a mismatch against a blank side. Gate mismatch on the raw\npre-normalization blank check instead, and update the stale test that\nencoded the old buggy expectation.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T04:42:39Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "224bb4b37aec53a5bd3078f937fa45c9a38d82a9",
+    "commit": {
+      "message": "fix(scraping): cap the personio feed body read (#830)\n\ntry_personio fetches the Personio XML feed through the SSRF-guarded\nget_guarded client, but read the body with an unbounded res.text().await.\nPR #821 capped the sibling generic-HTML fallback in the same resolver at\n8 MB via read_text_capped; apply the identical fix here, returning\nOk(None) on an over-cap/error body the same way the redirect-follow path\nalready does.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T04:42:30Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "122b47e19134e11fd2548b669ccae980b00771af",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-22T04:39:09Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "4d75800ebacd2667d7ea52c339c54d73940f7823",
+    "commit": {
+      "message": "fix: small advisory batch (rust) (#829)\n\n* perf(autopilot): skip duplicate note candidates within one run\n\nrun_notes_loop keyed only against prior runs, so the same NEW job surfaced\nunder two URL variants in one run bought an AI note for each; the later\nmerge_found_jobs collapsed them and discarded one - waste against the\nASSISTANT_NOTES_MAX ceiling. Track canonical keys seen this run and skip the\nsecond variant (before charge_daily, so it also spares the shared ceiling).\n\nThe oversized autopilot_helpers inline test module is moved to a sibling\ntests.rs so mod.rs stays under the R8 LOC cap; no test behavior changes.\n\nSource: #813 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai-generations): enforce one aggregate row per job url with upsert\n\nsave_application released the store lock between find_by_job_url and the\ninsert, so two concurrent saves for one job could both miss and both insert,\nforking the per-job aggregate. Add a UNIQUE(job_url) partial index (WHERE\njob_url != '', so deliberately unlinked '' rows still coexist) and recover\nfrom the resulting insert conflict by merging into the row the other writer\ncreated. The migration collapses any pre-existing fork before creating the\nindex, keeping the linked-or-newest row.\n\nTwo applications delete/detach tests inserted duplicate-url child rows to\nexercise multi-row cleanup; they now use distinct urls per the new index.\n\nSource: #816 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(applications): tighten the set-status test bound and trim a stale comment\n\nThe set-status contention test asserted events.len() >= ITERS; tighten it to\nthe exact count (ITERS * 2 transitions across the two threads + 1 creation\nseed event). Also drop the stale tail of set_status's comment claiming\n.transaction() needs a &mut *guard - the code uses guard.transaction() via\nauto-ref.\n\nSource: #811 nits.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T04:29:11Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "1466832c4fad18a7db12bcf6e51d92f3ff493bc1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-22T02:30:39Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "5c4453e00f8dd58687e970b1d934a10c234dfa40",
+    "commit": {
+      "message": "fix: persist completed stream text so the poll fallback works (#828)\n\n* fix(ai): persist the completed stream text for the poll fallback\n\nThe renderer's poll fallback (awaitAiStream) recovers a dropped stream frame or a\nmissed `done` event by reading `result.text` from the completed job, but the backend\npersisted only `{ done: true }` — so PR #802's longer-wins fix was a runtime no-op.\n\nAccumulate the completed answer (non-thinking deltas only) in the provider-agnostic\nstreaming completion path (`stream::finish`, shared by openai/anthropic/gemini/ollama)\nand in the CLI-agent path (`cli_agent::emit_done`), and persist it as `result.text`.\nBoth strip inline `<think>…</think>` via a shared `strip_think_blocks` mirroring the\nrenderer's think-splitter, so the persisted text is the SAME shape the renderer buffers:\nthe poll's `persisted.length > buffer.length` compares like-for-like and can never\nresolve reasoning markup into the final document.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(generate): align the stream poll test with the real job contract\n\nThe prior mock returned `{ status: 'completed', result: { text } }`, a shape the\nbackend never produced, so the regression test proved nothing. Mirror the real\ncontract (`result: { done: true, text }`, text think-stripped) and add a case pinning\nthat a recovered persisted result can never surface `<think>` markup.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T02:10:06Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5c7f9b3743948273048f479c4cfd789b79ead3f5",
+    "commit": {
+      "message": "fix(prompts): stop the italic strip from eating bullet lists across newlines (#827)",
+      "author": {
+        "date": "2026-07-22T01:37:07Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "550ab7b4a1d0f6a90e09c47f8bf63164106788d1",
+    "commit": {
+      "message": "fix(settings): clear a pending blur timer before re-arming it (#826)\n\nA blur → refocus-within-150ms → blur burst overwrote `blurTimerRef.current`\nand orphaned the first timer, so an unmount in that window cleared only the\nsecond and the first could still fire post-teardown. Clear the pending id\nbefore re-arming, mirroring the position-timer pattern.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T01:17:30Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "5266408012e187618cdcd705a702171e70ea64ff",
+    "commit": {
+      "message": "fix: pr-batch advisory follow-ups (extension) (#825)\n\n* fix(extension): let a hidden resume file input count as a decisive field\n\nA custom upload widget hides the native <input type=file> (display:none)\nbehind a styled button, which defeated the visible-field short-circuit in\nlooksLikeApplicationForm: a real application form with a hidden resume input\nand fewer than three other visible fields went unrecognized (#786 follow-up).\n\nA resume/CV-flavored file input (name/id/label or a document `accept`) is now\ndecisive even when hidden, checked across all inputs; the narrowing to\nresume-flavored inputs keeps the module under-reporting rather than over-\nreporting. Also close the two #786 lows: a \"Save draft\"/\"Add another\"\ntype=submit button is skipped via the SubmitEvent's submitter, and\ncheckbox/radio-only forms no longer count as application forms.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): cover camelcase compounds in the identity key patterns\n\ntextSignal lowercases without splitting camelCase, so name=\"workCity\"\nflattens to \"workcity\" and no longer matched the location pattern because\n\"work\" was not an enumerated city/town prefix (#784 follow-up). Add \"work\"\nto the enumerated prefix so workCity resolves to location, while keeping the\nleading-anchor enumeration so \"ethnicity\" stays a non-match (no new mis-fill\nsurface). Phone needs no change: \"work\" is already enumerated, so workPhone\nmatches, and headphone/smartphone correctly do not.\n\nPin the behavior: headphone in the phone non-match set, workphone in the\nphone match set, and workcity/homecity in the location match set.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs(extension): point the ambiguous-terms comment at both lists\n\nThe localized-fields comment referenced only AMBIGUOUS_WORDS, but the\ncollision-prone referr/reference/search terms now live in AMBIGUOUS_PREFIXED\n(#805 nit). Point the reader at both lists.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T00:57:36Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "8bfc4afe8205a390475afa09a7c8a1d8f4006cb7",
+    "commit": {
+      "message": "fix: pr-batch advisory follow-ups (renderer) (#824)\n\n* fix(settings): clear the location suggestion timers on unmount\n\nThe onBlur 150ms hide timer and the 0ms position-measure timer both call\nsetState; unref'd, a timer firing after jsdom teardown threw\n`window is not defined` and failed the whole test run. Keep both ids in refs\nand clear them in a useEffect cleanup; the 150ms blur delay is preserved.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(monitoring): relabel the sparkline for the hours-ago axis\n\nThe last-24h data is now hours-ago indexed (bin 23 = the most recent hour),\nbut the sparkline still drew hour-of-day labels and highlighted\n`new Date().getHours()`, so every bar was mislabeled. Highlight the last bucket\nand use relative axis notation (-24h … now). Adds the two boundary tests: a\ncompletion at exactly `now` is included, one at `windowStart` is excluded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(monitoring): drop the unreachable activity-feed id fallback\n\nEvery live id is `${jobId}-${ts}`, so `lastIndexOf('-')` is always positive and\nthe `cut > 0 ? … : a.id` fallback never ran. Slice directly.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(jobs): pin the applied-after-save ordering\n\nCompress the handleTailor rationale comment to two lines and add a deferred-save\nordering test proving `persistJob('applied')` fires only after `saveFromPosting`\nresolves.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(autopilot): keep the step-log reducer pure\n\nRead `Date.now()` at dispatch time and close it into the functional patch, so\nStrictMode dev double-invocation can't produce two timestamps in the reducer\nbody (#794 advisory).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T00:54:45Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "1012bc8ccbe8bc18d863eeef7ee76d32fd3f3c2e",
+    "commit": {
+      "message": "fix(agent): clamp confirm-request args to the called tool's own cap (#823)\n\nARGS_DISPLAY_CAP is the max of COVER_LETTER_CAP (20k) and SAVED_RESUME_CAP\n(40k), so both gated Write tools displayed up to 40k. save_cover_letter then\ntruncates at its own 20k cap, so a 20k-40k letter was shown and edited in full\nand silently clipped on save — the user approved text that was not the text\npersisted.\n\nTaking the max guarantees the \"never show LESS than is saved\" half of the\nmodule's display/edit-fidelity invariant; it does not hold the \"never show more\"\nhalf for whichever tool has the smaller cap.\n\nAdd display_cap_for(tool) and clamp with it. ARGS_DISPLAY_CAP stays as the\nfallback for an unknown/future tool, preserving the never-show-less guarantee by\ndefault. The module's security-invariant doc is updated to match.\n\nNeeds a >20k-char generated letter to bite, so this is about keeping the gate's\nguarantee exact rather than a failure seen in practice.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:54:31Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "57210906fca98884153103b4b8ca06c777f87929",
+    "commit": {
+      "message": "fix(scraping): cap the body read on the user-supplied-url path (#821)\n\nresolve_uncached called Response::text() on the generic-HTML fallback, buffering\nthe whole body with no size limit. That URL is attacker-influenced — which is\nwhy the fetch goes through get_guarded_following_redirects — so a hostile or\nbroken host could stream an arbitrarily large body. The 20s timeout bounds how\nlong we read, not how much.\n\nThe board path already caps at 8 MB inside fetch_text, with a Content-Length\npre-check and a streamed accumulation that aborts mid-body. fetch_text is not a\ndrop-in here: it uses the shared client and would drop the SSRF guard.\n\nExtract that logic into scraping::http::read_text_capped(response, cap) — same\ncharset handling, so umlauts still decode — have fetch_text call it so there is\none implementation, and read the scrape_url fallback through it at 8 MB.\n\nAdds wiremock tests for both directions of the helper; the 40 existing\nscraping::http tests cover the fetch_text refactor.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:54:22Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "4242312f99996545ae8eff2552ce1b14bbdbeba3",
+    "commit": {
+      "message": "fix(credentials): never treat an unreadable metadata index as empty (#819)\n\nload_meta mapped BOTH a read error and a parse error to unwrap_or_default() and\ncached the result. Since the writer persists the whole map, the next set/remove\nthen wrote a one-entry file and orphaned every previously saved credential from\nthe index — the keychain secrets survive, but nothing can find them again.\n\nSeparately, set/remove took the cache lock inside load_meta, released it, and\nretook it inside save_meta, so two concurrent writers could start from the same\nsnapshot and the second would drop the first's entry.\n\nread_meta_file now separates \"file absent\" (empty index, first run) from\n\"unreadable/corrupt\" (an error). load_meta still degrades to empty for read-only\ncallers but no longer caches that, and mutate_meta holds the lock across the\nwhole read-modify-write and refuses to write over an index it could not read,\nleaving the user's file recoverable. save_meta is subsumed by mutate_meta.\n\nAdds a corrupt-index test (asserting the file is left byte-for-byte intact) and\nan 80-write two-thread concurrency test.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:54:00Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "cc2a9d06138ad55b6426643cd6875949ae77e2e6",
+    "commit": {
+      "message": "ci: label fork prs via pull_request_target (#814)\n\n* ci: label fork prs via pull_request_target\n\n* ci: accept pull_request_target for the labeler in zizmor\n\nThe labeler workflow never checks out or executes pr code and reads its\nconfig from the base branch, so the dangerous-triggers finding is an\naccepted, documented exception (same pattern as the release.yml\ncache-poisoning entry).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T00:40:35Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "25c1432353800286fe971465c2fdf341235755de",
+    "commit": {
+      "message": "fix: pr-batch advisory follow-ups (rust/shared) (#818)\n\n* refactor(autopilot): extract shared cancel-completion helper\n\nBoth cancel sites in autopilot_run (the scrape Err arm and the pre-record\nguard) duplicated the same clear-summaries + job_cancel + span-end + payload\nsequence. Extract one private finish_cancelled helper (span message passed\nper call site); behaviour is byte-identical, drift-prevention only. #778\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(spend): recognise expanded and mapped ipv6 loopback spellings\n\nThe cost/display free-call gate matched loopback hosts by literal string only,\nso the fully-expanded [0:0:0:0:0:0:0:1] and IPv4-mapped [::ffff:127.0.0.1]\nforms billed a local openai-compatible server at the unknown-model rate, and a\nuserinfo prefix (user@[::1]) defeated the bracket match. Add the extra literal\narms and strip an optional userinfo@ segment before host parsing. Still literal\nonly, never used for routing or security, so no IP-parsing crate. #780\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(shared): tighten next_action_at contract to non-negative\n\nAdd .min(0) to ApplicationUpdateSchema.nextActionAt so the wire contract\nmatches the server-side parse_next_action_at guard, which already rejects a\nnegative epoch-ms instead of silently clearing the reminder. Also make that\nguard's rejection message echo the offending JSON type for easier renderer-side\ndebugging. #782\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(shared): cover the nynorsk franc code in language detection\n\nlanguage-detection maps both nob (Bokmål) and nno (Nynorsk) to 'no', but the\nsuite only exercised the nob sample, leaving the nno branch silently\nregressable. Add a Nynorsk sample (franc detects it as nno) asserting it maps\nto 'no'. #790\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T00:24:35Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "38b4502e5a6b08e55e7672eb326841f79ccd5d91",
+    "commit": {
+      "message": "fix(ai-generations): key the per-job aggregate on the normalized url (#816)\n\nsave_application looked its row up with the raw job_url, while the sibling\nApplicationStore dedupes on normalize_job_url. So the same job reached under\ndifferent tracking params — the norm on query-id boards like Indeed — missed its\nown aggregate and forked a second \"one-per-job\" row, scattering the resume,\ncover letter and answers for one job across two records.\n\nThe mismatch is already documented in commands/ai_generations.rs:84-86 (\"which\nnever matches for query-id boards like Indeed\").\n\nNormalize on the write path so the stored key matches ApplicationStore's, and\nfall back to a raw-url lookup so a row written before this change still merges\nand is migrated onto the normalized key instead of being orphaned. The fallback\nis guarded so an unusable url (normalize -> \"\") cannot merge into an unrelated\nlegacy row.\n\nAiGenerationStore::applied_job_urls has no production consumer (the applied flag\ncomes from ApplicationStore's, already normalized), so nothing downstream\nchanges shape.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:21:35Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "530b7d6ac6f52875bc2f0f43fa100dc0fad0e3a9",
+    "commit": {
+      "message": "fix(autopilot): key the ai-notes skip on the merge's canonical key (#813)\n\nThe skip set was built from raw job URLs, but merge_found_jobs collapses jobs by\nmerge_key -> canonical_job_key -> normalize_job_url, which strips tracking params\nand fragments. So a job re-surfacing as ...?utm_source=indeed was \"new\" to the\nskip and \"already known\" to the merge: a Completer::complete call was made and\ncharged, then its note was discarded.\n\nAggregators append varying utm_* params, so this fired on essentially every run\nrather than never — the opposite of the intent stated right above the check\n(\"in steady state (nothing new) this makes ZERO provider calls\").\n\nCarry HashSet<String> of canonical keys through generate_assistant_notes into\nrun_notes_loop and compare on that.\n\nThe existing zero-calls test is renamed and strengthened: the already-seen jobs\nnow re-surface WITH tracking params, which is the case that was broken. With the\ncomparison reverted to the raw URL it fails 2 calls vs 0 expected.\n\nautopilot_helpers/mod.rs is 1392 LOC on main against R8's 1400 cap; the first\ndraft hit 1403 and R8 caught it locally, so this lands at 1399.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:15:26Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "84b42d45056b91c265e3a678d872646008b59235",
+    "commit": {
+      "message": "fix(applications): read the row inside set_status's transaction (#811)\n\nset_status called self.get(id), which takes and RELEASES the mutex, and only\nthen opened the write transaction. A transition committing in that gap was\ninvisible to the call, so the status_events row it appended recorded a\nfrom_status the row no longer had — an append-only history containing a link\nthat never happened.\n\nThe transaction already existed so the UPDATE and its event row land together;\nthe read was just left outside it. Move it in via row_by_id_conn.\n\nThis keeps set_status an unconditional setter — transition_status_if remains\nthe compare-and-set path, and its doc comment already warns about exactly this\nget-then-set pattern.\n\nThe new race test walks status_events by rowid (commit order; the `at` column\nis millisecond-resolution and ties freely) and asserts each from_status equals\nthe previous to_status. It fails 3/3 against the old code and passed 5/5 with\nthe fix. Net +2 LOC, keeping the file under the R8 cap.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:06:57Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "308800880102f79d892ffaecf2ec635f6a1f8940",
+    "commit": {
+      "message": "fix(prompts): only flag a language mismatch when both languages are known (#809)\n\nvalidateMetadata computed mismatch as\n  (parsed.resumeLanguage ?? 'en') !== (parsed.jobAdLanguage ?? 'en')\n\nwhich is wrong twice: there is no 'unknown' guard, so an undetected side reads\nas a mismatch, and ?? is nullish-only, so the empty string the model often\nreturns survives as '' and compares unequal to 'en'.\n\nBoth siblings already require BOTH sides to be known — analyze/validate.ts:126\nand @ajh/shared detectLanguages:147 — and validateMetadata never got the guard.\nA false mismatch injects a \"different languages, rewrite entirely, do not\ntranslate\" instruction into the generation prompt.\n\nCoerce the two languages first (blank falls back to 'en', as a missing key\nalready did), then apply the both-known rule. targetLanguage uses the coerced\njobAdLanguage for the same reason.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:06:48Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "c77db3bd9d098e9a6b8fa299d541e401275d674c",
+    "commit": {
+      "message": "fix(monitoring): gate the running pulse on a stable id, not a translated label (#807)\n\nanimate was `label === 'Running'`, but label is t('monitoring.metrics.running').\nThat literal only matches when the active translation happens to be \"Running\",\nso on any other locale — de renders \"Läuft\" — the card never pulsed while jobs\nwere running.\n\nGive each metric a stable id and gate on id === 'running'. The list key moves\nfrom the translated label to the id for the same reason.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:03:35Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "0b957d8d680945a76f47f422f007d2f46e50af6a",
+    "commit": {
+      "message": "fix(extension): anchor the collision-prone denylist terms (#805)\n\nreferr, reference and search were plain-substring entries in AMBIGUOUS, so\nsignal.includes() fired inside ordinary words: referr in \"preferred\", search in\n\"research\", reference in \"preferences\". That skipped \"Preferred first name\",\n\"Preferred pronouns\", \"Research experience\" and \"Work preferences\".\n\nisAmbiguousSignal gates BOTH consumers — autofill's isCandidateField and\nanswers-capture's isCapturable — so those fields were neither filled nor\ncaptured, and the user's typed answer was never learned.\n\nMove the three into a leading-anchored AMBIGUOUS_PREFIXED regex. Only the\nleading side is anchored: _ is a word character, so \\b would stop matching\njob_search / reference_name, and the trailing side must stay open for referral,\nreferrer, references and searchTerm. Same shape as the identity-keyword fix in\n#784. referral drops out as redundant with referr.\n\nOther substring hits in the list (company in \"accompany\", parent in \"apparent\",\ntax in \"syntax\") are left alone — none is a plausible application-form label.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T00:03:14Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "d4239cdf18ccb9e4aaf17dab1ef794a5960cbb58",
+    "commit": {
+      "message": "fix(generate): prefer the persisted result over a truncated stream buffer (#802)\n\nThe job-status poll resolved buffer || job.result?.text, consulting the\npersisted text only when the buffer was EMPTY. That covers a lost final done\nchunk, but not a lost interior delta — which leaves a truncated but truthy\nprefix that short-circuits the ||, gets resolved as the finished document and is\nthen persisted by the caller.\n\nThe poll exists because deltas can be dropped, so the buffer is exactly the\nvalue that cannot be assumed complete. Resolve whichever of the two is longer:\na partial stream can never beat the persisted result, and a missing result.text\nstill falls back to what did stream.\n\nSame principle the timeout path already states — never persist truncated output\nas success.\n\nAdds stream-promise.test.ts; the truncated-prefix case fails on the old code.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:20:24Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "47a1aadab9ff495eb4a55c6c026d261cdd484071",
+    "commit": {
+      "message": "fix(monitoring): give the last-24-hours sparkline an actual 24-hour window (#800)\n\nThe chart is labelled \"Last 24 hours\" but had no time filter, and\nnew Date(ts).getHours() bucketed every completion the queue has ever held into a\n0-23 hour-OF-DAY slot. A job finished at 3pm three days ago therefore shared a\nbar with one finished at 3pm today, and nothing bounded allJobs.\n\nMove the binning into a tested pure helper that filters to the window and\nbuckets by hours-ago, oldest bucket first, so the bars read left to right\nchronologically and match the label. now is a parameter, so the caller owns the\nclock. The finishedAt ?? updatedAt choice and the completed-only filter are\nunchanged.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:18:42Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "56d87c1af3105a7eb05accfc3677b5bd9bb1ea6c",
+    "commit": {
+      "message": "feat(landing): re-render world clips at native 1024x576 with av1 delivery (#803)\n\n* feat(landing): re-render world clips at native 1024x576 with av1 delivery\n\n- all 22 clips re-rendered at 1024x576/576x1024 native wan, seedvr2-upscaled to 1080p-class; two weak slump landings curated out via seed re-rolls; all 20 seams re-verified frame-locked\n- desktop ships av1 primary (1440w, 23 mb set) with h264 fallback (1104w, 20 mb) picked at runtime via canPlayType in WorldClient; mobile stays h264 (720w, 17 mb); vendored engine untouched\n- adr-0019 weight/pipeline numbers refreshed (~64 mb total stored, one set streamed per visitor)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(lint): turn off core no-unused-vars for vendored scrub engine\n\nthe active rule for a plain .js file is core no-unused-vars, not the ts-scoped variant; per the ai-review-gate finding on pr 762\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-21T23:10:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fc5fe0a7f580bb21074cece941e86c6c8a99bcbd",
+    "commit": {
+      "message": "fix(monitoring): dedup the activity feed on the real job id (#798)\n\nThe live/historical merge built its dedup set from a.id.split('-')[0]. A job id\nis itself hyphenated (format!(\"job-{}\", Uuid::new_v4())) and a live item's id is\n`${event.jobId}-${event.ts}`, so that expression was ALWAYS the literal \"job\":\nthe set held one useless entry, no historical id matched it, the filter removed\nnothing, and every completed/failed/cancelled job rendered twice. The two rows\ncarry different React keys, so nothing else surfaced it.\n\nStrip only the trailing -<ts> to recover the job id.\n\nAdds useActivityFeed.test.ts covering both the dedup and the non-duplicate case;\nboth fail on the old code.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:07:25Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "e7779d6ae64bbfba7d2da1c43761b33815372d64",
+    "commit": {
+      "message": "fix(jobs): mark a posting applied only after tailor succeeds (#796)\n\nhandleTailor called trackInteraction('applied') before awaiting\nsaveFromPosting, and both failure paths returned without reverting it.\ntrackInteraction persists through persistJobMutation, so a Tailor that visibly\nfailed still left the posting recorded as Applied — badge and stored\ninteraction — contradicting the error toast shown at the same moment.\n\nMove the call below the res?.id guard, matching the sibling handleSave, which\nalready marks 'bookmarked' only after the mutation resolves.\n\nAdds tests for the reject and missing-id paths; both fail on the old code.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:07:17Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "0f8c533b5b646d2dfac80fd522772c7eef02d135",
+    "commit": {
+      "message": "fix(autopilot): derive step patches from the reducer state, not a snapshot (#794)\n\nhandleStep built its runStates/stepLogs patches from the render snapshot it\nclosed over (deps [runStates, stepLogs]). Both reducers are pure\n{ ...prev, ...patch } merges, so the value is fixed before dispatch: two step\nevents for the same autopilotId inside one React batch both read the same base\nand the second overwrote the first — a dropped step-log line and a skipped\nmachine transition.\n\nLet the reducers take a functional patch and compute both from prev. The\ncallback no longer closes over state, so its deps drop to [] and its identity\nis stable. Plain object patches at the other call sites are unchanged.\n\nRegression test fails on the old code with\n  expected [ 'scrape_done' ] to deeply equal [ 'scrape_start', 'scrape_done' ]\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:07:10Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "ad1fe26e23f801ca2283b812ccd11805bb2e1fc1",
+    "commit": {
+      "message": "fix(prompts): stop the italic strip from eating bold markup (#792)\n\nextractPlainText's italic pass, /\\*([^*]+)\\*/g, is not bold-aware. Inside\n**bold** the leftmost match is the inner *bold*, so bold was silently\ndowngraded — and because [^*]+ also matches spaces and commas, two adjacent\nbold spans paired up ACROSS each other:\n\n  \"Skills: **Python**, **Go**, **Kubernetes**\" -> \"Skills: *Python, Go, Kubernetes*\"\n\nThe prompts instruct the model to emit 2-3 **keyword** bolds per bullet and\nthis runs on every generated résumé, cover letter, email and answer, so it\ncorrupted essentially every document.\n\nGuard both delimiters against an adjacent asterisk. Genuine single-* italics\nstill strip; *** still collapses to ** (which is what the preceding pass says\nit is for).\n\nThe one existing assertion for ***strong*** -> *strong* documented the\ndowngrade rather than intending it; it now expects **strong**.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:57Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "d642355fbfe66713fc15a9f9a191412f01d724f0",
+    "commit": {
+      "message": "fix(shared): map the iso codes franc actually emits for zh, ar and no (#790)\n\nLANGUAGE_MAP keyed Chinese/Arabic/Norwegian on the macrolanguage ISO 639-3\ncodes zho/ara/nor. franc emits the INDIVIDUAL code — cmn, arb, nob/nno —\nso those three entries were dead and detectLanguage fell through to 'unknown'\nfor every résumé or job ad in those languages.\n\nVerified against the installed franc 6.2.0: Chinese -> cmn, Arabic -> arb,\nNorwegian -> nob.\n\nConsequences were silent: detectLanguages(...).mismatch needs both sides known,\nso the different-language warning never fired for those users, and referral\ndrafts collapse 'unknown' to 'en', handing a Chinese or Arabic user an English\ndraft.\n\nSame class as the swe -> sv fix in #679. The existing tests only covered\nen/de/fr, whose codes franc does emit, so nothing caught it; this adds real\ntext in each of the three scripts.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:50Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "66bcec2ba58f968e29f8267b2a1706bf6381d700",
+    "commit": {
+      "message": "fix(extension): reply via the response callback so popup requests work on chrome (#788)\n\nThe onMessage listener returned handleRequest(...) — a Promise. That is the\nFirefox browser.* convention; Chromium's chrome.runtime.onMessage requires\nsendResponse plus a LITERAL true return to keep the channel open. A Promise is\ntruthy but not true, so Chrome closed the channel with no reply, sendMessage\nresolved undefined, and popup.ts reported \"No response from the extension\nbackground.\" for every request/response action.\n\n@wxt-dev/browser does not bridge that: its whole runtime is\n  export const browser = globalThis.browser?.runtime?.id ? globalThis.browser : globalThis.chrome;\nwith no webextension-polyfill dependency, so on Chromium browser === chrome.\nOne-way background->popup pushes were unaffected, so the pill could still read\n\"Connected\" while every button errored.\n\nsendResponse + return true is accepted by both engines. A rejection now also\nanswers, instead of leaving the port to time out into the same message.\n\nbackground.test.ts's send() helper now drives the listener with a sendResponse\ncallback and asserts the literal-true return; without the fix, 62 of its 65\ntests fail on that assertion.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:42Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "f56ba3e6d168ef2a89c5906745587a34bea9f84c",
+    "commit": {
+      "message": "fix(extension): only auto-track a submit that came from the application form (#786)\n\nThe capture-phase submit listener fired for EVERY form on the page and posted\nnothing but location.href, so pressing Enter in the site's search box (or\nsubmitting a newsletter signup) auto-advanced a saved application to applied.\nSeparately, APPLY_TEXT_RE's unanchored 'apply' matched a bare \"Apply now\"\nrole=button — on a listing page that is the control that OPENS the application,\nnot the one that sends it.\n\nGate the submit path on looksLikeApplicationForm (a visible file input, or >= 3\nvisible fillable fields — a search box, newsletter signup and login form all\nfall below that). Keep the broad text pattern for a control inside such a form,\nwhere the structure corroborates it, and require an explicit send verb for a\ncontrol with no form around it, which is the pure-SPA case.\n\nKnown remaining gap, pre-existing: a \"Save draft\" submit button inside the real\napplication form still submits that form and so still fires. Telling those apart\nneeds SubmitEvent.submitter rather than the form.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:30Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "0d90e82d5854b622a38747954f20b565fc24fb4b",
+    "commit": {
+      "message": "fix(extension): anchor the city and phone identity keywords (#784)\n\ncity|town|phone|mobile were unanchored substrings in NAMED_KEY_PATTERNS, so\n'city' matched \"ethnicity\", 'phone' matched \"smartphone\"/\"iphone\" and 'mobile'\nmatched \"automobile\". An EEO Ethnicity field was filled with the user's city and\na \"Smartphone model\" field with their phone number — a mis-fill, which this\nmodule's contract explicitly forbids (\"under-fills rather than mis-fills\").\n\nThe neighbouring handy/mobil/ort/ville terms are already \\b-anchored with a\ncomment naming this exact hazard; these four were simply left bare.\n\nAnchor only the LEADING side via (?:^|[^a-z]): _ is a regex word character, so a\n\\b/trailing anchor would stop matching phone_number, candidate_phone,\nmobile_number and city_1 — and textSignal does not split camelCase, so\nphoneNumber arrives as \"phonenumber\". Legitimate compounds (cell/home/work/day/\ntele + phone, hometown) are spelled out.\n\nAdds field-signal.test.ts covering both directions.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:23Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "d4a1ee855d7d8c427dc754553c911aff73e18ebc",
+    "commit": {
+      "message": "fix(applications): reject a bad-typed next_action_at instead of clearing it (#782)\n\nThe handler mapped nextActionAt through Value::as_u64(), which returns None for\na negative, fractional, oversized, string or object value. That None is the same\nSome(None) the store reads as \"clear the reminder\", so a caller trying to SET a\nbad-typed reminder silently CLEARED it and the call still reported success.\n\nEvery other bad input on this handler is rejected — validate_recipient_email and\nreject_oversized_job_description both return AppError::Validation — so do the\nsame here, via a pure parse_next_action_at helper shaped like its sibling.\n\nRust-only: the Zod schema (z.number().int().nullable().optional(), no .min(0))\ncould also be tightened, but that runs through the IPC codegen. The server-side\nguard is the real trust boundary regardless, since a direct IPC caller bypasses\nthe renderer's validation.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:06:15Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "2dfb27756ce6b99b957fe4a89682df1a3931d023",
+    "commit": {
+      "message": "fix(spend): recognise a port-less ipv6 loopback as local (#780)\n\nis_localhost_url stripped the port via the LAST colon. An IPv6 host has colons\nof its own, so for a bracketed host with no port (http://[::1]/v1) that cut the\nhost down to \"[:\" and matched nothing — and the bare \"::1\" arm was dead for the\nsame reason. Only the ported spelling worked, which is the one the test covered.\n\nis_free_call therefore returned false for a local server, and since a local\nmodel name is not in RATES, estimate_cost billed it at the DEFAULT_RATE\n$3/$15-per-1M fallback: a fabricated cost for a free call.\n\nStrip the port structurally instead — up to and including ] for a bracketed\nhost, whole for a bare IPv6, single-colon split otherwise — and extend the\nexisting test with the port-less forms.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:01:51Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "e0c59c0a6628859a8d30062c72b70419e5cdb04b",
+    "commit": {
+      "message": "fix(autopilot): honour a cancel on the scrape error path (#778)\n\nThe engine reports an early Stop as Err(\"scrape cancelled\") — deliberately, per\nits F6 comment: Err only when the user cancelled AND no items were recovered.\nThe command's Err arm had no cancel check, so it unconditionally called\nfail_run_without_summaries + job_fail and returned {error}. The only cancel\nhandler sat on the Ok path and was never reached.\n\nTwo results: the UI showed Failed for a run the user deliberately stopped, and\nbecause outcome_failed treats any {error} payload as a failure, the scheduler\nre-ran the very scrape that was stopped.\n\nCheck cancel_token.is_cancelled() first in the Err arm and mirror the Ok-path\nhandler, returning {cancelled: true} — the shape outcome_failed already treats\nas \"not a failure\".\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T23:00:34Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "9fffdcf93f5e10dd241dd888263e299265c81b6d",
+    "commit": {
+      "message": "fix(postings): write interactions atomically and stop swallowing write errors (#776)\n\nsave() used fs::write, which truncates the target in place, and then discarded\nthe Result with .ok(). So a crash mid-write left interactions.json truncated,\nand a failed write (read-only volume, full disk) was reported as success by\nupsert/import_bundle while the record lived only in memory and vanished on the\nnext restart. A serialization failure was swallowed the same way.\n\nWrite to interactions.json.tmp and rename it over the target — the same trick\nthe corrupt-file backup path already uses — and log every failure, cleaning up\nthe temp file and leaving the previous file intact.\n\nsave() is called from upsert/clear_all/import_bundle, none of which return a\nResult, so this logs rather than changing those public signatures.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:57:46Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "200da13379434f08278d19bd06cee9d0c9f52f0b",
+    "commit": {
+      "message": "fix(documents): validate an import bundle before clearing the store (#774)\n\nimport() called clear_all() — which wipes documents, vectors, posting_vectors\nand match_scores — and only then deserialized the rows one by one, with no\nenclosing transaction. A malformed row at index k therefore returned Err with\nthe user's originals already destroyed and rows 0..k half-inserted.\n\nDeserialize every DocumentRecord and its optional vector first, then clear and\nrepopulate, matching ai_generations/applications/dedup/discovered, which all\nvalidate up-front for this exact reason.\n\nThe vector + vectorSpace reconstruction moves to parse_exported_vector() with\nunchanged behaviour, including the legacy Ollama/nomic-embed-text fallback.\n\nAdds a regression test; it fails on the old code with \"the prior library must\nsurvive a failed import: left 0, right 1\".\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:56:36Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "9e34626f2b5969dff8eef108cb63e6ec8ece0677",
+    "commit": {
+      "message": "fix(applications): make update_fields read-modify-write atomic (#772)\n\n* fix(applications): make update_fields read-modify-write atomic\n\nupdate_fields called self.get(id) — which takes and RELEASES the mutex — then\nself.write_row(&app), which retakes it. write_row_conn is a full-column upsert,\nso it re-persisted every column from the stale snapshot and silently clobbered\nany writer that committed in the gap: the extension's answers.save/merge_answers\nor a concurrent set_status.\n\nFold the lookup and the write into one transaction via row_by_id_conn, mirroring\nupsert_internal, which already carries this exact fix.\n\nThe new race test fails on every run against the old structure (\"merge_answers\nentry N was lost to a concurrent update_fields\") and passed 5/5 with the fix.\n\n* fix(applications): hold one lock instead of opening a transaction\n\nCI caught two problems with the first version of this fix.\n\nR8 (no oversized modules) failed: applications/mod.rs is 1398 LOC upstream\nagainst a 1400 hard cap, and the transaction version pushed it to 1407.\n\nClippy -D warnings failed too: replacing the self.write_row(&app) call left\nwrite_row itself dead.\n\nBoth point the same way — the transaction was more machinery than the fix\nneeds. update_fields does ONE read and ONE write, and every writer shares a\nsingle Connection behind this mutex, so holding the lock across both is what\nactually prevents the lost update; the transaction only added atomicity that a\nsingle upsert already has.\n\nTake the lock once, use the conn-scoped row_by_id_conn/write_row_conn, and drop\nthe now-unused write_row. Net effect on the file is -3 LOC (1395), so it no\nlonger sits against the cap.\n\nVerified: race test passes 5/5 with the fix and fails against upstream's\nupdate_fields; cargo test --lib 2690 passed; architecture 11 passed; clippy\n--all-targets --all-features -D warnings clean; fmt clean.\n\n---------\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:54:25Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "fb2c43a99fbdea97aac1c50c13e4ec691fed82ea",
+    "commit": {
+      "message": "fix(scraping): read the remoteok id per json variant (#770)\n\nThe id arrives as a JSON number for some rows and a JSON string for others, so\nit is typed Option<serde_json::Value>. Value::to_string() JSON-serialises,\nwhich means Value::String(\"1234567\") became \"\\\"1234567\\\"\" — quotes included —\nand those quotes ended up inside posting.id (remoteok:\"1234567\") and\nexternal_id, corrupting the stable PostingsCache key used for dedup and\ninteraction tracking. Only the Number variant serialised cleanly.\n\nExtract normalize_id() and read the value per variant. Non-string/non-integer\nvalues still map to an empty string, so the caller's is_empty() guard drops the\nrow unchanged.\n\nThe pre-existing tests only exercised a numeric id, which is exactly the\nvariant that escapes the bug.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:53:36Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "0eec449610a62c9d299055aa37605ffa8734d07c",
+    "commit": {
+      "message": "fix(scraping): advertise only gzip on the linkedin client (#768)\n\nThe client sent `Accept-Encoding: gzip, deflate, br`, but reqwest is built with\ndefault-features = false and no gzip/brotli/deflate feature, so it never\nauto-decompresses — and get_html decodes only the gzip magic bytes by hand.\nA br/deflate response therefore reached String::from_utf8 as compressed bytes\nand returned AppError::Parse(\"response was not valid UTF-8\"), which propagates\nout of search_guest page 0 and empties the whole LinkedIn board.\n\nAdvertise only gzip, and add a test pinning the header to what the decoder can\nactually handle.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:47:29Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "2346669fb7917c6f69da3e1590739dd8bd092b0d",
+    "commit": {
+      "message": "fix(extraction): stop rtf hex escape from slicing a str mid-character (#766)\n\nrtf_to_text decoded \\'xx via &rtf[i + 2..i + 4]. `rtf` is a Cow<str> and `i` is\na BYTE index, so that slice panics unless both ends land on UTF-8 char\nboundaries — and the only guard was a length check (i + 3 < n). An RTF with\n\\' followed by a multi-byte character (e.g. \\'€) therefore panicked with\n\"byte index N is not a char boundary\", aborting extraction of the résumé.\n\nRead the two digits from the `bytes` slice already in scope, validating them\nas ASCII hex first. A malformed escape now advances past just the \\' so the\nfollowing character's bytes stay intact; the truncated-at-end branch is\nunchanged.\n\nAdds regression tests for the multi-byte, truncated and well-formed cases.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:46:03Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "8b6116c857037353f2a9a11fbdc1ecc60a48a437",
+    "commit": {
+      "message": "fix(extraction): do not emit bare w:p docx paragraphs twice (#764)\n\n* fix(extraction): do not emit bare w:p docx paragraphs twice\n\nparse_document chained xml.split(\"<w:p \") with xml.split(\"<w:p>\"). For a\ndocument that uses the bare <w:p> spelling (Google Docs, LibreOffice,\npython-docx) the first split matches nothing and yields the WHOLE document as\none element — which parse_paragraph mines into a single boundary-less blob —\nwhile the chained second split also yields every paragraph. All text was\nemitted twice: once mashed together, once per paragraph. MS Word escaped it\nonly because its w:rsidR attributes leave the <w:p>-split branch empty.\n\nScan for the <w:p tag (requiring ' ' or '>' after it, so <w:pPr>/<w:pict> are\nnot mistaken for paragraphs) instead of splitting on one spelling; documents\nmixing both spellings are now handled too.\n\nAdds four regression tests that assert the EXACT extracted text — the existing\ncoverage used contains(), which stays green through duplication.\n\n* test(extraction): pin self-closing w:p paragraph handling\n\nReview follow-up on #764.\n\nA self-closing <w:p/> is not treated as a paragraph start, so it folds into the\nprevious slice. That is harmless — it carries no runs, so it contributes no\ntext, and the old chained splits ignored it too — but the boundary was\nundocumented and untested. Pin it with a test and note it in the doc comment.\n\nAlso inlines the single as_bytes() read, dropping the local binding.\n\n---------\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-21T22:44:55Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "f14de8b39ba4e358a062b30de6ffb0bae8d95d4a",
+    "commit": {
+      "message": "feat(landing): /world scroll-scrubbed papercraft camera-flight route (#762)\n\n* feat(landing): add /world scroll-scrubbed papercraft camera-flight route\n\n- six-scene papercraft diorama story: 6 dive + 5 connector clips with frame-locked seams, desktop 16:9 plus native 9:16 mobile chain, scrubbed by the vendored vanilla-js scroll-world engine\n- media produced locally at zero cost: codex stills, wan 2.2 i2v/flf on local comfyui (rtx 4090), seedvr2 temporal upscale to 1080p, denoised encodes at 18 mb desktop / 19 mb mobile (20 mb cap)\n- marketing tier untouched except one additive home link; parity gate extended with world.html; adr-0019 documents the new surface\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs(landing): acknowledge review advisories on /world mount constraints\n\n- document the vendored engine's no-teardown contract in WorldClient: /world is full-navigation-only (raw anchor), never an in-app Link; blob URLs intentionally non-revoked\n- fix stale authored-routes count in architecture status (5 pages -> 6 routes incl. /world)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(landing): strengthen world-config section assertions\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-21T22:11:42Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "228e5a2da4bd866e50f4991876480caafb97fefa",
+    "commit": {
+      "message": "chore: sync landing download version to v0.128.0",
+      "author": {
+        "date": "2026-07-21T20:22:51Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "6dfa1f6b2252a64bcbd25f90ade5330e584081a6",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.128.0 [skip ci]",
+      "author": {
+        "date": "2026-07-21T20:22:14Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "64d5686296a49c131ef4245db0e021faf3eff9a3",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-21T19:51:36Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "06cd575dabd6a3acc66b64075c019291209b4e9e",
+    "commit": {
+      "message": "chore(release): 0.128.0 [skip ci]",
+      "author": {
+        "date": "2026-07-21T19:45:18Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "420ba60427f15bba3a86e323799bd871fdd84ebb",
+    "commit": {
+      "message": "feat(ai): persist url import provenance and harvest from resolves (adr-031) (#761)\n\n* feat(scraping): harvest ats refs from single url resolves\n\nADR-031 §c: on a successful `scrape_resolve_url` (the single-posting synchronous\nresolve behind JobUrlImport), feed the resolved posting into the ADR-030 slug-\nharvest seam (source 'scrape'), so a URL import populates the slug typeahead like\nthe scrape/autopilot/extension paths. One call site reusing the existing pure\nextractor — zero new network. Harvests the posting's FINAL/canonical `url` (what\ngets stored on it — an aggregator click-tracker resolves to the board's real\nposting url), matching the other harvest sites, and degrades-not-fails via the\nseam's established log::warn. Seam-level test (resolved-posting-shaped input →\nstore contains the ref) drives the same pure `posting_to_ref` seam the\nAppHandle-bound command uses (no mock-app harness).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ai): persist job url provenance from url imports\n\nADR-031 renderer half: a URL-imported job ad now carries its provenance\nend-to-end so the generation joins applied-detection + cluster provenance.\n\n- JobUrlImport surfaces the resolved posting's canonical url + board alongside\n  the composed text via onImport(text, { url, board }).\n- JobAdField routes a URL import to a new optional onImport sink (falls back to\n  onChange for the Resume Analyzer, which doesn't persist provenance).\n- AIGeneratePage records provenance in the ai-generate session slice on import\n  and CLEARS it on any manual edit / paste-over / upload (stale-url foot-gun),\n  then threads jobUrl + board into useGeneration.persist(), which populates the\n  existing AiGenerationSaveRequest.jobUrl/board only when present.\n\nFailure path unchanged and audited (ADR d): scrape_resolve_url returns\njson!(null) for every failure (no distinct rate-limit union to surface), so an\nunresolvable url shows the inline jobUrlImport error with the field still\nusable; the Enter keyboard flow works. en+de parity preserved (no new keys).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record url import provenance (adr-031) and close the backlog row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: drop phantom harvestsource type from adr-031 owning symbols\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): document the resolve call-site coverage gap\n\n`single_resolve_harvests_the_resolved_postings_slug` pins the pure harvest seam\n(URL → ref → store → search) but NOT the `scrape_resolve_url` call site that\nwires `(posting.url, posting.company)` into it — a swapped arg order or a dropped\nharvest call there would still pass. Extend the test's header docstring to state\nthis explicitly (the call-site wiring is AppHandle + network-bound, unreachable\nwithout a mock-app harness this crate deliberately avoids; review + arg names\nguard it), mirroring the sibling acceptance test's honest-comment style. No code\nchange.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ui): label generation board chips via the boards i18n map\n\nThe GenerationCard board chip rendered gen.board raw, so a URL-imported\ngeneration whose generic-fallback resolve sets source 'url' showed a literal\nuppercase 'URL' badge. Route it through t('jobs.boards.${gen.board}', {\ndefaultValue }) like the jobs list, and add a jobs.boards.url pair\n(Web import / Web-Import) so the fallback reads humanely.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: move ats harvest seam below commands into discovered harvest module\n\ndrops the l3-to-l3 peer import flagged in review: harvest_ats_refs + posting_to_ref move from\ncommands/discovery.rs to discovered/harvest.rs, apphandle-free (take the store directly). all 5 call\nsites (scrape x3, autopilot, extension import) resolve the store at the shell boundary and pass it\ndown; missing store stays a graceful no-op. the moved tests now drive the real harvest fn, pinning\nthe (url, company) arg order the review found unguarded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: assert localized board chip labels and unknown-board fallback\n\nboard-chip tests now render through the real en resources (getFixedT) instead of a key-echo mock, so\na missing jobs.boards.url resource fails; adds the unknown-board defaultvalue-fallback case.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: cite the moved harvest symbols and correct the adr-031 rate-limit claim\n\nadr-031 now points at discovered::harvest::harvest_ats_refs (both occurrences) and describes the\nreal 429 behavior: failures collapse to null with the generic inline error; distinct backoff\nsurfacing stays a fast-follow.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-21T19:32:29Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "08efbc8321fb9225c747a9ef7dbcfbd61be661c3",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-21T10:19:18Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ccaddb3a6b750e43ca05c5d6bd2920e32237d0e2",
+    "commit": {
+      "message": "feat(scraping): harvest ats slugs passively with watched-company autopilot targets (adr-030) (#760)\n\n* feat(scraping): harvest ats slugs passively with watched-company autopilot targets\n\nPassively extract ATS company slugs from every scraped/imported posting URL\nand persist them, so the (later) slug typeahead and watched-company autopilot\ntargets populate with zero user effort (ADR-030).\n\n- extract_ats_ref (scraping/ats_ref.rs): the single URL-shape authority mapping\n  a posting URL to (ats, slug) for greenhouse/lever/personio/workable/ashby/\n  recruitee/smartrecruiters/breezy/bamboohr/pinpoint. scrape_url's greenhouse/\n  lever/ashby/smartrecruiters parsers now reuse these slug fns (no forked\n  shapes); host gates tightened to exact/suffix, slug casing preserved.\n- DiscoveredCompanyStore (discovered/mod.rs): own SQLite db, transactional\n  migration, upsert bump + display-name backfill, starred-first search,\n  watched() pairs. Resettable + DataStore (discoveredCompanies) + managed.\n- Parse-only harvest (commands::discovery::harvest_ats_refs) wired after\n  scrape_boards / scrape_url / autopilot record / extension import; degrades on\n  error, zero new network.\n- discovery IPC namespace (search/setStarred honest {error} union/watched) +\n  service hooks + query keys + mock-client entries.\n- AutopilotTarget gains watchedCompaniesOnly: a run resolves the starred set at\n  run time and injects per-ATS slugs (manual-style fan-out); empty stars skip\n  company boards with needs-company instead of the curated seed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): scope watched company fan-out per board and harvest pre-filter\n\nAddress scraping-applier-expert review of the ADR-030 slug-harvest feature.\n\n- HIGH: watched-company autopilot resolution no longer flattens every starred\n  slug into the shared BoardSearchInput.companies (which fanned a foreign ATS's\n  slugs at each company board and crowded its MAX_COMPANIES cap). It now builds a\n  PER-BOARD map (board id -> slugs starred under THAT ATS) and threads it through\n  the engine's existing per-board seeded_companies override via a new\n  scrape_boards_with_overrides; input.companies stays empty. A selected\n  company-scoped board with no matching star is skipped needs-company (never\n  fetched with a foreign slug, never the curated seed). scrape_boards_with_resolver\n  keeps its signature (existing engine tests untouched); the core impl gains the\n  override. New engine mock-transport tests: ashby-only stars -> ashby gets its\n  slugs, greenhouse skipped, no cross-ATS request; plus a per-board purity test.\n- MEDIUM: autopilot harvest moved to the pre-filter scraped postings (ADR-030\n  paragraph c), matching the manual-scrape harvest point.\n- LOW: discovery_set_starred rejects an atsKind that isn't a registered\n  company-scoped board id (registry lookup) so a compromised renderer can't\n  materialize garbage rows.\n- LOW: discovery_watched now uses a dedicated watched_companies() store query\n  (full starred rows, no search-cap coupling); watched() pairs stay for the resolver.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(jobs): slug typeahead with starred companies and watched autopilot target\n\nReplace the ScrapeForm comma-separated company input with an ADR-030 slug\ntypeahead: a new @ajh/ui CompanyTypeahead primitive (multi-select chips +\nper-row star toggle + free-text add) fed by the discovery service hooks,\nmerging passively-harvested slugs with the selected boards' curated seeds.\nAdd a 'My watched ATS companies' target toggle to the autopilot wizard board\nstep that sets watchedCompaniesOnly, with an inline watched list + empty hint.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): close ats harvest acceptance gaps\n\nAdd the missing acceptance-matrix deltas for ADR-030 (passive ATS slug\nharvest + watched companies):\n\n- ats_ref: multi-level subdomains under a real ATS suffix extract None\n  (pins the subdomain_slug label.contains('.') branch).\n- discovery: fixture posting URLs harvested through extract_ats_ref into\n  a real DiscoveredCompanyStore surface via search (URL->store->typeahead\n  seam; reuses the shared production mapping, never re-derived).\n- autopilot_helpers: real store stars resolve through watched() + the\n  registry requires_company filter into per-board targets (the store->\n  resolver seam between the store and pure-resolver tests).\n- CompanySlugField / WatchedCompaniesField: star/unstar failure surfaces\n  an error toast when the mutation throws (no silent failure).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: remove rtk tool prefix from agent and assistant configs\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): per-company control labels and blur-commit for the slug typeahead\n\nAddress frontend-reviewer findings on 84bf3a77:\n- Per-instance aria-labels: chip remove, star toggle, and wizard unstar now\n  interpolate the company name ({{company}}) so rotor/voice-control users no\n  longer meet N identical controls; CompanyTypeahead's starLabel/removeLabel\n  props take a per-row function. Tests switch to name-based queries.\n- Blur-commit: a typed-but-uncommitted slug is now flushed on focusout (guarded\n  by relatedTarget so a mid-click on a suggestion/star doesn't double-add), so\n  Start Scrape can no longer silently drop it.\n- Result-count aria-live status region on the typeahead (no role=option added).\n- Remove the orphaned jobs.companies.hint key from both locales.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: route apps/landing to the frontend fleet with next.js 16 hardening\n\nlanding ownership moves from project-steward to frontend-author with\nfrontend-reviewer + ui-ux-expert as critics; agent definitions gain\nnext.js 16 static-export guidance (async params, no server features,\nunoptimized images, turbopack, parity gates) sourced from current docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record ats slug harvesting (adr-030) in the knowledge base\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* style: apply rustfmt to discovery acceptance test\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): bound the watched-companies queries\n\nBoth `DiscoveredCompanyStore::watched()` (pairs) and `watched_companies()` (full\nrows) selected every starred row with no LIMIT, unlike `search`'s clamp(1,100)\ndiscipline (CWE-770 in principle — an unbounded read + per-run autopilot fan-out).\nAdd a shared `WATCHED_LIMIT = 500` bound (generous over any real starred set) to\nboth queries and pin it with a test (WATCHED_LIMIT + 1 stars → exactly 500).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: align adr-030 ipc names with the shipped discovery contract\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): recognize rippling posting urls in the ats slug extractor\n\nextract_ats_ref covered 10 of the 11 company-scoped ATS boards — Rippling had no\nparser, so a Rippling posting could never be harvested, appear in the typeahead,\nor be starred/watched. Add `rippling_slug` + register in PARSERS.\n\nShape (verified against boards::rippling): posting urls are host-locked to\n`ats.rippling.com/{slug}/jobs/{id}` (the board's `is_valid_rippling_job_url` guard\n+ every parse fixture, e.g. `https://ats.rippling.com/acme/jobs/job-abc-123`).\nCompany slug = first path segment, casing preserved (Rippling slugs are URL path\nsegments, mixed case allowed per `is_valid_rippling_slug` — not DNS labels).\nExact-host gate so the API host `api.rippling.com` (whose first segment is\n`platform`), the apex, and look-alikes → None. Positive + near-miss tests added.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): cover the harvest display-name fallback via a shared pure seam\n\nThe harvest acceptance test re-implemented the display-name fallback as an\nunconditional `Some(company)`, while production does\n`display_name.or_else(|| trim + empty-check)` — the trim/empty branch had zero\ncoverage (ADR-029 seam lesson: a test that re-implements the mapping tests\nnothing). Extract the pure per-posting mapping (`extract_ats_ref` + display\nfallback) into `posting_to_ref` (AppHandle-free); `harvest_ats_refs` and the\nacceptance test now both call it, and a new case pins that an empty/whitespace\ncompany yields `display_name` None (never an empty string).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): flush pending slug imperatively before start scrape\n\nThe blur-commit in 592ca7c9 is not sufficient: on WebKit (WKWebView /\nWebKitGTK — the app ships dmg/deb/rpm/appimage) a Start-button click doesn't\nreliably blur the focused input, and even when it does, add() queues an async\nstate update while onStart reads companies synchronously.\n\nCompanyTypeahead now exposes a CompanyTypeaheadHandle.commitPending() via a\nforwarded ref that synchronously runs the pending-query add path (idempotent\nonce the query is cleared). CompanySlugField forwards the ref; ScrapeForm's\nstart flow (Start button + query Enter-submit) calls\nflushSync(() => fieldRef.current?.commitPending()) before onStart when the\ncompany field is shown — the deterministic backstop the removed flushSync\nguard documented. Blur-commit stays for Chromium UX; zero role=option kept.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: scrub rtk from cursor rules and use rg in the stale-branch check\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: point scraping-domain at the extractor and store instead of restating them\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): validate rippling slugs at extraction and tidy count casts\n\nAddress PR #760 external review quick-wins:\n\n- ats_ref::rippling_slug validated the first path segment against the SAME shape\n  boards::rippling enforces (is_valid_rippling_slug, now pub(crate)), so the store\n  never persists a slug the board would later refuse (path-traversal/query chars,\n  leading/trailing hyphen, over-length). Negative test added.\n- discovered/mod.rs: the seen_count column no longer routes through the epoch-ms\n  ts_from_db/ts_to_db helpers — plain inline casts (u64::try_from(..).unwrap_or(0)\n  / i64::try_from(..).unwrap_or(i64::MAX)) with the same clamp/saturate semantics,\n  since it is a count, not a timestamp. first_seen_at/last_seen_at keep the helpers.\n- engine test: present-but-EMPTY override entry ({\"greenhouse\": []}) is treated as\n  absent — needs-company skip, no fetch — pinning the empty-vec branch of the skip\n  gate distinct from a missing key.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard rapid star toggles and assert the watched field renders\n\n- CompanySlugField.toggleStar: bail when the star mutation is already in\n  flight (setStarred.isPending), so a rapid double-click can't fire two writes\n  off the same stale option.starred snapshot. Regression test: two rapid clicks\n  during a deferred (in-flight) mutation → the write fires once.\n- StepTarget.test: stop mocking WatchedCompaniesField to null. Render the real\n  component (discovery service hooks stubbed, NotificationProvider added) and\n  assert the watched-companies toggle appears in the target step, so its\n  insertion is actually covered.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-21T09:58:08Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "27b573189a9ffeb291546c9b3271bcda5cdd12ca",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-21T07:20:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "4f6684b15ce52dc2b6c34ff112aef42e205b52af",
     "commit": {
       "message": "feat: nightly metrics snapshot data plane for mission control (#759)\n\n* feat: nightly metrics snapshot data plane for mission control\n\n* refactor: rescope lede rate-limit claim and test freshness line per review",
@@ -549,654 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "7096255dc71b1d3a61de8a95014abcb7799ba813",
-    "commit": {
-      "message": "chore: scaffold ripbook landing app and salvage gl assets (#712)\n\n* chore: scaffold ripbook landing app and salvage gl assets\n\nrestores a minimal working next 16 static-export app at apps/landing (semantic parity page,\ncapability gate with pre-launch guard, legacy fallback, fonts, merge-passthrough) salvaged\nverbatim from the pre-reset tree; gl mount is a marked stub until m1. full pinned gl dependency\nset lands in one lockfile change; knip entry fixed with milestone-scoped ignores; agent-system\nexplainer cards aligned with the ripbook docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: address coderabbit findings on the scaffold\n\nunquote single-word font families and lowercase the impact fallback; replace deprecated clip with\nclip-path on sr-only; drop deprecated page-break-inside; aria-hide the marquee clone and the\ndecorative crayon-arrow and stonks svgs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T09:01:02Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3019ca04e8791cf66db25b80a670f55b0807eddc",
-    "commit": {
-      "message": "docs: adopt the ripbook notebook landing plan (#711)\n\n* docs: adopt the ripbook notebook landing plan\n\nadr 0015 records the ripbook rebuild (9-page notebook, rip system, scroll rig, always-on post chain,\ncopy-parity and flip-held delivery) and supersedes the 8-beat journey, dom-overlay copy ruling, and\nfried pass b set-piece. adr 0014 gains an amended-by note. webgl-standards and webgl-gate-audit\nskills rewritten for the 9-page p-space model; webgl-author paths amended; context glossary updated.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: address ripbook adoption review findings\n\nretire pass b drift in shader-engineer, webgl-perf-profiler, gate-auditor; document the a11y\noverlay contract; mark adr 0014 sections historical; slim adr 0015 and context glossary to\ndecision-level pointers; generalize the exit window (rip vs hinge/signature exits); make uboil\ntier-driven (high 10hz, low 8hz).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T07:54:49Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "cb3c58dc427d26e7a018652167fc080c3b7433b8",
-    "commit": {
-      "message": "chore: reset the landing gl app for a restart (#710)\n\n* chore: reset the landing gl app for a restart\n\nRemoves the apps/landing implementation (p0-p5 remain in history for salvage); the folder\nstays for the rebuild. Pages deploy returns to uploading the static landing/ site directly,\nwith the storybook still built and published at /storybook/ (copied at deploy time, never\ncommitted). Fleet, art brief, and docs stay for the next iteration.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: regen workflow catalog for pages.yml description\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T06:59:37Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "66c36c68899974446454a6c2e7766c2cfa4c14ad",
-    "commit": {
-      "message": "feat: landing gl takeover p5 - the skeleton completes (#709)\n\n* feat: landing gl p5 - features canyon, testimonial wall, finale, journey line\n\nFeatures: 11 cards in facing rows the camera dollies between, borders merged to one batch,\nstagger-revealed as the look-target passes. Testimonials: 9-card pinboard wall with ascii star\nrating, deco scribbles boiling beside. Finale: desk vignette echoing the hero - guy, honest\nparagraph, tilted paper cta button, credits, closing heart. Journey line: a red fat-line pair\nsampled off the camera curve, dash head tracking global t exactly (reversible), arrowhead tip\ndoodles riding the heads and converging onto the cta over the finale tail.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: cull the testimonials root outside its beat window\n\nBackdrop and border batch rendered whenever co-mounted, bleeding the wall into the features\ncanyon pan; root group now culls on the same pure f(t) pattern as features.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T05:46:19Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "16b2994656a0601bf0fed6fb3b2d331ef003bd8b",
-    "commit": {
-      "message": "feat: landing gl p4 - deep fried set-piece and godmode rise (#708)\n\nFried: burst-through into a rotating sunburst world, per-word anton slam headline, grinning\nguy with lightning/star/flame draw-ons, secret dialog set-dressing. Godmode: warm sky rise,\nsun with drawing rays, stonks sweep, smug guy composed under the crown rule. Pass B split per\nverified merge constraints (bloom+ca / fried+scanline; ca is the convolution effect), custom\nfried effect (posterize, bayer dither, saturation, uv crunch) driven by a monotone trapezoid\nrecipe (strobe-cap invariant); renderToScreen driven per frame after autoRenderToScreen pinned\npresentation on the disabled last pass and blacked out the journey outside fried; intermediate\ngodmode waypoint front-loads the rise framing.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T04:11:49Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8b426036414e1307d4ba1706a9f44b81501ee507",
-    "commit": {
-      "message": "fix: hold the gl experience behind a pre-launch gate until the production flip (#707)\n\nThe pages pipeline has served the new app since p0, which meant capable desktop visitors were\ngetting the in-progress gl skeleton. Until the p7 flip, gl mounts only in dev or with ?gl=1;\neveryone else gets the legacy page exactly as shipped today.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T02:20:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "e80cdb8658242cb304b6bce8963a3d9b5cb7249c",
-    "commit": {
-      "message": "feat: landing gl takeover p3 - slump and descent beats (#706)\n\n* feat: landing gl p3 - slump and descent beats staged, camera plunges\n\nSlump: 2:47am room with darker paper mood, slumped guy, five screencap cards fading on pure\nf(t) windows, deco draw-on. Descent: waypoints refined so the camera pitches 27 to 55 degrees\nover a 22-unit vertical drop through a shaft of rejection cards, chip swarm, frazzled guy, and\nthe black-hole disc with orbiting hello text. Static ink outlines merged into single fat-line\nbatches; fully-undrawn draw-mode doodles now cull (visible=false at prog 0), clearing the\nmount-overlap draw peak 87 to 60; hero headline word gaps fixed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: art direction brief with grill rulings for the landing gl world\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: fade draw-mode fills on a lagged window so color chases linework\n\nFills in draw-mode doodles start transparent and fade in over prog 0.35-0.65, matching the\nart brief's color-chases-line choreography instead of popping opaque at first progress.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T01:46:44Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "10533df95c6d7568517bcbeaae08a28437cd44db",
-    "commit": {
-      "message": "feat: landing gl takeover p2 - ink strokes, self-hosted fonts, gl text (#705)\n\n* feat: landing gl p2 - ink strokes, self-hosted fonts, gl text, hero staged\n\nDoodle extractor turns the legacy page's inline svgs into committed polyline data (54 doodles,\n154 strokes); ink system renders them as fat-line strokes with stepped vertex-shader line boil\nand scrub-safe dash-offset draw-on; five families self-hosted as ttf (cdn links removed from\nthe semantic layer); gl text via drei/troika with per-text character atlases; hero beat staged\nfor real (graph-paper ground, boiling ink guy, caveat headline on real underline strokes).\n\nFixes a context-loss bug that blanked the canvas ~1s after boot: drei text suspension escaping\nto the next/dynamic boundary made r3f treat the hidden tree as unmounted and schedule an\nuncancelled gl.forceContextLoss. Suspense now lives inside the canvas (composer outside it);\na webglcontextlost watchdog falls back to the legacy page as insurance. Verified ~40s / ~19k\nframes on both routes with zero loss.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: address p2 review findings\n\ntroika-three-text pinned as a direct dependency (drei does not re-export preloadFont); font\npreload raced against a 4s timeout with per-font failure guards so a stalled fetch degrades to\nglyph pop-in instead of stranding the page; boil clock hoisted to the composer as its single\nper-frame writer; no-op map dropped from the extractor (doodles.json byte-identical).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T23:16:19Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "46d1a44e0b0210a63978ee59e628d27d374f477b",
-    "commit": {
-      "message": "feat: landing gl takeover p1 - engine spine (#703)\n\n* feat: add landing gl engine spine with journey camera and sketchbook post\n\nExperience gate (webgl2/pointer/width/reduced-motion) mounting an R3F canvas over the inert\nsemantic layer; lenis to scrolltrigger to zustand t store; catmull-rom journey with zero-alloc\nevalPose; 8 placeholder beats with active window mounting; halffloat composer running one\nmerged sketchbook effect (grain, ink bleed, vignette) in the sole priority-1 frame; quality\ntiers + stepped boil clock; root dev:landing script.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: replace non-null assertions with zero-alloc guards in journey hot path\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: address ai and coderabbit review findings on the engine spine\n\nSemantic root now hides only after the gl experience actually mounts (onReady), with strict-mode\ncleanup and an error boundary reverting to the legacy page on mount failure; visually-hidden\nskip-link gives AT users a first-tab-stop path to the accessible version; loader lift is a\none-shot ref guard instead of per-frame dom polling; smoothstep edges fixed to the portable\nform (edge0<edge1 per glsl spec); import formatting.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T19:43:34Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "030a23823155af28c8296f2008a2cfa433d43582",
-    "commit": {
-      "message": "ci: publish ui storybook to pages at /storybook/ (#704)\n\n* ci: publish ui storybook to pages at /storybook/\n\nBuilds @ajh/ui storybook after the landing app and copies storybook-static into the pages\nartifact; packages/ui/** added to triggers so the published storybook cannot go stale.\nLinked from the how-it-works footer.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: eslint-ignore storybook build output\n\nLocal storybook builds leave packages/ui/storybook-static, which repo-wide eslint runs\n(pre-push, editors) would otherwise lint as 12k minified-bundle errors.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: sync workflows readme with storybook publish step\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: add design system link to remaining passthrough footers\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T19:23:59Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "03a4ac6bdfbee0506b81f9ae4bb039c390d0b36d",
-    "commit": {
-      "message": "feat: landing gl takeover p0 - app skeleton + semantic parity port (#702)\n\n* feat: add apps/landing static-export app with semantic parity port\n\nNext 16 output:export app re-authoring landing/index.html as prerendered semantic components,\nescaped copy modules, and a verbatim legacy.ts interactivity port. Scoped eslint overrides,\nknip workspace entry, sharp build-approval resolved to false (unoptimized images need no sharp).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: build and deploy apps/landing in the pages workflow\n\nTriggers add apps/landing and lockfile paths; reuses the setup-node-pnpm composite; uploads\napps/landing/out after the postbuild passthrough merge. landing/ stays the passthrough source.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: add landing experience glossary terms and adr 0014\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: add webgl agent fleet for the landing experience\n\nwebgl-author, shader-engineer, webgl-reviewer, gate-auditor, webgl-perf-profiler plus\nwebgl-standards and webgl-gate-audit skills, review-webgl and gate commands; registered in\nrouting table, review routes, checker pairs, and the agent-system explainer.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: sync workflows readme with pages deploy description\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: sync board count to 24 in the landing port\n\nMirrors upstream landing/index.html copy bump (jobicy board) into the semantic port so\nparity holds until the P7 flip removes the original file.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: address ai and coderabbit review findings on the landing port\n\nimport.meta.dirname in esm next config; re-measure doc height after debounced journey rebuild;\nwebgl2-unavailable gate check via devtools initScript; glossary trimmed to pointer-style;\nts 6.0.3 exception documented in workspace comment; webgl-reviewer added to opus tier list.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T17:29:57Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "add0d7e012b6b7999abb85576ea7724e75a9b577",
-    "commit": {
-      "message": "docs: bump board count to 24 and document the jobicy board (#701)\n\nPRs #698-#700 merged: the SCRAPERS registry now has 24 boards (Jobicy added in\n#700), but the merged docs still said 23. Sync the user-facing count and add a\nJobicy pointer to the scraping knowledge doc.\n\n- README + landing (index, how-it-works, architecture-map, social-card): 23 -> 24\n- index chip swarm: +15 more -> +16 more (8 named + 16 = 24)\n- docs/knowledge/scraping-domain.md: 23 -> 24 across the doc + a thin-pointer Jobicy entry\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T16:43:20Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1a7559a48f528ba4e7b5f1e7dc7c6be698e6e9db",
-    "commit": {
-      "message": "feat: add jobicy keyless remote-jobs board with full descriptions (#700)\n\n* feat: add jobicy keyless remote-jobs board with full descriptions\n\nJobicy is a keyless remote-jobs API that returns full job-description HTML inline\n(no truncation, no detail-fetch wall) — a clean drop-in next to the other remote\nfeeds. Registered in SCRAPERS (registry now 24 boards).\n\n- free-text keyword search via the live-verified tag param\n- a zero-match search returns HTTP 404 with an empty-JSON body; fetch_text (not\n  fetch_json) lets us treat 200/404 as an authoritative empty and still Err on any\n  other non-2xx, so an honest no-results search is never misreported as a failure\n- url constrained to the jobicy.com host (is_valid_jobicy_url, mirrors comeet)\n- per-row deserialization (rows_to_jobs) so one drifted row can't zero the batch\n- jobicy.com added to the trust ATS_ALLOWLIST (posting url is jobicy's own host)\n- geo left unset (fixed-slug enum) / from_url None (no single-job endpoint), both live-verified\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: harden jobicy per review (status split, excerpt fallback, fmt)\n\nAddress PR #700 review (advisory):\n- extract the 404-vs-other-status decision into a pure parse_response() helper with\n  hermetic tests (500/403 -> Err, 404+empty-json -> Ok(empty), 200 -> Ok(jobs), 404+html -> Err)\n- fall back to jobExcerpt when jobDescription is present-but-empty (filter blanks both sides)\n- drop the hardcoded board count from the trust ATS_ALLOWLIST doc comment\n- make struct Job pub(crate) to match the pub(crate) fns exposing it (private_interfaces lint)\n- cargo fmt\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T16:29:33Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "026baa51d7e4c5588c5b229d702c9ac438b311d3",
-    "commit": {
-      "message": "feat: use dom_smoothie readability pass in scrape_url generic extraction fallback (#699)\n\n* feat: use dom_smoothie readability pass in scrape_url generic extraction fallback\n\nOn job pages without JSON-LD or an extension hint node, scrape_url fell back to a\nlargest-main/article-block guess that let nav/footer/boilerplate through. Add a\nMozilla-Readability-grade pass (dom_smoothie, MIT) as the last-resort rung; the\nlargest-block guess stays as the final floor.\n\n- readability_content_text() runs only after the hint-node and JSON-LD rungs miss\n- guarded by is_probably_readable() before parse(); any error/false/empty -> None -> main_content_text\n- TextMode::Markdown keeps the output shape identical to the existing fallbacks\n- max_elements_to_parse: 4000 bounds parsing of hostile/huge HTML (trips -> clean fall-through)\n- dom_smoothie 0.18 (MIT), already covered by the deny.toml allowlist\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: redact url and quiet readability enrichment logs\n\nAddress PR #699 review (advisory). The two readability_content_text log lines\ninterpolated the dom_smoothie error (which can embed the scraped url) at warn\nlevel; log only the host at debug, matching this file's convention. Also reword\nthe dom_smoothie Cargo.toml comment (its MIT license is permitted by deny.toml,\nnot a per-crate allowlist) and add a TODO(perf) for the deferred spawn_blocking\nrefactor of parse_from_html's generic fallback.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* style: apply cargo fmt to scrape_url test\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T16:29:19Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "289dedcdebd28738f4bd83a5fae8bf4dc28cfbb3",
-    "commit": {
-      "message": "docs: refresh readme + landing (12 templates, 23 boards, http linkedin) and unify footers (#698)\n\nREADME and the landing pages carried stale counts and an outdated LinkedIn-scraping\nclaim; sync them to current code and give every standard content page one footer.\n\n- templates 9 -> 12 (7 ATS-Safe + 5 Design) in README and index\n- boards 16 -> 23 everywhere (index, how-it-works, architecture-map, social-card) to match the registry\n- correct the LinkedIn claim: listings are fetched over HTTP; the Chromium window is only the optional login-cookie capture (README, privacy, index)\n- README extension section: add assisted autofill, native-messaging transport, and HMAC pairing\n- unify footers across index/download/privacy/agent-system/how-it-works/architecture-map (brand-capital casing, canonical link set, current page as plain text)\n- add a browser-extension feature card to index\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T15:20:46Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "14fc560995ffd4e6f709c99687129d160c0c93bd",
-    "commit": {
-      "message": "chore: sync landing download page to v0.127.0",
-      "author": {
-        "date": "2026-07-17T03:51:16Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "989de9d1bdc4e97a9df2ce4ed56603ad161e9b66",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.127.0 [skip ci]",
-      "author": {
-        "date": "2026-07-17T03:50:48Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a5a93229f1a685444366ff73864efc382d88581a",
-    "commit": {
-      "message": "docs: cache-bust the contributors image so new contributors show\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T03:20:15Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4a98111f9ff52887369c557f9d1c2bb68d9c2502",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-17T03:03:56Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "e5dcf3f53b6b431b8cdb216dbef50475887bcd73",
-    "commit": {
-      "message": "chore(release): 0.127.0 [skip ci]",
-      "author": {
-        "date": "2026-07-17T03:00:45Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "a69cace83b81daa5a87737f126ad69c8350df260",
-    "commit": {
-      "message": "ci: credit external contributors with @mentions in release notes (#697)\n\n* ci: credit external contributors with @mentions in release notes (corrected)\n\nCORRECTED IMPLEMENTATION: Properly wrap preset transform, not replace it.\n\nConvert .releaserc.json → release.config.mjs (ESM with top-level await).\nResolve preset factory with top-level await to extract its transform function,\nthen wrap it with a composition that:\n1. Calls preset's transform first (preserves type→section bucketing, hidden\n   filtering, reference linkification, BREAKING CHANGE handling)\n2. Respects the preset's filtering (returns false/null for hidden commits)\n3. Augments the result with (@<login>) credit if applicable\n\nThis fixes the v10 empty-notes gotcha: directly setting writerOpts.transform\nREPLACES the preset transform entirely, losing all the preset's logic.\nBy wrapping, we preserve the preset's work while adding attribution.\n\nAdd comprehensive tests covering:\n- extractGitHubLogin unit tests (6 cases)\n- Config loads with ESM and top-level await\n- Transform is properly wrapped in release-notes-generator plugin options\n- Guard script still validates notes correctly (9 tests, all passing)\n\nUpdate eslint.config.mjs to allow CommonJS in release.config.mjs (if needed\nfor CI compatibility—actually ESM now so may not be needed, but kept for safety).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* test: add real end-to-end render test for release notes with contributor credits\n\nAdd comprehensive test that validates the wrapped preset transform by rendering\nactual release notes through @semantic-release/release-notes-generator. This\ntest would have caught the replace-not-wrap bug because the output would have\nbeen broken (no sections, leaked chore, no linkification).\n\nTest covers synthetic commits (thejesh23 fix, owner feat, chore) and asserts:\n1. Non-empty notes output\n2. Section grouping preserved (### headers present)\n3. Exactly one (@thejesh23) credit for external contributor\n4. Owner commits have NO (@mention) suffix\n5. Hidden commits (chore/ci/test) filtered out entirely\n6. References (#679) linkified in GitHub URLs\n\nHermetic fixture (no git dependency) ensures test is stable across branches.\nComplements existing extractGitHubLogin unit tests and config structure checks.\n\nThis render test guards the v10 empty-notes gotcha forever: if transform ever\nreverts to replace-not-wrap, these assertions will fail loudly.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ci: dedupe login-extraction and fix stale .releaserc.json doc refs\n\nRe-validation of the contributor-credit release-notes change found two\ndrift risks and fixed them before push:\n\n- release.config.mjs defined its own copy of extractGitHubLogin instead\n  of importing the one in scripts/release-notes-transform.cjs, so the\n  unit tests (which do import from that file) were not actually\n  exercising the production regex — the two could silently drift.\n  release.config.mjs now imports the single implementation.\n- eslint.config.mjs's config-file override still referenced a\n  .releaserc.cjs path that never existed on this branch; removed (the\n  new release.config.mjs is already covered by the *.config.* glob).\n- Nine docs/agent-config files (CLAUDE.md x2, CONTRIBUTING.md,\n  docs/DEPLOYMENT.md, docs/DESIGN_DECISIONS.md, ADR-024,\n  .claude/agents/project-steward.md, .claude/skills/deployment-rules,\n  .claude/review-routes.json, a Rust doc-comment, and the guard script's\n  comment) still named the removed .releaserc.json; updated to\n  release.config.mjs. The review-routes.json glob was live-checked by\n  `pnpm check:agent-system`, which failed until fixed.\n\n* fix: harden preset transform resolution and esm require in test\n\nAddress two findings from the AI review gate:\n\n1. Harden release.config.mjs resolvePresetTransform to handle both\n   preset.writer.transform and preset.writerOpts.transform shapes,\n   for version robustness across preset versions (some use writer,\n   others writerOpts). Add explicit function type-check before\n   returning. Update comment to remove imprecise 'commits' mention\n   and clarify that both shapes are handled.\n\n2. Fix scripts/release-notes-transform.test.mjs line 161: add proper\n   ESM-compatible require via createRequire(import.meta.url) at the\n   top of the file (line 4), so the test works under plain node,\n   not just vitest's shim. Guard-validates test still passes.\n\nBoth gates verified:\n- pnpm test -- --project scripts: 15/15 suites, 31/31 tests (including\n  real generateNotes E2E render confirming 3 (@thejesh23) credits)\n- pnpm lint:strict: zero warnings/errors\n- pnpm check:agent-system: in sync\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T02:55:40Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "2d016b56259a694cdb9f851889aaf63871306b4a",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-17T01:39:11Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "d2f6fb2040202e1e3598c559540e6bf03c5398de",
-    "commit": {
-      "message": "feat: watch the inbox for application confirmations and notify to confirm (auto-track layer c) (#696)\n\n* feat: add the email-watch poller, parser, matcher, and scheduler\n\nThe watcher half of auto-track layer c (task #23 pr b): a separate l2\nscheduler mirroring the autopilot one (15-min ticks, failure backoff, 60s\ncheck-now rate limit), the imap read path (uid search above the watermark,\nheaders first, bodies only for fingerprint hits, all read-only), an en+de\nconfirmation-email parser (mail-parser, rfc2047/mime decode, sender-domain\nhints boost but never gate), and a token-jaccard company/title matcher\nagainst saved applications. New matches stamp the seen table first, then\npush a notification card routing to the matched application - never an\nautomatic write. Also treats a failed socket-timeout set as a connect error\n(the deferred pr-a review advisory).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ui: update the email-watch settings copy for the live watcher\n\nCheck now runs the real fetch-parse-match-notify pass and the watch switch\ngoverns the 15-minute automatic check, so the placeholder copy is rewritten\nto the true semantics (en+de); the 60s check-now rate limit surfaces as\nfriendly fixed copy instead of a raw error, with tests for both rejection\nshapes.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: guard concurrent email checks and broaden confirmation recall\n\nCritic round two (security PASS, match-quality PASS, rust-arch 1 HIGH): an\nin-flight RunGuard on the shared run_check seam closes both the check-now\nTOCTOU (gmail login bursts) and the stamp-before-notify concurrency gap;\neffective_last_uid is reused not duplicated; advance_last_uid enforces its\nmonotonic invariant in SQL; per-tick header/body/subject byte bounds; EXAMINE\nover SELECT for a read-only session; try_state for the credential store in the\nscheduler. Parser recall broadened per job-match review (thanks-for-your-\napplication and received-your-application EN shapes, dative ihrer bewerbung,\neingangsbestätigung, informal deine bewerbung), and/und boundary truncation\nfixed, plus 8 adversarial fixtures documenting the rejection-email and\nwrong-role precision limits that must gate any future auto-write.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: add the email-watch domain doc and close out the layer c pointers\n\nNew knowledge doc for the watcher domain (read-only imap posture, watermark\nand dedupe contracts, en+de fingerprint philosophy, honest limits incl. the\nrejection-parity constraint that gates any future auto-write), the\nextension-domain layer c pointer updated, and four lessons persisted from\nthis build's review rounds.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: clear seen on mailbox renumber and guard tick writes against disconnect\n\nReview-ensemble round (two verified HIGHs plus advisories): a uidvalidity\nchange now wipes the seen table in the same transaction as the watermark\nreset, so reused uids from a renumbered mailbox can never silently swallow a\nreal confirmation; the three post-tick writes and the notify path re-check\nthe account still exists, closing the disconnect-mid-tick resurrection race\npr a solved for its own writes; the uid search is watermark-scoped when the\ngeneration is confirmed unchanged; a concurrent-run refusal no longer\ninflates the backoff counter; and the renderer rate-limit sentinel is pinned\nby a cross-language parity test. The email-watch domain doc is corrected to\nthe shipped behavior (native-tls, credential persistence, real seen schema,\nnotify-only wording).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: pin the disconnect-mid-tick guard with a test and cap body fetches at the protocol level\n\nExtracts the account-still-connected check run_check_inner branches on into\na pure should_commit_outcomes fn (mirroring is_due/backoff_interval/\neffective_last_uid/classify_tick_outcome's own pattern) so the guard that\nsuppresses both post-tick writes and notify_match after a disconnect\nactually has a test pinning it, not just inline logic.\n\nAlso bounds fetch_bodies at the protocol level via a partial-octet\nBODY.PEEK[]<0.N> fetch item (confirmed supported by the imap crate's own\ndocumented grammar) instead of only truncating in-process after the whole\nmessage is already resident - a large/hostile mailbox no longer costs a\nmemory spike per candidate. The post-fetch cap in poller.rs stays as\ndefense-in-depth for a non-compliant server.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T01:21:09Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "89d51ee45560ad9e0db59e742ba2fca2421a772e",
-    "commit": {
-      "message": "feat: auto-suggest answers on popup open and offer the saved salary expectation (#695)\n\n* feat: detect german salary keywords and add a synthetic suggestion row\n\nExtends the answers.suggest salary detector with DACH-shaped keywords\n(gehalt, gehaltsvorstellung, vergütung, etc.) so German-language\napplication forms get the same Copy-only salary protection English\nforms already have; the umlaut survives normalize_question's Unicode\nlowercasing and the matcher's non-alphanumeric tokenizer without an\nASCII-folded variant.\n\nAlso appends a synthetic suggestion for any salary-shaped question no\nstored answer already covers, filled from the backend job_preferences\nsalary expectation (added in a following commit) — a real stored\nanswer always wins, the synthetic row only fills the gap.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: sync the salary expectation to the backend job_preferences store\n\nAdds salary_expectation to the job_preferences SQLite store (migration\n+ get/set/clear, byte-clamped ~200 bytes server-side) and the shared\nJobPreferencesSchema, closing the documented parity gap where the\nbridge could not read the renderer-only applicant.salaryExpectation.\n\nThe renderer stays the source of truth: ApplicantDetailsSection's\nonChange pushes the field through on every edit (merged onto whatever\nelse is already in job_preferences), and a new boot-time sync hook\nlands existing users' already-saved value on their next launch.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: auto-suggest answers on popup open (opt-in read via autofill.check)\n\nAdds a new read-only autofill.check wire verb — mirrors autotrack.check\nexactly (constants, zod, Rust msg/FrameDecision/handler, parity test,\nbridge.ts client method, background dispatch) — so the popup can check\nwhether assisted autofill is on without a click. The desktop still\nenforces the real gate on answers.suggest itself; this is only a\nclient-side shortcut.\n\nOn entering the connected view, once the fields probe confirms\nanswer-capturable fields, the popup auto-runs the same \"Suggest\nanswers\" flow silently: no \"Looking for matching answers…\" status line,\nno message on zero results — only a non-empty result renders anything.\nThe Answer-tools <summary> shows a live count, and the disclosure\nauto-expands only when the user has never expressed a collapse/expand\npreference (a new hasAnswerToolsPreference check), respecting an\nexplicit prior collapse. The manual \"Suggest answers\" button is\nunchanged.\n\nNo new permissions or manifest changes.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: unify auto/manual suggest generation and announce the count live\n\nReview fixes on the auto-suggest feature:\n\n- doSuggestAnswers (manual click) now bumps the SAME autoSuggestGeneration\n  token runAutoSuggest uses, invalidating any auto chain already in\n  flight; runAutoSuggest also checks btnSuggestAnswers.disabled right\n  before rendering, guarding a FRESH auto chain that starts while a\n  manual click is still mid-flight. Without this, whichever of the two\n  paths resolved last silently overwrote the other's suggestion-list\n  render.\n- The Answer-tools <summary> count now lives in a dedicated\n  aria-live=\"polite\" span instead of being baked into the whole\n  summary's textContent, so screen readers hear the count even while\n  the disclosure stays closed.\n- job_preferences/mod.rs's module header now names what it actually\n  stores (incl. salary_expectation, byte-capped and covered by the\n  store's existing backup/reset posture) instead of the stale\n  \"location and tech stack\" description.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: stop the salary write-through from nulling other job preferences\n\nMAJOR data-loss fix (PR #695 review): ApplicantDetailsSection's salary\nhandler called setJobPreferences.mutate({ ...jobPrefs, salaryExpectation }),\nbut JobPreferencesStore::set is a full-row UPDATE — before the\nuseJobPreferences query loads, jobPrefs is undefined, so the handler\nsilently NULLed the user's saved location, country code, and tech\nstack.\n\nAdds a narrow backend partial-setter — a new\njob_preferences_set_salary_expectation command backed by\nJobPreferencesStore::set_salary_expectation, a single-column UPDATE\nthat structurally cannot touch the other three columns regardless of\nany caller's cache/query state. ApplicantDetailsSection and the\nboot-time useSyncSalaryExpectation hook both switch to this write, and\nboth invalidate the shared jobPreferences query on success so a\nconcurrently-mounting useJobPreferences never caches a pre-write value.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: swallow a rejected boot-time salary sync instead of unhandled rejection\n\nuseSyncSalaryExpectation's setSalaryExpectation -> invalidateQueries\npromise chain had no .catch — a rejected IPC call became an unhandled\npromise rejection, and since `pushed.current` is set before the await,\nit was never retried this session. Best-effort boot sync, so impact\nwas \"salary not synced this launch,\" never data loss, but it's a\none-line gap on a path this PR just added.\n\nAdds .catch(() => {}) on the chain and a unit test that mocks a\nrejecting setSalaryExpectation and asserts the hook neither throws nor\nleaves an unhandled rejection.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-17T01:16:54Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "06a9d2ff7a43f174619ce6b430be67c5fa4b6dec",
-    "commit": {
-      "message": "ci: disable setup-node caching in the badge publisher (zizmor cache-poisoning) (#694)\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T22:01:39Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "176563fb2c5f06594b36f760d76ac5ec6c4a3e28",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-16T21:57:33Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "b6281d6d84d9f36b24f4de514961799ac43232e0",
-    "commit": {
-      "message": "fix: track bridge connections with a refcount and push status changes to settings (#693)\n\n* fix(shared): add a bridge live-connection-changed push event\n\nWire-protocol lockstep for the bridge's live-connection change push: a new\nEVENT_CHANNELS.extensionBridge.changed constant, its ExtensionBridgeChangedEvent\npayload type, and the matching onChanged subscription method on the\nExtensionBridgeContract, plus the generated Rust EXTENSION_BRIDGE_CHANGED\nconstant (pnpm gen:ipc).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(bridge): count live connections instead of one shared flag\n\nBridgeState.connected was a single AtomicBool set true on every AuthOk and\nfalse on ANY socket close. With two browsers paired on the same token,\nwhichever socket closed last decided is_connected() for every other\nstill-open one — Chrome's MV3 service worker idling its socket closed the\nflag while Firefox was still connected, so the Settings pill went stale.\n\nReplace it with an AtomicUsize refcount: inc_connected on AuthOk,\ndec_connected on that same connection's teardown (gated by a per-connection\n`authenticated` flag so an unauthenticated close never decrements), and\nemit `EXTENSION_BRIDGE_CHANGED` only on the 0->1 / ->0 transitions. Saturating\ndecrement so an unmatched call can never wrap the count below zero.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): subscribe the renderer to the bridge connection event\n\nWire the client, the app-global root layout, and a new\nuseExtensionBridgeEvents hook to the bridge's live-connection push:\ninvalidates the extension-bridge status query on a 0->1 / ->0 transition so\nthe Settings pill flips immediately on pair/unpair, instead of only on the\nexisting 30s poll (kept as a fallback for a missed/dropped event).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix(desktop): add a manual refresh button to the extension-bridge status\n\nBeside the connection pill in Settings, a RefreshButton that calls\nrefetch() on the status query — its label stays visible and only the icon\nspins while pending, matching this section's other pending-button pattern.\nAlso documents (en+de) that multiple browsers can pair with the same token\nand that Regenerate token disconnects all of them, not just the current one.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: extract the applied-check read path from the bridge module\n\nextension_bridge/mod.rs grew past the R8 hard LOC cap (tests/architecture.rs)\nonce the live-connection refcount landed. Move the self-contained\napplied.check machinery (AppliedCheckOk, resolve_applied_check,\napplied_result_reply, handle_applied_check) into a sibling applied_check.rs,\nmirroring the existing status_update.rs / autotrack.rs split. Pure move: no\nbehavior change, pub(super) visibility so import_tests.rs keeps direct\naccess, call sites updated to applied_check::handle_applied_check.\n\nmod.rs: 1419 -> 1316 LOC (cap is 1400).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T21:47:23Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4abedd27d8b5dddb5a65cefa39d44841d6858ed6",
-    "commit": {
-      "message": "docs: refresh the status tracker, de-drift the knowledge base, retire finished audit worklists (#692)\n\n* docs: audit architecture status — move shipped features, add missing sections\n\nVerified against git history and CHANGELOG:\n- Salary-answer feature (PRs #548, #549, #551) shipped v0.121.0\n- Interview practice mode (PR #623) shipped v0.126.0\n- Humanized generation tone tiers (PR #563) shipped v0.123.0\n- Resume template expansion (PRs #590-594) shipped v0.125.0\n- Auto-track Layer A (PR #687) shipped v0.126.0\n- Email-confirmation watching Layer C (PR #689) shipped v0.126.0\n\nChanges made:\n- Added salary expectation helper, humanized tone, 12-template gallery to AI Generation section\n- Added interview practice mode to Agentic Features section\n- Corrected TypeScript version: per-importer (apps use ^7.0.2, root ^6.0.3 for eslint)\n- Removed hybrid search warning; removed shipped backlog items\n- Updated Phase 4 Autopilot notes (backend provider store, not snapshot)\n- Added Applications & Tracker section (status pipeline, answers, interview questions)\n- Added Email-Confirmation Watching section (Layer C, ADR-0013)\n- Added Browser Extension section (8 shipped features, HMAC bridge, auto-track)\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: add codegraph section to development guide\n\nAdded \"Code Intelligence: Codegraph\" subsection documenting the structural\nquery tool (SQLite knowledge graph, .codegraph/, zero-token) alongside graphify.\nClarifies routing: codegraph FIRST for structural questions (calls, dependencies,\nimpact), graphify SECOND for semantic questions (rationale, cross-file meaning).\n\nIncludes CLI examples (callers, callees, impact, query, sync) and MCP usage\n(codegraph_explore with natural-language questions). Verifies against CLAUDE.md\n§Code intelligence routing rules.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: correct knowledge-doc drift against current code\n\nRefresh docs/knowledge pointers (paths, counts, registries, phase models) to\nmatch the code on main after the recent feature and refactor waves.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: fix stale decision-record pins\n\nUpdate ADR file/line/count pins (lib.rs setup, generation path, capability\ncounts, registry sizes, tier tables, shipped HMAC handshake and German-market\ncoverage) to match current code without rewriting the decisions.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: fold audit remnants into the backlog\n\nAdd the nine still-open remnants from the legacy audit worklists (auth-board\nderivation, scrape:item listener, scrapeform persistence, dead counter,\nbattery awareness, i18n, module relocation, allowlist burn-down, backup e2e)\nas low-priority backlog rows in the architecture status.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: annotate the audit ledger with the verified requirement closes\n\nMark REQ-16240 route-path clause superseded_by REQ-09023, REQ-16637/16638\nclosed-obsolete (#475), REQ-16642 closed (#499), REQ-16659 closed (YAGNI),\nand REQ-16681 closed (German coverage via Jooble + Arbeitsagentur, #618),\nper the per-item verification pass; record the REQ-16240 close in NEXT_ISSUES.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: remove the superseded audit and analysis worklists\n\nDelete AUDIT_TRIAGE.md, UX_AUDIT.md, and architecture-analysis.md (verified\nitem-by-item: shipped, closed, or folded into the ARCHITECTURE_STATUS backlog\nand NEXT_ISSUES; git history preserves the full text) and repoint the five\nactive inbound references to architecture-rules.md / git history.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: fix the detached status-table row and the imap-not-oauth wording\n\nReview follow-up on the docs sweep: the interview-practice row rendered as a\nsetext heading (blank line + ---), the email connection row claimed an oauth\napp-password flow (it is an imap app password in the os keychain, adr-0013),\nand the polling row described the unmerged watcher as already spawned.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T21:35:47Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a9c29d97c135997de18232abee019687f7820fb1",
-    "commit": {
-      "message": "ui: regroup the extension popup by task with a context probe and collapsed answer tools (#690)\n\n* ui: move the primary import and fill actions above the answers tools in the popup\n\nReorders the \"Import this job\" / \"Fill this form\" / \"I already applied\"\nblock to render above \"Save my answers from this page\" / \"Suggest\nanswers for this form\" in the popup, matching the intended visual and\ntab order. Pure DOM reorder inside the existing .view flex column (no\ncopy/id/class/handler/visibility changes).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: add a read-only fillable-fields probe to gate popup form tools\n\nAdds a fieldsProbe popup<->background verb (\"does this page have any\nfillable form fields?\") reusing the same field-detection gates\nSave-answers/Suggest already apply (answers-capture.ts's\nhasFillableFields), injected the same classic-script way as the other\nscan collectors (probe-fields.ts, registered in vite.config.ts). Never\ntouches the token/bridge — page-only, offline-safe. Every failure mode\n(no active tab, restricted page, scripting denied) fails OPEN\n(hasFields:true) so a probe bug can never hide a popup feature; only a\nconfirmed empty scan resolves false.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: persist the popup answer-tools disclosure expand/collapse preference\n\nA UI boolean only (not PII/job data), stored in chrome.storage.local\nalongside the pairing token so the popup can remember whether the\n\"Answer tools\" section was left expanded.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* ui: regroup the popup into job/form/answer-tools sections\n\nDe-crowds the connected-view popup: real <section>s grouped by\njob-to-be-done (Job: import/check-fit/applied state; Form: fill/save\nanswers; Answer tools: suggest/draft/rewrite, now collapsed by default\ninside one <details>) with hairline dividers between groups, replacing\nthe flat 15-control stack. \"Unpair this device\" moves into the \"?\"\nhelp popover instead of a standing row.\n\nVisual tier: only Import/Fill/Save & pair/Get-Update-app keep the\nraised primary treatment; every other button gets a new flat/quiet\nstyle (.btn--quiet). The 5 rewrite-preset buttons become one <select>\n(same wire preset ids). Assist/rewrite inputs flatten from the dashed\nhand-drawn border to a plain hairline (dashed stays only on the\npairing-token input), and nested result cards get slightly tighter\npadding.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: wire the popup to the fields probe, tools persistence, and preset select\n\nGates the Form group + Answer-tools disclosure on the fieldsProbe\nresult on entering the connected view (fire-and-forget, generation-\nguarded like the existing appliedCheck auto-check); a probe error or\ntransport rejection fails open so the groups stay visible. Applies the\npersisted answer-tools expand/collapse preference on load, persists it\nback on every toggle, and auto-expands over a collapsed preference when\na streamed AI answer is buffered/still running on reopen. Replaces the\nper-preset button click wiring with the new #rewrite-preset <select>'s\nchange handler (same preset ids on the wire).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: resolve popup restructure critic findings (contrast, motion, aria, unpair)\n\nHIGH: dark-mode .btn--quiet borders and the assist/rewrite inputs were\n~1.05:1 against the card (borderless in practice, no shadow to fall\nback on) — add a dedicated --quiet-border token at 0.4 alpha in dark\nmode (~3.3:1), while light mode keeps --card-border (already >>3:1).\nDisable the Answer-tools chevron's rotate transition under\nprefers-reduced-motion. Drop #rewrite-preset's aria-label, which\nsilently overrode its own visible <label> (WCAG 2.5.3).\n\nMEDIUM: give --divider its own dark-mode alpha too (deriving it from\n--card-border compounded to an invisible wash, same root cause as the\nbutton/input borders). Restore the rewrite \"Accept\" button's raised\nprimary treatment — it writes onto the live page field, a legitimate\nper-context primary alongside Import/Fill/Save & pair/Get app, not a\nCopy/Restore-tier action. Gate \"Unpair this device\" on hasToken (it\nrendered in every phase, including states with nothing to unpair), add\na small \"Reset pairing\" sub-label, and broaden the popover's aria-label\nnow that it hosts more than the explanatory text.\n\nLOW: fix the stale initAnswerToolsPreference comment (now\nbootstrapAnswerTools) and document the fields-probe's deliberate\nflash-then-hide (fail-open by design) at the markup default.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: split the fields probe into form/answer signals, fix stale-probe race\n\nMAJOR (CodeRabbit): the fields probe gated the popup's Form group\n(\"Fill this form\" / \"Save my answers\") on answers-capture's candidate\nlists alone, which deliberately EXCLUDE identity fields — so a page\nwith only name/email/phone hid the very button that fills them. Split\ninto two independent signals: hasFormFields is now the union of\nautofill's new hasAutofillableFields (lib/autofill.ts, reuses\nmatchFieldKey's identity-match gate) and answers-capture's\nhasAnswerCapturableFields (renamed from hasFillableFields), gating the\nForm group; hasAnswerFields stays the narrower answer-capturable-only\nsignal, gating the Answer-tools disclosure (Suggest/rewrite have\nnothing to act on from identity fields alone). probe-fields.ts computes\nboth; the popup<->background fieldsProbe message now carries both\nbooleans (still internal, no bridge/wire-protocol change).\n\nMINOR (CodeRabbit): a pending fieldsProbe response could resolve AFTER\nthe popup left `connected` and re-hide the groups in an ungated phase.\nIncrement fieldsProbeGeneration in render()'s non-connected branch,\nbefore resetting visibility, so a stale in-flight response becomes a\nno-op via the existing generation guard.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T18:45:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4c17552ae774a8bcf1794c3a22da88d53092f160",
-    "commit": {
-      "message": "chore: auto-bump last-updated headers on md edits and backfill stale dates (#691)\n\n* chore: add auto-bump hook for markdown last-updated headers\n\nAuto-bumps \"Last updated: YYYY-MM-DD\" headers to today when markdown files\nare edited, preserving trailing annotations like \"(v0.116.0)\". Wired into\nlint-staged to run BEFORE prettier, so timestamps stay current without\nmanual updates or drift.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* chore: backfill last-updated dates from git history (38 files)\n\nHistorical correction: set last-updated headers to their git log dates\nrather than leaving stale values. Preserves trailing annotations like\nversion tags. This is a one-shot backfill; going forward, the auto-bump\nhook maintains current dates on edit.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: document last-updated header maintenance for steward\n\nAdd guidance on the auto-bump hook and annotation refresh workflow to\nthe docs-standards skill. When editing docs with annotated headers like\n\"Last updated: 2026-07-16 (v0.116.0)\", the steward should refresh the\nannotation to describe the change, making commit history meaningful.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* test: cover the last-updated bump script\n\nComprehensive test suite for bump-last-updated.mjs covering:\n1. Date-changed: stale dates bumped to today, annotations preserved\n2. Idempotence: current dates unchanged (mtime + content verified)\n3. Header-missing: files without \"Last updated\" left untouched\n4. CRLF preservation: both LF and CRLF line endings handled correctly\n5. Non-markdown: .txt and other extensions skipped silently\n\nEdge cases: complex annotations, header on line 1, search depth (0-9).\nUses vitest with node environment, temp files cleaned per-test.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: eliminate time-bomb hardcoded dates in bump-last-updated tests\n\nAdd BUMP_DATE environment variable seam to the script (validated YYYY-MM-DD,\ndefaults to today). Tests now use fixed TEST_DATE=2031-01-05 via env var,\nmaking all fixtures and assertions independent of the real clock. Tests pass\nidentically whether run today or any future date — no clock dependencies.\n\nTests: 17 pass (1 new regression test for env var validation).\nScript: quiet fallback on invalid BUMP_DATE; normal clock usage when unset.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: improve bump-last-updated script robustness and compatibility\n\n1. Git compatibility: use --date=short + %ad instead of %as (supports git < 2.30)\n2. Mixed line endings: only rewrite header line, don't normalize entire file\n   (preserves CRLF/LF mix exactly as it exists)\n3. Use captured groups from regex instead of re-extracting date\n4. Remove unused async from main() — no awaits needed\n\nTests still pass (21 tests, all green). No behavior change for normal cases.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T18:34:09Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "92e8a2ee72f0d09c32a5e426697fa67aa49aa1b2",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-16T16:54:46Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "7de160e10f457b19a83d89575ac61733ee985299",
-    "commit": {
-      "message": "feat: connect gmail for email-confirmation watching (auto-track layer c, foundation) (#689)\n\n* feat: add the email-watch foundation (store, imap connect, ipc)\n\nBackend half of auto-track Layer C (task #23): EmailWatchStore (email_watch.db,\naccount singleton + seen dedupe, Resettable, excluded from backups), a thin\nIMAP validate_connection seam (native-tls; imap's rustls-tls bridge pins a\nrustls-webpki with 4 live RUSTSEC advisories and no update path), the\nemail-imap keychain slot, and the 5 email_watch_* commands with contracts,\ntauri-client namespace, and mock parity. No poller/parser yet — that is PR B.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* feat: add the email-watch settings section and service hooks\n\nFrontend half of PR A (task #23): use-email-watch hooks (status query + 4\nmutations seeding the status cache), the accounts EmailWatchSection\n(connect form, connected view with enable switch and check-now, honest\nconsent disclosure), settings-search entry, and en/de translations.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: harden the email-watch foundation per critic review + add adr-0013\n\nReview round (security PASS, rust-arch PASS, frontend 1 HIGH — all resolved):\nexact-pin the alpha imap dep, try_state in the mutating commands instead of a\npanicking state(), fresh-account semantics on an address switch (clears the\nuid watermark and seen table, +test), sentinel the spawn_blocking join error,\nlog imap error kinds only, keep text labels on the pending check-now and\ndisconnect buttons (a11y HIGH, +2 regression tests, en/de keys).\n\nDocs: ADR-0013 (imap-over-oauth economics, notify-dont-write, zero content\negress), the new imap egress class enumerated in README and SECURITY, and\nthree lessons persisted.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: guard email-watch writes against a racing disconnect and strip password paste-spaces\n\nCloses the /review ensemble's verified advisories: set_enabled/record_check\nnow no-op once the account row is cleared (WHERE id = 1 AND address IS NOT\nNULL, row-affected result + 3 interleaving tests), so a disconnect landing\nduring the multi-second imap round trip can never leave enabled=1 on an\nempty row; the gmail app password is stripped of ascii whitespace before\nvalidation (google displays it space-grouped and pastes keep the spaces);\nadr-0005 gains egress class 7 so adr-0013's citation resolves.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: address the verified coderabbit findings on the email-watch foundation\n\nSeven of eleven bot findings verified real against head and fixed: imap\nvalidation gets explicit connect/read/write timeouts via a manual socket path\n(the pinned crate's builder exposes none, so a black-holing server pinned a\nblocking worker forever); connect()/clear() multi-statement writes are now\ntransactional (a landed update + failed seen-delete could permanently skip the\nstale-mailbox cleanup); the app password clears from component state on a\nfailed connect too; adr-0005's stale six-classes count, adr-0013's overstated\nrevocation and read-only claims, and the readme/security sqlite-credentials\nconflation are corrected. The other four were verified already-fixed, false\npositives, or an advisory metric - in-thread replies document each.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T16:33:40Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "56de4f72cd82d31ad54e655f7a46859d389adb2c",
-    "commit": {
-      "message": "test: settle the extension-bridge ai-assist cache assertion with waitfor (#688)\n\nThe \"caches the returned setting so a re-read reflects it immediately\" test\nread queryClient.getQueryData synchronously right after mutateAsync resolved,\nso under full-suite parallel load it intermittently saw undefined before the\nonSuccess setQueryData had settled. Passed 9/9 in isolation, failed rarely in\n`pnpm test`.\n\nWraps the cache assertion in waitFor, matching the idiom the other cache tests\nalready use (use-ai-generations.test.ts:43). The assertion's meaning is\nunchanged; the hook was already correct.\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T14:21:43Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bfa848393e5bafe16d715997e9fc5ec1636ee9ae",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-16T04:49:40Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "798c82fefe5ecaddabb54f5d222eb7052e078f16",
-    "commit": {
-      "message": "feat: auto-track sent applications on a detected form submit (opt-in) (#687)\n\n* feat: auto-track sent applications on a detected form submit (opt-in)\n\nAfter the user invokes the extension on an application page (an existing\ninjection gesture) and enables the new default-OFF \"Auto-track sent applications\"\nopt-in, a pure-DOM submit-watch arms a capture-phase submit + apply-button\nlistener. On a detected submit it re-checks the opt-in, runs applied.check, and\nauto status.update {to:'applied', auto:true} for a tracked saved job (silent\nno-op if already applied; an action-badge nudge to import when untracked). It\nnever blocks/alters the submit and never auto-creates.\n\nThe auto write is desktop-enforced: status.update refuses auto:true when the\nopt-in is off (the manual popup mark-as-applied is unflagged and ungated as\nbefore). No new permissions/manifest changes; Firefox data_collection stays none.\n\nLayer A of the auto-track feature; full-page-nav submits are best-effort (Layer C\nemail parsing is the complement).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: cover the auto-track background wiring, distinguish auto vs manual, harden sender check\n\nCloses the review findings (all advisory):\n- add background.ts integration tests for the submitDetected route, arm-after-\n  gesture, and badge-clear (the wiring the pure-fn tests didn't exercise)\n- pin the duplicated SUBMIT_DETECTED_MSG literal with a parity test so the\n  background/lib copies can't silently diverge\n- record \"auto-tracked via extension\" vs \"via extension\" in the status history\n  so an auto write is distinguishable later, not only in the notification body\n- assert sender.id === runtime.id before acting on submitDetected (belt-and-\n  braces; already mitigated by the absent externally_connectable)\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: amend adr-0009 and extension-domain for auto-track layer a\n\nRecords the auto-track opt-in (task #22) as a distinct sanctioned\nauto-action consent class in adr-0009: the server-side enforcement\nboundary in handle_status_update, the honest residual risk, and the\nnew autotrack.check/autotrack.result verbs plus status.update's auto\nflag. extension-domain.md gets the verb-table entries and a new\ngesture-armed submit-watch section documenting detection, routing,\ndecision branches, and honest limits.\n\n* refactor: extract auto-track opt-in machinery into an autotrack submodule for r8\n\nThe auto-track additions pushed extension_bridge/mod.rs to 1425 LOC, over the\n1400 hard cap. Move the opt-in file load/persist, the enabled accessors, and the\nautotrack result reply into a sibling autotrack.rs (mirrors status_update.rs).\nmod.rs is now 1372. No behavior change.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T04:40:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "fd08935e1eff89e233565350f84b5e4538528351",
-    "commit": {
-      "message": "docs: fix contributing release process and merge duplicate sections (#686)\n\nCONTRIBUTING.md wrongly claimed releases auto-run on merge to main.\nRewrite both Release Process sections to match the real two-step\nmanual workflow_dispatch flow (release.yml) and consolidate the\nfile's duplicated Testing/Code Style/Commit Conventions/Release\nProcess sections into one guide.",
-      "author": {
-        "date": "2026-07-16T03:19:27Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f34f7077fc4ddb9d8d5d57ed61dc889ca63d5f86",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-16T02:26:58Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "9eb2e75ade9434797b405e5f75a4f4ad07d5d070",
-    "commit": {
-      "message": "fix: resolve the agent_run provider from the backend store, not the renderer request (#685)\n\n* fix: resolve the agent_run provider from the backend store, not the renderer request\n\nThe agent \"prep this application\" loop still trusted req.provider/model/base_url\nand threaded base_url into ToolContext, so an XSS'd renderer could point an\nopenai-compatible base_url at an attacker and exfiltrate the key + resume/JD per\nturn — the same class task #16 closed for ai_generate. It was also split-brain:\nresearch_company already resolved from the store while complete_trusted used\nctx.base_url, so one run could hit two endpoints.\n\nagent_run now resolves via Completer::from_active; ToolContext carries only\njob_id; complete_trusted resolves from the store too (unifying every agent tool +\nthe agent's own turns on one store-configured endpoint). provider/model/base_url\nare removed from AgentRunRequest (Rust struct + Zod schema) so the renderer can no\nlonger supply them — the compile-time lock. Renderer sends only { resumeId, jobId }.\n\nCloses the last renderer-settable base_url path (NEXT_ISSUES #5).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* refactor: remove the dead request-driven provider-resolve constructor\n\nAfter #16 + #25 flipped every generation path onto `Completer::from_active`, the\nrequest-driven `Completer::resolve(provider, model, base_url)` had zero callers —\nand it's the exact \"accept a renderer-supplied base_url\" footgun the whole exfil\nclass removed. Delete it (keeping resolve_parts/from_config/from_active) so\nstore-resolution is the ONLY way to bind egress routing; a future command can no\nlonger re-introduce the class by wiring renderer input into it. Reword the doc\nlinks that pointed at it. No behavior change.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: close adr-0012 scope now that agent_run is store-routed\n\nTask #25 flipped agent_run onto Completer::from_active and deleted the\nold request-driven Completer::resolve constructor, so it is no longer\na tracked exception. Update adr-0012's scope/consequences/references to\nsay the base_url provenance closure covers every generation path, mark\nNEXT_ISSUES #5 closed, and correct the automation-domain knowledge note\nthat still described agent_run as unflipped.\n\nReviewed by tauri-security-reviewer + rust-backend-architect, no\nHIGH/CRITICAL findings.\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T02:17:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "09a1458895a88490c38a84ecbc1fb54e1448e71a",
-    "commit": {
-      "message": "docs: fix stale apps/tauri trees, app-data dir name, and ci badge (#684)",
-      "author": {
-        "date": "2026-07-16T01:47:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8161de30ee0327bae20cfe5c7ef3004a5fed899d",
-    "commit": {
-      "message": "docs: fix drifted directory paths, add apps/extension listings, narrow CI path filter (#683)\n\n* docs: fix drifted directory paths after the contracts/commands/tauri-client splits\n\nUpdate stale references to the three files that became directories\n(packages/shared/src/ipc/contracts.ts, apps/desktop/src-tauri/src/commands.rs,\napps/desktop/src/tauri-client.ts) plus several other renderer/Rust/prompts\nfiles that moved into their own subfolders since these docs were last\ntouched (app-client.ts, PdfPreview, PageShell, MatchScoresProvider,\nuse-cli-agents.ts, use-ai-provider.ts, emphasis.ts, rewrite.ts,\nhtml_to_markdown, ReferralModal). Also fixes the pre-rename apps/tauri path\nin README.md's project-structure tree and adds the previously-omitted\napps/extension (and missing packages/translations, packages/test-ids)\nto every top-level architecture/directory-listing block.\n\n* ci: narrow the change-detection filter from .github/** to workflows + actions\n\n`.github/**` in all three path filters meant editing any file under .github/ —\nincluding docs like copilot-instructions.md and issue/PR templates — forced the\nfull heavy CI suite. Scope it to `.github/workflows/**` + `.github/actions/**`\n(the parts CI actually executes), so .github docs/config skip the heavy jobs\nlike any other doc while workflow/action edits still trigger a full run.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T01:03:58Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "24a2cb81c23b8158af3d84af2959f87204d061a3",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-16T00:27:37Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "b9230da4ca21f546926c14c4e06b01f549cbd35c",
-    "commit": {
-      "message": "fix: own the active ai provider config in the backend so the renderer can't set base_url (#682)\n\n* fix: own the active ai provider config in the backend so the renderer can't set base_url\n\nThe renderer's Zustand preferences were the source of truth for the active AI\nprovider/model/base_url and injected them into every generation call, which the\nbackend trusted. An XSS'd renderer could set provider=openai + base_url=attacker\nand exfiltrate the stored key + full prompt on every call (unguarded egress\npath); the extension bridge was worse, persisting the attacker base_url to disk.\n\nIntroduce a backend-owned AiConfigStore (SQLite, mirrors EmbeddingConfig) as the\nsingle source of truth for { activeProvider, providers:{model,baseUrl} }, wired\ninto the GDPR reset registry + backup bundle. Generation, research, the extension\nbridge, and autopilot now resolve provider/model/base_url server-side via\nCompleter::from_active; provider + baseUrl are removed from AiGenerateRequest\n(compile-time lock). base_url is validated on write (http(s) only, cloud-metadata\naddress blocked) — provenance, not IP-filtering, so localhost/LAN gateways still\nwork. The renderer flips to a backend-backed useActiveConfig query with a boot\nprefetch and a one-time post-hydration seed from existing prefs; effort and\nmodelLimits stay renderer-side. The three settings-time inspection commands keep\nbase_url (not the generation surface).\n\nBehavior change: a scheduled autopilot run now follows the currently-active\nprovider instead of the one pinned when the schedule was created.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: scope base_url ownership docs, drop inert native base_url, guard cold-boot caption\n\nAddress the #16 review findings (all advisory, none blocking):\n\n- Scope the AiConfigStore module doc + net/ssrf doc: base_url ownership is closed\n  for the flipped generation commands (ai_generate, pipeline, research/salary,\n  bridge, autopilot); the agent_run path is a tracked follow-up (NEXT_ISSUES #5).\n  Correct the metadata-block claim to \"any IPv4 notation\" (IPv6 forms are not\n  covered; the block is defense-in-depth, not the boundary).\n- Persist base_url only for openai-compatible in both validate_settings and the\n  seed/import scrub path; native providers store NULL so an inert base_url can't\n  reach record_usage's cost gate (+ tests).\n- Guard the autopilot StepAction and StepFineTune captions on the useActiveConfig\n  isPending window so an already-configured user never sees a \"no provider\" flash\n  on cold boot (+ test).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* docs: close out task #16 with the base_url provenance adr\n\nAdd ADR-0012 (backend-owned AiConfigStore, provenance not IP-filtering,\nscoped to the flipped commands with agent_run tracked as open). Sync the\nAI-provider and autopilot behavior-change notes into automation-domain.md,\nretire the answer-assist provider-snapshot description in extension-domain.md\nand ADR-0011, and add two LOW follow-ups to NEXT_ISSUES.\n\n* fix: handle the error-union in provider-config mutations and cover from_active + boot\n\nAddress the #682 claude review:\n\n- HIGH: useSetActiveProvider/useSetProviderSettings/useConfigureActiveProvider\n  now narrow the { error } union and throw so a rejected write surfaces via\n  onError instead of a false success; useConfigureActiveProvider stops before\n  setActiveProvider when setProviderSettings errors. CloudProviderConfig's\n  base_url save gains error feedback (+ i18n key). So a base_url rejected by the\n  new SSRF/provenance guard is now shown, not swallowed.\n- Extract an AppHandle-free from_config/resolve_parts seam from Completer so the\n  fail-closed base_url re-validate is unit-tested (tampered metadata/scheme ->\n  reject, never fall back to the default endpoint).\n- Add the missing AiConfigBoot seed-logic test (once-only guard, pre-hydration\n  skip, fresh-install skip, invalidation).\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-16T00:07:40Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "014dead79eb75876f42e050ee6e61303ad01cf52",
-    "commit": {
-      "message": "fix(prompts): count zero words for empty or whitespace-only resume (#681)\n\nresume.split(/\\s+/).length returned 1 for an empty string and inflated\ncounts by 1-2 for leading/trailing whitespace. Trim first and bail out\non empty so the word stat surfaced by getResumeStats reflects reality.\n\nCloses #678\n\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T23:42:24Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "1bb747438d159b9b35043dd4734db687c21236ed",
-    "commit": {
-      "message": "fix(analyze): don't flag language mismatch when a language is unknown (#680)\n\nThe mismatch fallback compared langs.resume and langs.jobAd directly, so\na missing or 'unknown' value on either side flipped mismatch to true\n(e.g. {resume: 'en', jobAd: 'unknown'} reported a mismatch). Now mirror\ndetectLanguages() in @ajh/shared: mismatch only when both codes are\npresent, non-'unknown', and different.\n\nCloses #677\n\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T23:42:10Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "0459ea21f5e12125032f59d6f78f9d2fbbb3f97f",
-    "commit": {
-      "message": "fix(shared): map swedish to iso 639-1 'sv' not iso 639-3 'swe' (#679)\n\nEvery other entry in LANGUAGE_MAP returns an ISO 639-1 code but Swedish\nreturned 'swe' (ISO 639-3), and LANGUAGE_NAMES was keyed on that same\n'swe' to hide the mismatch. Downstream code (analysis prompt, metadata,\ndetectLanguages mismatch check) expects ISO 639-1, so Swedish text\nsilently misrouted through the pipeline.\n\nCloses #676\n\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T23:42:01Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "cd3f5a738cb5cb9ddb05a80d98bdb6d898caf930",
-    "commit": {
-      "message": "ci: skip the pr labeler on fork prs to avoid a read-only-token failure\n\nGitHub caps the GITHUB_TOKEN to read-only for pull_request events on fork PRs\nregardless of the declared permissions, so actions/labeler's set-labels call\n403s (\"Resource not accessible by integration\"). Gate the job on a same-repo\nhead so fork PRs get a neutral skipped status instead of a red X; a maintainer\nlabels those by hand.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-15T21:48:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d114faf86567746f6544466b37f73e26bf0822ce",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-15T19:05:00Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "9bf24aa0e11dca454dcbe8bf3715d289a44fc349",
-    "commit": {
-      "message": "fix: restore rewrite-mode review fixes lost in #649 (#675)\n\n* fix: address rewrite-mode review findings\n\n- Refuse a field replace when its value changed after pick (data integrity):\n  thread the field's expected current value through answerReplace end-to-end;\n  replaceFilledField returns CHANGED_SINCE_PICK and never overwrites a manual\n  edit made between pick and Accept/Restore. The expected baseline updates to\n  whatever a successful Accept/Restore wrote.\n- Fix the rewrite picker reset: Number('') is 0, so resetting the picker to\n  its placeholder silently re-picked index 0 instead of clearing the target;\n  guard the empty value before coercion.\n- Validate rewrite required fields BEFORE acquiring the ai_research limiter,\n  via a pure validate_rewrite_fields (which structurally can't touch the\n  limiter), so malformed rewrite frames can't burn rate-limiter slots.\n- Extract assist_prompt_for_mode (pure mode->prompt) and test it directly;\n  the remaining resolve_answer_assist end-to-end slice has no mock-app harness\n  in this crate (pre-existing, same as draft mode).\n\nKeeps the rewrite prompt policy in extension_bridge to mirror the shipped\ndraft path (ANSWER_ASSIST_SYSTEM + build_user_message live there too) —\nconfirmed a CodeRabbit false positive by the independent review.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n* fix: capture rewrite target before await to prevent mid-flight repick clobber\n\nsendRewriteReplace re-read the module-level rewriteTarget after the await to\nstamp expectedValue; a re-pick to a different field mid-flight would corrupt\nthe new target's baseline. Capture the target by reference before the send so\nthe in-flight request only ever touches the object it captured.\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-15T18:55:09Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "592a6c9f9ec718d0cfa92fcee5d74417dbaf737f",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-15T18:50:02Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "2ec7a8cfcbe3851283bcd3f2d1b157c94afd2c74",
-    "commit": {
-      "message": "fix: bring hmac keyinit trait into scope for the 0.13 api (#674)\n\nhmac 0.13 (#672) moved `Hmac::new_from_slice` from an inherent method to\nthe `KeyInit` trait, so `main` stopped compiling in the extension_bridge\npairing handshake. Bring the trait into scope — one import, zero logic\nchange (same MAC key/message/constant-time verify; KAT + tamper/reject\ntests pass unchanged). sha2 0.11 (#669) and tokio-tungstenite 0.30 (#670)\nneeded no changes — their use sites were already API-compatible.\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-15T18:29:49Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b416749752d8dce75269940c668032a33873f428",
-    "commit": {
-      "message": "feat: add ai answer rewrite mode to the extension (#649)\n\nRewrite the answer text you already typed in a form field, streamed live,\nthen replace that exact field on Accept. Builds on the shipped bridge\nstreaming transport; the answer.assist verb gains an additive, optional\nmode: 'draft' | 'rewrite' plus existingAnswer/preset/instruction (reusing\nthe assist.chunk/done/cancel frames, no new wire message).\n\n- Presets (shorten/expand/rephrase/impact/grammar) + free-text instruction\n  reuse the in-app RewritePopover ids and buildRewritePrompt contract,\n  ported to a Rust-native REWRITE_SYSTEM (pure text transform: preserve\n  meaning/tense/voice, never fabricate, honor length, stay in-language; no\n  resume/job/company/salary grounding). compose_draft_stream is\n  parameterized on system + max_tokens so draft and rewrite share the one\n  streaming compose path.\n- Rides the SAME extension AI-assist opt-in as drafting (same billable\n  consent class, ADR-0011); same limiter + daily charge.\n- The popup picks a FILLED field (text/textarea only, never a select) via a\n  fail-safe occurrence-index/expectedCount locate; Accept replaces exactly\n  that field (input/change only, never submits), Restore-original re-injects\n  the frozen value, Copy always available. The rewritten text is passed\n  transiently to the injected classic script, never persisted or logged.\n- Hardening: existingAnswer + instruction are fence-neutralized and both new\n  tags registered in FENCE_TAG_PATTERNS (sibling-forgery stripped); a\n  cross-workspace parity test binds the Rust preset strings to the en\n  translations source so wording/id drift fails a test.\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-15T17:41:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "86db13a538454d35bc4a97cc01aa0a22170103a5",
-    "commit": {
-      "message": "chore: bump gitleaks/gitleaks-action from 2.3.9 to 3.0.0 (#663)\n\nBumps [gitleaks/gitleaks-action](https://github.com/gitleaks/gitleaks-action) from 2.3.9 to 3.0.0.\n- [Release notes](https://github.com/gitleaks/gitleaks-action/releases)\n- [Commits](https://github.com/gitleaks/gitleaks-action/compare/ff98106e4c7b2bc287b24eaf42907196329070c7...e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e)\n\n---\nupdated-dependencies:\n- dependency-name: gitleaks/gitleaks-action\n  dependency-version: 3.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T17:40:18Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a056fd211a852d2ac984fefefb24d4d0f7389789",
-    "commit": {
-      "message": "chore: bump regex from 1.12.4 to 1.13.0 in /apps/desktop/src-tauri (#666)\n\nBumps [regex](https://github.com/rust-lang/regex) from 1.12.4 to 1.13.0.\n- [Release notes](https://github.com/rust-lang/regex/releases)\n- [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/regex/compare/1.12.4...1.13.0)\n\n---\nupdated-dependencies:\n- dependency-name: regex\n  dependency-version: 1.13.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T17:40:06Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "704c2da8a930dfbe5ae5acbbf4ad7413516ebf86",
-    "commit": {
-      "message": "chore: bump sha2 from 0.10.9 to 0.11.0 in /apps/desktop/src-tauri (#669)\n\nBumps [sha2](https://github.com/RustCrypto/hashes) from 0.10.9 to 0.11.0.\n- [Commits](https://github.com/RustCrypto/hashes/compare/sha2-v0.10.9...sha2-v0.11.0)\n\n---\nupdated-dependencies:\n- dependency-name: sha2\n  dependency-version: 0.11.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-15T17:39:55Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
