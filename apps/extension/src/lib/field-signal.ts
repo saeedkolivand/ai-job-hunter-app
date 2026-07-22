@@ -75,7 +75,7 @@ const AMBIGUOUS = [
   // matches the generic `\bname\b` catch-all in `matchNamedKey` and mis-fills
   // with the applicant's OWN name. All are long, distinctive substrings with no
   // English-word collision (the short/collision-prone ones live in
-  // {@link AMBIGUOUS_WORDS} below).
+  // {@link AMBIGUOUS_WORDS} / {@link AMBIGUOUS_PREFIXED} below).
   'ansprechpartner', // DE contact person
   'notfall', // DE emergency (covers notfallkontakt/notfallnummer)
   'referenz', // DE reference (covers referenzperson/referenznummer)
@@ -369,8 +369,10 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   // "microphone" and bare `mobile` ⊂ "automobile", so a "Smartphone model" field
   // received the user's phone number — a mis-fill, which this module's contract
   // forbids ("under-fills rather than mis-fills"). The known compound prefixes
-  // (`cell`/`home`/`work`/`day`/`tele`phone) are spelled out so they keep
-  // matching. The TRAILING side is deliberately left open — `_` is a word
+  // (`cell`/`home`/`work`/`day`/`tele`phone) are ENUMERATED so they keep matching
+  // — camelCase compounds flatten to the same lowercased signal (`workPhone` →
+  // `workphone` → `work`+`phone`), while a non-enumerated `headphone`/`smartphone`
+  // deliberately does NOT match. The TRAILING side is deliberately left open — `_` is a word
   // character, so a `\b`/trailing anchor would stop matching the very common
   // `phone_number`, `phoneNumber` and `mobile_number` field names. `(?:^|[^a-z])`
   // is used rather than a lookbehind because these patterns are only ever
@@ -404,14 +406,18 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   },
   // `city`/`town` are anchored on their LEADING side (see the `phone` note
   // above): bare `city` ⊂ "ethnicity", so an EEO "Ethnicity" field was resolving
-  // to `location` and receiving the user's city. `hometown` is spelled out so it
-  // keeps matching. The trailing side stays open so `city_1` / `cityName` still
+  // to `location` and receiving the user's city. The compound prefixes
+  // (`home`/`work`) are ENUMERATED rather than allowing any letter before `city`,
+  // so a camelCase compound flattens and still matches (`workCity` → `workcity`
+  // → `work`+`city`) WITHOUT re-opening the `ethnicity` mis-fill (its `city` is
+  // preceded by an un-enumerated `ethni`). `hometown` is spelled out so it keeps
+  // matching. The trailing side stays open so `city_1` / `cityName` still
   // match. The other EU city/place terms use `\b` where they are
   // short/collision-prone, unchanged.
   {
     key: 'location',
     pattern:
-      /(?:^|[^a-z])(?:home)?(?:city|town)|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
+      /(?:^|[^a-z])(?:home|work)?(?:city|town)|\blocation\b|\bort\b|stadt|wohnort|\bville\b|ciudad|citta|plaats|miasto|cidade|localidad/,
   },
 ];
 

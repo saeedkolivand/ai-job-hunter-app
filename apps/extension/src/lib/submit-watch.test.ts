@@ -165,6 +165,122 @@ describe('armSubmitWatch — apply-style click heuristic', () => {
   });
 });
 
+describe('armSubmitWatch — hidden résumé file input (#786 follow-up)', () => {
+  it('recognizes a form whose résumé file input is hidden behind a custom upload button', () => {
+    // A styled upload widget hides the native <input type=file> (display:none).
+    // With only one OTHER visible field the form falls below the 3-field bar, so
+    // without treating the hidden résumé input as decisive the real application
+    // form would go unrecognized. Visibility is computed-style only (isHidden).
+    setBody(`
+      <form id="f">
+        <input name="first_name" />
+        <input type="file" name="resume" style="display:none" />
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('still ignores a hidden NON-résumé file input with too few visible fields', () => {
+    // The narrowing: only a résumé/CV-flavored hidden file input is decisive, so
+    // a bare hidden upload on a non-application form stays below the bar and the
+    // module keeps under-reporting rather than over-reporting.
+    setBody(`
+      <form id="f">
+        <input name="q" />
+        <input type="file" style="display:none" />
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe('armSubmitWatch — non-application forms (#786 lows)', () => {
+  it('does NOT treat a checkbox/radio-only form as an application form', () => {
+    // A filter / cookie-consent / survey widget is built only from checkboxes or
+    // radios; a real application form clears the bar on its text/email/résumé
+    // fields, so these are excluded from the fillable-field count.
+    setBody(`
+      <form id="f">
+        <input type="checkbox" name="a" />
+        <input type="checkbox" name="b" />
+        <input type="radio" name="c" value="1" />
+        <input type="radio" name="c" value="2" />
+        <button type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    );
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire when a "Save draft" button submits the application form', () => {
+    // Real browsers carry the pressed button as the SubmitEvent's `submitter`;
+    // a draft-save submit must not auto-advance the application to `applied`.
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <button id="draft" type="submit">Save draft</button>
+        <button id="send" type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new SubmitEvent('submit', {
+        submitter: document.getElementById('draft'),
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('still fires when the real submit button sends the application form', () => {
+    setBody(`
+      <form id="f">
+        ${APPLICATION_FIELDS}
+        <button id="draft" type="submit">Save draft</button>
+        <button id="send" type="submit">Submit application</button>
+      </form>
+    `);
+    const post = vi.fn();
+    armSubmitWatch(document, post);
+
+    (document.getElementById('f') as HTMLFormElement).dispatchEvent(
+      new SubmitEvent('submit', {
+        submitter: document.getElementById('send'),
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('armSubmitWatch — fire-once guard', () => {
   it('posts AT MOST ONCE when the apply click AND its submit both fire', () => {
     setBody(`<form id="f">${APPLICATION_FIELDS}<button type="submit">Apply</button></form>`);
