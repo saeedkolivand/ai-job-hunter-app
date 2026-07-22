@@ -46,6 +46,11 @@ function explicitScheme(input: string): string | null {
  */
 function identifyingQueryParams(host: string): readonly string[] {
   if (host === 'indeed.com' || host.endsWith('.indeed.com')) return ['jk'];
+  // news.ycombinator.com/item?id=<id> — the URL `boards::ycombinator` builds when
+  // an HN job story has no external link. Without this every such posting
+  // normalizes to the bare `/item` path and cross-source dedup collapses them all
+  // into one row.
+  if (host === 'news.ycombinator.com') return ['id'];
   return [];
 }
 
