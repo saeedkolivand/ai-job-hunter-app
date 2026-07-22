@@ -323,6 +323,21 @@ fn location_filter_blank_passes_through_with_active_query() {
 }
 
 #[test]
+fn location_filter_matches_a_geocode_picker_city_country_label() {
+    // The location box writes the picker's "<city>, <country>" label
+    // (`commands::geocoding` builds it), while The Muse writes its own shape
+    // ("Berlin, Germany" here, "New York, NY" in the wild). Requiring the whole
+    // label as one substring dropped every row; matching segment-wise keeps it.
+    let postings = sample_postings();
+    let filtered = apply_filters(&postings, "", "Berlin, Deutschland");
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].title, "Senior Backend Engineer");
+
+    // A label sharing no segment with the posting still excludes it.
+    assert!(apply_filters(&postings, "", "Paris, France").is_empty());
+}
+
+#[test]
 fn query_and_location_filters_combine_with_and() {
     let postings = sample_postings();
     // Title matches "engineer" but location does not match "remote" -> excluded.

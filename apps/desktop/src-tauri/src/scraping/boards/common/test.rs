@@ -321,3 +321,52 @@ fn canonical_key_empty_or_non_http_url_falls_back_to_title_company() {
     );
     assert_eq!(canonical_job_key("file:///etc/passwd", "T", "Co"), expected);
 }
+
+// ── location_matches ─────────────────────────────────────────────────────────
+//
+// Shared by every board that filters location client-side (The Muse, Comeet via
+// `matches_filters`; GermanTechJobs directly). The requested location is
+// normally the geocode picker's "<city>, <country>" label, so the tests below
+// pin the segment-wise contract against each board's own location shape.
+
+#[test]
+fn location_matches_a_city_country_label_against_a_boards_own_shape() {
+    // The regression: the picker writes "new york, united states" while The Muse
+    // writes "new york, ny". A whole-string `contains` matched neither, zeroing
+    // the board for every picked city.
+    assert!(location_matches("new york, united states", "new york, ny"));
+    assert!(location_matches("berlin, germany", "berlin, deutschland"));
+    // GermanTechJobs shapes: street address ending in the city, and city+region.
+    assert!(location_matches(
+        "berlin, germany",
+        "rust engineer alpha ag karl-marx-allee 1, berlin"
+    ));
+    assert!(location_matches(
+        "munich, bayern",
+        "java dev beta gmbh munich"
+    ));
+}
+
+#[test]
+fn location_matches_a_single_segment_request_unchanged() {
+    // Free-typed (unpicked) input is one segment — the pre-existing behaviour.
+    assert!(location_matches("berlin", "berlin, germany"));
+    assert!(location_matches("remote", "remote"));
+}
+
+#[test]
+fn location_matches_rejects_when_no_segment_appears() {
+    assert!(!location_matches("berlin, germany", "new york, ny"));
+    assert!(!location_matches("paris, france", "remote"));
+    // An empty haystack can never satisfy a non-empty request.
+    assert!(!location_matches("berlin, germany", ""));
+}
+
+#[test]
+fn location_matches_ignores_blank_and_whitespace_only_segments() {
+    // A trailing comma or a doubled separator must not turn into an empty needle
+    // that `contains` trivially accepts — that would disable the filter entirely.
+    assert!(!location_matches("berlin,", "new york, ny"));
+    assert!(!location_matches(" , , ", "new york, ny"));
+    assert!(location_matches("berlin,", "berlin, germany"));
+}

@@ -52,12 +52,36 @@ pub(crate) fn is_valid_dns_label_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
+/// Whether a board's own location text satisfies the requested location, for the
+/// boards that filter client-side.
+///
+/// `requested` is normally the geocode picker's `"<city>, <country>"` label
+/// (`commands::geocoding` builds it precisely "so the UI only ever shows
+/// 'City, Country'"), while a board writes its location in its own shape —
+/// `"New York, NY"`, `"Munich, Bayern"`, `"Karl-Marx-Allee 1, Berlin"`. Requiring
+/// the WHOLE label as one contiguous substring therefore matched nothing and
+/// zeroed the board for every picked city, so match SEGMENT-wise instead: any
+/// non-empty comma-separated part of the request appearing in `haystack` is
+/// enough.
+///
+/// Conservative by design — it errs toward keeping a posting, mirroring the
+/// engine's central [`crate::scraping::engine::location_filter`], which
+/// tokenizes the request and keeps on any token hit for the same reason. Both
+/// arguments must already be lowercased by the caller.
+pub(crate) fn location_matches(requested: &str, haystack: &str) -> bool {
+    requested
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .any(|part| haystack.contains(part))
+}
+
 /// Client-side query/location filter for boards with no server-side keyword
 /// search (The Muse, Comeet). Case-insensitive substring match on
-/// `title + company` for `query`; case-insensitive substring match on
-/// `location` for `location`; an empty filter passes everything; both
-/// clauses AND-combine. Originally The Muse-local; extracted here once
-/// Comeet needed the identical filter instead of a second copy.
+/// `title + company` for `query`; segment-wise case-insensitive match on
+/// `location` for `location` (see [`location_matches`]); an empty filter passes
+/// everything; both clauses AND-combine. Originally The Muse-local; extracted
+/// here once Comeet needed the identical filter instead of a second copy.
 pub(crate) fn matches_filters(
     posting: &crate::scraping::types::JobPosting,
     query: &str,
@@ -74,7 +98,7 @@ pub(crate) fn matches_filters(
     let loc_filter = location.trim().to_lowercase();
     if !loc_filter.is_empty() {
         let loc = posting.location.as_deref().unwrap_or("").to_lowercase();
-        if !loc.contains(&loc_filter) {
+        if !location_matches(&loc_filter, &loc) {
             return false;
         }
     }

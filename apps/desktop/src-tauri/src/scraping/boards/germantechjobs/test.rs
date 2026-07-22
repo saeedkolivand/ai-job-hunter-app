@@ -218,20 +218,9 @@ fn test_keyword_filter_excludes_non_matching_job() {
     let all = parse_feed(FILTER_XML, "germantechjobs", now);
     assert_eq!(all.len(), 2, "fixture must parse 2 jobs before filtering");
 
-    let q = "rust";
     let filtered: Vec<_> = all
         .into_iter()
-        .filter(|p| {
-            let haystack = format!(
-                "{} {} {} {}",
-                p.title,
-                p.company,
-                p.location.as_deref().unwrap_or(""),
-                p.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            haystack.contains(q)
-        })
+        .filter(|p| matches_gtj_filters(p, "rust", ""))
         .collect();
 
     assert_eq!(
@@ -249,20 +238,9 @@ fn test_location_filter_matches_on_location_field() {
     let now = chrono::Utc::now().timestamp_millis();
     let all = parse_feed(FILTER_XML, "germantechjobs", now);
 
-    let loc = "hamburg";
     let filtered: Vec<_> = all
         .into_iter()
-        .filter(|p| {
-            let haystack = format!(
-                "{} {} {} {}",
-                p.title,
-                p.company,
-                p.location.as_deref().unwrap_or(""),
-                p.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            haystack.contains(loc)
-        })
+        .filter(|p| matches_gtj_filters(p, "", "hamburg"))
         .collect();
 
     assert_eq!(
@@ -271,6 +249,33 @@ fn test_location_filter_matches_on_location_field() {
         "only the Hamburg job should pass the location filter"
     );
     assert_eq!(filtered[0].external_id.as_deref(), Some("job-java"));
+}
+
+#[test]
+fn test_location_filter_accepts_a_geocode_picker_city_country_label() {
+    // The location box writes the picker's "<city>, <country>" label, but this
+    // feed's <location> is a bare city ("Berlin") or a street address ending in
+    // one ("Karl-Marx-Allee 1, Berlin"). The whole label is never a contiguous
+    // substring, so the board used to return 0 for every picked German city.
+    let now = chrono::Utc::now().timestamp_millis();
+    let all = parse_feed(FILTER_XML, "germantechjobs", now);
+
+    let keep = |loc: &str| -> Vec<_> {
+        all.iter()
+            .filter(|p| matches_gtj_filters(p, "", &loc.to_lowercase()))
+            .collect()
+    };
+
+    let filtered = keep("Berlin, Germany");
+    assert_eq!(
+        filtered.len(),
+        1,
+        "the Berlin job must survive a 'City, Country' label"
+    );
+    assert_eq!(filtered[0].external_id.as_deref(), Some("job-rust"));
+
+    // A label sharing no segment with any posting still filters everything out.
+    assert!(keep("Paris, France").is_empty());
 }
 
 // ── continue-path (guard-miss) coverage ──────────────────────────────────────

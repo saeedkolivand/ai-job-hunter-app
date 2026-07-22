@@ -210,6 +210,37 @@ pub(crate) fn parse_feed(xml: &str, scraper_id: &str, now: i64) -> Vec<JobPostin
     out
 }
 
+/// The board's client-side keyword + location filter. `query` and `location`
+/// must already be trimmed and lowercased by the caller.
+///
+/// Extracted from `search()`'s `retain` so tests drive the REAL predicate — a
+/// verbatim copy in the test file would silently diverge from what `search()`
+/// actually runs (the same reasoning as The Muse's `apply_filters` helper).
+pub(crate) fn matches_gtj_filters(posting: &JobPosting, query: &str, location: &str) -> bool {
+    let haystack = format!(
+        "{} {} {} {}",
+        posting.title,
+        posting.company,
+        posting.location.as_deref().unwrap_or(""),
+        posting.description.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+
+    if !query.is_empty() && !haystack.contains(query) {
+        return false;
+    }
+    // Segment-wise, not whole-string: `input.location` is normally the geocode
+    // picker's "<city>, <country>" label, while this feed writes <location> as a
+    // bare city ("Berlin"), a "<city>, <region>" pair ("Munich, Bayern"), or a
+    // street address ending in the city ("Karl-Marx-Allee 1, Berlin"). The whole
+    // label is never a contiguous substring, so requiring it returned 0 rows for
+    // every geocode-picked German city — the exact market this board serves.
+    if !location.is_empty() && !super::common::location_matches(location, &haystack) {
+        return false;
+    }
+    true
+}
+
 // ── scraper ──────────────────────────────────────────────────────────────────
 
 pub struct GermanTechJobsScraper;
@@ -270,24 +301,7 @@ impl Scraper for GermanTechJobsScraper {
         let mut out = parse_feed(&res.text, self.id(), now);
 
         // ── client-side keyword + location filter ─────────────────────────────
-        out.retain(|posting| {
-            let haystack = format!(
-                "{} {} {} {}",
-                posting.title,
-                posting.company,
-                posting.location.as_deref().unwrap_or(""),
-                posting.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-
-            if !q.is_empty() && !haystack.contains(&q) {
-                return false;
-            }
-            if !loc.is_empty() && !haystack.contains(&loc) {
-                return false;
-            }
-            true
-        });
+        out.retain(|posting| matches_gtj_filters(posting, &q, &loc));
 
         for posting in &out {
             if let Some(ref on_item) = ctx.on_item {
