@@ -1364,7 +1364,10 @@ describe('validateMetadata', () => {
     const meta = validateMetadata('{"candidateName":"Jane","jobTitle":"Dev","jobAdLanguage":"de"}');
     expect(meta?.candidateName).toBe('Jane');
     expect(meta?.targetLanguage).toBe('de');
-    expect(meta?.mismatch).toBe(true); // resumeLanguage defaults to en, jobAd is de
+    // resumeLanguage is omitted (blank) and defaults to 'en' for prompting, but
+    // a blank side must never itself flag a mismatch — see the dedicated
+    // asymmetric-blank test below.
+    expect(meta?.mismatch).toBe(false);
     expect(meta?.topRequirements).toEqual([]);
   });
 
@@ -1408,6 +1411,16 @@ describe('validateMetadata', () => {
     // is `''` — so `'' !== 'en'` used to read as a mismatch.
     const meta = validateMetadata('{"resumeLanguage":"","jobAdLanguage":"en"}');
     expect(meta?.resumeLanguage).toBe('en');
+    expect(meta?.mismatch).toBe(false);
+  });
+
+  it('does not flag a mismatch when a blank side would otherwise default to a different known language', () => {
+    // Asymmetric case: a blank jobAdLanguage normalizes to 'en' via toLanguage(),
+    // which would read as a genuine "de vs en" mismatch unless the guard checks
+    // the RAW (pre-normalization) blank state instead of the coerced value.
+    const meta = validateMetadata('{"resumeLanguage":"de","jobAdLanguage":""}');
+    expect(meta?.resumeLanguage).toBe('de');
+    expect(meta?.jobAdLanguage).toBe('en');
     expect(meta?.mismatch).toBe(false);
   });
 
