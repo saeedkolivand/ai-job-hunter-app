@@ -149,7 +149,7 @@ typst-pdf = "=0.15.0"
 # `PagedDocument` moved out of `typst-library` into the `typst-layout` crate in
 # 0.15, so the engine's compile path imports it directly. Already a transitive
 # dep of `typst`; exact pin kept in lockstep with the rest of the family.
-typst-layout = "=0.15.0"
+typst-layout = "=0.15.1"
 # SVG emitter for the live-preview render path (render_*_svg_pages). Runtime dep:
 # the preview command returns per-page SVG strings shown via <img> in the UI.
 # Exact pin matches typst/typst-pdf. typst is already a runtime dep, so this is a
