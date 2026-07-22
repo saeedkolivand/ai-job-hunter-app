@@ -195,6 +195,59 @@ fn save_application_upserts_by_job_url_into_one_aggregate() {
     assert_eq!(list[0].application_answers, vec![answer("why-company")]);
 }
 
+/// The aggregate is "one row per job", but it used to key on the RAW url, so the
+/// same job reached under different tracking params (the norm on query-id boards
+/// like Indeed) missed its own row and split into a second aggregate.
+#[test]
+fn save_application_merges_the_same_job_across_tracking_params() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    store
+        .save_application(record("g1", "https://acme.com/job/1?utm_source=indeed"))
+        .unwrap();
+    let mut second = record("g2", "https://acme.com/job/1#apply");
+    second.resume_text = String::new();
+    second.cover_letter_text = String::new();
+    second.application_answers = vec![answer("why-company")];
+    store.save_application(second).unwrap();
+
+    let list = store.list();
+    assert_eq!(list.len(), 1, "one aggregate row per job");
+    assert_eq!(list[0].id, "g1", "merged into the first row");
+    assert_eq!(list[0].cover_letter_text, "C", "cover preserved");
+    assert_eq!(list[0].application_answers, vec![answer("why-company")]);
+    assert_eq!(
+        list[0].job_url, "https://acme.com/job/1",
+        "the aggregate is keyed on the normalized url"
+    );
+}
+
+/// A row written before the normalization carries its raw url; a later save must
+/// still find it (and migrate it onto the normalized key) rather than fork.
+#[test]
+fn save_application_still_merges_a_legacy_raw_url_row() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    // Written directly, bypassing save_application's normalization.
+    store
+        .insert(&record("legacy", "https://acme.com/job/2?utm_source=old"))
+        .unwrap();
+
+    let mut incoming = record("g2", "https://acme.com/job/2?utm_source=old");
+    incoming.application_answers = vec![answer("why-company")];
+    store.save_application(incoming).unwrap();
+
+    let list = store.list();
+    assert_eq!(list.len(), 1, "must merge, not fork off the legacy row");
+    assert_eq!(list[0].id, "legacy");
+    assert_eq!(
+        list[0].job_url, "https://acme.com/job/2",
+        "the legacy row is migrated onto the normalized key"
+    );
+}
+
 #[test]
 fn save_application_inserts_separate_rows_when_unlinked() {
     let dir = TempDir::new().unwrap();
