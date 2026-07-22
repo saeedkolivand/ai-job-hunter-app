@@ -372,16 +372,20 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // short AI-reasoned note to the top NEW matches. Bounded (≤ ASSISTANT_NOTES_MAX
     // provider calls, per-provider daily ceiling, cancellable mid-call, AND an
     // overall wall-clock timeout — see `generate_assistant_notes`) and best-effort —
-    // a provider/config error just means no notes, never a failed run. `prior_urls`
+    // a provider/config error just means no notes, never a failed run. `prior_keys`
     // (this record's pre-run found jobs) lets the step skip re-surfaced jobs, whose
     // notes the store merge preserves for free, so a steady-state run makes zero
     // provider calls. No-op unless `autopilot.assistant` is set. Runs BEFORE
     // `record_run`/`on_new_jobs` below, so the wall-clock timeout is what keeps a
     // hung provider from delaying the user-facing "new jobs" notification.
-    let prior_urls: std::collections::HashSet<&str> = autopilot
+    // Keyed on `canonical_job_key` — the SAME identity `merge_found_jobs` uses —
+    // not the raw URL. A job that re-surfaces under different tracking params is
+    // the same job to the merge, so keying on the raw URL paid for a note the
+    // merge then discarded, every single run.
+    let prior_keys: std::collections::HashSet<String> = autopilot
         .found_jobs
         .iter()
-        .map(|j| j.url.as_str())
+        .map(|j| crate::scraping::boards::common::canonical_job_key(&j.url, &j.title, &j.company))
         .collect();
 
     // Resolve the active provider from the BACKEND-OWNED store (task #16) through
@@ -419,7 +423,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         limiter,
         &autopilot,
         &mut found_jobs,
-        &prior_urls,
+        &prior_keys,
         &cancel_token,
     )
     .await;

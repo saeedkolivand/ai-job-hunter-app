@@ -308,8 +308,20 @@ impl AiGenerationStore {
     /// résumé, cover letter, answers, and brief from separate user actions land on
     /// one record; otherwise insert a fresh row (manual generations with no link).
     /// Returns the id of the affected row.
-    pub fn save_application(&self, incoming: AiGenerationRecord) -> AppResult<String> {
-        if let Some(existing) = self.find_by_job_url(&incoming.job_url) {
+    pub fn save_application(&self, mut incoming: AiGenerationRecord) -> AppResult<String> {
+        // Key the aggregate on the NORMALIZED url — the identity `ApplicationStore`
+        // already dedupes on. Matching the raw url split the same job into two
+        // "one-per-job" rows as soon as it was reached under different tracking
+        // params, which is the norm on query-id boards like Indeed.
+        let normalized = crate::applications::normalize_job_url(&incoming.job_url);
+        let raw = std::mem::replace(&mut incoming.job_url, normalized);
+        let mut found = self.find_by_job_url(&incoming.job_url);
+        // A row written before this normalization still carries its raw url; match
+        // it too, and the write below migrates it onto the normalized key.
+        if found.is_none() && !incoming.job_url.is_empty() && raw != incoming.job_url {
+            found = self.find_by_job_url(&raw);
+        }
+        if let Some(existing) = found {
             let merged = merge_application(existing, incoming);
             let id = merged.id.clone();
             self.update(&merged)?;
