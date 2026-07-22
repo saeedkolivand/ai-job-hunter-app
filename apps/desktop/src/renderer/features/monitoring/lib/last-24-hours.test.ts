@@ -76,4 +76,16 @@ describe('binLast24Hours', () => {
     const bins = binLast24Hours([job({ finishedAt: NOW + HOUR })], NOW);
     expect(bins.reduce((a, b) => a + b, 0)).toBe(0);
   });
+
+  it('includes a completion at exactly now (inclusive upper boundary)', () => {
+    const bins = binLast24Hours([job({ finishedAt: NOW })], NOW);
+    expect(bins[LAST_24H_BUCKETS - 1]).toBe(1);
+    expect(bins.reduce((a, b) => a + b, 0)).toBe(1);
+  });
+
+  it('excludes a completion at exactly the window start (exclusive lower boundary)', () => {
+    const windowStart = NOW - LAST_24H_BUCKETS * HOUR;
+    const bins = binLast24Hours([job({ finishedAt: windowStart })], NOW);
+    expect(bins.reduce((a, b) => a + b, 0)).toBe(0);
+  });
 });
