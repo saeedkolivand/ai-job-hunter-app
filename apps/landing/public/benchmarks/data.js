@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784687439006,
+  "lastUpdate": 1784695148957,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5369,6 +5369,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 299189,
             "range": "± 14333",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d75800ebacd2667d7ea52c339c54d73940f7823",
+          "message": "fix: small advisory batch (rust) (#829)\n\n* perf(autopilot): skip duplicate note candidates within one run\n\nrun_notes_loop keyed only against prior runs, so the same NEW job surfaced\nunder two URL variants in one run bought an AI note for each; the later\nmerge_found_jobs collapsed them and discarded one - waste against the\nASSISTANT_NOTES_MAX ceiling. Track canonical keys seen this run and skip the\nsecond variant (before charge_daily, so it also spares the shared ceiling).\n\nThe oversized autopilot_helpers inline test module is moved to a sibling\ntests.rs so mod.rs stays under the R8 LOC cap; no test behavior changes.\n\nSource: #813 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai-generations): enforce one aggregate row per job url with upsert\n\nsave_application released the store lock between find_by_job_url and the\ninsert, so two concurrent saves for one job could both miss and both insert,\nforking the per-job aggregate. Add a UNIQUE(job_url) partial index (WHERE\njob_url != '', so deliberately unlinked '' rows still coexist) and recover\nfrom the resulting insert conflict by merging into the row the other writer\ncreated. The migration collapses any pre-existing fork before creating the\nindex, keeping the linked-or-newest row.\n\nTwo applications delete/detach tests inserted duplicate-url child rows to\nexercise multi-row cleanup; they now use distinct urls per the new index.\n\nSource: #816 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(applications): tighten the set-status test bound and trim a stale comment\n\nThe set-status contention test asserted events.len() >= ITERS; tighten it to\nthe exact count (ITERS * 2 transitions across the two threads + 1 creation\nseed event). Also drop the stale tail of set_status's comment claiming\n.transaction() needs a &mut *guard - the code uses guard.transaction() via\nauto-ref.\n\nSource: #811 nits.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-22T06:29:11+02:00",
+          "tree_id": "e91539f5376eba2945b9df0a0f97d073a0ac953b",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4d75800ebacd2667d7ea52c339c54d73940f7823"
+        },
+        "date": 1784695147820,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2121392,
+            "range": "± 82214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2545666,
+            "range": "± 129549",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288456,
+            "range": "± 11471",
             "unit": "ns/iter"
           }
         ]
