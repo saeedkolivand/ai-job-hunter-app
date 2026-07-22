@@ -668,8 +668,10 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
     }
 
     let mut line_buf = String::new();
+    // Bytes from a read that ended mid-UTF-8-sequence — see `stream::push_utf8`.
+    let mut carry: Vec<u8> = Vec::new();
     while let Some(bytes) = response.chunk().await.map_err(|e| e.to_string())? {
-        line_buf.push_str(&String::from_utf8_lossy(&bytes));
+        super::stream::push_utf8(&mut line_buf, &mut carry, &bytes);
         // Walk by a `consumed` offset and drain the parsed prefix once after the
         // inner loop, instead of reallocating the whole tail per line (O(n²)).
         let mut consumed = 0;
