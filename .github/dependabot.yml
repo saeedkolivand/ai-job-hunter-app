@@ -67,3 +67,11 @@ updates:
 
     labels:
       - github-actions
+
+    # codeql-action init/analyze must move in lockstep: init writes a config
+    # stamped with its own version and a newer analyze refuses to load it.
+    groups:
+      codeql-action:
+        patterns:
+          - github/codeql-action
+          - github/codeql-action/*
