@@ -1377,4 +1377,30 @@ describe('validateMetadata', () => {
     expect(meta?.jobCountry).toBe('');
     expect(meta?.jobLocation).toBe('');
   });
+
+  it('does not flag a mismatch when a language is unknown', () => {
+    // `??` is nullish-only and there was no 'unknown' guard, so an undetected
+    // side raised a spurious "rewrite entirely / do not translate" instruction.
+    // Matches analyze/validate.ts and @ajh/shared's detectLanguages, which both
+    // require BOTH sides to be known.
+    const meta = validateMetadata('{"resumeLanguage":"en","jobAdLanguage":"unknown"}');
+    expect(meta?.mismatch).toBe(false);
+    expect(
+      validateMetadata('{"resumeLanguage":"unknown","jobAdLanguage":"unknown"}')?.mismatch
+    ).toBe(false);
+  });
+
+  it('does not flag a mismatch on an empty-string language', () => {
+    // The model answers with "" rather than omitting the key, and `'' ?? 'en'`
+    // is `''` — so `'' !== 'en'` used to read as a mismatch.
+    const meta = validateMetadata('{"resumeLanguage":"","jobAdLanguage":"en"}');
+    expect(meta?.resumeLanguage).toBe('en');
+    expect(meta?.mismatch).toBe(false);
+  });
+
+  it('still flags a real mismatch between two known languages', () => {
+    const meta = validateMetadata('{"resumeLanguage":"en","jobAdLanguage":"de"}');
+    expect(meta?.mismatch).toBe(true);
+    expect(meta?.targetLanguage).toBe('de');
+  });
 });
