@@ -324,7 +324,16 @@ pub(super) fn parse_cover_letter(
         let clean = strip_md_links(trimmed);
 
         // Skip lines that were part of the header (name + blank + contact echo).
-        if skip_lines < 3
+        //
+        // Bounded to the PRE-BODY zone by `!body_started`: `skip_lines` only
+        // advances when this arm actually fires, so on a letter with fewer than
+        // three leading header lines the arm stayed armed into the body and ate
+        // its blank lines — swallowing the paragraph breaks (the `clean.is_empty()`
+        // flush below never ran) and space-joining the whole letter into one
+        // run-on block. Safe: `current_para_text` is only ever appended to in the
+        // `body_started` branch, so nothing can be pending while this is reachable.
+        if !body_started
+            && skip_lines < 3
             && (clean.is_empty()
                 || clean.trim().trim_end_matches([',', '.']).to_lowercase() == name_lower
                 || (!contact_md.is_empty() && contact_md.contains(clean.trim())))
@@ -611,6 +620,35 @@ Mit freundlichen Grüßen,
 
 Max Müller
 ";
+
+    #[test]
+    fn body_paragraphs_survive_a_letter_with_no_letterhead() {
+        // The agent's `draft_cover_letter` prompt asks for the finished letter
+        // only — "no preamble" — so the draft opens straight at the salutation
+        // with no name/contact echo to consume the three header skips. The skip
+        // arm then ate the BODY's blank lines and the whole letter collapsed into
+        // a single run-on paragraph.
+        let letter = "Dear Hiring Manager,\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n\nSincerely,\n\nJane Smith\n";
+        let model = parse_cover_letter(letter, None, Some("Jane Smith"), "us", "en", dummy_style());
+
+        assert_eq!(
+            model.body.len(),
+            3,
+            "each blank-line-separated paragraph must stay separate; got {:?}",
+            model.body
+        );
+        assert_eq!(model.salutation.as_deref(), Some("Dear Hiring Manager,"));
+    }
+
+    #[test]
+    fn body_paragraphs_survive_a_letter_with_only_a_date_and_salutation() {
+        // Two leading pre-body lines instead of three — still not enough to burn
+        // the skip budget before the body starts.
+        let letter = "12 March 2025\n\nDear Hiring Manager,\n\nFirst paragraph.\n\nSecond paragraph.\n\nSincerely,\n\nJane Smith\n";
+        let model = parse_cover_letter(letter, None, Some("Jane Smith"), "us", "en", dummy_style());
+
+        assert_eq!(model.body.len(), 2, "got {:?}", model.body);
+    }
 
     #[test]
     fn parses_english_letter_all_fields() {
