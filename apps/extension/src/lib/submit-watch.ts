@@ -34,7 +34,7 @@
  * dependency.
  */
 
-import { isHidden } from './field-signal';
+import { isHidden, textSignal } from './field-signal';
 
 /** Internal background message kind the injected watcher posts on a detected
  *  submit. Duplicated as a plain literal in `background.ts` (kept out of that
@@ -54,11 +54,59 @@ const APPLY_TEXT_RE = /apply|submit application|send application|finish/i;
 const STRICT_APPLY_TEXT_RE =
   /submit\s+(?:your|my|the)?\s*application|send\s+(?:your|my|the)?\s*application|finish/i;
 
+/** Submit-button text that means "not the final application send" — a
+ *  draft-save or an "add another entry" control. A `type="submit"` "Save draft"
+ *  button inside the real application form still fires the form's `submit`
+ *  event, and the listener sees the FORM, not the button; without inspecting the
+ *  `SubmitEvent`'s `submitter` it auto-advanced the application to `applied` on a
+ *  draft save (#786's documented follow-up gap). Kept narrow — over-matching only
+ *  costs a false negative (the user marks it by hand), the direction this module
+ *  prefers. */
+const NON_SUBMIT_TEXT_RE = /\bdraft\b|save (?:for )?later|add another/i;
+
 /** Minimum number of visible, fillable fields for a `<form>` to be treated as an
  *  application form. A site search box, a newsletter signup and a login form all
  *  have one or two; a real application form has more (and usually a résumé file
  *  input, which short-circuits this check outright). */
 const MIN_APPLICATION_FIELDS = 3;
+
+/** Control types that never count as a fillable application field: submit/button
+ *  furniture, a site search box, and — deliberately — checkbox/radio. A form
+ *  built ONLY from checkboxes or radios is a filter / cookie-consent / survey
+ *  widget, not an application; a real application form still clears the bar on
+ *  its text/email/résumé fields, so excluding these only removes a false
+ *  positive (under-report over over-report). */
+const NON_FILLABLE_TYPES = [
+  'hidden',
+  'submit',
+  'button',
+  'image',
+  'reset',
+  'search',
+  'checkbox',
+  'radio',
+];
+
+/** A file input's résumé-flavored name/id/placeholder/aria-label/label text. */
+const RESUME_FILE_TEXT_RE = /resume|curriculum|lebenslauf|(?:^|[^a-z])cv/;
+/** A file input's `accept` listing document (résumé) types, not `image/*` etc. */
+const RESUME_FILE_ACCEPT_RE = /pdf|\.docx?|msword|wordprocessingml/;
+
+/**
+ * True when `el` is a résumé/CV file input — the single strongest
+ * application-form signal. A custom upload widget routinely hides the native
+ * `<input type=file>` (`display:none`) behind a styled button, so this is the
+ * one field checked WITHOUT the visibility filter (the visible-file count below
+ * would otherwise miss a real application form — #786 follow-up). Restricted to
+ * résumé-flavored inputs (name/id/label/aria-label, or an `accept` listing
+ * document types) so an arbitrary hidden file input can't masquerade as an
+ * application form — the module UNDER-reports rather than over-reports.
+ */
+function isResumeFileInput(el: HTMLElement): boolean {
+  if ((el.getAttribute('type') ?? '').toLowerCase() !== 'file') return false;
+  const accept = (el.getAttribute('accept') ?? '').toLowerCase();
+  return RESUME_FILE_TEXT_RE.test(textSignal(el)) || RESUME_FILE_ACCEPT_RE.test(accept);
+}
 
 /**
  * Whether `form` looks like the application form rather than incidental page
@@ -69,14 +117,16 @@ const MIN_APPLICATION_FIELDS = 3;
  * submit was indistinguishable from sending the application.
  */
 function looksLikeApplicationForm(form: HTMLFormElement): boolean {
-  const fields = Array.from(form.querySelectorAll('input, textarea, select')).filter(
-    (el): el is HTMLElement => el instanceof HTMLElement && !isHidden(el)
+  const all = Array.from(form.querySelectorAll('input, textarea, select')).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement
   );
-  const fillable = fields.filter((el) => {
-    const type = (el.getAttribute('type') ?? '').toLowerCase();
-    return !['hidden', 'submit', 'button', 'image', 'reset', 'search'].includes(type);
-  });
-  // A file input is the résumé upload — decisive on its own.
+  // A résumé/CV file input is decisive on its own — even when hidden behind a
+  // custom upload button (checked across ALL inputs; see isResumeFileInput).
+  if (all.some(isResumeFileInput)) return true;
+  const fillable = all
+    .filter((el) => !isHidden(el))
+    .filter((el) => !NON_FILLABLE_TYPES.includes((el.getAttribute('type') ?? '').toLowerCase()));
+  // Any other VISIBLE file input is very likely the résumé upload too — decisive.
   if (fillable.some((el) => (el.getAttribute('type') ?? '').toLowerCase() === 'file')) return true;
   return fillable.length >= MIN_APPLICATION_FIELDS;
 }
@@ -86,6 +136,14 @@ function looksLikeApplicationForm(form: HTMLFormElement): boolean {
 function applicationFormFor(el: HTMLElement): HTMLFormElement | null {
   const form = (el as HTMLButtonElement | HTMLInputElement).form ?? el.closest?.('form') ?? null;
   return form instanceof HTMLFormElement ? form : null;
+}
+
+/** The visible text of a submit/apply control: an input's `value`, else its
+ *  text content + `aria-label`. */
+function controlText(el: Element): string {
+  return el instanceof HTMLInputElement
+    ? el.value
+    : `${el.textContent ?? ''} ${el.getAttribute('aria-label') ?? ''}`;
 }
 
 /**
@@ -102,10 +160,7 @@ function isApplyControl(el: Element): boolean {
   const isSubmitInput = tag === 'INPUT' && type === 'submit';
   const isRoleButton = el.getAttribute('role') === 'button';
   if (!isSubmitButton && !isSubmitInput && !isRoleButton) return false;
-  const text =
-    el instanceof HTMLInputElement
-      ? el.value
-      : `${el.textContent ?? ''} ${el.getAttribute('aria-label') ?? ''}`;
+  const text = controlText(el);
   // Inside an application form the surrounding structure corroborates the text,
   // so the broad pattern is trusted. With no form to corroborate it, only an
   // explicit send verb counts — a bare "Apply now" out there is the button that
@@ -139,6 +194,14 @@ export function armSubmitWatch(doc: Document, post: (url: string) => void): void
     (ev) => {
       const form = ev.target;
       if (!(form instanceof HTMLFormElement) || !looksLikeApplicationForm(form)) return;
+      // A "Save draft"/"Add another" `type=submit` button inside the real form
+      // also fires this `submit` event. Real browsers carry the pressed button as
+      // the SubmitEvent's `submitter`; skip a non-final-submit control so a draft
+      // save isn't mis-reported as sending the application (#786 follow-up). A
+      // programmatic `form.submit()` (or a plain `Event`) has no submitter — fire
+      // as before.
+      const submitter = (ev as Partial<SubmitEvent>).submitter ?? null;
+      if (submitter && NON_SUBMIT_TEXT_RE.test(controlText(submitter))) return;
       fire();
     },
     true
