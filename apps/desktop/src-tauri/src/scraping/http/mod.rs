@@ -99,6 +99,63 @@ pub struct FetchResult {
     pub text: String,
 }
 
+/// Read a response body as text, refusing to buffer more than `cap` bytes.
+///
+/// Two guards: a cheap `Content-Length` pre-check for honest servers, then a
+/// streamed accumulation that aborts the moment the running total exceeds `cap`
+/// — so a server that lies about or omits `Content-Length` still can't drive us
+/// into OOM. The charset comes from `Content-Type`, mirroring what
+/// `reqwest::Response::text()` does internally, so German umlauts / € decode
+/// correctly regardless of the cap.
+///
+/// Public to the crate because callers that hold a `Response` from their OWN
+/// client — e.g. the SSRF-guarded `net::http::get_guarded*` used for
+/// attacker-influenced URLs — cannot route through [`fetch_text`] (that would
+/// drop the guard) but need the same bound.
+pub(crate) async fn read_text_capped(response: reqwest::Response, cap: usize) -> AppResult<String> {
+    if let Some(content_length) = response.content_length() {
+        if content_length > cap as u64 {
+            return Err(AppError::Validation("Response too large".to_string()));
+        }
+    }
+
+    let encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|ct| ct.to_str().ok())
+        .and_then(|ct| {
+            // Extract charset=... from e.g. "text/html; Charset="ISO-8859-1""
+            // Key match is case-insensitive; strip surrounding quotes from value.
+            ct.split(';').find_map(|part| {
+                let p = part.trim();
+                let eq = p.find('=')?;
+                if !p[..eq].trim().eq_ignore_ascii_case("charset") {
+                    return None;
+                }
+                let cs = p[eq + 1..].trim().trim_matches(|c| c == '"' || c == '\'');
+                Some(cs.to_ascii_lowercase())
+            })
+        })
+        .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
+        .unwrap_or(encoding_rs::UTF_8);
+
+    let mut stream = response.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        // .without_url() — reqwest::Error's Display embeds the full request URL
+        // (incl. query string), which can carry secrets like an API token/key;
+        // strip it before it reaches BoardScrapeSummary.error → IPC → renderer.
+        let chunk = chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
+        if buf.len().saturating_add(chunk.len()) > cap {
+            return Err(AppError::Validation("Response too large".to_string()));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+
+    let (cow, _enc, _had_errors) = encoding.decode(&buf);
+    Ok(cow.into_owned())
+}
+
 pub async fn fetch_text(
     url: &str,
     opts: FetchOptions,
@@ -194,56 +251,7 @@ pub async fn fetch_text(
                     continue;
                 }
 
-                // Cheap pre-check: honest servers that declare content-length
-                // let us abort before reading a single byte.
-                if let Some(content_length) = response.content_length() {
-                    if content_length > cap as u64 {
-                        return Err(AppError::Validation("Response too large".to_string()));
-                    }
-                }
-
-                // Determine charset from Content-Type (mirrors what reqwest::Response::text()
-                // does internally) so German umlauts / € decode correctly regardless of cap.
-                let encoding = headers
-                    .get(reqwest::header::CONTENT_TYPE)
-                    .and_then(|ct| ct.to_str().ok())
-                    .and_then(|ct| {
-                        // Extract charset=... from e.g. "text/html; Charset="ISO-8859-1""
-                        // Key match is case-insensitive; strip surrounding quotes from value.
-                        ct.split(';').find_map(|part| {
-                            let p = part.trim();
-                            let eq = p.find('=')?;
-                            if !p[..eq].trim().eq_ignore_ascii_case("charset") {
-                                return None;
-                            }
-                            let cs = p[eq + 1..].trim().trim_matches(|c| c == '"' || c == '\'');
-                            Some(cs.to_ascii_lowercase())
-                        })
-                    })
-                    .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
-                    .unwrap_or(encoding_rs::UTF_8);
-
-                // Stream the body, accumulating bytes and aborting as soon as the
-                // running total exceeds the effective cap — prevents OOM from a
-                // server that lies about or omits Content-Length.
-                let mut stream = response.bytes_stream();
-                let mut buf: Vec<u8> = Vec::new();
-                while let Some(chunk) = stream.next().await {
-                    // .without_url() — reqwest::Error's Display embeds the full
-                    // request URL (incl. query string), which can carry secrets
-                    // like an API token/key; strip it before it reaches
-                    // BoardScrapeSummary.error → IPC → renderer + logs.
-                    let chunk =
-                        chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
-                    if buf.len().saturating_add(chunk.len()) > cap {
-                        return Err(AppError::Validation("Response too large".to_string()));
-                    }
-                    buf.extend_from_slice(&chunk);
-                }
-
-                // Decode using the charset we extracted above.
-                let (cow, _enc, _had_errors) = encoding.decode(&buf);
-                let text = cow.into_owned();
+                let text = read_text_capped(response, cap).await?;
 
                 return Ok(FetchResult {
                     status_code,
