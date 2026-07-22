@@ -756,3 +756,45 @@ fn test_html_to_markdown_falls_back_on_empty_output() {
     // returns a clean string (trimmed).
     assert_eq!(result.trim(), result, "result must already be trimmed");
 }
+
+/// `read_text_capped` is the shared bound for callers that hold their own
+/// `Response` — notably `scrape_url`, whose URL is attacker-influenced and so
+/// must go through the SSRF-guarded client rather than `fetch_text`.
+#[tokio::test]
+async fn read_text_capped_returns_the_body_under_the_cap() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("Hello World"))
+        .mount(&mock_server)
+        .await;
+
+    let response = reqwest::get(mock_server.uri()).await.unwrap();
+    assert_eq!(
+        read_text_capped(response, 1024).await.unwrap(),
+        "Hello World"
+    );
+}
+
+#[tokio::test]
+async fn read_text_capped_rejects_a_body_over_the_cap() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("x".repeat(4096)))
+        .mount(&mock_server)
+        .await;
+
+    let response = reqwest::get(mock_server.uri()).await.unwrap();
+    let err = read_text_capped(response, 64)
+        .await
+        .expect_err("a body over the cap must not be buffered");
+    assert!(
+        format!("{err}").contains("too large"),
+        "expected a size error, got: {err}"
+    );
+}
