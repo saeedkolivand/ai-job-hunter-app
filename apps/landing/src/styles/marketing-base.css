@@ -1,0 +1,79 @@
+/* Shared base for the light-paper utility pages (privacy, download) — the rules
+   byte-identical between src/content/privacy/styles.css and
+   src/content/download/styles.css. Injected after marketing-tokens.css and
+   before the page's own stylesheet. Rules that differ between the two pages
+   (a{}, code{}, .wrap, .lede, focus-visible umbrellas, reduced-motion) stay
+   per-page. Uses var(--muted), which each page defines for itself. */
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.top-back {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  border: none;
+  margin-bottom: 30px;
+}
+.top-back:hover {
+  color: var(--ink);
+}
+
+h1 {
+  font-family: var(--impact);
+  text-transform: uppercase;
+  font-size: clamp(38px, 9vw, 64px);
+  line-height: 0.95;
+  margin: 0 0 10px;
+  letter-spacing: 1px;
+}
+
+hr.scrawl {
+  border: none;
+  height: 14px;
+  margin: 48px auto;
+  width: 160px;
+  background: no-repeat center/contain
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 14'><path d='M4 8 q12 -8 24 0 t24 0 t24 0 t24 0 t24 0 t24 0' fill='none' stroke='%231c1812' stroke-width='2.6' stroke-linecap='round'/></svg>");
+}
+
+footer {
+  margin-top: 60px;
+  text-align: center;
+}
+.byline {
+  font-family: var(--scrawl);
+  font-size: 15px;
+  color: var(--muted);
+}
+.foot-links {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.foot-links a {
+  color: var(--muted);
+  border: none;
+}
+.foot-links a:hover {
+  color: var(--ink);
+}
+.foot-links a:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

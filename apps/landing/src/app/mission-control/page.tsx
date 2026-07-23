@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 
 import { DocShell } from '@/components/DocShell';
-import { Fonts } from '@/components/Fonts';
 import { CspMeta } from '@/components/mission-control/CspMeta';
 import { MissionControl } from '@/components/mission-control/MissionControl';
 import { PageStyle } from '@/components/PageStyle';
@@ -21,7 +20,6 @@ export default function MissionControlPage() {
   return (
     <>
       <CspMeta />
-      <Fonts />
       <PageStyle css={readStyle('mission-control.css')} />
       <DocShell
         eyebrow="the whole repo, one screen"

@@ -1,13 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
+import { DownloadBody } from '@/components/download/DownloadBody';
 import { DownloadFreshness } from '@/components/DownloadFreshness';
-import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
-import { RawHtml } from '@/components/RawHtml';
 import versionData from '@/data/version.json';
-import { readContent } from '@/lib/content';
-import { buildDownloadsHtml } from '@/lib/downloads';
+import { readStyle } from '@/lib/styles';
 import type { VersionData } from '@/lib/version';
 
 export const metadata: Metadata = {
@@ -34,24 +32,17 @@ export const viewport: Viewport = { themeColor: '#f4ecdc' };
 
 // Bake the download cards from src/data/version.json at build (updated on release
 // by scripts/sync-download-page.cjs); DownloadFreshness swaps to a newer GitHub
-// release at runtime. The block is wrapped in `#downloads-block` (display:contents
-// via .platforms flow) so it stays a flex item of `.platforms`.
+// release at runtime by mutating `#downloads-block` (rendered by DownloadCards,
+// inside DownloadBody's `.platforms` div) in place.
 export default function DownloadPage() {
   const data = versionData as VersionData;
-  const block = `<div id="downloads-block" style="display:contents">${buildDownloadsHtml(
-    data.version,
-    data.installers
-  )}</div>`;
-  const body = readContent('download', 'body.html').replace(
-    /<!-- downloads:start[\s\S]*?downloads:end -->/,
-    block
-  );
 
   return (
     <>
-      <Fonts />
-      <PageStyle css={readContent('download', 'styles.css')} />
-      <RawHtml html={body} />
+      <PageStyle css={readStyle('marketing-tokens.css')} />
+      <PageStyle css={readStyle('marketing-base.css')} />
+      <PageStyle css={readStyle('download.css')} />
+      <DownloadBody version={data.version} installers={data.installers} />
       <DownloadFreshness baked={data.version} />
       <ClientScripts srcs={['/scripts/download-0.js']} />
     </>
