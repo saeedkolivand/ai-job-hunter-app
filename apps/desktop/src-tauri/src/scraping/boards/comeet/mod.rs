@@ -265,11 +265,7 @@ impl Scraper for ComeetScraper {
         let mut out = Vec::new();
 
         for posting in parse_comeet_response(positions, company_uid.trim(), now) {
-            if !matches_filters(
-                &posting,
-                &input.query,
-                input.location.as_deref().unwrap_or(""),
-            ) {
+            if !matches_filters(&posting, &input.query) {
                 continue;
             }
             if let Some(ref on_item) = ctx.on_item {

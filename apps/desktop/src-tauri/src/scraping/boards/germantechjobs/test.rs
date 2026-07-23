@@ -191,7 +191,7 @@ fn test_bad_pubdate_yields_posted_at_none() {
     );
 }
 
-// ── client-side keyword / location filter ────────────────────────────────────
+// ── client-side keyword filter (location is the engine's central filter) ──────
 
 const FILTER_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <jobs>
@@ -218,20 +218,9 @@ fn test_keyword_filter_excludes_non_matching_job() {
     let all = parse_feed(FILTER_XML, "germantechjobs", now);
     assert_eq!(all.len(), 2, "fixture must parse 2 jobs before filtering");
 
-    let q = "rust";
     let filtered: Vec<_> = all
         .into_iter()
-        .filter(|p| {
-            let haystack = format!(
-                "{} {} {} {}",
-                p.title,
-                p.company,
-                p.location.as_deref().unwrap_or(""),
-                p.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            haystack.contains(q)
-        })
+        .filter(|p| matches_gtj_filters(p, "rust"))
         .collect();
 
     assert_eq!(
@@ -243,34 +232,30 @@ fn test_keyword_filter_excludes_non_matching_job() {
 }
 
 #[test]
-fn test_location_filter_matches_on_location_field() {
-    // A job matching only on the location field (not in title/company/description)
-    // must still be included when filtering by that location.
+fn test_board_filter_does_not_drop_on_location() {
+    // GermanTechJobs is `supports_location() == false`, so board-local filtering
+    // is keyword-only: the engine's central `location_filter` is the single
+    // authority on location. The board must NOT zero itself on a geocode-picked
+    // "<city>, <country>" label (the original regression), and its keyword
+    // filter is location-agnostic.
     let now = chrono::Utc::now().timestamp_millis();
     let all = parse_feed(FILTER_XML, "germantechjobs", now);
 
-    let loc = "hamburg";
-    let filtered: Vec<_> = all
-        .into_iter()
-        .filter(|p| {
-            let haystack = format!(
-                "{} {} {} {}",
-                p.title,
-                p.company,
-                p.location.as_deref().unwrap_or(""),
-                p.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-            haystack.contains(loc)
-        })
-        .collect();
-
+    // Empty query → every row passes, whatever its location (Berlin, Hamburg).
+    let kept_all: Vec<_> = all.iter().filter(|p| matches_gtj_filters(p, "")).collect();
     assert_eq!(
-        filtered.len(),
-        1,
-        "only the Hamburg job should pass the location filter"
+        kept_all.len(),
+        2,
+        "no location narrowing happens board-side"
     );
-    assert_eq!(filtered[0].external_id.as_deref(), Some("job-java"));
+
+    // A keyword keeps its row regardless of that row's location.
+    let kept_rust: Vec<_> = all
+        .iter()
+        .filter(|p| matches_gtj_filters(p, "rust"))
+        .collect();
+    assert_eq!(kept_rust.len(), 1);
+    assert_eq!(kept_rust[0].external_id.as_deref(), Some("job-rust"));
 }
 
 // ── continue-path (guard-miss) coverage ──────────────────────────────────────

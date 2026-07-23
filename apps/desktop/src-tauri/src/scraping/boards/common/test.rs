@@ -321,3 +321,57 @@ fn canonical_key_empty_or_non_http_url_falls_back_to_title_company() {
     );
     assert_eq!(canonical_job_key("file:///etc/passwd", "T", "Co"), expected);
 }
+
+// ── matches_filters (keyword-only) ───────────────────────────────────────────
+//
+// `matches_filters` is the client-side KEYWORD filter for the boards with no
+// server-side keyword search (The Muse, Comeet). It intentionally does not
+// filter location: those boards are `supports_location() == false`, so the
+// engine's central `location_filter` is the single authority (see the fn doc).
+
+fn keyword_posting(
+    title: &str,
+    company: &str,
+    location: Option<&str>,
+) -> crate::scraping::types::JobPosting {
+    crate::scraping::types::JobPosting {
+        id: "b:1".into(),
+        external_id: None,
+        title: title.into(),
+        company: company.into(),
+        location: location.map(str::to_string),
+        url: "https://acme.example/1".into(),
+        source: "b".into(),
+        description: None,
+        requirements: None,
+        posted_at: None,
+        captured_at: 0,
+        extra: std::collections::HashMap::new(),
+    }
+}
+
+#[test]
+fn matches_filters_empty_query_passes_everything() {
+    let p = keyword_posting("Backend Engineer", "Acme", Some("Paris, France"));
+    assert!(matches_filters(&p, ""));
+    assert!(matches_filters(&p, "   "));
+}
+
+#[test]
+fn matches_filters_keyword_is_case_insensitive_over_title_and_company() {
+    let p = keyword_posting("Senior RUST Engineer", "BetaCorp", None);
+    assert!(matches_filters(&p, "rust"));
+    assert!(matches_filters(&p, "betacorp"));
+    assert!(!matches_filters(&p, "python"));
+}
+
+#[test]
+fn matches_filters_does_not_filter_on_location() {
+    // Location is delegated to the engine's central `location_filter`; a
+    // non-matching location must NOT be dropped board-side. A row whose keyword
+    // matches passes regardless of where it is.
+    let p = keyword_posting("Rust Engineer", "Acme", Some("Tokyo, Japan"));
+    assert!(matches_filters(&p, "rust"));
+    // And with no keyword, everything passes here — location is not this fn's job.
+    assert!(matches_filters(&p, ""));
+}
