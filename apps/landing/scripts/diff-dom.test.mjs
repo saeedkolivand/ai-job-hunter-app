@@ -25,6 +25,14 @@ describe('diff-dom', () => {
     assert.equal(mismatches.length, 1);
   });
 
+  it('treats "prop: value" and "prop:value" (React SSR) as equal', () => {
+    const { mismatches } = diffBodies(
+      html('<div style="border-color: var(--ui); color: var(--ui)"></div>'),
+      html('<div style="border-color:var(--ui);color:var(--ui)"></div>')
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
   it('skips a real inline event handler (onclick) from the diff', () => {
     const { mismatches } = diffBodies(
       html('<button onclick="doThing()">go</button>'),
@@ -45,6 +53,14 @@ describe('diff-dom', () => {
     const { mismatches } = diffBodies(
       html('<div hidden inert></div>'),
       html('<div hidden="" inert=""></div>')
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
+  it('normalizes URL colons in data URIs (background:url vs background: url)', () => {
+    const { mismatches } = diffBodies(
+      html('<div style="background:url(data:image/png;base64,AA==)"></div>'),
+      html('<div style="background: url(data:image/png;base64,AA==)"></div>')
     );
     assert.equal(mismatches.length, 0);
   });

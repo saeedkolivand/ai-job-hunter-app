@@ -25,7 +25,10 @@ const ROOT = process.cwd();
 // architecture map is now a Next route backed by a typed data module
 // (src/data/architecture-map.ts) whose nodes cite REAL file paths + IPC contract
 // names — exactly what this guard validates; how-it-works is a Next route whose
-// authored body lives in src/content/.
+// authored body is a 1:1-ported TSX component (src/components/how-it-works/
+// HowItWorksBody.tsx, formerly the plain-text src/content/how-it-works/body.html
+// — the checks below scan raw text, so the class="→className=" / quote-style
+// rewrite from the TSX port doesn't change what they match).
 //
 // NOTE: the agent-system page was ported to a typed data source
 // (src/data/agent-fleet.ts, PR2), but it is deliberately NOT in this path-checked
@@ -35,13 +38,19 @@ const ROOT = process.cwd();
 // invariants.
 const DIAGRAMS = [
   'apps/landing/src/data/architecture-map.ts',
-  'apps/landing/src/content/how-it-works/body.html',
+  'apps/landing/src/components/how-it-works/HowItWorksBody.tsx',
 ];
 
 // Every authored landing page + embedded script (secret-scan only) — the site is
-// public, so no committed token may ship. The ported pages' text now lives in
-// src/content/*/body.html and their former inline scripts in public/scripts/*.js;
-// the dashboards + benchmarks are public/ passthrough.
+// public, so no committed token may ship. The five ported pages' authored text
+// now lives in TSX body components under src/components/<slug>/ (formerly
+// src/content/*/body.html, deleted across #872/#879/this branch's ports —
+// that stale slug-template mapping is exactly how this scan silently voided
+// itself for all five pages: existsSync-guarded, so a moved source failed
+// open instead of loud). Kept as an explicit list, not a glob: checkPaths
+// (above) only walks DIAGRAMS, so nothing else validates these literals —
+// see the run loop below, which now hard-fails a missing entry instead of
+// skipping it.
 const SECRET_SCAN_FILES = [
   'apps/landing/src/data/agent-fleet.ts',
   'apps/landing/src/data/architecture-map.ts',
@@ -49,9 +58,17 @@ const SECRET_SCAN_FILES = [
   'apps/landing/public/benchmarks/data.js',
   'scripts/assets/social-card.html',
   'apps/landing/src/data/version.json',
-  ...['home', 'creature', 'download', 'how-it-works', 'privacy'].map(
-    (r) => `apps/landing/src/content/${r}/body.html`
-  ),
+  'apps/landing/src/components/home/HomeBody.tsx',
+  'apps/landing/src/components/home/HomeBeats.tsx',
+  'apps/landing/src/components/home/CookieGag.tsx',
+  'apps/landing/src/components/creature/CreatureBody.tsx',
+  'apps/landing/src/components/download/DownloadBody.tsx',
+  'apps/landing/src/components/download/DownloadCards.tsx',
+  'apps/landing/src/components/how-it-works/HowItWorksBody.tsx',
+  'apps/landing/src/components/privacy/PrivacyBody.tsx',
+  'apps/landing/src/components/SiteFooter.tsx',
+  'apps/landing/src/components/BackLink.tsx',
+  'apps/landing/src/lib/site-links.ts',
   ...[
     'home-0',
     'creature-0',
@@ -256,7 +273,16 @@ if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
 }
 
 for (const file of SECRET_SCAN_FILES) {
-  if (existsSync(join(ROOT, file))) checkSecrets(file, read(file));
+  if (!existsSync(join(ROOT, file))) {
+    fail(
+      'Secret-scan source moved',
+      file,
+      'listed in SECRET_SCAN_FILES but no longer exists — update the list ' +
+        '(this used to fail open silently, voiding the scan for that file)'
+    );
+    continue;
+  }
+  checkSecrets(file, read(file));
 }
 
 if (failures.length === 0) {

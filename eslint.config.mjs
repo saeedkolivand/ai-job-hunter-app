@@ -133,12 +133,10 @@ export default tseslint.config(
       // src/components, src/lib) IS linted; but these are not source:
       //   out/ + .next/         → Next build output
       //   public/**             → passthrough dashboards + verbatim gag scripts
-      //   src/content/**        → verbatim HTML/CSS fragments of the ported pages
       //   next-env.d.ts         → generated
       'apps/landing/out/**',
       'apps/landing/.next/**',
       'apps/landing/public/**',
-      'apps/landing/src/content/**',
       'apps/landing/next-env.d.ts',
     ],
   },
@@ -532,12 +530,12 @@ export default tseslint.config(
   //     language and injects verbatim first-party HTML — no shared primitives.
   //   • i18n adapter / ports-and-adapters service hooks: no app IPC surface.
   // dangerouslySetInnerHTML is intentional and safe here: the injected content is
-  // build-time-inlined first-party static HTML (src/content/**), never user input.
-  // The exemption is scoped to the two wrapper components that implement the
+  // build-time-read first-party CSS (src/styles/**), never user input. The
+  // exemption is scoped to the one wrapper component that implements the
   // pattern — any OTHER landing file reaching for dangerouslySetInnerHTML must
   // justify its own override.
   {
-    files: ['apps/landing/src/components/RawHtml.tsx', 'apps/landing/src/components/PageStyle.tsx'],
+    files: ['apps/landing/src/components/PageStyle.tsx'],
     rules: {
       'react/no-danger': 'off',
     },
