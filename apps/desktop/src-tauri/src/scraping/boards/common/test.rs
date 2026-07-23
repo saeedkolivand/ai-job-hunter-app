@@ -322,51 +322,56 @@ fn canonical_key_empty_or_non_http_url_falls_back_to_title_company() {
     assert_eq!(canonical_job_key("file:///etc/passwd", "T", "Co"), expected);
 }
 
-// ── location_matches ─────────────────────────────────────────────────────────
+// ── matches_filters (keyword-only) ───────────────────────────────────────────
 //
-// Shared by every board that filters location client-side (The Muse, Comeet via
-// `matches_filters`; GermanTechJobs directly). The requested location is
-// normally the geocode picker's "<city>, <country>" label, so the tests below
-// pin the segment-wise contract against each board's own location shape.
+// `matches_filters` is the client-side KEYWORD filter for the boards with no
+// server-side keyword search (The Muse, Comeet). It intentionally does not
+// filter location: those boards are `supports_location() == false`, so the
+// engine's central `location_filter` is the single authority (see the fn doc).
 
-#[test]
-fn location_matches_a_city_country_label_against_a_boards_own_shape() {
-    // The regression: the picker writes "new york, united states" while The Muse
-    // writes "new york, ny". A whole-string `contains` matched neither, zeroing
-    // the board for every picked city.
-    assert!(location_matches("new york, united states", "new york, ny"));
-    assert!(location_matches("berlin, germany", "berlin, deutschland"));
-    // GermanTechJobs shapes: street address ending in the city, and city+region.
-    assert!(location_matches(
-        "berlin, germany",
-        "rust engineer alpha ag karl-marx-allee 1, berlin"
-    ));
-    assert!(location_matches(
-        "munich, bayern",
-        "java dev beta gmbh munich"
-    ));
+fn keyword_posting(
+    title: &str,
+    company: &str,
+    location: Option<&str>,
+) -> crate::scraping::types::JobPosting {
+    crate::scraping::types::JobPosting {
+        id: "b:1".into(),
+        external_id: None,
+        title: title.into(),
+        company: company.into(),
+        location: location.map(str::to_string),
+        url: "https://acme.example/1".into(),
+        source: "b".into(),
+        description: None,
+        requirements: None,
+        posted_at: None,
+        captured_at: 0,
+        extra: std::collections::HashMap::new(),
+    }
 }
 
 #[test]
-fn location_matches_a_single_segment_request_unchanged() {
-    // Free-typed (unpicked) input is one segment — the pre-existing behaviour.
-    assert!(location_matches("berlin", "berlin, germany"));
-    assert!(location_matches("remote", "remote"));
+fn matches_filters_empty_query_passes_everything() {
+    let p = keyword_posting("Backend Engineer", "Acme", Some("Paris, France"));
+    assert!(matches_filters(&p, ""));
+    assert!(matches_filters(&p, "   "));
 }
 
 #[test]
-fn location_matches_rejects_when_no_segment_appears() {
-    assert!(!location_matches("berlin, germany", "new york, ny"));
-    assert!(!location_matches("paris, france", "remote"));
-    // An empty haystack can never satisfy a non-empty request.
-    assert!(!location_matches("berlin, germany", ""));
+fn matches_filters_keyword_is_case_insensitive_over_title_and_company() {
+    let p = keyword_posting("Senior RUST Engineer", "BetaCorp", None);
+    assert!(matches_filters(&p, "rust"));
+    assert!(matches_filters(&p, "betacorp"));
+    assert!(!matches_filters(&p, "python"));
 }
 
 #[test]
-fn location_matches_ignores_blank_and_whitespace_only_segments() {
-    // A trailing comma or a doubled separator must not turn into an empty needle
-    // that `contains` trivially accepts — that would disable the filter entirely.
-    assert!(!location_matches("berlin,", "new york, ny"));
-    assert!(!location_matches(" , , ", "new york, ny"));
-    assert!(location_matches("berlin,", "berlin, germany"));
+fn matches_filters_does_not_filter_on_location() {
+    // Location is delegated to the engine's central `location_filter`; a
+    // non-matching location must NOT be dropped board-side. A row whose keyword
+    // matches passes regardless of where it is.
+    let p = keyword_posting("Rust Engineer", "Acme", Some("Tokyo, Japan"));
+    assert!(matches_filters(&p, "rust"));
+    // And with no keyword, everything passes here — location is not this fn's job.
+    assert!(matches_filters(&p, ""));
 }

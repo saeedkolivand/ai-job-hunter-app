@@ -215,11 +215,7 @@ impl Scraper for TheMuseScraper {
             }
 
             for posting in parse_themuse_response(resp.results, now) {
-                if !matches_filters(
-                    &posting,
-                    &input.query,
-                    input.location.as_deref().unwrap_or(""),
-                ) {
+                if !matches_filters(&posting, &input.query) {
                     continue;
                 }
 

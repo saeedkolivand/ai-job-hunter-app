@@ -191,7 +191,7 @@ fn test_bad_pubdate_yields_posted_at_none() {
     );
 }
 
-// ── client-side keyword / location filter ────────────────────────────────────
+// ── client-side keyword filter (location is the engine's central filter) ──────
 
 const FILTER_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <jobs>
@@ -220,7 +220,7 @@ fn test_keyword_filter_excludes_non_matching_job() {
 
     let filtered: Vec<_> = all
         .into_iter()
-        .filter(|p| matches_gtj_filters(p, "rust", ""))
+        .filter(|p| matches_gtj_filters(p, "rust"))
         .collect();
 
     assert_eq!(
@@ -232,50 +232,30 @@ fn test_keyword_filter_excludes_non_matching_job() {
 }
 
 #[test]
-fn test_location_filter_matches_on_location_field() {
-    // A job matching only on the location field (not in title/company/description)
-    // must still be included when filtering by that location.
+fn test_board_filter_does_not_drop_on_location() {
+    // GermanTechJobs is `supports_location() == false`, so board-local filtering
+    // is keyword-only: the engine's central `location_filter` is the single
+    // authority on location. The board must NOT zero itself on a geocode-picked
+    // "<city>, <country>" label (the original regression), and its keyword
+    // filter is location-agnostic.
     let now = chrono::Utc::now().timestamp_millis();
     let all = parse_feed(FILTER_XML, "germantechjobs", now);
 
-    let filtered: Vec<_> = all
-        .into_iter()
-        .filter(|p| matches_gtj_filters(p, "", "hamburg"))
+    // Empty query → every row passes, whatever its location (Berlin, Hamburg).
+    let kept_all: Vec<_> = all.iter().filter(|p| matches_gtj_filters(p, "")).collect();
+    assert_eq!(
+        kept_all.len(),
+        2,
+        "no location narrowing happens board-side"
+    );
+
+    // A keyword keeps its row regardless of that row's location.
+    let kept_rust: Vec<_> = all
+        .iter()
+        .filter(|p| matches_gtj_filters(p, "rust"))
         .collect();
-
-    assert_eq!(
-        filtered.len(),
-        1,
-        "only the Hamburg job should pass the location filter"
-    );
-    assert_eq!(filtered[0].external_id.as_deref(), Some("job-java"));
-}
-
-#[test]
-fn test_location_filter_accepts_a_geocode_picker_city_country_label() {
-    // The location box writes the picker's "<city>, <country>" label, but this
-    // feed's <location> is a bare city ("Berlin") or a street address ending in
-    // one ("Karl-Marx-Allee 1, Berlin"). The whole label is never a contiguous
-    // substring, so the board used to return 0 for every picked German city.
-    let now = chrono::Utc::now().timestamp_millis();
-    let all = parse_feed(FILTER_XML, "germantechjobs", now);
-
-    let keep = |loc: &str| -> Vec<_> {
-        all.iter()
-            .filter(|p| matches_gtj_filters(p, "", &loc.to_lowercase()))
-            .collect()
-    };
-
-    let filtered = keep("Berlin, Germany");
-    assert_eq!(
-        filtered.len(),
-        1,
-        "the Berlin job must survive a 'City, Country' label"
-    );
-    assert_eq!(filtered[0].external_id.as_deref(), Some("job-rust"));
-
-    // A label sharing no segment with any posting still filters everything out.
-    assert!(keep("Paris, France").is_empty());
+    assert_eq!(kept_rust.len(), 1);
+    assert_eq!(kept_rust[0].external_id.as_deref(), Some("job-rust"));
 }
 
 // ── continue-path (guard-miss) coverage ──────────────────────────────────────

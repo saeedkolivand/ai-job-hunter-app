@@ -210,13 +210,26 @@ pub(crate) fn parse_feed(xml: &str, scraper_id: &str, now: i64) -> Vec<JobPostin
     out
 }
 
-/// The board's client-side keyword + location filter. `query` and `location`
-/// must already be trimmed and lowercased by the caller.
+/// The board's client-side KEYWORD filter. `query` must already be trimmed and
+/// lowercased by the caller.
 ///
 /// Extracted from `search()`'s `retain` so tests drive the REAL predicate — a
 /// verbatim copy in the test file would silently diverge from what `search()`
 /// actually runs (the same reasoning as The Muse's `apply_filters` helper).
-pub(crate) fn matches_gtj_filters(posting: &JobPosting, query: &str, location: &str) -> bool {
+///
+/// Location is deliberately NOT filtered here. GermanTechJobs does not consume
+/// the requested location server-side (`supports_location() == false`), so the
+/// engine's central `location_filter` is the single, diaeresis/exonym-aware
+/// authority on location and runs on this board's output. A board-local matcher
+/// only duplicated and diverged from it — and, by requiring the whole
+/// "<city>, <country>" picker label as one substring (which this feed never
+/// writes: a bare city "Berlin", a "<city>, <region>" pair "Munich, Bayern", or
+/// a street address "Karl-Marx-Allee 1, Berlin"), it dropped every row and
+/// zeroed the board for every geocode-picked German city.
+pub(crate) fn matches_gtj_filters(posting: &JobPosting, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
     let haystack = format!(
         "{} {} {} {}",
         posting.title,
@@ -226,19 +239,7 @@ pub(crate) fn matches_gtj_filters(posting: &JobPosting, query: &str, location: &
     )
     .to_lowercase();
 
-    if !query.is_empty() && !haystack.contains(query) {
-        return false;
-    }
-    // Segment-wise, not whole-string: `input.location` is normally the geocode
-    // picker's "<city>, <country>" label, while this feed writes <location> as a
-    // bare city ("Berlin"), a "<city>, <region>" pair ("Munich, Bayern"), or a
-    // street address ending in the city ("Karl-Marx-Allee 1, Berlin"). The whole
-    // label is never a contiguous substring, so requiring it returned 0 rows for
-    // every geocode-picked German city — the exact market this board serves.
-    if !location.is_empty() && !super::common::location_matches(location, &haystack) {
-        return false;
-    }
-    true
+    haystack.contains(query)
 }
 
 // ── scraper ──────────────────────────────────────────────────────────────────
@@ -265,11 +266,6 @@ impl Scraper for GermanTechJobsScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let loc = input
-            .location
-            .as_ref()
-            .map(|l| l.trim().to_lowercase())
-            .unwrap_or_default();
 
         let res = fetch_text(
             "https://germantechjobs.de/job_feed.xml",
@@ -300,8 +296,9 @@ impl Scraper for GermanTechJobsScraper {
 
         let mut out = parse_feed(&res.text, self.id(), now);
 
-        // ── client-side keyword + location filter ─────────────────────────────
-        out.retain(|posting| matches_gtj_filters(posting, &q, &loc));
+        // ── client-side keyword filter (location is the engine's central
+        //    `location_filter`, not board-local — see `matches_gtj_filters`) ────
+        out.retain(|posting| matches_gtj_filters(posting, &q));
 
         for posting in &out {
             if let Some(ref on_item) = ctx.on_item {
