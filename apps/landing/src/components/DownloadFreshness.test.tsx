@@ -126,7 +126,7 @@ describe('DownloadFreshness', () => {
     render(<DownloadFreshness baked={BAKED} />);
     await waitFor(() => expect(versionLabel()).toBe(`v${remote}`));
 
-    // Positional order per DownloadFreshness.tsx / downloads.ts markup:
+    // Positional order per DownloadFreshness.tsx / DownloadCards.tsx markup:
     // macArm, macIntel, winExe, winMsi, linuxAppImage, linuxDeb, linuxRpm.
     const expected = buildInstallers(remote);
     expect(dlBtnHrefs()).toEqual([
