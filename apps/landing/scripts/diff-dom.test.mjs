@@ -56,4 +56,12 @@ describe('diff-dom', () => {
     );
     assert.equal(mismatches.length, 0);
   });
+
+  it('normalizes URL colons in data URIs (background:url vs background: url)', () => {
+    const { mismatches } = diffBodies(
+      html('<div style="background:url(data:image/png;base64,AA==)"></div>'),
+      html('<div style="background: url(data:image/png;base64,AA==)"></div>')
+    );
+    assert.equal(mismatches.length, 0);
+  });
 });

@@ -133,7 +133,6 @@ export default tseslint.config(
       // src/components, src/lib) IS linted; but these are not source:
       //   out/ + .next/         → Next build output
       //   public/**             → passthrough dashboards + verbatim gag scripts
-      //   src/content/**        → verbatim HTML/CSS fragments of the ported pages
       //   next-env.d.ts         → generated
       'apps/landing/out/**',
       'apps/landing/.next/**',
