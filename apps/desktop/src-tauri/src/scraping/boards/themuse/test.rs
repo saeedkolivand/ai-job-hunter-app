@@ -266,10 +266,10 @@ fn sample_postings() -> Vec<JobPosting> {
 /// reimplementation (that was the bug: a byte-duplicated mirror here could
 /// diverge from `search()`'s actual filter and hide a regression). Every
 /// test below now exercises the real extracted fn through this.
-fn apply_filters(postings: &[JobPosting], query: &str, location: &str) -> Vec<JobPosting> {
+fn apply_filters(postings: &[JobPosting], query: &str) -> Vec<JobPosting> {
     postings
         .iter()
-        .filter(|posting| matches_filters(posting, query, location))
+        .filter(|posting| matches_filters(posting, query))
         .cloned()
         .collect()
 }
@@ -277,7 +277,7 @@ fn apply_filters(postings: &[JobPosting], query: &str, location: &str) -> Vec<Jo
 #[test]
 fn query_filter_matches_title_case_insensitive() {
     let postings = sample_postings();
-    let filtered = apply_filters(&postings, "BACKEND", "");
+    let filtered = apply_filters(&postings, "BACKEND");
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].title, "Senior Backend Engineer");
 }
@@ -285,7 +285,7 @@ fn query_filter_matches_title_case_insensitive() {
 #[test]
 fn query_filter_matches_company_case_insensitive() {
     let postings = sample_postings();
-    let filtered = apply_filters(&postings, "globex", "");
+    let filtered = apply_filters(&postings, "globex");
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].company, "Globex");
 }
@@ -293,45 +293,32 @@ fn query_filter_matches_company_case_insensitive() {
 #[test]
 fn query_filter_empty_returns_all() {
     let postings = sample_postings();
-    let filtered = apply_filters(&postings, "", "");
+    let filtered = apply_filters(&postings, "");
     assert_eq!(filtered.len(), 2);
 }
 
 #[test]
 fn query_filter_matching_nothing_returns_empty() {
     let postings = sample_postings();
-    let filtered = apply_filters(&postings, "nonexistent-role", "");
+    let filtered = apply_filters(&postings, "nonexistent-role");
     assert!(filtered.is_empty());
 }
 
 #[test]
-fn location_filter_substring_match_case_insensitive() {
+fn board_filter_does_not_drop_on_location() {
+    // The Muse is `supports_location() == false`, so board-local filtering is
+    // keyword-only: location is the engine's central `location_filter`. A query
+    // that matches must keep the row whatever its location, and an empty query
+    // keeps every row — the board must never zero itself on a picked city (the
+    // original "New York, United States" vs "New York, NY" regression).
     let postings = sample_postings();
-    let filtered = apply_filters(&postings, "", "berlin");
+    // "Senior Backend Engineer" in "Berlin, Germany" is kept by the keyword
+    // alone; the board applies no "Paris"/"Remote" location narrowing here.
+    let filtered = apply_filters(&postings, "engineer");
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].title, "Senior Backend Engineer");
-}
-
-#[test]
-fn location_filter_blank_passes_through_with_active_query() {
-    // A blank location must not itself exclude anything — combined with an
-    // active query, only the query clause should narrow the result.
-    let postings = sample_postings();
-    let filtered = apply_filters(&postings, "engineer", "");
-    assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].title, "Senior Backend Engineer");
-}
-
-#[test]
-fn query_and_location_filters_combine_with_and() {
-    let postings = sample_postings();
-    // Title matches "engineer" but location does not match "remote" -> excluded.
-    let filtered = apply_filters(&postings, "engineer", "remote");
-    assert!(filtered.is_empty());
-    // Both match -> included.
-    let filtered = apply_filters(&postings, "engineer", "berlin");
-    assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].title, "Senior Backend Engineer");
+    // No keyword → both rows pass, regardless of their differing locations.
+    assert_eq!(apply_filters(&postings, "").len(), 2);
 }
 
 // ---------------------------------------------------------------------------
