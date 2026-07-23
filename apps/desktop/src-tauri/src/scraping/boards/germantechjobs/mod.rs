@@ -210,6 +210,38 @@ pub(crate) fn parse_feed(xml: &str, scraper_id: &str, now: i64) -> Vec<JobPostin
     out
 }
 
+/// The board's client-side KEYWORD filter. `query` must already be trimmed and
+/// lowercased by the caller.
+///
+/// Extracted from `search()`'s `retain` so tests drive the REAL predicate — a
+/// verbatim copy in the test file would silently diverge from what `search()`
+/// actually runs (the same reasoning as The Muse's `apply_filters` helper).
+///
+/// Location is deliberately NOT filtered here. GermanTechJobs does not consume
+/// the requested location server-side (`supports_location() == false`), so the
+/// engine's central `location_filter` is the single, diaeresis/exonym-aware
+/// authority on location and runs on this board's output. A board-local matcher
+/// only duplicated and diverged from it — and, by requiring the whole
+/// "<city>, <country>" picker label as one substring (which this feed never
+/// writes: a bare city "Berlin", a "<city>, <region>" pair "Munich, Bayern", or
+/// a street address "Karl-Marx-Allee 1, Berlin"), it dropped every row and
+/// zeroed the board for every geocode-picked German city.
+pub(crate) fn matches_gtj_filters(posting: &JobPosting, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let haystack = format!(
+        "{} {} {} {}",
+        posting.title,
+        posting.company,
+        posting.location.as_deref().unwrap_or(""),
+        posting.description.as_deref().unwrap_or("")
+    )
+    .to_lowercase();
+
+    haystack.contains(query)
+}
+
 // ── scraper ──────────────────────────────────────────────────────────────────
 
 pub struct GermanTechJobsScraper;
@@ -234,11 +266,6 @@ impl Scraper for GermanTechJobsScraper {
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
         let q = input.query.trim().to_lowercase();
-        let loc = input
-            .location
-            .as_ref()
-            .map(|l| l.trim().to_lowercase())
-            .unwrap_or_default();
 
         let res = fetch_text(
             "https://germantechjobs.de/job_feed.xml",
@@ -269,25 +296,9 @@ impl Scraper for GermanTechJobsScraper {
 
         let mut out = parse_feed(&res.text, self.id(), now);
 
-        // ── client-side keyword + location filter ─────────────────────────────
-        out.retain(|posting| {
-            let haystack = format!(
-                "{} {} {} {}",
-                posting.title,
-                posting.company,
-                posting.location.as_deref().unwrap_or(""),
-                posting.description.as_deref().unwrap_or("")
-            )
-            .to_lowercase();
-
-            if !q.is_empty() && !haystack.contains(&q) {
-                return false;
-            }
-            if !loc.is_empty() && !haystack.contains(&loc) {
-                return false;
-            }
-            true
-        });
+        // ── client-side keyword filter (location is the engine's central
+        //    `location_filter`, not board-local — see `matches_gtj_filters`) ────
+        out.retain(|posting| matches_gtj_filters(posting, &q));
 
         for posting in &out {
             if let Some(ref on_item) = ctx.on_item {
