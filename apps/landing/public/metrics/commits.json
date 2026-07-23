@@ -1,5 +1,53 @@
 [
   {
+    "sha": "6d1e75a99752ebe0cb7fdbb0e8c69af6c8eeeeb9",
+    "commit": {
+      "message": "fix: restore agent-fleet assembly-line scroll pin broken by doc-shell overflow (#882)\n\n* fix: restore agent-fleet assembly-line scroll pin broken by doc-shell overflow\n\nThe /agent-system \"Assembly Line\" section pins via CSS position:sticky\ninside a 340vh runway. Moving the page under the shared DocShell wrapper\nintroduced overflow-x:hidden on .doc-shell, which per spec forces\ncomputed overflow-y to auto — making .doc-shell a scroll container. The\nsticky panel then resolved against .doc-shell (which never scrolls\ninternally) instead of the viewport, so it never pinned and scrolled\naway with the page.\n\nUse overflow-x:clip instead: it clips horizontal overflow without\nestablishing a scroll container, so descendant sticky pins resolve\nagainst the viewport again. Verified in-browser: pinned across the full\nrunway, belt scrubs horizontally, no horizontal scrollbar.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* fix: keep overflow-x hidden fallback under the clip on doc-shell\n\noverflow:clip needs Safari 16+/Chrome 90+/Firefox 81+ and the repo pins\nno browserslist baseline. Layer overflow-x:hidden before overflow-x:clip\nso engines without clip keep today's clipping (last-valid-wins gives\nmodern engines clip + the sticky-pin fix).\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T18:13:11Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "eef53dbbd8ef67307180fa78cba974cf9b75f422",
+    "commit": {
+      "message": "chore: sync landing download version to v0.129.1",
+      "author": {
+        "date": "2026-07-23T16:08:46Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "ab6cfbb2f129160126176ab154367f0618dfac10",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.129.1 [skip ci]",
+      "author": {
+        "date": "2026-07-23T16:08:00Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "f51a0570c37e497097e94b6adc9d77ac6f6da4fa",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-23T16:00:39Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "2b31882bf4643615d1452b7216d98c81fdc30ecc",
     "commit": {
       "message": "chore(release): 0.129.1 [skip ci]",
@@ -1145,54 +1193,6 @@
       "message": "feat(ai): persist url import provenance and harvest from resolves (adr-031) (#761)\n\n* feat(scraping): harvest ats refs from single url resolves\n\nADR-031 §c: on a successful `scrape_resolve_url` (the single-posting synchronous\nresolve behind JobUrlImport), feed the resolved posting into the ADR-030 slug-\nharvest seam (source 'scrape'), so a URL import populates the slug typeahead like\nthe scrape/autopilot/extension paths. One call site reusing the existing pure\nextractor — zero new network. Harvests the posting's FINAL/canonical `url` (what\ngets stored on it — an aggregator click-tracker resolves to the board's real\nposting url), matching the other harvest sites, and degrades-not-fails via the\nseam's established log::warn. Seam-level test (resolved-posting-shaped input →\nstore contains the ref) drives the same pure `posting_to_ref` seam the\nAppHandle-bound command uses (no mock-app harness).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(ai): persist job url provenance from url imports\n\nADR-031 renderer half: a URL-imported job ad now carries its provenance\nend-to-end so the generation joins applied-detection + cluster provenance.\n\n- JobUrlImport surfaces the resolved posting's canonical url + board alongside\n  the composed text via onImport(text, { url, board }).\n- JobAdField routes a URL import to a new optional onImport sink (falls back to\n  onChange for the Resume Analyzer, which doesn't persist provenance).\n- AIGeneratePage records provenance in the ai-generate session slice on import\n  and CLEARS it on any manual edit / paste-over / upload (stale-url foot-gun),\n  then threads jobUrl + board into useGeneration.persist(), which populates the\n  existing AiGenerationSaveRequest.jobUrl/board only when present.\n\nFailure path unchanged and audited (ADR d): scrape_resolve_url returns\njson!(null) for every failure (no distinct rate-limit union to surface), so an\nunresolvable url shows the inline jobUrlImport error with the field still\nusable; the Enter keyboard flow works. en+de parity preserved (no new keys).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record url import provenance (adr-031) and close the backlog row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: drop phantom harvestsource type from adr-031 owning symbols\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): document the resolve call-site coverage gap\n\n`single_resolve_harvests_the_resolved_postings_slug` pins the pure harvest seam\n(URL → ref → store → search) but NOT the `scrape_resolve_url` call site that\nwires `(posting.url, posting.company)` into it — a swapped arg order or a dropped\nharvest call there would still pass. Extend the test's header docstring to state\nthis explicitly (the call-site wiring is AppHandle + network-bound, unreachable\nwithout a mock-app harness this crate deliberately avoids; review + arg names\nguard it), mirroring the sibling acceptance test's honest-comment style. No code\nchange.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ui): label generation board chips via the boards i18n map\n\nThe GenerationCard board chip rendered gen.board raw, so a URL-imported\ngeneration whose generic-fallback resolve sets source 'url' showed a literal\nuppercase 'URL' badge. Route it through t('jobs.boards.${gen.board}', {\ndefaultValue }) like the jobs list, and add a jobs.boards.url pair\n(Web import / Web-Import) so the fallback reads humanely.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: move ats harvest seam below commands into discovered harvest module\n\ndrops the l3-to-l3 peer import flagged in review: harvest_ats_refs + posting_to_ref move from\ncommands/discovery.rs to discovered/harvest.rs, apphandle-free (take the store directly). all 5 call\nsites (scrape x3, autopilot, extension import) resolve the store at the shell boundary and pass it\ndown; missing store stays a graceful no-op. the moved tests now drive the real harvest fn, pinning\nthe (url, company) arg order the review found unguarded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: assert localized board chip labels and unknown-board fallback\n\nboard-chip tests now render through the real en resources (getFixedT) instead of a key-echo mock, so\na missing jobs.boards.url resource fails; adds the unknown-board defaultvalue-fallback case.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: cite the moved harvest symbols and correct the adr-031 rate-limit claim\n\nadr-031 now points at discovered::harvest::harvest_ats_refs (both occurrences) and describes the\nreal 429 behavior: failures collapse to null with the generic inline error; distinct backoff\nsurfacing stays a fast-follow.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
       "author": {
         "date": "2026-07-21T19:32:29Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "08efbc8321fb9225c747a9ef7dbcfbd61be661c3",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-21T10:19:18Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "ccaddb3a6b750e43ca05c5d6bd2920e32237d0e2",
-    "commit": {
-      "message": "feat(scraping): harvest ats slugs passively with watched-company autopilot targets (adr-030) (#760)\n\n* feat(scraping): harvest ats slugs passively with watched-company autopilot targets\n\nPassively extract ATS company slugs from every scraped/imported posting URL\nand persist them, so the (later) slug typeahead and watched-company autopilot\ntargets populate with zero user effort (ADR-030).\n\n- extract_ats_ref (scraping/ats_ref.rs): the single URL-shape authority mapping\n  a posting URL to (ats, slug) for greenhouse/lever/personio/workable/ashby/\n  recruitee/smartrecruiters/breezy/bamboohr/pinpoint. scrape_url's greenhouse/\n  lever/ashby/smartrecruiters parsers now reuse these slug fns (no forked\n  shapes); host gates tightened to exact/suffix, slug casing preserved.\n- DiscoveredCompanyStore (discovered/mod.rs): own SQLite db, transactional\n  migration, upsert bump + display-name backfill, starred-first search,\n  watched() pairs. Resettable + DataStore (discoveredCompanies) + managed.\n- Parse-only harvest (commands::discovery::harvest_ats_refs) wired after\n  scrape_boards / scrape_url / autopilot record / extension import; degrades on\n  error, zero new network.\n- discovery IPC namespace (search/setStarred honest {error} union/watched) +\n  service hooks + query keys + mock-client entries.\n- AutopilotTarget gains watchedCompaniesOnly: a run resolves the starred set at\n  run time and injects per-ATS slugs (manual-style fan-out); empty stars skip\n  company boards with needs-company instead of the curated seed.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): scope watched company fan-out per board and harvest pre-filter\n\nAddress scraping-applier-expert review of the ADR-030 slug-harvest feature.\n\n- HIGH: watched-company autopilot resolution no longer flattens every starred\n  slug into the shared BoardSearchInput.companies (which fanned a foreign ATS's\n  slugs at each company board and crowded its MAX_COMPANIES cap). It now builds a\n  PER-BOARD map (board id -> slugs starred under THAT ATS) and threads it through\n  the engine's existing per-board seeded_companies override via a new\n  scrape_boards_with_overrides; input.companies stays empty. A selected\n  company-scoped board with no matching star is skipped needs-company (never\n  fetched with a foreign slug, never the curated seed). scrape_boards_with_resolver\n  keeps its signature (existing engine tests untouched); the core impl gains the\n  override. New engine mock-transport tests: ashby-only stars -> ashby gets its\n  slugs, greenhouse skipped, no cross-ATS request; plus a per-board purity test.\n- MEDIUM: autopilot harvest moved to the pre-filter scraped postings (ADR-030\n  paragraph c), matching the manual-scrape harvest point.\n- LOW: discovery_set_starred rejects an atsKind that isn't a registered\n  company-scoped board id (registry lookup) so a compromised renderer can't\n  materialize garbage rows.\n- LOW: discovery_watched now uses a dedicated watched_companies() store query\n  (full starred rows, no search-cap coupling); watched() pairs stay for the resolver.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(jobs): slug typeahead with starred companies and watched autopilot target\n\nReplace the ScrapeForm comma-separated company input with an ADR-030 slug\ntypeahead: a new @ajh/ui CompanyTypeahead primitive (multi-select chips +\nper-row star toggle + free-text add) fed by the discovery service hooks,\nmerging passively-harvested slugs with the selected boards' curated seeds.\nAdd a 'My watched ATS companies' target toggle to the autopilot wizard board\nstep that sets watchedCompaniesOnly, with an inline watched list + empty hint.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): close ats harvest acceptance gaps\n\nAdd the missing acceptance-matrix deltas for ADR-030 (passive ATS slug\nharvest + watched companies):\n\n- ats_ref: multi-level subdomains under a real ATS suffix extract None\n  (pins the subdomain_slug label.contains('.') branch).\n- discovery: fixture posting URLs harvested through extract_ats_ref into\n  a real DiscoveredCompanyStore surface via search (URL->store->typeahead\n  seam; reuses the shared production mapping, never re-derived).\n- autopilot_helpers: real store stars resolve through watched() + the\n  registry requires_company filter into per-board targets (the store->\n  resolver seam between the store and pure-resolver tests).\n- CompanySlugField / WatchedCompaniesField: star/unstar failure surfaces\n  an error toast when the mutation throws (no silent failure).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: remove rtk tool prefix from agent and assistant configs\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): per-company control labels and blur-commit for the slug typeahead\n\nAddress frontend-reviewer findings on 84bf3a77:\n- Per-instance aria-labels: chip remove, star toggle, and wizard unstar now\n  interpolate the company name ({{company}}) so rotor/voice-control users no\n  longer meet N identical controls; CompanyTypeahead's starLabel/removeLabel\n  props take a per-row function. Tests switch to name-based queries.\n- Blur-commit: a typed-but-uncommitted slug is now flushed on focusout (guarded\n  by relatedTarget so a mid-click on a suggestion/star doesn't double-add), so\n  Start Scrape can no longer silently drop it.\n- Result-count aria-live status region on the typeahead (no role=option added).\n- Remove the orphaned jobs.companies.hint key from both locales.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: route apps/landing to the frontend fleet with next.js 16 hardening\n\nlanding ownership moves from project-steward to frontend-author with\nfrontend-reviewer + ui-ux-expert as critics; agent definitions gain\nnext.js 16 static-export guidance (async params, no server features,\nunoptimized images, turbopack, parity gates) sourced from current docs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record ats slug harvesting (adr-030) in the knowledge base\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* style: apply rustfmt to discovery acceptance test\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): bound the watched-companies queries\n\nBoth `DiscoveredCompanyStore::watched()` (pairs) and `watched_companies()` (full\nrows) selected every starred row with no LIMIT, unlike `search`'s clamp(1,100)\ndiscipline (CWE-770 in principle — an unbounded read + per-run autopilot fan-out).\nAdd a shared `WATCHED_LIMIT = 500` bound (generous over any real starred set) to\nboth queries and pin it with a test (WATCHED_LIMIT + 1 stars → exactly 500).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: align adr-030 ipc names with the shipped discovery contract\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): recognize rippling posting urls in the ats slug extractor\n\nextract_ats_ref covered 10 of the 11 company-scoped ATS boards — Rippling had no\nparser, so a Rippling posting could never be harvested, appear in the typeahead,\nor be starred/watched. Add `rippling_slug` + register in PARSERS.\n\nShape (verified against boards::rippling): posting urls are host-locked to\n`ats.rippling.com/{slug}/jobs/{id}` (the board's `is_valid_rippling_job_url` guard\n+ every parse fixture, e.g. `https://ats.rippling.com/acme/jobs/job-abc-123`).\nCompany slug = first path segment, casing preserved (Rippling slugs are URL path\nsegments, mixed case allowed per `is_valid_rippling_slug` — not DNS labels).\nExact-host gate so the API host `api.rippling.com` (whose first segment is\n`platform`), the apex, and look-alikes → None. Positive + near-miss tests added.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): cover the harvest display-name fallback via a shared pure seam\n\nThe harvest acceptance test re-implemented the display-name fallback as an\nunconditional `Some(company)`, while production does\n`display_name.or_else(|| trim + empty-check)` — the trim/empty branch had zero\ncoverage (ADR-029 seam lesson: a test that re-implements the mapping tests\nnothing). Extract the pure per-posting mapping (`extract_ats_ref` + display\nfallback) into `posting_to_ref` (AppHandle-free); `harvest_ats_refs` and the\nacceptance test now both call it, and a new case pins that an empty/whitespace\ncompany yields `display_name` None (never an empty string).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): flush pending slug imperatively before start scrape\n\nThe blur-commit in 592ca7c9 is not sufficient: on WebKit (WKWebView /\nWebKitGTK — the app ships dmg/deb/rpm/appimage) a Start-button click doesn't\nreliably blur the focused input, and even when it does, add() queues an async\nstate update while onStart reads companies synchronously.\n\nCompanyTypeahead now exposes a CompanyTypeaheadHandle.commitPending() via a\nforwarded ref that synchronously runs the pending-query add path (idempotent\nonce the query is cleared). CompanySlugField forwards the ref; ScrapeForm's\nstart flow (Start button + query Enter-submit) calls\nflushSync(() => fieldRef.current?.commitPending()) before onStart when the\ncompany field is shown — the deterministic backstop the removed flushSync\nguard documented. Blur-commit stays for Chromium UX; zero role=option kept.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: scrub rtk from cursor rules and use rg in the stale-branch check\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: point scraping-domain at the extractor and store instead of restating them\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): validate rippling slugs at extraction and tidy count casts\n\nAddress PR #760 external review quick-wins:\n\n- ats_ref::rippling_slug validated the first path segment against the SAME shape\n  boards::rippling enforces (is_valid_rippling_slug, now pub(crate)), so the store\n  never persists a slug the board would later refuse (path-traversal/query chars,\n  leading/trailing hyphen, over-length). Negative test added.\n- discovered/mod.rs: the seen_count column no longer routes through the epoch-ms\n  ts_from_db/ts_to_db helpers — plain inline casts (u64::try_from(..).unwrap_or(0)\n  / i64::try_from(..).unwrap_or(i64::MAX)) with the same clamp/saturate semantics,\n  since it is a count, not a timestamp. first_seen_at/last_seen_at keep the helpers.\n- engine test: present-but-EMPTY override entry ({\"greenhouse\": []}) is treated as\n  absent — needs-company skip, no fetch — pinning the empty-vec branch of the skip\n  gate distinct from a missing key.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard rapid star toggles and assert the watched field renders\n\n- CompanySlugField.toggleStar: bail when the star mutation is already in\n  flight (setStarred.isPending), so a rapid double-click can't fire two writes\n  off the same stale option.starred snapshot. Regression test: two rapid clicks\n  during a deferred (in-flight) mutation → the write fires once.\n- StepTarget.test: stop mocking WatchedCompaniesField to null. Render the real\n  component (discovery service hooks stubbed, NotificationProvider added) and\n  assert the watched-companies toggle appears in the target step, so its\n  insertion is actually covered.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T09:58:08Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "27b573189a9ffeb291546c9b3271bcda5cdd12ca",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-07-21T07:20:25Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "4f6684b15ce52dc2b6c34ff112aef42e205b52af",
-    "commit": {
-      "message": "feat: nightly metrics snapshot data plane for mission control (#759)\n\n* feat: nightly metrics snapshot data plane for mission control\n\n* refactor: rescope lede rate-limit claim and test freshness line per review",
-      "author": {
-        "date": "2026-07-21T07:19:39Z"
       }
     },
     "author": {
