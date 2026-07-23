@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784795706169,
+  "lastUpdate": 1784807654161,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5495,6 +5495,90 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 290453,
             "range": "± 23312",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "35212698+thejesh23@users.noreply.github.com",
+            "name": "Thejesh",
+            "username": "thejesh23"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a9c0c91d8287dcd5ad71085541caaba18b1895d6",
+          "message": "fix(export): do not consume a letter's salutation as the letterhead name (#876)\n\nThe DOCX letter renderers treated the first non-blank line as the letterhead\nname whatever it was: `if !header_done && docx.document.children.is_empty()`.\nA letter that opens straight at the salutation (no letterhead) therefore had its\n\"Dear …\" line consumed as the name and replaced with meta.candidate_name — and\nbecause `in_body` is set only in the salutation arm, the whole body then\nrendered in the muted addressee style.\n\nGuard the name block with `!is_salutation && !is_signoff` (both already computed\njust above) so a salutation-first letter falls through to the salutation arm,\nwhich sets header_done/in_body correctly. The block is duplicated in\ngenerate_cover_letter_docx_classic (Classic) and generate_cover_letter_docx_layout\n(Refined/Banded); both are guarded.\n\nTest opens a letterhead-less letter with a candidate name set and asserts the\n\"Dear Hiring Manager\" line survives, across all three layouts. Fails on main\n(Classic path: the salutation is replaced by the candidate name).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+          "timestamp": "2026-07-23T13:15:43+02:00",
+          "tree_id": "648cdd7b9f8f6b6fec31146b3d2c544b0c353c60",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a9c0c91d8287dcd5ad71085541caaba18b1895d6"
+        },
+        "date": 1784806664280,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2211462,
+            "range": "± 8561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2632122,
+            "range": "± 21564",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 292792,
+            "range": "± 6115",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f",
+          "message": "fix(export): keep a subject-line-first letterhead-less letter's subject line (#878)\n\nExtends the #876 name-block guard in both docx letter renderer arms with\n!is_subject_line, so a letter opening with a subject/reference line (e.g. a\nGerman Betreff: line) and no letterhead name no longer has that line consumed\nas the candidate name. The later subject-line call sites reuse the computed\nbinding instead of recomputing. Pinning test covers all three letter layouts\nand fails on the unguarded renderer.\n\nFixes #877\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-23T13:44:23+02:00",
+          "tree_id": "15e825023643862c1ae397913a79b422e62b7d3f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f"
+        },
+        "date": 1784807653153,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2202960,
+            "range": "± 7815",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2625640,
+            "range": "± 17341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293703,
+            "range": "± 2009",
             "unit": "ns/iter"
           }
         ]
