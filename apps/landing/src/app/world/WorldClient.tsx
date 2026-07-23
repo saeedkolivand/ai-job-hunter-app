@@ -8,7 +8,7 @@ import { withAv1Sources, WORLD_CONFIG } from './world-config';
 // Theme tokens the vendored engine reads off .sw-root/:root (see scrub-engine.js's
 // header comment). Page background matches --sw-bg so the still posters blend
 // seamlessly with the surrounding page. Anton / Patrick Hand are self-hosted via
-// public/fonts/fonts.css (injected by <Fonts /> in page.tsx) — family names must
+// public/fonts/fonts.css (injected by <Fonts /> in layout.tsx) — family names must
 // match that stylesheet's @font-face declarations exactly.
 const THEME_CSS = `
   .sw-root, :root {

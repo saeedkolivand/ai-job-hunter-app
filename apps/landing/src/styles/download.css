@@ -1,0 +1,266 @@
+:root {
+  --red: #e24b4a;
+  /* --red-link: darkened red (4.74:1 on --paper) — used for body links to meet WCAG AA 4.5:1 */
+  --red-link: #b83433;
+  --muted: #5a4f3a;
+  /* legibility floor: Space Mono >=13px copy, Gloria Hallelujah >=15px copy, Patrick Hand >=14px */
+}
+a {
+  color: var(--red-link);
+  text-decoration: none;
+  border-bottom: 1.5px solid rgba(184, 52, 51, 0.4);
+}
+a:hover {
+  border-bottom-color: var(--red-link);
+}
+/* global focus ring — ink outline (≥9:1 on all page backgrounds) for all interactive elements */
+a:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+code {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  background: #e6dcc4;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+/* click-to-copy command chip */
+.copy-cmd {
+  cursor: pointer;
+  display: inline-block;
+  margin: 3px 0;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.copy-cmd:hover {
+  background: #dccdaa;
+}
+.copy-cmd:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.copy-cmd.copied {
+  background: #cfe6cf;
+  color: #2f5d2f;
+}
+.copy-cmd.copied::after {
+  content: ' ✓';
+  font-weight: 700;
+}
+
+.wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 56px 22px 90px;
+}
+
+.top-back:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.lede {
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.85;
+  color: #2c271c;
+  margin: 22px 0 0;
+}
+.lede b {
+  color: var(--ink);
+}
+
+h2 {
+  font-family: var(--scrawl);
+  font-size: clamp(18px, 4vw, 24px);
+  margin: 0;
+  color: var(--ink);
+}
+
+.dl-version {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 22px;
+}
+.dl-version b {
+  color: var(--ink);
+}
+
+/* ---- platform rows (one wide row per OS) ---- */
+.platforms {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 26px 0 8px;
+}
+.pcard {
+  background: #fffef8;
+  border: 2.6px solid var(--ink);
+  border-radius: 16px 11px 18px 9px/9px 17px 11px 16px;
+  box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.14);
+  padding: 18px 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+}
+.pcard:nth-child(odd) {
+  transform: rotate(-0.3deg);
+}
+.pcard:nth-child(even) {
+  transform: rotate(0.3deg);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 150px;
+}
+.pc-head h2 {
+  font-size: 22px;
+}
+.pc-ico {
+  font-size: 30px;
+  line-height: 1;
+}
+.pc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+/* solid buttons stay borderless (like .cta) — a same-color border on a rounded
+   fractional-width box bleeds the page color as seams on the left/right edges */
+.dl-btn {
+  font-family: var(--hand);
+  font-size: 16px;
+  background: var(--ink);
+  color: #f4ecdc;
+  border: none;
+  border-radius: 12px 9px 13px 8px;
+  padding: 8px 18px;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.22);
+  text-align: center;
+  transition: transform 0.14s;
+  text-decoration: none;
+}
+.dl-btn:hover {
+  transform: translateY(-2px);
+}
+/* dark-bg primary button: paper-color ring (contrast vs #1c1812 ≈ 13.7:1) */
+.dl-btn:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.dl-btn.alt {
+  background: transparent;
+  color: var(--ink);
+  border: 2.6px solid var(--ink);
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.14);
+  font-size: 15px;
+  padding: 7px 16px;
+}
+/* alt button on light pcard bg: ink ring (high contrast) */
+.dl-btn.alt:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+/* note drops to its own full-width line beneath the head + buttons */
+.dl-note {
+  flex-basis: 100%;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.auto-note {
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--muted);
+  margin: 14px 0 0;
+}
+
+/* ---- browser extension ---- */
+.ext-intro {
+  font-family: var(--hand);
+  font-size: 17px;
+  color: #3a3527;
+  margin: 0 0 18px;
+  max-width: 54ch;
+}
+.ext-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+}
+.ext-card {
+  background: #ece2cf;
+  border: 2.4px solid var(--ink);
+  border-radius: 14px 18px 11px 16px;
+  box-shadow: 4px 5px 0 rgba(0, 0, 0, 0.14);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ext-card h2 {
+  font-size: 20px;
+}
+.ext-card .sub {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  margin: -4px 0 0;
+}
+.ext-btn {
+  font-family: var(--hand);
+  font-size: 16px;
+  background: var(--ink);
+  color: #f4ecdc;
+  border: none;
+  border-radius: 11px 8px 12px 9px;
+  padding: 8px 14px;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.2);
+  transition: transform 0.14s;
+  margin-top: auto;
+}
+.ext-btn:hover {
+  transform: translateY(-2px);
+}
+/* dark-bg ext button: paper-color ring (contrast vs #1c1812 ≈ 13.7:1) */
+.ext-btn:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+  border-radius: 11px;
+}
+
+/* reduced motion — disable transitions/transforms but keep focus-visible rings */
+@media (prefers-reduced-motion: reduce) {
+  .dl-btn,
+  .ext-btn,
+  .copy-cmd {
+    transition: none;
+  }
+  .dl-btn:hover,
+  .ext-btn:hover {
+    transform: none;
+  }
+  /* focus-visible outlines are not animated — no suppression needed */
+}

@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
-import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { RawHtml } from '@/components/RawHtml';
 import { readContent } from '@/lib/content';
@@ -15,7 +14,6 @@ export const metadata: Metadata = {
 export default function CreaturePage() {
   return (
     <>
-      <Fonts />
       <PageStyle css={readContent('creature', 'styles.css')} />
       <RawHtml html={readContent('creature', 'body.html')} />
       <ClientScripts srcs={['/scripts/creature-0.js', '/scripts/creature-1.js']} />
