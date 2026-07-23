@@ -52,29 +52,27 @@ pub(crate) fn is_valid_dns_label_slug(slug: &str) -> bool {
         && !slug.ends_with('-')
 }
 
-/// Client-side query/location filter for boards with no server-side keyword
-/// search (The Muse, Comeet). Case-insensitive substring match on
-/// `title + company` for `query`; case-insensitive substring match on
-/// `location` for `location`; an empty filter passes everything; both
-/// clauses AND-combine. Originally The Muse-local; extracted here once
-/// Comeet needed the identical filter instead of a second copy.
-pub(crate) fn matches_filters(
-    posting: &crate::scraping::types::JobPosting,
-    query: &str,
-    location: &str,
-) -> bool {
+/// Client-side KEYWORD filter for boards with no server-side keyword search
+/// (The Muse, Comeet). Case-insensitive substring match on `title + company`
+/// for `query`; an empty query passes everything. Originally The Muse-local;
+/// extracted here once Comeet needed the identical filter instead of a second
+/// copy.
+///
+/// Location is deliberately NOT filtered here. These boards do not consume the
+/// requested location server-side (`Scraper::supports_location() == false`), so
+/// the engine's central [`crate::scraping::engine::location_filter`] is the
+/// single authority on location: it runs on their output both as a live gate and
+/// as a post-hoc safety net, and it is diaeresis/exonym-aware (München/Munich,
+/// Köln/Cologne). A second board-local matcher here only duplicated — and
+/// diverged from — that logic: it matched a raw "<city>, <country>" picker label
+/// as one contiguous substring, which no board writes, so it dropped every row
+/// and zeroed the board for any geocode-picked city. Delegating to the central
+/// filter fixes that and keeps one authority.
+pub(crate) fn matches_filters(posting: &crate::scraping::types::JobPosting, query: &str) -> bool {
     let q = query.trim().to_lowercase();
     if !q.is_empty() {
         let haystack = format!("{} {}", posting.title, posting.company).to_lowercase();
         if !haystack.contains(&q) {
-            return false;
-        }
-    }
-
-    let loc_filter = location.trim().to_lowercase();
-    if !loc_filter.is_empty() {
-        let loc = posting.location.as_deref().unwrap_or("").to_lowercase();
-        if !loc.contains(&loc_filter) {
             return false;
         }
     }
