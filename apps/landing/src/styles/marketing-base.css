@@ -1,6 +1,6 @@
-/* Shared base for the light-paper utility pages (privacy, download) — the rules
-   byte-identical between src/content/privacy/styles.css and
-   src/content/download/styles.css. Injected after marketing-tokens.css and
+/* Shared base for the light-paper utility pages (privacy, download) —
+   extracted from the pre-refactor privacy/download stylesheets; these rules
+   must stay identical for both pages. Injected after marketing-tokens.css and
    before the page's own stylesheet. Rules that differ between the two pages
    (a{}, code{}, .wrap, .lede, focus-visible umbrellas, reduced-motion) stay
    per-page. Uses var(--muted), which each page defines for itself. */
