@@ -523,6 +523,12 @@ fn merge_application(
     incoming: AiGenerationRecord,
 ) -> AiGenerationRecord {
     let pick = |inc: String, ex: String| if inc.trim().is_empty() { ex } else { inc };
+    // `mismatch` is derived from the resume/jobAd language pair, so it is only
+    // meaningful when the incoming save actually carries that pair. An
+    // answers-only / interview-only save leaves the language fields blank and its
+    // `mismatch` defaults to `false` — not a real verdict.
+    let incoming_has_languages =
+        !incoming.resume_language.trim().is_empty() && !incoming.job_ad_language.trim().is_empty();
     AiGenerationRecord {
         id: existing.id,
         created_at: existing.created_at,
@@ -532,7 +538,16 @@ fn merge_application(
         resume_language: pick(incoming.resume_language, existing.resume_language),
         job_ad_language: pick(incoming.job_ad_language, existing.job_ad_language),
         target_language: pick(incoming.target_language, existing.target_language),
-        mismatch: incoming.mismatch || existing.mismatch,
+        // Follow the incoming verdict ONLY when this save computed the language
+        // pair — mirroring how the language fields themselves merge (`pick`), so a
+        // corrected regeneration (`mismatch=false`) clears a stale warning while a
+        // content-less save can't clobber a real prior verdict. The old
+        // `incoming || existing` made a `true` permanent.
+        mismatch: if incoming_has_languages {
+            incoming.mismatch
+        } else {
+            existing.mismatch
+        },
         top_requirements: if incoming.top_requirements.is_empty() {
             existing.top_requirements
         } else {
