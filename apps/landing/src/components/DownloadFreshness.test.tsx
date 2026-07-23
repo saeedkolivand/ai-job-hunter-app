@@ -2,23 +2,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, waitFor } from '@testing-library/react';
 
-import { buildDownloadsHtml } from '@/lib/downloads';
+import { DownloadCards } from '@/components/download/DownloadCards';
 import { buildInstallers } from '@/lib/version';
 
 import { DownloadFreshness } from './DownloadFreshness';
 
 const BAKED = '0.127.0';
 
-// Mirrors the exact fixture app/download/page.tsx stamps into the page, so this
-// test can't drift from the real production markup DownloadFreshness reads.
+// Renders the real production component (not a hand-copied fixture), so this
+// test can't drift from the markup DownloadFreshness reads.
 function mountDownloadsBlock(version: string): void {
-  document.body.insertAdjacentHTML(
-    'beforeend',
-    `<div id="downloads-block" style="display:contents">${buildDownloadsHtml(
-      version,
-      buildInstallers(version)
-    )}</div>`
-  );
+  render(<DownloadCards version={version} installers={buildInstallers(version)} />);
 }
 
 function dlBtnHrefs(): string[] {

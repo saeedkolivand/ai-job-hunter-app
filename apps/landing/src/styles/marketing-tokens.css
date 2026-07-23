@@ -1,0 +1,11 @@
+/* Shared marketing-tier tokens (byte-identical across home/privacy/download/creature).
+   Page-specific vars (--red, --muted, --accent, …) stay in each page's own
+   stylesheet; :root blocks merge, so a page's stylesheet may extend this one. */
+:root {
+  --scrawl: 'Gloria Hallelujah', cursive;
+  --hand: 'Patrick Hand', cursive;
+  --impact: 'Anton', Impact, sans-serif;
+  --mono: 'Space Mono', monospace;
+  --paper: #f4ecdc;
+  --ink: #1c1812;
+}
