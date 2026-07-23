@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
 import { act, waitFor } from '@testing-library/react';
 
 import { createMockClient, makeQueryClient, renderHookWithClient } from '@/test-support';
@@ -13,6 +14,21 @@ import {
 } from './use-extension-bridge';
 
 const MOCK_STATUS = { port: 9712, connected: true, token: 'tok-abc123' };
+
+// makeQueryClient() defaults to gcTime: 0, which schedules an unobserved query
+// for near-immediate GC (TanStack Query's Query constructor calls scheduleGc()
+// on creation). A test that seeds a key via setQueryData without an active
+// useQuery observer races that GC timer against its own assertion — flaky
+// under load, since the removal and the check are two independent macrotasks.
+// gcTime: Infinity keeps the seeded entry alive deterministically (same fix
+// already applied in use-autopilot.test.ts's `persistentClient`).
+const persistentClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity, staleTime: Infinity },
+      mutations: { retry: false },
+    },
+  });
 
 describe('useExtensionBridgeStatus', () => {
   it('returns the status payload from the client', async () => {
@@ -199,7 +215,7 @@ describe('useSetExtensionAiAssistSetting', () => {
       'extensionBridge.aiAssistEnabled': vi.fn().mockResolvedValue({ enabled: false }),
       'extensionBridge.setAiAssistEnabled': vi.fn().mockResolvedValue({ enabled: true }),
     });
-    const queryClient = makeQueryClient();
+    const queryClient = persistentClient();
 
     const { result: setResult } = renderHookWithClient(() => useSetExtensionAiAssistSetting(), {
       client,
