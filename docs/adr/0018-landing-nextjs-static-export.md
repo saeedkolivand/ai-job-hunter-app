@@ -133,6 +133,25 @@ browser-stored secrets.
 **Nightly metrics snapshot and GitHub API live fallback** (shipped 2026-07-21, PR4):
 The mission-control dashboard now fetches data from a nightly snapshot (`apps/landing/public/metrics/`) with live GitHub API fallback. A new `.github/workflows/metrics-snapshot.yml` runs nightly (03:17 UTC) and on manual dispatch: it bakes 7 GitHub REST API payloads into JSON files and commits them to main via SSH over the `RELEASE_DEPLOY_KEY` (the default `GITHUB_TOKEN` is not a ruleset bypass actor and its push to protected main is rejected). The `commits.json` snapshot is uniquely field-allowlisted (via jq) to strip git author/committer names and emails before public upload — the client consumes only sha, message, date, and login. Missing or stale snapshots degrade gracefully via per-key live fallback (dashboard shows an honest freshness line from `meta.json`). The push is marked `[skip ci]` + the pages.yml workflow is dispatched explicitly to keep the deploy intentional and avoid redundant CI runs. This approach trades real-time accuracy for load relief and reproducible dashboard renders across multiple deployments. The snapshot mode is transparent to users via a single `liveOrSnapshot` seam in mission-control's data source configuration (`dataSource: { mode: 'snapshot', snapshotBase: '/metrics' }`); the API data-fetch path remains available for client sign-in scenarios (users with fine-grained PATs can opt into live mode for latest data).
 
+## Addendum: PR1–PR3 Raw-HTML Pipeline Retirement
+
+**Conversion of all 5 marketing pages to TSX and retirement of the fragment pipeline** (completed 2026-07-23, PRs #872, #879, this PR):
+
+The static-HTML fragment pipeline (`src/content/`, `src/components/RawHtml.tsx`, `src/lib/content.ts`, and per-page `body.html` files) has been fully retired across three sequential PRs. All five authored marketing pages (home, creature, how-it-works, privacy, download) are now TSX components (`src/components/*/Body.tsx` or `src/app/*/page.tsx`). **Rendered DOM is byte-identical** to the legacy static site — verified per route via `scripts/diff-dom.mjs` against pre-refactor baselines.
+
+**Structural changes:**
+
+- **Components**: `HomeBody`, `CreatureBody`, `HowItWorksBody`, `PrivacyBody`, `DownloadBody` are server components with no props, each building its markup from constant JSX literals (one-to-one conversion of the original `body.html` fragments, preserving class names, attributes, SMIL, and Unicode verbatim).
+- **Shared UI**: `SiteFooter` and `BackLink` components extracted and reused across pages (rendered byte-identical to the original).
+- **CSS**: Moved from `src/content/*/*.css` to `src/styles/*.css` (e.g., `src/content/how-it-works/styles.css` → `src/styles/how-it-works.css`). One comment updated to reference the `display:contents` root wrapper. Content-identical otherwise (whitespace normalized by Prettier per repo convention).
+- **Fonts**: Hoisted to `src/app/layout.tsx` (loaded once, not per-page).
+- **Shared tokens**: `marketing-tokens.css` and `marketing-base.css` consolidated and applied via `PageStyle` at page level.
+- **Link list**: The parity gate's `EXPECTED_HREFS` literal in `scripts/check-parity.mjs` is now the canonical source for marketing links (was derived from parsed `body.html` fragments). Editing a marketing link now requires conscious update of this frozen list.
+
+**Parity gate**: `pnpm check:parity` remains the permanent non-optional guard — it ensures Next export output byte-matches the legacy static-site layout per page via `scripts/diff-dom.mjs` element-by-element comparison (inclusive of entity-normalized inline styles). Blind spot: `diff-dom.mjs` drops whitespace-only text nodes, so lost inline word-gaps between adjacent inline elements are invisible to the diff. Compensating checks: explicit `{' '}` discipline in JSX, whole-page whitespace-collapsed textContent comparison against the baseline during review, and per-page structural render tests. A regression test (`scripts/diff-dom.test.mjs`) documents the colon-spacing fix for multi-declaration inline styles.
+
+**Deleted files**: `src/content/` (directory), `src/components/RawHtml.tsx`, `src/lib/content.ts`. Repo-wide grep confirms no remaining references to `RawHtml` or `readContent` outside historical commit messages and the already-converted pages' provenance comments.
+
 ## References
 
 - Supersedes-parts-of: `docs/adr/0017-landing-consolidation-static-site.md` (the no-build-step
