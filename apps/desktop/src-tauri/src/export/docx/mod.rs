@@ -92,8 +92,12 @@ fn generate_cover_letter_docx_classic(
         let is_salutation = crate::locale::letter::is_salutation(&clean);
         let is_signoff = crate::locale::letter::is_signoff(&clean);
 
-        // First line is name
-        if !header_done && docx.document.children.is_empty() {
+        // First line is name — but ONLY a real letterhead name, not a letter that
+        // opens straight at the salutation. Without this guard a letterhead-less
+        // letter's "Dear …" was consumed as the name (replaced with the candidate
+        // name), the salutation arm never ran, `in_body` was never set, and the
+        // whole body rendered in the muted addressee style.
+        if !header_done && docx.document.children.is_empty() && !is_salutation && !is_signoff {
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
@@ -317,8 +321,12 @@ fn generate_cover_letter_docx_layout(
         let is_salutation = crate::locale::letter::is_salutation(&clean);
         let is_signoff = crate::locale::letter::is_signoff(&clean);
 
-        // First line is name.
-        if !header_done && docx.document.children.is_empty() {
+        // First line is name — but ONLY a real letterhead name, not a letter that
+        // opens straight at the salutation. Without this guard a letterhead-less
+        // letter's "Dear …" was consumed as the name (replaced with the candidate
+        // name), the salutation arm never ran, `in_body` was never set, and the
+        // whole body rendered in the muted addressee style.
+        if !header_done && docx.document.children.is_empty() && !is_salutation && !is_signoff {
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
