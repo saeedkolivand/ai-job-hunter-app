@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
+import { CreatureBody } from '@/components/creature/CreatureBody';
 import { PageStyle } from '@/components/PageStyle';
-import { RawHtml } from '@/components/RawHtml';
-import { readContent } from '@/lib/content';
+import { readStyle } from '@/lib/styles';
 
 export const metadata: Metadata = {
   title: 'THE CREATURE — a hand-drawn doodle short film',
@@ -14,8 +14,9 @@ export const metadata: Metadata = {
 export default function CreaturePage() {
   return (
     <>
-      <PageStyle css={readContent('creature', 'styles.css')} />
-      <RawHtml html={readContent('creature', 'body.html')} />
+      <PageStyle css={readStyle('marketing-tokens.css')} />
+      <PageStyle css={readStyle('creature.css')} />
+      <CreatureBody />
       <ClientScripts srcs={['/scripts/creature-0.js', '/scripts/creature-1.js']} />
     </>
   );
