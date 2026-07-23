@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784806665284,
+  "lastUpdate": 1784807654161,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5537,6 +5537,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 292792,
             "range": "± 6115",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f",
+          "message": "fix(export): keep a subject-line-first letterhead-less letter's subject line (#878)\n\nExtends the #876 name-block guard in both docx letter renderer arms with\n!is_subject_line, so a letter opening with a subject/reference line (e.g. a\nGerman Betreff: line) and no letterhead name no longer has that line consumed\nas the candidate name. The later subject-line call sites reuse the computed\nbinding instead of recomputing. Pinning test covers all three letter layouts\nand fails on the unguarded renderer.\n\nFixes #877\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-23T13:44:23+02:00",
+          "tree_id": "15e825023643862c1ae397913a79b422e62b7d3f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f"
+        },
+        "date": 1784807653153,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2202960,
+            "range": "± 7815",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2625640,
+            "range": "± 17341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293703,
+            "range": "± 2009",
             "unit": "ns/iter"
           }
         ]
