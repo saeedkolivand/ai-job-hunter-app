@@ -47,9 +47,28 @@ if (!linksFonts) {
 // ── Normalize a DOM subtree into a plain comparable tree ─────────────────────
 const SKIP_TAGS = new Set(['style', 'script', 'link']);
 
+// React's inline-style serializer joins declarations with a bare `;` (no
+// trailing space); hand-authored HTML in the baseline has `; ` after each
+// declaration. That's cosmetic (scripts read style via computed/DOM APIs,
+// never the raw attribute string) — collapse both to the same form so it
+// doesn't false-fail the structural diff.
+function normalizeStyleAttr(value) {
+  return value
+    .split(';')
+    .map((decl) => decl.trim())
+    .filter((decl) => decl.length > 0)
+    .join(';');
+}
+
 function normalizeElement(el) {
   const attrs = [...el.attributes]
-    .map((a) => [a.name, a.value])
+    // Inline event handlers (onclick, onload, ...) are behavior, not structure —
+    // a converted page attaches the same listener via React onClick at
+    // hydration instead of a string attribute in the served HTML (e.g. home's
+    // #cookie dismiss button), so comparing them here would false-fail on a
+    // correct conversion.
+    .filter((a) => !a.name.startsWith('on'))
+    .map((a) => [a.name, a.name === 'style' ? normalizeStyleAttr(a.value) : a.value])
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return { type: 'element', tag: el.tagName.toLowerCase(), attrs, children: normalizeChildren(el) };
 }
