@@ -1,5 +1,173 @@
 [
   {
+    "sha": "2b31882bf4643615d1452b7216d98c81fdc30ecc",
+    "commit": {
+      "message": "chore(release): 0.129.1 [skip ci]",
+      "author": {
+        "date": "2026-07-23T15:30:53Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "d9f9c7985f45e3fa3f7795bd29f6fbbcad9d18d2",
+    "commit": {
+      "message": "refactor: convert landing how-it-works to tsx and remove raw-html pipeline (PR3/3) (#881)\n\n* refactor: port landing how-it-works page to tsx\n\nHowItWorksBody 1:1 port of the docs-tier page (sidebar tab nav, six\njs-populated view panels, legend) reusing BackLink and SiteFooter; css moved\nverbatim with only the stale wrapper comment reworded; frozen three-file\ninjection order preserved. diff-dom gains colon-space normalization inside\nstyle declarations (react ssr emits prop:value; this page's baseline is the\nonly one written prop: value) with a regression test. The overview lede\navoids an entity in the tag-adjacent text run — next's jsx transform drops\nthe leading space after an inline tag when the same run carries an entity,\nwhich shipped as a joined word until the review's byte-level audit caught it.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: remove landing raw-html content pipeline\n\nRawHtml and readContent had no consumers left after the how-it-works port —\ndeleted along with the emptied src/content tree. The react/no-danger eslint\nexemption shrinks to PageStyle alone and the dead content ignore glob is\ndropped; marketing-base's provenance comment now speaks in past tense.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: adr-0018 addendum for the landing tsx conversion\n\nRecords the raw-html pipeline retirement across the three prs, the curated\nfrozen parity href list, the diff-dom verification and its documented\ninline-word-gap blind spot with the compensating checks, and the fonts\nhoist; re-points adr-0019's body.html reference at HomeBody.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: pin diff-dom url colon edge and drop stale ignore comment\n\nReview-ensemble consensus nits: the ignores comment still described the\ndeleted src/content glob, and normalizeDeclaration's documented data-uri\nfirst-colon behavior had no regression case.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: repoint landing drift guard and secret scan at the tsx sources\n\nThe drift guard read the deleted src/content/how-it-works/body.html\n(pre-push ENOENT) — now reads HowItWorksBody.tsx; extraction regexes scan\nraw text and needed no change (probe line trips all four checks). The\nsecret scan's five body.html entries had been silently no-op behind an\nexistsSync guard since the deletions began — repointed at the eleven real\nauthored tsx/shared sources, and a listed-but-missing file is now a hard\nfailure instead of a silent skip.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T15:27:08Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "adcc337e05e2bbb29d2ecf2d02acbaeca8766ae2",
+    "commit": {
+      "message": "test: de-flake use-extension-bridge cache-seeding assertion (#880)\n\nThe shared makeQueryClient sets gcTime 0, so the entry seeded by the\nmutation's onSuccess has no observers and tanstack query's immediate\neviction timer races the test's waitFor polling (4 documented red CI\nsightings, ~5% repro in isolation). Use a persistentClient (gcTime and\nstaleTime infinity) for that one test, mirroring the use-autopilot\nsuite's established pattern for observer-less cache seeding. 40/40\nconsecutive isolated runs green post-fix; full renderer suite green.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T13:07:39Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e26e95930a74b63b69519fbb47397dc6ae59f3a2",
+    "commit": {
+      "message": "refactor: convert landing home and creature pages to tsx (PR2/3) (#879)\n\n* refactor: port landing home page to tsx\n\nHomeBody + HomeBeats (mechanical size split) + CookieGag client component\nreplacing the sole inline onclick; home.css moves next to the other route\nstyles minus the six shared token declarations. diff-dom.mjs learns two\nnarrow normalizations proven necessary by the port: inline on* handler\nattributes are behavior not structure, and react's style serializer joins\ndeclarations with a bare semicolon. Scoped eslint override for the ported\nbodies' baked-in decorative hex (dom-parity, not themeable chrome).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: port landing creature page to tsx\n\nCreatureBody 1:1 port of the film-player scaffold (SMIL turbulence filters,\nhud, overlays, sitefoot via site-links constants); creature.css moves minus\nthe shared tokens. hidden/inert stay bare JSX booleans — an empty-string\nvalue makes react's static renderer drop them entirely.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: harden diff-dom style and handler normalization\n\nCoderabbit findings on the parity tool: the style-attribute split is now\nquote- and paren-aware so a quoted semicolon cannot mask a real difference,\nand the on* attribute skip consults the dom element as an allowlist so\ncustom attributes like onboarding still diff. Adds a node:test self-test\ncovering both edges plus the boolean-attribute parity contract.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T13:06:54Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d1b3f2598f77ba1dc2989d9a0d65adbbada04854",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-23T11:54:14Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f",
+    "commit": {
+      "message": "fix(export): keep a subject-line-first letterhead-less letter's subject line (#878)\n\nExtends the #876 name-block guard in both docx letter renderer arms with\n!is_subject_line, so a letter opening with a subject/reference line (e.g. a\nGerman Betreff: line) and no letterhead name no longer has that line consumed\nas the candidate name. The later subject-line call sites reuse the computed\nbinding instead of recomputing. Pinning test covers all three letter layouts\nand fails on the unguarded renderer.\n\nFixes #877\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T11:44:23Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d7026d87d4eb874039d7c847a76b9b9841cb062d",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-23T11:37:45Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "a9c0c91d8287dcd5ad71085541caaba18b1895d6",
+    "commit": {
+      "message": "fix(export): do not consume a letter's salutation as the letterhead name (#876)\n\nThe DOCX letter renderers treated the first non-blank line as the letterhead\nname whatever it was: `if !header_done && docx.document.children.is_empty()`.\nA letter that opens straight at the salutation (no letterhead) therefore had its\n\"Dear …\" line consumed as the name and replaced with meta.candidate_name — and\nbecause `in_body` is set only in the salutation arm, the whole body then\nrendered in the muted addressee style.\n\nGuard the name block with `!is_salutation && !is_signoff` (both already computed\njust above) so a salutation-first letter falls through to the salutation arm,\nwhich sets header_done/in_body correctly. The block is duplicated in\ngenerate_cover_letter_docx_classic (Classic) and generate_cover_letter_docx_layout\n(Refined/Banded); both are guarded.\n\nTest opens a letterhead-less letter with a candidate name set and asserts the\n\"Dear Hiring Manager\" line survives, across all three layouts. Fails on main\n(Classic path: the salutation is replaced by the candidate name).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-23T11:15:43Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "57bc6cc08a65e8910753f5fa5537c1356d46a8ce",
+    "commit": {
+      "message": "fix(ai-generations): make the mismatch merge follow a language-bearing save (#874)\n\nmerge_application OR-accumulated mismatch (incoming || existing) while every\nother scalar is pick/latest-wins. mismatch is derived from the resume/jobAd\nlanguage pair, so OR made a true permanent: a corrected regeneration\n(mismatch=false) could never clear a stale language-mismatch warning.\n\nFollow incoming.mismatch only when the incoming save carries the language pair\n(both language fields non-empty) — mirroring how the language fields themselves\nmerge via pick. A content-less answers/interview-only save (blank languages,\ndefault mismatch=false) then keeps the existing verdict instead of clobbering\nit, and a real correction clears it.\n\nRegression test fails on the old code (the stale true is never cleared).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-23T11:13:23Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "395a89557a6ec8ffa50dd5edd83585f0aad636fb",
+    "commit": {
+      "message": "refactor: convert landing privacy and download pages to tsx (PR1/3) (#872)\n\n* refactor: freeze landing parity href list and normalize entities\n\nThe parity gate's link check no longer derives from src/content/*/body.html\n(being deleted as pages convert to tsx) — the 13 expected hrefs are frozen as\na curated literal list like PHRASES. Built output is entity-normalized before\nmatching since react's serializer escapes quotes/apostrophes in text nodes.\nAdds scripts/diff-dom.mjs, a jsdom DOM-equivalence checker used to prove each\nconverted page renders an identical body vs a baseline build.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: hoist landing fonts into root layout\n\nEvery route rendered its own <Fonts /> — the root layout now provides it once\nand the per-page copies are removed. Built head output is unchanged (react\nhoists and dedupes the stylesheet link). privacy/download keep theirs one more\ncommit until their tsx port lands.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor: port landing privacy and download pages to tsx\n\nFirst two raw-html pages converted to pure tsx bodies with an identical\nrendered DOM (verified with scripts/diff-dom.mjs against a main-build\nbaseline — all 9 routes match; public/scripts js binds unchanged).\n\n- shared foundation: marketing-tokens.css (the :root font/paper/ink prefix\n  shared by all marketing pages), marketing-base.css (rules byte-identical\n  between the two paper pages), site-links.ts constants, SiteFooter (current\n  page rendered as plain text) + tests, BackLink\n- privacy: PrivacyBody.tsx + styles/privacy.css replace content/privacy\n- download: DownloadBody.tsx + DownloadCards.tsx (server component replacing\n  the buildDownloadsHtml string seam; .dl-btn positional order preserved for\n  DownloadFreshness) + styles/download.css replace content/download and\n  lib/downloads.ts; DownloadFreshness.test.tsx fixture now renders the real\n  DownloadCards so the test cannot drift from production markup\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: add structural render tests for landing tsx bodies\n\nPre-PR review consensus finding: the DOM-identity constraint (ADR-0018\nprotected skin; vanilla scripts bind by id/class/data-attr) had no ongoing\nenforcement beyond a manual diff-dom run. PrivacyBody.test.tsx asserts the\nsix anchor ids, back-link, and footer wiring; DownloadBody.test.tsx asserts\nthe seven .dl-btn anchors in DownloadFreshness's positional order, the\ndownloads-block wrapper, copy-cmd data-copy values, extension buttons, and\nfooter. Also fixes two comments made stale by the port (downloads.ts\nreference, fonts locator).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: record review calibration entries for landing tsx pr1\n\nTwo verifier-refuted false positives logged so they are not re-raised:\nthe react 19 stylesheet-link-stays-in-body head-ordering trap and\nhypothetical-duplicate nits on short curated literals.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-23T10:32:54Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "ed1dad2d16ac6176797c75be67b228bb87d942cf",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-23T08:35:06Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "869e60b8404ad0eb8f71dcfb828e3320f821a9fe",
+    "commit": {
+      "message": "fix(ui): flush a pending RichTextEditor edit on unmount instead of dropping it (#841)\n\n* fix(ui): flush a pending RichTextEditor edit on unmount instead of dropping it\n\nThe unmount effect is commented \"Flush any pending debounce on unmount so the\nlast edit is never lost\", but its body only cleared the timer — `emit` was\nnever called, so the pending markdown was discarded.\n\n`RichTextEditor` is rendered conditionally (Preview / Edit / Source in\nEditableOutput), so switching view unmounts it. Type, then click Preview within\nONCHANGE_DEBOUNCE_MS (200ms) and the last edit is gone: the parent-owned\n`value` still holds the pre-keystroke markdown, the preview/PDF renders stale\ntext, and re-entering Edit re-parses the stale value. No error, no indication.\nThe same loss happens on any unmount of the surrounding panel inside the\ndebounce window — the ordinary \"type, then immediately click away\" pattern.\n\nCapture the pending document synchronously in `onUpdate` (a ProseMirror node is\nimmutable, so it is just a pointer copy) and serialize THAT in the cleanup,\nrather than reaching into an editor Tiptap may already have destroyed by the\ntime this component's cleanup runs. The timer path clears the ref before\nemitting, so the two paths can never double-emit.\n\n`emitDoc` is `useCallback([])`-stable, so `emit` stays stable and the existing\n`useImperativeHandle(ref, …, [editor, emit])` dependency list is unaffected.\n\n* test(ui): make the unmount-flush suite deterministic\n\nThe new suite was red on CI at the previous commit. Two independent causes,\nboth in the test setup rather than the production change:\n\n- The editor's initial-content load is itself a transaction, so a mounted\n  editor schedules one debounced emit on its own. Under real timers that\n  mount emit could fire before the \"nothing emitted yet\" assertion on a\n  slower runner. Drain and clear it explicitly before the edit under test.\n\n- jsdom implements no layout, so `Range.getClientRects` is undefined and\n  ProseMirror's coordsAtPos -> singleRect throws an unhandled\n  \"target.getClientRects is not a function\" from scrollToSelection on every\n  editor transaction. Stub `Range.getClientRects`/`getBoundingClientRect`\n  in the shared jsdom setup alongside the existing scrollIntoView stub, so\n  the \"still emits exactly once\" assertion is no longer polluted by it.\n\n---------\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-23T08:13:44Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "a7c217b05fb08e08615fac97d4b2091290553879",
+    "commit": {
+      "message": "fix(scraper): delegate board location filtering to the central location_filter (#835)\n\n* fix(scraper): match a 'City, Country' location label segment-wise\n\nThe location box normally holds the geocode picker's \"<city>, <country>\"\nlabel — `commands::geocoding` builds it exactly so \"the UI only ever shows\n'City, Country'\", and both entry points (jobs ScrapeFilters, autopilot\nStepTarget) write `suggestion.display` straight into `location`.\n\nThe two boards that filter location client-side required that WHOLE label to\nappear as one contiguous substring of the board's own location text. No board\nwrites it that way:\n\n  The Muse        \"New York, NY\"            vs request \"New York, United States\"\n  GermanTechJobs  \"Karl-Marx-Allee 1, Berlin\" / \"Munich, Bayern\"\n                                            vs request \"Berlin, Germany\"\n\nso the filter dropped every row and the board reported 0 results for any\npicked city. Typing free text without picking a suggestion still worked,\nwhich is why it survives manual testing.\n\nMatch segment-wise instead: any non-empty comma-separated part of the request\nappearing in the haystack is enough. Conservative — it errs toward keeping,\nmirroring the engine's own `location_filter`, which already tokenizes the\nrequest and keeps on any token hit for this exact reason.\n\n- adds `common::location_matches`, shared by both call sites\n- extracts `germantechjobs::matches_gtj_filters` from `search()`'s `retain`\n  so tests drive the real predicate instead of a copy that could diverge\n  (same reasoning as The Muse's `apply_filters`)\n\nSingle-segment requests behave exactly as before.\n\n* fix(scraper): delegate board location filtering to the central location_filter\n\nReworks the fix per review. The first version added a board-local segment-wise\nmatcher (`location_matches`); this removes board-local LOCATION filtering from\nthe three `supports_location() == false` boards entirely and lets the engine's\ncentral `location_filter` be the single authority — the reviewer's preferred\ndirection, and the one the issue points at.\n\nWhy this is correct and strictly better than a second local matcher:\n\n- The Muse, Comeet and GermanTechJobs are all non-location boards, so the engine\n  already runs `location_filter` on their output both as a live gate\n  (`KeepItemByBoardFn`) and as a post-hoc safety net. Board-local location\n  filtering was redundant with it.\n- The central filter is diaeresis/exonym-aware (München/Munich, Köln/Cologne via\n  the curated table + DIN-5007-2 folding) and conservative (keeps remote /\n  empty / unknown, and a country-code-only request is inert). A raw\n  case-insensitive board-local matcher had none of that and, running BEFORE the\n  central filter, produced false drops the central filter is designed to rescue.\n- The original 0-results bug is still fixed: `location_spec()` feeds the picker's\n  \"<city>, <country>\" label into the central filter, which TOKENISES it (it does\n  not require the whole label as one substring), so a geocode-picked city keeps\n  its rows via the central filter alone.\n\nChanges:\n- common.rs: `matches_filters` is now keyword-only (drops the `location` param);\n  `location_matches` is deleted.\n- germantechjobs: `matches_gtj_filters` is keyword-only; the unused `loc` local\n  is removed.\n- The Muse / Comeet call sites pass query only.\n- Tests updated across common/themuse/germantechjobs: the board-local location\n  assertions are replaced with ones pinning that these boards no longer drop on\n  location (delegated to the central filter, whose own exonym/diacritic behaviour\n  is unit-tested in engine::location_filter).\n\nKnown limitation (unchanged by this PR, now consistent across all non-location\nboards): because `location_spec()` stores the whole label in `city`, the central\nfilter also tokenises the country segment, so \"Munich, Germany\" keeps a\n\"Frankfurt, Germany\" row. That is a central-filter property shared by every\nnon-location board, not something this PR introduces; tightening it is a separate\nchange to `location_filter`/`location_spec`.\n\n---------\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-23T08:03:53Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "44cdf5a26868d930595aa9d83360597890bb8c98",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-23T06:10:02Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "b5285663be81df654f68b9383a1b3623fa2556a9",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1029,174 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "be4477ccab00aea9718984eb9606bdbb8f09839b",
-    "commit": {
-      "message": "refactor: port architecture-map passthrough to typed-data next route (#757)\n\n* refactor: port architecture-map passthrough to typed-data next route with pan/zoom engine\n\n* refactor: scope map a11y announcements to deliberate actions and fix scrapers count claim\n\n* refactor: harden landing drift guard and add map interaction tests per coderabbit review",
-      "author": {
-        "date": "2026-07-21T05:44:13Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b5a71fe1516e23c1275eb2f559b840f1e4a59ade",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-21T05:15:11Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "a0230890dfbfe85f8444fe1a9554cc734ea19d59",
-    "commit": {
-      "message": "fix(jobs): post-756 review findings and ai review sticky restyle (#758)\n\n* docs: broaden adr-029 dash-tail risk note and log review fast-follows\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): dedupe split request keys before the count cap\n\nclamp_split_request trimmed/blank-filtered/byte-capped other_keys but did not\nde-duplicate before .take(MAX_OTHER_KEYS), so a repeated key wasted one of the\n32 slots (the insert is idempotent anyway). De-dup first-seen order preserved\nvia a HashSet seen-check before the cap; self-pairs equal to the clamped\nmember_key are already dropped. Extended the clamp tests with a 33-entry,\n2-duplicate case → 31 distinct pairs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard agency list edits pre-load and cap the zod schema\n\nPost-#756 AI-review-gate findings:\n\n- AgencyCompaniesPreferences add()/remove() early-return when useJobPreferences\n  is still undefined (pre-load) — otherwise a quick add builds the next list from\n  an empty [] and replaces the user's saved agency list with just that one entry\n  (single-column setter, but still column data loss). Mirrors the sibling-panel\n  guards in 92e5302b, with a regression test asserting no mutate fires pre-load.\n- JobPreferencesSchema.extraAgencyCompanies gains .max(500) to mirror the Rust\n  MAX_EXTRA_AGENCY_COMPANIES cap (same pattern as otherKeys' .max(32)); IPC\n  codegen unchanged (gen:ipc --check green).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): pin split-request dedup collapse and full cap capacity\n\nThe Stop review-gate asked for two explicit cases on clamp_split_request:\n- duplicate other_keys collapse to ONE entry, first-seen order preserved;\n- de-dup runs BEFORE the count cap, so repeats never steal slots — >32 distinct\n  keys with one key hammered still yields the FULL 32 distinct keys, not fewer.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: restyle ai review sticky comment into severity sections\n\nReplace the cramped one-table sticky body with a claude-review-style\nlayout — bold verdict line, expanded Critical/High/Medium sections with\nper-finding anchors, and a collapsed Low details block. Presentation\nonly: validateFindings/blockingFindings/exit-code logic (ADR-0008) is\nunchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T05:04:28Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d4354552e572d4d862781f654abea1f36504fe61",
-    "commit": {
-      "message": "feat(scraping): cluster cross-board duplicate jobs with source chips and split (adr-029) (#756)\n\n* feat(scraping): cluster cross-board duplicates with pair tombstones\n\nRecompute-at-ingest cross-board job clustering per ADR-029. One pure module\n(scraping/cluster) blocks by normalized company + title first-token, then joins\nby cosine (cached same-space vectors) or trigram-Jaccard of normalized titles;\na user \"not a duplicate\" pair tombstone against any member vetoes the join.\n\nSurfaces:\n- scraping/cluster/{normalize,mod}.rs: fold/company/title normalization, agency\n  flag, trigram-Jaccard, assign_clusters, new_cluster_count (+ heavy unit tests).\n- vector.rs (L0): hoisted cosine, re-exported from commands::ai_provider so the\n  L1 cluster module reuses it without an upward import (arch R7).\n- dedup/mod.rs: DedupStore on dedup.db (pair tombstones, DataStore + Resettable).\n- commands/scrape.rs::recluster_postings_cache wired after both scrape paths;\n  postings::apply_cluster_annotations patches cache items by id.\n- autopilot: FoundJob cluster fields; record_run clusters the merged list and\n  returns the all-new-cluster count; cluster-aware minMatchScore retention.\n- IPC: dedup_mark_not_duplicate (5-file flow, gen:ipc) + JobPreferences\n  extraAgencyCompanies single-column setter; tauri-client + service hooks.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): clamp dedup split request at the command boundary\n\n- dedup_mark_not_duplicate: server-side clamp (CWE-770) mirroring\n  clamp_agency_list — cap other_keys at 32, byte-clamp member_key + each\n  other_key (~200 B), drop blank/self keys; no-op when nothing usable. Never\n  trusts the renderer's Zod bounds alone. Colocated tests cover the caps.\n- scraping/cluster: normalize the agency extras once per assign_clusters call\n  (is_agency_with) instead of re-normalizing the full list per posting.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat(jobs): render cross-board clusters with source chips and agency filter\n\nRenderer side of ADR-029 (Feature A). The backend already annotates postings\nand autopilot found-jobs with clusterId/clusterCanonical/clusterMembers/isAgency;\nthis wires the UI to group, echo, and split them.\n\n- Posting type gains the four optional cluster fields (matching the backend JSON).\n- Shared ClusterSourceChips + AgencyChip in components/job (both features import\n  them without crossing feature dirs); chips open member urls via useOpenExternal.\n- Jobs list hides clusterCanonical===false rows (unannotated always shown) and\n  adds a hideAgency session toggle next to the sort control.\n- PostingRow / PostingListItem / JobDetailPane render source chips + agency chip;\n  JobDetailPane adds an \"All sources\" section with a per-member \"Not a duplicate\"\n  split calling useMarkNotDuplicate.\n- AutopilotCard renders one row per cluster (counts track visible clusters) plus\n  chips + agency + a split action scoped by autopilotId.\n- Settings: AgencyCompaniesPreferences edits extraAgencyCompanies via the\n  single-column setter.\n- en/de i18n for cluster/agency/settings keys, TEST_IDS, and colocated tests.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): add cluster acceptance fixtures for cross-board dedup\n\nClose the ADR-029 acceptance gap: the same real-world job, parsed through two\nreal board parsers with two different wire shapes (germantechjobs XML feed +\nAdzuna JSON), must collapse into one cluster with both source refs and the\ncanonical-preference winner. Fixture-driven, no network.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): keep cluster chips non-interactive inside the split-view listbox\n\nfrontend-reviewer HIGH: focusable chip Buttons inside PostingListItem — a\nrole=\"option\" row with tabIndex=-1 in the active-descendant listbox — broke the\nAPG pattern (option must have no focusable descendants), exploded tab stops, and\nrisked focus loss when the virtualizer unmounts a focused chip.\n\n- ClusterSourceChips gains `interactive` (default true); when false it renders\n  pure presentational badges (no Button, no click) so the option row stays a\n  single tab stop. PostingListItem passes interactive={false}; PostingRow and\n  JobDetailPane keep the interactive chips (the \"open other source\" action lives\n  in the detail pane's \"All sources\" section).\n- PostingListItem.test now renders the REAL chips and asserts the option row has\n  zero focusable descendants + a chip click selects once (no double action).\n- Harden SourceBadge: guard the PLATFORM_CONFIG lookup with Object.hasOwn so a\n  hostile source (__proto__/constructor) falls through to the generic fallback\n  instead of resolving an Object.prototype member and crashing on config.icon.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(jobs): cover autopilot split action and dedup invalidation paths\n\ntesting-reviewer follow-ups (tests only):\n\n- AutopilotCard: assert the cluster split fires markNotDuplicate with\n  { memberKey, otherKeys, autopilotId } — the autopilotId is load-bearing (only\n  this call site sends it, ADR-029 §h autopilot-record recompute). Forward\n  data-testid through the test's Button stub so the split button is queryable.\n- use-dedup: assert the split invalidates BOTH keys.postings.all and\n  keys.autopilot.all on success (a dropped second invalidate would leave the\n  AutopilotCard rows stale, undetected).\n- ClusterSourceChips: a member with no board renders the hostOf(url) fallback\n  label.\n- Drop the unused `export` on the file-private ClusterMember interface (cleanup\n  audit; every consumer declares its own inline shape).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(scraping): close cluster coverage gaps and share the posting cluster-input seam\n\nCoverage (testing-reviewer):\n- dedup command: multi-byte UTF-8 clamp test (€×150) with is_char_boundary\n  assertion, guarding the char-boundary walk-back in clamp_bytes.\n- DedupStore::import: malformed-row bundle → Err AND pre-existing rows survive\n  (locks deserialize-all-before-mutate).\n- cluster_aware_retain: mixed cluster [below-bar scored + unscored] → whole\n  cluster dropped (ADR-029 §g).\n- boundary pins: cosine at exactly 0.92 and trigram-Jaccard at exactly 0.90\n  (54/60) both JOIN via the production `similar` `>=`, so a `>=`→`>` slip fails;\n  plus a MAX_EXTRA_AGENCY_COMPANIES list-length cap test.\n\nRefactor (folded in):\n- Extract cluster::posting_cluster_input — the single JobPosting→ClusterInput\n  seam; recluster_postings_cache now deserializes each cache item to JobPosting\n  and calls it, and the aggregator acceptance test uses it too (no third\n  hand-rolled mapping). Removed the now-unused str_field helper.\n- Cleanup: drop the never-read ClusterAssignment.key field; delete the is_agency\n  convenience wrapper (only test callers) — tests call is_agency_with directly.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: record cross-board clustering (adr-029) in the knowledge base\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: fix dedup store pointer and cluster-aware minmatchscore row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): surface dedup split failures instead of a false success toast\n\n/review HIGH: dedup_mark_not_duplicate RESOLVES json!({\"error\": ...}) on\nfailure — Tauri never rejects a returned Value — so useMarkNotDuplicate never\nthrew and both split call sites showed the \"Postings separated\" success toast on\na silent failure.\n\n- Widen the honest union end to end: DedupContract.markNotDuplicate and the\n  tauri-client namespace now return { success: true } | { error: string }\n  (mirrors AiContract.setActiveProvider).\n- useMarkNotDuplicate narrows the resolved payload and throws on 'error' in\n  result before the onSuccess invalidations run.\n- JobDetailPane + AutopilotCard split call sites add onError → notify.error with\n  a new jobs.cluster.splitFailed key (en + de; parity test enforces).\n- Tests: use-dedup gains a case where the mock RESOLVES { error } and asserts\n  the mutation rejects + does not invalidate; JobDetailPane asserts the error\n  toast (not the success toast) fires on failure.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: record full-row set() false-positive precedent in review config\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* style: apply rustfmt to clustering sources\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: run export-render benchmark on main only with dispatch opt-in\n\npull_request events no longer trigger the 16-minute cargo bench; the\npush-to-main baseline keeps the rust changes gate and workflow_dispatch\non any branch remains the per-pr opt-in.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: point scraping-domain at cluster constants instead of restating values\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(scraping): log tombstone read failures instead of silently re-merging\n\nDedupStore::all_pairs swallowed a transient SQLite prepare/query error via\n`.ok()`, returning an empty set — which silently re-merges previously-split\nclusters on the next ingest with zero trace. Keep the degrade-to-no-splits\npolicy but `log::warn!` the prepare + query error branches so the failure is\nobservable (matches the crate's `[dedup]`/store-open warn style).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): guard prefs saves pre-load, host fallback label, distinct-count denominator\n\nPR #756 review findings (renderer):\n\n- TechStackPreferences + JobLocationPreferences: early-return each handler when\n  useJobPreferences is still undefined (pre-load). The full-row\n  useSetJobPreferences write spread `{...undefined, field}`, NULLing every other\n  column — now including extraAgencyCompanies. One guard test per component.\n- JobDetailPane \"All sources\": the no-board fallback label rendered the raw url\n  while ClusterSourceChips used a shortened host. Hoisted hostOf to a shared\n  components/job/host-of util; both surfaces now render the same fallback.\n- JobsPage count denominator now counts distinct jobs (clusterCanonical !==\n  false) instead of raw postings, so the text filter + hideAgency reduce the\n  numerator against a distinct-jobs base.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T04:45:16Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "cbce701309ea82fafa840700be99eb3da1a6cb57",
-    "commit": {
-      "message": "chore: bump the minor-and-patch group across 1 directory with 24 updates (#753)\n\nBumps the minor-and-patch group with 24 updates in the / directory:\n\n| Package | From | To |\n| --- | --- | --- |\n| [eslint-plugin-storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/lib/eslint-plugin) | `10.5.0` | `10.5.2` |\n| [knip](https://github.com/webpro-nl/knip/tree/HEAD/packages/knip) | `6.26.0` | `6.27.0` |\n| [lint-staged](https://github.com/lint-staged/lint-staged) | `17.0.8` | `17.1.0` |\n| [semantic-release](https://github.com/semantic-release/semantic-release) | `25.0.7` | `25.0.8` |\n| [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint) | `8.63.0` | `8.64.0` |\n| [@tanstack/react-router](https://github.com/TanStack/router/tree/HEAD/packages/react-router) | `1.170.17` | `1.170.18` |\n| [@tauri-apps/plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | `2.7.1` | `2.7.2` |\n| [@tauri-apps/plugin-positioner](https://github.com/tauri-apps/plugins-workspace) | `2.3.2` | `2.3.3` |\n| [@tauri-apps/plugin-store](https://github.com/tauri-apps/plugins-workspace) | `2.4.3` | `2.4.4` |\n| [lucide-react](https://github.com/lucide-icons/lucide/tree/HEAD/packages/lucide-react) | `1.24.0` | `1.25.0` |\n| [react-hook-form](https://github.com/react-hook-form/react-hook-form) | `7.81.0` | `7.82.0` |\n| [@tailwindcss/vite](https://github.com/tailwindlabs/tailwindcss/tree/HEAD/packages/@tailwindcss-vite) | `4.3.2` | `4.3.3` |\n| [@tanstack/router-vite-plugin](https://github.com/TanStack/router/tree/HEAD/packages/router-vite-plugin) | `1.167.19` | `1.167.22` |\n| [tailwindcss](https://github.com/tailwindlabs/tailwindcss/tree/HEAD/packages/tailwindcss) | `4.3.2` | `4.3.3` |\n| [vite](https://github.com/vitejs/vite/tree/HEAD/packages/vite) | `8.1.4` | `8.1.5` |\n| [react-i18next](https://github.com/i18next/react-i18next) | `17.0.9` | `17.0.10` |\n| [i18next-cli](https://github.com/i18next/i18next-cli) | `1.65.0` | `1.66.2` |\n| [@tiptap/pm](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/pm) | `3.27.4` | `3.28.0` |\n| [@tiptap/react](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/react) | `3.27.4` | `3.28.0` |\n| [@tiptap/starter-kit](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/starter-kit) | `3.27.4` | `3.28.0` |\n| [@storybook/addon-vitest](https://github.com/storybookjs/storybook/tree/HEAD/code/addons/vitest) | `10.5.0` | `10.5.2` |\n| [@storybook/react](https://github.com/storybookjs/storybook/tree/HEAD/code/renderers/react) | `10.5.0` | `10.5.2` |\n| [@storybook/react-vite](https://github.com/storybookjs/storybook/tree/HEAD/code/frameworks/react-vite) | `10.5.0` | `10.5.2` |\n| [storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/core) | `10.5.0` | `10.5.2` |\n\n\n\nUpdates `eslint-plugin-storybook` from 10.5.0 to 10.5.2\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.2/code/lib/eslint-plugin)\n\nUpdates `knip` from 6.26.0 to 6.27.0\n- [Release notes](https://github.com/webpro-nl/knip/releases)\n- [Commits](https://github.com/webpro-nl/knip/commits/knip@6.27.0/packages/knip)\n\nUpdates `lint-staged` from 17.0.8 to 17.1.0\n- [Release notes](https://github.com/lint-staged/lint-staged/releases)\n- [Changelog](https://github.com/lint-staged/lint-staged/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/lint-staged/lint-staged/compare/v17.0.8...v17.1.0)\n\nUpdates `semantic-release` from 25.0.7 to 25.0.8\n- [Release notes](https://github.com/semantic-release/semantic-release/releases)\n- [Commits](https://github.com/semantic-release/semantic-release/compare/v25.0.7...v25.0.8)\n\nUpdates `typescript-eslint` from 8.63.0 to 8.64.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.64.0/packages/typescript-eslint)\n\nUpdates `@tanstack/react-router` from 1.170.17 to 1.170.18\n- [Release notes](https://github.com/TanStack/router/releases)\n- [Changelog](https://github.com/TanStack/router/blob/main/packages/react-router/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/router/commits/@tanstack/react-router@1.170.18/packages/react-router)\n\nUpdates `@tauri-apps/plugin-dialog` from 2.7.1 to 2.7.2\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/log-v2.7.1...dialog-v2.7.2)\n\nUpdates `@tauri-apps/plugin-positioner` from 2.3.2 to 2.3.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/os-v2.3.2...nfc-v2.3.3)\n\nUpdates `@tauri-apps/plugin-store` from 2.4.3 to 2.4.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.3...fs-v2.4.4)\n\nUpdates `lucide-react` from 1.24.0 to 1.25.0\n- [Release notes](https://github.com/lucide-icons/lucide/releases)\n- [Commits](https://github.com/lucide-icons/lucide/commits/1.25.0/packages/lucide-react)\n\nUpdates `react-hook-form` from 7.81.0 to 7.82.0\n- [Release notes](https://github.com/react-hook-form/react-hook-form/releases)\n- [Changelog](https://github.com/react-hook-form/react-hook-form/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/react-hook-form/react-hook-form/compare/v7.81.0...v7.82.0)\n\nUpdates `@tailwindcss/vite` from 4.3.2 to 4.3.3\n- [Release notes](https://github.com/tailwindlabs/tailwindcss/releases)\n- [Changelog](https://github.com/tailwindlabs/tailwindcss/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/tailwindlabs/tailwindcss/commits/v4.3.3/packages/@tailwindcss-vite)\n\nUpdates `@tanstack/router-vite-plugin` from 1.167.19 to 1.167.22\n- [Release notes](https://github.com/TanStack/router/releases)\n- [Changelog](https://github.com/TanStack/router/blob/main/packages/router-vite-plugin/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/router/commits/@tanstack/router-vite-plugin@1.167.22/packages/router-vite-plugin)\n\nUpdates `tailwindcss` from 4.3.2 to 4.3.3\n- [Release notes](https://github.com/tailwindlabs/tailwindcss/releases)\n- [Changelog](https://github.com/tailwindlabs/tailwindcss/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/tailwindlabs/tailwindcss/commits/v4.3.3/packages/tailwindcss)\n\nUpdates `vite` from 8.1.4 to 8.1.5\n- [Release notes](https://github.com/vitejs/vite/releases)\n- [Changelog](https://github.com/vitejs/vite/blob/main/packages/vite/CHANGELOG.md)\n- [Commits](https://github.com/vitejs/vite/commits/v8.1.5/packages/vite)\n\nUpdates `react-i18next` from 17.0.9 to 17.0.10\n- [Changelog](https://github.com/i18next/react-i18next/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/i18next/react-i18next/compare/v17.0.9...v17.0.10)\n\nUpdates `i18next-cli` from 1.65.0 to 1.66.2\n- [Changelog](https://github.com/i18next/i18next-cli/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/i18next/i18next-cli/compare/v1.65.0...v1.66.2)\n\nUpdates `@tiptap/pm` from 3.27.4 to 3.28.0\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/pm/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.28.0/packages/pm)\n\nUpdates `@tiptap/react` from 3.27.4 to 3.28.0\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/react/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.28.0/packages/react)\n\nUpdates `@tiptap/starter-kit` from 3.27.4 to 3.28.0\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/starter-kit/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.28.0/packages/starter-kit)\n\nUpdates `@storybook/addon-vitest` from 10.5.0 to 10.5.2\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.2/code/addons/vitest)\n\nUpdates `@storybook/react` from 10.5.0 to 10.5.2\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.2/code/renderers/react)\n\nUpdates `@storybook/react-vite` from 10.5.0 to 10.5.2\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.2/code/frameworks/react-vite)\n\nUpdates `storybook` from 10.5.0 to 10.5.2\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.2/code/core)\n\n---\nupdated-dependencies:\n- dependency-name: \"@storybook/addon-vitest\"\n  dependency-version: 10.5.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react\"\n  dependency-version: 10.5.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react-vite\"\n  dependency-version: 10.5.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tailwindcss/vite\"\n  dependency-version: 4.3.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-router\"\n  dependency-version: 1.170.18\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/router-vite-plugin\"\n  dependency-version: 1.167.22\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tauri-apps/plugin-dialog\"\n  dependency-version: 2.7.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tauri-apps/plugin-positioner\"\n  dependency-version: 2.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tauri-apps/plugin-store\"\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/pm\"\n  dependency-version: 3.28.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/react\"\n  dependency-version: 3.28.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/starter-kit\"\n  dependency-version: 3.28.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: eslint-plugin-storybook\n  dependency-version: 10.5.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: i18next-cli\n  dependency-version: 1.66.2\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: knip\n  dependency-version: 6.27.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: lint-staged\n  dependency-version: 17.1.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: lucide-react\n  dependency-version: 1.25.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: react-hook-form\n  dependency-version: 7.82.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: react-i18next\n  dependency-version: 17.0.10\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: semantic-release\n  dependency-version: 25.0.8\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: storybook\n  dependency-version: 10.5.2\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: tailwindcss\n  dependency-version: 4.3.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: typescript-eslint\n  dependency-version: 8.64.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: vite\n  dependency-version: 8.1.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T03:04:50Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a5f14e889f4f054acda22592288c6fdeda87542b",
-    "commit": {
-      "message": "chore: relocate og template beside its generator and close out the landing chain docs (#755)\n\n* chore: relocate og template beside its generator and refresh landing chain status\n\nMoves scripts' social-card.html render source out of apps/landing (it was never\nserved); repoints the generator, secret-scan list, and prettierignore; cleanup\nsweep of the landing app found nothing dead. Docs mark PR1-PR3 shipped.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: mark landing chain pr1-pr3 shipped in status and adr\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: restore adr addendum lost to a stale-tree copy; mark chain pr1-pr3 shipped\n\nThe previous docs commit copied file versions from a checkout that was two\ncommits behind origin/main, wiping the pr2 adr addendum (origin invariant,\nnext 16 constraint). This restores the full current docs and re-applies the\nintended chain-status edits plus the stale google-fonts row fix.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: self-host social-card template fonts from public fonts dir\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T02:47:26Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "fcc0bd67dbbd30b0f4f6b50bc0560b0be516894e",
-    "commit": {
-      "message": "chore: bump eslint-plugin-simple-import-sort from 13.0.0 to 14.0.0 (#754)\n\nBumps [eslint-plugin-simple-import-sort](https://github.com/lydell/eslint-plugin-simple-import-sort) from 13.0.0 to 14.0.0.\n- [Changelog](https://github.com/lydell/eslint-plugin-simple-import-sort/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/lydell/eslint-plugin-simple-import-sort/compare/v13.0.0...v14.0.0)\n\n---\nupdated-dependencies:\n- dependency-name: eslint-plugin-simple-import-sort\n  dependency-version: 14.0.0\n  dependency-type: direct:development\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:16:38Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "deaa8f85ac9e9a123f95be0a3d6ffb098e6da64c",
-    "commit": {
-      "message": "chore: bump tauri-plugin-log in /apps/desktop/src-tauri (#752)\n\nBumps [tauri-plugin-log](https://github.com/tauri-apps/plugins-workspace) from 2.8.0 to 2.9.0.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/log-v2.8.0...log-v2.9.0)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-log\n  dependency-version: 2.9.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:16:23Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "c81cb0ff9164ffcd9d0b9f44d961aa7ff6422d2c",
-    "commit": {
-      "message": "chore: bump tokio from 1.52.3 to 1.53.0 in /apps/desktop/src-tauri (#751)\n\nBumps [tokio](https://github.com/tokio-rs/tokio) from 1.52.3 to 1.53.0.\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.52.3...tokio-1.53.0)\n\n---\nupdated-dependencies:\n- dependency-name: tokio\n  dependency-version: 1.53.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:16:11Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "11fb482ddeed3782b2bacf5ca7177633ffda7baa",
-    "commit": {
-      "message": "chore: bump tauri-plugin-dialog in /apps/desktop/src-tauri (#750)\n\nBumps [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) from 2.7.1 to 2.7.2.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/log-v2.7.1...dialog-v2.7.2)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-dialog\n  dependency-version: 2.7.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:15:54Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d31e1fc214f99ef7ff63dd4796fa9548c3788a25",
-    "commit": {
-      "message": "chore: bump async-trait from 0.1.89 to 0.1.91 in /apps/desktop/src-tauri (#749)\n\nBumps [async-trait](https://github.com/dtolnay/async-trait) from 0.1.89 to 0.1.91.\n- [Release notes](https://github.com/dtolnay/async-trait/releases)\n- [Commits](https://github.com/dtolnay/async-trait/compare/0.1.89...0.1.91)\n\n---\nupdated-dependencies:\n- dependency-name: async-trait\n  dependency-version: 0.1.91\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:14:31Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ecca914c8c8fcf0ee0b95272aea07cdf50cdd33a",
-    "commit": {
-      "message": "chore: bump actions/checkout from 7.0.0 to 7.0.1 (#748)\n\nBumps [actions/checkout](https://github.com/actions/checkout) from 7.0.0 to 7.0.1.\n- [Release notes](https://github.com/actions/checkout/releases)\n- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/actions/checkout/compare/9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0...3d3c42e5aac5ba805825da76410c181273ba90b1)\n\n---\nupdated-dependencies:\n- dependency-name: actions/checkout\n  dependency-version: 7.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:14:17Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "3d0fb3280fe668e5857530f992f3b07ff9122da5",
-    "commit": {
-      "message": "chore: bump futures from 0.3.32 to 0.3.33 in /apps/desktop/src-tauri (#747)\n\nBumps [futures](https://github.com/rust-lang/futures-rs) from 0.3.32 to 0.3.33.\n- [Release notes](https://github.com/rust-lang/futures-rs/releases)\n- [Changelog](https://github.com/rust-lang/futures-rs/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/futures-rs/compare/0.3.32...0.3.33)\n\n---\nupdated-dependencies:\n- dependency-name: futures\n  dependency-version: 0.3.33\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:14:03Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "fda23d78acef2e69bb4e4f17928d631b357de03d",
-    "commit": {
-      "message": "chore: bump taiki-e/install-action from 2.83.2 to 2.84.0 (#746)\n\nBumps [taiki-e/install-action](https://github.com/taiki-e/install-action) from 2.83.2 to 2.84.0.\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/43aecc8d72668fbcfe75c31400bc4f890f1c5853...a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.84.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:13:50Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
