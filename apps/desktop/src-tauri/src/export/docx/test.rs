@@ -397,3 +397,46 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
     assert_ne!(classic, banded, "Classic and Banded DOCX bytes must differ");
     assert_ne!(refined, banded, "Refined and Banded DOCX bytes must differ");
 }
+
+/// A cover letter that opens directly at the salutation (no letterhead name/
+/// contact lines) must keep its "Dear …" line and render the body normally.
+///
+/// The name block used to fire on the FIRST non-blank line whatever it was, so a
+/// letterhead-less letter had its salutation consumed as the name (replaced with
+/// `meta.candidate_name`) and, because `in_body` is set only in the salutation
+/// arm, the whole body then rendered in the muted addressee style. Covers BOTH
+/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded).
+#[test]
+fn letterhead_less_letter_keeps_its_salutation_and_body() {
+    for layout in [
+        LetterLayout::Classic,
+        LetterLayout::Refined,
+        LetterLayout::Banded,
+    ] {
+        let request = ExportRequest {
+            text: "Dear Hiring Manager,\n\nI am writing to apply for the role.\n\nSincerely,\nJane Smith".to_string(),
+            format: ExportFormat::Docx,
+            document_type: DocumentType::CoverLetter,
+            template_id: TemplateId::Classic,
+            // `candidate_name` is what the buggy name block substituted IN PLACE
+            // of the salutation, so its presence makes the drop observable.
+            meta: Some(GenerationMeta {
+                candidate_name: Some("Jane Smith".to_string()),
+                job_title: None,
+                company_name: None,
+                target_language: None,
+            }),
+            ats_mode: false,
+            locale: None,
+            contact: None,
+            accent: None,
+            letter_layout: layout,
+        };
+        let bytes = generate_docx(&request).expect("docx");
+        let xml = document_xml(&bytes);
+        assert!(
+            xml.contains("Dear Hiring Manager"),
+            "{layout:?}: the salutation was consumed as the letterhead name"
+        );
+    }
+}
