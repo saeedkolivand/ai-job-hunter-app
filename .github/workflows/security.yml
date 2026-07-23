@@ -61,13 +61,13 @@ jobs:
           fetch-depth: 1
 
       - name: 🧰 Initialize CodeQL
-        uses: github/codeql-action/init@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           languages: ${{ matrix.language }}
           build-mode: none
 
       - name: 🔬 Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           category: '/language:${{ matrix.language }}'
 
@@ -92,7 +92,7 @@ jobs:
           fetch-depth: 1
 
       - name: 🐍 Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
       - name: 🔬 Run Semgrep
         run: |
@@ -104,7 +104,7 @@ jobs:
 
       - name: 📤 Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -140,7 +140,7 @@ jobs:
 
       - name: 📤 Upload SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: results.sarif
           category: scorecard
@@ -203,7 +203,7 @@ jobs:
         uses: ./.github/actions/setup-rust
 
       - name: 📥 Install cargo-audit
-        uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9 # v2
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
         with:
           tool: cargo-audit
 

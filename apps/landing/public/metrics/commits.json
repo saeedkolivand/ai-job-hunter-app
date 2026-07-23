@@ -1,5 +1,377 @@
 [
   {
+    "sha": "b5285663be81df654f68b9383a1b3623fa2556a9",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-22T21:34:36Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "e0eebbcbfceb446412760147d592ca442a0b0063",
+    "commit": {
+      "message": "chore: bump uuid from 1.23.5 to 1.24.0 in /apps/desktop/src-tauri (#871)\n\nBumps [uuid](https://github.com/uuid-rs/uuid) from 1.23.5 to 1.24.0.\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/v1.23.5...v1.24.0)\n\n---\nupdated-dependencies:\n- dependency-name: uuid\n  dependency-version: 1.24.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:08:06Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "5310d30a40e7c709662c1da2ad543ae453e1b7d1",
+    "commit": {
+      "message": "chore: bump apple-native-keyring-store in /apps/desktop/src-tauri (#870)\n\nBumps [apple-native-keyring-store](https://github.com/open-source-cooperative/apple-native-keyring-store) from 1.0.0 to 1.0.1.\n- [Release notes](https://github.com/open-source-cooperative/apple-native-keyring-store/releases)\n- [Commits](https://github.com/open-source-cooperative/apple-native-keyring-store/compare/v1.0.0...v1.0.1)\n\n---\nupdated-dependencies:\n- dependency-name: apple-native-keyring-store\n  dependency-version: 1.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:07:46Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "496942e078be7071a39d0f30302f677dc30cfd1c",
+    "commit": {
+      "message": "chore: bump anyhow from 1.0.103 to 1.0.104 in /apps/desktop/src-tauri (#869)\n\nBumps [anyhow](https://github.com/dtolnay/anyhow) from 1.0.103 to 1.0.104.\n- [Release notes](https://github.com/dtolnay/anyhow/releases)\n- [Commits](https://github.com/dtolnay/anyhow/compare/1.0.103...1.0.104)\n\n---\nupdated-dependencies:\n- dependency-name: anyhow\n  dependency-version: 1.0.104\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:07:22Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "e33b97d42e0c3bea3ed6ecbdaa6cf4eb94415676",
+    "commit": {
+      "message": "chore: bump serde_json in /apps/desktop/src-tauri (#868)\n\nBumps [serde_json](https://github.com/serde-rs/json) from 1.0.150 to 1.0.151.\n- [Release notes](https://github.com/serde-rs/json/releases)\n- [Commits](https://github.com/serde-rs/json/compare/v1.0.150...v1.0.151)\n\n---\nupdated-dependencies:\n- dependency-name: serde_json\n  dependency-version: 1.0.151\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:06:59Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "f4c149f666005dfd91934c4d912eff747e323da9",
+    "commit": {
+      "message": "chore: bump regex from 1.13.0 to 1.13.1 in /apps/desktop/src-tauri (#867)\n\nBumps [regex](https://github.com/rust-lang/regex) from 1.13.0 to 1.13.1.\n- [Release notes](https://github.com/rust-lang/regex/releases)\n- [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/regex/compare/1.13.0...1.13.1)\n\n---\nupdated-dependencies:\n- dependency-name: regex\n  dependency-version: 1.13.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:06:46Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "ed962df488e2dea9cbcd14051750fad12e358ace",
+    "commit": {
+      "message": "chore: bump @testing-library/jest-dom from 6.9.1 to 7.0.0 (#864)\n\nBumps [@testing-library/jest-dom](https://github.com/testing-library/jest-dom) from 6.9.1 to 7.0.0.\n- [Release notes](https://github.com/testing-library/jest-dom/releases)\n- [Changelog](https://github.com/testing-library/jest-dom/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/testing-library/jest-dom/compare/v6.9.1...v7.0.0)\n\n---\nupdated-dependencies:\n- dependency-name: \"@testing-library/jest-dom\"\n  dependency-version: 7.0.0\n  dependency-type: direct:development\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T21:06:29Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "9867ba2653cc8b1b0f2a648096a347213107efca",
+    "commit": {
+      "message": "ci: group typst family bumps in dependabot (#866)\n\nThe typst crates are exact-pinned and must move in lockstep; separate\ndependabot prs split the pins (see the typst-layout-only bump). Same\npattern as the codeql-action group.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T21:04:01Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "071cc6aa81910320cd887b9498d690361b14df74",
+    "commit": {
+      "message": "fix(export): bump typst family to 0.15.1 in lockstep (#865)\n\n#851 bumped only typst-layout to =0.15.1, leaving typst, typst-pdf,\ntypst-svg and typst-render at =0.15.0 — against the file's lockstep\npin comment and the repo's typst-family-bumps-together rule. Align the\nwhole family at =0.15.1 and regenerate Cargo.lock.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T20:58:38Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "25302585150843899d04a481531a6ed5a7bc340c",
+    "commit": {
+      "message": "chore: bump docx-rs from 0.4.20 to 0.4.21 in /apps/desktop/src-tauri (#859)\n\nBumps [docx-rs](https://github.com/bokuweb/docx-rs) from 0.4.20 to 0.4.21.\n- [Release notes](https://github.com/bokuweb/docx-rs/releases)\n- [Changelog](https://github.com/bokuweb/docx-rs/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bokuweb/docx-rs/commits/0.4.21)\n\n---\nupdated-dependencies:\n- dependency-name: docx-rs\n  dependency-version: 0.4.21\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T20:45:09Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "c8a867cf786e282390d51771c3ad7853ebc715d4",
+    "commit": {
+      "message": "chore: bump typescript-eslint in the minor-and-patch group (#863)\n\nBumps the minor-and-patch group with 1 update: [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint).\n\n\nUpdates `typescript-eslint` from 8.64.0 to 8.65.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.65.0/packages/typescript-eslint)\n\n---\nupdated-dependencies:\n- dependency-name: typescript-eslint\n  dependency-version: 8.65.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T20:44:09Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "42e2c3a9c4eae8ea44a08ef05498864b5d97ab67",
+    "commit": {
+      "message": "chore: bump tauri-plugin-single-instance in /apps/desktop/src-tauri (#862)\n\nBumps [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) from 2.4.2 to 2.4.3.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.2...fs-v2.4.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-single-instance\n  dependency-version: 2.4.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T20:43:42Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "dcf74b527ada32c43910b9607579449dfe0798fe",
+    "commit": {
+      "message": "chore: bump tokio from 1.53.0 to 1.53.1 in /apps/desktop/src-tauri (#861)\n\nBumps [tokio](https://github.com/tokio-rs/tokio) from 1.53.0 to 1.53.1.\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.53.0...tokio-1.53.1)\n\n---\nupdated-dependencies:\n- dependency-name: tokio\n  dependency-version: 1.53.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T20:42:56Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "5cb8c5dab732ea7e04c2f9c072284e4774f41464",
+    "commit": {
+      "message": "ci: bump codeql-action init to 4.37.3 in lockstep with analyze (#857)\n\n* ci: bump codeql-action init and analyze to 4.37.3 in lockstep\n\nDependabot bumped only the analyze pin (#850), but init writes a config\nstamped with its own version and the newer analyze refuses to load it:\n\"Loaded a configuration file for version '4.37.0', but running version\n'4.37.3'\". Bump both pins together and group github/codeql-action* in\ndependabot config so future bumps arrive as one PR.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: fix dependabot group pattern and align upload-sarif pins\n\nThe group pattern github/codeql-action* does not match the subpath\ndependency names (init/analyze/upload-sarif); use an explicit root\nentry plus github/codeql-action/* so the group actually fires. Also\nbump both upload-sarif pins to the same 4.37.3 commit for full\nlockstep across the workflow.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-22T20:27:00Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7f1cf5740c0d16d1bcaadd44565deafc31be7cb0",
+    "commit": {
+      "message": "chore: bump the minor-and-patch group with 8 updates (#856)\n\nBumps the minor-and-patch group with 8 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [eslint-plugin-storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/lib/eslint-plugin) | `10.5.2` | `10.5.3` |\n| [@tanstack/react-query](https://github.com/TanStack/query/tree/HEAD/packages/react-query) | `5.101.2` | `5.101.3` |\n| [@tanstack/react-virtual](https://github.com/TanStack/virtual/tree/HEAD/packages/react-virtual) | `3.14.6` | `3.14.7` |\n| [@tanstack/router-vite-plugin](https://github.com/TanStack/router/tree/HEAD/packages/router-vite-plugin) | `1.167.22` | `1.167.23` |\n| [@storybook/addon-vitest](https://github.com/storybookjs/storybook/tree/HEAD/code/addons/vitest) | `10.5.2` | `10.5.3` |\n| [@storybook/react](https://github.com/storybookjs/storybook/tree/HEAD/code/renderers/react) | `10.5.2` | `10.5.3` |\n| [@storybook/react-vite](https://github.com/storybookjs/storybook/tree/HEAD/code/frameworks/react-vite) | `10.5.2` | `10.5.3` |\n| [storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/core) | `10.5.2` | `10.5.3` |\n\n\nUpdates `eslint-plugin-storybook` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/lib/eslint-plugin)\n\nUpdates `@tanstack/react-query` from 5.101.2 to 5.101.3\n- [Release notes](https://github.com/TanStack/query/releases)\n- [Changelog](https://github.com/TanStack/query/blob/main/packages/react-query/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/query/commits/@tanstack/react-query@5.101.3/packages/react-query)\n\nUpdates `@tanstack/react-virtual` from 3.14.6 to 3.14.7\n- [Release notes](https://github.com/TanStack/virtual/releases)\n- [Changelog](https://github.com/TanStack/virtual/blob/main/packages/react-virtual/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/virtual/commits/@tanstack/react-virtual@3.14.7/packages/react-virtual)\n\nUpdates `@tanstack/router-vite-plugin` from 1.167.22 to 1.167.23\n- [Release notes](https://github.com/TanStack/router/releases)\n- [Changelog](https://github.com/TanStack/router/blob/main/packages/router-vite-plugin/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/router/commits/@tanstack/router-vite-plugin@1.167.23/packages/router-vite-plugin)\n\nUpdates `@storybook/addon-vitest` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/addons/vitest)\n\nUpdates `@storybook/react` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/renderers/react)\n\nUpdates `@storybook/react-vite` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/frameworks/react-vite)\n\nUpdates `storybook` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/core)\n\n---\nupdated-dependencies:\n- dependency-name: eslint-plugin-storybook\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-query\"\n  dependency-version: 5.101.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-virtual\"\n  dependency-version: 3.14.7\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/router-vite-plugin\"\n  dependency-version: 1.167.23\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/addon-vitest\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react-vite\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: storybook\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:58:29Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "0e129a7767502b351f6541fee621be644cb92a4d",
+    "commit": {
+      "message": "chore: bump serde from 1.0.228 to 1.0.229 in /apps/desktop/src-tauri (#855)\n\nBumps [serde](https://github.com/serde-rs/serde) from 1.0.228 to 1.0.229.\n- [Release notes](https://github.com/serde-rs/serde/releases)\n- [Commits](https://github.com/serde-rs/serde/compare/v1.0.228...v1.0.229)\n\n---\nupdated-dependencies:\n- dependency-name: serde\n  dependency-version: 1.0.229\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:58:14Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b0b3455ee640fb74faa851372b76e0ba1a798f89",
+    "commit": {
+      "message": "chore: bump thiserror from 2.0.18 to 2.0.19 in /apps/desktop/src-tauri (#854)\n\nBumps [thiserror](https://github.com/dtolnay/thiserror) from 2.0.18 to 2.0.19.\n- [Release notes](https://github.com/dtolnay/thiserror/releases)\n- [Commits](https://github.com/dtolnay/thiserror/compare/2.0.18...2.0.19)\n\n---\nupdated-dependencies:\n- dependency-name: thiserror\n  dependency-version: 2.0.19\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:57:59Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "89002c199119fa04b5457a9f1d0875776acd9370",
+    "commit": {
+      "message": "chore: bump tauri-plugin-positioner in /apps/desktop/src-tauri (#853)\n\nBumps [tauri-plugin-positioner](https://github.com/tauri-apps/plugins-workspace) from 2.3.2 to 2.3.3.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/os-v2.3.2...nfc-v2.3.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-positioner\n  dependency-version: 2.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:57:47Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b5dfab503ca0db992133a9a0f1ea41cc8b9862d1",
+    "commit": {
+      "message": "chore: bump tauri-plugin-store in /apps/desktop/src-tauri (#852)\n\nBumps [tauri-plugin-store](https://github.com/tauri-apps/plugins-workspace) from 2.4.3 to 2.4.4.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.3...fs-v2.4.4)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-store\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:57:30Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "fc6102ac74351d23ec0d6dafc9fd0537e5899d40",
+    "commit": {
+      "message": "chore: bump typst-layout in /apps/desktop/src-tauri (#851)\n\nBumps [typst-layout](https://github.com/typst/typst) from 0.15.0 to 0.15.1.\n- [Release notes](https://github.com/typst/typst/releases)\n- [Commits](https://github.com/typst/typst/compare/v0.15.0...v0.15.1)\n\n---\nupdated-dependencies:\n- dependency-name: typst-layout\n  dependency-version: 0.15.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:56:47Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "59119d14f60666b1d4374ac85a5489859de09338",
+    "commit": {
+      "message": "chore: bump github/codeql-action/analyze from 4.37.0 to 4.37.3 (#850)\n\nBumps [github/codeql-action/analyze](https://github.com/github/codeql-action) from 4.37.0 to 4.37.3.\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/99df26d4f13ea111d4ec1a7dddef6063f76b97e9...e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action/analyze\n  dependency-version: 4.37.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:56:34Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "9e2123b91e72a93170a0eea19d614a2ad13ff232",
+    "commit": {
+      "message": "chore: bump actions/labeler from 6.2.0 to 7.0.0 (#849)\n\nBumps [actions/labeler](https://github.com/actions/labeler) from 6.2.0 to 7.0.0.\n- [Release notes](https://github.com/actions/labeler/releases)\n- [Commits](https://github.com/actions/labeler/compare/b8dd2d9be0f68b860e7dae5dae7d772984eacd6d...bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13)\n\n---\nupdated-dependencies:\n- dependency-name: actions/labeler\n  dependency-version: 7.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:56:20Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "c28b5d8bc537a47b476696d50714ac0edd131ad0",
+    "commit": {
+      "message": "chore: bump taiki-e/install-action from 2.84.0 to 2.84.1 (#848)\n\nBumps [taiki-e/install-action](https://github.com/taiki-e/install-action) from 2.84.0 to 2.84.1.\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9...c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.84.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:56:10Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "8b9c5ccf715cc492133f59aaed08a59065495077",
+    "commit": {
+      "message": "chore: bump astral-sh/setup-uv from 8.3.2 to 9.0.0 (#847)\n\nBumps [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) from 8.3.2 to 9.0.0.\n- [Release notes](https://github.com/astral-sh/setup-uv/releases)\n- [Commits](https://github.com/astral-sh/setup-uv/compare/11f9893b081a58869d3b5fccaea48c9e9e46f990...c771a70e6277c0a99b617c7a806ffedaca235ff9)\n\n---\nupdated-dependencies:\n- dependency-name: astral-sh/setup-uv\n  dependency-version: 9.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:55:42Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "4ce651caff04889ef8c080872d65d5999f606a2d",
+    "commit": {
+      "message": "chore: bump anthropics/claude-code-action from 1.0.179 to 1.0.180 (#846)\n\nBumps [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) from 1.0.179 to 1.0.180.\n- [Release notes](https://github.com/anthropics/claude-code-action/releases)\n- [Commits](https://github.com/anthropics/claude-code-action/compare/b76a0776ae74036e77cd11018083743453d7ad35...fa7e2f0a29a126f0b81cdcf360561b36e44cf608)\n\n---\nupdated-dependencies:\n- dependency-name: anthropics/claude-code-action\n  dependency-version: 1.0.180\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:55:30Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "9e7b698d51138999d268260e7725b6d5820164bb",
+    "commit": {
+      "message": "fix(scraper): keep distinct Hacker News job ids apart in cross-source dedup (#845)\n\n`identifying_query_params` allowlisted only Indeed, so `normalize_job_url`\ndrops the entire query string for every other host. But `boards::ycombinator`\nfalls back to `news.ycombinator.com/item?id=<id>` whenever an HN job story\ncarries no external url — the id lives in the QUERY:\n\n    https://news.ycombinator.com/item?id=44100001 -> .../item\n    https://news.ycombinator.com/item?id=44100002 -> .../item\n\nso `dedup_cross_source` collapsed every text-only HN posting into one row. The\nallowlist's own doc comment already stated the rule it was violating (\"Keep in\nsync with the canonical URL builders … that place a job id in the query\nstring\"); ycombinator is a second such builder. The aggregator's `canonical_url`\ndocuments the same hazard from the other direction.\n\nAdd the `news.ycombinator.com` -> `id` entry on both sides of the lockstep pair\n(Rust + the TS mirror), so tracking params on the same id still collapse while\ndistinct ids stay apart.\n\nAlso tightens the doc comment so `applications/mod.rs` stays under the R8\n1400-LOC hard cap (1399).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:41:39Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "5c0a3050c020543fb7fa458a23fdcf57986ab9dc",
+    "commit": {
+      "message": "fix(ui): ignore a superseded geocode response (#843)\n\nThe debounce in `useGeocoding` only bounds when a request STARTS. Once one is\nin flight nothing cancels it, and the cleanup clears only the pending timer, so\n`setSuggestions(s)` ran unconditionally on whatever resolved last.\n\nTwo requests are in flight whenever the user resumes typing after a pause\nlonger than the 300ms debounce — the normal rhythm for typing a city name. If\nthe older, slower one wins the race (Nominatim is rate-limited to ~1 req/s and\nthe Rust side caches, so latencies vary by seconds) it overwrites the list with\nsuggestions for a query the user has already typed past, and `setActiveIndex(-1)`\nwipes their keyboard selection mid-interaction.\n\nFlag the run as superseded in the cleanup and drop a late resolution. React\nalways runs the previous cleanup before the next effect run, so this also\ncovers the `< 2 chars` early-return path — which otherwise let an in-flight\nrequest repopulate a list the hook had just cleared — and stops a setState\nafter unmount.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:41:36Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "ec671a56d7c045a1e344214c3727cd540baa7f37",
+    "commit": {
+      "message": "fix(export): keep body paragraphs separate in a letter with no letterhead (#839)\n\nThe header-skip arm in `parse_cover_letter` was not anchored to the header:\n\n    if skip_lines < 3\n        && (clean.is_empty() || …name… || …contact echo…)\n\n`skip_lines` only advances when the arm fires, so the arm stays armed for the\nwhole document until three skippable lines have accumulated. Since\n`clean.is_empty()` alone satisfies it, any of the first three blank lines is\nconsumed with `continue` — including blank lines in the BODY, which never\nreach the paragraph-flush branch below. The next body line is then space-joined\nonto the un-flushed paragraph.\n\nA letter that opens straight at the salutation therefore renders as ONE run-on\nblock instead of separate paragraphs. That shape is exactly what the agent\nproduces: `COVER_LETTER_SYSTEM` asks for the finished letter only — \"no\npreamble or commentary\" — so there is no name/contact echo to burn the three\nskips before the body starts. It is also the natural hand-edited shape, since\nthe template renders the letterhead from `ContactProfile` and the parser\ndeliberately drops any contact echo from the body.\n\nThe repo fixture `EN_LETTER` happens to spend all three skips on its\nletterhead before the body, which is why the existing tests pass.\n\nBound the arm with `!body_started`. Safe by construction: `current_para_text`\nis only appended to in the `body_started` branch, so no paragraph can be\npending while the arm is reachable. Affects both the PDF download and the live\npreview (`render_letter_pdf` / `render_letter_svg_pages`).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:41:32Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "aa4cf0142863948dd2b9309f7cc0e72928d7e952",
+    "commit": {
+      "message": "fix(ai): stop corrupting streamed text at a chunk boundary (#837)\n\n`stream_response` decoded each transport read on its own:\n\n    buf.push_str(&String::from_utf8_lossy(&bytes));\n\n`reqwest::Response::chunk` splits the body at arbitrary byte offsets — a\nchunked-transfer body surfaces as the socket reads land, and h2 DATA frames\nare cut wherever the server flushed — so one multi-byte character routinely\nstraddles two reads. `from_utf8_lossy` then replaced BOTH halves with U+FFFD\nand consumed the partial bytes; nothing carried the incomplete tail forward.\n\nThe corruption was silent. U+FFFD is legal inside a JSON string, so the frame\nstill parsed and the mojibake flowed through `emit_delta` to the live view\nAND through `answer` into `finish`, which persists it as `result.text` — so\nthe renderer's poll fallback recovered the same corrupted document. Cover\nletters routinely contain em dashes, curly quotes and accented characters,\nevery one of which is a 2-3 byte sequence.\n\nThis is the single streaming loop behind every cloud adapter (openai,\nanthropic, gemini, ollama, and every OpenAI-compatible gateway), so it\naffected all of them.\n\nAdd `push_utf8`, which holds an incomplete trailing sequence in a `carry`\nbuffer until the next read completes it. Genuinely invalid bytes (a corrupt\ntransfer, never a provider) still collapse to one U+FFFD and are skipped, so\na malformed stream can never stall the loop.\n\nApplied at all three sites that decoded a read in isolation: the production\nloop, the test-only `drive_stream` core, and `ollama::pull`'s progress\nstream.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:41:29Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "919224d7489384d2dcca5b62a4f8d441f03f96ae",
+    "commit": {
+      "message": "fix(ui): stop rendering \"0mo ago\" for a 28-29 day old timestamp (#833)\n\nuseFormatRelativeTime ended the week tier at `weeks < 4` (day 28) but\nfloors the month tier on `days / 30`, so days 28 and 29 fell through to\n`monthsAgo` with `months === 0` — a month-old job posting or generation\ncard rendered \"0mo ago\" (\"vor 0 Mo.\" in de).\n\nHand over to the month tier at the same 30-day boundary `months` is\ncomputed on, so the tiers stay contiguous: days 28-29 now render \"4w ago\".\n\nAdds the hook's first unit test, including a sweep asserting no tier ever\ninterpolates a zero count.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-22T19:41:26Z"
+      }
+    },
+    "author": {
+      "login": "thejesh23"
+    }
+  },
+  {
+    "sha": "e1a2295e48cf866d660859991c19b1bdb40826f7",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-22T06:04:29Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "aa00c75e7516edb1c9be1152b19c465bcbdc9661",
     "commit": {
       "message": "chore: sync landing download version to v0.129.0",
@@ -825,378 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "46c7876d300a3a22b7c715f6f40aeefb6ead2266",
-    "commit": {
-      "message": "chore: bump actions/setup-node from 6.4.0 to 7.0.0 (#745)\n\nBumps [actions/setup-node](https://github.com/actions/setup-node) from 6.4.0 to 7.0.0.\n- [Release notes](https://github.com/actions/setup-node/releases)\n- [Commits](https://github.com/actions/setup-node/compare/48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e...820762786026740c76f36085b0efc47a31fe5020)\n\n---\nupdated-dependencies:\n- dependency-name: actions/setup-node\n  dependency-version: 7.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:13:12Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "801965f9d75b3a3f6e179136616f2f796980c3bc",
-    "commit": {
-      "message": "chore: bump github/codeql-action/upload-sarif from 4.37.0 to 4.37.1 (#744)\n\nBumps [github/codeql-action/upload-sarif](https://github.com/github/codeql-action) from 4.37.0 to 4.37.1.\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/99df26d4f13ea111d4ec1a7dddef6063f76b97e9...7188fc363630916deb702c7fdcf4e481b751f97a)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action/upload-sarif\n  dependency-version: 4.37.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:13:01Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "08ef4849989b10dd14c5a025d252c8d78e9d1854",
-    "commit": {
-      "message": "chore: bump anthropics/claude-code-action from 1.0.174 to 1.0.179 (#743)\n\nBumps [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) from 1.0.174 to 1.0.179.\n- [Release notes](https://github.com/anthropics/claude-code-action/releases)\n- [Commits](https://github.com/anthropics/claude-code-action/compare/12531344451323133b0493233c759991ac61da12...b76a0776ae74036e77cd11018083743453d7ad35)\n\n---\nupdated-dependencies:\n- dependency-name: anthropics/claude-code-action\n  dependency-version: 1.0.179\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T02:12:52Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "774468eb5a736e37134117a734920c093f585ccb",
-    "commit": {
-      "message": "feat: landing docs tier — docshell, mission control, agent-system route, next 16 (#742)\n\n* feat: landing docs tier - docshell, mission control, agent-system route, next 16\n\nShared landing tokens + DocShell (agent-system dark hand-drawn look). /agent-system\nported to a typed-data React route; /how-it-works reskinned onto the shell (copy\nverbatim); ci-dashboard deleted and replaced by /mission-control - a verdict-first\nwhole-repo dashboard (DORA-lite, CHAOSS starter health, benchmark sparklines,\ncommunity stats) with fine-grained-PAT sign-in and confirm-gated safe-tier write\nactions (never merges). Next.js 16.2.10 (TS held at 6, documented); liveOrSnapshot\ndata seam ready for the PR4 snapshot plane. Security review APPROVE (frame-buster,\nimg-src tightened, origin invariant recorded); all ui-ux findings fixed incl.\nempty-sample null-guards, AA contrast token, and reskin tint re-tokenization.\narchitecture-map port deferred to its own PR (stays passthrough).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: document landing coverage and ts pin protection in dependabot config\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: address all pr2 review findings - self-hosted fonts, fail-closed guards, verdict semantics\n\nSelf-hosts all 6 font families site-wide (20 woff2 + fonts.css; GoogleFonts component\ndeleted; CSP font/style sources tightened to self) closing the origin-invariant\ncontradiction CodeRabbit flagged. Enforces write-action needs at the confirm choke\npoint, wires cacheTtlMs, serves stale cache on rate-limit 403, makes the script-src\nallowlist fail-closed, treats skipped/neutral workflow conclusions as non-red with a\ndecisive-conclusion scan, stabilizes the confirm-dialog focus trap, and matches danger\nstyling on the pages dispatch. Docs: TS-pin row corrected, ADR literals -> manifest\nrefs, origin invariant extended to stylesheets.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T01:36:46Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "a13a9f9c8f1ed6139bc94b4c260052f875b24b95",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-20T23:17:28Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "b91a5d1cae12cfc3c6577582694ae24089dd3c79",
-    "commit": {
-      "message": "fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch (#741)\n\n* fix(extension): parse linkedin job ad from captured page dom instead of authwalled refetch\n\nthe canonical (spa/list-view) import branch discarded the extension's captured html and\nserver-fetched /jobs/view/<id>, which linkedin authwalls — imports lost the description.\nresolve(canonical) stays primary; on an unusable or description-less result the bridge now\ngap-fills title/description from the hint-scoped detail pane only (whole-document json-ld\nis ignored so a list shell can never import the wrong job). the content-script hint tries\nvisible job-detail-pane containers before main.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: update extension-import canonical-url seam after fix 2d6a7eda\n\ndocument the list-shell JSON-LD scope safeguard: canonical branch never\ncalls parse_from_html() on captured list-shell DOM; only the hint-scoped\njob_root_generic_html() extraction may gap-fill when resolve() fails.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): walk ancestor chain in job-node visibility gate\n\nisHiddenByStyle only checked the matched element's own computed\ndisplay, which does not inherit; reuse field-signal.ts's isHidden\n(ancestor-walk) instead, built via content.ts's own isolated\nRollup pass so the import stays classic-script-safe.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T23:08:02Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "4687ed476a54e7f6d7189dc5dca51f91a4aa1970",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-20T22:32:50Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "408d0dc30eebd6fc308d64705ccc78604ad80bbf",
-    "commit": {
-      "message": "feat: migrate landing to next.js static export with real routes (#740)\n\n* feat: migrate landing to next.js static export with real routes\n\napps/landing becomes a Next 15 static-export workspace app: the 5 authored pages\nare real routes (faithful port, verbatim CSS/HTML slices + client gag scripts),\ndashboards/benchmarks/storybook stay public/ passthrough, flat export keeps every\nlegacy URL working. Adds the version.json release seam with a client freshness\ncheck (tested, incl. injection regression), resurrects check:parity as a permanent\ngate, rewires pages/ci/quality/release workflows + lint/knip/vitest, and lands\nADR-0018 (amends ADR-0017's no-build-step; directory consolidation stands).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: excise unrelated extension wip from migration commit and drop stray turbo input\n\nThe six extension/scrape_url files belonged to a concurrent branch's in-progress\nwork and entered the previous commit via a blanket git add of a shared working\ntree; restored byte-for-byte to origin/main. That work ships on its own branch.\nAlso removes the nonexistent data/** turbo input (review finding).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T22:11:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "96222e18fdc5685cdba6da97dc2ff7e582f0671f",
-    "commit": {
-      "message": "chore: remove dead files, unwired wizard machine, and unused exports (#739)\n\nDeletes 5 unreferenced files: the stale pre-Tauri env.d.ts (imported a\nnonexistent ../preload), three dead barrel index.ts files\n(components/layout, components/ui, features/settings), and the\nuseDefaultResumeId re-export shim. Removes the 4 now-inert\nvi.mock('@/features/jobs/hooks/useDefaultResumeId', ...) blocks left\nbehind in tailor-back-nav.test.tsx, route-outlet-nesting.test.tsx,\nInterviewPrepTab.test.tsx and ApplicationDetailPage.test.tsx.\n\nDeletes the fully unwired autopilot-wizard.machine directory (never\nimported by CreationWizard). Drops the unreachable \" || 'the company'\"\nfallback in application-email.ts (companyName is only read on the\nhasCompany-true branch). De-exports 11 app-internal symbols across the\nextension autofill/field-signal libs and desktop hooks/store/schema/\nconstants/components where the export keyword had no external\nconsumer, verified with per-symbol grep.\n\nscripts/release-notes-transform.cjs::extractGitHubLogin and\nsession-store.ts::ResumeBuilderSlice were left exported: the former is\nactively consumed via CommonJS module.exports by release.config.mjs\nand its unit test, and de-exporting the latter broke tsc (TS4058,\nuseResumeBuilder's inferred return type). preferences-schema.ts's\nAiProviderConfig/ResumePreference were also kept exported after\nde-exporting produced unused-imports/no-unused-vars warnings that\nwould fail CI's lint:strict --max-warnings 0 gate.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T20:33:06Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1e9d466df09fc2c4d2523dd6c855a3f401a95dc8",
-    "commit": {
-      "message": "feat(extension): match autofill fields labeled in major eu languages (#738)\n\n* feat(extension): match autofill fields labeled in major eu languages\n\nTier-2 free-text field matching (matchNamedKey) only understood English\nlabels, so German/French/Spanish/Italian/Polish/... application forms\n(Vorname, Prénom, Nombre, Correo electrónico, Telefonnummer, Wohnort, ...)\nnever autofilled. Tier-1 autocomplete matching was already language-agnostic.\n\n- Refactor matchNamedKey into an ordered, first-match-wins {key, pattern}[]\n  table and widen every pattern to DE/FR/ES/IT/NL/PL/PT/SV/DA (+ NO/FI where\n  the words coincide). Combined full-name phrases (nombre completo, imie i\n  nazwisko, ...) run before first/last so they resolve to fullName, not just a\n  first token. name/nombre/nome carry negative lookaheads so username/company\n  fields (Nombre de usuario / Nombre de la empresa / Nome utente) never fill.\n- Strip diacritics (NFD + \\p{Diacritic}) inside textSignal so the signal is\n  accent-free and all keywords can be written accent-free. matchExtraLink is\n  unchanged (its normalizeLabel double-strip is idempotent). field-signal.ts\n  keeps ZERO imports (it is inlined into the classic fill.js/capture.js).\n- Localize the generic-name denylist (schule/universitat/firma/usuario/...) and\n  the AMBIGUOUS sensitive-PII denylist (geburtsdatum, dni, pesel, codice\n  fiscale, personnummer, ...) so school/company fields and national-id/DOB\n  fields are never filled or captured.\n\nPer-language tests (DE/FR/ES/IT/PL) cover positive fills incl. accented labels\nand negative school/company/username guards. Full extension suite: 499 pass.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): localize third-party denylists and anchor collision-prone autofill terms\n\nExtension-reviewer hardening of the multilingual autofill matcher.\n\n- HIGH: third-party identity fields mis-filled. \"Name des Ansprechpartners\" /\n  \"Notfallkontakts\" / \"Referenzperson\" all fire the generic \\bname\\b catch-all,\n  but the reference/emergency/contact-person categories AMBIGUOUS protects in\n  English had no EU translations. Add DE/FR/ES/IT/NL/PL equivalents to the\n  denylist (ansprechpartner, notfall, referenz, urgence, contacto de\n  emergencia, contactpersoon, osoba kontaktowa, ...).\n- HIGH: bare `firma` substring wrongly SKIPPED legit English name fields\n  ('affirmative'/'confirmation' contain \"firma\"), blocking real EEO\n  \"Name (Affirmative Action)\" fields. Anchor it as \\bfirma\\b.\n- Route both fill (isCandidateField) and capture (isCapturable) through a new\n  shared isAmbiguousSignal(), combining the substring list with a \\b-anchored\n  set for short/collision-prone terms (dni, bsn, urgence) — dni no longer\n  over-skips Polish \"poprzedni\".\n- MEDIUM: stripDiacritics now folds atomic letters NFD leaves intact\n  (ø/æ/ł/đ/ß), so \"Fødselsnummer\" / \"Szkoła\" match their ASCII denylist forms.\n\nAdds regression tests for each. Full extension suite: 505 pass. field-signal.ts\nstill has zero imports (inlined into fill.js/capture.js).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): match concatenated german mobile phone labels\n\nThe phone keywords `\\bhandy\\b` / `\\bmobil\\b` are word-boundary anchored, so the\nstandard concatenated German labels \"Handynummer\" / \"Mobilnummer\" (and\n\"Mobiltelefon\" / \"Handytelefon\") never matched — exactly the reported use case.\n\nKeep the anchors (bare `handy` collides with \"handyman\", bare `mobil` with\n\"automobil…\") and add explicit compound alternatives\nhandynummer|handytelefon|mobilnummer|mobiltelefon to the phone pattern.\n\nRegression tests: Handynummer/Mobilnummer/Mobiltelefon fill from the phone\nvalue, and Automobilhersteller/Handyman still do NOT. Full suite: 507 pass.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): fill combined name labels whole and mirror capture coverage\n\n- Combined \"first AND last\" labels that are not in the fullName phrase list\n  fell through to first/last and PARTIALLY filled (e.g. \"Vor- und Nachname\"\n  filled only the last name via nachname, \"Nombre y apellidos\" only the first\n  via nombre). Add the conjunction forms to the fullName pattern (which runs\n  before first/last): vor-? und nachname (DE), nombre y apellidos? (ES), nome\n  e cognome (IT), prenom et nom (FR), voor-? en achternaam (NL).\n- Mirror the new localized cases in answers-capture tests so both consumers of\n  isAmbiguousSignal/matchNamedKey stay pinned: a filled Vorname maps to\n  firstName (not captured), and Ansprechpartner/Notfallkontakt are not captured.\n\nFull extension suite: 510 pass. field-signal.ts still import-free (inlined into\nfill.js/capture.js). Committed with --no-verify: the worktree eslint cannot load\nits flat config (corrupt storybook store entry, missing dist chunk); prettier\n--check passes on the changed files and CI runs eslint on a clean install.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T19:11:20Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "644c139cccf9a9f748e88554fa0460c9ae6ee1c6",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-20T18:55:51Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "4faf353f1725bc844293ec7e8b3148d418e2209f",
-    "commit": {
-      "message": "refactor: consolidate static landing into apps/landing and retire the scroll-film app (#737)\n\n* refactor: consolidate static landing into apps/landing and retire the scroll-film app\n\nThe TERMINAL VELOCITY scroll-film (ADR-0016) is abandoned by owner decision mid-M4.\napps/landing is now the self-contained static site formerly at landing/ (no build step,\nno workspace package); pages.yml publishes it directly. The film milestones M1-M3 remain\nin history; the uncommitted M4 tree is preserved in a stash on feat/tv-m4-robot.\nADR-0017 records the decision and supersedes ADR-0016.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: reroute landing review ownership to project-steward for the static site\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: mark gl fleet dormant in routing table and webgl-standards skill per adr-0017\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T18:46:05Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "b8d4f227cb06a1bc2a682471521f58e4ae9135bc",
-    "commit": {
-      "message": "fix(applications): standalone apply-by-email generation and scrollable jobs scrape form (#736)\n\n* fix(applications): generate apply-by-email without a prior document generation\n\nThe apply-by-email tab gated Generate on a résumé and a job description that\nboth resolved only from the first matching AiGenerationRecord, so the tab was\ndead until a résumé/cover letter had already been generated for the job. Mirror\nInterviewPrepTab: resolve the JD from application.jobDescription, then the saved\ngeneration, then the job URL; source candidateName from the contact profile and\ntargetLanguage from the detected job-ad language (unknown falls back to English).\nUpgrade the needsResume empty state with a CTA that navigates to the documents\nroute so a first-time user has a way forward.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(jobs): let the scrape form scroll when boards and advanced settings overflow\n\nThe jobs-page header block (PageHeader + ScrapeForm + summary chips) sat under\nthe overflow-hidden PageTransition with no bounded height. Selecting every board\nand opening the advanced grid grew it past the viewport, pushing the Start button\noff the bottom with no way to scroll to it at the 900x600 window floor. Bound the\nwrapper to max-h-[55vh] with overflow-y-auto so tall form content scrolls within\nthe page (results list stays the primary scroll owner); short content is\nunchanged. Add a test-id seam for the class-assertion test.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(applications): cover in-flight job-url resolve loading gate\n\nAdd a case for the new ApplyByEmailTab loading gate: an empty job description\nwith no saved generation and an in-flight useResolveJobUrl renders the skeleton\nonly — the Generate button and needsJob empty state stay absent. Also drop the\ninert min-h-0 from the jobs scrape-form wrapper (shrink-0 already prevents\nshrinking) and update its class-assertion test.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T18:30:03Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "921e7238af6e768d531746b9b269b79ca50b5cd4",
-    "commit": {
-      "message": "fix(export): keep applicant name out of recipient block and prefer profile casing for signature (#735)\n\nB.1: skip the applicant's own name case-insensitively (markdown-stripped,\ntrailing-punctuation tolerant) so a title-case or bold first line no longer\nleaks into the recipient block when the stored name is all-caps.\nB.2: an all-caps stored name adopts the contact profile's matching full_name\ncasing for the letterhead and signature; no-op without a matching profile.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T18:14:39Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c0ff9cbe8ae1835bfe564d0cfe7284b313988619",
-    "commit": {
-      "message": "fix(prompts): omit company lines instead of emitting placeholders when company unknown (#734)\n\n* fix(prompts): omit company lines instead of emitting placeholders when company unknown\n\nCover letters and application emails printed a literal company placeholder\n(\"[Company Name]\", \"Unternehmen/Company\") when meta.companyName was empty,\nbecause the FORMAT skeleton kept fill-in slots and the context Role line fell\nback to a \"this company\"/\"the company\" stand-in the model rendered verbatim.\n\n- cover-letter: add an omit-if-unknown + never-placeholder rule to the FORMAT\n  skeleton; make the user-prompt Role line name the company only when known and\n  otherwise instruct never to invent or write a company placeholder.\n- application-email: name the company in the CONTEXT Role line only when known,\n  and append a never-invent-a-company instruction to the opening bullet.\n- tests: cover the unknown-company path and assert the known-company Role line\n  is unchanged.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(prompts): make company-name rules conditional at every depth\n\nThe system prompts unconditionally hard-ruled \"Use the real company name and\njob title\", which contradicted the new omit-when-unknown instructions in the\nFORMAT skeleton and the CONTEXT Role line. Reword the static rule text to be\nself-conditional at every cover-letter depth (brief/task/full) so the system\nand CONTEXT never disagree, without threading a company flag through the\nsystem builders.\n\n- cover-letter: rule now reads \"use the real company name and job title when\n  they are provided; if the company name is not provided, name only the role\n  and never invent or write a placeholder for a company\" at all three depths.\n- application-email: gate the full-depth \"about THIS role at THIS company\"\n  framing on hasCompany, falling back to \"about THIS role\" when unknown.\n- tests: assert the conditional rule at every depth and the gated email framing.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T17:52:23Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3a3c9fa073a0fcc51169f436ffd9a9176cf49681",
-    "commit": {
-      "message": "fix(export): keep Unicode letters in exported filenames (#729)\n\n* fix(export): keep unicode letters in exported filenames\n\nThe filename sanitiser used /[^a-zA-Z0-9\\s-]/g, which deleted every\nnon-ASCII letter. For users whose name contained Cyrillic, CJK, Arabic,\nGreek, Hebrew, Thai or any other non-Latin script, sanitize() returned\nan empty string and the exported file was named\nCandidate-Role-Company-<type>.<ext>, dropping the user's name entirely.\n\nSwitch to the Unicode-aware class /[^\\p{L}\\p{N}\\s-]/gu so all Unicode\nletters/numbers survive. Modern filesystems (APFS, NTFS, ext4) all\naccept Unicode filenames. The existing NFD + combining-mark strip runs\nfirst, so Latin-with-diacritics behaviour (Jöhn -> John) is unchanged.\n\n* style: format export sanitize chain with prettier\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Saeed Kolivand <saeedkolivand1997@gmail.com>\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-20T16:33:33Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "0879044006430dedc248f0995b964f43aa27fc98",
-    "commit": {
-      "message": "fix(links): capture markdown urls containing balanced parens (#733)\n\nMD_LINK_SPAN_RE used `[^)]+` for the URL group, which stops at the\nfirst `)`. A markdown link to a Wikipedia disambiguation URL like\n`[Python](https://en.wikipedia.org/wiki/Python_(programming_language))`\nwas truncated to `https://en.wikipedia.org/wiki/Python_(programming`,\nproducing a broken suggestion in the editor's link pick-list.\n\nAllow one level of balanced parens inside the URL group, with the\nexisting 200/2000-char bounds preserved so the regex stays linear on\nadversarial input.",
-      "author": {
-        "date": "2026-07-20T16:13:40Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "d46fac53134620f3d1a3677eb64f4a89fc8232dd",
-    "commit": {
-      "message": "fix(analyze): drop false language mismatch when a language is empty string (#731)\n\nvalidateAndRepair coerced an empty-string language field to 'unknown'\nfor the output but then decided mismatch on the ORIGINAL raw value.\nAn empty string is a string, and \"\" !== 'unknown', so a model reply\nlike { resume: \"\", jobAd: \"fr\" } produced { resume: 'unknown', jobAd:\n'fr', mismatch: true } — self-contradictory and lit up the amber\nmismatch banner alongside a resume language shown as \"unknown\".\n\nCompute mismatch on the coerced values so the guard the comment\ndescribes actually applies.",
-      "author": {
-        "date": "2026-07-20T16:13:35Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "bf2aab12f26597d1ee6939b765e138d610ad275c",
-    "commit": {
-      "message": "fix(language-detection): return 'unknown' for codes outside the map (#727)\n\ndetectLanguage()'s docstring promises to return an ISO 639-1 code, but\nLANGUAGE_MAP[code] || code leaks franc's raw ISO 639-3 code (e.g. ukr,\nbul, ben, pes) whenever the detected language is not in the map.\nDownstream getLanguageName() then can't resolve it and displays the raw\n3-letter code to the user.\n\nFall back to 'unknown' so the ISO 639-1 contract holds.",
-      "author": {
-        "date": "2026-07-20T16:13:30Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "d37aff25746cf7d5f5953bd6792e44be66e996b5",
-    "commit": {
-      "message": "fix(referral): pass iso code instead of display name to locale (#725)\n\nThe referral draft hook was passing detectLanguages(...).resumeName\n(\"English\", \"Deutsch\", \"Français\") into locale, which is fed through\nsafeLocale(). safeLocale only recognises ISO 639-1 codes and collapses\nanything else to 'en', so non-English users always received an English\nreferral draft.\n\nPass .resume (the ISO code) at both call sites.",
-      "author": {
-        "date": "2026-07-20T16:13:26Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "e6fb7853e7d5c7580ad34234ebde7a87e39369bd",
-    "commit": {
-      "message": "docs: dedupe fleet map critics and de-concept gl agent descriptions (#723)\n\n* docs: dedupe shared critics in fleet map and de-concept gl agent descriptions\n\n- agent-system.html: seencritics guard renders a critic shared by multiple\n  authors once; webgl-reviewer no longer appears twice\n- five gl agent descriptions (author, shader, reviewer, gate-auditor,\n  perf-profiler) rewritten concept-agnostic in the explainer and the\n  .claude/agents frontmatter; ripbook-era body references now point at the\n  current skills and adr 0016\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: reflow shader-engineer strict-enforcement parenthetical broken by list formatting\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-19T14:15:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bd87e89bf0ab77bf85f88371e82a6fce27087d88",
-    "commit": {
-      "message": "feat: terminal velocity m3 — water, splash vat, deep and blackout (#722)\n\n* feat: terminal velocity m3 - water, splash vat, deep and blackout\n\n- gerstner water surface with derivative micro-normals and fresnel horizon\n- in-house vat pipeline: decode contract + procedural stand-in crown bake\n  (real houdini flip bake is a drop-in later per adr errata)\n- the deep: thin dying god-ray shafts, sparse papers, limp-figure silhouette\n- blackout with growing amber point; altitude-to-depth gauge handoff\n- wcag luminance-velocity clamp with self-priming mount (the one documented\n  real-time exception; converges to pure f(t) at rest)\n- three-good-godrays deferred to the post-chain milestone (recorded); additive\n  shafts ship as the implementation\n- three rounds of live-browser visual iteration: deep/blackout verified\n  excellent, surface reads, rewind determinism pixel-verified\n- pruned unused skeleton deps (troika-three-text, svg-path-properties,\n  framer-motion)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: resolve pr 722 coderabbit findings\n\n- fog c0-continuous at surface_t: deep branch anchors fog_cold directly\n  (single source of truth) + density aligned; continuity test pins it\n- splash-crown edge tests: degenerate bake, 2pi wrap, finite sweep\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-19T13:51:04Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "407559cf88f4dbc1241aac662e865d15f614b7db",
-    "commit": {
-      "message": "feat: terminal velocity m2 — tower canyon and paper storm (#721)\n\n* feat: terminal velocity m2 - tower canyon and paper storm\n\n- canyon world module: instanced tower walls with procedural sodium windows and\n  seeded slow flicker, night fog grade, vertigo camera segment, desk props\n- paper storm: one instancedmesh, analytic flutter with exact-derivative normals,\n  procedural rejection-letter atlas, density ramp pure f(t), tier-aware counts\n- altitude-to-depth gauge mechanic so the chrome gauge moves through every scene\n- audited by webgl-reviewer (approve, zero blocking) + live browser smoke-check;\n  9 draw calls at canyon peak vs 100 budget; 72 unit tests\n- includes .claude/launch.json (browser preview config for smoke checks)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* style: add missing space in import specifier list\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-19T00:29:13Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3db3540183e39862bd674ee4d9eb0caa31f4203d",
-    "commit": {
-      "message": "feat: terminal velocity m1 — scroll rig, playhead, semantic layer parity (#720)\n\n* feat: terminal velocity m1 - scroll rig, playhead, semantic layer parity\n\n- lenis + gsap single-clock scroll rig, one master scrub timeline, damped playhead\n  pure f(scroll) at rest, 3000 svh frozen scroll track\n- scene resolver with half-open intervals, zustand store + preallocated singleton\n- semantic story layer with full legacy copy/link parity + check:parity script\n- experience gate (webgl2, >900px, fine pointer, reduced motion, detect-gpu tier)\n- letterbox/timecode/depth-gauge dom chrome, reduced-motion runtime state machine\n- placeholder gl world proving the rig; 30 unit tests\n- review fixes: lagsmoothing global leak dropped, motion-toggle state from resolved\n  probe, a11y overlay gl-live only, chrome writes gated on change, start/stop symmetry\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: resolve pr 720 review findings\n\n- escape < in json-ld serialization (script breakout)\n- self-host detect-gpu benchmarks under public/detect-gpu, no cdn fetch per visitor\n- wire check:parity into pnpm test via a spawning vitest spec so drift fails ci\n- hide motion toggle in fallback mode where it has no effect\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: resolve claude review advisories on m1\n\n- skip-to-end drives the playhead to the finale scene instead of anchor-jumping\n  into the inert semantic layer\n- chapter stepper uses instant scroll (reduced-motion path)\n- single nan-guarded clamp01 shared by resolver/timecode/scroll-track + regression tests\n- chrome compares rounded numbers per frame, formats only on change\n- webgl2 probe releases its context; scroll-track clamp-branch tests\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T23:02:16Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "562b58203cff92be500c0f96bb740089a5654752",
-    "commit": {
-      "message": "docs: rewrite webgl-standards and gate-audit skills for terminal velocity (#719)\n\n* docs: rewrite webgl-standards and gate-audit skills for terminal velocity\n\n- webgl-standards: playhead model, 9-scene map, scroll rig, gltf-clip scrub, in-house vat\n  playback, gerstner water + godrays, instanced paper storm, filmic post chain, per-tier\n  budget ladder + 45/83 governor, a11y gates, loading choreography; all version pins\n  verified against npm 2026-07-18\n- webgl-gate-audit: ripbook gates replaced with playhead driving, scrub + vat determinism,\n  fps at risk scenes, draw-call + bundle probes, strobe check, copy-parity, fallback checks\n- honest flags: three-good-godrays peer excludes three 0.185 (resolution path recorded),\n  three-vat does not exist on npm (vat decode ruled in-house)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: resolve pr 719 review findings across gl skills and adr-0016\n\n- adr-0016 errata: three-vat does not exist on npm; vat decode is in-house\n- half-open scene intervals, svh scroll track, frame-time-ratio governor hysteresis,\n  explicit reduced-motion runtime transition, dom-inspection evidence clause,\n  deterministic bundle accounting, exact 900px fallback threshold\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T21:36:27Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "332aa7a0e79af2c0bd7f15a01848535d33ba12e2",
-    "commit": {
-      "message": "docs: adr-0016 — terminal velocity scroll-film supersedes ripbook (#718)\n\n* docs: adr-0016 terminal velocity scroll-film supersedes ripbook\n\n- new adr-0016: landing rebuilds as a realistic cg scroll-film (one-shot playhead, 9-scene\n  scroll map, webgl2 lane, vat splash, budgets, a11y rules, m1-m6 milestones)\n- adr-0015 marked superseded, adr-0014 pointers re-aimed at 0016\n- context.md glossary: terminal velocity terms added, ripbook terms marked historical\n- webgl-standards skill gets a superseded banner pending its gl-author rewrite\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: fix review findings in adr-0016 (stray dash bullets, glossary dedup)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T21:03:21Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "cdf3e5760b6740a6351617e7230c58f46e9e4973",
-    "commit": {
-      "message": "chore: strip the landing app to a bare next skeleton (#717)\n\nowner decision: the ripbook gl implementation is abandoned; m1-m3 stay in git history for\nsalvage. removes all gl source dirs, glloader, fonts, and the landing vitest project; page\nrenders a minimal shell; metadata and passthrough build kept. package.json and knip kept\nunchanged per owner instruction.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T17:37:37Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "bf59ca3516903f543a188f16b217be847b37ab1a",
-    "commit": {
-      "message": "docs: add the critic contract and seed the miss ledger (#716)\n\n* docs: add the critic contract and seed the miss ledger\n\n* build: add a docs/meta fast path to the pre-push gate\n\nA push whose branch contribution (merge-base(origin/main)..HEAD) is entirely\ndocs/meta content — markdown, docs/**, the .claude agent/skill/command fleet,\nCLAUDE.md, landing/*.html — now skips the build/typecheck/test + rust + AI-review\ngates and runs only the cheap guards those paths need: agent-system drift when\n.claude/** or CLAUDE.md changed, landing-diagram drift when landing/ changed, and\nprettier --check on the changed files.\n\nBasing the decision on the branch's own diff (not the raw remote_sha..local_sha\npush range) means a re-push that merely folds a fresh origin/main in — exactly\nwhat the hook's own stale-base sync forces on an open PR — still fast-paths a\ndocs-only PR instead of re-gating main's already-merged, already-tested code,\nwhich is what dragged apps/desktop/src and packages/ into NODE=1 and ran the full\nturbo+vitest gate on a docs-only PR. Any executable/config/build input, an\nundetermined push range, an unresolvable merge-base, or PREPUSH_FULL=1 all still\ntake the full gate — uncertainty never fast-paths.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: give the perf critics the critic-contract pointer block\n\nCLAUDE.md now states every critic loads critic-contract first, but the two\ncross-cutting perf critics lacked the pointer, making the blanket claim false\n(flagged in the PR #716 review). Add the binding \"read FIRST\" block to both;\nwebgl-perf-profiler's wording notes it also writes degradation rungs, so its\nfindings and pass/fail verdicts — not its edits — follow the contract.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T16:52:43Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5b73f165007b4c8e4a115dbb77e5d50115485af4",
-    "commit": {
-      "message": "chore: regenerate store gallery for autofill and answer features (#715)\n\n* chore: regenerate store gallery for autofill and answer features\n\nExtend the deterministic store-asset generator to a full 5-shot Chrome/AMO\ngallery (Chrome's cap): private -> pair -> import -> autofill -> answer tools.\n\n- New 04-fill-forms: connected view, arrow -> Fill this form, real post-fill\n  message (Filled 4 fields - review them on the page).\n- New 05-answers: connected view with Answer tools open, a pasted question and\n  a drafted answer + Copy, arrow -> Help me answer. Card is far taller than\n  the 800px frame, so a per-shot cardAnchorY scrolls it to keep the draft in\n  view (crop-to-fit, the same overflow the centred shots already rely on).\n- Captions kept honest/opt-in (autofill fills empty fields on command, never\n  submits; draft is from your own resume, copy-only) - no overstated claims.\n- Existing 01-03 generation is byte-neutral (verified identical output on the\n  same build); their PNGs move only because the popup build itself evolved.\n- README: 5-shot table + captions, drop the stale dark-variant/Import-via-URL\n  claims, note AMO reuses the same 1280x800 set.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: make store screenshot arrows dynamic per shot\n\neach shot now measures the caption bbox in the live composite page and routes its arrow\nfrom the caption edge to the measured target: seeded per-shot jitter, a clearance solver\nthat keeps the stroke 12px off the caption glyphs, and a tangent-aligned arrowhead\n\nalso removes stray review-tool artifact lines from the store-assets readme\n\n* chore: aim store screenshot arrowheads at the target buttons\n\nthe offline shot targeted a hidden retry button (0x0 measurement) so the arrow pointed at the\ncard corner — target the visible get-the-app button instead and fail capture on zero-size targets\n\nthe curve is now a cubic whose arrival control is fixed on the ray from the tip to the measured\nbutton centre, so every head arrives pointing at its button instead of steeply past it\n\n* chore: address coderabbit findings on store asset generator\n\n- reject non-finite target fractions (NaN/Infinity slipped past the <= 0 guard)\n- rotate arrow geometry about the card's real css transform-origin (the shifted\n  card centre for anchored shots, not the frame centre) — regenerates 05-answers\n- correct the raw-captures readme: element screenshots track main.app width at\n  2x device scale (340px -> 680px), not the viewport\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T16:04:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "d833486463d506b4e9ae5a085800ff95bea899d4",
-    "commit": {
-      "message": "feat: ripbook m2 - kraft paper material system (#714)\n\n* feat: ripbook m2 - kraft paper material system\n\nat-load bake pipeline (paper albedo-rough + normal-height 4096/2048, stain, smudge, hatch\natlases; mips + max aniso; one shared bake with per-page seed transforms); page material v2\nconsuming the bakes with normal-mapped light catch and seeded stains; ink toon material with\ntri-planar hatch, pencil grain, and screen-constant inverted-hull boil outline proven on a desk\nprop; notebook cover hinge exit, page stack, instanced spiral binding, procedural desk dressing;\nwindow-level pointer parallax; exception-safe bake harness with boot fallback.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat: address m2 review findings\n\nascending-edge smoothstep rewrite across all bake masks (identical output, no driver ub);\nfract-wrap the smudge lookup; transactional bake publish with provisional targets and\nnull-on-failure holders; bake and warmup failures now reach legacy via a plain onerror callback\nthreaded from glloader (empirically proven - the old throw-via-setstate hung the loader);\nhinge direction flipped so the cover lifts toward the camera instead of clipping the stack;\nthree/addons import path.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T14:20:39Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f6e0936bab077dc82a88405de9c11856703de54b",
-    "commit": {
-      "message": "feat: ripbook m1 - notebook shell and rip rig proof (#713)\n\n* feat: ripbook m1 - notebook shell and rip rig proof\n\nlenis + one scrub:true scrolltrigger master timeline writing preallocated channels; zustand\nstore with getstate reads; 9-page registry with the 0.72 exit split; row-snap corner-tear\npresplit with seam attributes; single priority-1 composer useframe owning camera, throw path,\nuboil and urip uploads; shared rip paper shadermaterial (tear-front gate + peel bend + edge\nboil, pure f(ripp)); real gl mount behind the gate with loader lift, dev hud, and full teardown.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* feat: address m1 review findings and add rig unit tests\n\nexact hud=1 gating; exception-safe scroll init with idempotent teardown; restore gsap ticker\nlag-smoothing default on cleanup; phase the rip into tearp (uploaded to urip) and throwp\n(free-piece transform) so the seam fully tears before the piece flies; prettier fix. stands up\nthe landing vitest project (additive root wiring, coverage-neutral) with 25 unit tests over\npageprogress, activepagefor, and the corner-tear presplit.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-18T11:05:51Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]

@@ -3242,6 +3242,52 @@ fn dedup_posting_with_extra(
 }
 
 #[test]
+fn dedup_cross_source_keeps_distinct_hacker_news_job_ids_apart() {
+    // `boards::ycombinator` falls back to `news.ycombinator.com/item?id=<id>`
+    // whenever an HN job story carries no external url — the id lives in the
+    // QUERY. `normalize_job_url` drops the whole query for any host without an
+    // allowlist entry, so every such posting used to normalize to the bare
+    // `/item` path and collapse into one row.
+    let out = dedup_cross_source(vec![
+        dedup_posting(
+            "ycombinator",
+            "https://news.ycombinator.com/item?id=44100001",
+            "Backend Engineer",
+            "Acme",
+            None,
+        ),
+        dedup_posting(
+            "ycombinator",
+            "https://news.ycombinator.com/item?id=44100002",
+            "Frontend Engineer",
+            "Beta",
+            None,
+        ),
+    ]);
+    assert_eq!(out.len(), 2, "distinct HN job ids must not collapse");
+
+    // Tracking params on the SAME id must still collapse — the allowlist keeps
+    // only `id`, so this is the behaviour the allowlist exists to preserve.
+    let out = dedup_cross_source(vec![
+        dedup_posting(
+            "ycombinator",
+            "https://news.ycombinator.com/item?id=44100001",
+            "Backend Engineer",
+            "Acme",
+            None,
+        ),
+        dedup_posting(
+            "ycombinator",
+            "https://news.ycombinator.com/item?id=44100001&utm_source=x",
+            "Backend Engineer",
+            "Acme",
+            None,
+        ),
+    ]);
+    assert_eq!(out.len(), 1, "the same HN id must still dedup");
+}
+
+#[test]
 fn dedup_cross_source_upgrades_description_and_extra_but_keeps_incumbent_identity() {
     // Same job, two boards: "aggregator" FIRST (incumbent) — truncated snippet,
     // but carries the salary fields Adzuna scrapes into `extra`; "board" SECOND

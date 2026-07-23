@@ -57,6 +57,15 @@ updates:
     labels:
       - dependencies
 
+    # The typst family (typst, typst-pdf, typst-svg, typst-render,
+    # typst-layout) is exact-pinned and must bump in lockstep — a partial
+    # bump splits the pins (#851) and risks mixed-version rendering.
+    groups:
+      typst:
+        patterns:
+          - typst
+          - typst-*
+
     commit-message:
       prefix: chore
 
@@ -67,3 +76,11 @@ updates:
 
     labels:
       - github-actions
+
+    # codeql-action init/analyze must move in lockstep: init writes a config
+    # stamped with its own version and a newer analyze refuses to load it.
+    groups:
+      codeql-action:
+        patterns:
+          - github/codeql-action
+          - github/codeql-action/*
