@@ -29,7 +29,7 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   position: relative;
-  overflow-x: hidden;
+  overflow-x: clip; /* clip not hidden: hidden makes .doc-shell a scroll container and breaks sticky pins inside (agent-fleet belt) */
 }
 /* faint film grain so the dark never reads flat (decorative, pointer-safe) */
 .doc-shell::after {
