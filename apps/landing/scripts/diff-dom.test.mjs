@@ -25,6 +25,14 @@ describe('diff-dom', () => {
     assert.equal(mismatches.length, 1);
   });
 
+  it('treats "prop: value" and "prop:value" (React SSR) as equal', () => {
+    const { mismatches } = diffBodies(
+      html('<div style="border-color: var(--ui); color: var(--ui)"></div>'),
+      html('<div style="border-color:var(--ui);color:var(--ui)"></div>')
+    );
+    assert.equal(mismatches.length, 0);
+  });
+
   it('skips a real inline event handler (onclick) from the diff', () => {
     const { mismatches } = diffBodies(
       html('<button onclick="doThing()">go</button>'),

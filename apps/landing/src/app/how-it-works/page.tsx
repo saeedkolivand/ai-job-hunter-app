@@ -1,9 +1,8 @@
 import type { Metadata } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
+import { HowItWorksBody } from '@/components/how-it-works/HowItWorksBody';
 import { PageStyle } from '@/components/PageStyle';
-import { RawHtml } from '@/components/RawHtml';
-import { readContent } from '@/lib/content';
 import { readStyle } from '@/lib/styles';
 
 // Docs-tier reskin: the self-hosted shell fonts (Space Grotesk / Caveat / Space
@@ -18,9 +17,9 @@ export default function HowItWorksPage() {
   return (
     <>
       <PageStyle css={readStyle('docs-tokens.css')} />
-      <PageStyle css={readContent('how-it-works', 'styles.css')} />
+      <PageStyle css={readStyle('how-it-works.css')} />
       <PageStyle css={readStyle('how-it-works-shell.css')} />
-      <RawHtml html={readContent('how-it-works', 'body.html')} />
+      <HowItWorksBody />
       <ClientScripts srcs={['/scripts/how-it-works-0.js', '/scripts/how-it-works-1.js']} />
     </>
   );

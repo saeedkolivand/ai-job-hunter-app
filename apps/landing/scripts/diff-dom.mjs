@@ -63,14 +63,24 @@ function splitStyleDeclarations(value) {
 }
 
 // React's inline-style serializer joins declarations with a bare `;` (no
-// trailing space); hand-authored HTML in the baseline has `; ` after each
-// declaration. That's cosmetic (scripts read style via computed/DOM APIs,
-// never the raw attribute string) — collapse both to the same form so it
-// doesn't false-fail the structural diff.
+// trailing space) and `prop:value` (no space after the colon); hand-authored
+// HTML in the baseline has `; ` after each declaration and often `prop: value`
+// too (e.g. how-it-works' `style="border-color: var(--ui); color: var(--ui)"`).
+// Both are cosmetic (scripts read style via computed/DOM APIs, never the raw
+// attribute string) — collapse both to the same form so they don't
+// false-fail the structural diff. Only the FIRST `:` in a declaration is the
+// property/value separator (a value like `url(a:b)` keeps any later colons).
+function normalizeDeclaration(decl) {
+  const sep = decl.indexOf(':');
+  if (sep === -1) return decl;
+  return `${decl.slice(0, sep).trim()}:${decl.slice(sep + 1).trim()}`;
+}
+
 function normalizeStyleAttr(value) {
   return splitStyleDeclarations(value)
     .map((decl) => decl.trim())
     .filter((decl) => decl.length > 0)
+    .map(normalizeDeclaration)
     .join(';');
 }
 
