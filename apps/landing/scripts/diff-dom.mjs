@@ -23,29 +23,44 @@
 // Node stdlib + jsdom only (already a devDependency of @ajh/landing).
 
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 import { JSDOM } from 'jsdom';
 
-const [, , baselinePath, newPath] = process.argv;
-if (!baselinePath || !newPath) {
-  console.error('Usage: node scripts/diff-dom.mjs <baseline.html> <new.html>');
-  process.exit(1);
-}
-
-const baselineDom = new JSDOM(readFileSync(baselinePath, 'utf8'));
-const newDom = new JSDOM(readFileSync(newPath, 'utf8'));
-
-// ── Self-hosted fonts guard — never regress to an external font URL ──────────
-const linksFonts = [...newDom.window.document.querySelectorAll('link[href]')].some(
-  (link) => link.getAttribute('href') === '/fonts/fonts.css'
-);
-if (!linksFonts) {
-  console.error(`FAIL — ${newPath} has no <link href="/fonts/fonts.css"> (self-hosted fonts).`);
-  process.exit(1);
-}
-
 // ── Normalize a DOM subtree into a plain comparable tree ─────────────────────
 const SKIP_TAGS = new Set(['style', 'script', 'link']);
+
+// Split a style attribute value on top-level `;` only — a `;` inside a
+// quoted string (content: "a; b") or a url(...)/function argument must not
+// split the declaration in two.
+function splitStyleDeclarations(value) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let current = '';
+  for (const ch of value) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+    } else if (ch === '(') {
+      depth++;
+      current += ch;
+    } else if (ch === ')') {
+      depth = Math.max(0, depth - 1);
+      current += ch;
+    } else if (ch === ';' && depth === 0) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts;
+}
 
 // React's inline-style serializer joins declarations with a bare `;` (no
 // trailing space); hand-authored HTML in the baseline has `; ` after each
@@ -53,8 +68,7 @@ const SKIP_TAGS = new Set(['style', 'script', 'link']);
 // never the raw attribute string) — collapse both to the same form so it
 // doesn't false-fail the structural diff.
 function normalizeStyleAttr(value) {
-  return value
-    .split(';')
+  return splitStyleDeclarations(value)
     .map((decl) => decl.trim())
     .filter((decl) => decl.length > 0)
     .join(';');
@@ -66,8 +80,11 @@ function normalizeElement(el) {
     // a converted page attaches the same listener via React onClick at
     // hydration instead of a string attribute in the served HTML (e.g. home's
     // #cookie dismiss button), so comparing them here would false-fail on a
-    // correct conversion.
-    .filter((a) => !a.name.startsWith('on'))
+    // correct conversion. Narrowed to real event-handler IDL attributes (the
+    // DOM itself is the allowlist: `onclick`/`onload`/... exist as properties
+    // on the element; a custom attribute like `onboarding` does not) so this
+    // never skips a legitimate non-handler attribute that merely starts with "on".
+    .filter((a) => !(a.name.toLowerCase().startsWith('on') && a.name.toLowerCase() in el))
     .map((a) => [a.name, a.name === 'style' ? normalizeStyleAttr(a.value) : a.value])
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return { type: 'element', tag: el.tagName.toLowerCase(), attrs, children: normalizeChildren(el) };
@@ -122,10 +139,8 @@ function countElements(node) {
   return 1 + node.children.reduce((n, child) => n + countElements(child), 0);
 }
 
-// ── Recursive diff, capped at 10 reported mismatches ─────────────────────────
-const mismatches = [];
-
-function compare(a, b, path) {
+// ── Recursive diff, capped at 10 reported mismatches per call ────────────────
+function compare(a, b, path, mismatches) {
   if (mismatches.length >= 10) return;
   if (!a || !b || a.type !== b.type || (a.type === 'element' && a.tag !== b.tag)) {
     mismatches.push({ path, expected: describe(a), actual: describe(b) });
@@ -142,22 +157,56 @@ function compare(a, b, path) {
   for (let i = 0; i < len && mismatches.length < 10; i++) {
     const childA = a.children[i];
     const childB = b.children[i];
-    compare(childA, childB, childPath(path, childA ?? childB, i));
+    compare(childA, childB, childPath(path, childA ?? childB, i), mismatches);
   }
 }
 
-const baselineBody = normalizeElement(baselineDom.window.document.body);
-const newBody = normalizeElement(newDom.window.document.body);
-compare(baselineBody, newBody, 'body');
-
-if (mismatches.length > 0) {
-  console.error(`FAIL — DOM mismatch between ${baselinePath} and ${newPath}:\n`);
-  for (const m of mismatches) {
-    console.error(`  at ${m.path}`);
-    console.error(`    expected: ${m.expected}`);
-    console.error(`    actual:   ${m.actual}\n`);
-  }
-  process.exit(1);
+// Diffs the <body> subtrees of two HTML documents (as strings). Exported so
+// the self-test (diff-dom.test.mjs) can exercise the real comparison logic
+// without shelling out to the CLI.
+export function diffBodies(baselineHtml, newHtml) {
+  const baselineBody = normalizeElement(new JSDOM(baselineHtml).window.document.body);
+  const newBody = normalizeElement(new JSDOM(newHtml).window.document.body);
+  const mismatches = [];
+  compare(baselineBody, newBody, 'body', mismatches);
+  return { mismatches, elementCount: countElements(newBody) };
 }
 
-console.log(`ok — ${countElements(newBody)} elements match`);
+function main() {
+  const [, , baselinePath, newPath] = process.argv;
+  if (!baselinePath || !newPath) {
+    console.error('Usage: node scripts/diff-dom.mjs <baseline.html> <new.html>');
+    process.exit(1);
+  }
+
+  const baselineHtml = readFileSync(baselinePath, 'utf8');
+  const newHtml = readFileSync(newPath, 'utf8');
+
+  // ── Self-hosted fonts guard — never regress to an external font URL ────────
+  const newDom = new JSDOM(newHtml);
+  const linksFonts = [...newDom.window.document.querySelectorAll('link[href]')].some(
+    (link) => link.getAttribute('href') === '/fonts/fonts.css'
+  );
+  if (!linksFonts) {
+    console.error(`FAIL — ${newPath} has no <link href="/fonts/fonts.css"> (self-hosted fonts).`);
+    process.exit(1);
+  }
+
+  const { mismatches, elementCount } = diffBodies(baselineHtml, newHtml);
+
+  if (mismatches.length > 0) {
+    console.error(`FAIL — DOM mismatch between ${baselinePath} and ${newPath}:\n`);
+    for (const m of mismatches) {
+      console.error(`  at ${m.path}`);
+      console.error(`    expected: ${m.expected}`);
+      console.error(`    actual:   ${m.actual}\n`);
+    }
+    process.exit(1);
+  }
+
+  console.log(`ok — ${elementCount} elements match`);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
