@@ -152,6 +152,37 @@ fn merge_layers_interview_questions_without_clobbering_other_fields() {
     assert_eq!(merged.interview_questions, vec![interview_question("iq-1")]);
 }
 
+/// A corrected regeneration must be able to CLEAR a stale language-mismatch
+/// warning, and a content-less (answers/interview-only) save must NOT clobber a
+/// real prior verdict. The old `incoming || existing` made a `true` permanent.
+#[test]
+fn merge_mismatch_follows_a_language_bearing_save_and_ignores_a_content_less_one() {
+    // Prior verdict: mismatch (a German résumé generated against an English ad).
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.mismatch = true;
+
+    // A corrected regeneration carries the language pair and says "no mismatch".
+    let mut fixed = record("g2", "https://acme.com/job/1");
+    fixed.resume_language = "en".into();
+    fixed.job_ad_language = "en".into();
+    fixed.mismatch = false;
+    assert!(
+        !merge_application(existing.clone(), fixed).mismatch,
+        "a language-bearing save with mismatch=false must clear the stale warning"
+    );
+
+    // An answers-only save carries no language pair; its default mismatch=false
+    // must not wipe the existing verdict.
+    let mut answers_only = record("g3", "https://acme.com/job/1");
+    answers_only.resume_language = String::new();
+    answers_only.job_ad_language = String::new();
+    answers_only.mismatch = false;
+    assert!(
+        merge_application(existing, answers_only).mismatch,
+        "a content-less save must not clobber a real prior mismatch verdict"
+    );
+}
+
 #[test]
 fn merge_layers_answers_onto_an_existing_cover_without_clobbering() {
     let mut existing = record("g1", "https://acme.com/job/1");
