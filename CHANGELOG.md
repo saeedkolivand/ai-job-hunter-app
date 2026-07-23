@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.129.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.129.0...v0.129.1) (2026-07-23)
+
+### 🐛 Bug Fixes
+
+* **ai-generations:** make the mismatch merge follow a language-bearing save ([#874](https://github.com/saeedkolivand/ai-job-hunter-app/issues/874)) (@thejesh23) ([57bc6cc](https://github.com/saeedkolivand/ai-job-hunter-app/commit/57bc6cc08a65e8910753f5fa5537c1356d46a8ce))
+* **ai:** stop corrupting streamed text at a chunk boundary ([#837](https://github.com/saeedkolivand/ai-job-hunter-app/issues/837)) (@thejesh23) ([aa4cf01](https://github.com/saeedkolivand/ai-job-hunter-app/commit/aa4cf0142863948dd2b9309f7cc0e72928d7e952))
+* **export:** bump typst family to 0.15.1 in lockstep ([#865](https://github.com/saeedkolivand/ai-job-hunter-app/issues/865)) ([071cc6a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/071cc6aa81910320cd887b9498d690361b14df74)), closes [#851](https://github.com/saeedkolivand/ai-job-hunter-app/issues/851)
+* **export:** do not consume a letter's salutation as the letterhead name ([#876](https://github.com/saeedkolivand/ai-job-hunter-app/issues/876)) (@thejesh23) ([a9c0c91](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a9c0c91d8287dcd5ad71085541caaba18b1895d6))
+* **export:** keep a subject-line-first letterhead-less letter's subject line ([#878](https://github.com/saeedkolivand/ai-job-hunter-app/issues/878)) ([a8bf608](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a8bf6089e9e4d89a4daccfc0000da8c6bf219d2f)), closes [#876](https://github.com/saeedkolivand/ai-job-hunter-app/issues/876) [#877](https://github.com/saeedkolivand/ai-job-hunter-app/issues/877)
+* **export:** keep body paragraphs separate in a letter with no letterhead ([#839](https://github.com/saeedkolivand/ai-job-hunter-app/issues/839)) (@thejesh23) ([ec671a5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ec671a56d7c045a1e344214c3727cd540baa7f37))
+* **scraper:** delegate board location filtering to the central location_filter ([#835](https://github.com/saeedkolivand/ai-job-hunter-app/issues/835)) (@thejesh23) ([a7c217b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a7c217b05fb08e08615fac97d4b2091290553879))
+* **scraper:** keep distinct Hacker News job ids apart in cross-source dedup ([#845](https://github.com/saeedkolivand/ai-job-hunter-app/issues/845)) (@thejesh23) ([9e7b698](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9e7b698d51138999d268260e7725b6d5820164bb))
+* **ui:** flush a pending RichTextEditor edit on unmount instead of dropping it ([#841](https://github.com/saeedkolivand/ai-job-hunter-app/issues/841)) (@thejesh23) ([869e60b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/869e60b8404ad0eb8f71dcfb828e3320f821a9fe))
+* **ui:** ignore a superseded geocode response ([#843](https://github.com/saeedkolivand/ai-job-hunter-app/issues/843)) (@thejesh23) ([5c0a305](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5c0a3050c020543fb7fa458a23fdcf57986ab9dc))
+* **ui:** stop rendering "0mo ago" for a 28-29 day old timestamp ([#833](https://github.com/saeedkolivand/ai-job-hunter-app/issues/833)) (@thejesh23) ([919224d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/919224d7489384d2dcca5b62a4f8d441f03f96ae))
+
+### ♻️ Refactors
+
+* convert landing home and creature pages to tsx (PR2/3) ([#879](https://github.com/saeedkolivand/ai-job-hunter-app/issues/879)) ([e26e959](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e26e95930a74b63b69519fbb47397dc6ae59f3a2))
+* convert landing how-it-works to tsx and remove raw-html pipeline (PR3/3) ([#881](https://github.com/saeedkolivand/ai-job-hunter-app/issues/881)) ([d9f9c79](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d9f9c7985f45e3fa3f7795bd29f6fbbcad9d18d2))
+* convert landing privacy and download pages to tsx (PR1/3) ([#872](https://github.com/saeedkolivand/ai-job-hunter-app/issues/872)) ([395a895](https://github.com/saeedkolivand/ai-job-hunter-app/commit/395a89557a6ec8ffa50dd5edd83585f0aad636fb))
+
 ## [0.129.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.128.0...v0.129.0) (2026-07-22)
 
 ### ✨ Features
