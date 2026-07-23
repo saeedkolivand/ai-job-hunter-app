@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
 
-import { Fonts } from '@/components/Fonts';
-
 import { WorldClient } from './WorldClient';
 
 export const metadata: Metadata = {
@@ -36,7 +34,6 @@ export const metadata: Metadata = {
 export default function WorldPage() {
   return (
     <>
-      <Fonts />
       <WorldClient />
     </>
   );

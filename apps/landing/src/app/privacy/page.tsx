@@ -1,10 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
-import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
-import { RawHtml } from '@/components/RawHtml';
-import { readContent } from '@/lib/content';
+import { PrivacyBody } from '@/components/privacy/PrivacyBody';
+import { readStyle } from '@/lib/styles';
 
 export const metadata: Metadata = {
   title: 'AI Job Hunter — Privacy Policy',
@@ -31,9 +30,10 @@ export const viewport: Viewport = { themeColor: '#f4ecdc' };
 export default function PrivacyPage() {
   return (
     <>
-      <Fonts />
-      <PageStyle css={readContent('privacy', 'styles.css')} />
-      <RawHtml html={readContent('privacy', 'body.html')} />
+      <PageStyle css={readStyle('marketing-tokens.css')} />
+      <PageStyle css={readStyle('marketing-base.css')} />
+      <PageStyle css={readStyle('privacy.css')} />
+      <PrivacyBody />
       <ClientScripts srcs={['/scripts/privacy-0.js']} />
     </>
   );

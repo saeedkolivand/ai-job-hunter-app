@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 
 import { ArchitectureMap } from '@/components/architecture-map/ArchitectureMap';
 import { DocShell } from '@/components/DocShell';
-import { Fonts } from '@/components/Fonts';
 import { PageStyle } from '@/components/PageStyle';
 import { readStyle } from '@/lib/styles';
 
@@ -29,7 +28,6 @@ export const metadata: Metadata = {
 export default function ArchitectureMapPage() {
   return (
     <>
-      <Fonts />
       <PageStyle css={readStyle('architecture-map.css')} />
       <DocShell wide>
         <ArchitectureMap />
