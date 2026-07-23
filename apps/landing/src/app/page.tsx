@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 
 import { ClientScripts } from '@/components/ClientScripts';
+import { HomeBody } from '@/components/home/HomeBody';
 import { PageStyle } from '@/components/PageStyle';
-import { RawHtml } from '@/components/RawHtml';
-import { readContent } from '@/lib/content';
+import { readStyle } from '@/lib/styles';
 
 export const metadata: Metadata = {
   title: 'AI Job Hunter — please hire him',
@@ -38,8 +38,9 @@ export const metadata: Metadata = {
 export default function HomePage() {
   return (
     <>
-      <PageStyle css={readContent('home', 'styles.css')} />
-      <RawHtml html={readContent('home', 'body.html')} />
+      <PageStyle css={readStyle('marketing-tokens.css')} />
+      <PageStyle css={readStyle('home.css')} />
+      <HomeBody />
       <ClientScripts srcs={['/scripts/home-0.js']} />
     </>
   );
