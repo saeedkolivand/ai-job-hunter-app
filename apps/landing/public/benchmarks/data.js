@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784756076494,
+  "lastUpdate": 1784795706169,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5453,6 +5453,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 302271,
             "range": "± 17168",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "35212698+thejesh23@users.noreply.github.com",
+            "name": "Thejesh",
+            "username": "thejesh23"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a7c217b05fb08e08615fac97d4b2091290553879",
+          "message": "fix(scraper): delegate board location filtering to the central location_filter (#835)\n\n* fix(scraper): match a 'City, Country' location label segment-wise\n\nThe location box normally holds the geocode picker's \"<city>, <country>\"\nlabel — `commands::geocoding` builds it exactly so \"the UI only ever shows\n'City, Country'\", and both entry points (jobs ScrapeFilters, autopilot\nStepTarget) write `suggestion.display` straight into `location`.\n\nThe two boards that filter location client-side required that WHOLE label to\nappear as one contiguous substring of the board's own location text. No board\nwrites it that way:\n\n  The Muse        \"New York, NY\"            vs request \"New York, United States\"\n  GermanTechJobs  \"Karl-Marx-Allee 1, Berlin\" / \"Munich, Bayern\"\n                                            vs request \"Berlin, Germany\"\n\nso the filter dropped every row and the board reported 0 results for any\npicked city. Typing free text without picking a suggestion still worked,\nwhich is why it survives manual testing.\n\nMatch segment-wise instead: any non-empty comma-separated part of the request\nappearing in the haystack is enough. Conservative — it errs toward keeping,\nmirroring the engine's own `location_filter`, which already tokenizes the\nrequest and keeps on any token hit for this exact reason.\n\n- adds `common::location_matches`, shared by both call sites\n- extracts `germantechjobs::matches_gtj_filters` from `search()`'s `retain`\n  so tests drive the real predicate instead of a copy that could diverge\n  (same reasoning as The Muse's `apply_filters`)\n\nSingle-segment requests behave exactly as before.\n\n* fix(scraper): delegate board location filtering to the central location_filter\n\nReworks the fix per review. The first version added a board-local segment-wise\nmatcher (`location_matches`); this removes board-local LOCATION filtering from\nthe three `supports_location() == false` boards entirely and lets the engine's\ncentral `location_filter` be the single authority — the reviewer's preferred\ndirection, and the one the issue points at.\n\nWhy this is correct and strictly better than a second local matcher:\n\n- The Muse, Comeet and GermanTechJobs are all non-location boards, so the engine\n  already runs `location_filter` on their output both as a live gate\n  (`KeepItemByBoardFn`) and as a post-hoc safety net. Board-local location\n  filtering was redundant with it.\n- The central filter is diaeresis/exonym-aware (München/Munich, Köln/Cologne via\n  the curated table + DIN-5007-2 folding) and conservative (keeps remote /\n  empty / unknown, and a country-code-only request is inert). A raw\n  case-insensitive board-local matcher had none of that and, running BEFORE the\n  central filter, produced false drops the central filter is designed to rescue.\n- The original 0-results bug is still fixed: `location_spec()` feeds the picker's\n  \"<city>, <country>\" label into the central filter, which TOKENISES it (it does\n  not require the whole label as one substring), so a geocode-picked city keeps\n  its rows via the central filter alone.\n\nChanges:\n- common.rs: `matches_filters` is now keyword-only (drops the `location` param);\n  `location_matches` is deleted.\n- germantechjobs: `matches_gtj_filters` is keyword-only; the unused `loc` local\n  is removed.\n- The Muse / Comeet call sites pass query only.\n- Tests updated across common/themuse/germantechjobs: the board-local location\n  assertions are replaced with ones pinning that these boards no longer drop on\n  location (delegated to the central filter, whose own exonym/diacritic behaviour\n  is unit-tested in engine::location_filter).\n\nKnown limitation (unchanged by this PR, now consistent across all non-location\nboards): because `location_spec()` stores the whole label in `city`, the central\nfilter also tokenises the country segment, so \"Munich, Germany\" keeps a\n\"Frankfurt, Germany\" row. That is a central-filter property shared by every\nnon-location board, not something this PR introduces; tightening it is a separate\nchange to `location_filter`/`location_spec`.\n\n---------\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
+          "timestamp": "2026-07-23T10:03:53+02:00",
+          "tree_id": "6b171ae5ebe713b3506e7da252f1f751fde06b11",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a7c217b05fb08e08615fac97d4b2091290553879"
+        },
+        "date": 1784795705083,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2159490,
+            "range": "± 83256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2542820,
+            "range": "± 29480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 290453,
+            "range": "± 23312",
             "unit": "ns/iter"
           }
         ]
