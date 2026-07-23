@@ -91,13 +91,20 @@ fn generate_cover_letter_docx_classic(
         // market (was English/German only).
         let is_salutation = crate::locale::letter::is_salutation(&clean);
         let is_signoff = crate::locale::letter::is_signoff(&clean);
+        let is_subject_line = crate::locale::letter::is_subject_line(&clean);
 
         // First line is name — but ONLY a real letterhead name, not a letter that
-        // opens straight at the salutation. Without this guard a letterhead-less
-        // letter's "Dear …" was consumed as the name (replaced with the candidate
-        // name), the salutation arm never ran, `in_body` was never set, and the
-        // whole body rendered in the muted addressee style.
-        if !header_done && docx.document.children.is_empty() && !is_salutation && !is_signoff {
+        // opens straight at the salutation, sign-off, or subject/reference line
+        // (e.g. German "Betreff: …"). Without this guard a letterhead-less
+        // letter's "Dear …"/"Betreff: …" was consumed as the name (replaced with
+        // the candidate name), the salutation/subject arm never ran, `in_body`
+        // was never set, and the whole body rendered in the muted addressee style.
+        if !header_done
+            && docx.document.children.is_empty()
+            && !is_salutation
+            && !is_signoff
+            && !is_subject_line
+        {
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
@@ -187,7 +194,7 @@ fn generate_cover_letter_docx_classic(
         }
 
         // Subject line (Betreff/Objet/Oggetto/…) — bold, before the salutation.
-        if !in_body && crate::locale::letter::is_subject_line(&clean) {
+        if !in_body && is_subject_line {
             docx = docx.add_paragraph(
                 Paragraph::new()
                     .add_run(
@@ -320,13 +327,20 @@ fn generate_cover_letter_docx_layout(
 
         let is_salutation = crate::locale::letter::is_salutation(&clean);
         let is_signoff = crate::locale::letter::is_signoff(&clean);
+        let is_subject_line = crate::locale::letter::is_subject_line(&clean);
 
         // First line is name — but ONLY a real letterhead name, not a letter that
-        // opens straight at the salutation. Without this guard a letterhead-less
-        // letter's "Dear …" was consumed as the name (replaced with the candidate
-        // name), the salutation arm never ran, `in_body` was never set, and the
-        // whole body rendered in the muted addressee style.
-        if !header_done && docx.document.children.is_empty() && !is_salutation && !is_signoff {
+        // opens straight at the salutation, sign-off, or subject/reference line
+        // (e.g. German "Betreff: …"). Without this guard a letterhead-less
+        // letter's "Dear …"/"Betreff: …" was consumed as the name (replaced with
+        // the candidate name), the salutation/subject arm never ran, `in_body`
+        // was never set, and the whole body rendered in the muted addressee style.
+        if !header_done
+            && docx.document.children.is_empty()
+            && !is_salutation
+            && !is_signoff
+            && !is_subject_line
+        {
             let name_text = meta
                 .and_then(|m| m.candidate_name.as_ref())
                 .map(|s| s.as_str())
@@ -483,7 +497,7 @@ fn generate_cover_letter_docx_layout(
         }
 
         // Subject / reference line (Betreff/Objet/Re/…) — before the salutation.
-        if !in_body && crate::locale::letter::is_subject_line(&clean) {
+        if !in_body && is_subject_line {
             if is_refined {
                 // The always-on JOB REFERENCE line: caption suppressed when the
                 // subject already opens with the market's own label or "Re:" —
