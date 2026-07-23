@@ -92,3 +92,31 @@ if (!('IntersectionObserver' in globalThis)) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = vi.fn();
 }
+
+// jsdom implements no layout, so `Range.getClientRects` is undefined. ProseMirror's
+// coordsAtPos → singleRect queries a text Range on every scrollToSelection (which
+// runs on each editor transaction); without these it throws an unhandled
+// "target.getClientRects is not a function" that pollutes any editor-driven test.
+// Returning empty rects is enough — jsdom has no viewport to scroll into anyway.
+const EMPTY_RECT: DOMRect = {
+  x: 0,
+  y: 0,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: 0,
+  height: 0,
+  toJSON: () => ({}),
+};
+const EMPTY_RECT_LIST = {
+  length: 0,
+  item: () => null,
+  *[Symbol.iterator](): Iterator<DOMRect> {},
+} as unknown as DOMRectList;
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => EMPTY_RECT_LIST;
+}
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => EMPTY_RECT;
+}

@@ -13,6 +13,18 @@ async function toggleBulletList(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Bullet list' }));
 }
 
+/**
+ * Loading the initial content is itself a transaction, so a freshly mounted
+ * editor schedules one debounced emit of the *unchanged* value (this happens on
+ * `main` too). Wait for that mount emit and discard it, so a later
+ * "nothing emitted yet" assertion is not racing it on a slow runner — the flake
+ * that made the previous version of this suite unreliable in CI.
+ */
+async function drainMountEmit(onChange: ReturnType<typeof vi.fn>) {
+  await waitFor(() => expect(onChange).toHaveBeenCalled());
+  onChange.mockClear();
+}
+
 describe('RichTextEditor — pending edit on unmount', () => {
   it('flushes a debounced edit when the editor unmounts', async () => {
     // Preview / Edit / Source is a conditional render, so switching view
@@ -22,27 +34,30 @@ describe('RichTextEditor — pending edit on unmount', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const { unmount } = render(<RichTextEditor value="Hello" onChange={onChange} />);
+    await drainMountEmit(onChange);
 
     await toggleBulletList(user);
 
-    // Unmount inside the debounce window, before any emit has fired.
+    // Unmount inside the debounce window, before the edit's own timer fires.
     expect(onChange).not.toHaveBeenCalled();
     unmount();
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    // The unmount flush is synchronous (it serializes the captured doc directly,
+    // not via the timer), so onChange has already fired exactly once.
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0]?.[0]).toContain('Hello');
   });
 
   it('never emits changed content for an untouched document', async () => {
-    // The editor already schedules one emit on mount (pre-existing: loading the
-    // initial content is itself a transaction, so a mounted editor emits the
-    // unchanged value after the debounce on `main` too). The flush must
-    // therefore be value-PRESERVING for an untouched document — otherwise a
-    // plain view switch would mark it dirty with different content.
+    // The flush must be value-PRESERVING for an untouched document — otherwise a
+    // plain view switch would mark it dirty with different content. Both the
+    // mount emit and any unmount flush of the untouched doc must round-trip to
+    // exactly the input value.
     const onChange = vi.fn();
     const { unmount } = render(<RichTextEditor value="Hello" onChange={onChange} />);
 
     await screen.findByRole('button', { name: 'Bullet list' });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
     unmount();
 
     for (const [md] of onChange.mock.calls) {
@@ -56,11 +71,12 @@ describe('RichTextEditor — pending edit on unmount', () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     const { unmount } = render(<RichTextEditor value="Hello" onChange={onChange} />);
+    await drainMountEmit(onChange);
 
     await toggleBulletList(user);
-    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1)); // debounce fired
 
-    unmount();
+    unmount(); // the ref was cleared by the timer, so cleanup emits nothing
 
     expect(onChange).toHaveBeenCalledTimes(1);
   });
