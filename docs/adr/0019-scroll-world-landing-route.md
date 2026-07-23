@@ -51,7 +51,7 @@ Six dive scenes tell the story (slump → doomscroll → workshop → robot engi
 - **URL**: `/world` (served as `world.html` by the static export, per ADR-0018's parity gate).
 - **Next.js file**: `apps/landing/src/app/world/page.tsx` — metadata + OG tags + `<WorldClient />`.
 - **Parity gate** (`scripts/check-parity.mjs`): Updated `REQUIRED_FILES` to include `world.html` — this ensures the built `out/` contains the `/world` route and prevents accidental deletion.
-- **Marketing tier link**: One additive link in `src/content/home/body.html` (line 349: `→ or fly through the world (new)`). No other marketing copy touched; the marketing tier remains protected.
+- **Marketing tier link**: One additive link in `src/components/home/HomeBody.tsx` (lines 693–694: `→ or fly through the world (new)`). No other marketing copy touched; the marketing tier remains protected.
 
 ### Origin invariant (ADR-0018 security constraint reaffirmed)
 
