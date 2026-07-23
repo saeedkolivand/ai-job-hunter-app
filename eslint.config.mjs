@@ -555,6 +555,24 @@ export default tseslint.config(
     },
   },
 
+  // ── Home/creature ported inline hex — DOM-parity, not design-system chrome ──
+  // ADR-0018: home and creature are byte-for-byte ports of hand-authored static
+  // HTML whose vanilla JS (public/scripts/{home,creature}-0.js) binds to the
+  // rendered DOM. Their inline style={{...}} hex values (SVG doodle fills,
+  // decorative gradients) are baked into the pre-refactor baseline and must be
+  // preserved verbatim for diff-dom parity — they are not themeable UI chrome,
+  // so the brand-token rule doesn't apply here.
+  {
+    files: [
+      'apps/landing/src/components/home/HomeBeats.tsx',
+      'apps/landing/src/components/home/HomeBody.tsx',
+      'apps/landing/src/components/creature/CreatureBody.tsx',
+    ],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+
   // ── Vendored scroll-world engine — verbatim third-party file ────────────────
   // scrub-engine.js is vendored byte-for-byte from the scroll-world skill
   // (framework-agnostic vanilla JS) and must never be reformatted/edited to
