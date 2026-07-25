@@ -1,5 +1,17 @@
 [
   {
+    "sha": "e078feeb59f85e4857929ace8402c560b87a0f56",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-24T06:03:54Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "e04fc9b319af6b30317bb624252b83c4ce5fa731",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1185,18 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "06cd575dabd6a3acc66b64075c019291209b4e9e",
-    "commit": {
-      "message": "chore(release): 0.128.0 [skip ci]",
-      "author": {
-        "date": "2026-07-21T19:45:18Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
     }
   }
 ]
