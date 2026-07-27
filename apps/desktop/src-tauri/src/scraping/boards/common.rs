@@ -219,6 +219,32 @@ pub(crate) fn ats_partial_note(
     (rows_dropped > 0).then(|| format!("rows-dropped:{rows_dropped}"))
 }
 
+/// Companion to [`ats_partial_note`] for the ATS boards that fetch one company
+/// at a time WITHOUT a pre-fetch slug validator (Ashby, Lever): `failed_fetches`
+/// of the attempted per-company fetches failed (404 on a rotted slug, 403, a
+/// rate-limited 429, a response over the byte cap) while at least one sibling
+/// succeeded — so [`ats_all_fetches_failed`] keeps the run `Ok` and those
+/// failures were previously log-only, invisible to the user (the whole point of
+/// this note: a run that quietly fetched 3 of 10 companies looked complete).
+///
+/// Emits the same PR-D `kind:value` grammar as [`ats_partial_note`]:
+/// `companies-failed:<n>`. Returns `None` when nothing failed, OR when EVERY
+/// fetch failed (`successful_fetches == 0`) — that whole-board FAILURE is
+/// surfaced as an `Err`, never as a note. Company names are deliberately NOT in
+/// the token: it crosses IPC into a chip, so it stays a count (the per-company
+/// detail is already in the `log::warn!` each board emits).
+///
+/// Pure — directly unit-testable without a mock server. The caller emits the
+/// returned token via `ScrapeContext::report_note`, gated on non-cancellation
+/// (a benign interruption reports nothing, mirroring [`ats_finish_search`]).
+pub(crate) fn ats_failed_fetches_note(
+    successful_fetches: usize,
+    failed_fetches: usize,
+) -> Option<String> {
+    (successful_fetches > 0 && failed_fetches > 0)
+        .then(|| format!("companies-failed:{failed_fetches}"))
+}
+
 /// Decide the pagination-failure policy for a page fetch: a page reached with
 /// nothing collected yet (typically page 0) propagates the fetch failure as a
 /// board error; a later page that fails after some items were already

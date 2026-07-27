@@ -1899,6 +1899,7 @@
       "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
+      "jobicy": "Jobicy",
       "arbeitnow": "Arbeit Now",
       "themuse": "The Muse",
       "wwr": "WWR",
@@ -1958,7 +1959,9 @@
         "slugsInvalid_one": "{{count}} company name invalid",
         "slugsInvalid_other": "{{count}} company names invalid",
         "rowsDropped_one": "{{count}} row unreadable — board format may have changed",
-        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed"
+        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed",
+        "companiesFailed_one": "{{count}} company could not be fetched",
+        "companiesFailed_other": "{{count}} companies could not be fetched"
       }
     },
     "viewList": "List",

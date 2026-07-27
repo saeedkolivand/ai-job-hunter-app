@@ -84,7 +84,7 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
-    let input = BoardSearchInput {
+    let mut input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
         // `amount` is the per-board cap: each board returns up to this many results.
@@ -174,6 +174,20 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     tokio::spawn(async move {
         // Hold the concurrency guard for the whole scrape; dropped on completion.
         let _guard = guard;
+
+        // Backfill the market for a location the user TYPED instead of picking
+        // from the geocode suggestions: the renderer only sends `countryCode`
+        // for a picked suggestion, so a freehand "Germany"/"Amsterdam" arrives
+        // with none — and the aggregator then hardcodes a 'de' guess AND
+        // suppresses its sparse-city broadening (silent under-return). Same
+        // best-effort lookup autopilot does on save; runs INSIDE the spawned
+        // task so the command still returns its `jobId` immediately, and a
+        // network error / no match / 2s timeout just leaves it absent.
+        if input.country_code.is_none() {
+            input.country_code =
+                crate::commands::geocoding::derive_country_code(input.location.as_deref()).await;
+        }
+
         let result = engine
             .scrape_boards(
                 &boards,

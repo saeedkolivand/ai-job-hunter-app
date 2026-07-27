@@ -3,9 +3,9 @@
 /// Endpoint: `https://api.lever.co/v0/postings/{company}?mode=json`
 /// No global keyword search — requires a company slug. The engine skips this
 /// board with `"needs-company"` when `input.companies` is empty.
-use super::super::http::fetch_json;
+use super::super::http::{fetch_json, FetchOptions};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::ats_all_fetches_failed;
+use super::common::{ats_all_fetches_failed, ats_failed_fetches_note};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -74,6 +74,7 @@ impl Scraper for LeverScraper {
         let total = input.companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut failed_fetches = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, company) in input.companies.iter().enumerate() {
@@ -91,10 +92,17 @@ impl Scraper for LeverScraper {
                 urlencoding::encode(company)
             );
 
+            let opts = FetchOptions {
+                // One Lever call returns a company's WHOLE board, so a large
+                // employer's payload can exceed the 8 MB default guard (observed:
+                // veeva → "Response too large", i.e. a silently dropped company).
+                // Raise the per-request cap only here.
+                max_bytes: Some(16 * 1024 * 1024),
+                ..Default::default()
+            };
+
             let postings =
-                match fetch_json::<Vec<LeverPosting>>(&url, Default::default(), ctx.signal.clone())
-                    .await
-                {
+                match fetch_json::<Vec<LeverPosting>>(&url, opts, ctx.signal.clone()).await {
                     Ok(d) => d,
                     Err(e) => {
                         // A fetch that failed because the run was cancelled is not
@@ -103,6 +111,7 @@ impl Scraper for LeverScraper {
                             break;
                         }
                         log::warn!("[lever] fetch failed for '{}': {e}", company);
+                        failed_fetches += 1;
                         first_fetch_error.get_or_insert_with(|| e.to_string());
                         continue;
                     }
@@ -134,6 +143,16 @@ impl Scraper for LeverScraper {
 
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
+            }
+        }
+
+        // A PARTIAL run (some companies fetched, some failed) still returns Ok, so
+        // the failures would otherwise be log-only — surface the count as ONE
+        // informational note. Gated on non-cancellation: a benign interruption
+        // reports nothing (mirrors `ats_finish_search`).
+        if !ctx.signal.is_cancelled() {
+            if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
+                ctx.report_note(note);
             }
         }
 
