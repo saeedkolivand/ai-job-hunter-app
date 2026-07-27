@@ -148,7 +148,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'react developer',
     location: '',
     workType: 'any',
-    amount: 50,
+    pages: 2,
     dateFilter: '24h',
     watchedCompaniesOnly: false,
     minMatchScore: 50,
@@ -163,11 +163,14 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   };
 }
 
-/** Exposes the live countryCode field as JSON for assertions. */
+/** Exposes the live countryCode + pages fields as JSON for assertions. */
 function Probe() {
   const { watch } = useFormContext<WizardState>();
   const countryCode = watch('countryCode');
-  return <output data-testid={TEST_IDS.autopilot.probe}>{JSON.stringify({ countryCode })}</output>;
+  const pages = watch('pages');
+  return (
+    <output data-testid={TEST_IDS.autopilot.probe}>{JSON.stringify({ countryCode, pages })}</output>
+  );
 }
 
 function renderStep(overrides: Partial<WizardState> = {}) {
@@ -185,9 +188,9 @@ function renderStep(overrides: Partial<WizardState> = {}) {
   return render(<Host />);
 }
 
-function readProbe(): { countryCode: string | undefined } {
+function readProbe(): { countryCode: string | undefined; pages: number } {
   const text = screen.getByTestId(TEST_IDS.autopilot.probe).textContent ?? '{}';
-  return JSON.parse(text) as { countryCode: string | undefined };
+  return JSON.parse(text) as { countryCode: string | undefined; pages: number };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -263,6 +266,46 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
     await user.click(screen.getByTestId('location-input-stub'));
 
     expect(readProbe().countryCode).toBeUndefined();
+  });
+});
+
+// ── Page-budget field ───────────────────────────────────────────────────────
+// The control used to be an "Items to scrape" count (1–500) that the save step
+// divided by 25, so every value above 250 collapsed to the same 10 pages and
+// silently did nothing. It is now the page budget itself, bounded to the
+// backend's AutopilotTargetSchema range.
+
+describe('StepTarget — page budget field', () => {
+  it('bounds the control to the backend 1–10 page range and seeds the form value', () => {
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    expect(input).toHaveAttribute('min', '1');
+    expect(input).toHaveAttribute('max', '10');
+    expect(input.value).toBe('2');
+  });
+
+  it('writes a typed page count straight into the form (no ×25 item detour)', async () => {
+    const user = userEvent.setup();
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole('spinbutton');
+    await user.clear(input);
+    await user.type(input, '7');
+
+    expect(readProbe().pages).toBe(7);
+  });
+
+  it('clamps an over-range entry down to 10 on blur instead of accepting a no-op value', async () => {
+    const user = userEvent.setup();
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole('spinbutton');
+    await user.clear(input);
+    await user.type(input, '40');
+    await user.tab();
+
+    expect(readProbe().pages).toBe(10);
   });
 });
 

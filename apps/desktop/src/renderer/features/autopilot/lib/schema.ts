@@ -32,7 +32,9 @@ export const autopilotWizardSchema = z.object({
   location: z.string(),
   countryCode: z.string().optional(),
   workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),
-  amount: z.number().int().min(1).max(500),
+  // Mirrors the backend's AutopilotTargetSchema.pages (int 1–10) and the
+  // NumberField's own min/max, which blur-clamps into the same range.
+  pages: z.number().int().min(1).max(10),
   dateFilter: z.string(),
   watchedCompaniesOnly: z.boolean(),
   minMatchScore: z.number().min(0).max(100),

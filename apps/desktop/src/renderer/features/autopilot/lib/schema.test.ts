@@ -14,7 +14,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'rust backend',
     location: '',
     workType: 'any',
-    amount: 50,
+    pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,
     minMatchScore: 50,
@@ -80,8 +80,16 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ boards: [''] })).success).toBe(false);
   });
 
-  it('rejects out-of-range numeric controls (amount > 500, score > 100)', () => {
-    expect(autopilotWizardSchema.safeParse(makeForm({ amount: 501 })).success).toBe(false);
+  it('rejects out-of-range numeric controls (pages outside 1–10, score > 100)', () => {
+    // pages mirrors the backend AutopilotTargetSchema range, so 11 (and 0) must
+    // fail here rather than reaching the IPC boundary.
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 11 })).success).toBe(false);
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 0 })).success).toBe(false);
     expect(autopilotWizardSchema.safeParse(makeForm({ minMatchScore: 101 })).success).toBe(false);
+  });
+
+  it('accepts the full 1–10 page range', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 1 })).success).toBe(true);
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 10 })).success).toBe(true);
   });
 });

@@ -244,13 +244,16 @@ export function StepTarget({ prefilled }: StepTargetProps) {
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
           control={control}
-          name="amount"
+          name="pages"
           render={({ field }) => (
-            <WizardField label={t('autopilot.wizard.target.items')}>
+            <WizardField
+              label={t('autopilot.wizard.target.pages')}
+              hint={t('autopilot.wizard.target.pagesHint')}
+            >
               <NumberField
                 min={1}
-                max={500}
-                fallback={25}
+                max={10}
+                fallback={2}
                 variant="default"
                 className={fieldCls}
                 value={field.value}
