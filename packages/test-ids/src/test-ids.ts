@@ -22,8 +22,15 @@ export const TEST_IDS = {
   /** Jobs feature — scraping, results, form */
   jobs: {
     scrapeForm: 'scrape-form',
-    /** Bounded, scrollable wrapper around the page header + scrape form. */
+    /** Scrollable body of the scrape drawer — owns the form's overflow so tall
+     *  form content can never push the Start button out of reach. */
     scrapeFormScroll: 'scrape-form-scroll',
+    /** Compact command bar above the results (title + filters + view + actions). */
+    commandBar: 'jobs-command-bar',
+    /** Second command-bar row: the active-filter chips (only when non-empty). */
+    filterChips: 'jobs-filter-chips',
+    /** Live scrape strip in the command bar — progress label + cancel. */
+    scrapeStatusStrip: 'jobs-scrape-status',
     /** stub-only: no matching attribute on the real component */
     scrapeFilters: 'scrape-filters',
     aggregatorKeyHint: 'aggregator-key-hint',

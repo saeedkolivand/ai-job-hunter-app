@@ -1740,9 +1740,7 @@
     }
   },
   "jobs": {
-    "eyebrow": "Live postings",
     "title": "Job board",
-    "subtitle": "Scraped job postings from your configured boards. Filter, open a posting, and tailor your application.",
     "searchPlaceholder": "Filter by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "emptyCta": "Search jobs",
@@ -1968,7 +1966,15 @@
     "selectAJob": "Select a job to see details",
     "agencyChip": "Agency",
     "filters": {
-      "hideAgency": "Hide agency posts"
+      "hideAgency": "Hide agency posts",
+      "activeLabel": "Active filters",
+      "searchChip": "Search: {{query}}",
+      "remove": "Remove filter: {{name}}",
+      "clearAll": "Clear filters"
+    },
+    "commandBar": {
+      "label": "Job board controls",
+      "shownCount": "{{shown}} of {{total}} jobs shown"
     },
     "cluster": {
       "alsoOn": "Also on",

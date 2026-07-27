@@ -1744,9 +1744,7 @@
     }
   },
   "jobs": {
-    "eyebrow": "Live-Anzeigen",
     "title": "Jobbörse",
-    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, öffnen und Bewerbung anpassen.",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort filtern…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
@@ -1972,7 +1970,15 @@
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "agencyChip": "Personalvermittler",
     "filters": {
-      "hideAgency": "Vermittleranzeigen ausblenden"
+      "hideAgency": "Vermittleranzeigen ausblenden",
+      "activeLabel": "Aktive Filter",
+      "searchChip": "Suche: {{query}}",
+      "remove": "Filter entfernen: {{name}}",
+      "clearAll": "Filter zurücksetzen"
+    },
+    "commandBar": {
+      "label": "Jobbörsen-Steuerung",
+      "shownCount": "{{shown}} von {{total}} Jobs angezeigt"
     },
     "cluster": {
       "alsoOn": "Auch auf",

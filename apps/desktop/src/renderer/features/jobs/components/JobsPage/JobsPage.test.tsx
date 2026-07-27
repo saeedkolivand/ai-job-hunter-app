@@ -16,6 +16,7 @@
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -55,7 +56,14 @@ const resultsProps = {
   failureNote: undefined as unknown,
   totalCount: undefined as unknown,
   filtered: undefined as unknown,
+  // The empty state's "Search jobs" CTA — must open the same scrape drawer as
+  // the command bar's primary action.
+  onScrape: undefined as unknown,
 };
+
+// ScrapeForm prop capture — the drawer hands the form its own dismiss callback
+// (`onToggle`); firing it must close the drawer.
+const scrapeFormContainer = { onToggle: null as (() => void) | null };
 
 // usePostings — mutable container so tests can simulate "results present" vs
 // "zero results" for the header-strip mutual-exclusivity gating (the header
@@ -129,15 +137,6 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => (ts: number) => String(ts),
 }));
 
-vi.mock('@/components/layout/PageHeader', () => ({
-  PageHeader: ({ title, actions }: { title: string; actions?: ReactNode }) => (
-    <div data-testid={TEST_IDS.layout.pageHeader}>
-      {title}
-      {actions}
-    </div>
-  ),
-}));
-
 vi.mock('@/components/layout/PageTransition', () => ({
   PageTransition: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -148,11 +147,13 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
     failureNote,
     totalCount,
     filtered,
+    onScrape,
   }: {
     boardSummaries?: unknown;
     failureNote?: unknown;
     totalCount?: unknown;
     filtered?: unknown;
+    onScrape?: unknown;
   }) => {
     // Records the summaries + failure note + unfiltered count forwarded into
     // the empty-state wiring, plus the sorted `filtered` list so the stable
@@ -161,6 +162,7 @@ vi.mock('@/features/jobs/components/JobsResults', () => ({
     resultsProps.failureNote = failureNote;
     resultsProps.totalCount = totalCount;
     resultsProps.filtered = filtered;
+    resultsProps.onScrape = onScrape;
     return <div data-testid={TEST_IDS.jobs.jobsResults} />;
   },
 }));
@@ -176,7 +178,10 @@ vi.mock('@/components/scrape/BoardSummaryChips', () => ({
 }));
 
 vi.mock('@/features/jobs/components/ScrapeForm', () => ({
-  ScrapeForm: () => <div data-testid={TEST_IDS.jobs.scrapeForm} />,
+  ScrapeForm: ({ onToggle }: { onToggle?: () => void }) => {
+    scrapeFormContainer.onToggle = onToggle ?? null;
+    return <div data-testid={TEST_IDS.jobs.scrapeForm} />;
+  },
 }));
 
 vi.mock('@/features/jobs/providers', () => ({
@@ -203,6 +208,8 @@ vi.mock('@ajh/ui', () => ({
     </div>
   ),
   ConfirmModal: () => null,
+  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) =>
+    open ? <div role="dialog">{children}</div> : null,
   Dropdown: () => null,
   Input: () => null,
   SegmentedControl: ({ onChange }: { onChange?: (v: string) => void }) => {
@@ -770,22 +777,70 @@ describe('JobsPage — stable newest sort', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Header/scrape-form scroll container — jsdom can't measure layout, so assert
-// the bounding + scroll classes are present on the wrapper. Without them, a
-// full board selection + open advanced grid overflows the viewport and the
-// Start button becomes unreachable at the 900x600 window floor.
+// Scrape drawer — the form moved out of the page flow into a right slide-over.
+// It must be closed on mount (so it can never displace the results list), open
+// from the command bar's Scrape action, and close again from the form's own
+// dismiss control. jsdom can't measure layout, so the "tall form content can't
+// clip the Start button" guarantee is asserted as the scroll class on the
+// drawer body (which is now the sole scroll owner for the form).
 // ---------------------------------------------------------------------------
 
-describe('JobsPage — scrape form scroll container', () => {
+describe('JobsPage — scrape drawer', () => {
   beforeEach(() => {
     postingsContainer.data = [];
   });
 
-  it('bounds and scrolls the header wrapper so tall form content cannot clip the Start button', () => {
+  it('is closed on mount — the form never occupies page flow', () => {
+    renderJobsPage();
+    expect(screen.queryByTestId(TEST_IDS.jobs.scrapeForm)).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens from the command bar Scrape action and renders the reused ScrapeForm', async () => {
+    const user = userEvent.setup();
     renderJobsPage();
 
-    const wrapper = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
-    expect(wrapper.className).toContain('overflow-y-auto');
-    expect(wrapper.className).toContain('max-h-[55vh]');
+    await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
+  });
+
+  it('the drawer body scrolls, so tall form content cannot put the Start button out of reach', async () => {
+    const user = userEvent.setup();
+    renderJobsPage();
+
+    await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
+
+    const body = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
+    expect(body.className).toContain('overflow-y-auto');
+    expect(body.className).toContain('min-h-0');
+  });
+
+  it("closes again via the form's own dismiss control (onToggle)", async () => {
+    const user = userEvent.setup();
+    renderJobsPage();
+
+    await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
+
+    act(() => {
+      scrapeFormContainer.onToggle?.();
+    });
+
+    expect(screen.queryByTestId(TEST_IDS.jobs.scrapeForm)).not.toBeInTheDocument();
+  });
+
+  it('the empty-state CTA opens the same drawer', async () => {
+    renderJobsPage();
+    expect(screen.queryByTestId(TEST_IDS.jobs.scrapeForm)).not.toBeInTheDocument();
+
+    // JobsResults is stubbed — invoke the `onScrape` prop it was handed, which
+    // is the empty state's "Search jobs" CTA on the real component.
+    act(() => {
+      (resultsProps.onScrape as (() => void) | undefined)?.();
+    });
+
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
   });
 });
