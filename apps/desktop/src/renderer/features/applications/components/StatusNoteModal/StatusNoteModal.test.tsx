@@ -18,9 +18,7 @@ vi.mock('@ajh/translations', () => ({
 
 describe('StatusNoteModal', () => {
   it('renders nothing while closed', () => {
-    render(
-      <StatusNoteModal open={false} onClose={vi.fn()} status="applied" onSave={vi.fn()} />
-    );
+    render(<StatusNoteModal open={false} onClose={vi.fn()} status="applied" onSave={vi.fn()} />);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -97,7 +95,7 @@ describe('StatusNoteModal', () => {
     rerender(<StatusNoteModal open={false} onClose={onClose} status="offer" onSave={vi.fn()} />);
     rerender(<StatusNoteModal open onClose={onClose} status="offer" onSave={vi.fn()} />);
 
-    const field = screen.getByPlaceholderText('applications.note.placeholder');
-    expect((field as HTMLTextAreaElement).value).toBe('');
+    const field = screen.getByPlaceholderText<HTMLTextAreaElement>('applications.note.placeholder');
+    expect(field.value).toBe('');
   });
 });

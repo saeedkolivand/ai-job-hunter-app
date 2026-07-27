@@ -473,13 +473,13 @@ describe('ApplyByEmailTab — canonical contact binding', () => {
       />
     );
 
+    // Generic form (not an `as` cast): eslint's no-unnecessary-type-assertion
+    // strips the cast, but `tsc` still needs the input type for `.value`.
     expect(
-      (screen.getByLabelText('applications.detail.email.recipientNameLabel'))
-        .value
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientNameLabel').value
     ).toBe('Dana Doe');
     expect(
-      (screen.getByLabelText('applications.detail.email.recipientEmailLabel'))
-        .value
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientEmailLabel').value
     ).toBe('dana@acme.com');
   });
 
