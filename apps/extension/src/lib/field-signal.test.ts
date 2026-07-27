@@ -85,6 +85,13 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
       'aka_first_name',
       'alsoknownasfirstname',
       'also_known_as_last_name',
+      // Taleo's `nm` abbreviation — the deny patterns end `n(?:ame|m)` for
+      // exactly these, and the name PATTERNS match them, so both halves must
+      // agree or a third party's `…Nm` box gets filled.
+      'spousefirstnm',
+      'referencelastnm',
+      'dependentlastnm',
+      'beneficiaryfirstnm',
       // A leading `[^p]` character guard (the first attempt at exempting
       // "preferred") silently exempted EVERY p-terminated prefix — these are
       // ordinary HRIS spellings and each one was filled with the user's name.
@@ -374,13 +381,31 @@ describe('matchNamedKey — first / last name', () => {
     }
   });
 
-  it("lets a field's own first/last attribute out-specify a 'Full Name' GROUP label", () => {
+  it('keeps a single box that asks for BOTH halves on fullName', () => {
+    // Prose freely names both halves of a name; the `lastName` row's `last name`
+    // matches such a label, so without the conjunction forms (and with the
+    // first/last veto reading prose) the box received only the surname.
+    for (const signal of [
+      'first and last name',
+      'first & last name',
+      'first/last name',
+      'first name and last name',
+      'full name first and last name', // label + placeholder, as one signal
+    ]) {
+      expect(matchNamedKey(signal, ''), signal).toBe('fullName');
+    }
+  });
+
+  it("lets a field's own first/last ATTRIBUTE out-specify a 'Full Name' GROUP label", () => {
     // Workday/Ashby wire a group heading to each box via aria-labelledby, so
     // "full name" lands in the signal of a `first_name` input — and the fullName
-    // row runs first, which put the WHOLE name in the first-name box.
-    expect(matchNamedKey('first_name full name')).toBe('firstName');
-    expect(matchNamedKey('last_name full name')).toBe('lastName');
-    expect(matchNamedKey('lname full name')).toBe('lastName');
+    // row runs first, which put the WHOLE name in the first-name box. The veto
+    // reads the ATTRIBUTE signal (2nd arg), never the prose.
+    expect(matchNamedKey('first_name full name', 'first_name')).toBe('firstName');
+    expect(matchNamedKey('last_name full name', 'last_name')).toBe('lastName');
+    expect(matchNamedKey('lname full name', 'lname')).toBe('lastName');
+    // …and the SAME prose with no first/last attribute stays a full-name field.
+    expect(matchNamedKey('full name first and last name', 'candidate_name')).toBe('fullName');
     // A real full-name field is unaffected…
     expect(matchNamedKey('fullname full name')).toBe('fullName');
     // …and so are the localized COMBINED phrases (they carry no first/last
@@ -419,5 +444,23 @@ describe('labelText', () => {
     document.body.innerHTML = `<label for="w">Notice period<input id="w" /></label>`;
     const el = document.getElementById('w') as HTMLInputElement;
     expect(labelText(el).trim()).toBe('Notice period');
+  });
+
+  it('collapses the markup whitespace inside a label', () => {
+    // The question text is persisted + sent over the bridge, so the same
+    // question must not key differently because of source indentation.
+    document.body.innerHTML = `
+      <label for="m">Why
+          this     role?</label><input id="m" />`;
+    const el = document.getElementById('m') as HTMLInputElement;
+    expect(labelText(el).trim()).toBe('Why this role?');
+  });
+
+  it('caps an aria-labelledby reference that points at a whole container', () => {
+    document.body.innerHTML = `
+      <div id="card">${'very long boilerplate '.repeat(60)}</div>
+      <input id="c" aria-labelledby="card" />`;
+    const el = document.getElementById('c') as HTMLInputElement;
+    expect(labelText(el).length).toBeLessThanOrEqual(310);
   });
 });

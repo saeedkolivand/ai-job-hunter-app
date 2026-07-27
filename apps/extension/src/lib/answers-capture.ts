@@ -22,6 +22,7 @@
  */
 
 import {
+  attributeSignal,
   autocompleteToken,
   isAmbiguousSignal,
   isHidden,
@@ -84,7 +85,7 @@ function isCapturable(el: HTMLElement): boolean {
   if (matchAutocompleteKey(autocompleteToken(el)) !== null) return false;
   const signal = textSignal(el);
   if (isAmbiguousSignal(signal)) return false;
-  return matchNamedKey(signal) === null;
+  return matchNamedKey(signal, attributeSignal(el)) === null;
 }
 
 /** The selected option's VISIBLE text (not its `value` attribute) — per the

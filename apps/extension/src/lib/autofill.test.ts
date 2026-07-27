@@ -420,6 +420,24 @@ describe('planAndFill – aria-labelledby labels (Workday / Ashby)', () => {
     expect(val('we')).toBe('saeed@example.com');
   });
 
+  it('fills the WHOLE name into a single box placeheld "First and Last Name"', () => {
+    // Prose names both halves; only the field's own ATTRIBUTE may veto the
+    // fullName row. Reading the placeholder as attribute-style evidence made
+    // this box fall through to lastName and receive just "Kolivand".
+    setForm(`
+      <label for="fn1">Full Name</label>
+      <input id="fn1" placeholder="First and Last Name" />
+      <label for="fn2">First and Last Name</label><input id="fn2" />
+      <input id="fn3" aria-label="First &amp; last name" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('fn1')).toBe('Saeed Kolivand');
+    expect(val('fn2')).toBe('Saeed Kolivand');
+    expect(val('fn3')).toBe('Saeed Kolivand');
+  });
+
   it("lets each box's own attribute win over a shared 'Full Name' GROUP label", () => {
     // Workday/Ashby point every box of a group at one heading, so "Full Name"
     // reaches the first/last inputs' signals — and the fullName row runs first.

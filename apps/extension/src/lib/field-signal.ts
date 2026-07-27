@@ -271,6 +271,14 @@ export function isHidden(el: HTMLElement): boolean {
   return false;
 }
 
+/** Per-source character cap for {@link labelText}. A label is a short phrase;
+ *  an `aria-labelledby` id may point at a whole CONTAINER (a fieldset, a card),
+ *  whose `textContent` is unbounded — and this string is persisted as the
+ *  answers-capture question key and sent over the bridge, so it must not grow
+ *  without limit. 300 is far above any real label and well below "swallowed the
+ *  page". */
+const LABEL_SOURCE_MAX = 300;
+
 /** CSS.escape when available (jsdom + browsers), else a conservative fallback. */
 function escapeId(id: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(id);
@@ -306,7 +314,7 @@ export function labelText(el: HTMLElement): string {
   const append = (node: Element | null): void => {
     if (!node || seen.has(node) || !node.textContent) return;
     seen.add(node);
-    text += ` ${node.textContent}`;
+    text += ` ${node.textContent.slice(0, LABEL_SOURCE_MAX)}`;
   };
 
   if (el.id) append(doc.querySelector(`label[for="${escapeId(el.id)}"]`));
@@ -317,7 +325,11 @@ export function labelText(el: HTMLElement): string {
       if (id) append(doc.getElementById(id));
     }
   }
-  return text;
+  // Collapse the source markup's newlines/indentation into single spaces: this
+  // string is not only matched against, it is PERSISTED as the answers-capture
+  // question key and sent over the bridge, so "Why\n    this role?" and
+  // "Why this role?" must be one question, not two.
+  return text.replace(/\s+/g, ' ');
 }
 
 /** Fold an accented EU label to ASCII so it matches the accent-free keyword
@@ -355,6 +367,22 @@ export function textSignal(el: HTMLElement): string {
       el.getAttribute('aria-label') ?? '',
       labelText(el),
     ].join(' ')
+  ).toLowerCase();
+}
+
+/** The same normalization as {@link textSignal}, but from the field's OWN
+ *  ATTRIBUTES only (`name`/`id`/`autocomplete`) — no placeholder, aria-label or
+ *  label prose.
+ *
+ *  {@link matchNamedKey} takes this as a second, narrower signal because the two
+ *  carry different EVIDENCE. Prose is written for a human and freely names both
+ *  halves of a name ("First and Last Name" is a single full-name box; a "Full
+ *  Name" group heading sits above separate first/last boxes), while an attribute
+ *  names the ONE field it is on. A rule that must not be fooled by a group
+ *  heading — the `fullName` row's `denyAttribute` — therefore reads only this. */
+export function attributeSignal(el: HTMLElement): string {
+  return stripDiacritics(
+    [el.getAttribute('name') ?? '', el.id, el.getAttribute('autocomplete') ?? ''].join(' ')
   ).toLowerCase();
 }
 
@@ -460,29 +488,41 @@ const NON_PERSON_NAME_OWNER =
   /user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|major|certificat|schule|hochschule|universitat|benutzer|\bfirma\b|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/;
 
 /**
- * The ATTRIBUTE-style first/last spellings, on their own — the `fullName` row's
- * other half of {@link NamedKeyPattern.deny}.
+ * The first/last spellings, as the `fullName` row's
+ * {@link NamedKeyPattern.denyAttribute} — matched against the ATTRIBUTE signal
+ * ({@link attributeSignal}) only, never the prose one.
  *
  * A GROUP label reaches a field's signal through `aria-labelledby` (and, for a
  * wrapping `<label>`, through {@link labelText}), so a "Full Name" group heading
  * above `first_name` / `last_name` boxes lands the phrase "full name" in BOTH
  * their signals. Since the `fullName` row runs first, each box would then take
- * the WHOLE name. When the signal ALSO carries a first/last attribute token, the
- * field's own attribute is the more specific evidence and wins. The DE/ES/IT/PL
- * combined phrases ("vor- und nachname", "nombre y apellidos", …) contain none
- * of these tokens, so they are unaffected.
+ * the WHOLE name. When the field's OWN ATTRIBUTE says first/last, that is the
+ * more specific evidence and wins.
+ *
+ * Reading only the attribute signal is load-bearing, not a refinement: the
+ * separator class accepts a space, so against the full signal this also matched
+ * PROSE — the single full-name box placeheld "First and Last Name" was vetoed
+ * out of `fullName` and fell through to `lastName`, receiving only the surname.
+ * (Dropping `\s` from the class is NOT the fix — it re-opens the mirror case, a
+ * prose `aria-label="First name"` under a "Full Name" heading.) The DE/ES/IT/PL
+ * combined phrases contain none of these tokens either way.
  */
 const ATTRIBUTE_FIRST_LAST_NAME =
   /(?:first|given|fore)[\s_-]*(?:name|nm)|(?:^|[^a-z])fname|(?:last|family)[\s_-]*(?:name|nm)|(?:^|[^a-z])lname/;
 
 /** One row of {@link NAMED_KEY_PATTERNS}: the key it resolves to, the signal
- *  pattern that claims it, and an optional `deny` that VETOES the row (the
- *  matcher then falls through to the rows below, and finally to the catch-all)
- *  — the row-scoped equivalent of the catch-all's own denylist. */
+ *  pattern that claims it, and optional vetoes — the row-scoped equivalent of
+ *  the catch-all's own denylist. A veto makes the matcher fall through to the
+ *  rows below, and finally to the catch-all. */
 interface NamedKeyPattern {
   key: string;
   pattern: RegExp;
+  /** Vetoes the row when it matches the FULL signal (attributes + prose). */
   deny?: RegExp;
+  /** Vetoes the row only when it matches the field's own ATTRIBUTE signal
+   *  ({@link attributeSignal}) — for evidence that a human-facing label may
+   *  legitimately carry but an attribute may not. */
+  denyAttribute?: RegExp;
 }
 
 const NAMED_KEY_PATTERNS: readonly NamedKeyPattern[] = [
@@ -530,12 +570,20 @@ const NAMED_KEY_PATTERNS: readonly NamedKeyPattern[] = [
   // compound.
   {
     key: 'fullName',
+    // The English conjunction forms ("First and Last Name", "First name & last
+    // name", "first/last name") join the localized ones: a SINGLE box asking for
+    // both halves is a full-name field, and without them it fell to the
+    // `lastName` row below (its `last name` matches) and received only the
+    // surname.
     pattern:
-      /full[\s_-]*name|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
-    // Veto: a non-person owner (school/company/user account — the same denylist
-    // the bare-"Name" catch-all applies), or a first/last ATTRIBUTE token that
-    // out-specifies a "Full Name" group label. See both consts above.
-    deny: new RegExp(`${NON_PERSON_NAME_OWNER.source}|${ATTRIBUTE_FIRST_LAST_NAME.source}`),
+      /full[\s_-]*name|first[\s_-]*(?:name)?[\s_-]*(?:and|&|\+|\/)[\s_-]*last[\s_-]*name|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
+    // Veto 1 (whole signal): a non-person owner — the same denylist the
+    // bare-"Name" catch-all applies, so "University Full Name" is refused in
+    // prose AND attribute spellings.
+    deny: NON_PERSON_NAME_OWNER,
+    // Veto 2 (ATTRIBUTE signal only): the field's own name/id says first/last,
+    // so a "Full Name" GROUP heading in its prose must not win. See the const.
+    denyAttribute: ATTRIBUTE_FIRST_LAST_NAME,
   },
   // First/last name — the separator between the two words is OPTIONAL
   // (`[\s_-]*`), because a form field's strongest signal is usually its
@@ -586,9 +634,18 @@ const NAMED_KEY_PATTERNS: readonly NamedKeyPattern[] = [
   },
 ];
 
-export function matchNamedKey(signal: string): string | null {
-  for (const { key, pattern, deny } of NAMED_KEY_PATTERNS) {
-    if (pattern.test(signal) && !deny?.test(signal)) return key;
+/**
+ * @param signal the full {@link textSignal} (attributes + prose).
+ * @param attributes the narrower {@link attributeSignal}; defaults to `signal`,
+ *   which is the pre-split behavior — every DOM caller passes it explicitly, and
+ *   only a row's {@link NamedKeyPattern.denyAttribute} reads it.
+ */
+export function matchNamedKey(signal: string, attributes: string = signal): string | null {
+  for (const { key, pattern, deny, denyAttribute } of NAMED_KEY_PATTERNS) {
+    if (!pattern.test(signal)) continue;
+    if (deny?.test(signal)) continue;
+    if (denyAttribute?.test(attributes)) continue;
+    return key;
   }
   // Generic catch-all: a bare "Name" field → full name, UNLESS the name belongs
   // to a non-person owner ({@link NON_PERSON_NAME_OWNER}) — a school, a company,

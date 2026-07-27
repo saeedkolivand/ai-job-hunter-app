@@ -94,6 +94,28 @@ describe('collectAnswers — disabled / readonly fields are not answers', () => 
     expect(collectAnswers(document)).toEqual([]);
   });
 
+  it('leaves a readonly field out of the REWRITE scan, and unlocatable for rewriting', () => {
+    // The rewrite path (`collectFilledFields` → `locateFilledField`) is the one
+    // that would hand readonly boilerplate back as an editable "answer".
+    setForm(`
+      <label for="ro2">Standard terms</label><textarea id="ro2" readonly>Boilerplate text.</textarea>
+      <label for="ans">Why this role?</label><input id="ans" type="text" value="Because I love it." />
+    `);
+    expect(collectFilledFields(document)).toEqual([
+      { question: 'Why this role?', index: 0, answer: 'Because I love it.' },
+    ]);
+    expect(locateFilledField(document, 'Standard terms', 0, 1)).toBeNull();
+  });
+
+  it('skips a disabled <select> (the :disabled half applies to selects too)', () => {
+    setForm(`
+      <label for="sel">Work authorization</label>
+      <select id="sel" disabled><option value="yes" selected>Yes</option></select>
+    `);
+    expect(collectAnswers(document)).toEqual([]);
+    expect(hasAnswerCapturableFields(document)).toBe(false);
+  });
+
   it('leaves a readonly field out of the QUESTIONS scan too', () => {
     setForm(`
       <label for="ro">Posting id</label><input id="ro" type="text" readonly />

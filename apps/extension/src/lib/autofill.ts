@@ -22,6 +22,7 @@
  */
 
 import {
+  attributeSignal,
   autocompleteToken,
   isAmbiguousSignal,
   isHidden,
@@ -167,8 +168,10 @@ function matchFieldKey(el: HTMLInputElement): string | null {
   if (tier1) return tier1;
 
   // ── Tier 2: unambiguous free-text signal (shared with answers-capture's
-  // exclude-identity-fields check — see `matchNamedKey`) ────────────────────
-  return matchNamedKey(signal);
+  // exclude-identity-fields check — see `matchNamedKey`). The field's own
+  // ATTRIBUTE signal goes along separately so a group label in the prose can't
+  // out-vote it (see `attributeSignal`). ────────────────────────────────────
+  return matchNamedKey(signal, attributeSignal(el));
 }
 
 /**
