@@ -39,6 +39,37 @@ pub(crate) fn map_posted_at(created_at: Option<i64>) -> Option<i64> {
     created_at // createdAt is already epoch-milliseconds — pass through verbatim
 }
 
+/// Production Lever API host. Factored into a constant (rather than inlined)
+/// purely so tests can drive [`LeverScraper::search_with_base`] against a local
+/// `wiremock` base instead — the aggregator's `JOOBLE_BASE_URL` pattern.
+const LEVER_BASE_URL: &str = "https://api.lever.co";
+
+/// Fetch ONE company's whole board. Split out of the search loop so the
+/// per-company request — including the raised byte cap — is drivable against a
+/// mock host, which is what makes the partial-failure note testable without the
+/// live API.
+async fn fetch_lever_company(
+    base_url: &str,
+    company: &str,
+    signal: tokio_util::sync::CancellationToken,
+) -> crate::error::AppResult<Vec<LeverPosting>> {
+    let url = format!(
+        "{base_url}/v0/postings/{}?mode=json",
+        urlencoding::encode(company)
+    );
+
+    let opts = FetchOptions {
+        // One Lever call returns a company's WHOLE board, so a large employer's
+        // payload can exceed the 8 MB default guard (observed: veeva →
+        // "Response too large", i.e. a silently dropped company). Raise the
+        // per-request cap only here.
+        max_bytes: Some(16 * 1024 * 1024),
+        ..Default::default()
+    };
+
+    fetch_json::<Vec<LeverPosting>>(&url, opts, signal).await
+}
+
 pub struct LeverScraper;
 
 #[async_trait]
@@ -61,6 +92,20 @@ impl Scraper for LeverScraper {
 
     async fn search(
         &self,
+        input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        self.search_with_base(LEVER_BASE_URL, input, ctx).await
+    }
+}
+
+impl LeverScraper {
+    /// The real search loop, parameterized by API base URL so tests can point it
+    /// at a mock server ([`fetch_lever_company`]). `search` supplies
+    /// [`LEVER_BASE_URL`]; nothing else calls this.
+    async fn search_with_base(
+        &self,
+        base_url: &str,
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
@@ -87,35 +132,20 @@ impl Scraper for LeverScraper {
                 continue;
             }
 
-            let url = format!(
-                "https://api.lever.co/v0/postings/{}?mode=json",
-                urlencoding::encode(company)
-            );
-
-            let opts = FetchOptions {
-                // One Lever call returns a company's WHOLE board, so a large
-                // employer's payload can exceed the 8 MB default guard (observed:
-                // veeva → "Response too large", i.e. a silently dropped company).
-                // Raise the per-request cap only here.
-                max_bytes: Some(16 * 1024 * 1024),
-                ..Default::default()
-            };
-
-            let postings =
-                match fetch_json::<Vec<LeverPosting>>(&url, opts, ctx.signal.clone()).await {
-                    Ok(d) => d,
-                    Err(e) => {
-                        // A fetch that failed because the run was cancelled is not
-                        // a real board-level error.
-                        if ctx.signal.is_cancelled() {
-                            break;
-                        }
-                        log::warn!("[lever] fetch failed for '{}': {e}", company);
-                        failed_fetches += 1;
-                        first_fetch_error.get_or_insert_with(|| e.to_string());
-                        continue;
+            let postings = match fetch_lever_company(base_url, company, ctx.signal.clone()).await {
+                Ok(d) => d,
+                Err(e) => {
+                    // A fetch that failed because the run was cancelled is not
+                    // a real board-level error.
+                    if ctx.signal.is_cancelled() {
+                        break;
                     }
-                };
+                    log::warn!("[lever] fetch failed for '{}': {e}", company);
+                    failed_fetches += 1;
+                    first_fetch_error.get_or_insert_with(|| e.to_string());
+                    continue;
+                }
+            };
             successful_fetches += 1;
 
             for p in postings {
@@ -148,12 +178,17 @@ impl Scraper for LeverScraper {
 
         // A PARTIAL run (some companies fetched, some failed) still returns Ok, so
         // the failures would otherwise be log-only — surface the count as ONE
-        // informational note. Gated on non-cancellation: a benign interruption
-        // reports nothing (mirrors `ats_finish_search`).
-        if !ctx.signal.is_cancelled() {
-            if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
-                ctx.report_note(note);
-            }
+        // informational note.
+        //
+        // Deliberately NOT gated on cancellation (unlike `ats_partial_note`'s
+        // callers): the engine cancels `ctx.signal` the moment the central
+        // `amount` cap fills, which on a long seeded company list is exactly when
+        // failures are most likely to have accumulated — gating here would
+        // suppress the note precisely when it matters. `failed_fetches` only ever
+        // counts non-cancellation errors (the loop breaks on a cancelled signal
+        // before recording), so the count stays honest either way.
+        if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
+            ctx.report_note(note);
         }
 
         // Distinguishes an all-slug 403/parse-drift run from a genuine zero result;

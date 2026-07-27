@@ -168,12 +168,12 @@ impl Scraper for AshbyScraper {
 
         // A PARTIAL run (some companies fetched, some failed) still returns Ok, so
         // the failures would otherwise be log-only — surface the count as ONE
-        // informational note. Gated on non-cancellation: a benign interruption
-        // reports nothing (mirrors `ats_finish_search`).
-        if !ctx.signal.is_cancelled() {
-            if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
-                ctx.report_note(note);
-            }
+        // informational note. NOT gated on cancellation, for the reason spelled
+        // out in `lever`'s copy: the engine cancels `ctx.signal` as soon as the
+        // central `amount` cap fills, and `failed_fetches` only counts
+        // non-cancellation errors anyway.
+        if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
+            ctx.report_note(note);
         }
 
         // Return Err only when every attempt failed — see `ats_all_fetches_failed`.

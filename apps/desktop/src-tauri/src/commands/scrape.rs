@@ -167,7 +167,7 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     // never a no-op. `scrape_boards` detects the pre-registered slot and reuses
     // it (we_minted=false) and therefore will NOT remove it — we clean up below.
     let cancel_token = tokio_util::sync::CancellationToken::new();
-    engine.register_token(&job_id, cancel_token).await;
+    engine.register_token(&job_id, cancel_token.clone()).await;
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
@@ -183,9 +183,33 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         // best-effort lookup autopilot does on save; runs INSIDE the spawned
         // task so the command still returns its `jobId` immediately, and a
         // network error / no match / 2s timeout just leaves it absent.
+        //
+        // CANCELLATION: this await must race the token, because a cancel landing
+        // here would otherwise be LOST — `ScraperEngine::cancel` REMOVES the job
+        // slot before cancelling it, so the later `scrape_boards` finds no
+        // pre-registered token and mints a FRESH, un-cancelled one. The abandoned
+        // run would then scrape to completion and its first streamed item would
+        // `clear_all()` the postings cache the user's NEW search is already
+        // filling (the Jobs page cancels-then-starts). `biased;` polls
+        // cancellation first so an already-cancelled run never starts the lookup.
         if input.country_code.is_none() {
-            input.country_code =
-                crate::commands::geocoding::derive_country_code(input.location.as_deref()).await;
+            let derived = tokio::select! {
+                biased;
+                () = cancel_token.cancelled() => None,
+                cc = crate::commands::geocoding::derive_country_code(input.location.as_deref()) => cc,
+            };
+            input.country_code = derived;
+        }
+
+        // Covers the same window without a geocode (a cancel arriving between the
+        // command returning its jobId and this task waking): never START a scrape
+        // for a run the user already cancelled. `jobs_cancel` has already emitted
+        // `job.cancelled`, so there is no terminal event to report here — just
+        // release the slot (idempotent; `cancel` already removed it) and the
+        // concurrency guard held by `_guard`.
+        if cancel_token.is_cancelled() {
+            engine.unregister_token(&job_id_clone).await;
+            return;
         }
 
         let result = engine

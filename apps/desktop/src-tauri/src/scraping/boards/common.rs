@@ -235,8 +235,13 @@ pub(crate) fn ats_partial_note(
 /// detail is already in the `log::warn!` each board emits).
 ///
 /// Pure — directly unit-testable without a mock server. The caller emits the
-/// returned token via `ScrapeContext::report_note`, gated on non-cancellation
-/// (a benign interruption reports nothing, mirroring [`ats_finish_search`]).
+/// returned token via `ScrapeContext::report_note`, and — unlike
+/// [`ats_partial_note`]'s callers — does NOT gate that on cancellation: the
+/// engine cancels `ctx.signal` as soon as the central `amount` cap fills, which
+/// on a long seeded company list is exactly when failures are most likely to
+/// have accumulated. The count stays honest because a fetch that failed *because
+/// of* cancellation is never recorded (each board breaks on a cancelled signal
+/// before incrementing).
 pub(crate) fn ats_failed_fetches_note(
     successful_fetches: usize,
     failed_fetches: usize,

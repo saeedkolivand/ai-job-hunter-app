@@ -40,14 +40,20 @@ vi.mock('@ajh/ui', async (importOriginal) => {
         onChange={(e) => onChange(e.target.value)}
       />
       <actual.Button
-        onClick={() =>
+        onClick={() => {
+          // Fire in the REAL order LocationInput.select() uses: onChange(display)
+          // FIRST, then onSelectSuggestion(s). The ordering matters — if the
+          // clearing onChange ran last it would wipe the structured payload the
+          // pick just captured, and a stub that only fires onSelectSuggestion
+          // could never catch that.
+          onChange('Berlin, Germany');
           onSelectSuggestion?.({
             display: 'Berlin, Germany',
             countryCode: 'DE',
             lat: 52.52,
             lon: 13.4,
-          })
-        }
+          });
+        }}
       >
         pick
       </actual.Button>
@@ -109,7 +115,10 @@ describe('ScrapeFilters — location', () => {
 
     fireEvent.click(screen.getByText('pick'));
 
-    expect(onFormChange).toHaveBeenCalledWith({
+    // Assert on the LAST call, not "any call": the pick fires the clearing
+    // onChange first, so a bare `toHaveBeenCalledWith` would still pass if the
+    // clear ran second and threw the picked payload away.
+    expect(onFormChange.mock.calls.at(-1)?.[0]).toEqual({
       location: 'Berlin, Germany',
       countryCode: 'DE',
       latitude: 52.52,

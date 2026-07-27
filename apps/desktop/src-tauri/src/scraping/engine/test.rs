@@ -541,6 +541,45 @@ async fn cancel_reaches_a_pre_registered_token() {
     assert!(token.is_cancelled());
 }
 
+/// `cancel` REMOVES the slot before cancelling it, so a `scrape_boards` that
+/// starts AFTER the cancel finds no pre-registered token and mints a fresh,
+/// un-cancelled one — the cancel is invisible to it.
+///
+/// This is a contract test, not a wish: `commands::scrape::scrape_boards` awaits
+/// a geocode backfill between registering its token and calling the engine, and
+/// relies on this exact behavior being true to justify holding its OWN clone of
+/// the token and checking it before starting the scrape. If `cancel` ever keeps
+/// the slot (making the mint-fresh path unreachable), this test fails and that
+/// guard can be simplified — until then, removing it silently resurrects the
+/// lost-cancel window.
+#[tokio::test]
+async fn cancel_removes_the_slot_so_a_later_run_mints_a_fresh_token() {
+    let engine = ScraperEngine::new();
+    let registered = tokio_util::sync::CancellationToken::new();
+
+    engine
+        .register_token("job-lost-cancel", registered.clone())
+        .await;
+    engine.cancel("job-lost-cancel").await;
+    assert!(
+        registered.is_cancelled(),
+        "the registered clone must flip — that part reaches the caller"
+    );
+
+    // The slot is gone: re-registering under the same id succeeds and the NEW
+    // token is un-cancelled, which is exactly what `scrape_boards` would mint.
+    let fresh = tokio_util::sync::CancellationToken::new();
+    engine
+        .register_token("job-lost-cancel", fresh.clone())
+        .await;
+    assert!(
+        !fresh.is_cancelled(),
+        "a token registered after the cancel is un-cancelled — a run started \
+         here would ignore the user's cancel unless the caller checks its own \
+         clone first (see commands::scrape::scrape_boards)"
+    );
+}
+
 // ── run_boards tests ──────────────────────────────────────────────────────────
 
 #[tokio::test]
