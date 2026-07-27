@@ -13,9 +13,7 @@ import { mountScrollWorld } from './scrub-engine';
 // fire here. That is exactly the iOS failure mode these tests need to reproduce:
 // a clip whose events never arrive must still be primed and must still recover.
 
-const CLIP_TIMEOUT = 0;
-
-const flush = () => new Promise<void>((resolve) => setTimeout(() => resolve(), CLIP_TIMEOUT));
+const flush = () => new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
 
 /** The three media queries the engine probes, driven per-test. */
 function stubMatchMedia(opts: { coarse: boolean; narrow: boolean; reduce: boolean }) {
@@ -30,6 +28,11 @@ function stubMatchMedia(opts: { coarse: boolean; narrow: boolean; reduce: boolea
 function stubScreen(width: number, height: number) {
   Object.defineProperty(window.screen, 'width', { configurable: true, value: width });
   Object.defineProperty(window.screen, 'height', { configurable: true, value: height });
+}
+
+/** Drives the priming gate — deliberately independent of the coarse-pointer query. */
+function stubTouchPoints(points: number) {
+  Object.defineProperty(window.navigator, 'maxTouchPoints', { configurable: true, value: points });
 }
 
 /** Unique asset paths per test so earlier mounts' listeners can't pollute a filter. */
@@ -73,30 +76,50 @@ function stubFetch(mode: 'pending' | 'ok') {
 }
 
 /** Captures which <video> elements the engine tried to prime (muted play→pause). */
-function trackPriming(playResult: 'resolve' | 'reject') {
+function trackPriming(playResult: 'resolve' | 'reject' | 'no-promise') {
   const played: HTMLMediaElement[] = [];
+  const paused: HTMLMediaElement[] = [];
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (
     this: HTMLMediaElement
   ) {
     played.push(this);
+    if (playResult === 'no-promise') return undefined as unknown as Promise<void>;
     return playResult === 'resolve'
       ? Promise.resolve()
       : Promise.reject(new Error('gesture required'));
   });
-  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
-  return played;
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+    this: HTMLMediaElement
+  ) {
+    paused.push(this);
+  });
+  return { played, paused };
 }
 
-const primedIn = (played: HTMLMediaElement[], container: HTMLElement) =>
-  played.filter((v) => container.contains(v));
+const inside = (els: HTMLMediaElement[], container: HTMLElement) =>
+  els.filter((v) => container.contains(v));
 
 const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
+
+/** A touch device whose clips actually materialise as <video> elements. */
+function touchDeviceWithVideos(playResult: 'resolve' | 'reject' | 'no-promise') {
+  vi.stubGlobal('requestAnimationFrame', () => 0);
+  stubMatchMedia({ coarse: true, narrow: true, reduce: false });
+  stubScreen(430, 932);
+  stubTouchPoints(5);
+  URL.createObjectURL = () => 'blob:scrub-engine-test';
+  URL.revokeObjectURL = () => {};
+  return trackPriming(playResult);
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   URL.createObjectURL = originalCreateObjectURL;
-  document.body.innerHTML = '';
+  URL.revokeObjectURL = originalRevokeObjectURL;
+  stubTouchPoints(0);
+  document.body.replaceChildren();
 });
 
 // ---------------------------------------------------------------------------
@@ -140,16 +163,8 @@ describe('device classification picks the asset set', () => {
 // and its scene never left the poster.
 // ---------------------------------------------------------------------------
 describe('iOS video priming', () => {
-  function phoneWithVideos(playResult: 'resolve' | 'reject') {
-    vi.stubGlobal('requestAnimationFrame', () => 0);
-    stubMatchMedia({ coarse: true, narrow: true, reduce: false });
-    stubScreen(430, 932);
-    URL.createObjectURL = () => 'blob:scrub-engine-test';
-    return { played: trackPriming(playResult) };
-  }
-
   it('primes clips that appear after the touch (their load events never fire on iOS)', async () => {
-    const { played } = phoneWithVideos('resolve');
+    const { played } = touchDeviceWithVideos('resolve');
     const resolvers: Array<() => void> = [];
     vi.stubGlobal(
       'fetch',
@@ -163,50 +178,100 @@ describe('iOS video priming', () => {
 
     // The touch lands while the clips are still in flight — nothing to prime yet.
     window.dispatchEvent(new Event('pointerdown'));
-    expect(primedIn(played, container)).toHaveLength(0);
+    expect(inside(played, container)).toHaveLength(0);
 
     resolvers.forEach((resolve) => resolve());
     await flush();
 
     const videos = container.querySelectorAll('video.sw-scene__video');
     expect(videos.length).toBeGreaterThan(0);
-    expect(primedIn(played, container)).toHaveLength(videos.length);
+    expect(inside(played, container)).toHaveLength(videos.length);
   });
 
   it('re-primes on a later touch when play() was refused (the listener is not once-only)', async () => {
-    const { played } = phoneWithVideos('reject');
+    const { played } = touchDeviceWithVideos('reject');
     stubFetch('ok');
     const container = mount('retry');
     await flush();
 
     // Clips created before any gesture must not be primed yet.
-    expect(primedIn(played, container)).toHaveLength(0);
+    expect(inside(played, container)).toHaveLength(0);
 
     window.dispatchEvent(new Event('pointerdown'));
     await flush();
-    const afterFirstTouch = primedIn(played, container).length;
+    const afterFirstTouch = inside(played, container).length;
     expect(afterFirstTouch).toBeGreaterThan(0);
 
     // A once:true listener would be gone by now and this would stay flat.
     window.dispatchEvent(new Event('touchstart'));
     await flush();
-    expect(primedIn(played, container)).toHaveLength(afterFirstTouch * 2);
+    expect(inside(played, container)).toHaveLength(afterFirstTouch * 2);
   });
 
   it('primes each clip only once while play() keeps succeeding', async () => {
-    const { played } = phoneWithVideos('resolve');
+    const { played } = touchDeviceWithVideos('resolve');
     stubFetch('ok');
     const container = mount('once');
     await flush();
 
     window.dispatchEvent(new Event('pointerdown'));
     await flush();
-    const primed = primedIn(played, container).length;
+    const primed = inside(played, container).length;
 
     window.dispatchEvent(new Event('pointerdown'));
     window.dispatchEvent(new Event('touchstart'));
     await flush();
-    expect(primedIn(played, container)).toHaveLength(primed);
+    expect(inside(played, container)).toHaveLength(primed);
+  });
+
+  it('primes a trackpad-attached iPad, which reports a fine pointer but is still touch', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    // iPadOS 13.4+ with a Magic Keyboard: hover:hover + pointer:fine, yet WebKit
+    // still gates media loading on a gesture. `coarse` misses this device entirely.
+    stubMatchMedia({ coarse: false, narrow: false, reduce: false });
+    stubScreen(1024, 1366);
+    stubTouchPoints(5);
+    URL.createObjectURL = () => 'blob:scrub-engine-test';
+    const { played } = trackPriming('resolve');
+    stubFetch('ok');
+    const container = mount('ipadtrackpad');
+    await flush();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await flush();
+    const videos = container.querySelectorAll('video.sw-scene__video');
+    expect(videos.length).toBeGreaterThan(0);
+    expect(inside(played, container)).toHaveLength(videos.length);
+  });
+
+  it('never primes on a non-touch desktop', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    stubMatchMedia({ coarse: false, narrow: false, reduce: false });
+    stubScreen(2560, 1440);
+    stubTouchPoints(0);
+    URL.createObjectURL = () => 'blob:scrub-engine-test';
+    const { played } = trackPriming('resolve');
+    stubFetch('ok');
+    const container = mount('nontouch');
+    await flush();
+
+    expect(container.querySelectorAll('video.sw-scene__video').length).toBeGreaterThan(0);
+    window.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('touchstart'));
+    await flush();
+    expect(inside(played, container)).toHaveLength(0);
+  });
+
+  it('pauses straight away when play() returns no promise (pre-promise WebKit)', async () => {
+    const { played, paused } = touchDeviceWithVideos('no-promise');
+    stubFetch('ok');
+    const container = mount('nopromise');
+    await flush();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await flush();
+    expect(inside(played, container).length).toBeGreaterThan(0);
+    expect(inside(paused, container)).toHaveLength(inside(played, container).length);
   });
 });
 
@@ -216,18 +281,21 @@ describe('iOS video priming', () => {
 // re-requested on every scroll tick.
 // ---------------------------------------------------------------------------
 describe('clip failure recovery', () => {
+  function sceneOf(container: HTMLElement) {
+    const scene = container.querySelector('.sw-scene');
+    if (!scene) throw new Error('engine did not build a scene');
+    return scene;
+  }
+
   it('drops the dead video back to its poster and stops retrying after 3 attempts', async () => {
-    vi.stubGlobal('requestAnimationFrame', () => 0);
-    stubMatchMedia({ coarse: true, narrow: true, reduce: false });
-    stubScreen(430, 932);
-    URL.createObjectURL = () => 'blob:scrub-engine-test';
-    trackPriming('resolve');
+    touchDeviceWithVideos('resolve');
+    const revoked: string[] = [];
+    URL.revokeObjectURL = (url: string) => void revoked.push(url);
     const urls = stubFetch('ok');
     const container = mount('fail');
     await flush();
 
-    const scene = container.querySelector('.sw-scene');
-    if (!scene) throw new Error('engine did not build a scene');
+    const scene = sceneOf(container);
     // The engine only adds has-clip on `seeked`, which jsdom never fires; set it
     // by hand so the error path's cleanup of it is actually observable.
     scene.classList.add('has-clip');
@@ -236,6 +304,8 @@ describe('clip failure recovery', () => {
     failClip();
     expect(scene.querySelector('video')).toBeNull();
     expect(scene.classList.contains('has-clip')).toBe(false);
+    // The discarded blob is released; live clips deliberately keep theirs.
+    expect(revoked).toEqual(['blob:scrub-engine-test']);
 
     const attempts = () => urls.filter((u) => u === '/fail/m0.mp4').length;
     expect(attempts()).toBe(1);
@@ -247,5 +317,31 @@ describe('clip failure recovery', () => {
       failClip();
     }
     expect(attempts()).toBe(3);
+  });
+
+  it('ignores a late error from a video the segment has already replaced', async () => {
+    touchDeviceWithVideos('resolve');
+    stubFetch('ok');
+    const container = mount('stale');
+    await flush();
+
+    const scene = sceneOf(container);
+    const first = scene.querySelector('video');
+    first?.dispatchEvent(new Event('error'));
+    window.dispatchEvent(new Event('orientationchange'));
+    await flush();
+
+    const second = scene.querySelector('video');
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+
+    // The discarded element errors again; without the identity guard this resets
+    // the segment and the next tick stacks a third <video> over the live one.
+    first?.dispatchEvent(new Event('error'));
+    window.dispatchEvent(new Event('orientationchange'));
+    await flush();
+
+    expect(scene.querySelectorAll('video')).toHaveLength(1);
+    expect(scene.querySelector('video')).toBe(second);
   });
 });

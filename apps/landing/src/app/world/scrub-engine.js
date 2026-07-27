@@ -77,6 +77,13 @@ function mountScrollWorld(container, config) {
   const isMobile = coarse
     ? Math.min(window.screen.width, window.screen.height) <= 500
     : window.matchMedia('(max-width: 860px)').matches;
+  // Video priming (see primeVideo) is gated separately from the asset tier: since
+  // iPadOS 13.4 an iPad with a Magic Keyboard/trackpad reports hover:hover +
+  // pointer:fine, so `coarse` misses it — yet WebKit still gates media loading on a
+  // gesture there, which would strand exactly that config on posters forever.
+  // maxTouchPoints catches every touch-capable browser (a Windows touch laptop just
+  // takes a harmless muted play→pause); a real desktop reports 0 and never primes.
+  const canTouch = navigator.maxTouchPoints > 0;
   const SECTIONS = config.sections || [];
   const CONNECTORS = config.connectors || [];
   const CONNECTORS_M = config.connectorsMobile || [];
@@ -316,8 +323,15 @@ function mountScrollWorld(container, config) {
         // must not sit on top of the poster. Reset the segment back to its still so a
         // later scroll can retry (bounded by `tries`).
         v.addEventListener('error', () => {
+          // A late error from an element this segment has already replaced must not
+          // reset the live clip (that would freeze it and stack a second <video>).
+          if (s.video !== v) return;
           if (v.parentNode) v.parentNode.removeChild(v);
-          if (s.video === v) s.video = null;
+          // Live clips keep their blob URL for the page's lifetime by design, but a
+          // torn-down one is dead weight — release it or a failing segment leaks
+          // multi-MB blobs once per retry.
+          URL.revokeObjectURL(v.src);
+          s.video = null;
           s.el.classList.remove('has-clip');
           s.hasClip = false;
           s.ready = false;
@@ -432,13 +446,14 @@ function mountScrollWorld(container, config) {
   // on any touch, every clip that exists but hasn't been primed yet is primed (muted
   // play→pause). That also covers a first touch landing while clip 0's fetch is
   // still in flight. `s.primed` keeps it to one play() per segment; `userReady` lets a
-  // freshly-created clip prime itself (see loadClip). Gated on `coarse`, not `isMobile`:
-  // this is a WebKit-on-touch policy, not an asset-tier choice — iPads need it too even
-  // though they now take the desktop set.
+  // freshly-created clip prime itself (see loadClip). Gated on `canTouch`, not `coarse`
+  // (a trackpad-attached iPad is pointer:fine yet still needs this) and not `isMobile`
+  // (a WebKit-on-touch policy is not an asset-tier choice — iPads need priming even
+  // though they now take the desktop set).
   let userReady = false;
   function primeVideo(s) {
     const v = s.video;
-    if (!coarse || !v || s.primed) return;
+    if (!canTouch || !v || s.primed) return;
     s.primed = true;
     try {
       const p = v.play();
@@ -450,6 +465,9 @@ function mountScrollWorld(container, config) {
         }).catch(() => {
           s.primed = false; // priming was refused — let the next gesture try again
         });
+      // Pre-promise WebKit returns undefined from play(); without this the primed
+      // clip just keeps playing underneath the scrubber.
+      else v.pause();
     } catch (e) {
       s.primed = false;
     }

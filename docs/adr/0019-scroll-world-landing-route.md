@@ -86,17 +86,32 @@ Now a phone is a coarse pointer **and** a phone-sized screen, tested on the scre
 
 The result is a `const` evaluated **once at mount**, not a function: a live check let a resize serve one scene's poster from one set and the next scene's clip from the other. **Behaviour change:** a desktop browser resized (or a DevTools device toggle flipped) across 860px no longer switches asset sets without a reload.
 
-`coarse` on its own is still the right gate for the particle drop, the URL-bar resize guard, and video priming (D3) — those are touch-browser traits, not asset-tier choices. The two must not be conflated.
+Three call sites consume it: the scene poster (`stillMobile` vs `still`), the clip URL in `loadClip`, and — easy to miss — the `raf()` seek step `eps`. Tablets therefore also move from the phone's coarse `0.02` to the desktop `0.008`, i.e. finer scrubbing and more decodes. That is the intended pairing with the heavier desktop encode they now receive, and it stays bounded by the existing `s.video.seeking` coalescer, which already refuses to queue a seek while the decoder is busy.
+
+`coarse` on its own remains the gate for the particle drop and the URL-bar resize guard — genuine touch-browser traits. It is **not** the gate for priming; see D3.
 
 ### D3 — iOS priming: persistent listeners + prime on creation
 
 Upstream registered the primer `{once:true}` on `pointerdown`/`touchstart`, so it only reached videos that existed at the first touch — in practice segment 0 alone, because `loadClip` is gated on scroll proximity. iOS WebKit refuses to load media data for a video created outside a gesture, so every later clip never fired `loadeddata`/`loadedmetadata`, `s.ready` stayed false, `raf()` skipped it, `seeked` never fired, `has-clip` was never added, and every scene past the first showed its poster forever.
 
-Two changes: `loadClip` primes a clip **immediately on creation** when `userReady` is already set (a muted + `playsinline` `play()` _is_ permitted outside a gesture and forces the data load), and the gesture listeners **stay registered** (still passive) so any later touch primes anything still unprimed — which also covers a first touch landing while segment 0's blob fetch is in flight. `primeVideo` now takes the segment and dedupes on a per-segment `s.primed` flag (reset if `play()` is refused, so the next gesture retries); it is gated on `coarse`, not `isMobile`, because iPads need priming even though D2 gives them the desktop set.
+Two changes: `loadClip` primes a clip **immediately on creation** when `userReady` is already set (a muted + `playsinline` `play()` _is_ permitted outside a gesture and forces the data load), and the gesture listeners **stay registered** (still passive) so any later touch primes anything still unprimed — which also covers a first touch landing while segment 0's blob fetch is in flight. `primeVideo` now takes the segment and dedupes on a per-segment `s.primed` flag (reset if `play()` is refused, so the next gesture retries).
+
+The priming gate is `canTouch = navigator.maxTouchPoints > 0`, evaluated once at mount — **not** `coarse` and **not** `isMobile`:
+
+- Not `isMobile`, because WebKit's gesture-gated media loading is a browser policy, not an asset tier — iPads need priming even though D2 now gives them the desktop set.
+- Not `coarse`, because since iPadOS 13.4 an iPad with a Magic Keyboard/trackpad reports `hover:hover` + `pointer:fine`. A `coarse` gate leaves exactly that configuration on posters forever — the original bug, on a device the original fix's rationale claimed to cover.
+
+`maxTouchPoints` catches every touch-capable browser. The cost is a harmless muted `play()`→`pause()` on Windows touch laptops; a real desktop reports `0` and never primes at all (locked by a test, since that guard is the only thing standing between desktop and a burst of spurious `play()` calls).
+
+`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber.
 
 ### D4 — bounded clip-failure recovery
 
 Upstream latched `s.loading = true` forever on success (a clip that then failed to decode wedged its scene on the poster with no path back) while a failing `fetch` cleared the latch and re-requested on **every scroll tick**. An `error` listener on the video now removes the dead element, drops `has-clip`, and resets the segment so a later scroll can retry; a per-segment `s.tries` counter caps that at 3 attempts, so neither failure mode storms or wedges.
+
+The handler's first line is an identity guard, `if (s.video !== v) return;`. Media elements can fire `error` more than once and a discarded element outlives its replacement, so without it a late error from an already-replaced `<video>` resets the segment while the **live** clip is still mounted — freezing that clip and stacking a second `<video>` into the scene on the next tick.
+
+Teardown also calls `URL.revokeObjectURL(v.src)`. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a torn-down element is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry.
 
 ### D5 — header doc comment
 
