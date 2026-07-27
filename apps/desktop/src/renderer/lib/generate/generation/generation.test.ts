@@ -1041,24 +1041,45 @@ describe('output tone wiring (Settings → Output Tone)', () => {
     expect(systemOf(client)).toMatch(/TONE: a more narrative, distinctive voice/);
   });
 
-  it('threads the store outputTone AND the resolved market into the application-email prompt', async () => {
-    usePreferencesStore.setState({ outputTone: 'formal' });
-    const client = register();
-    // English email for a German job: only the market resolved from `jobCountry`
-    // can put a German salutation in the prompt — drop the `market` argument and
-    // this falls back to the international "Dear Hiring Manager,".
+  // The application-email path resolves its own market + tone (mirroring
+  // generateCoverLetter); each is asserted alone so a regression in one is never
+  // reported as a failure of the other.
+  type EmailMeta = Parameters<typeof generateApplicationEmail>[0]['meta'];
+  const runEmail = async (client: ReturnType<typeof register>, meta: EmailMeta) => {
     const p = generateApplicationEmail({
       resume: 'My resume',
       jobAd: 'Backend role in Berlin',
-      meta: { ...META, jobCountry: 'DE' },
+      meta,
       model: 'llama3',
     });
     await flushUntilStreaming();
     emit('Subject: Application\n\nGreeting.');
     done();
     await p;
-    const system = systemOf(client);
-    expect(system).toMatch(/TONE: formal and precise/);
+    return systemOf(client);
+  };
+
+  it('threads the store outputTone into the application-email system prompt', async () => {
+    usePreferencesStore.setState({ outputTone: 'formal' });
+    const client = register();
+    expect(await runEmail(client, META)).toMatch(/TONE: formal and precise/);
+  });
+
+  it('threads the market resolved from meta.jobCountry into the application-email prompt', async () => {
+    const client = register();
+    // English email for a German job: only the market resolved from `jobCountry`
+    // can put a German salutation in the prompt — drop the `market` argument and
+    // this falls back to the international "Dear Hiring Manager,".
+    const system = await runEmail(client, { ...META, jobCountry: 'DE' });
+    expect(system).toContain('Sehr geehrte Damen und Herren,');
+    expect(system).not.toContain('Dear Hiring Manager,');
+  });
+
+  it('falls back to the target-language market when the job country is unknown', async () => {
+    const client = register();
+    // No jobCountry (the ApplyByEmail tab never sets one): resolveMarket falls
+    // through to the letter language, so a German email still gets DACH etiquette.
+    const system = await runEmail(client, { ...META, targetLanguage: 'de' });
     expect(system).toContain('Sehr geehrte Damen und Herren,');
     expect(system).not.toContain('Dear Hiring Manager,');
   });

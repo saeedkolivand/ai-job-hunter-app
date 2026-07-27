@@ -16,7 +16,7 @@
  */
 
 import { truncateResume } from '../../context-manager/index.js';
-import { letterConventions } from '../../locale/index.js';
+import { marketLanguageFit } from '../../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   buildCompanyResearchBlock,
@@ -102,9 +102,10 @@ Line 3+ is the email body.`;
  * Sanitize a recipient name before it is interpolated into the prompt greeting.
  *
  * Removes control characters (including bare newlines / carriage returns) so a
- * crafted multi-line "name" cannot inject prompt instructions, and the three
- * delimiter characters this builder itself relies on: `"` (which would close the
- * quoted greeting) and `{`/`}` (which would forge a convention placeholder).
+ * crafted multi-line "name" cannot inject prompt instructions, and every
+ * delimiter this builder itself relies on: `"` (which would close the quoted
+ * greeting), `{`/`}` (which would forge a convention placeholder) and `[`/`]`
+ * (which would close the `[Greeting: …]` skeleton slot).
  * Collapses internal whitespace to a single space, trims edges, and caps at 80
  * CODE POINTS — not UTF-16 units, so the cut can never split a surrogate pair
  * into a lone half. Returns an empty string when the result is blank, which
@@ -113,7 +114,7 @@ Line 3+ is the email body.`;
 function sanitizeRecipientName(raw: string): string {
   const cleaned = raw
     .replace(/[\p{Cc}]+/gu, ' ') // fold control chars + newlines into a space
-    .replace(/["{}]/g, ' ') // cannot close the quoted greeting or forge a placeholder
+    .replace(/["{}[\]]/g, ' ') // cannot close the quoted greeting / [slot] or forge a placeholder
     .replace(/\s+/g, ' ') // collapse consecutive spaces
     .trim();
   return [...cleaned].slice(0, 80).join('').trim();
@@ -133,6 +134,19 @@ function sanitizeRecipientName(raw: string): string {
  * print gendered alternatives while the recipient's name appears nowhere in the
  * prompt — a coin-flip the model cannot win.
  */
+/**
+ * True when a market's NAMED salutation pattern offers gendered alternatives no
+ * free-text name can resolve. Two shapes exist in the conventions table:
+ * slash-separated (`de`: "… Frau {lastName}, / … Herr {lastName},", `uk`:
+ * "Dear Mr/Ms {lastName}") and the parenthesized suffix used across Romance and
+ * Slavic markets (`pt`: "Exmo.(a) Senhor(a) {lastName},", `ru`:
+ * "Уважаемый(ая) …"). Either shape reaches the reader as a mail-merge artifact
+ * unless the writer is told to pick one, so both must open the same gate.
+ */
+function hasGenderVariants(pattern: string): boolean {
+  return pattern.includes('/') || /\(\p{L}{1,3}\)/u.test(pattern);
+}
+
 function renderNamedSalutation(pattern: string, name: string): string {
   const slot = pattern.includes('{lastName}')
     ? '{lastName}'
@@ -184,8 +198,8 @@ export function buildApplicationEmailPrompt(
   // keeping the market's register. ONE `greeting` string feeds all three
   // injection points (FORMAT skeleton, task-depth acceptance check, user
   // CONTEXT) so they can never disagree.
-  const c = letterConventions(market);
-  const sameLanguage = c.nativeLanguage === lang.slice(0, 2).toLowerCase();
+  const fit = marketLanguageFit(market, lang);
+  const c = fit.conventions;
   // A named salutation is only usable when the market's pattern has a name slot
   // to fill; `renderNamedSalutation` returns '' otherwise and we fall back to the
   // generic form (see its doc comment).
@@ -202,15 +216,13 @@ export function buildApplicationEmailPrompt(
   // (with no recipient there is nobody to disambiguate — es's generic
   // "Estimado/a Sr./Sra.:" must not be turned into a gender guess).
   const pickOne =
-    namedSalutation && c.salutations.named.includes('/')
+    namedSalutation && hasGenderVariants(c.salutations.named)
       ? " Write exactly one variant — the one that fits the recipient, in this market's form of address (surname only where that is the convention) — never the alternatives together."
       : '';
-  const greeting = sameLanguage
-    ? `"${salutation}"${pickOne}`
-    : `the formal ${lang} equivalent of "${salutation}", at this market's level of formality (never a casual greeting).${pickOne}`;
-  const signoff = sameLanguage
-    ? `"${c.signoffs[0]}"`
-    : `the formal ${lang} equivalent of "${c.signoffs[0]}"`;
+  const greeting = fit.sameLanguage
+    ? `${fit.inOutputLanguage(salutation)}${pickOne}`
+    : `${fit.inOutputLanguage(salutation)}, at this market's level of formality (never a casual greeting).${pickOne}`;
+  const signoff = fit.signoff;
 
   const langNote = meta.mismatch
     ? `Write entirely in ${lang}. Use native phrasing and professional conventions for that market. Do NOT translate literally.`
