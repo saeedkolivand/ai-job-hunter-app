@@ -1096,11 +1096,19 @@ export async function generateApplicationEmail(params: {
     onToken,
   } = params;
   const profile = buildProviderProfile(model);
+  // Same market resolution as the cover letter (job country first, letter
+  // language as the fallback): the greeting and sign-off follow that market's
+  // etiquette instead of an English default.
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
+  const tone = usePreferencesStore.getState().outputTone;
   // No external writing-style sample: the résumé is already in
   // <candidate_resume>, and the prompt builder's own voice directive points
   // there instead of duplicating it (see buildResumeVoiceDirective).
   const { system, user } = buildApplicationEmailPrompt(
-    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
+    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief, market, tone },
     profile
   );
   // Application emails are prose: randomness + the shared detector-resistance
