@@ -2842,13 +2842,13 @@ fn update_fields_and_merge_answers_race_never_loses_an_answer() {
 /// (recipient + salary columns present) — with one row per interesting
 /// contact/recipient population combination.
 ///
-/// The four fields are independently empty-or-not (16 states); these nine rows
-/// cover every state the promotion rule can treat differently — both pairs
-/// fully populated / fully empty, EITHER pair half-populated (the cases that
-/// distinguish a pair-atomic promotion from a per-column one), a whitespace-only
-/// canonical pair, and an identical alias pair. Returns the ids in declaration
-/// order.
-fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 9] {
+/// The four fields are independently empty-or-not (16 states); these rows cover
+/// every state the promotion rule can treat differently — both pairs fully
+/// populated / fully empty, EITHER pair half-populated (the cases that
+/// distinguish a pair-atomic promotion from a per-column one), each flavour of
+/// whitespace-only canonical pair, and an identical alias pair. Returns the ids
+/// in declaration order.
+fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 12] {
     let ids = [
         "app-recipient-only",
         "app-contact-only",
@@ -2862,9 +2862,18 @@ fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 9] {
         // promotion must move BOTH columns, leaving the empty side empty.
         "app-recipient-name-only",
         "app-recipient-email-only",
-        // Whitespace-only canonical pair — reachable from pre-trim builds, so
-        // the emptiness test has to be TRIM-based, not `= ''`.
-        "app-whitespace-contact",
+        // Whitespace-only canonical pairs — reachable from pre-trim builds. Each
+        // flavour is seeded separately because SQLite's BARE `TRIM(x)` strips
+        // only U+0020: a TAB or an NBSP (endemic in text copied out of scraped
+        // HTML) read as non-empty in SQL while `str::trim` calls them empty, so
+        // the same row folded one way in place and the other way through a
+        // restored bundle until the migration passed an explicit charset.
+        "app-space-contact",
+        "app-tab-contact",
+        "app-nbsp-contact",
+        // Alias pair IDENTICAL to the canonical one — nothing is being dropped,
+        // so the `<>` distinctness guard must suppress the preserved note.
+        "app-identical-pair",
     ];
     let conn = Connection::open(dir.join("applications.db")).unwrap();
     conn.execute_batch(
@@ -2908,7 +2917,7 @@ fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 9] {
         PRAGMA user_version = 6;",
     )
     .unwrap();
-    let rows: [(&str, &str, &str, &str, &str); 9] = [
+    let rows: [(&str, &str, &str, &str, &str); 12] = [
         (ids[0], "", "", "Rita Recruiter", "rita@acme.com"),
         (ids[1], "Cora Contact", "cora@acme.com", "", ""),
         (
@@ -2936,6 +2945,21 @@ fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 9] {
         (ids[6], "", "", "Rita Recruiter", ""),
         (ids[7], "", "", "", "rita@acme.com"),
         (ids[8], "   ", "  ", "Rita Recruiter", "rita@acme.com"),
+        (ids[9], "\t", "\t\t", "Rita Recruiter", "rita@acme.com"),
+        (
+            ids[10],
+            "\u{A0}",
+            "\u{A0} \u{A0}",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (
+            ids[11],
+            "Rita Recruiter",
+            "rita@acme.com",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
     ];
     for (id, contact_name, contact_email, recipient_name, recipient_email) in rows {
         conn.execute(
@@ -2971,7 +2995,7 @@ fn raw_column(dir: &std::path::Path, id: &str, column: &str) -> String {
 #[test]
 fn contact_backfill_promotes_the_pair_atomically() {
     let dir = TempDir::new().unwrap();
-    let [recipient_only, contact_only, both, neither, contact_name_only, contact_email_only, recipient_name_only, recipient_email_only, whitespace_contact] =
+    let [recipient_only, contact_only, both, neither, contact_name_only, contact_email_only, recipient_name_only, recipient_email_only, space_contact, tab_contact, nbsp_contact, identical_pair] =
         seed_pre_unification_db(dir.path());
 
     // Opening runs migration 7 (unify) + 8 (reminder marker).
@@ -3029,10 +3053,29 @@ fn contact_backfill_promotes_the_pair_atomically() {
         (String::new(), "rita@acme.com".into())
     );
 
-    // 9. Whitespace-only canonical pair counts as empty (TRIM rule), so it is
-    // promoted just like a truly empty one.
+    // 9-11. A whitespace-only canonical pair counts as EMPTY and is promoted like
+    // a truly empty one — for every flavour of whitespace, not just U+0020.
+    // SQLite's bare `TRIM(x)` strips only spaces, so the TAB and NBSP rows failed
+    // to promote here while `str::trim` (the import path) folded them: the same
+    // row ended up with a different contact depending on whether it migrated in
+    // place or came back through a restored bundle.
+    for (id, flavour) in [
+        (space_contact, "spaces"),
+        (tab_contact, "tabs"),
+        (nbsp_contact, "NBSP"),
+    ] {
+        assert_eq!(
+            contact_of(id),
+            ("Rita Recruiter".into(), "rita@acme.com".into()),
+            "a canonical pair holding only {flavour} must count as empty and promote"
+        );
+    }
+
+    // 12. Alias pair IDENTICAL to the canonical one: nothing is being dropped, so
+    // the `<>` distinctness guard must suppress the preserved note (asserted
+    // below) while the contact itself stays exactly as it was.
     assert_eq!(
-        contact_of(whitespace_contact),
+        contact_of(identical_pair),
         ("Rita Recruiter".into(), "rita@acme.com".into())
     );
 
@@ -3047,7 +3090,10 @@ fn contact_backfill_promotes_the_pair_atomically() {
         contact_email_only,
         recipient_name_only,
         recipient_email_only,
-        whitespace_contact,
+        space_contact,
+        tab_contact,
+        nbsp_contact,
+        identical_pair,
     ] {
         let app = store.get(id).unwrap();
         assert_eq!(
@@ -3074,8 +3120,18 @@ fn contact_backfill_promotes_the_pair_atomically() {
             "{id}: a dropped distinct apply-by-email contact must survive in notes"
         );
     }
-    // A promoted row keeps its notes clean — nothing was dropped.
-    for id in [recipient_only, whitespace_contact, neither] {
+    // Nothing was dropped for these, so no note may be appended: the promoted
+    // rows (their alias pair BECAME the contact), the empty one, and — the case
+    // the `<>` distinctness guard exists for — the row whose alias pair was
+    // already identical to its canonical pair.
+    for id in [
+        recipient_only,
+        space_contact,
+        tab_contact,
+        nbsp_contact,
+        neither,
+        identical_pair,
+    ] {
         assert!(
             !store.get(id).unwrap().notes.contains("Apply-by-email:"),
             "{id}: nothing was dropped, so no note may be appended"

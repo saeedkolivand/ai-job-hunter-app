@@ -154,6 +154,14 @@ const MAX_CONTACT_NAME_BYTES: usize = 200;
 /// - `None` → `Ok(None)` (field absent — leave unchanged).
 /// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
 /// - Over the cap → `Err(AppError::Validation)`, never a silent truncation.
+/// - Containing a control character → `Err(AppError::Validation)`.
+///
+/// Interior SPACES are legal here (unlike in an address) — names have them. But
+/// control characters are not: this value is interpolated verbatim into the
+/// `Apply-by-email: <name> <<email>>` line the contact unification writes into
+/// `notes`, and into the display-name half of any future message header, where a
+/// bare CR/LF is an injection primitive exactly like the one
+/// [`validate_recipient_email`] rejects in the address.
 fn validate_contact_name(raw: Option<String>) -> AppResult<Option<String>> {
     let Some(s) = raw else {
         return Ok(None);
@@ -164,6 +172,13 @@ fn validate_contact_name(raw: Option<String>) -> AppResult<Option<String>> {
             "contact name exceeds the {MAX_CONTACT_NAME_BYTES}-byte limit ({} bytes)",
             trimmed.len()
         )));
+    }
+    // After the trim, so a surrounding newline is still just whitespace to strip
+    // (mirrors the ordering in `validate_recipient_email`).
+    if trimmed.chars().any(char::is_control) {
+        return Err(AppError::Validation(
+            "contact name must not contain control characters".into(),
+        ));
     }
     Ok(Some(trimmed))
 }
@@ -638,6 +653,33 @@ mod tests {
         let err = validate_contact_name(Some("a".repeat(MAX_CONTACT_NAME_BYTES + 1)))
             .expect_err("an over-cap name must be rejected");
         assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn contact_name_control_characters_are_rejected_but_spaces_are_kept() {
+        // The name is interpolated verbatim into the migration's
+        // "Apply-by-email: <name> <<email>>" note and into the display-name half
+        // of any future message header, so a bare CR/LF is the same injection
+        // primitive the address guard rejects.
+        for bad in [
+            "Rita\r\nBcc: attacker@evil.test",
+            "Rita\nRecruiter",
+            "Rita\tRecruiter",
+            "Rita\u{0000}",
+        ] {
+            let err = validate_contact_name(Some(bad.into()))
+                .expect_err(&format!("{bad:?} must be rejected"));
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{bad:?} must fail validation, got {err:?}"
+            );
+        }
+        // Interior SPACES are legal in a name (unlike in an address) — real
+        // names have them, so the guard must not borrow the email rule wholesale.
+        assert_eq!(
+            validate_contact_name(Some("Rita von der Recruiter".into())).unwrap(),
+            Some("Rita von der Recruiter".to_string())
+        );
     }
 
     #[test]

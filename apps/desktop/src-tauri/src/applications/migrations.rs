@@ -11,6 +11,22 @@
 
 use crate::db::Migration;
 
+/// The whitespace set SQLite's two-argument `TRIM(x, y)` must strip so the
+/// `unify_application_contact` emptiness test agrees with Rust's `str::trim` —
+/// see `super::contact` for the other half of that lockstep.
+///
+/// Bare `TRIM(x)` strips ONLY U+0020, whereas `str::trim` strips all Unicode
+/// `White_Space`. So a `"\u{A0}"` (NBSP — endemic in text copied out of scraped
+/// HTML) or a TAB read as NON-empty in SQL and as empty in Rust, and the same
+/// row folded one way through the in-place migration and the other way through
+/// a restored bundle.
+///
+/// Covers space, TAB, LF, CR and NBSP — everything a real contact field picks up
+/// from HTML or a paste. Rust stays a strict SUPERSET for exotic separators
+/// (U+2028, U+3000, …); that residual divergence is documented and accepted in
+/// `super::contact` rather than chased with an unbounded `char()` list.
+const SQL_TRIM_CHARS: &str = "' ' || char(9) || char(10) || char(13) || char(160)";
+
 /// The ordered migration list for `applications.db`. Append only.
 pub(super) const MIGRATIONS: &[Migration] = &[
     Migration {
@@ -109,8 +125,8 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             // (already in `contact_name`) with person B's address (in
             // `recipient_email`) — and that fused identity feeds the
             // apply-by-email `mailto:` sink, i.e. a message addressed to B under
-            // A's name. Same rule, same emptiness test (`TRIM`, because
-            // whitespace-only values are reachable from pre-trim builds), as
+            // A's name. Same rule, same emptiness test (whitespace-only values
+            // are reachable from pre-trim builds — see [`SQL_TRIM_CHARS`]), as
             // `super::Application::canonicalize_contact`, which applies it to an
             // imported bundle — the two MUST stay in lockstep.
             //
@@ -130,12 +146,12 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             // Idempotent: statement 1 skips a note it already appended (`instr`
             // on the exact line), and statement 2's `WHERE` no longer matches a
             // row it already promoted.
-            conn.execute_batch(
+            conn.execute_batch(&format!(
                 "UPDATE applications
                     SET notes = CASE WHEN notes = '' THEN '' ELSE notes || char(10) || char(10) END
                                 || 'Apply-by-email: ' || recipient_name || ' <' || recipient_email || '>'
-                  WHERE (TRIM(recipient_name) <> '' OR TRIM(recipient_email) <> '')
-                    AND NOT (TRIM(contact_name) = '' AND TRIM(contact_email) = '')
+                  WHERE (TRIM(recipient_name, {WS}) <> '' OR TRIM(recipient_email, {WS}) <> '')
+                    AND NOT (TRIM(contact_name, {WS}) = '' AND TRIM(contact_email, {WS}) = '')
                     AND (recipient_name <> contact_name OR recipient_email <> contact_email)
                     AND instr(
                           notes,
@@ -145,9 +161,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
                  UPDATE applications
                     SET contact_name  = recipient_name,
                         contact_email = recipient_email
-                  WHERE TRIM(contact_name) = '' AND TRIM(contact_email) = ''
-                    AND (TRIM(recipient_name) <> '' OR TRIM(recipient_email) <> '');",
-            )
+                  WHERE TRIM(contact_name, {WS}) = '' AND TRIM(contact_email, {WS}) = ''
+                    AND (TRIM(recipient_name, {WS}) <> '' OR TRIM(recipient_email, {WS}) <> '');",
+                WS = SQL_TRIM_CHARS
+            ))
         },
     },
     Migration {

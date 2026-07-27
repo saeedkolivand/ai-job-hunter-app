@@ -9,6 +9,21 @@
 //! imported backup ends up with a different contact than the same row migrated
 //! in place.
 //!
+//! **Emptiness must mean the same thing on both sides.** This side uses
+//! [`str::trim`], which strips every Unicode `White_Space` char; SQLite's bare
+//! `TRIM(x)` strips only U+0020, so the migration passes an explicit charset
+//! (`super::migrations::SQL_TRIM_CHARS` — space, TAB, LF, CR, NBSP) to line the
+//! two up on every value a real contact field picks up from HTML or a paste.
+//!
+//! A deliberate, accepted residual: Rust remains a strict SUPERSET for exotic
+//! separators (U+2028 LINE SEPARATOR, U+3000 IDEOGRAPHIC SPACE, …). Such a value
+//! reads as empty here and as non-empty in SQL, so a bundle carrying one folds
+//! while the same row in place does not. Chasing full parity would mean pinning
+//! an unbounded `char()` list to whatever Unicode table the current Rust
+//! toolchain ships — a worse trap than the gap. These characters do not occur in
+//! a scraped or typed contact field, and the failure mode is a contact that is
+//! not promoted (visible, recoverable) rather than a wrong one.
+//!
 //! Split out of [`super`] to keep the store body under the architecture LOC cap
 //! (`tests/architecture.rs` R8).
 

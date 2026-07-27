@@ -399,8 +399,25 @@ export const ApplicationUpdateSchema = z.object({
   // manager / apply-by-email recipient — one person, one pair). Server-side
   // BOTH inbound names go through the same trim + byte-cap + address-format
   // guards, so the caps here match the deprecated aliases below exactly.
-  contactName: z.string().trim().max(200).optional(),
-  contactEmail: z.string().trim().max(254).optional(),
+  //
+  // Byte-length (not `.max()`'s char-count), matching the Rust guards and the
+  // `jobDescription` precedent below: a 200-CHARACTER CJK name is 600 bytes, so
+  // a char cap passed here and then failed server-side with an error the user
+  // could do nothing about.
+  contactName: z
+    .string()
+    .trim()
+    .refine((v) => new TextEncoder().encode(v).length <= 200, {
+      message: 'contactName must be at most 200 bytes',
+    })
+    .optional(),
+  contactEmail: z
+    .string()
+    .trim()
+    .refine((v) => new TextEncoder().encode(v).length <= 254, {
+      message: 'contactEmail must be at most 254 bytes',
+    })
+    .optional(),
   // The imported/pasted job description, persisted onto the Application so a JD
   // captured from the browser DOM survives to tailoring. Capped to a sane bound
   // so a pathological paste can't bloat the row. Byte-length (not char-count) so
@@ -418,8 +435,22 @@ export const ApplicationUpdateSchema = z.object({
   // callers (the apply-by-email tab, the extension) keep working: a write under
   // either name lands in the SAME storage, and both names come back populated
   // with that one value. Sending both in one patch → the canonical one wins.
-  recipientName: z.string().trim().max(200).optional(),
-  recipientEmail: z.string().trim().max(254).optional(),
+  // Byte-capped identically to the canonical pair above — they hit one column,
+  // so a laxer alias would just be a way around the canonical bound.
+  recipientName: z
+    .string()
+    .trim()
+    .refine((v) => new TextEncoder().encode(v).length <= 200, {
+      message: 'recipientName must be at most 200 bytes',
+    })
+    .optional(),
+  recipientEmail: z
+    .string()
+    .trim()
+    .refine((v) => new TextEncoder().encode(v).length <= 254, {
+      message: 'recipientEmail must be at most 254 bytes',
+    })
+    .optional(),
 });
 export type ApplicationUpdateRequest = z.infer<typeof ApplicationUpdateSchema>;
 
