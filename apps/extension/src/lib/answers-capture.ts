@@ -73,6 +73,14 @@ const CAPTURABLE_INPUT_TYPES = new Set(['text', '']);
  *  `Application.answers`. */
 function isCapturable(el: HTMLElement): boolean {
   if (isHidden(el)) return false;
+  // Mirrors autofill's `isCandidateField` gate (see this module's no-drift
+  // contract in `field-signal.ts`): a `disabled`/`readonly` field is not
+  // something the user answered — a readonly textarea is boilerplate (terms,
+  // a pre-filled job description), and a disabled one is not submitted at all,
+  // so neither belongs in `Application.answers` nor in the questions scan.
+  if (el.matches(':disabled')) return false;
+  if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.readOnly)
+    return false;
   if (matchAutocompleteKey(autocompleteToken(el)) !== null) return false;
   const signal = textSignal(el);
   if (isAmbiguousSignal(signal)) return false;

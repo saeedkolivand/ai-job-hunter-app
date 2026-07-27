@@ -10,9 +10,9 @@
  * a visibly wrong box, which they may not notice and cannot undo.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { isAmbiguousSignal, matchNamedKey } from './field-signal';
+import { isAmbiguousSignal, labelText, matchNamedKey } from './field-signal';
 
 describe('isAmbiguousSignal', () => {
   it('still skips the genuinely ambiguous / sensitive fields', () => {
@@ -58,6 +58,77 @@ describe('isAmbiguousSignal', () => {
     // "Preferred first name" is ubiquitous on ATS forms; once it is no longer
     // treated as ambiguous it fills as a first name.
     expect(matchNamedKey('preferred first name')).toBe('firstName');
+  });
+});
+
+describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () => {
+  it('skips a name that belongs to someone else — in attribute spellings too', () => {
+    // The denylist is prose-shaped (`AMBIGUOUS`) or leading-anchored
+    // (`AMBIGUOUS_PREFIXED`), so once the name patterns learned the attribute
+    // spellings, every camelCase third-party box below started receiving the
+    // USER's name. Skipping is the only correct answer for all of them.
+    for (const signal of [
+      'professionalreferencefirstname',
+      'jobreferencefirstname',
+      'proreferencelastname',
+      'workreferencelastname',
+      'myreferrerfirstname',
+      'staffreferralfirstname',
+      'refereelastname',
+      'spousefirstname',
+      'childfirstname',
+      'dependentlastname',
+      'beneficiaryfirstname',
+      'previouslastname',
+      'formerfirstname',
+      'otherlastname',
+      'aka_first_name',
+      // Already denied before this rule (leading-anchored / prose) — pinned so
+      // the compound rule can never be "simplified" into losing them.
+      'reference_first_name',
+      'references[0][first_name]',
+      'referencefirstname',
+      'emergencycontactfirstname',
+      'mothers_maiden_name',
+    ]) {
+      expect(isAmbiguousSignal(signal), signal).toBe(true);
+    }
+  });
+
+  it('skips the name parts we hold no profile value for (middle / additional / kana)', () => {
+    // There is no middleName key in the profile, so the ONLY safe outcome is a
+    // skip — a hyphenated `middle-name` used to reach the bare-name catch-all
+    // and receive the full name.
+    for (const signal of [
+      'middle name',
+      'middlename',
+      'middle_name',
+      'middle-name',
+      'middleinitial name',
+      'additional name',
+      'lastnamekana',
+      'name_kana',
+      'furigana',
+    ]) {
+      expect(isAmbiguousSignal(signal), signal).toBe(true);
+    }
+  });
+
+  it('still lets the preferred/research/preferences family through (the `referr` ⊂ "preferred" trap)', () => {
+    for (const signal of [
+      'preferred first name',
+      'preferred_first_name',
+      'preferredfirstname',
+      'preferred name',
+      'preferred pronouns',
+      'work preferences',
+      'research experience',
+      'notification preferences',
+    ]) {
+      expect(isAmbiguousSignal(signal), signal).toBe(false);
+    }
+    // …and the camelCase spelling resolves like the prose one.
+    expect(matchNamedKey('preferredfirstname')).toBe('firstName');
   });
 });
 
@@ -251,5 +322,75 @@ describe('matchNamedKey — first / last name', () => {
     ]) {
       expect(matchNamedKey(signal), signal).toBeNull();
     }
+  });
+
+  it('applies the school/company denylist to the fullName ATTRIBUTE spellings too', () => {
+    // The row-level `deny` exists for exactly this: the prose spelling
+    // ("University Name") has always been refused by the catch-all's denylist,
+    // but `university_full_name` matched the fullName row BEFORE the catch-all
+    // ever ran, so it escaped — and received the applicant's name.
+    for (const signal of [
+      'school_full_name',
+      'university_full_name',
+      'college_full_name',
+      'institution_full_name',
+      'program_full_name',
+      'course_full_name',
+      'schoolfullname',
+      'universityfullname',
+      'degreefullname',
+      'certificationfullname',
+      'coursefullname',
+      'majorfullname',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBeNull();
+    }
+  });
+
+  it("lets a field's own first/last attribute out-specify a 'Full Name' GROUP label", () => {
+    // Workday/Ashby wire a group heading to each box via aria-labelledby, so
+    // "full name" lands in the signal of a `first_name` input — and the fullName
+    // row runs first, which put the WHOLE name in the first-name box.
+    expect(matchNamedKey('first_name full name')).toBe('firstName');
+    expect(matchNamedKey('last_name full name')).toBe('lastName');
+    expect(matchNamedKey('lname full name')).toBe('lastName');
+    // A real full-name field is unaffected…
+    expect(matchNamedKey('fullname full name')).toBe('fullName');
+    // …and so are the localized COMBINED phrases (they carry no first/last
+    // attribute token, only prose).
+    expect(matchNamedKey('vor- und nachname')).toBe('fullName');
+    expect(matchNamedKey('nombre y apellidos')).toBe('fullName');
+    expect(matchNamedKey('nome e cognome')).toBe('fullName');
+    expect(matchNamedKey('voor- en achternaam')).toBe('fullName');
+  });
+});
+
+describe('labelText', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('counts a label referenced BOTH by for= and aria-labelledby only once', () => {
+    // The React-Aria / headless-UI shape. `answers-capture` persists this string
+    // as the question key, so a duplicated label duplicates the stored question.
+    document.body.innerHTML = `
+      <label for="q" id="q-label">Why this role?</label>
+      <input id="q" aria-labelledby="q-label" />`;
+    const el = document.getElementById('q') as HTMLInputElement;
+    expect(labelText(el).trim()).toBe('Why this role?');
+  });
+
+  it('joins DISTINCT aria-labelledby references in order, after the <label>', () => {
+    document.body.innerHTML = `
+      <span id="g">Contact</span><span id="h">Email address</span>
+      <input id="e" aria-labelledby="g h" />`;
+    const el = document.getElementById('e') as HTMLInputElement;
+    expect(labelText(el).trim()).toBe('Contact Email address');
+  });
+
+  it('counts a wrapping label that also carries for= only once', () => {
+    document.body.innerHTML = `<label for="w">Notice period<input id="w" /></label>`;
+    const el = document.getElementById('w') as HTMLInputElement;
+    expect(labelText(el).trim()).toBe('Notice period');
   });
 });

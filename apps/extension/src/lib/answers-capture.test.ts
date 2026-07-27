@@ -72,6 +72,37 @@ describe('collectAnswers — textarea', () => {
   });
 });
 
+describe('collectAnswers — disabled / readonly fields are not answers', () => {
+  it('skips a readonly textarea (boilerplate) and a disabled input', () => {
+    // Mirrors autofill's `isCandidateField` gate — fill and capture must agree
+    // on what counts as a real, user-editable field.
+    setForm(`
+      <label for="terms">Terms</label><textarea id="terms" readonly>Standard terms apply.</textarea>
+      <label for="ref">Requisition</label><input id="ref" type="text" value="REQ-1" disabled />
+      <label for="q">Why this role?</label><input id="q" type="text" value="Because I love it." />
+    `);
+    expect(collectAnswers(document)).toEqual([
+      { question: 'Why this role?', answer: 'Because I love it.' },
+    ]);
+  });
+
+  it('skips a field disabled by an ancestor <fieldset disabled>', () => {
+    setForm(`
+      <fieldset disabled>
+        <label for="d">Notice period</label><input id="d" type="text" value="2 weeks" />
+      </fieldset>`);
+    expect(collectAnswers(document)).toEqual([]);
+  });
+
+  it('leaves a readonly field out of the QUESTIONS scan too', () => {
+    setForm(`
+      <label for="ro">Posting id</label><input id="ro" type="text" readonly />
+      <label for="open">Why this role?</label><input id="open" type="text" />
+    `);
+    expect(collectQuestions(document)).toEqual([{ question: 'Why this role?', index: 0 }]);
+  });
+});
+
 describe('collectAnswers — select captures the visible option text, not the value', () => {
   it("captures the selected option's displayed text", () => {
     setForm(`

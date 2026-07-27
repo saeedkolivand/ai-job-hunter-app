@@ -134,9 +134,11 @@ function isCandidateField(el: HTMLInputElement): boolean {
   // disabled input is never even submitted, and writing to a readonly one (via
   // the native setter, which bypasses the UI guard) puts a value where the user
   // cannot correct it — and would then be COUNTED in the summary as filled,
-  // making the report a lie. Both are checked before the layout-free visibility
-  // walk because they are single property reads.
-  if (el.disabled || el.readOnly) return false;
+  // making the report a lie. `:disabled` rather than the `disabled` property so
+  // the check also covers a field disabled by an ancestor `<fieldset disabled>`
+  // (the property reflects only the element's OWN attribute) — ATS forms disable
+  // whole sections that way, and those fields are just as unsubmittable.
+  if (el.matches(':disabled') || el.readOnly) return false;
   if (isHidden(el)) return false;
   if (el.value.trim() !== '') return false; // never overwrite
 
