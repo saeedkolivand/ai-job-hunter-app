@@ -60,6 +60,63 @@ pub struct ScrapeUpdateDescriptionRequest {
 /// so a caller can tell the write didn't take effect as sent.
 const MAX_DESCRIPTION_LEN: usize = 256 * 1024;
 
+/// Fill `input.country_code` for a location the user TYPED instead of picking
+/// from the geocode suggestions: the renderer only sends `countryCode` for a
+/// picked suggestion, so a freehand "Germany"/"Amsterdam" arrives with none —
+/// and the aggregator then hardcodes a `'de'` guess AND suppresses its
+/// sparse-city broadening (a silent under-return). Same best-effort lookup
+/// autopilot does on save; a network error / no match / 2s timeout just leaves
+/// the field absent.
+///
+/// Returns **false when the run was cancelled** (the caller must abandon it),
+/// true otherwise. Two cancellation concerns, both handled here:
+/// - the lookup is raced against `token` with a `biased;` select, so a Stop
+///   during the ≤2s geocode takes effect immediately instead of after it — and
+///   an already-cancelled run never issues the request at all;
+/// - a cancel that landed before this ran (between the command returning its
+///   `jobId` and the spawned task waking) is caught by the same final check.
+///
+/// This narrows the window at the COMMAND layer; it is closed at the engine
+/// layer by [`crate::scraping::ScraperEngine::cancel`] cancelling the job slot
+/// in place instead of removing it, so a cancel landing after this returns
+/// `true` is still honored by the engine rather than lost to a freshly minted
+/// token. Takes a bare token + `&mut BoardSearchInput` so it is unit-testable
+/// without an `AppHandle`.
+async fn backfill_country_code(
+    token: &tokio_util::sync::CancellationToken,
+    input: &mut BoardSearchInput,
+) -> bool {
+    // Owned so the lookup future doesn't borrow `input` while we write to it.
+    let location = input.location.clone();
+    backfill_country_code_with(
+        token,
+        input,
+        crate::commands::geocoding::derive_country_code(location.as_deref()),
+    )
+    .await
+}
+
+/// [`backfill_country_code`] with the geocode lookup injected, so the
+/// cancellation behavior is testable against a hung / instant / never-polled
+/// future instead of the real Nominatim round trip (no network in tests).
+///
+/// `lookup` is only ever POLLED when `country_code` is absent — an existing
+/// (picked) country is never clobbered and costs no request.
+async fn backfill_country_code_with(
+    token: &tokio_util::sync::CancellationToken,
+    input: &mut BoardSearchInput,
+    lookup: impl std::future::Future<Output = Option<String>>,
+) -> bool {
+    if input.country_code.is_none() {
+        input.country_code = tokio::select! {
+            biased;
+            () = token.cancelled() => None,
+            cc = lookup => cc,
+        };
+    }
+    !token.is_cancelled()
+}
+
 #[tauri::command]
 pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     let job_id = new_job_id();
@@ -175,39 +232,12 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         // Hold the concurrency guard for the whole scrape; dropped on completion.
         let _guard = guard;
 
-        // Backfill the market for a location the user TYPED instead of picking
-        // from the geocode suggestions: the renderer only sends `countryCode`
-        // for a picked suggestion, so a freehand "Germany"/"Amsterdam" arrives
-        // with none — and the aggregator then hardcodes a 'de' guess AND
-        // suppresses its sparse-city broadening (silent under-return). Same
-        // best-effort lookup autopilot does on save; runs INSIDE the spawned
-        // task so the command still returns its `jobId` immediately, and a
-        // network error / no match / 2s timeout just leaves it absent.
-        //
-        // CANCELLATION: this await must race the token, because a cancel landing
-        // here would otherwise be LOST — `ScraperEngine::cancel` REMOVES the job
-        // slot before cancelling it, so the later `scrape_boards` finds no
-        // pre-registered token and mints a FRESH, un-cancelled one. The abandoned
-        // run would then scrape to completion and its first streamed item would
-        // `clear_all()` the postings cache the user's NEW search is already
-        // filling (the Jobs page cancels-then-starts). `biased;` polls
-        // cancellation first so an already-cancelled run never starts the lookup.
-        if input.country_code.is_none() {
-            let derived = tokio::select! {
-                biased;
-                () = cancel_token.cancelled() => None,
-                cc = crate::commands::geocoding::derive_country_code(input.location.as_deref()) => cc,
-            };
-            input.country_code = derived;
-        }
-
-        // Covers the same window without a geocode (a cancel arriving between the
-        // command returning its jobId and this task waking): never START a scrape
-        // for a run the user already cancelled. `jobs_cancel` has already emitted
-        // `job.cancelled`, so there is no terminal event to report here — just
-        // release the slot (idempotent; `cancel` already removed it) and the
-        // concurrency guard held by `_guard`.
-        if cancel_token.is_cancelled() {
+        // Fill in the market for a typed (not picked) location, unless the user
+        // already cancelled — see [`backfill_country_code`].
+        if !backfill_country_code(&cancel_token, &mut input).await {
+            // `jobs_cancel` already emitted `job.cancelled`, so there is no
+            // terminal event to report here — just release the slot and the
+            // concurrency guard held by `_guard`.
             engine.unregister_token(&job_id_clone).await;
             return;
         }
@@ -641,5 +671,131 @@ mod test {
         let id = validate_update_description("  job-1  ", &at_cap)
             .expect("a trimmed non-empty id with an at-cap description must validate");
         assert_eq!(id, "job-1", "the validated id must be trimmed");
+    }
+
+    // ── backfill_country_code (pre-scrape cancellation) ──────────────────────
+    //
+    // Driven through the injected-lookup seam so every case is hermetic: no
+    // Nominatim round trip, no `AppHandle`, no timing sleeps.
+
+    fn input_with(location: Option<&str>, country_code: Option<&str>) -> BoardSearchInput {
+        BoardSearchInput {
+            query: "rust".to_string(),
+            location: location.map(str::to_string),
+            amount: 25,
+            pages: 1,
+            date_filter: None,
+            job_type: None,
+            work_type: None,
+            experience_level: None,
+            easy_apply: None,
+            actively_hiring: None,
+            verified: None,
+            sort_by: None,
+            country_code: country_code.map(str::to_string),
+            latitude: None,
+            longitude: None,
+            radius_km: None,
+            companies: Vec::new(),
+        }
+    }
+
+    /// Already cancelled when the task wakes → abandon the run AND never poll the
+    /// lookup. The `biased;` ordering is what guarantees the second half: an
+    /// unbiased select picks a ready branch at random and could fire the geocode
+    /// request for a run nobody is waiting on.
+    #[tokio::test]
+    async fn pre_cancelled_run_is_abandoned_without_polling_the_lookup() {
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        let mut input = input_with(Some("Germany"), None);
+        let polled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = polled.clone();
+
+        let proceed = backfill_country_code_with(&token, &mut input, async move {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Some("de".to_string())
+        })
+        .await;
+
+        assert!(!proceed, "a cancelled run must not proceed to the scrape");
+        assert!(
+            !polled.load(std::sync::atomic::Ordering::SeqCst),
+            "the geocode lookup must never be issued for an already-cancelled run"
+        );
+        assert!(input.country_code.is_none());
+    }
+
+    /// A cancel landing WHILE the lookup is in flight wins immediately — the run
+    /// is abandoned instead of waiting out the 2s geocode cap. `pending()` stands
+    /// in for a hung Nominatim call: without the select the test would hang.
+    #[tokio::test]
+    async fn cancel_during_the_lookup_abandons_the_run() {
+        let token = tokio_util::sync::CancellationToken::new();
+        let mut input = input_with(Some("Amsterdam"), None);
+
+        let canceller = token.clone();
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            canceller.cancel();
+        });
+
+        let proceed = backfill_country_code_with(
+            &token,
+            &mut input,
+            std::future::pending::<Option<String>>(),
+        )
+        .await;
+
+        assert!(
+            !proceed,
+            "a cancel during the lookup must abandon the run, not wait it out"
+        );
+        assert!(
+            input.country_code.is_none(),
+            "an interrupted lookup must leave the field absent"
+        );
+    }
+
+    /// The happy path: the lookup resolves, its country is written, and the run
+    /// proceeds.
+    #[tokio::test]
+    async fn a_resolved_lookup_fills_the_country_and_proceeds() {
+        let token = tokio_util::sync::CancellationToken::new();
+        let mut input = input_with(Some("Amsterdam"), None);
+
+        let proceed =
+            backfill_country_code_with(&token, &mut input, std::future::ready(Some("nl".into())))
+                .await;
+
+        assert!(proceed);
+        assert_eq!(input.country_code.as_deref(), Some("nl"));
+    }
+
+    /// A country the user PICKED is authoritative: no lookup is polled and the
+    /// value is never overwritten (the backfill is for typed locations only).
+    #[tokio::test]
+    async fn an_existing_country_code_is_kept_and_costs_no_lookup() {
+        let token = tokio_util::sync::CancellationToken::new();
+        let mut input = input_with(Some("Austin, United States"), Some("us"));
+        let polled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = polled.clone();
+
+        let proceed = backfill_country_code_with(&token, &mut input, async move {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Some("de".to_string())
+        })
+        .await;
+
+        assert!(proceed);
+        assert_eq!(
+            input.country_code.as_deref(),
+            Some("us"),
+            "a picked country must never be clobbered by the backfill"
+        );
+        assert!(
+            !polled.load(std::sync::atomic::Ordering::SeqCst),
+            "no geocode request may be issued when the country is already known"
+        );
     }
 }

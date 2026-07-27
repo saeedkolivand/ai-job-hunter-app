@@ -43,6 +43,37 @@ struct AshbyResponse {
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
 
+/// Production Ashby API host. Factored into a constant (rather than inlined)
+/// purely so tests can drive [`AshbyScraper::search_with_base`] against a local
+/// `wiremock` base instead — mirrors Lever's `LEVER_BASE_URL`.
+const ASHBY_BASE_URL: &str = "https://api.ashbyhq.com";
+
+/// Fetch ONE company's whole board. Split out of the search loop so the
+/// per-company request — including the raised byte cap — is drivable against a
+/// mock host, which is what makes the partial-failure note testable without the
+/// live API.
+async fn fetch_ashby_company(
+    base_url: &str,
+    company: &str,
+    signal: tokio_util::sync::CancellationToken,
+) -> crate::error::AppResult<AshbyResponse> {
+    let url = format!(
+        "{base_url}/posting-api/job-board/{}?includeCompensation=true",
+        urlencoding::encode(company)
+    );
+
+    let opts = FetchOptions {
+        // One Ashby call returns a company's WHOLE board, so a large employer's
+        // payload can exceed the 8 MB default guard (observed: openai →
+        // "Response too large", i.e. a silently dropped company). Raise the
+        // per-request cap only here.
+        max_bytes: Some(16 * 1024 * 1024),
+        ..Default::default()
+    };
+
+    fetch_json::<AshbyResponse>(&url, opts, signal).await
+}
+
 pub struct AshbyScraper;
 
 #[async_trait]
@@ -68,6 +99,20 @@ impl Scraper for AshbyScraper {
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
+        self.search_with_base(ASHBY_BASE_URL, input, ctx).await
+    }
+}
+
+impl AshbyScraper {
+    /// The real search loop, parameterized by API base URL so tests can point it
+    /// at a mock server ([`fetch_ashby_company`]). `search` supplies
+    /// [`ASHBY_BASE_URL`]; nothing else calls this.
+    async fn search_with_base(
+        &self,
+        base_url: &str,
+        input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
         // Engine skips us when companies is empty; guard defensively anyway.
         if input.companies.is_empty() {
             return Ok(vec![]);
@@ -90,21 +135,7 @@ impl Scraper for AshbyScraper {
                 break;
             }
 
-            let url = format!(
-                "https://api.ashbyhq.com/posting-api/job-board/{}?includeCompensation=true",
-                urlencoding::encode(company)
-            );
-
-            let opts = FetchOptions {
-                // One Ashby call returns a company's WHOLE board, so a large
-                // employer's payload can exceed the 8 MB default guard (observed:
-                // openai → "Response too large", i.e. a silently dropped company).
-                // Raise the per-request cap only here.
-                max_bytes: Some(16 * 1024 * 1024),
-                ..Default::default()
-            };
-
-            let data = match fetch_json::<AshbyResponse>(&url, opts, ctx.signal.clone()).await {
+            let data = match fetch_ashby_company(base_url, company, ctx.signal.clone()).await {
                 Ok(d) => d,
                 Err(e) => {
                     // Check cancellation first: a fetch that failed because

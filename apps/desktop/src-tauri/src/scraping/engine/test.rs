@@ -541,42 +541,95 @@ async fn cancel_reaches_a_pre_registered_token() {
     assert!(token.is_cancelled());
 }
 
-/// `cancel` REMOVES the slot before cancelling it, so a `scrape_boards` that
-/// starts AFTER the cancel finds no pre-registered token and mints a fresh,
-/// un-cancelled one — the cancel is invisible to it.
+/// The lost-cancel regression guard: a cancel that lands BEFORE the run reaches
+/// the engine must still be honored — no items streamed, `Err("scrape
+/// cancelled")` returned.
 ///
-/// This is a contract test, not a wish: `commands::scrape::scrape_boards` awaits
-/// a geocode backfill between registering its token and calling the engine, and
-/// relies on this exact behavior being true to justify holding its OWN clone of
-/// the token and checking it before starting the scrape. If `cancel` ever keeps
-/// the slot (making the mint-fresh path unreachable), this test fails and that
-/// guard can be simplified — until then, removing it silently resurrects the
-/// lost-cancel window.
+/// `cancel` used to `remove()` the slot before cancelling it, so a run starting
+/// afterwards found no slot, MINTED a fresh un-cancelled token, and scraped on
+/// as if nothing had happened — its streamed items then clobbering whatever the
+/// user started next. The window is real: callers do async work between
+/// `register_token` and the engine call (`commands::scrape` awaits a geocode
+/// backfill) and the engine itself waits on `sem.acquire_owned()`.
+///
+/// Drives the REAL path (`scrape_boards_with_resolver` + `FakeScraper`), not the
+/// map bookkeeping — a token registered after a cancel is un-cancelled by
+/// construction, so asserting that would prove nothing.
 #[tokio::test]
-async fn cancel_removes_the_slot_so_a_later_run_mints_a_fresh_token() {
+async fn a_cancel_before_the_run_reaches_the_engine_is_honored() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static FAKE: std::sync::LazyLock<FakeScraper> =
+        std::sync::LazyLock::new(|| FakeScraper::http(25));
+
     let engine = ScraperEngine::new();
-    let registered = tokio_util::sync::CancellationToken::new();
-
+    let token = CancellationToken::new();
     engine
-        .register_token("job-lost-cancel", registered.clone())
+        .register_token("job-cancel-before-engine", token.clone())
         .await;
-    engine.cancel("job-lost-cancel").await;
-    assert!(
-        registered.is_cancelled(),
-        "the registered clone must flip — that part reaches the caller"
+
+    // The user hits Stop while the command is still in its pre-scrape phase.
+    engine.cancel("job-cancel-before-engine").await;
+    assert!(token.is_cancelled(), "the caller's own clone must flip");
+
+    let streamed = std::sync::Arc::new(AtomicUsize::new(0));
+    let streamed_cb = streamed.clone();
+
+    let result = engine
+        .scrape_boards_with_resolver(
+            &["board-x".to_string()],
+            fake_input(25),
+            "job-cancel-before-engine".to_string(),
+            None,
+            Some(std::sync::Arc::new(move |_item| {
+                streamed_cb.fetch_add(1, Ordering::SeqCst);
+            })),
+            std::path::Path::new("."),
+            |_id| Ok(&*FAKE as &'static dyn super::super::types::Scraper),
+        )
+        .await;
+
+    assert_eq!(
+        streamed.load(Ordering::SeqCst),
+        0,
+        "a run the user already cancelled must stream ZERO items — anything \
+         streamed here lands in the postings cache and wipes the search the \
+         user started instead"
     );
-
-    // The slot is gone: re-registering under the same id succeeds and the NEW
-    // token is un-cancelled, which is exactly what `scrape_boards` would mint.
-    let fresh = tokio_util::sync::CancellationToken::new();
-    engine
-        .register_token("job-lost-cancel", fresh.clone())
-        .await;
+    let err = result.expect_err("a fully-cancelled run must report Err, not a silent empty Ok");
     assert!(
-        !fresh.is_cancelled(),
-        "a token registered after the cancel is un-cancelled — a run started \
-         here would ignore the user's cancel unless the caller checks its own \
-         clone first (see commands::scrape::scrape_boards)"
+        err.to_string().contains("cancelled"),
+        "the error must name cancellation, got: {err}"
+    );
+}
+
+/// Companion: `cancel` must LEAVE the slot in place (that is what makes the
+/// mint-fresh path unreachable above), so a second cancel for the same job — a
+/// double-click on Stop, or a tray cancel racing the UI — still resolves to the
+/// same token rather than silently doing nothing.
+#[tokio::test]
+async fn cancel_leaves_the_slot_in_place_and_is_idempotent() {
+    let engine = ScraperEngine::new();
+    let token = CancellationToken::new();
+    engine
+        .register_token("job-double-cancel", token.clone())
+        .await;
+
+    engine.cancel("job-double-cancel").await;
+    engine.cancel("job-double-cancel").await;
+    assert!(token.is_cancelled());
+
+    // The slot survives, so the owner's `unregister_token` is still the single
+    // remover — the invariant the no-leak argument in `cancel`'s doc rests on.
+    engine.unregister_token("job-double-cancel").await;
+    let late = CancellationToken::new();
+    engine
+        .register_token("job-double-cancel", late.clone())
+        .await;
+    engine.unregister_token("job-double-cancel").await;
+    assert!(
+        !late.is_cancelled(),
+        "a fresh registration after the owner released the slot must be clean"
     );
 }
 
