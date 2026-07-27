@@ -1,5 +1,17 @@
 [
   {
+    "sha": "de18905791bbdd63d0555dbc1839dabd103d0534",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-26T06:14:24Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "5df47b0207355bae1ef990547c08171b852e9cc6",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "chore: sync landing download version to v0.128.0",
       "author": {
         "date": "2026-07-21T20:22:51Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "6dfa1f6b2252a64bcbd25f90ade5330e584081a6",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.128.0 [skip ci]",
-      "author": {
-        "date": "2026-07-21T20:22:14Z"
       }
     },
     "author": {
