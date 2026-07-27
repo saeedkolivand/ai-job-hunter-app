@@ -1596,6 +1596,7 @@
       "validation": {
         "missingFields": "Please fill in all required fields (Name, Board, and Search Query).",
         "nameRequired": "Give this search a name.",
+        "pagesRange": "Enter a whole number of pages between 1 and 10.",
         "queryRequired": "Enter a search query."
       },
       "target": {

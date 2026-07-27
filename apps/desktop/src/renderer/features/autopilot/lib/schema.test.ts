@@ -95,6 +95,15 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 2.5 })).success).toBe(false);
   });
 
+  it('reports every pages failure as the same i18n KEY, not a zod English default', () => {
+    // StepTarget renders this straight through t(...) into WizardField's error
+    // slot; a raw zod message would ship untranslated copy to the user.
+    const key = 'autopilot.wizard.validation.pagesRange';
+    expect(messageFor(makeForm({ pages: 2.5 }), 'pages')).toBe(key);
+    expect(messageFor(makeForm({ pages: 0 }), 'pages')).toBe(key);
+    expect(messageFor(makeForm({ pages: 11 }), 'pages')).toBe(key);
+  });
+
   it('accepts the full 1–10 page range', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 1 })).success).toBe(true);
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 10 })).success).toBe(true);

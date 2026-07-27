@@ -245,11 +245,12 @@ export function StepTarget({ prefilled }: StepTargetProps) {
         <Controller
           control={control}
           name="pages"
-          render={({ field }) => (
+          render={({ field, fieldState }) => (
             <WizardField
               label={t('autopilot.wizard.target.pages')}
               hint={t('autopilot.wizard.target.pagesHint')}
               htmlFor="autopilot-pages"
+              error={fieldState.error?.message ? t(fieldState.error.message) : undefined}
             >
               <NumberField
                 id="autopilot-pages"
@@ -260,6 +261,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 className={fieldCls}
                 value={field.value}
                 onChange={(n) => field.onChange(n)}
+                aria-invalid={!!fieldState.error}
                 onBlur={() => {
                   field.onBlur();
                   // NumberField clamps to [min, max] on blur but never rounds, so a

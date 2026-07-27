@@ -68,7 +68,7 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     countryCode: jobPrefs?.countryCode,
     // No job-preference field seeds work type; default to the 'any' sentinel.
     workType: 'any',
-    // Matches the backend's AutopilotTargetSchema.pages default (2 pages ≈ 50 jobs).
+    // Matches the backend's AutopilotTargetSchema.pages default.
     pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,

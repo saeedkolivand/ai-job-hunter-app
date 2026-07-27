@@ -23,8 +23,9 @@ import type { WizardState } from '@/features/autopilot/types';
  * No field uses `.default()`: the wizard always seeds complete `defaultValues`
  * (`buildDefaults` / `autopilotToWizardState`), so the schema's input and output
  * types match (a zod `.default()` input/output mismatch otherwise breaks the
- * `useForm`/`zodResolver` generics). `name` / `query` messages are i18n KEYS the
- * steps resolve through `WizardField`'s `error` prop via `t(...)`.
+ * `useForm`/`zodResolver` generics). `name` / `query` / `pages` messages are
+ * i18n KEYS the steps resolve through `WizardField`'s `error` prop via `t(...)`
+ * — never zod's own English defaults, which would render unlocalized.
  */
 export const autopilotWizardSchema = z.object({
   name: z.string().trim().min(1, 'autopilot.wizard.validation.nameRequired'),
@@ -34,8 +35,13 @@ export const autopilotWizardSchema = z.object({
   countryCode: z.string().optional(),
   workType: z.enum(['remote', 'hybrid', 'on-site', 'any']),
   // Mirrors the backend's AutopilotTargetSchema.pages (int 1–10) and the
-  // NumberField's own min/max, which blur-clamps into the same range.
-  pages: z.number().int().min(1).max(10),
+  // NumberField's own min/max, which blur-clamps into the same range. All three
+  // checks share one message so the field reports a single, actionable rule.
+  pages: z
+    .number()
+    .int('autopilot.wizard.validation.pagesRange')
+    .min(1, 'autopilot.wizard.validation.pagesRange')
+    .max(10, 'autopilot.wizard.validation.pagesRange'),
   dateFilter: z.string(),
   watchedCompaniesOnly: z.boolean(),
   minMatchScore: z.number().min(0).max(100),

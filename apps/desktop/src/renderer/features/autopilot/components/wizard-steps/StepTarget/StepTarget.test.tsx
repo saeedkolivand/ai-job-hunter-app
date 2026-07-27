@@ -18,13 +18,15 @@
 
 import { FormProvider, useForm, useFormContext } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 import { NotificationProvider } from '@ajh/ui';
 
+import { autopilotWizardSchema } from '@/features/autopilot/lib/schema';
 import type { WizardState } from '@/features/autopilot/types';
 
 import { StepTarget } from './index';
@@ -166,7 +168,13 @@ function Probe() {
 
 function renderStep(overrides: Partial<WizardState> = {}) {
   function Host() {
-    const methods = useForm<WizardState>({ defaultValues: makeForm(overrides) });
+    // Same resolver + mode as CreationWizard, so validation-driven UI (inline
+    // error text, aria-invalid) is exercised here rather than assumed.
+    const methods = useForm<WizardState>({
+      defaultValues: makeForm(overrides),
+      resolver: zodResolver(autopilotWizardSchema),
+      mode: 'onChange',
+    });
     return (
       <NotificationProvider>
         <FormProvider {...methods}>
@@ -284,6 +292,37 @@ describe('StepTarget — page budget field', () => {
     expect(screen.getByLabelText('autopilot.wizard.target.pages')).toBe(
       screen.getByRole('spinbutton')
     );
+  });
+
+  it('marks the field invalid inline while a non-integer is still unblurred', async () => {
+    // The blur-round below is not guaranteed to run: on WKWebView a click does
+    // not focus the clicked button, so "Next" can be pressed without the input
+    // ever blurring. The resolver then rejects `pages` and — before this wiring
+    // — the only feedback was the wizard's generic "missing fields" banner,
+    // with nothing marking the offending control for sighted or SR users.
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+
+    // The message is an i18n KEY resolved through WizardField's `error` prop
+    // (t is mocked to identity here), never zod's raw English default.
+    expect(await screen.findByText('autopilot.wizard.validation.pagesRange')).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('clears the inline error once the value is valid again', async () => {
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+    await screen.findByText('autopilot.wizard.validation.pagesRange');
+
+    fireEvent.blur(input); // rounds to 3 → valid
+    await waitFor(() => {
+      expect(screen.queryByText('autopilot.wizard.validation.pagesRange')).toBeNull();
+    });
+    expect(input).toHaveAttribute('aria-invalid', 'false');
   });
 
   it('rounds a non-integer entry on blur so it can never reach the .int() schema', () => {
