@@ -28,7 +28,7 @@ interface StepTargetProps {
 export function StepTarget({ prefilled }: StepTargetProps) {
   const { t, i18n } = useTranslation();
   const api = useAppClient();
-  const { control, setValue } = useFormContext<WizardState>();
+  const { control, getValues, setValue } = useFormContext<WizardState>();
   const boards = useWatch({ control, name: 'boards' });
   // Country derived from the picked location suggestion — surfaced inline so the
   // user SEES which market the autopilot will search (vs. the silent save-time
@@ -249,8 +249,10 @@ export function StepTarget({ prefilled }: StepTargetProps) {
             <WizardField
               label={t('autopilot.wizard.target.pages')}
               hint={t('autopilot.wizard.target.pagesHint')}
+              htmlFor="autopilot-pages"
             >
               <NumberField
+                id="autopilot-pages"
                 min={1}
                 max={10}
                 fallback={2}
@@ -258,6 +260,17 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 className={fieldCls}
                 value={field.value}
                 onChange={(n) => field.onChange(n)}
+                onBlur={() => {
+                  field.onBlur();
+                  // NumberField clamps to [min, max] on blur but never rounds, so a
+                  // typed "2.5" would reach the schema's .int() as invalid and make
+                  // the final Create button a silent no-op. Fold it to a whole page
+                  // here — on blur only, so the buffer isn't fought mid-typing.
+                  setValue('pages', Math.round(getValues('pages')), {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }}
               />
             </WizardField>
           )}

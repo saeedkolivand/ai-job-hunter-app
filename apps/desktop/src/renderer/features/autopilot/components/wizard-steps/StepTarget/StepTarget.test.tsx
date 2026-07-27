@@ -18,7 +18,7 @@
 
 import { FormProvider, useForm, useFormContext } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -116,18 +116,9 @@ vi.mock('@/features/autopilot/components/wizard-steps/PrefilledBadge', () => ({
   PrefilledBadge: () => null,
 }));
 
-vi.mock('@/features/autopilot/components/wizard-steps/WizardField', () => ({
-  WizardField: ({
-    children,
-  }: {
-    children?: React.ReactNode;
-    label?: string;
-    htmlFor?: string;
-    hint?: string;
-    badge?: React.ReactNode;
-    error?: string;
-  }) => <>{children}</>,
-}));
+// WizardField is NOT stubbed: it is a dependency-free presentational wrapper and
+// it owns the label/`htmlFor` wiring, so stubbing it would hide a control that
+// ships without an accessible name (see the page-budget field tests below).
 
 // Render the REAL WatchedCompaniesField so its insertion into the target step is
 // actually asserted — but stub the discovery SERVICE hooks so no React Query /
@@ -283,6 +274,31 @@ describe('StepTarget — page budget field', () => {
     expect(input).toHaveAttribute('min', '1');
     expect(input).toHaveAttribute('max', '10');
     expect(input.value).toBe('2');
+  });
+
+  it('gives the control an accessible name via the label/htmlFor pair', () => {
+    // WizardField renders its <label> as a SIBLING of the control, so without
+    // matching htmlFor/id the input announces as "spinbutton, blank".
+    renderStep({ pages: 2 });
+
+    expect(screen.getByLabelText('autopilot.wizard.target.pages')).toBe(
+      screen.getByRole('spinbutton')
+    );
+  });
+
+  it('rounds a non-integer entry on blur so it can never reach the .int() schema', () => {
+    // NumberField clamps to [min, max] on blur but never rounds. An unrounded
+    // 2.5 fails the resolver, and the final Create button runs through
+    // handleSubmit with no onInvalid branch — it would just do nothing.
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+    expect(readProbe().pages).toBe(2.5); // unrounded while the field is focused
+
+    fireEvent.blur(input);
+    expect(readProbe().pages).toBe(3);
+    expect(input.value).toBe('3'); // the displayed buffer follows the rounded value
   });
 
   it('writes a typed page count straight into the form (no ×25 item detour)', async () => {

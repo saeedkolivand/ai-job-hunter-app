@@ -10,8 +10,9 @@ import type { WizardState } from '@/features/autopilot/types';
  * This is deliberately NOT the IPC `AutopilotCreate` shape: `keywords` /
  * `excludeKeywords` are editable comma strings here (split on save), and
  * `workType: 'any'` + an empty `dateFilter` are form-level sentinels that
- * {@link wizardStateToPayload} maps away. Number/enum controls are bounded by
- * their own widgets, so only `name` and `query` are user-failable — both live on
+ * {@link wizardStateToPayload} maps away. Enum controls are bounded by their own
+ * widgets, so the user-failable fields are `name`, `query` and `pages` (whose
+ * NumberField clamps its range but not to a whole number) — all three live on
  * step 0, which is what gates the wizard's "Next".
  *
  * `boards` has no upper bound here: the picker only toggles catalog entries and

@@ -1612,7 +1612,7 @@
         "fromLocationSettings": "from location settings",
         "countryResolved": "Country: {{country}}",
         "pages": "Pages to scrape",
-        "pagesHint": "≈25 jobs per page",
+        "pagesHint": "per board — actual results vary",
         "postedWithin": "Posted within",
         "anyTime": "Any time",
         "last24h": "Last 24h",

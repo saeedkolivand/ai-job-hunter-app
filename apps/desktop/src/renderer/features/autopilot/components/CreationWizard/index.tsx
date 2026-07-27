@@ -27,8 +27,12 @@ const STEPS = ['Target', 'Filter', 'Action', 'Schedule'] as const;
 
 // Fields each step must pass before "Next" advances. Steps without an entry have
 // no gate (their controls are bounded, so they can't hold invalid input).
+// `pages` IS gated: its NumberField clamps to [min, max] on blur but never
+// rounds, so a non-integer must be caught here — the final submit runs through
+// `handleSubmit(onValid)` with no onInvalid branch, where a rejected value would
+// silently do nothing instead of surfacing an error.
 const STEP_FIELDS: Partial<Record<number, (keyof WizardState)[]>> = {
-  0: ['name', 'boards', 'query'],
+  0: ['name', 'boards', 'query', 'pages'],
 };
 
 export function CreationWizard({ onDone, onCancel }: CreationWizardProps) {

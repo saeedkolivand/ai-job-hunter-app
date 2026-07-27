@@ -88,6 +88,13 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ minMatchScore: 101 })).success).toBe(false);
   });
 
+  it('rejects a non-integer page count', () => {
+    // NumberField clamps its range on blur but does not round, so this is the
+    // one way a user can hand the wizard an invalid `pages`. StepTarget rounds
+    // on blur and CreationWizard gates `pages` on step 0 because of it.
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 2.5 })).success).toBe(false);
+  });
+
   it('accepts the full 1–10 page range', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 1 })).success).toBe(true);
     expect(autopilotWizardSchema.safeParse(makeForm({ pages: 10 })).success).toBe(true);
