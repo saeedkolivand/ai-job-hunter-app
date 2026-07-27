@@ -948,3 +948,44 @@ describe('TailorFlow — onJobDescChange host callback', () => {
     );
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. Height chain (load-bearing layout)
+// ─────────────────────────────────────────────────────────────────────────────
+// GenerationOutput pins its header by being height-bounded, which only works if
+// every ancestor passes a bounded height down. These two links are that chain's
+// top: drop either and the viewer grows past the window again, an ancestor
+// becomes the scroll owner and the header scrolls away with the document — while
+// every assertion inside GenerationOutput/ResultsPanel stays green (they only
+// walk up to their own render container).
+
+describe('TailorFlow — height chain', () => {
+  it('bounds the stage body and stretches the stage to it, on every stage', () => {
+    for (const stage of ['configuring', 'done'] as const) {
+      genMock.resumeOut = stage === 'done' ? 'Generated resume text' : '';
+      genMock.output = genMock.resumeOut;
+
+      const { unmount } = renderFlow({});
+      const testId =
+        stage === 'done' ? TEST_IDS.documents.resultsPanel : TEST_IDS.documents.tailorWizard;
+
+      // Stage element (motion.div) must fill the stage body…
+      const stageEl = screen.getByTestId(testId).parentElement;
+      expect(stageEl, stage).not.toBeNull();
+      expect(stageEl?.className, stage).toContain('h-full');
+
+      // …and the stage body must be a bounded flex child, never content-sized.
+      const stageBody = stageEl?.parentElement;
+      expect(stageBody, stage).not.toBeNull();
+      expect(stageBody?.className, stage).toContain('min-h-0');
+      expect(stageBody?.className, stage).toContain('flex-1');
+
+      // The root the two hang off is itself height-bounded.
+      const root = stageBody?.parentElement;
+      expect(root?.className, stage).toContain('h-full');
+      expect(root?.className, stage).toContain('min-h-0');
+
+      unmount();
+    }
+  });
+});

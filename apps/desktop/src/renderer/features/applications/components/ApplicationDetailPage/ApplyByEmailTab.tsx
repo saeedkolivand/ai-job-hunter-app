@@ -279,10 +279,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Body-only copy — the subject has its own copy button (see handleCopySubject),
+  // so re-prepending "Subject: …" here would force the user to strip it back out
+  // before pasting into a mail client's body field.
   const handleCopy = () => {
-    const full = subject ? `Subject: ${subject}\n\n${body}` : body;
     void navigator.clipboard
-      .writeText(full)
+      .writeText(body)
       .then(() => {
         setCopied(true);
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current);

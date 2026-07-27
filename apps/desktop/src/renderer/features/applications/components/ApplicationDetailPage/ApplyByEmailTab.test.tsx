@@ -3,7 +3,8 @@
  *
  * Covers:
  *  - Feature #2: the subject copy button writes JUST the subject (no "Subject:"
- *    prefix, no body) and is independent of the whole-email Copy button.
+ *    prefix, no body) and is independent of the body Copy button, which in turn
+ *    writes JUST the body (the subject is never re-prepended).
  *  - Feature #5: select-to-rewrite wiring — clicking Rewrite opens RewritePopover
  *    with docType='email' and the selected span (or the whole field when nothing
  *    is selected); accepting splices the replacement back into the mutable draft.
@@ -254,14 +255,18 @@ describe('ApplyByEmailTab — subject-only copy', () => {
     );
   });
 
-  it('the whole-email Copy button still writes the "Subject: …" + body blob', async () => {
+  it('the body Copy button writes JUST the body (no "Subject: …" prefix)', async () => {
     await renderWithDraft();
 
     fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.copy' }));
 
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`Subject: ${SUBJECT}\n\n${BODY}`);
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(BODY);
     });
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(
+      `Subject: ${SUBJECT}\n\n${BODY}`
+    );
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(EMAIL_RAW);
   });
 });
 
@@ -375,13 +380,12 @@ describe('ApplyByEmailTab — select-to-rewrite', () => {
 
     const rewrittenBody = 'Hello, I am REWRITTEN in the role.';
 
-    // Whole-email Copy writes the post-rewrite blob (not the original BODY).
+    // Body Copy writes the post-rewrite body (not the original BODY, and no subject).
     fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.copy' }));
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        `Subject: ${SUBJECT}\n\n${rewrittenBody}`
-      );
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(rewrittenBody);
     });
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalledWith(BODY);
 
     // mailto encodes the post-rewrite body too.
     fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.openMailto' }));
