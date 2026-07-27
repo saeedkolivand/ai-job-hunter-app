@@ -111,14 +111,17 @@ export function JobsSplitView({
 
   return (
     // Single column until the CARD (not the viewport) is wide enough for two
-    // panes, then a row — `@3xl` = 48rem, roughly the point where a 280px list
-    // still leaves the detail pane a usable ~450px. The parent results card
-    // carries `@container`; a viewport `md:` here fired even when the expanded
-    // sidebar left the card ~390px wide (docs/PATTERNS.md §15).
+    // panes, then a row. `@2xl` = 42rem: the card reaches it at a ~1100px window
+    // and still yields 280px of list + ~434px of detail, both usable. `@3xl`
+    // (48rem) needed a 1200px window — 1340px at large text scale — which
+    // pushed most narrow-window users into one column, the very complaint this
+    // redesign started from. The parent results card carries `@container`; a
+    // viewport `md:` here fired even when the expanded sidebar left the card
+    // ~390px wide (docs/PATTERNS.md §15).
     // w-full + min-w-0: this element is the lone flex child of that card, so
     // without them its main size resolves to max-content and the panes overflow
     // (clipped by the card's overflow-hidden) instead of sharing the width.
-    <div className="@3xl:flex-row flex h-full w-full min-h-0 min-w-0 flex-col">
+    <div className="@2xl:flex-row flex h-full w-full min-h-0 min-w-0 flex-col">
       {/* ── Left: list pane ── */}
       {/* Single-column: hidden when a job is selected. Two-pane: always visible.
           Width is proportional-with-bounds (the utility equivalent of
@@ -129,8 +132,8 @@ export function JobsSplitView({
       <aside
         className={[
           'flex flex-col overflow-hidden border-r border-[var(--border-clear)]',
-          selectedPosting ? '@3xl:flex hidden' : 'flex',
-          '@3xl:w-[34%] @3xl:min-w-[280px] @3xl:max-w-[480px] @3xl:shrink-0',
+          selectedPosting ? '@2xl:flex hidden' : 'flex',
+          '@2xl:w-[34%] @2xl:min-w-[280px] @2xl:max-w-[480px] @2xl:shrink-0',
         ].join(' ')}
       >
         {/* List scroll container — virtualizer targets this.
@@ -189,12 +192,12 @@ export function JobsSplitView({
       <section
         className={[
           'flex-col overflow-hidden min-w-0 flex-1',
-          selectedPosting ? 'flex' : '@3xl:flex hidden',
+          selectedPosting ? 'flex' : '@2xl:flex hidden',
         ].join(' ')}
       >
         {/* Controls bar — Back button for the single-column layout only */}
         {selectedPosting && (
-          <div className="@3xl:hidden flex shrink-0 items-center gap-2 border-b border-[var(--border-clear)] py-2 pl-5 pr-0">
+          <div className="@2xl:hidden flex shrink-0 items-center gap-2 border-b border-[var(--border-clear)] py-2 pl-5 pr-0">
             <Button variant="ghost" onClick={handleBack} aria-label={t('jobs.backToList')}>
               <ChevronLeft size={13} /> {t('jobs.backToList')}
             </Button>

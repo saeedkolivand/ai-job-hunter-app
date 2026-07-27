@@ -162,15 +162,11 @@ export function JobsResults({
             <div className="w-full max-w-2xl space-y-2">
               {/* Transient live scrape progress — a thin fill that advances as
                   each board finishes; shown only while a fresh scrape has no
-                  results yet. */}
-              <div className="space-y-1">
-                <ProgressBar value={(scrapeProgress ?? 0) * 100} showLabel={false} />
-                <div className="text-[10px] text-foreground/45">
-                  {scrapeProgress == null
-                    ? t('jobs.scanning')
-                    : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })}
-                </div>
-              </div>
+                  results yet. The bar carries no label of its own: the command
+                  bar's status strip sits ~60px above with the SAME copy, and
+                  two identical lines reading out of step looked like a stutter.
+                  The strip is the labelled surface (it also owns Cancel). */}
+              <ProgressBar value={(scrapeProgress ?? 0) * 100} showLabel={false} />
               <RowSkeleton />
               <RowSkeleton />
               <RowSkeleton />

@@ -131,6 +131,7 @@ const formatRelativeTime = () => '';
 function renderResults(opts: {
   filtered: Posting[];
   scraping?: boolean;
+  scrapeProgress?: number | null;
   resumeId?: string | null;
   boardSummaries?: BoardScrapeSummary[];
   failureNote?: string | null;
@@ -145,6 +146,7 @@ function renderResults(opts: {
       filtered={opts.filtered}
       formatRelativeTime={formatRelativeTime}
       scraping={opts.scraping ?? false}
+      scrapeProgress={opts.scrapeProgress}
       boardSummaries={opts.boardSummaries}
       failureNote={opts.failureNote}
       totalCount={opts.totalCount}
@@ -186,6 +188,17 @@ describe('JobsResults — gating', () => {
     expect(screen.getByText('jobs.searching')).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.jobs.postingRow)).not.toBeInTheDocument();
     expect(screen.queryByText('jobs.showMore')).not.toBeInTheDocument();
+  });
+
+  it('leaves the scanning copy to the command bar — the bar under the progress fill is unlabelled', () => {
+    renderResults({ filtered: [], scraping: true, scrapeProgress: 0.42 });
+
+    // The command bar's status strip sits ~60px above with the SAME copy and
+    // owns Cancel; two identical lines updating out of step read as a stutter.
+    expect(screen.queryByText(/jobs\.scanningPercent/)).not.toBeInTheDocument();
+    expect(screen.queryByText('jobs.scanning')).not.toBeInTheDocument();
+    // The fill itself stays — it is the non-duplicated part of the signal.
+    expect(screen.getByText('jobs.searching')).toBeInTheDocument();
   });
 
   it('keeps existing rows visible during show-more (scraping=true with results already present)', () => {

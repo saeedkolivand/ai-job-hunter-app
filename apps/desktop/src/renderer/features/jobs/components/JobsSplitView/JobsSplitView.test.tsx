@@ -536,7 +536,10 @@ describe('JobsSplitView — scroll persist (RAF-throttled)', () => {
 // Two defects, one contract. (1) `md:` is a VIEWPORT breakpoint and is always
 // active at the 900px window floor, so it forced two panes even when the
 // expanded sidebar left the results card ~390px wide — the gate has to read the
-// card's own width (`@3xl`, docs/PATTERNS.md §15). (2) The fixed
+// card's own width (`@2xl` = 42rem — the card reaches it at a ~1100px window
+// and still yields 280px of list + ~434px of detail; `@3xl` needed 1200px,
+// 1340px at large text scale, which starved the narrow windows this redesign
+// exists to serve — docs/PATTERNS.md §15). (2) The fixed
 // `md:w-[420px] xl: 2xl:` ladder left the detail pane ~248px, which is what
 // clipped its action cluster. jsdom has no layout engine, so the contract is
 // asserted on the classes that produce it — the same seam ModalShell's
@@ -555,9 +558,9 @@ describe('JobsSplitView — responsive width contract', () => {
     renderSplit();
     const { aside } = panes();
 
-    expect(aside.className).toContain('@3xl:w-[34%]');
-    expect(aside.className).toContain('@3xl:min-w-[280px]');
-    expect(aside.className).toContain('@3xl:max-w-[480px]');
+    expect(aside.className).toContain('@2xl:w-[34%]');
+    expect(aside.className).toContain('@2xl:min-w-[280px]');
+    expect(aside.className).toContain('@2xl:max-w-[480px]');
     // The fixed ladder is what starved the detail pane at the 900px floor.
     expect(aside.className).not.toContain('w-[420px]');
     expect(aside.className).not.toContain('xl:w-[480px]');
@@ -566,7 +569,7 @@ describe('JobsSplitView — responsive width contract', () => {
 
   it('keeps the list pane from being squeezed by detail-pane content', () => {
     renderSplit();
-    expect(panes().aside.className).toContain('@3xl:shrink-0');
+    expect(panes().aside.className).toContain('@2xl:shrink-0');
   });
 
   it('gates two-pane on the CARD width, never on the viewport', () => {
@@ -575,7 +578,7 @@ describe('JobsSplitView — responsive width contract', () => {
 
     // Every layout decision is a container query. A viewport `md:` fired at the
     // 900px floor even when the sidebar left the card far too narrow to split.
-    expect(root.className).toContain('@3xl:flex-row');
+    expect(root.className).toContain('@2xl:flex-row');
     expect(root.className).not.toMatch(/(^|\s)md:/);
     expect(aside.className).not.toMatch(/(^|\s)md:/);
     expect(detail.className).not.toMatch(/(^|\s)md:/);

@@ -115,19 +115,40 @@ describe('JobsCommandBar — active filter chips', () => {
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('names only the removable filter chips as the "active filters" group', () => {
+  it('makes the scrolling chips row itself a named, reachable tab stop', () => {
+    setJobs({ filter: 'rust' });
+    renderBar({
+      boardSummaries: [
+        { board: 'linkedin', count: 4 },
+        { board: 'indeed', count: 0, skipped: 'needs-login' },
+        { board: 'xing', count: 0, error: 'rate limited' },
+      ],
+    });
+
+    // The row scrolls (see the single-line contract below), so everything past
+    // its right edge is keyboard-unreachable unless the CONTAINER is focusable —
+    // only the leftmost chip's × is a tab stop otherwise. axe stays silent on
+    // this: one focusable descendant satisfies scrollable-region-focusable.
+    const chips = screen.getByTestId(TEST_IDS.jobs.filterChips);
+    expect(chips).toBe(screen.getByRole('group', { name: 'jobs.filters.activeLabel' }));
+    expect(chips).toHaveAttribute('tabindex', '0');
+    // A focusable div renders no ring by default.
+    expect(chips.className).toContain('focus-visible:ring-2');
+
+    chips.focus();
+    expect(document.activeElement).toBe(chips);
+  });
+
+  it('keeps scrape diagnostics beside the filter chips, not nested in their own group', () => {
     setJobs({ filter: 'rust' });
     renderBar({ boardSummaries: [{ board: 'linkedin', count: 4 }] });
 
-    // Scrape diagnostics are OUTPUT, not applied filters — they sit beside the
-    // group, not inside it.
-    const group = screen.getByRole('group', { name: 'jobs.filters.activeLabel' });
+    // Diagnostics are OUTPUT, not applied filters; they keep their own group
+    // label rather than being absorbed into "active filters".
+    const chips = screen.getByTestId(TEST_IDS.jobs.filterChips);
     expect(
-      within(group).getByRole('button', { name: 'jobs.filters.remove[name=rust]' })
+      within(chips).getByRole('button', { name: 'jobs.filters.remove[name=rust]' })
     ).toBeInTheDocument();
-    expect(
-      within(group).queryByRole('group', { name: 'jobs.boardSummary.label' })
-    ).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'jobs.boardSummary.label' })).toBeInTheDocument();
   });
 

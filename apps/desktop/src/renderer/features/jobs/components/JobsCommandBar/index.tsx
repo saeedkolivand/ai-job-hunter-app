@@ -195,32 +195,33 @@ export function JobsCommandBar({
 
       {/* Applied filters + last-scrape diagnostics — one strictly single-line row
           that scrolls sideways rather than wrapping, so diagnostics can never
-          grow the bar and squeeze the results list at the 900×600 floor. */}
+          grow the bar and squeeze the results list at the 900×600 floor.
+          Because it scrolls, the container itself must be a tab stop: content
+          past the right edge is otherwise unreachable by keyboard (only the
+          leftmost chip's × is focusable, which is also why axe's
+          scrollable-region-focusable rule stays silent here — one focusable
+          descendant satisfies it). A focusable div gets no ring by default, so
+          the focus-visible style is explicit. */}
       {showChipsRow && (
         <div
           data-testid={TEST_IDS.jobs.filterChips}
-          className="scrollbar-thin mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5"
+          tabIndex={0}
+          role="group"
+          aria-label={t('jobs.filters.activeLabel')}
+          className="scrollbar-thin mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto rounded pb-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
         >
-          {/* The group names the REMOVABLE filter chips only — the scrape
-              diagnostics beside them are output, not applied filters. */}
           {trimmedFilter.length > 0 && (
-            <div
-              role="group"
-              aria-label={t('jobs.filters.activeLabel')}
-              className="flex shrink-0 items-center gap-1.5"
+            <Tag
+              color="processing"
+              closable
+              closeLabel={t('jobs.filters.remove', { name: trimmedFilter })}
+              onClose={() => setJobs({ filter: '' })}
+              className="max-w-[16rem] shrink-0 text-[10px] font-normal"
             >
-              <Tag
-                color="processing"
-                closable
-                closeLabel={t('jobs.filters.remove', { name: trimmedFilter })}
-                onClose={() => setJobs({ filter: '' })}
-                className="max-w-[16rem] text-[10px] font-normal"
-              >
-                <span className="truncate">
-                  {t('jobs.filters.searchChip', { query: trimmedFilter })}
-                </span>
-              </Tag>
-            </div>
+              <span className="truncate">
+                {t('jobs.filters.searchChip', { query: trimmedFilter })}
+              </span>
+            </Tag>
           )}
           {boardSummaries.length > 0 && (
             <BoardSummaryChips summaries={boardSummaries} className="shrink-0 flex-nowrap" />
