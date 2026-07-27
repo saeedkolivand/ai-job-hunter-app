@@ -7,20 +7,6 @@ import {
 
 import type { WizardState } from '@/features/autopilot/types';
 
-/** Scrapers paginate in ~25-result pages. */
-const PAGE_SIZE = 25;
-/** Backend cap on autopilot scraper pages (AutopilotTargetSchema.pages: max 10). */
-const MAX_PAGES = 10;
-
-/**
- * Convert a requested job count into a scraper page budget, clamped to the
- * backend's allowed range — mirrors the jobs page's `jobsToPages` (#41).
- */
-export function itemsToPages(amount: number): number {
-  const n = Number.isFinite(amount) && amount > 0 ? amount : PAGE_SIZE;
-  return Math.min(Math.max(Math.ceil(n / PAGE_SIZE), 1), MAX_PAGES);
-}
-
 /** Split a comma-separated keyword string into a trimmed, non-empty list (or undefined). */
 function splitKeywords(raw: string): string[] | undefined {
   const list = raw
@@ -45,7 +31,7 @@ export function wizardStateToPayload(form: WizardState): AutopilotCreate {
       location: form.location || undefined,
       countryCode: form.countryCode || undefined,
       workType: form.workType !== 'any' ? form.workType : undefined,
-      pages: itemsToPages(form.amount),
+      pages: form.pages,
       dateFilter: form.dateFilter || undefined,
       // Off collapses to undefined so an old autopilot stays free of the field.
       watchedCompaniesOnly: form.watchedCompaniesOnly || undefined,
@@ -82,7 +68,8 @@ export function buildDefaults(jobPrefs?: JobPreferences): WizardState {
     countryCode: jobPrefs?.countryCode,
     // No job-preference field seeds work type; default to the 'any' sentinel.
     workType: 'any',
-    amount: 50,
+    // Matches the backend's AutopilotTargetSchema.pages default.
+    pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,
     minMatchScore: 0,
@@ -107,8 +94,7 @@ export function autopilotToWizardState(ap: Autopilot): WizardState {
     location: target.location ?? '',
     countryCode: target.countryCode,
     workType: target.workType ?? 'any',
-    // Stored as pages; surface back as an approximate item count for editing.
-    amount: target.pages * PAGE_SIZE,
+    pages: target.pages,
     dateFilter: target.dateFilter ?? '',
     watchedCompaniesOnly: target.watchedCompaniesOnly ?? false,
     minMatchScore: ap.filter.minMatchScore,
