@@ -219,9 +219,20 @@ function escapeId(id: string): string {
 }
 
 /** The associated label text for a form element: `<label for>` + any wrapping
- *  `<label>`. Takes `HTMLElement` (not just `HTMLInputElement`) so it works
- *  identically for `<textarea>`/`<select>` — every member it touches
- *  (`id`/`closest`) is generic to `Element`, not input-specific. */
+ *  `<label>` + every element referenced by `aria-labelledby`. Takes
+ *  `HTMLElement` (not just `HTMLInputElement`) so it works identically for
+ *  `<textarea>`/`<select>` — every member it touches (`id`/`closest`/
+ *  `getAttribute`) is generic to `Element`, not input-specific.
+ *
+ *  `aria-labelledby` is the ONLY label many modern ATS forms expose: Workday and
+ *  Ashby render their field labels as sibling `<div>`/`<span>`s wired by id
+ *  rather than a `<label for>`, so without this resolution those fields carried
+ *  an empty label and were matched from `name`/`id`/`placeholder` alone (or, for
+ *  answers-capture, skipped as unlabelled). The attribute is an id LIST
+ *  (space-separated, in reference order) — each referenced element's
+ *  `textContent` is appended, same shape as the label text above. `getElementById`
+ *  needs no escaping (unlike the `label[for=…]` selector) and is jsdom-safe; no
+ *  layout/computed-style read is involved. */
 export function labelText(el: HTMLElement): string {
   const doc = el.ownerDocument;
   let text = '';
@@ -231,6 +242,14 @@ export function labelText(el: HTMLElement): string {
   }
   const wrapping = el.closest('label');
   if (wrapping?.textContent) text += ` ${wrapping.textContent}`;
+  const labelledBy = el.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    for (const id of labelledBy.split(/\s+/)) {
+      if (!id) continue;
+      const ref = doc.getElementById(id);
+      if (ref?.textContent) text += ` ${ref.textContent}`;
+    }
+  }
   return text;
 }
 
@@ -387,22 +406,50 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   // ("Vor- und Nachname", "Nombre y apellidos", "Nome e cognome"), which would
   // otherwise PARTIALLY fill via the first/last patterns below (nachname →
   // lastName, nombre → firstName). `-?` tolerates the elided-hyphen DE/NL forms.
+  //
+  // `full[\s_-]*name` (was the space-only `\bfull name\b`) so the ATTRIBUTE
+  // spellings resolve here too — `fullname`, `full_name`, `full-name`, and the
+  // camelCase `fullName` (which flattens to `fullname` in the lowercased
+  // signal). Left unanchored on both sides, unlike `phone`/`city`: no English or
+  // EU word CONTAINS "fullname", so there is no collision to guard against,
+  // while an anchor would break the very common `candidateFullName`-style
+  // compound.
   {
     key: 'fullName',
     pattern:
-      /\bfull name\b|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
+      /full[\s_-]*name|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
   },
+  // First/last name — the separator between the two words is OPTIONAL
+  // (`[\s_-]*`), because a form field's strongest signal is usually its
+  // `name`/`id` ATTRIBUTE, not a prose label: `first_name`, `firstName`
+  // (→ `firstname` once lowercased), `given-name` and Greenhouse's
+  // `job_application[first_name]` are all the same field as a "First name"
+  // label. Before this, the space-only `first name`/`last name` patterns missed
+  // every one of them, and the HYPHENATED spellings were actively harmful: `-`
+  // is a non-word character, so `first-name`/`family-name` fell through to the
+  // generic `\bname\b` catch-all in `matchNamedKey` and received the FULL name
+  // in BOTH boxes.
+  //
+  // Anchoring follows the `phone`/`city` rule — anchor only what collides.
+  // `first`/`given`/`fore`/`last`/`family` + `name` collide with nothing, so
+  // they stay open on both sides (`applicantFirstName`, `first_name_1` and
+  // `firstNameInput` must all keep matching). The bare abbreviations DO collide
+  // and are LEADING-anchored: `lname` ⊂ "fullname" (which must stay `fullName`,
+  // not `lastName`) and `fname` is short enough to hide inside a future
+  // compound. The trailing side stays open for `fname_1`/`lnameInput`.
+  // `nm` is Taleo's abbreviation (`firstNm`/`lastNm`).
+  //
   // `nombre` (ES) and `nome` (IT/PT) mean "name" — excluded when they head a
   // username/company/full-name phrase so they only fire for a real first name.
   {
     key: 'firstName',
     pattern:
-      /first name|given name|forename|vorname|prenom|voornaam|fornamn|fornavn|etunimi|\bimie\b|\bnombre\b(?!\s*(?:de\b|completo))|\bnome\b(?!\s*(?:completo|utente|de\b|da\b|del))/,
+      /(?:first|given|fore)[\s_-]*(?:name|nm)|(?:^|[^a-z])fname|vorname|prenom|voornaam|fornamn|fornavn|etunimi|\bimie\b|\bnombre\b(?!\s*(?:de\b|completo))|\bnome\b(?!\s*(?:completo|utente|de\b|da\b|del))/,
   },
   {
     key: 'lastName',
     pattern:
-      /last name|surname|family name|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
+      /(?:last|family)[\s_-]*(?:name|nm)|(?:^|[^a-z])lname|surname|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
   },
   // `city`/`town` are anchored on their LEADING side (see the `phone` note
   // above): bare `city` ⊂ "ethnicity", so an EEO "Ethnicity" field was resolving

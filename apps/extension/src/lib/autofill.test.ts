@@ -292,6 +292,122 @@ describe('planAndFill – name-split flag', () => {
   });
 });
 
+describe('planAndFill – attribute-only name fields (no "first name" phrase anywhere)', () => {
+  it('fills separate first/last boxes from underscore / camelCase / abbreviated NAME attributes', () => {
+    // The overwhelmingly common real-world shape: no <label>, no autocomplete —
+    // just a `name` attribute. All of these used to resolve to null (nothing
+    // filled at all) because the patterns required a literal space.
+    setForm(`
+      <input id="a" name="first_name" />
+      <input id="b" name="last_name" />
+      <input id="c" name="firstName" />
+      <input id="d" name="lastName" />
+      <input id="e" name="fname" />
+      <input id="f" name="lname" />
+      <input id="g" name="job_application[first_name]" />
+      <input id="h" name="job_application[last_name]" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    for (const id of ['a', 'c', 'e', 'g']) expect(val(id), id).toBe('Saeed');
+    for (const id of ['b', 'd', 'f', 'h']) expect(val(id), id).toBe('Kolivand');
+    expect(summary.nameSplit).toEqual({ first: 'Saeed', last: 'Kolivand' });
+  });
+
+  it('regression: HYPHENATED first/last fields no longer BOTH receive the full name', () => {
+    // `-` is not a word character, so these matched the generic `\bname\b`
+    // catch-all: "Saeed Kolivand" was written into every one of them, silently.
+    setForm(`
+      <input id="fn" name="first-name" />
+      <input id="gn" name="given-name" />
+      <input id="ln" name="last-name" />
+      <input id="famn" name="family-name" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('fn')).toBe('Saeed');
+    expect(val('gn')).toBe('Saeed');
+    expect(val('ln')).toBe('Kolivand');
+    expect(val('famn')).toBe('Kolivand');
+  });
+
+  it('still refuses a username / user_name login field', () => {
+    setForm(`
+      <input id="u1" name="username" />
+      <input id="u2" name="user_name" />
+      <input id="u3" name="fullName" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('u1')).toBe('');
+    expect(val('u2')).toBe('');
+    // …while the full-name attribute spelling next to them still fills.
+    expect(val('u3')).toBe('Saeed Kolivand');
+  });
+});
+
+describe('planAndFill – aria-labelledby labels (Workday / Ashby)', () => {
+  it('resolves an aria-labelledby id LIST into the field signal', () => {
+    setForm(`
+      <div id="lbl-first">First name</div>
+      <input id="wf" aria-labelledby="lbl-first" />
+      <div id="lbl-email">Email address</div>
+      <div id="lbl-req">(required)</div>
+      <input id="we" type="email" aria-labelledby="lbl-email lbl-req" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('wf')).toBe('Saeed');
+    expect(val('we')).toBe('saeed@example.com');
+  });
+
+  it('ignores an aria-labelledby that points at a missing id', () => {
+    setForm(`<input id="ghost" aria-labelledby="does-not-exist" />`);
+    planAndFill(document, PROFILE);
+    expect(val('ghost')).toBe('');
+  });
+
+  it('applies the ambiguous denylist to an aria-labelledby label too', () => {
+    setForm(`
+      <div id="lbl-emg">Emergency contact phone</div>
+      <input id="emg" type="tel" aria-labelledby="lbl-emg" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('emg')).toBe('');
+  });
+});
+
+describe('planAndFill – disabled / readonly fields', () => {
+  it('never writes into a disabled or readonly field', () => {
+    setForm(`
+      <label for="d1">Email</label><input id="d1" type="email" disabled />
+      <label for="r1">Full name</label><input id="r1" type="text" readonly />
+      <label for="ok1">Phone number</label><input id="ok1" type="tel" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    expect(val('d1')).toBe('');
+    expect(val('r1')).toBe('');
+    // Guard against a false positive: a normal sibling still fills, and the
+    // summary counts ONLY what was really written.
+    expect(val('ok1')).toBe('+31612345678');
+    expect(summary.filled.map((f) => f.key)).toEqual(['phone']);
+  });
+
+  it('does not report a page of only disabled/readonly fields as autofillable', () => {
+    setForm(`
+      <label for="d2">Email</label><input id="d2" type="email" disabled />
+      <label for="r2">First name</label><input id="r2" type="text" readonly />
+    `);
+    expect(hasAutofillableFields(document)).toBe(false);
+  });
+});
+
 describe('planAndFill – filled-nothing', () => {
   it('reports filledNothing when no field matches', () => {
     setForm(`

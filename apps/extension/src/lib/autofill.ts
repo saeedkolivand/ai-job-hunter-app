@@ -122,13 +122,21 @@ export function splitName(fullName: string): { first: string; last: string } {
 }
 
 /**
- * The baseline gate shared by every fill tier: a fillable input TYPE, visible,
- * empty, not a card/password autocomplete token, and not matching the ambiguous/
- * sensitive denylist ({@link isAmbiguousSignal}). Extracted so the extra-link
- * matcher (Tier 2) applies the exact same discipline as the named-key matcher below.
+ * The baseline gate shared by every fill tier: a fillable input TYPE, writable
+ * (not `disabled`/`readonly`), visible, empty, not a card/password autocomplete
+ * token, and not matching the ambiguous/sensitive denylist
+ * ({@link isAmbiguousSignal}). Extracted so the extra-link matcher (Tier 2)
+ * applies the exact same discipline as the named-key matcher below.
  */
 function isCandidateField(el: HTMLInputElement): boolean {
   if (!FILLABLE_TYPES.has(el.type)) return false;
+  // A `disabled`/`readonly` field is one the page has declared un-editable: a
+  // disabled input is never even submitted, and writing to a readonly one (via
+  // the native setter, which bypasses the UI guard) puts a value where the user
+  // cannot correct it — and would then be COUNTED in the summary as filled,
+  // making the report a lie. Both are checked before the layout-free visibility
+  // walk because they are single property reads.
+  if (el.disabled || el.readOnly) return false;
   if (isHidden(el)) return false;
   if (el.value.trim() !== '') return false; // never overwrite
 

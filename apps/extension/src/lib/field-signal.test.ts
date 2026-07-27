@@ -141,3 +141,115 @@ describe('matchNamedKey — location', () => {
     }
   });
 });
+
+describe('matchNamedKey — first / last name', () => {
+  it('matches the attribute spellings of a first-name field, not just the "first name" phrase', () => {
+    for (const signal of [
+      'first name',
+      // camelCase `firstName` flattens to `firstname` in the lowercased signal.
+      'firstname',
+      'first_name',
+      'first-name',
+      'job_application[first_name]', // Greenhouse
+      'fname',
+      'fname_1',
+      'first_nm', // Taleo
+      'firstnm',
+      'given name',
+      'given-name',
+      'givenname',
+      'forename',
+      'candidate_first_name',
+      // No separator at all before `first` (camelCase `applicantFirstName`) —
+      // these patterns are deliberately NOT leading-anchored (nothing collides).
+      'applicantfirstname',
+      'preferred first name',
+      'vorname',
+      'prenom',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBe('firstName');
+    }
+  });
+
+  it('matches the attribute spellings of a last-name field', () => {
+    for (const signal of [
+      'last name',
+      'lastname',
+      'last_name',
+      'last-name',
+      'job_application[last_name]', // Greenhouse
+      'lname',
+      'lnameinput',
+      'last_nm',
+      'lastnm',
+      'family name',
+      'family-name',
+      'familyname',
+      'surname',
+      'candidate_last_name',
+      'applicantlastname',
+      'nachname',
+      'nazwisko',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBe('lastName');
+    }
+  });
+
+  it('regression: a HYPHENATED first/last field no longer falls through to the bare-name catch-all', () => {
+    // `-` is not a word character, so `first-name` / `family-name` used to match
+    // the generic `\bname\b` catch-all and receive the FULL name in BOTH boxes —
+    // a silent mis-fill, the one failure mode this module exists to prevent.
+    expect(matchNamedKey('first-name')).toBe('firstName');
+    expect(matchNamedKey('given-name')).toBe('firstName');
+    expect(matchNamedKey('last-name')).toBe('lastName');
+    expect(matchNamedKey('family-name')).toBe('lastName');
+  });
+
+  it('keeps full-name fields on fullName — including the attribute spellings', () => {
+    for (const signal of [
+      'full name',
+      'fullname',
+      'full_name',
+      'full-name',
+      'candidatefullname',
+      // The bare-"name" catch-all is unchanged and still runs LAST.
+      'name',
+      'your name',
+      'vollstandiger name',
+      'nombre completo',
+      'imie i nazwisko',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBe('fullName');
+    }
+  });
+
+  it('does not let `lname` claim `fullname` (ordering + leading anchor)', () => {
+    // `lname` ⊂ "fu**llname**": unanchored it would turn every `fullName` field
+    // into a lastName one.
+    expect(matchNamedKey('fullname')).toBe('fullName');
+    expect(matchNamedKey('candidate_fullname')).toBe('fullName');
+  });
+
+  it('never routes a username-family / non-person "name" field to a person key', () => {
+    // `username`/`user name` are stopped by the denylist BEFORE matchNamedKey
+    // runs (both autofill's `isCandidateField` and capture's `isCapturable`
+    // check it first) …
+    expect(isAmbiguousSignal('username')).toBe(true);
+    expect(isAmbiguousSignal('user name')).toBe(true);
+    // … and matchNamedKey itself must refuse them too, so widening the name
+    // patterns can never write the user's name into a login field.
+    for (const signal of [
+      'username',
+      'user name',
+      'user_name',
+      'nickname',
+      'display name',
+      'file name',
+      'screen name',
+      'school name',
+      'university name',
+    ]) {
+      expect(matchNamedKey(signal), signal).toBeNull();
+    }
+  });
+});
