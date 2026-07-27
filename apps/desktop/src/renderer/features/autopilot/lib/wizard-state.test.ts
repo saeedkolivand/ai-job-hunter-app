@@ -4,12 +4,7 @@ import { AGGREGATOR_BOARD_ID, type Autopilot, type JobPreferences } from '@ajh/s
 
 import type { WizardState } from '@/features/autopilot/types';
 
-import {
-  autopilotToWizardState,
-  buildDefaults,
-  itemsToPages,
-  wizardStateToPayload,
-} from './wizard-state';
+import { autopilotToWizardState, buildDefaults, wizardStateToPayload } from './wizard-state';
 
 // ── Minimal valid Autopilot fixture ──────────────────────────────────────────
 
@@ -126,6 +121,12 @@ describe('buildDefaults()', () => {
 
   it('defaults watchedCompaniesOnly to false (ADR-030 §e)', () => {
     expect(buildDefaults().watchedCompaniesOnly).toBe(false);
+  });
+
+  it('defaults pages to 2, matching the backend AutopilotTargetSchema default', () => {
+    // Was `amount: 50` (an item count the save step divided by 25). The form now
+    // holds the page budget itself, so the default must be the page number.
+    expect(buildDefaults().pages).toBe(2);
   });
 });
 
@@ -245,6 +246,19 @@ describe('autopilotToWizardState()', () => {
   it('falls back to watchedCompaniesOnly: false when absent (legacy record)', () => {
     expect(autopilotToWizardState(BASE_AUTOPILOT).watchedCompaniesOnly).toBe(false);
   });
+
+  it('reads target.pages verbatim instead of the old ×25 item approximation', () => {
+    // BASE_AUTOPILOT stores pages: 2 — the wizard used to surface that as 50
+    // "items", which round-tripped back to 2 pages only because of the ÷25.
+    expect(autopilotToWizardState(BASE_AUTOPILOT).pages).toBe(2);
+  });
+
+  it.each([1, 5, 10])('round-trips a stored pages: %i through the wizard unchanged', (pages) => {
+    const ap: Autopilot = { ...BASE_AUTOPILOT, target: { ...BASE_AUTOPILOT.target, pages } };
+    const state = autopilotToWizardState(ap);
+    expect(state.pages).toBe(pages);
+    expect(wizardStateToPayload(state).target.pages).toBe(pages);
+  });
 });
 
 // ── wizardStateToPayload ──────────────────────────────────────────────────────
@@ -256,7 +270,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'rust backend',
     location: 'Berlin',
     workType: 'remote',
-    amount: 75,
+    pages: 3,
     dateFilter: '24h',
     watchedCompaniesOnly: false,
     minMatchScore: 70,
@@ -319,24 +333,12 @@ describe('wizardStateToPayload()', () => {
     });
   });
 
-  describe('items → pages conversion', () => {
-    it.each([
-      [1, 1],
-      [25, 1],
-      [26, 2],
-      [50, 2],
-      [75, 3],
-      [250, 10],
-      [500, 10], // clamped to the backend max of 10 pages
-    ])('maps amount %i to %i page(s)', (amount, pages) => {
-      expect(itemsToPages(amount)).toBe(pages);
-      expect(wizardStateToPayload(makeForm({ amount })).target.pages).toBe(pages);
-    });
-
-    it('falls back to one page for non-positive / non-finite amounts', () => {
-      expect(itemsToPages(0)).toBe(1);
-      expect(itemsToPages(-5)).toBe(1);
-      expect(itemsToPages(Number.NaN)).toBe(1);
+  describe('pages passthrough (true pages field)', () => {
+    // The form used to hold an item count divided by 25 on save, so anything
+    // above 250 silently collapsed to the same 10 pages. It now carries the
+    // page budget verbatim across the whole range the widget/schema allow.
+    it.each([1, 2, 3, 7, 10])('forwards pages: %i to target.pages unchanged', (pages) => {
+      expect(wizardStateToPayload(makeForm({ pages })).target.pages).toBe(pages);
     });
   });
 

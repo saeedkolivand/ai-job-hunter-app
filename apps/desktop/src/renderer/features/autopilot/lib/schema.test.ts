@@ -14,7 +14,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'rust backend',
     location: '',
     workType: 'any',
-    amount: 50,
+    pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,
     minMatchScore: 50,
@@ -80,8 +80,32 @@ describe('autopilotWizardSchema — step-0 gate', () => {
     expect(autopilotWizardSchema.safeParse(makeForm({ boards: [''] })).success).toBe(false);
   });
 
-  it('rejects out-of-range numeric controls (amount > 500, score > 100)', () => {
-    expect(autopilotWizardSchema.safeParse(makeForm({ amount: 501 })).success).toBe(false);
+  it('rejects out-of-range numeric controls (pages outside 1–10, score > 100)', () => {
+    // pages mirrors the backend AutopilotTargetSchema range, so 11 (and 0) must
+    // fail here rather than reaching the IPC boundary.
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 11 })).success).toBe(false);
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 0 })).success).toBe(false);
     expect(autopilotWizardSchema.safeParse(makeForm({ minMatchScore: 101 })).success).toBe(false);
+  });
+
+  it('rejects a non-integer page count', () => {
+    // NumberField clamps its range on blur but does not round, so this is the
+    // one way a user can hand the wizard an invalid `pages`. StepTarget rounds
+    // on blur and CreationWizard gates `pages` on step 0 because of it.
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 2.5 })).success).toBe(false);
+  });
+
+  it('reports every pages failure as the same i18n KEY, not a zod English default', () => {
+    // StepTarget renders this straight through t(...) into WizardField's error
+    // slot; a raw zod message would ship untranslated copy to the user.
+    const key = 'autopilot.wizard.validation.pagesRange';
+    expect(messageFor(makeForm({ pages: 2.5 }), 'pages')).toBe(key);
+    expect(messageFor(makeForm({ pages: 0 }), 'pages')).toBe(key);
+    expect(messageFor(makeForm({ pages: 11 }), 'pages')).toBe(key);
+  });
+
+  it('accepts the full 1–10 page range', () => {
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 1 })).success).toBe(true);
+    expect(autopilotWizardSchema.safeParse(makeForm({ pages: 10 })).success).toBe(true);
   });
 });
