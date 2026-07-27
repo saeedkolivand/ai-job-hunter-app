@@ -90,7 +90,11 @@ export function ResultsPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-8 py-6">
+      {/* Height-bounded body — NOT a scroll container. GenerationOutput owns its
+          own scroll boundary (below its pinned tab/action header), so the header
+          stays visible while the document scrolls. Making this scroll again would
+          re-break that: the whole viewer, header included, would scroll away. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-8 py-6">
         <GenerationOutput
           target={target}
           activeOut={activeOut}

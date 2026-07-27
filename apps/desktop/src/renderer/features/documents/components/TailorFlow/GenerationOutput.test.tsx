@@ -923,4 +923,74 @@ describe('GenerationOutput', () => {
       expect(screen.getByRole('tabpanel')).toHaveAttribute('tabindex', '0');
     });
   });
+
+  // ── 10. Scroll boundary — the tab/action header stays pinned ─────────────────
+  // Regression guard for the "header scrolls away" bug: the viewer used to grow
+  // past its host (intrinsic `min-h-[32rem]` panel + no overflow of its own), so
+  // the PARENT scrolled the whole component — header included. The scroll boundary
+  // now lives on the tabpanel and every control above it is a pinned `shrink-0`
+  // sibling, i.e. OUTSIDE the scrollport. jsdom has no layout, so these assert the
+  // structural invariants that produce the behaviour, not pixels.
+
+  describe('scroll boundary', () => {
+    const SCROLLS = /overflow-(?:y-)?(?:auto|scroll)/;
+
+    it('the tabpanel owns the vertical scroll', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      expect(screen.getByRole('tabpanel').className).toMatch(SCROLLS);
+    });
+
+    it('the tabpanel is bounded by its host, with no intrinsic min-height', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.className).toContain('min-h-0');
+      expect(panel.className).toContain('flex-1');
+      // An arbitrary min-height (e.g. `min-h-[32rem]`) makes the panel taller than
+      // its host again, which pushes the scroll back up to the caller.
+      expect(panel.className).not.toMatch(/min-h-(?!0\b)/);
+    });
+
+    it('the root is height-bounded so the caller never has to scroll it', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const root = screen.getByRole('tabpanel').parentElement;
+      expect(root).not.toBeNull();
+      expect(root?.className).toContain('min-h-0');
+      expect(root?.className).toContain('flex-1');
+      expect(root?.className).not.toMatch(/min-h-(?!0\b)/);
+    });
+
+    it('nothing between the root and the tabpanel is a second scroll container', () => {
+      const { container } = render(
+        <GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />
+      );
+      for (
+        let el = screen.getByRole('tabpanel').parentElement;
+        el !== null && el !== container;
+        el = el.parentElement
+      ) {
+        expect(el.className).not.toMatch(SCROLLS);
+      }
+    });
+
+    it('keeps the tabs and the Copy/Export actions outside the scrollport', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.contains(screen.getByRole('tablist'))).toBe(false);
+      expect(panel.contains(screen.getByRole('button', { name: /autopilot\.apply\.copy/i }))).toBe(
+        false
+      );
+      expect(panel.contains(screen.getByRole('button', { name: /aiGenerate\.export/i }))).toBe(
+        false
+      );
+    });
+
+    it('keeps the template / accent / letter-layout strips outside the scrollport', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.contains(screen.getByTestId(TEST_IDS.documents.templatePicker))).toBe(false);
+      expect(
+        panel.contains(screen.getByTestId(`${TEST_IDS.generation.letterLayoutOption}-classic`))
+      ).toBe(false);
+    });
+  });
 });

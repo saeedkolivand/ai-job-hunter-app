@@ -209,8 +209,13 @@ export function GenerationOutput({
     }
   };
 
+  // Three-part shape (mirrors the AI-Generate viewer + ModalShell, docs/PATTERNS.md §13):
+  // the root is HEIGHT-BOUNDED (`min-h-0 flex-1` inside the caller's `h-full` column)
+  // instead of growing past it, so the chrome stays put and only the tabpanel scrolls.
+  // Never give it an intrinsic min-height — that pushes the scroll boundary back up to
+  // the caller, and the header scrolls away with the document (the bug this fixes).
   return (
-    <div className="flex min-h-56 flex-1 flex-col rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
+    <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
       <div className="shrink-0 flex items-center justify-between border-b border-foreground/[0.06] px-3 py-2">
         <Tabs
           ariaLabel={t('autopilot.apply.tabs.outputTabs')}
@@ -327,12 +332,20 @@ export function GenerationOutput({
           <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
         </div>
       )}
+      {/* The ONLY scroll boundary in this viewer: everything above is `shrink-0` and
+          therefore pinned (tabs + Copy/Export, and the template / accent / layout
+          strips that mutate what you're looking at). Because the pinned chrome is a
+          flex SIBLING — not sticky chrome overlaying this box — it can never obscure
+          a focused element inside it (WCAG 2.4.11), so no scroll-margin is needed.
+          Content normally fits (EditableOutput/JobAdView are `h-full`/`min-h-0` and
+          scroll internally); `overflow-y-auto` is the safety valve on short windows,
+          and the panel is focusable (`tabIndex={0}`) so it stays keyboard-scrollable. */}
       <div
         role="tabpanel"
         id={activePanelId}
         aria-labelledby={activeTabId}
         tabIndex={0}
-        className="flex min-h-[32rem] flex-1 flex-col px-3 py-2"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2"
       >
         {view === 'jobAd' ? (
           <JobAdView
