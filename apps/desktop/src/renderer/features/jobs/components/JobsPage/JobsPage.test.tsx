@@ -13,7 +13,7 @@
  * shared-object container (avoids the vi.mock factory scope isolation constraint)
  * so we can fire synthetic events directly in each test.
  */
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -61,9 +61,17 @@ const resultsProps = {
   onScrape: undefined as unknown,
 };
 
-// ScrapeForm prop capture — the drawer hands the form its own dismiss callback
-// (`onToggle`); firing it must close the drawer.
-const scrapeFormContainer = { onToggle: null as (() => void) | null };
+// ScrapeForm prop capture — the drawer hands the form its dismiss callback
+// (`onToggle`) and its submit (`onStart`); either must close the drawer.
+const scrapeFormContainer = {
+  onToggle: null as (() => void) | null,
+  onStart: null as (() => void) | null,
+};
+
+// Drawer prop capture — asserts the focus-return fallback the page wires in.
+const drawerContainer = {
+  returnFocusTo: null as { current: HTMLElement | null } | null,
+};
 
 // usePostings — mutable container so tests can simulate "results present" vs
 // "zero results" for the header-strip mutual-exclusivity gating (the header
@@ -178,8 +186,9 @@ vi.mock('@/components/scrape/BoardSummaryChips', () => ({
 }));
 
 vi.mock('@/features/jobs/components/ScrapeForm', () => ({
-  ScrapeForm: ({ onToggle }: { onToggle?: () => void }) => {
+  ScrapeForm: ({ onToggle, onStart }: { onToggle?: () => void; onStart?: () => void }) => {
     scrapeFormContainer.onToggle = onToggle ?? null;
+    scrapeFormContainer.onStart = onStart ?? null;
     return <div data-testid={TEST_IDS.jobs.scrapeForm} />;
   },
 }));
@@ -202,14 +211,34 @@ vi.mock('@ajh/translations', () => ({
 }));
 
 vi.mock('@ajh/ui', () => ({
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <div role="button" onClick={onClick}>
+  // A real <button> (not a div) so `ref` forwarding — which the drawer's
+  // focus-return fallback depends on — is actually exercised.
+  Button: ({
+    children,
+    onClick,
+    ref,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    ref?: Ref<HTMLButtonElement>;
+  }) => (
+    <button type="button" ref={ref} onClick={onClick}>
       {children}
-    </div>
+    </button>
   ),
   ConfirmModal: () => null,
-  Drawer: ({ open, children }: { open: boolean; children: ReactNode }) =>
-    open ? <div role="dialog">{children}</div> : null,
+  Drawer: ({
+    open,
+    children,
+    returnFocusTo,
+  }: {
+    open: boolean;
+    children: ReactNode;
+    returnFocusTo?: { current: HTMLElement | null };
+  }) => {
+    drawerContainer.returnFocusTo = returnFocusTo ?? null;
+    return open ? <div role="dialog">{children}</div> : null;
+  },
   Dropdown: () => null,
   Input: () => null,
   SegmentedControl: ({ onChange }: { onChange?: (v: string) => void }) => {
@@ -806,15 +835,55 @@ describe('JobsPage — scrape drawer', () => {
     expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
   });
 
-  it('the drawer body scrolls, so tall form content cannot put the Start button out of reach', async () => {
+  it('closes on Search — in the click handler, not from a background stream event', async () => {
+    const user = userEvent.setup();
+    renderJobsPage();
+
+    await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeForm)).toBeInTheDocument();
+
+    act(() => {
+      scrapeFormContainer.onStart?.();
+    });
+
+    // Closing here (user-initiated) rather than from an effect on the first
+    // streamed posting is what keeps focus predictable: the old effect yanked
+    // focus mid-interaction and, on the first-run path, closed the drawer only
+    // AFTER the empty-state CTA it would return focus to had unmounted.
+    expect(screen.queryByTestId(TEST_IDS.jobs.scrapeForm)).not.toBeInTheDocument();
+  });
+
+  it('stays closed when a scrape returns ZERO results (nothing ever streams)', async () => {
+    const user = userEvent.setup();
+    renderJobsPage();
+
+    await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
+    act(() => {
+      scrapeFormContainer.onStart?.();
+    });
+
+    // A completion with no postings must not strand the drawer open — the old
+    // livePostings-driven close never fired for an empty result set.
+    fireJobEvent({
+      type: 'job.completed',
+      jobId: 'job-123',
+      data: { boards: [{ board: 'linkedin', count: 0 }] },
+    });
+
+    expect(screen.queryByTestId(TEST_IDS.jobs.scrapeForm)).not.toBeInTheDocument();
+  });
+
+  it('hands the drawer an always-mounted focus-return target', async () => {
     const user = userEvent.setup();
     renderJobsPage();
 
     await user.click(screen.getByRole('button', { name: /jobs\.scrapeJobs/ }));
 
-    const body = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
-    expect(body.className).toContain('overflow-y-auto');
-    expect(body.className).toContain('min-h-0');
+    // The empty-state CTA can unmount while the drawer is open, so the drawer
+    // needs a fallback that never does — the command bar's Scrape button.
+    expect(drawerContainer.returnFocusTo?.current).toBe(
+      screen.getByRole('button', { name: /jobs\.scrapeJobs/ })
+    );
   });
 
   it("closes again via the form's own dismiss control (onToggle)", async () => {

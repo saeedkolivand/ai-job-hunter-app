@@ -1,4 +1,5 @@
 import { LayoutList, LayoutPanelLeft, ListFilter, Loader2, Plus, Trash2 } from 'lucide-react';
+import type { Ref } from 'react';
 
 import type { BoardScrapeSummary } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
@@ -30,18 +31,26 @@ interface JobsCommandBarProps {
   boardSummaries: BoardScrapeSummary[];
   /** Sanitized note for an outright scrape failure; gated like `boardSummaries`. */
   failureNote: string | null;
+  /**
+   * Forwarded to the Scrape button. It is the only ALWAYS-mounted control that
+   * opens the scrape drawer, so the drawer uses it as its focus-return fallback
+   * when the empty-state CTA it was opened from has since unmounted.
+   */
+  scrapeButtonRef?: Ref<HTMLButtonElement>;
 }
 
 /**
  * Compact command bar that replaced the Jobs hero (title + subtitle + inline
  * form). One wrapping row of controls, plus two conditional thin rows below it:
- * the active-filter chips and the live scrape status.
+ * the live scrape status and the active-filter chips.
  *
  * Responsive contract: the control row is `flex-wrap` with no `shrink-0`
  * no-wrap container, so at the 900px window floor the trailing action group
- * wraps onto a second line instead of being clipped. The bar is `@container`
- * so its children can respond to the page column's width rather than the
- * viewport (`docs/PATTERNS.md` §15).
+ * wraps onto a second line instead of being clipped. HEIGHT is the scarce
+ * resource there — German runs ~30% longer and pushed this bar to 56% of the
+ * content column — so every row below the first stays strictly single-line: the
+ * chips row scrolls sideways instead of wrapping, and a filter that is already
+ * visible as a control (hide-agency, 40px above) gets no chip at all.
  *
  * Filter/sort/view state is read straight from the session store (the same
  * source `JobsPage` and `JobsResults` read) so the page doesn't have to thread
@@ -58,30 +67,26 @@ export function JobsCommandBar({
   onCancelScrape,
   boardSummaries,
   failureNote,
+  scrapeButtonRef,
 }: JobsCommandBarProps) {
   const { t } = useTranslation();
   const { jobs, setJobs } = useSessionStore();
   const { filter, sortBy, viewMode, hideAgency } = jobs;
 
   const trimmedFilter = filter.trim();
-  const searchChipLabel = t('jobs.filters.searchChip', { query: trimmedFilter });
-  const hasFilterChips = trimmedFilter.length > 0 || hideAgency;
-  const showChipsRow = hasFilterChips || boardSummaries.length > 0 || failureNote !== null;
-
-  const clearAllFilters = () => setJobs({ filter: '', hideAgency: false });
+  const showChipsRow =
+    trimmedFilter.length > 0 || boardSummaries.length > 0 || failureNote !== null;
 
   return (
     <div
       data-testid={TEST_IDS.jobs.commandBar}
       role="group"
       aria-label={t('jobs.commandBar.label')}
-      className="@container shrink-0 px-10 pb-3 pt-6"
+      className="shrink-0 px-10 pb-3 pt-6"
     >
       {/* Control row — wraps; never a fixed no-wrap strip. */}
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-gradient shrink-0 text-lg font-bold tracking-tight">
-          {t('jobs.title')}
-        </h1>
+        <h1 className="text-body-strong shrink-0 text-foreground/90">{t('jobs.title')}</h1>
 
         <Input
           id="jobs-filter-query"
@@ -97,6 +102,22 @@ export function JobsCommandBar({
           allowClear
         />
 
+        {/* Count sits with the input it describes — alone on the right it
+            stranded a void of whitespace once the action group wrapped away. */}
+        <span className="shrink-0 tabular-nums text-[11px] text-foreground/50">
+          <span aria-hidden="true">
+            {shownCount} / {totalCount}
+          </span>
+          {/* `aria-label` on a bare span is a prohibited-and-dropped mapping, so
+              the spelled-out form is real (visually hidden) text instead. */}
+          <span className="sr-only">
+            {t('jobs.commandBar.shownCount', {
+              shown: String(shownCount),
+              total: String(totalCount),
+            })}
+          </span>
+        </span>
+
         <Dropdown
           options={[
             { value: 'newest', label: t('jobs.sortNewest') },
@@ -106,24 +127,13 @@ export function JobsCommandBar({
           value={sortBy}
           onChange={(value) => setJobs({ sortBy: value as 'newest' | 'oldest' | 'company' })}
           placeholder={t('jobs.sort')}
+          aria-label={t('jobs.sort')}
         />
 
         <span data-testid={TEST_IDS.jobs.hideAgencyToggle} className="inline-flex">
           <Tag.CheckableTag checked={hideAgency} onChange={(v) => setJobs({ hideAgency: v })}>
             {t('jobs.filters.hideAgency')}
           </Tag.CheckableTag>
-        </span>
-
-        {/* Count — the visible "N / M" stays the terse glanceable form; the
-            accessible name spells it out for AT. */}
-        <span
-          className="shrink-0 tabular-nums text-[11px] text-foreground/50"
-          aria-label={t('jobs.commandBar.shownCount', {
-            shown: String(shownCount),
-            total: String(totalCount),
-          })}
-        >
-          {shownCount} / {totalCount}
         </span>
 
         {/* Trailing actions — right-aligned when there is room, wrapped to their
@@ -151,7 +161,7 @@ export function JobsCommandBar({
               {t('jobs.clear')}
             </Button>
           )}
-          <Button variant="primary" onClick={onScrape}>
+          <Button ref={scrapeButtonRef} variant="primary" onClick={onScrape}>
             <Plus size={12} />
             {t('jobs.scrapeJobs')}
           </Button>
@@ -159,19 +169,22 @@ export function JobsCommandBar({
       </div>
 
       {/* Live scrape status — the scrape form now lives in a drawer that closes
-          as soon as results stream in, so progress + cancel have to stay
-          reachable here. */}
+          on Search, so progress + cancel have to stay reachable here. Same
+          scanning copy as the results skeleton, so the two never disagree.
+          `/70`, not `/55`: the light-scheme legibility remap in utilities.css
+          lifts only /20…/50, so /55 renders LIGHTER than /50 and measured
+          3.67:1 — under AA — on the one row carrying the only Cancel control. */}
       {scraping && (
         <div
           data-testid={TEST_IDS.jobs.scrapeStatusStrip}
           role="status"
           aria-live="polite"
-          className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-foreground/55"
+          className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-foreground/70"
         >
           <Loader2 size={11} aria-hidden="true" className="animate-spin text-brand-soft" />
           <span>
             {scrapeProgress == null
-              ? t('jobs.scraping')
+              ? t('jobs.scanning')
               : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })}
           </span>
           <Button variant="ghost" onClick={onCancelScrape}>
@@ -180,45 +193,44 @@ export function JobsCommandBar({
         </div>
       )}
 
-      {/* Applied filters + last-scrape diagnostics — only when there is
-          something to show. */}
+      {/* Applied filters + last-scrape diagnostics — one strictly single-line row
+          that scrolls sideways rather than wrapping, so diagnostics can never
+          grow the bar and squeeze the results list at the 900×600 floor. */}
       {showChipsRow && (
         <div
           data-testid={TEST_IDS.jobs.filterChips}
-          role="group"
-          aria-label={t('jobs.filters.activeLabel')}
-          className="mt-2 flex flex-wrap items-center gap-1.5"
+          className="scrollbar-thin mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5"
         >
+          {/* The group names the REMOVABLE filter chips only — the scrape
+              diagnostics beside them are output, not applied filters. */}
           {trimmedFilter.length > 0 && (
-            <Tag
-              color="processing"
-              closable
-              closeLabel={t('jobs.filters.remove', { name: searchChipLabel })}
-              onClose={() => setJobs({ filter: '' })}
-              className="max-w-[16rem] text-[10px] font-normal"
+            <div
+              role="group"
+              aria-label={t('jobs.filters.activeLabel')}
+              className="flex shrink-0 items-center gap-1.5"
             >
-              <span className="truncate">{searchChipLabel}</span>
-            </Tag>
+              <Tag
+                color="processing"
+                closable
+                closeLabel={t('jobs.filters.remove', { name: trimmedFilter })}
+                onClose={() => setJobs({ filter: '' })}
+                className="max-w-[16rem] text-[10px] font-normal"
+              >
+                <span className="truncate">
+                  {t('jobs.filters.searchChip', { query: trimmedFilter })}
+                </span>
+              </Tag>
+            </div>
           )}
-          {hideAgency && (
-            <Tag
-              color="processing"
-              closable
-              closeLabel={t('jobs.filters.remove', { name: t('jobs.filters.hideAgency') })}
-              onClose={() => setJobs({ hideAgency: false })}
-              className="text-[10px] font-normal"
-            >
-              {t('jobs.filters.hideAgency')}
-            </Tag>
+          {boardSummaries.length > 0 && (
+            <BoardSummaryChips summaries={boardSummaries} className="shrink-0 flex-nowrap" />
           )}
-          {hasFilterChips && (
-            <Button variant="ghost" onClick={clearAllFilters}>
-              {t('jobs.filters.clearAll')}
-            </Button>
-          )}
-          {boardSummaries.length > 0 && <BoardSummaryChips summaries={boardSummaries} />}
           {failureNote !== null && (
-            <p role="status" aria-live="polite" className="text-[11px] text-red-400/80">
+            <p
+              role="status"
+              aria-live="polite"
+              className="shrink-0 whitespace-nowrap text-[11px] text-red-400/80"
+            >
               {t('jobs.lastScrapeFailed', { reason: failureNote })}
             </p>
           )}

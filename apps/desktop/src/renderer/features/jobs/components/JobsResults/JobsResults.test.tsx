@@ -413,6 +413,22 @@ describe('JobsResults — board diagnostics in the empty state', () => {
   });
 });
 
+// ── split-mode container-query host ──────────────────────────────────────────
+
+describe('JobsResults — split-mode container host', () => {
+  it('marks the results card as a @container so the split can size off pane width', () => {
+    STORE_STATE.jobs = { viewMode: 'split', selectedId: 'a' };
+    renderResults({ filtered: [posting('a', 'A')], resumeId: null });
+
+    // JobsSplitView gates two-pane on `@3xl`. A container-query variant with NO
+    // `@container` ancestor silently never fires (docs/PATTERNS.md §15), so the
+    // split would collapse to one column at every width without this class.
+    const card = screen.getByTestId('jobs-split-view').parentElement;
+    expect(card?.className).toContain('@container');
+    expect(card?.className).toContain('surface-card');
+  });
+});
+
 // ── split-mode auto-select ────────────────────────────────────────────────────
 
 describe('JobsResults — split-mode auto-select', () => {

@@ -5,7 +5,6 @@ import {
   type BoardScrapeSummary,
   type DATE_FILTER_OPTIONS,
 } from '@ajh/shared';
-import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { ConfirmModal, Drawer, useNotification } from '@ajh/ui';
 
@@ -46,6 +45,11 @@ export function JobsPage() {
   const { jobs } = useSessionStore();
   const { filter, sortBy, hideAgency } = jobs;
   const [showScrapeForm, setShowScrapeForm] = useState(false);
+  // Always-mounted opener for the scrape drawer. The drawer normally returns
+  // focus to whatever opened it, but the empty-state "Search jobs" CTA unmounts
+  // the moment a scrape starts, so this is the fallback that keeps focus off
+  // <body> on the first-run path.
+  const scrapeButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   // Per-board outcome of the most recent scrape. Kept in page state (not dropped
   // after reading) so the chip strip persists in the results header once the
@@ -204,10 +208,6 @@ export function JobsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (livePostings.length > 0) setShowScrapeForm(false);
-  }, [livePostings.length]);
-
   // `absorbedInto` traces which live-stream ids collapsed into which survivor id
   // (boards stream at different speeds and the persisted refetch can land under a
   // DIFFERENT incumbent than the one currently selected) — JobsResults consumes it
@@ -230,9 +230,18 @@ export function JobsPage() {
   // Start a fresh scrape — drop the previous run's chip strip/failure note so
   // neither reads as the new run's outcome (a fresh one arrives on the next
   // job.completed / job.failed).
+  //
+  // Closing the drawer here, in the USER-INITIATED handler, is deliberate. It
+  // used to close from an effect on `livePostings.length` — i.e. driven by a
+  // background stream event, which yanked focus out from under whatever the
+  // user was doing and, on the first-run path (empty state → "Search jobs" →
+  // drawer), unmounted the very CTA the drawer would restore focus to, dropping
+  // focus to <body>. Closing on the click also means a scrape that returns ZERO
+  // results still closes the drawer instead of stranding it open (WCAG 2.4.3).
   const handleStartScrape = () => {
     setLastSummaries([]);
     setLastFailureNote(null);
+    setShowScrapeForm(false);
     void startScrape();
   };
 
@@ -334,6 +343,7 @@ export function JobsPage() {
             onCancelScrape={cancelScrape}
             boardSummaries={showDiagnostics ? lastSummaries : []}
             failureNote={showDiagnostics ? lastFailureNote : null}
+            scrapeButtonRef={scrapeButtonRef}
           />
 
           <JobsResults
@@ -358,28 +368,25 @@ export function JobsPage() {
       {/* New Scrape — a right slide-over instead of an inline block, so the form
           can't push the results list (or its own Start button) off screen at the
           900x600 window floor. Batch-apply is unchanged: edits only take effect
-          when the user hits Search. The drawer body owns the scroll. */}
+          when the user hits Search. ScrapeForm owns the pinned header/footer and
+          the single scrolling body inside the panel. */}
       <Drawer
         open={showScrapeForm}
         onClose={() => setShowScrapeForm(false)}
         ariaLabel={t('jobs.newScrape')}
+        returnFocusTo={scrapeButtonRef}
       >
-        <div
-          data-testid={TEST_IDS.jobs.scrapeFormScroll}
-          className="min-h-0 flex-1 overflow-y-auto p-4"
-        >
-          <ScrapeForm
-            show={showScrapeForm}
-            form={scrapeForm}
-            scraping={scraping}
-            scrapeOutcome={scrapeOutcome}
-            onToggle={() => setShowScrapeForm(false)}
-            onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
-            onStart={handleStartScrape}
-            onCancel={cancelScrape}
-            onGeocode={geocodeSuggest}
-          />
-        </div>
+        <ScrapeForm
+          show={showScrapeForm}
+          form={scrapeForm}
+          scraping={scraping}
+          scrapeOutcome={scrapeOutcome}
+          onToggle={() => setShowScrapeForm(false)}
+          onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
+          onStart={handleStartScrape}
+          onCancel={cancelScrape}
+          onGeocode={geocodeSuggest}
+        />
       </Drawer>
 
       <ConfirmModal

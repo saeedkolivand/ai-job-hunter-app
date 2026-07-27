@@ -246,7 +246,11 @@ export function JobsResults({
   if (viewMode === 'split') {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-10 pb-10">
-        <div className="surface-card flex h-full min-h-0 overflow-hidden rounded-2xl">
+        {/* `@container`: the split decides list-vs-two-pane from the CARD's own
+            width, not the viewport (docs/PATTERNS.md §15). A viewport `md:`
+            fired even when the sidebar left the card ~390px wide, which is far
+            too narrow for two panes. */}
+        <div className="surface-card @container flex h-full min-h-0 overflow-hidden rounded-2xl">
           <JobsSplitView
             display={filtered}
             formatRelativeTime={formatRelativeTime}

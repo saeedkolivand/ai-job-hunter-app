@@ -94,47 +94,41 @@ describe('JobsCommandBar — active filter chips', () => {
     setJobs({ filter: 'rust', hideAgency: true });
     renderBar();
 
-    await user.click(
-      screen.getByRole('button', {
-        name: 'jobs.filters.remove[name=jobs.filters.searchChip[query=rust]]',
-      })
-    );
+    // The remove label is the BARE query — prefixing it with the chip's own
+    // "Search:" label produced a double colon in the announcement.
+    await user.click(screen.getByRole('button', { name: 'jobs.filters.remove[name=rust]' }));
 
     expect(useSessionStore.getState().jobs.filter).toBe('');
     expect(useSessionStore.getState().jobs.hideAgency).toBe(true);
   });
 
-  it("the hide-agency chip's × clears only hideAgency, leaving the text filter alone", async () => {
-    const user = userEvent.setup();
-    setJobs({ filter: 'rust', hideAgency: true });
+  it('does NOT chip hide-agency — its toggle is already visible in the row above', () => {
+    setJobs({ hideAgency: true });
     renderBar();
 
-    await user.click(
-      screen.getByRole('button', {
-        name: 'jobs.filters.remove[name=jobs.filters.hideAgency]',
-      })
-    );
-
-    expect(useSessionStore.getState().jobs.hideAgency).toBe(false);
-    expect(useSessionStore.getState().jobs.filter).toBe('rust');
+    // Duplicating an always-visible control as a chip cost a whole extra line of
+    // bar height, which is the scarce resource at the 900×600 floor in German.
+    expect(screen.queryByTestId(TEST_IDS.jobs.filterChips)).not.toBeInTheDocument();
+    // The toggle itself still reflects the state.
+    expect(
+      within(screen.getByTestId(TEST_IDS.jobs.hideAgencyToggle)).getByRole('button')
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('clear-all removes both filters in one go', async () => {
-    const user = userEvent.setup();
-    setJobs({ filter: 'rust', hideAgency: true });
-    renderBar();
-
-    await user.click(screen.getByRole('button', { name: 'jobs.filters.clearAll' }));
-
-    expect(useSessionStore.getState().jobs.filter).toBe('');
-    expect(useSessionStore.getState().jobs.hideAgency).toBe(false);
-  });
-
-  it('offers no clear-all when only scrape diagnostics (not filters) populate the row', () => {
+  it('names only the removable filter chips as the "active filters" group', () => {
+    setJobs({ filter: 'rust' });
     renderBar({ boardSummaries: [{ board: 'linkedin', count: 4 }] });
 
-    expect(screen.getByTestId(TEST_IDS.jobs.filterChips)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'jobs.filters.clearAll' })).not.toBeInTheDocument();
+    // Scrape diagnostics are OUTPUT, not applied filters — they sit beside the
+    // group, not inside it.
+    const group = screen.getByRole('group', { name: 'jobs.filters.activeLabel' });
+    expect(
+      within(group).getByRole('button', { name: 'jobs.filters.remove[name=rust]' })
+    ).toBeInTheDocument();
+    expect(
+      within(group).queryByRole('group', { name: 'jobs.boardSummary.label' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'jobs.boardSummary.label' })).toBeInTheDocument();
   });
 
   it('renders the sanitized failure note in the chips row when one is passed', () => {
@@ -146,10 +140,24 @@ describe('JobsCommandBar — active filter chips', () => {
 });
 
 describe('JobsCommandBar — view mode + count', () => {
-  it('shows the terse "shown / total" count with a spelled-out accessible name', () => {
+  it('shows the terse "shown / total" count with a spelled-out screen-reader form', () => {
     renderBar({ shownCount: 3, totalCount: 5 });
-    const count = screen.getByLabelText('jobs.commandBar.shownCount[shown=3,total=5]');
-    expect(count).toHaveTextContent('3 / 5');
+
+    // `aria-label` on a bare span is a prohibited-and-dropped ARIA mapping, so
+    // the accessible form has to be REAL (visually hidden) text.
+    const terse = screen.getByText('3 / 5');
+    expect(terse).toHaveAttribute('aria-hidden', 'true');
+
+    const spelled = screen.getByText('jobs.commandBar.shownCount[shown=3,total=5]');
+    expect(spelled).toBeInTheDocument();
+    expect(spelled.className).toContain('sr-only');
+  });
+
+  it('gives the sort dropdown a name that says what it does, not just its value', () => {
+    renderBar();
+    // Without this the trigger's only accessible name is the selected option
+    // ("Newest first"), which never mentions sorting.
+    expect(screen.getByRole('button', { name: 'jobs.sort' })).toBeInTheDocument();
   });
 
   it('the segmented control switches viewMode to split', async () => {
@@ -183,10 +191,21 @@ describe('JobsCommandBar — live scrape strip', () => {
     renderBar({ scraping: true, scrapeProgress: null, onCancelScrape });
 
     const strip = screen.getByTestId(TEST_IDS.jobs.scrapeStatusStrip);
-    expect(within(strip).getByText('jobs.scraping')).toBeInTheDocument();
+    // Same copy as the results skeleton, so the two progress surfaces never
+    // word the same state differently.
+    expect(within(strip).getByText('jobs.scanning')).toBeInTheDocument();
 
     await user.click(within(strip).getByRole('button', { name: 'jobs.cancel' }));
     expect(onCancelScrape).toHaveBeenCalledTimes(1);
+  });
+
+  it('meets the light-scheme contrast floor on the row carrying the only Cancel', () => {
+    renderBar({ scraping: true });
+    const strip = screen.getByTestId(TEST_IDS.jobs.scrapeStatusStrip);
+    // The light-legibility remap in utilities.css lifts ONLY /20…/50, so /55
+    // renders lighter than /50 and measured 3.67:1 — below AA.
+    expect(strip.className).toContain('text-foreground/70');
+    expect(strip.className).not.toContain('text-foreground/55');
   });
 
   it('shows a rounded percentage once progress is known', () => {
@@ -202,7 +221,7 @@ describe('JobsCommandBar — live scrape strip', () => {
 });
 
 describe('JobsCommandBar — narrow-window layout contract', () => {
-  it('wraps the control row instead of clipping it, and never scrolls horizontally', () => {
+  it('wraps the control row instead of clipping it, and never scrolls itself', () => {
     renderBar();
 
     const bar = screen.getByTestId(TEST_IDS.jobs.commandBar);
@@ -210,12 +229,32 @@ describe('JobsCommandBar — narrow-window layout contract', () => {
     // wrapper is what produced the stray horizontal scrollbar.
     expect(bar.className).not.toContain('overflow');
     expect(bar.className).toContain('shrink-0');
-    // Container-query context so children size off the page column, not the viewport.
-    expect(bar.className).toContain('@container');
 
     const controlRow = bar.firstElementChild;
     expect(controlRow?.className).toContain('flex-wrap');
     // A `shrink-0` on the row would re-pin it at max-content and reintroduce the clip.
     expect(controlRow?.className).not.toContain('shrink-0');
+  });
+
+  it('keeps the chips row to a single line, scrolling sideways instead of growing taller', () => {
+    setJobs({ filter: 'rust' });
+    renderBar({
+      boardSummaries: [
+        { board: 'linkedin', count: 4 },
+        { board: 'indeed', count: 0, skipped: 'needs-login' },
+        { board: 'xing', count: 0, error: 'rate limited' },
+      ],
+    });
+
+    const chips = screen.getByTestId(TEST_IDS.jobs.filterChips);
+    // Height is the scarce resource at the 900×600 floor (German runs ~30%
+    // longer); a wrapping diagnostics row ate the results list.
+    expect(chips.className).toContain('flex-nowrap');
+    expect(chips.className).toContain('overflow-x-auto');
+    expect(chips.className).not.toContain('flex-wrap');
+    // Children must not shrink, or "nowrap" would just squash them instead.
+    for (const child of Array.from(chips.children)) {
+      expect(child.className).toContain('shrink-0');
+    }
   });
 });
