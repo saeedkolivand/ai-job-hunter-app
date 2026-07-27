@@ -13,7 +13,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Location autocomplete backed by Nominatim (OpenStreetMap). Supports city names and postcodes. Debounces at 300 ms.',
+          'Location autocomplete. Debounces at 300 ms and delegates the lookup to `onFetchSuggestions` — the desktop app passes the Tauri `geocode_suggest` command (a bundled offline GeoNames index, with Photon/OpenStreetMap as the fallback).',
       },
     },
   },

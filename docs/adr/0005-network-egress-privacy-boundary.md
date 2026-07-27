@@ -22,7 +22,7 @@ Network egress is **permitted** and enumerated by class, each with a gating rule
 2. **Job boards and aggregators** (scraping) — the app's core function; disclosed. Sends only search parameters and fetches public postings.
 3. **Web search** — optional, opt-in, off until the user enables it.
 4. **Updater** (GitHub releases) — an on-launch version check; sends no user data.
-5. **Location autocomplete** (OpenStreetMap/Nominatim) — user-initiated typeahead; sends only the location text the user types, returns city/country only.
+5. **Location autocomplete** — **offline by default**: a bundled GeoNames index (`apps/desktop/src-tauri/geodata/`, CC BY 4.0) answers virtually every query with no network call at all. Only a query the index cannot match reaches Photon (photon.komoot.io, OpenStreetMap/ODbL) as a fallback; it sends only the location text the user types and returns city/country only. Nominatim was retired here — its usage policy forbids autocomplete.
 6. **Optional enrichment** (e.g. Clearbit logos) — must be **opt-in and default OFF**, CSP-scoped to the minimum hosts, and send no more than a public identifier (a company name). With the setting off, nothing leaves the device.
 7. **Email-confirmation watching** (IMAP to user's own mail host) — opt-in, default OFF; credential user-supplied and OS-keychain-backed; email content never leaves the device. See [ADR 0013](0013-email-confirmation-watching.md).
 
@@ -47,6 +47,6 @@ No runtime behavior changes: every current call already complies. The fix is to 
 ## References
 
 - Privacy claims: `README.md` ("What It Does"), `SECURITY.md` ("Security posture").
-- Egress sites: `apps/desktop/src-tauri/src/commands/geocoding.rs` (Nominatim), `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (Adzuna/JSearch), the updater wiring in `apps/desktop/src-tauri/src/lib.rs`, `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit, opt-in).
+- Egress sites: `apps/desktop/src-tauri/src/commands/geocoding.rs` (Photon — fallback only; the bundled index in `apps/desktop/src-tauri/geodata/` makes the common case a no-egress lookup, see `apps/desktop/src-tauri/geodata/README.md` for the data license + attribution), `apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs` (Adzuna/JSearch), the updater wiring in `apps/desktop/src-tauri/src/lib.rs`, `apps/desktop/src/renderer/services/use-company-logo/use-company-logo.ts` (Clearbit, opt-in).
 - Opt-in setting: `apps/desktop/src/renderer/store/preferences-schema/preferences-schema.ts` (company-logo preference, default OFF).
 - Audit finding: `p2-contra-cross-001` (AUDIT_REPORT.md §4).

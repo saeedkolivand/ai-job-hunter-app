@@ -1,502 +1,505 @@
-//! Unit tests for `to_city_country`.
+//! Unit tests for the offline GeoNames index and the Photon fallback mapper.
 //!
-//! This child module can reach the private parent helper via
-//! `super::to_city_country`. Tests are authored by the test-author stage.
+//! Everything here is hermetic: the index tests run against the **real bundled
+//! asset** (that is the point — a silently-empty or mis-parsed asset must fail
+//! the build, not degrade the picker), and the fallback tests feed canned
+//! Photon GeoJSON to the pure mapper. No test touches the network.
 
-use serde_json::json;
+use serde_json::{json, Value};
 
-use super::to_city_country;
+use super::{
+    dedupe_by_display, geonames, photon_suggestions, should_try_online, suggest, to_city_country,
+    MAX_SUGGESTIONS,
+};
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
-fn display(v: &serde_json::Value) -> &str {
+fn display(v: &Value) -> &str {
     v.get("display")
         .and_then(|d| d.as_str())
         .expect("display field missing")
 }
 
-fn country_code(v: &serde_json::Value) -> Option<&str> {
+fn country_code(v: &Value) -> Option<&str> {
     v.get("countryCode").and_then(|c| c.as_str())
 }
 
-fn lat(v: &serde_json::Value) -> Option<f64> {
+fn lat(v: &Value) -> Option<f64> {
     v.get("lat").and_then(|l| l.as_f64())
 }
 
-fn lon(v: &serde_json::Value) -> Option<f64> {
+fn lon(v: &Value) -> Option<f64> {
     v.get("lon").and_then(|l| l.as_f64())
 }
 
-// ---------------------------------------------------------------------------
-// 1. City result (addresstype == "city")
-// ---------------------------------------------------------------------------
+fn displays(results: &[Value]) -> Vec<&str> {
+    results.iter().map(display).collect()
+}
+
+fn search(query: &str) -> Vec<Value> {
+    geonames::search(query, MAX_SUGGESTIONS)
+}
+
+// ===========================================================================
+// 1. The bundled asset actually parses
+// ===========================================================================
 
 #[test]
-fn city_result_full_fields() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "city": "Berlin",
-            "country": "Germany",
-            "country_code": "de"
+fn bundled_asset_parses_into_a_populated_index() {
+    let (cities, countries) = geonames::row_counts();
+    // cities15000 carries ~34k rows and countryInfo ~250. Assert generous
+    // floors: this fails loudly if the gz asset is corrupt/empty or the column
+    // layout drifted, instead of silently returning zero suggestions forever.
+    assert!(
+        cities > 20_000,
+        "bundled city index parsed only {cities} rows — asset corrupt or column layout changed"
+    );
+    assert!(
+        countries >= 200,
+        "bundled country index parsed only {countries} rows"
+    );
+}
+
+// ===========================================================================
+// 2. Ranking
+// ===========================================================================
+
+#[test]
+fn prefix_hits_rank_by_population() {
+    // "ber" prefixes Berlin (3.4M), Bergen (294k), Berbera (242k)… — the
+    // biggest must lead. It must ALSO beat the country Bermuda, which prefixes
+    // "ber" too: country *prefixes* share the tier and lose on population.
+    let results = search("ber");
+    assert_eq!(
+        display(&results[0]),
+        "Berlin, Germany",
+        "biggest prefix match must lead, got {:?}",
+        displays(&results)
+    );
+    assert!(
+        !displays(&results).contains(&"Bermuda"),
+        "a small country prefix must not displace big cities: {:?}",
+        displays(&results)
+    );
+}
+
+#[test]
+fn exact_name_outranks_a_longer_prefix_match() {
+    // Berlin-Köpenick / Berlin Hohenschönhausen also start with "berlin"; the
+    // exact-name tier keeps the city the user obviously meant on top.
+    let results = search("berlin");
+    assert_eq!(display(&results[0]), "Berlin, Germany");
+    assert_eq!(country_code(&results[0]), Some("DE"));
+}
+
+#[test]
+fn exact_name_collision_ranks_the_bigger_city_first() {
+    // Two real "York"s (GB 156k, US 44k) — same tier, population decides.
+    let hits = search("york");
+    let results = displays(&hits);
+    let gb = results.iter().position(|d| *d == "York, United Kingdom");
+    let us = results.iter().position(|d| *d == "York, United States");
+    assert!(
+        gb.is_some() && us.is_some(),
+        "both Yorks expected: {results:?}"
+    );
+    assert!(gb < us, "the larger York must rank first: {results:?}");
+}
+
+// ===========================================================================
+// 3. Alternate names + diacritic folding
+// ===========================================================================
+
+#[test]
+fn german_endonym_and_its_ascii_digraph_both_find_the_city() {
+    // GeoNames' primary name is "Munich"; "München" is an alternate. Both the
+    // umlaut spelling and its ASCII digraph must fold onto it (shared `fold`).
+    for query in ["münchen", "muenchen", "MÜNCHEN", " München "] {
+        let results = search(query);
+        assert_eq!(
+            display(&results[0]),
+            "Munich, Germany",
+            "query {query:?} must resolve to Munich, got {:?}",
+            displays(&results)
+        );
+        assert_eq!(country_code(&results[0]), Some("DE"));
+    }
+}
+
+#[test]
+fn diacritic_primary_name_matches_its_ascii_form() {
+    // Reverse direction: the primary name carries the umlaut ("Köln"), the
+    // asciiname is the digraph form ("Koeln"). Either spelling must hit.
+    for query in ["köln", "koeln", "Köln"] {
+        let results = search(query);
+        assert_eq!(
+            display(&results[0]),
+            "Köln, Germany",
+            "query {query:?} must resolve to Köln, got {:?}",
+            displays(&results)
+        );
+    }
+}
+
+#[test]
+fn exact_alternate_name_beats_a_bigger_city_prefix() {
+    // "wien" is exactly Vienna's German alternate; "Wiener Neustadt" merely
+    // starts with it. Both land in the prefix tier, so Vienna's population wins.
+    let results = search("wien");
+    assert_eq!(
+        display(&results[0]),
+        "Vienna, Austria",
+        "got {:?}",
+        displays(&results)
+    );
+}
+
+// ===========================================================================
+// 4. Country-level queries
+// ===========================================================================
+
+#[test]
+fn country_name_query_returns_a_country_level_suggestion() {
+    let results = search("germany");
+    let first = &results[0];
+    assert_eq!(display(first), "Germany");
+    assert_eq!(country_code(first), Some("DE"));
+    // countryInfo carries no coordinates — lat/lon must be explicit JSON nulls
+    // (a missing key would break the `{display,lat,lon,countryCode}` contract).
+    assert!(
+        first.get("lat").map(Value::is_null).unwrap_or(false),
+        "country lat must be an explicit null"
+    );
+    assert!(
+        first.get("lon").map(Value::is_null).unwrap_or(false),
+        "country lon must be an explicit null"
+    );
+}
+
+#[test]
+fn full_country_name_outranks_every_city() {
+    // "Luxembourg" is both a country and a city; the exact-country tier wins.
+    let results = search("luxembourg");
+    assert_eq!(
+        display(&results[0]),
+        "Luxembourg",
+        "an exactly-spelled country must lead, got {:?}",
+        displays(&results)
+    );
+    assert_eq!(country_code(&results[0]), Some("LU"));
+}
+
+// ===========================================================================
+// 5. Shape parity with the pre-existing contract
+// ===========================================================================
+
+#[test]
+fn results_keep_the_suggestion_contract() {
+    for query in ["a", "san", "new", "united", "berlin"] {
+        let results = search(query);
+        assert!(
+            results.len() <= MAX_SUGGESTIONS,
+            "query {query:?} returned {} suggestions",
+            results.len()
+        );
+        let mut labels = Vec::new();
+        for suggestion in &results {
+            for key in ["display", "lat", "lon", "countryCode"] {
+                assert!(
+                    suggestion.get(key).is_some(),
+                    "query {query:?}: missing key {key} in {suggestion}"
+                );
+            }
+            let cc = country_code(suggestion).expect("countryCode must be a string");
+            assert!(
+                cc.len() == 2 && cc.chars().all(|c| c.is_ascii_uppercase()),
+                "countryCode must be uppercase ISO-2, got {cc:?}"
+            );
+            labels.push(display(suggestion));
         }
-    });
-    let result = to_city_country(&item).expect("should return Some for city result");
+        let mut deduped = labels.clone();
+        deduped.sort_unstable();
+        deduped.dedup();
+        assert_eq!(
+            deduped.len(),
+            labels.len(),
+            "query {query:?} returned duplicate labels: {labels:?}"
+        );
+    }
+}
+
+#[test]
+fn no_match_returns_nothing() {
+    assert!(search("zx").is_empty(), "'zx' matches no bundled place");
+    assert!(search("   ").is_empty(), "whitespace-only query");
+    assert!(search("").is_empty(), "empty query");
+}
+
+// ===========================================================================
+// 6. suggest() orchestration — offline first, network only on a real miss
+// ===========================================================================
+
+#[tokio::test]
+async fn suggest_answers_from_the_offline_index() {
+    // No network in tests: this passing at all proves the bundled index (not
+    // Photon) served it.
+    let results = suggest("berlin").await;
+    assert_eq!(display(&results[0]), "Berlin, Germany");
+    assert!(results.len() <= MAX_SUGGESTIONS);
+}
+
+#[tokio::test]
+async fn suggest_empty_query_never_looks_anything_up() {
+    assert!(suggest("").await.is_empty());
+    assert!(suggest("   ").await.is_empty());
+}
+
+#[test]
+fn short_queries_never_reach_the_network() {
+    // Fair use: an offline miss on a half-typed word must not fire a request at
+    // the free community endpoint.
+    assert!(!should_try_online("b"));
+    assert!(!should_try_online("zx"));
+    // Counted in chars, not bytes — "köl" is 3 chars but 4 bytes.
+    assert!(should_try_online("köl"));
+    assert!(should_try_online("berlin"));
+}
+
+// ===========================================================================
+// 7. Photon fallback mapper — canned GeoJSON, no network
+// ===========================================================================
+
+fn photon_feature(properties: Value, coordinates: Option<[f64; 2]>) -> Value {
+    match coordinates {
+        Some([lon, lat]) => json!({
+            "type": "Feature",
+            "geometry": { "type": "Point", "coordinates": [lon, lat] },
+            "properties": properties,
+        }),
+        None => json!({ "type": "Feature", "properties": properties }),
+    }
+}
+
+#[test]
+fn photon_city_feature_maps_to_city_country() {
+    let feature = photon_feature(
+        json!({
+            "type": "city",
+            "name": "Berlin",
+            "country": "Germany",
+            "countrycode": "DE",
+            "state": "Berlin"
+        }),
+        Some([13.3888, 52.5170]),
+    );
+    let result = to_city_country(&feature).expect("city feature must map");
 
     assert_eq!(display(&result), "Berlin, Germany");
     assert_eq!(country_code(&result), Some("DE"));
-    assert_eq!(lat(&result), Some(52.5));
-    assert_eq!(lon(&result), Some(13.4));
-}
-
-// ---------------------------------------------------------------------------
-// 2. town / village / municipality / hamlet fallbacks
-// ---------------------------------------------------------------------------
-
-#[test]
-fn town_fallback() {
-    let item = json!({
-        "addresstype": "town",
-        "lat": "51.5",
-        "lon": "-0.1",
-        "address": {
-            "town": "Reading",
-            "country": "United Kingdom",
-            "country_code": "gb"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some for town");
-
-    assert_eq!(display(&result), "Reading, United Kingdom");
-    assert_eq!(country_code(&result), Some("GB"));
-    assert_eq!(lat(&result), Some(51.5));
-    assert_eq!(lon(&result), Some(-0.1));
+    // GeoJSON order is [lon, lat] — a swap here would put jobs in the wrong
+    // hemisphere, so assert both explicitly.
+    assert_eq!(lat(&result), Some(52.5170));
+    assert_eq!(lon(&result), Some(13.3888));
 }
 
 #[test]
-fn village_fallback() {
-    let item = json!({
-        "addresstype": "village",
-        "lat": "48.1",
-        "lon": "11.6",
-        "address": {
-            "village": "Grünwald",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some for village");
-
-    assert_eq!(display(&result), "Grünwald, Germany");
-    assert_eq!(country_code(&result), Some("DE"));
-}
-
-#[test]
-fn municipality_fallback() {
-    let item = json!({
-        "addresstype": "municipality",
-        "lat": "60.0",
-        "lon": "25.0",
-        "address": {
-            "municipality": "Espoo",
-            "country": "Finland",
-            "country_code": "fi"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some for municipality");
-
-    assert_eq!(display(&result), "Espoo, Finland");
-    assert_eq!(country_code(&result), Some("FI"));
-}
-
-#[test]
-fn hamlet_fallback() {
-    let item = json!({
-        "addresstype": "hamlet",
-        "lat": "55.0",
-        "lon": "10.0",
-        "address": {
-            "hamlet": "Stengade",
-            "country": "Denmark",
-            "country_code": "dk"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some for hamlet");
-
-    assert_eq!(display(&result), "Stengade, Denmark");
-    assert_eq!(country_code(&result), Some("DK"));
-}
-
-// city takes priority over town when both present
-#[test]
-fn city_takes_priority_over_town() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "city": "Berlin",
-            "town": "Wannsee",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some");
-    assert_eq!(display(&result), "Berlin, Germany");
-}
-
-// ---------------------------------------------------------------------------
-// 3. Country-level result (no city field)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn country_level_result() {
-    let item = json!({
-        "addresstype": "country",
-        "address": {
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some for country-level");
-
-    assert_eq!(display(&result), "Germany");
-    assert_eq!(country_code(&result), Some("DE"));
-    // lat/lon absent → null
-    assert!(result.get("lat").and_then(|v| v.as_f64()).is_none());
-    assert!(result.get("lon").and_then(|v| v.as_f64()).is_none());
-}
-
-// ---------------------------------------------------------------------------
-// 4. Rejected types — road / house / postcode / POI / state
-// ---------------------------------------------------------------------------
-
-#[test]
-fn road_rejected() {
-    let item = json!({
-        "addresstype": "road",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "road": "Main St",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    assert!(to_city_country(&item).is_none(), "road should be rejected");
-}
-
-#[test]
-fn postcode_rejected() {
-    let item = json!({
-        "addresstype": "postcode",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "postcode": "10115",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    assert!(
-        to_city_country(&item).is_none(),
-        "postcode should be rejected"
+fn photon_lowercase_country_code_is_uppercased() {
+    let feature = photon_feature(
+        json!({ "type": "city", "name": "Paris", "country": "France", "countrycode": "fr" }),
+        Some([2.3, 48.9]),
     );
-}
-
-#[test]
-fn house_number_rejected() {
-    let item = json!({
-        "addresstype": "house",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "house_number": "42",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    assert!(to_city_country(&item).is_none(), "house should be rejected");
-}
-
-#[test]
-fn poi_rejected() {
-    let item = json!({
-        "addresstype": "amenity",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "amenity": "Brandenburg Gate",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    assert!(
-        to_city_country(&item).is_none(),
-        "POI/amenity should be rejected"
-    );
-}
-
-#[test]
-fn state_level_rejected() {
-    let item = json!({
-        "addresstype": "state",
-        "lat": "52.0",
-        "lon": "12.0",
-        "address": {
-            "state": "Brandenburg",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    assert!(
-        to_city_country(&item).is_none(),
-        "state/region should be rejected"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// 5. No country — city present, country absent
-// ---------------------------------------------------------------------------
-
-#[test]
-fn city_without_country() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "34.0",
-        "lon": "36.0",
-        "address": {
-            "city": "Homs"
-            // no country, no country_code
-        }
-    });
-    let result =
-        to_city_country(&item).expect("should return Some when city present without country");
-
-    assert_eq!(
-        display(&result),
-        "Homs",
-        "no trailing comma when country absent"
-    );
-    assert!(
-        result
-            .get("countryCode")
-            .map(|v| v.is_null())
-            .unwrap_or(true),
-        "countryCode should be null/absent"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// 6. Missing or non-numeric lat/lon → null, suggestion still returned
-// ---------------------------------------------------------------------------
-
-#[test]
-fn missing_lat_lon_still_returns_suggestion() {
-    let item = json!({
-        "addresstype": "city",
-        "address": {
-            "city": "Oslo",
-            "country": "Norway",
-            "country_code": "no"
-        }
-        // lat / lon keys absent
-    });
-    let result = to_city_country(&item).expect("should return Some even without lat/lon");
-
-    assert_eq!(display(&result), "Oslo, Norway");
-    assert!(lat(&result).is_none(), "lat should be null when absent");
-    assert!(lon(&result).is_none(), "lon should be null when absent");
-}
-
-#[test]
-fn non_numeric_lat_lon_returns_null_fields() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "not-a-number",
-        "lon": "also-bad",
-        "address": {
-            "city": "Atlantis",
-            "country": "Mythica",
-            "country_code": "my"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some with non-numeric lat/lon");
-
-    assert_eq!(display(&result), "Atlantis, Mythica");
-    assert!(lat(&result).is_none(), "non-numeric lat should be null");
-    assert!(lon(&result).is_none(), "non-numeric lon should be null");
-}
-
-// ---------------------------------------------------------------------------
-// 7. country_code casing — always upper-cased
-// ---------------------------------------------------------------------------
-
-#[test]
-fn country_code_uppercased_from_lowercase() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "51.5",
-        "lon": "-0.1",
-        "address": {
-            "city": "London",
-            "country": "United Kingdom",
-            "country_code": "gb"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some");
-
-    assert_eq!(
-        country_code(&result),
-        Some("GB"),
-        "country_code must be upper-cased"
-    );
-}
-
-#[test]
-fn country_code_already_upper_stays_upper() {
-    let item = json!({
-        "addresstype": "city",
-        "lat": "48.9",
-        "lon": "2.3",
-        "address": {
-            "city": "Paris",
-            "country": "France",
-            "country_code": "FR"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some");
-
+    let result = to_city_country(&feature).expect("city feature must map");
     assert_eq!(country_code(&result), Some("FR"));
 }
 
-// ---------------------------------------------------------------------------
-// 8. Empty string city fields are treated as absent (use next fallback)
-// ---------------------------------------------------------------------------
-
 #[test]
-fn empty_city_falls_through_to_town() {
-    let item = json!({
-        "addresstype": "town",
-        "lat": "53.0",
-        "lon": "9.0",
-        "address": {
-            "city": "",
-            "town": "Buxtehude",
-            "country": "Germany",
-            "country_code": "de"
-        }
-    });
-    let result = to_city_country(&item).expect("should return Some using town fallback");
-
-    assert_eq!(display(&result), "Buxtehude, Germany");
-}
-
-// ---------------------------------------------------------------------------
-// 9. Country-level with only country_code (no country name)
-//    Branch: (None, None) => country_code.clone()?  →  yields raw uppercased code.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn country_level_code_only_no_country_name() {
-    let item = json!({
-        "addresstype": "country",
-        "address": {
-            "country_code": "de"
-            // "country" name intentionally absent
-        }
-    });
-    let result = to_city_country(&item)
-        .expect("should return Some: country_code fallback covers the (None,None) branch");
-
-    assert_eq!(
-        display(&result),
-        "DE",
-        "display must be the raw uppercased country_code when country name is absent"
-    );
-    assert_eq!(
-        country_code(&result),
-        Some("DE"),
-        "countryCode must also be the uppercased code"
-    );
-    // lat/lon absent from the input → the JSON value must be explicitly null,
-    // not merely a missing key — assert directly on the Value variant.
-    assert!(
-        result.get("lat").map(|v| v.is_null()).unwrap_or(false),
-        "lat must be an explicit JSON null (not a missing key)"
-    );
-    assert!(
-        result.get("lon").map(|v| v.is_null()).unwrap_or(false),
-        "lon must be an explicit JSON null (not a missing key)"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// 10. Country addresstype with empty address → returns None
-//     The `?` on `country_code.clone()?` in the (None, None) branch propagates
-//     None out of the helper when both country name and country_code are absent.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn country_level_empty_address_returns_none() {
-    let item = json!({
-        "addresstype": "country",
-        "address": {}
-        // no country, no country_code, no city
-    });
-    assert!(
-        to_city_country(&item).is_none(),
-        "country addresstype with an empty address must return None: \
-         the ? on country_code propagates None out of the helper"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// 11. Road result that carries a parent `city` field (Nominatim contextual address)
-//
-//     Nominatim sometimes returns `addresstype:"road"` but includes a `city`
-//     field in the address object because it encodes the administrative context
-//     of the road.  The keep-rule in `to_city_country` is:
-//       "city present OR is_country_level" → accept.
-//     Because `city` is present the road hit is accepted, and `display` is built
-//     from the city (not the road name).  This is intentional: a road match
-//     collapses to its containing city so the UI shows "Berlin, Germany" rather
-//     than a street name.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn road_with_parent_city_collapses_to_city() {
-    let item = json!({
-        "addresstype": "road",
-        "lat": "52.5",
-        "lon": "13.4",
-        "address": {
-            "road": "Unter den Linden",
+fn photon_sub_city_feature_collapses_to_its_parent_city() {
+    // A street/house hit carries the containing city — the picker shows the
+    // city, never the street (same reduction the Nominatim path used).
+    let feature = photon_feature(
+        json!({
+            "type": "street",
+            "name": "Unter den Linden",
             "city": "Berlin",
             "country": "Germany",
-            "country_code": "de"
-        }
+            "countrycode": "DE"
+        }),
+        Some([13.39, 52.51]),
+    );
+    let result = to_city_country(&feature).expect("street with a parent city must map");
+    assert_eq!(display(&result), "Berlin, Germany");
+}
+
+#[test]
+fn photon_locality_and_district_use_their_own_name() {
+    for feature_type in ["locality", "district"] {
+        let feature = photon_feature(
+            json!({
+                "type": feature_type,
+                "name": "Kreuzberg",
+                "country": "Germany",
+                "countrycode": "DE"
+            }),
+            Some([13.4, 52.5]),
+        );
+        let result = to_city_country(&feature)
+            .unwrap_or_else(|| panic!("a {feature_type} feature must map"));
+        assert_eq!(display(&result), "Kreuzberg, Germany");
+    }
+}
+
+#[test]
+fn photon_country_feature_maps_to_the_country_name() {
+    let feature = photon_feature(
+        json!({ "type": "country", "name": "Germany", "country": "Germany", "countrycode": "DE" }),
+        Some([10.4, 51.1]),
+    );
+    let result = to_city_country(&feature).expect("country feature must map");
+    assert_eq!(display(&result), "Germany");
+    assert_eq!(country_code(&result), Some("DE"));
+}
+
+#[test]
+fn photon_country_feature_without_a_name_falls_back_to_the_code() {
+    let feature = photon_feature(json!({ "type": "country", "countrycode": "de" }), None);
+    let result = to_city_country(&feature).expect("country code alone is still a usable label");
+    assert_eq!(display(&result), "DE");
+    assert_eq!(country_code(&result), Some("DE"));
+}
+
+#[test]
+fn photon_rejects_hits_with_no_city_and_no_country_level() {
+    for properties in [
+        json!({ "type": "house", "name": "42", "country": "Germany", "countrycode": "DE" }),
+        json!({ "type": "street", "name": "Main St", "country": "Germany", "countrycode": "DE" }),
+        json!({ "type": "state", "name": "Brandenburg", "country": "Germany", "countrycode": "DE" }),
+        json!({ "type": "county", "name": "Kent", "country": "United Kingdom", "countrycode": "GB" }),
+        json!({ "type": "other", "name": "Brandenburg Gate", "country": "Germany", "countrycode": "DE" }),
+    ] {
+        let feature = photon_feature(properties.clone(), Some([13.0, 52.0]));
+        assert!(
+            to_city_country(&feature).is_none(),
+            "must be rejected: {properties}"
+        );
+    }
+}
+
+#[test]
+fn photon_city_without_a_country_has_no_trailing_comma() {
+    let feature = photon_feature(
+        json!({ "type": "city", "name": "Homs" }),
+        Some([36.7, 34.7]),
+    );
+    let result = to_city_country(&feature).expect("city without country must still map");
+    assert_eq!(display(&result), "Homs");
+    assert!(
+        result
+            .get("countryCode")
+            .map(Value::is_null)
+            .unwrap_or(false),
+        "countryCode must be an explicit null"
+    );
+}
+
+#[test]
+fn photon_missing_geometry_yields_null_coordinates() {
+    let feature = photon_feature(
+        json!({ "type": "city", "name": "Oslo", "country": "Norway", "countrycode": "NO" }),
+        None,
+    );
+    let result = to_city_country(&feature).expect("no geometry is not a reason to drop a city");
+    assert_eq!(display(&result), "Oslo, Norway");
+    assert!(lat(&result).is_none() && lon(&result).is_none());
+    assert!(result.get("lat").map(Value::is_null).unwrap_or(false));
+    assert!(result.get("lon").map(Value::is_null).unwrap_or(false));
+}
+
+// ===========================================================================
+// 8. Photon response mapping — dedupe, cap, malformed bodies
+// ===========================================================================
+
+fn city(name: &str) -> Value {
+    photon_feature(
+        json!({ "type": "city", "name": name, "country": "Germany", "countrycode": "DE" }),
+        Some([13.0, 52.0]),
+    )
+}
+
+#[test]
+fn photon_response_dedupes_and_caps_at_five() {
+    let body = json!({
+        "type": "FeatureCollection",
+        "features": [
+            city("Berlin"), city("Berlin"), city("Hamburg"), city("Munich"),
+            city("Cologne"), city("Frankfurt"), city("Stuttgart"), city("Bremen"),
+        ]
     });
-    // Road hits are normally rejected, but this one carries a `city` field in
-    // the address context, so the keep-rule (`city.is_some()`) accepts it and
-    // the display collapses to the city — never the road name.
-    let result = to_city_country(&item)
-        .expect("road with a parent city field must be accepted and collapsed to its city");
+    let results = photon_suggestions(&body);
+
+    assert_eq!(results.len(), MAX_SUGGESTIONS, "must cap at 5");
+    assert_eq!(
+        displays(&results),
+        vec![
+            "Berlin, Germany",
+            "Hamburg, Germany",
+            "Munich, Germany",
+            "Cologne, Germany",
+            "Frankfurt, Germany",
+        ],
+        "duplicates drop out and the upstream order is preserved"
+    );
+}
+
+#[test]
+fn photon_response_skips_unmappable_features_without_dropping_the_rest() {
+    let body = json!({
+        "features": [
+            photon_feature(json!({ "type": "state", "name": "Bavaria", "countrycode": "DE" }), Some([11.0, 48.0])),
+            city("Munich"),
+        ]
+    });
+    let results = photon_suggestions(&body);
+    assert_eq!(displays(&results), vec!["Munich, Germany"]);
+}
+
+#[test]
+fn photon_malformed_body_degrades_to_no_suggestions() {
+    for body in [
+        json!({}),
+        json!({ "features": null }),
+        json!({ "features": "nope" }),
+        json!({ "features": [] }),
+        json!({ "message": "rate limited" }),
+        Value::Null,
+    ] {
+        assert!(
+            photon_suggestions(&body).is_empty(),
+            "malformed body must degrade to empty, not panic: {body}"
+        );
+    }
+}
+
+#[test]
+fn dedupe_keeps_first_of_each_label_and_stops_at_the_limit() {
+    let items = vec![
+        json!({ "display": "Berlin, Germany", "lat": 1.0 }),
+        json!({ "display": "Berlin, Germany", "lat": 2.0 }),
+        json!({ "display": "Bern, Switzerland" }),
+        // No display → cannot be labelled, so it is dropped, not counted.
+        json!({ "lat": 3.0 }),
+        json!({ "display": "Bremen, Germany" }),
+    ];
+    let results = dedupe_by_display(items.into_iter(), 2);
 
     assert_eq!(
-        display(&result),
-        "Berlin, Germany",
-        "display must be the city, not the road name"
+        displays(&results),
+        vec!["Berlin, Germany", "Bern, Switzerland"]
     );
     assert_eq!(
-        country_code(&result),
-        Some("DE"),
-        "countryCode must be uppercased"
+        lat(&results[0]),
+        Some(1.0),
+        "the FIRST occurrence of a label must survive"
     );
-    assert_eq!(lat(&result), Some(52.5), "lat must be preserved");
-    assert_eq!(lon(&result), Some(13.4), "lon must be preserved");
 }
