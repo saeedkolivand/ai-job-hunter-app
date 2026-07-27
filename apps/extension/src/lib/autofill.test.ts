@@ -292,6 +292,229 @@ describe('planAndFill – name-split flag', () => {
   });
 });
 
+describe('planAndFill – attribute-only name fields (no "first name" phrase anywhere)', () => {
+  it('fills separate first/last boxes from underscore / camelCase / abbreviated NAME attributes', () => {
+    // The overwhelmingly common real-world shape: no <label>, no autocomplete —
+    // just a `name` attribute. All of these used to resolve to null (nothing
+    // filled at all) because the patterns required a literal space.
+    setForm(`
+      <input id="a" name="first_name" />
+      <input id="b" name="last_name" />
+      <input id="c" name="firstName" />
+      <input id="d" name="lastName" />
+      <input id="e" name="fname" />
+      <input id="f" name="lname" />
+      <input id="g" name="job_application[first_name]" />
+      <input id="h" name="job_application[last_name]" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    for (const id of ['a', 'c', 'e', 'g']) expect(val(id), id).toBe('Saeed');
+    for (const id of ['b', 'd', 'f', 'h']) expect(val(id), id).toBe('Kolivand');
+    expect(summary.nameSplit).toEqual({ first: 'Saeed', last: 'Kolivand' });
+  });
+
+  it('regression: HYPHENATED first/last fields no longer BOTH receive the full name', () => {
+    // `-` is not a word character, so these matched the generic `\bname\b`
+    // catch-all: "Saeed Kolivand" was written into every one of them, silently.
+    setForm(`
+      <input id="fn" name="first-name" />
+      <input id="gn" name="given-name" />
+      <input id="ln" name="last-name" />
+      <input id="famn" name="family-name" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('fn')).toBe('Saeed');
+    expect(val('gn')).toBe('Saeed');
+    expect(val('ln')).toBe('Kolivand');
+    expect(val('famn')).toBe('Kolivand');
+  });
+
+  it("never writes the user's name into a THIRD PARTY's name box", () => {
+    // The attribute spellings out-ran the denylist, which is prose-shaped
+    // (`AMBIGUOUS`) or leading-anchored (`AMBIGUOUS_PREFIXED`) — so every box
+    // below silently received the applicant's own name.
+    setForm(`
+      <input id="t1" name="professionalReferenceFirstName" />
+      <input id="t2" name="jobReferenceFirstName" />
+      <input id="t3" name="myReferrerFirstName" />
+      <input id="t4" name="spouseFirstName" />
+      <input id="t5" name="dependentLastName" />
+      <input id="t6" name="beneficiaryFirstName" />
+      <input id="t7" name="previousLastName" />
+      <input id="t8" name="aka_first_name" />
+      <input id="t9" name="childFirstName" />
+      <input id="t10" name="otherLastName" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    for (let i = 1; i <= 10; i += 1) expect(val(`t${i}`), `t${i}`).toBe('');
+    expect(summary.filledNothing).toBe(true);
+  });
+
+  it('skips a middle-name box instead of giving it the full name', () => {
+    // There is no middleName in the profile; `middle-name` used to reach the
+    // bare-"name" catch-all and receive "Saeed Kolivand".
+    setForm(`
+      <input id="m1" name="first-name" />
+      <input id="m2" name="middle-name" />
+      <input id="m3" name="middle_name" />
+      <input id="m4" name="last-name" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('m1')).toBe('Saeed');
+    expect(val('m2')).toBe('');
+    expect(val('m3')).toBe('');
+    expect(val('m4')).toBe('Kolivand');
+  });
+
+  it('does not let the fullName attribute spellings escape the school/company denylist', () => {
+    setForm(`
+      <input id="s1" name="school_full_name" />
+      <input id="s2" name="universityFullName" />
+      <input id="s3" name="degreeFullName" />
+      <input id="s4" name="courseFullName" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('s1')).toBe('');
+    expect(val('s2')).toBe('');
+    expect(val('s3')).toBe('');
+    expect(val('s4')).toBe('');
+  });
+
+  it('still refuses a username / user_name login field', () => {
+    setForm(`
+      <input id="u1" name="username" />
+      <input id="u2" name="user_name" />
+      <input id="u3" name="fullName" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('u1')).toBe('');
+    expect(val('u2')).toBe('');
+    // …while the full-name attribute spelling next to them still fills.
+    expect(val('u3')).toBe('Saeed Kolivand');
+  });
+});
+
+describe('planAndFill – aria-labelledby labels (Workday / Ashby)', () => {
+  it('resolves an aria-labelledby id LIST into the field signal', () => {
+    setForm(`
+      <div id="lbl-first">First name</div>
+      <input id="wf" aria-labelledby="lbl-first" />
+      <div id="lbl-email">Email address</div>
+      <div id="lbl-req">(required)</div>
+      <input id="we" type="email" aria-labelledby="lbl-email lbl-req" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('wf')).toBe('Saeed');
+    expect(val('we')).toBe('saeed@example.com');
+  });
+
+  it('fills the WHOLE name into a single box placeheld "First and Last Name"', () => {
+    // Prose names both halves; only the field's own ATTRIBUTE may veto the
+    // fullName row. Reading the placeholder as attribute-style evidence made
+    // this box fall through to lastName and receive just "Kolivand".
+    setForm(`
+      <label for="fn1">Full Name</label>
+      <input id="fn1" placeholder="First and Last Name" />
+      <label for="fn2">First and Last Name</label><input id="fn2" />
+      <input id="fn3" aria-label="First &amp; last name" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('fn1')).toBe('Saeed Kolivand');
+    expect(val('fn2')).toBe('Saeed Kolivand');
+    expect(val('fn3')).toBe('Saeed Kolivand');
+  });
+
+  it("lets each box's own attribute win over a shared 'Full Name' GROUP label", () => {
+    // Workday/Ashby point every box of a group at one heading, so "Full Name"
+    // reaches the first/last inputs' signals — and the fullName row runs first.
+    setForm(`
+      <span id="grp">Full Name</span>
+      <input id="gf" name="first_name" aria-labelledby="grp" />
+      <input id="gl" name="last_name" aria-labelledby="grp" />
+    `);
+
+    planAndFill(document, PROFILE);
+
+    expect(val('gf')).toBe('Saeed');
+    expect(val('gl')).toBe('Kolivand');
+  });
+
+  it('ignores an aria-labelledby that points at a missing id', () => {
+    setForm(`<input id="ghost" aria-labelledby="does-not-exist" />`);
+    planAndFill(document, PROFILE);
+    expect(val('ghost')).toBe('');
+  });
+
+  it('applies the ambiguous denylist to an aria-labelledby label too', () => {
+    setForm(`
+      <div id="lbl-emg">Emergency contact phone</div>
+      <input id="emg" type="tel" aria-labelledby="lbl-emg" />
+    `);
+    planAndFill(document, PROFILE);
+    expect(val('emg')).toBe('');
+  });
+});
+
+describe('planAndFill – disabled / readonly fields', () => {
+  it('never writes into a disabled or readonly field', () => {
+    setForm(`
+      <label for="d1">Email</label><input id="d1" type="email" disabled />
+      <label for="r1">Full name</label><input id="r1" type="text" readonly />
+      <label for="ok1">Phone number</label><input id="ok1" type="tel" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    expect(val('d1')).toBe('');
+    expect(val('r1')).toBe('');
+    // Guard against a false positive: a normal sibling still fills, and the
+    // summary counts ONLY what was really written.
+    expect(val('ok1')).toBe('+31612345678');
+    expect(summary.filled.map((f) => f.key)).toEqual(['phone']);
+  });
+
+  it('skips a field disabled by an ancestor <fieldset disabled>', () => {
+    // `el.disabled` reflects only the element's OWN attribute, so the property
+    // check alone would fill (and count) a whole disabled section.
+    setForm(`
+      <fieldset disabled>
+        <label for="fs1">Email</label><input id="fs1" type="email" />
+        <input id="fs2" name="first_name" />
+      </fieldset>
+      <label for="live">Phone number</label><input id="live" type="tel" />
+    `);
+
+    const summary = planAndFill(document, PROFILE);
+
+    expect(val('fs1')).toBe('');
+    expect(val('fs2')).toBe('');
+    expect(val('live')).toBe('+31612345678');
+    expect(summary.filled.map((f) => f.key)).toEqual(['phone']);
+  });
+
+  it('does not report a page of only disabled/readonly fields as autofillable', () => {
+    setForm(`
+      <label for="d2">Email</label><input id="d2" type="email" disabled />
+      <label for="r2">First name</label><input id="r2" type="text" readonly />
+    `);
+    expect(hasAutofillableFields(document)).toBe(false);
+  });
+});
+
 describe('planAndFill – filled-nothing', () => {
   it('reports filledNothing when no field matches', () => {
     setForm(`

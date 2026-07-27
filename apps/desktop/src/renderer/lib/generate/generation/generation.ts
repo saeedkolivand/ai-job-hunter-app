@@ -50,7 +50,7 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { GitHubRepo } from '@ajh/shared';
-import { detectLanguages } from '@ajh/shared/language-detection';
+import { detectLanguages, getLanguageName } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -619,6 +619,12 @@ export async function generateInterviewQuestions(params: {
   seedTopics?: string[];
   /** Target interviewers (canonical audience ids) — N questions per audience. */
   audiences?: string[];
+  /** Output language: a locale CODE ('de', 'es', …) when it came from the picker,
+   *  otherwise whatever the ad detection produced (a code outside the picker's
+   *  allowlist, or a language NAME). Overrides `meta.targetLanguage`, and
+   *  deliberately does NOT feed `resolveMarket` — the register stays that of the
+   *  job's country even when only the output language changes. */
+  language?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
@@ -630,6 +636,7 @@ export async function generateInterviewQuestions(params: {
     companyBrief = '',
     seedTopics = [],
     audiences = [],
+    language,
     signal,
     onToken,
   } = params;
@@ -638,8 +645,18 @@ export async function generateInterviewQuestions(params: {
     jobCountry: meta.jobCountry,
     targetLanguage: meta.targetLanguage,
   });
+  // The prompt wants a human language NAME, streamGenerate wants a locale code.
+  // An allowlisted picker code resolves to its English name; anything else (a
+  // detected language the picker doesn't offer, e.g. 'nl') goes through
+  // `getLanguageName` — 28 codes, degrading to the code itself — rather than
+  // being collapsed to English or interpolated as a bare ISO code.
+  const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
+  const languageName = lang?.englishName ?? (language ? getLanguageName(language) : undefined);
+  // The anti-AI-tell lexicon is per-language: without this, questions written in
+  // German were still policed by the English tell-list.
+  const languageCode = lang?.code ?? language ?? meta.targetLanguage;
 
-  const system = buildInterviewQuestionsSystemPrompt();
+  const system = buildInterviewQuestionsSystemPrompt(languageCode);
   const user = buildInterviewQuestionsPrompt({
     resume,
     jobAd,
@@ -649,6 +666,7 @@ export async function generateInterviewQuestions(params: {
     audiences,
     target: profile,
     market,
+    language: languageName,
   });
   // Interview questions are prose: keep the existing 0.5 temperature default,
   // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
@@ -659,7 +677,9 @@ export async function generateInterviewQuestions(params: {
     user,
     onToken ?? (() => {}),
     sampling.temperature,
-    meta.targetLanguage || 'en',
+    // Same code the lexicon uses; `streamGenerate` clamps it via `safeLocale`,
+    // so a language outside the supported set falls back to 'en' here only.
+    languageCode || 'en',
     signal,
     undefined,
     sampling
