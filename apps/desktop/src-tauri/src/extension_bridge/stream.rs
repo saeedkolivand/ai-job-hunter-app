@@ -199,6 +199,13 @@ pub(super) enum NextStep<T> {
     /// rather than keep waiting for a next inbound frame that may never
     /// arrive.
     WriterEnded,
+    /// The pairing token was rotated (Settings → "Regenerate", or a factory
+    /// reset) while this connection was live — see
+    /// [`super::BridgeState::regenerate_token`]. Every socket that existed at
+    /// rotation time gets this; the caller tells an AUTHENTICATED one
+    /// `token.revoked` (never an unauthenticated one — that would be a token
+    /// oracle) and tears the connection down either way.
+    Revoked,
 }
 
 /// The exact `tokio::select!` race `handle_connection`'s read loop runs every
@@ -221,14 +228,27 @@ pub(super) enum NextStep<T> {
 /// and `tokio::task::JoinHandle` both are — `tokio::select!` may drop either
 /// branch on any iteration without losing a frame or a writer-task
 /// completion), so re-entering this fresh every loop iteration is safe.
-pub(super) async fn next_step<R, W>(reader_next: R, writer_done: W) -> NextStep<R::Output>
+///
+/// `revoked` (in production, this connection's
+/// [`super::BridgeState::subscribe_revoke`] receiver) is the third arm: a token
+/// rotation must reach a QUIET connection immediately — the whole point of the
+/// revoke is that the paired browser learns to re-pair, and an idle socket
+/// sends nothing that would otherwise wake this loop. `broadcast::Receiver::recv`
+/// is cancel-safe like the other two.
+pub(super) async fn next_step<R, W, V>(
+    reader_next: R,
+    writer_done: W,
+    revoked: V,
+) -> NextStep<R::Output>
 where
     R: std::future::Future,
     W: std::future::Future,
+    V: std::future::Future,
 {
     tokio::select! {
         frame = reader_next => NextStep::Frame(frame),
         _ = writer_done => NextStep::WriterEnded,
+        _ = revoked => NextStep::Revoked,
     }
 }
 
@@ -807,11 +827,28 @@ mod tests {
         let reader_next = std::future::pending::<Option<i32>>();
         let writer_done = std::future::ready(());
 
-        let outcome = next_step(reader_next, writer_done).await;
+        let outcome = next_step(reader_next, writer_done, std::future::pending::<()>()).await;
 
         assert!(
             matches!(outcome, NextStep::WriterEnded),
             "the writer ending must win the race even though the reader never resolves"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_step_reports_revoked_on_a_quiet_connection() {
+        // A token rotation must reach an IDLE, healthy connection at once — a
+        // paired browser that sends nothing (the normal state between clicks)
+        // would otherwise never learn its pairing died. Both other arms here
+        // never resolve, so this test completing at all is the proof.
+        let reader_next = std::future::pending::<Option<i32>>();
+        let writer_done = std::future::pending::<()>();
+
+        let outcome = next_step(reader_next, writer_done, std::future::ready(())).await;
+
+        assert!(
+            matches!(outcome, NextStep::Revoked),
+            "a revoke must win against a quiet reader and a healthy writer"
         );
     }
 
@@ -824,7 +861,7 @@ mod tests {
         let reader_next = std::future::ready(Some(7));
         let writer_done = std::future::pending::<()>();
 
-        let outcome = next_step(reader_next, writer_done).await;
+        let outcome = next_step(reader_next, writer_done, std::future::pending::<()>()).await;
 
         let NextStep::Frame(value) = outcome else {
             panic!("expected NextStep::Frame — the writer must never win while a frame is ready");

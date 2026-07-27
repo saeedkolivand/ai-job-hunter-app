@@ -31,6 +31,7 @@ fn message_type_constants_match_ts() {
         msg::AUTH,
         msg::AUTH_OK,
         msg::UPDATE_REQUIRED,
+        msg::TOKEN_REVOKED,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::PROFILE_GET,
@@ -92,6 +93,7 @@ fn reserved_types_are_distinct() {
         msg::AUTH,
         msg::AUTH_OK,
         msg::UPDATE_REQUIRED,
+        msg::TOKEN_REVOKED,
         msg::IMPORT_REQUEST,
         msg::IMPORT_RESULT,
         msg::PROFILE_GET,
@@ -236,6 +238,105 @@ fn reset_rotates_token() {
     let before = s.token();
     s.reset();
     assert_ne!(s.token(), before, "factory reset rotates the pairing token");
+}
+
+// ── Pairing revocation on rotation ───────────────────────────────────────────
+//
+// A rotation used to leave live authenticated sockets running and the
+// `connected` count up: the desktop reported "connected" for a pairing whose
+// secret no longer existed, and the extension — whose reconnect gets the
+// deliberately silent failed-handshake close (indistinguishable from a crashed
+// app) — retried the dead token forever instead of showing its pairing view.
+// Rotation now revokes first: signal every live socket, zero the count, THEN
+// swap the secret.
+
+#[test]
+fn rotation_revokes_live_sockets_then_swaps_the_token() {
+    use tokio::sync::broadcast::error::TryRecvError;
+
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    // A connection task that exists BEFORE the rotation (subscribed at accept
+    // time, exactly as `handle_connection` does).
+    let mut live = s.subscribe_revoke();
+    assert!(
+        matches!(live.try_recv(), Err(TryRecvError::Empty)),
+        "no revoke signal before a rotation"
+    );
+    s.inc_connected();
+    assert!(s.is_connected());
+    let before = s.token();
+
+    let after = s.regenerate_token();
+
+    assert!(
+        live.try_recv().is_ok(),
+        "every socket live at rotation time is signalled to revoke its pairing"
+    );
+    assert_ne!(before, after, "and the token itself is rotated");
+    assert_eq!(s.token(), after);
+    assert!(
+        !s.is_connected(),
+        "no pairing survives a rotation — the live-connection count is zeroed \
+         immediately, not once each socket happens to finish tearing down"
+    );
+
+    // The revoked socket's own teardown still runs `dec_connected`; it must
+    // saturate at zero rather than wrap `AtomicUsize` (which `is_connected`
+    // would misread as connected again).
+    assert!(
+        !s.dec_connected(),
+        "a revoked socket's teardown reports no 1→0 transition (already zero)"
+    );
+    assert!(!s.is_connected());
+
+    // A connection accepted AFTER the rotation is handshaking against the NEW
+    // token — it must never receive the previous rotation's signal (a broadcast
+    // is an edge, not replayed state), or it would revoke itself on connect.
+    let mut fresh = s.subscribe_revoke();
+    assert!(
+        matches!(fresh.try_recv(), Err(TryRecvError::Empty)),
+        "a socket accepted after the rotation is not told its pairing was revoked"
+    );
+}
+
+#[test]
+fn factory_reset_revokes_live_sockets_too() {
+    use crate::data_store::Resettable;
+
+    // The reset hook and Settings → "Regenerate" must not diverge: both go
+    // through `regenerate_token`, so both revoke.
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    let mut live = s.subscribe_revoke();
+    s.inc_connected();
+
+    s.reset();
+
+    assert!(
+        live.try_recv().is_ok(),
+        "a factory reset revokes live pairings, not just Settings → Regenerate"
+    );
+    assert!(!s.is_connected());
+}
+
+#[test]
+fn token_revoked_frame_carries_no_token_material() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+    let old = s.token();
+    let new = s.regenerate_token();
+
+    let frame = token_revoked_reply();
+    let parsed: Value = serde_json::from_str(&frame).unwrap();
+
+    assert_eq!(parsed["type"], msg::TOKEN_REVOKED);
+    assert_eq!(parsed["reqId"], REVOKE_REQ_ID, "reqId stays non-empty");
+    assert!(parsed["payload"].is_null(), "the frame carries no payload");
+    // The whole point of the no-oracle rule: a revoked peer learns that its
+    // pairing is dead and NOTHING about either secret.
+    assert!(!frame.contains(&old), "the old token must never be on the wire");
+    assert!(!frame.contains(&new), "nor the new one");
 }
 
 // ── Assisted-autofill opt-in (default OFF, persisted) ─────────────────────────

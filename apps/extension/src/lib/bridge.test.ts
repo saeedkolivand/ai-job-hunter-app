@@ -690,10 +690,11 @@ describe('BridgeClient – v2 mutual handshake', () => {
 
   /** Build a BridgeClient whose getStoredToken returns the given value + open the socket. */
   async function clientWithToken(
-    storedToken: string | null
+    storedToken: string | null,
+    onTokenRevoked?: () => Promise<void> | void
   ): Promise<{ client: BridgeClient; socket: FakeWebSocket; connectPromise: Promise<void> }> {
     const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(storedToken);
-    const client = new BridgeClient(vi.fn(), getStoredToken);
+    const client = new BridgeClient(vi.fn(), getStoredToken, onTokenRevoked);
     const connectPromise = client.ensureConnected();
     await vi.waitFor(() => {
       expect(latestSocket).toBeDefined();
@@ -1097,6 +1098,131 @@ describe('BridgeClient – v2 mutual handshake', () => {
     expect(socket.send).not.toHaveBeenCalled();
     // Phase is 'connected' from the bridge perspective (background → not_paired).
     expect(client.status().phase).toBe('connected');
+    client.dispose();
+  });
+
+  // ── token.revoked (the desktop rotated its pairing secret) ─────────────────
+  //
+  // Without this frame a rotation stranded the extension: its reconnect fails
+  // the proof check, the desktop closes WITHOUT a reply (no token oracle, by
+  // design), and `performHandshake` can only read that silence as the
+  // recoverable `app_not_running` — so it retried the dead token forever and
+  // the popup never returned to the pairing view.
+
+  /** Build a client whose stored token can be dropped mid-test (as the background does). */
+  async function authenticatedClientThatCanUnpair(): Promise<{
+    client: BridgeClient;
+    socket: FakeWebSocket;
+    onTokenRevoked: ReturnType<typeof vi.fn>;
+    socketCount: () => number;
+    latest: () => FakeWebSocket;
+  }> {
+    let count = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      count += 1;
+      latestSocket = ws;
+    });
+
+    let stored: string | null = FAKE_TOKEN;
+    const getStoredToken = vi.fn(() => Promise.resolve(stored));
+    // Mirrors the background's `unpairLocally` (clears storage).
+    const onTokenRevoked = vi.fn(() => {
+      stored = null;
+      return Promise.resolve();
+    });
+    const client = new BridgeClient(vi.fn(), getStoredToken, onTokenRevoked);
+    const connectPromise = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    await connectPromise;
+    expect(client.status().phase).toBe('connected');
+
+    return {
+      client,
+      socket,
+      onTokenRevoked,
+      socketCount: () => count,
+      latest: () => latestSocket!,
+    };
+  }
+
+  function sendTokenRevoked(socket: FakeWebSocket): void {
+    socket.simulateMessage(
+      JSON.stringify({
+        type: EXTENSION_MESSAGE_TYPES.tokenRevoked,
+        reqId: 'token-revoked',
+        payload: null,
+      })
+    );
+  }
+
+  it('drops the stored token on `token.revoked` and re-probes UNPAIRED (pairing view)', async () => {
+    const { client, socket, onTokenRevoked, socketCount, latest } =
+      await authenticatedClientThatCanUnpair();
+    const socketsBefore = socketCount();
+
+    // The desktop revokes this session, then closes the socket (exactly what
+    // `handle_connection`'s revoke arm does).
+    sendTokenRevoked(socket);
+    socket.simulateClose();
+
+    expect(onTokenRevoked).toHaveBeenCalledTimes(1);
+
+    // ONE immediate re-probe — no backoff loop hammering the dead secret.
+    await vi.waitFor(() => {
+      expect(socketCount()).toBe(socketsBefore + 1);
+    });
+    const reprobe = latest();
+    reprobe.simulateOpen();
+
+    await vi.waitFor(() => {
+      expect(client.status().phase).toBe('connected');
+    });
+    // The critical assertion: NOT ONE frame on the new socket. The dead token
+    // is never handshaked again — an open socket with no stored token is what
+    // the background's `computeStatus` folds into `not_paired`, i.e. the popup
+    // shows the pairing view instead of a permanent "app not running".
+    expect(reprobe.send).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it('ignores a duplicate `token.revoked` (un-pairs once, not per frame)', async () => {
+    const { client, socket, onTokenRevoked } = await authenticatedClientThatCanUnpair();
+
+    sendTokenRevoked(socket);
+    sendTokenRevoked(socket);
+
+    expect(onTokenRevoked).toHaveBeenCalledTimes(1);
+    client.dispose();
+  });
+
+  it('ignores an UNKNOWN message type (how already-published extensions survive new verbs)', async () => {
+    // The compatibility contract that lets the desktop send `token.revoked`
+    // without a protocol bump: an extension that predates a verb must ignore it
+    // silently — no throw, no phase change, no state mutation.
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN);
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    await connectPromise;
+
+    const framesBefore = socket.send.mock.calls.length;
+    socket.simulateMessage(
+      JSON.stringify({ type: 'some.future.verb', reqId: 'x', payload: { anything: true } })
+    );
+
+    expect(client.status().phase).toBe('connected');
+    expect(socket.send.mock.calls.length).toBe(framesBefore);
     client.dispose();
   });
 });

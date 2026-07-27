@@ -92,6 +92,30 @@ export const EXTENSION_MESSAGE_TYPES = {
    * this (and a never-a-`challenge` outcome) as an `outdated` state.
    */
   updateRequired: 'update.required',
+  /**
+   * Desktop → extension: the pairing this socket authenticated with is
+   * REVOKED — the desktop rotated its pairing token (Settings → "Regenerate",
+   * or a factory reset). No payload, no token material: it says only that the
+   * stored secret is dead.
+   *
+   * Sent ONLY over an ALREADY-AUTHENTICATED session, immediately before the
+   * desktop closes that socket. Never to a mid-handshake / unauthenticated
+   * peer — telling one "your pairing was revoked" would confirm its token had
+   * been valid, i.e. exactly the oracle the silent-close failed-handshake path
+   * exists to deny (ADR-0010).
+   *
+   * Why the frame is needed at all: after a rotation, a reconnecting extension
+   * fails the handshake and the desktop closes WITHOUT a reply — which is
+   * indistinguishable from a crashed/closed app, so the extension can only
+   * read it as the recoverable `app_not_running` and would retry the dead
+   * token forever, never showing the pairing view again. This frame is the one
+   * unambiguous "re-pair" signal, and it can be sent safely precisely because
+   * the session that receives it already proved it knew the old token.
+   *
+   * Old extensions ignore an unknown `type` (their frame dispatch falls
+   * through to a no-op), so sending this needs no protocol-version bump.
+   */
+  tokenRevoked: 'token.revoked',
   /** Extension → desktop: import a job (URL mode, or Scan mode with `html`). No token. */
   importRequest: 'import.request',
   /** Desktop → extension: the import outcome (or an `error`). */

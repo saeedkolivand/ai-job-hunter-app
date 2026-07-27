@@ -696,6 +696,24 @@ export class BridgeClient {
    */
   private outdated = false;
   /**
+   * Set between a `token.revoked` frame and the socket close that follows it.
+   * The desktop rotated its pairing secret (Settings → "Regenerate", or a
+   * factory reset), so the stored token is dead — retrying it would loop on the
+   * handshake's deliberately silent close (which
+   * {@link performHandshake} can only read as the recoverable
+   * `app_not_running`), leaving the popup stuck on "app not running" forever.
+   * Instead the close re-probes ONCE, unpaired: an attach with no token reports
+   * `connected`, which the background's `computeStatus` folds into
+   * `not_paired` — the pairing view.
+   */
+  private revoked = false;
+  /**
+   * Resolves once {@link onTokenRevoked} has finished dropping the stored token.
+   * The close handler awaits it before re-probing so the reconnect can never
+   * race the now-dead token back onto the wire.
+   */
+  private revokeCleared: Promise<void> | null = null;
+  /**
    * Set while a v2 handshake is in flight. `handshakeFrame` receives every
    * incoming frame (so `performHandshake` can advance step by step);
    * `handshakeClosed` is invoked on socket close so a step resolves as `closed`.
@@ -708,7 +726,14 @@ export class BridgeClient {
   constructor(
     private readonly onPhaseChange: (status: BridgeStatus) => void,
     /** Optional: called on connect to retrieve the stored pairing token for the auth handshake. */
-    private readonly getStoredToken?: () => Promise<string | null>
+    private readonly getStoredToken?: () => Promise<string | null>,
+    /**
+     * Optional: called when the desktop sends `token.revoked` — it rotated the
+     * pairing secret, so the owner must DROP the stored token (the background
+     * un-pairs locally). Awaited before the post-revoke reconnect so the dead
+     * token is never handshaked again.
+     */
+    private readonly onTokenRevoked?: () => Promise<void> | void
   ) {}
 
   status(): BridgeStatus {
@@ -1470,6 +1495,21 @@ export class BridgeClient {
       } else if (this.outdated) {
         // Desktop too old to speak v2 — recover on the next popup open / Retry.
         this.setPhase('outdated');
+      } else if (this.revoked) {
+        // The desktop revoked this pairing (it rotated the token) and closed
+        // the socket. No backoff loop with the dead secret: wait for it to be
+        // cleared, then re-probe ONCE. That attach finds no token, reports
+        // `connected`, and `computeStatus` folds "connected + no token" into
+        // `not_paired` — the popup's pairing view, which is exactly what the
+        // user has to act on.
+        this.revoked = false;
+        this.backoffIndex = 0;
+        this.setPhase('searching');
+        const cleared = this.revokeCleared ?? Promise.resolve();
+        this.revokeCleared = null;
+        void cleared.then(() => {
+          if (!this.disposed) void this.ensureConnected();
+        });
       } else {
         this.setPhase('app_not_running');
         this.scheduleReconnect();
@@ -1633,6 +1673,16 @@ export class BridgeClient {
       return;
     }
 
+    // token.revoked → the desktop rotated its pairing secret, so ours is dead.
+    // Unlike every other frame below this is not a reply: it correlates to no
+    // request and carries no payload. It only ever arrives on an authenticated
+    // session (the desktop never sends it to an unverified peer), and the
+    // desktop closes the socket right after it.
+    if (env.type === EXTENSION_MESSAGE_TYPES.tokenRevoked) {
+      this.handleTokenRevoked();
+      return;
+    }
+
     const reqId = typeof env.reqId === 'string' ? env.reqId : '';
 
     // profile.result → the assisted-autofill contact profile (separate map).
@@ -1771,6 +1821,28 @@ export class BridgeClient {
     if (src.error !== undefined) normalized.error = src.error;
     if (src.partial !== undefined) normalized.partial = src.partial;
     resolve(normalized);
+  }
+
+  /**
+   * Handle a `token.revoked` frame: drop the stored pairing token and arm the
+   * un-paired re-probe the close that follows will run (see `attach`'s
+   * `onClose`). We do NOT close the transport here — the desktop closes it
+   * immediately after this frame, and even if it somehow didn't, an open socket
+   * with no stored token already reports `not_paired`, which is the correct end
+   * state either way.
+   *
+   * Idempotent: a duplicate frame (or a second rotation racing the close) must
+   * not clear the token twice or arm two re-probes.
+   */
+  private handleTokenRevoked(): void {
+    if (this.revoked) return;
+    this.revoked = true;
+    // Swallow a clear failure: the re-probe must still run (worst case it
+    // handshakes the dead token once and lands on the usual retry path).
+    this.revokeCleared = Promise.resolve(this.onTokenRevoked?.()).then(
+      () => undefined,
+      () => undefined
+    );
   }
 
   private failAllPending(reason: string): void {

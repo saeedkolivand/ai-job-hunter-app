@@ -74,6 +74,8 @@ mod import_flow;
 #[cfg(test)]
 mod import_tests;
 mod match_live;
+/// Wire `type` constants (the TS-mirrored protocol table) — see its module doc.
+pub mod msg;
 pub mod native_host;
 pub mod register;
 mod status_update;
@@ -102,131 +104,6 @@ pub const NATIVE_HOST_NAME: &str = "app.aijobhunter.bridge";
 
 /// On-disk host-manifest filename the browser reads to find + spawn the host.
 pub const NATIVE_HOST_MANIFEST: &str = "app.aijobhunter.bridge.json";
-
-/// Wire `type` strings — the Rust mirror of the shared `EXTENSION_MESSAGE_TYPES`
-/// in `packages/shared/src/ipc/extension-protocol.ts`. A parity test
-/// ([`test`]) pins these to the TS literals so the two can never drift.
-pub mod msg {
-    /// Handshake step 1 (extension → desktop): `{ protocol, clientNonce }`. NO
-    /// token — the proof (step 3) authenticates. Must be the FIRST frame.
-    pub const HELLO: &str = "hello";
-    /// Handshake step 2 (desktop → extension): `{ serverNonce }`.
-    pub const CHALLENGE: &str = "challenge";
-    /// Handshake step 3 (extension → desktop): `{ proof }` where
-    /// `proof = HMAC-SHA256(token, CLIENT_MSG)`. The token is NEVER on the wire
-    /// in v2; the desktop verifies `proof` constant-time (see [`super::handshake`]).
-    pub const AUTH: &str = "auth";
-    /// Handshake step 4 (desktop → extension): `{ serverProof }` where
-    /// `serverProof = HMAC-SHA256(token, SERVER_MSG)` — the desktop proving IT
-    /// knows the token so the extension can reject a rogue/port-squatting peer.
-    pub const AUTH_OK: &str = "auth.ok";
-    /// Force-cutover reply (desktop → extension): sent, then the socket closes,
-    /// when a connection's first frame is not a valid protocol-2 `hello` (e.g. an
-    /// old extension's legacy `{type:'auth', token}` frame, or a lower protocol).
-    pub const UPDATE_REQUIRED: &str = "update.required";
-    pub const IMPORT_REQUEST: &str = "import.request";
-    pub const IMPORT_RESULT: &str = "import.result";
-    /// Extension → desktop: fetch the contact profile for assisted autofill; no
-    /// payload (authed by the already-authenticated session). Returned only when
-    /// the autofill opt-in is on, else a refusal `error`.
-    pub const PROFILE_GET: &str = "profile.get";
-    /// Desktop → extension: the contact-profile fields for autofill (or an `error`).
-    pub const PROFILE_RESULT: &str = "profile.result";
-    /// Extension → desktop: "Check fit" (Scan mode only; no URL-mode fetch).
-    /// Keyword-only ALWAYS, opt-in-gated (same class as `profile.get`), and
-    /// per-connection throttled — see [`super::match_live`]'s module doc.
-    pub const MATCH_LIVE: &str = "match.live";
-    /// Desktop → extension: the `match.live` outcome. Like `status.update`,
-    /// this verb's errors ARE user-facing (a deliberate click).
-    pub const MATCH_RESULT: &str = "match.result";
-    /// Extension → desktop: "have I already applied to this URL?" — a pure,
-    /// read-only lookup against the local `ApplicationStore` keyed by the
-    /// normalized job url (no fetch, never mutates, no consent gate — this is
-    /// the user's own metadata, device-local, loopback only).
-    pub const APPLIED_CHECK: &str = "applied.check";
-    /// Desktop → extension: the `applied.check` outcome (found + optional
-    /// application id/status/title/appliedAt), or `{ found: false, error }` on
-    /// a malformed/empty url.
-    pub const APPLIED_RESULT: &str = "applied.result";
-    /// Extension → desktop: "mark this URL applied" — a user-gestured WRITE,
-    /// structurally restricted to the single `saved → applied` transition on
-    /// an EXACT normalized-URL-key match. Never any other transition, never a
-    /// fuzzy match; see [`super::status_update::resolve_status_update`] for
-    /// the allowlist.
-    pub const STATUS_UPDATE: &str = "status.update";
-    /// Desktop → extension: the `status.update` outcome — `{ ok: true,
-    /// applicationId, status }` on success, `{ ok: false, error }` on a
-    /// refusal (no match / wrong starting status / unsupported transition) or
-    /// a malformed request. UNLIKE `applied.result`, this verb's errors ARE
-    /// user-facing (it answers a deliberate click, not a passive check).
-    pub const STATUS_RESULT: &str = "status.result";
-    /// Extension → desktop: read the auto-track opt-in (Task #22, auto-track
-    /// Layer A) — no payload. The extension consults this before ARMING its
-    /// gesture submit-watcher (client-side gate). Reading the flag needs no
-    /// consent (it is the user's own device-local setting); the WRITE it gates
-    /// (`status.update { auto: true }`) is the enforced boundary.
-    pub const AUTOTRACK_CHECK: &str = "autotrack.check";
-    /// Desktop → extension: the `autotrack.check` outcome — `{ enabled }`.
-    pub const AUTOTRACK_RESULT: &str = "autotrack.result";
-    /// Extension → desktop: read the assisted-autofill opt-in (Task #30) — no
-    /// payload. Mirrors `AUTOTRACK_CHECK` exactly (see [`autofill_check`]):
-    /// the popup auto-runs "Suggest answers" only when this reads `true`, but
-    /// the real gate stays enforced on `answers.suggest` itself.
-    pub const AUTOFILL_CHECK: &str = "autofill.check";
-    /// Desktop → extension: the `autofill.check` outcome — `{ enabled }`.
-    pub const AUTOFILL_RESULT: &str = "autofill.result";
-    /// Extension → desktop: "save my answers from this page" — append the
-    /// captured `{question, answer}` pairs onto the Application matched by
-    /// (canonicalized + normalized) `url`. No match → a refusal telling the
-    /// user to import the job first; NEVER auto-creates. Rides the SAME
-    /// assisted-autofill opt-in as `profile.get` (capture is the mirror
-    /// direction of fill) — see [`super::answers_save::resolve_answers_save`].
-    pub const ANSWERS_SAVE: &str = "answers.save";
-    /// Desktop → extension: the `answers.save` outcome — `{ ok: true,
-    /// applicationId, saved, skipped, title?, company? }` on success, `{ ok:
-    /// false, error }` on a refusal (opt-in off / no match / malformed
-    /// request). Like `status.update`, this verb's errors ARE user-facing.
-    pub const ANSWERS_RESULT: &str = "answers.result";
-    /// Extension → desktop: "suggest answers for this form" — fuzzy-match the
-    /// scanned EMPTY question labels against every stored `ApplicationAnswer`
-    /// across ALL applications. Rides the SAME assisted-autofill opt-in as
-    /// `profile.get`/`answers.save` — see
-    /// [`super::answers_suggest::resolve_answers_suggest`].
-    pub const ANSWERS_SUGGEST: &str = "answers.suggest";
-    /// Desktop → extension: the `answers.suggest` outcome — `{ ok: true,
-    /// suggestions: [...] }` on success, `{ ok: false, error }` on a refusal
-    /// (opt-in off / malformed request). Like `status.update`, this verb's
-    /// errors ARE user-facing.
-    pub const ANSWERS_SUGGEST_RESULT: &str = "answers.suggest.result";
-    /// Extension → desktop: "help me answer this question" — the first
-    /// BILLABLE-AI verb on the bridge. `{ question, url?, searchWeb? }`.
-    /// Gated on the SEPARATE `ai_assist_enabled` opt-in (never the
-    /// assisted-autofill one) — see [`super::answer_assist`].
-    pub const ANSWER_ASSIST: &str = "answer.assist";
-    /// Desktop → extension: the `answer.assist` outcome — `{ ok: true,
-    /// question, draft, sourced: {web?, brief?, salary?} }` on success,
-    /// `{ ok: false, error }` on a refusal (opt-in off / no usable AI
-    /// provider configured / malformed request). Like `status.update`, this
-    /// verb's errors ARE user-facing.
-    pub const ANSWER_ASSIST_RESULT: &str = "answer.assist.result";
-    /// Desktop → extension: one incremental delta of a streaming reply —
-    /// `{ delta }`. The envelope's own `reqId` correlates it to the original
-    /// request; additive so a future streaming verb rides the same family —
-    /// see [`super::answer_assist`]'s streaming doc.
-    pub const ASSIST_CHUNK: &str = "assist.chunk";
-    /// Desktop → extension: no payload — the stream named by the envelope's
-    /// `reqId` has ended (success or failure); the verb's own terminal reply
-    /// (e.g. `ANSWER_ASSIST_RESULT`) carries the actual outcome. A generic,
-    /// verb-agnostic mux signal so a background accumulator can retire its
-    /// buffer for `reqId` without parsing every verb's reply shape.
-    pub const ASSIST_DONE: &str = "assist.done";
-    /// Extension → desktop: no payload — cancel the in-flight stream named
-    /// by the envelope's `reqId` (starting a new draft/rewrite supersedes
-    /// the previous one). Best-effort, no reply — dispatched against THIS
-    /// connection's own [`stream::AssistStreamRegistry`], never a global
-    /// registry (see [`stream`]'s module doc).
-    pub const ASSIST_CANCEL: &str = "assist.cancel";
-}
 
 /// Handshake protocol version carried in the `hello` frame. MUST match the TS
 /// `EXTENSION_PROTOCOL_VERSION` in `packages/shared/.../extension-protocol-constants.ts`.
@@ -308,6 +185,16 @@ pub struct BridgeState {
     /// near-instant handshake) can never reset the burst allowance. See
     /// [`match_live::MatchLiveThrottle`]'s doc.
     match_live_limiter: Mutex<match_live::MatchLiveThrottle>,
+    /// Fan-out signal telling every LIVE connection task that the pairing
+    /// token is being rotated (see [`Self::regenerate_token`]). A broadcast —
+    /// not a per-connection registry — because that is exactly the shape the
+    /// connection tasks need: each one subscribes once at accept time and races
+    /// its receiver alongside `reader.next()` in the read loop (see
+    /// [`stream::next_step`]), so a rotation reaches every socket without this
+    /// state having to track (and reap) their senders. `send` is synchronous,
+    /// which is what lets the sync `Resettable::reset(&self)` hook reach the
+    /// async socket tasks at all.
+    revoke_tx: tokio::sync::broadcast::Sender<()>,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
 }
@@ -326,6 +213,11 @@ impl BridgeState {
             ai_assist_enabled: AtomicBool::new(load_ai_assist_optin(data_dir)),
             autotrack_enabled: AtomicBool::new(autotrack::load_autotrack_optin(data_dir)),
             match_live_limiter: Mutex::new(match_live::MatchLiveThrottle::new()),
+            // Capacity 1: the signal is a bare "rotate happened" edge, so a
+            // receiver that fell behind two back-to-back rotations gets
+            // `RecvError::Lagged` — which the read loop treats exactly like the
+            // signal itself (it still means "your pairing is gone").
+            revoke_tx: tokio::sync::broadcast::channel(1).0,
             data_dir: data_dir.to_path_buf(),
         }
     }
@@ -346,18 +238,53 @@ impl BridgeState {
         self.token.lock().clone()
     }
 
-    /// Rotate the pairing token: generate a new secret, persist it, and return
-    /// it. Any socket that re-runs the v2 handshake (a fresh connection, or a
-    /// reconnect) with the old token will fail the client-proof check and must
-    /// re-pair with the new value; an already-authenticated session is
-    /// unaffected until it needs to reconnect.
+    /// Rotate the pairing token: REVOKE every live pairing, generate a new
+    /// secret, persist it, and return it. The single rotation path — Settings →
+    /// "Regenerate" ([`crate::commands::extension_bridge::extension_bridge_regenerate_token`])
+    /// and the factory-reset hook ([`crate::data_store::Resettable`]) both come
+    /// through here, so revocation can't apply to one and not the other.
+    ///
+    /// Order (inside the token lock, so a handshake can't interleave between
+    /// the two halves):
+    /// 1. signal [`Self::subscribe_revoke`]'s receivers — each live connection
+    ///    task sends `token.revoked` on its socket **if that socket is
+    ///    authenticated** and then closes it (see `handle_connection`);
+    /// 2. zero the live-connection count — no pairing survives a rotation, so
+    ///    [`Self::is_connected`] must read false immediately rather than
+    ///    waiting on every socket's teardown (a revoked socket's own
+    ///    [`Self::dec_connected`] then saturates at zero, never wrapping);
+    /// 3. rotate + persist the secret.
+    ///
+    /// Any socket that re-runs the v2 handshake afterwards with the old token
+    /// fails the client-proof check and must re-pair with the new value.
     pub fn regenerate_token(&self) -> String {
         let fresh = new_token();
-        *self.token.lock() = fresh.clone();
+        {
+            // Held across all three steps: `advance_auth` reads the token
+            // through this same lock, so a handshake either verified BEFORE the
+            // revoke went out (its connection task is subscribed, so it is torn
+            // down with the rest) or reads the ALREADY-ROTATED token and fails.
+            // There is no window where a socket authenticates against the old
+            // token and misses the revoke.
+            let mut token = self.token.lock();
+            let _ = self.revoke_tx.send(());
+            self.connected.store(0, Ordering::Relaxed);
+            *token = fresh.clone();
+        }
         if let Err(e) = persist_token(&self.data_dir, &fresh) {
             log::warn!("[extension_bridge] failed to persist regenerated token (non-fatal): {e}");
         }
         fresh
+    }
+
+    /// Subscribe to the pairing-revocation signal — one receiver per accepted
+    /// connection, taken at accept time (BEFORE the handshake) so a rotation
+    /// that races the handshake can never slip past a socket. Only sockets that
+    /// exist at rotation time are signalled: a broadcast is an edge, never
+    /// replayed state, so a connection opened after the rotation is not told
+    /// anything (it is already handshaking against the new token).
+    pub(super) fn subscribe_revoke(&self) -> tokio::sync::broadcast::Receiver<()> {
+        self.revoke_tx.subscribe()
     }
 
     /// Whether assisted autofill is opted in (the `profile.get` consent gate).
@@ -433,8 +360,11 @@ impl BridgeState {
     }
 }
 
-/// Factory-reset hook: rotate the token so a wiped install re-pairs from scratch,
-/// and return both opt-ins to their default OFF (consent must be re-granted).
+/// Factory-reset hook: rotate the token so a wiped install re-pairs from scratch
+/// — which also REVOKES every live pairing (see [`BridgeState::regenerate_token`]),
+/// so a paired browser is told to re-pair instead of surviving the reset on a
+/// socket it opened before it — and return both opt-ins to their default OFF
+/// (consent must be re-granted).
 impl crate::data_store::Resettable for BridgeState {
     fn reset(&self) {
         self.regenerate_token();
@@ -641,6 +571,11 @@ async fn probe_ports(range: std::ops::RangeInclusive<u16>) -> Option<(TcpListene
 /// below delayed indefinitely while the app still believes the extension is
 /// connected. Racing the writer handle alongside `reader.next()` means a
 /// writer-task end tears the connection down immediately instead.
+///
+/// The same race carries a third arm: this connection's
+/// [`BridgeState::subscribe_revoke`] receiver. A token rotation must reach even
+/// a QUIET socket at once — an authenticated one is sent [`msg::TOKEN_REVOKED`]
+/// (an unauthenticated one is closed silently, no oracle) and both tear down.
 async fn handle_connection(app: AppHandle, stream: TcpStream) {
     use tokio_tungstenite::tungstenite::handshake::server::ErrorResponse;
     use tokio_tungstenite::tungstenite::http::StatusCode;
@@ -700,6 +635,12 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // counted. Tracked per-connection so teardown below only decrements a
     // socket that actually incremented (never on an unauthenticated close).
     let mut authenticated = false;
+    // Subscribed HERE — before the handshake, not at `AuthOk` — so a rotation
+    // that races this socket's handshake still reaches it (see
+    // `BridgeState::regenerate_token`'s ordering note). Signalling an
+    // unauthenticated socket is safe: the read loop closes it WITHOUT the
+    // `token.revoked` frame, i.e. the same silent close a failed proof gets.
+    let mut revoked_rx = state.subscribe_revoke();
 
     let (writer, mut reader) = ws.split();
     // The ONE task that ever writes to the live WS sink — see `stream`'s
@@ -723,8 +664,37 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
 
     loop {
-        let frame = match stream::next_step(reader.next(), &mut writer_task).await {
+        let frame = match stream::next_step(reader.next(), &mut writer_task, revoked_rx.recv())
+            .await
+        {
             stream::NextStep::Frame(frame) => frame,
+            stream::NextStep::Revoked => {
+                // The pairing token was rotated out from under this socket
+                // (Settings → "Regenerate", or a factory reset). Tell an
+                // AUTHENTICATED peer — and ONLY an authenticated one — that its
+                // pairing is dead, so the extension drops its stored token and
+                // shows the pairing view instead of retrying the now-invalid
+                // secret forever against a silent-closing handshake.
+                //
+                // An unauthenticated socket (mid-handshake, or one that never
+                // got past `hello`) is told NOTHING and simply closes: sending
+                // it `token.revoked` would confirm the token it was proving
+                // against had been the real one — precisely the oracle the
+                // silent `Unauthorized` close denies (ADR-0010).
+                //
+                // The frame is enqueued, not awaited: `run_writer` outlives
+                // this loop (it holds the sink until its channel drains), so
+                // the frame reaches the peer before the close does.
+                if authenticated {
+                    log::info!(
+                        "[extension_bridge] pairing token rotated — revoking an authenticated \
+                         session and closing it"
+                    );
+                    let _ = out_tx.send(Message::text(token_revoked_reply()));
+                    let _ = out_tx.send(Message::Close(None));
+                }
+                break;
+            }
             stream::NextStep::WriterEnded => {
                 // See `next_step`'s doc + `handle_connection`'s own doc: the
                 // writer task ending (a `WRITE_STALL` timeout or a send error)
@@ -880,7 +850,11 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // Only a socket that actually reached `Authenticated` (and so incremented
     // the count above) decrements it here — an unauthenticated socket's
     // teardown (a rejected origin, a failed proof, an over-cap/outdated first
-    // frame) must never touch the count.
+    // frame) must never touch the count. After a REVOKE the count was already
+    // zeroed by `regenerate_token`, so this decrement saturates at zero and
+    // reports no transition — the rotation path owns that notification (the
+    // Settings mutation refetches the status; a factory reset emits the event
+    // itself), and a saturating decrement can never wrap the count back up.
     if authenticated && state.dec_connected() {
         // 1→0: the last paired browser disconnected — with two browsers
         // sharing one token, this now only fires once the SECOND socket also
@@ -1173,6 +1147,25 @@ fn update_required_reply(req_id: &str) -> String {
         "payload": {
             "error": "Update the AI Job Hunter browser extension to reconnect (bridge protocol v2)."
         },
+    })
+    .to_string()
+}
+
+/// Envelope `reqId` for the desktop-initiated [`msg::TOKEN_REVOKED`] frame.
+/// Every other frame echoes the caller's id, but this one answers no request —
+/// a fixed, non-empty sentinel keeps the envelope shape (`reqId` is required on
+/// both sides) without pretending to correlate to anything.
+const REVOKE_REQ_ID: &str = "token-revoked";
+
+/// Build the `token.revoked` frame. NO payload and, deliberately, no token
+/// material of any kind: a revoked peer is told only that its pairing is dead,
+/// never anything about the old or the new secret. Sent exclusively on an
+/// already-authenticated session (see `handle_connection`'s `Revoked` arm).
+fn token_revoked_reply() -> String {
+    json!({
+        "type": msg::TOKEN_REVOKED,
+        "reqId": REVOKE_REQ_ID,
+        "payload": Value::Null,
     })
     .to_string()
 }
