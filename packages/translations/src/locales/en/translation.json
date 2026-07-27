@@ -2524,7 +2524,10 @@
       "actions": "Actions",
       "openUrl": "Open job link",
       "deleteKeepDocs": "Remove tracking (keep documents)",
-      "deleteAll": "Delete everything"
+      "deleteAll": "Delete everything",
+      "appliedAgo": "Applied {{when}}",
+      "updatedAgo": "Updated {{when}}",
+      "statusError": "Could not update the stage."
     },
     "delete": {
       "keepTitle": "Remove application tracking",
@@ -2585,7 +2588,8 @@
         "rewriteBodyAriaLabel": "Rewrite the email body with AI",
         "openMailto": "Send via mail client",
         "needsResume": "Add your résumé to generate an application email.",
-        "addResume": "Add a résumé"
+        "addResume": "Add a résumé",
+        "recipientHint": "This is the application's primary contact — the same fields as the Overview tab."
       },
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
@@ -2668,7 +2672,38 @@
       "jdFetch": "Fetch description",
       "jdPlaceholder": "Paste the job description here…",
       "notFound": "Application not found",
-      "notFoundDesc": "This application may have been removed."
+      "notFoundDesc": "This application may have been removed.",
+      "followUpSection": "Follow-up",
+      "followUpOverdue": "Overdue {{date}}",
+      "followUpDue": "Follow up {{date}}",
+      "followUpOverdueHint": "This follow-up is overdue.",
+      "followUpUpcomingHint": "You will be reminded when this date arrives.",
+      "followUpNoneHint": "Set a date to get a reminder for the next step."
+    },
+    "pipeline": {
+      "aria": "Filter by pipeline stage",
+      "saved": "Saved",
+      "applied": "Applied",
+      "screening": "Screening",
+      "interviewing": "Interviewing",
+      "offer": "Offer",
+      "closed": "Closed",
+      "overdue": "Overdue: {{n}}"
+    },
+    "sort": {
+      "label": "Sort applications",
+      "updated": "Last updated",
+      "company": "Company (A–Z)",
+      "nextAction": "Next action"
+    },
+    "note": {
+      "title": "Add a note",
+      "afterChange": "Moved to {{stage}}. Add a note about what happened?",
+      "current": "Current stage: {{stage}}",
+      "placeholder": "e.g. Recruiter call scheduled for Thursday",
+      "save": "Save note",
+      "skip": "Skip",
+      "add": "Add note"
     }
   },
   "notifications": {

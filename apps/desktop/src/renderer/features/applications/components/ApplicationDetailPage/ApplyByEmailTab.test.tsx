@@ -53,10 +53,15 @@ const resolveJobUrlMock =
     (url: string, enabled?: boolean) => { data?: { description?: string }; isFetching: boolean }
   >();
 
+// Controlled so the canonical-contact binding tests can assert the exact patch
+// the recipient fields persist (`contactName`/`contactEmail`, never the
+// deprecated `recipientName`/`recipientEmail` aliases).
+const updateApplicationMutate = vi.fn();
+
 vi.mock('@/services', () => ({
   useDocuments: () => ({ isLoading: false }),
   useDocumentText: () => documentTextMock(),
-  useUpdateApplication: () => ({ mutate: vi.fn() }),
+  useUpdateApplication: () => ({ mutate: updateApplicationMutate }),
   useContactProfile: () => contactProfileMock(),
   useResolveJobUrl: (url: string, enabled?: boolean) => resolveJobUrlMock(url, enabled),
 }));
@@ -155,6 +160,7 @@ beforeEach(() => {
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
   RewritePopoverStub.mockClear();
+  updateApplicationMutate.mockClear();
   generateEmailMock.mockReset();
   generateEmailMock.mockImplementation(async (p) => {
     p.onToken?.(EMAIL_RAW);
@@ -311,7 +317,7 @@ describe('ApplyByEmailTab — select-to-rewrite', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     render(
       <ApplyByEmailTab
-        application={makeApp({ recipientEmail: 'hr@acme.com' })}
+        application={makeApp({ contactEmail: 'hr@acme.com' })}
         matchingGenerations={NO_GENERATIONS}
       />
     );
@@ -449,5 +455,76 @@ describe('ApplyByEmailTab — standalone generation', () => {
     const cta = screen.getByRole('button', { name: 'applications.detail.email.addResume' });
     fireEvent.click(cta);
     expect(navigateMock).toHaveBeenCalledWith({ to: '/documents' });
+  });
+});
+
+// ── Canonical contact binding ────────────────────────────────────────────────
+//
+// The email recipient IS the application's primary contact. These fields must
+// read AND write `contactName` / `contactEmail` — the deprecated
+// `recipientName` / `recipientEmail` aliases are never touched by this surface.
+
+describe('ApplyByEmailTab — canonical contact binding', () => {
+  it('seeds the recipient fields from contactName / contactEmail', () => {
+    render(
+      <ApplyByEmailTab
+        application={makeApp({ contactName: 'Dana Doe', contactEmail: 'dana@acme.com' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    expect(
+      (screen.getByLabelText('applications.detail.email.recipientNameLabel'))
+        .value
+    ).toBe('Dana Doe');
+    expect(
+      (screen.getByLabelText('applications.detail.email.recipientEmailLabel'))
+        .value
+    ).toBe('dana@acme.com');
+  });
+
+  it('persists the name to contactName (not the deprecated recipientName alias)', () => {
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    const field = screen.getByLabelText('applications.detail.email.recipientNameLabel');
+    fireEvent.change(field, { target: { value: '  Dana Doe  ' } });
+    fireEvent.blur(field);
+
+    expect(updateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(updateApplicationMutate.mock.calls[0]?.[0]).toEqual({
+      id: 'app-1',
+      contactName: 'Dana Doe',
+    });
+  });
+
+  it('persists the email to contactEmail (not the deprecated recipientEmail alias)', () => {
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    const field = screen.getByLabelText('applications.detail.email.recipientEmailLabel');
+    fireEvent.change(field, { target: { value: 'dana@acme.com' } });
+    fireEvent.blur(field);
+
+    expect(updateApplicationMutate).toHaveBeenCalledTimes(1);
+    expect(updateApplicationMutate.mock.calls[0]?.[0]).toEqual({
+      id: 'app-1',
+      contactEmail: 'dana@acme.com',
+    });
+  });
+
+  it('does NOT write when the value is unchanged from the stored contact', () => {
+    render(
+      <ApplyByEmailTab
+        application={makeApp({ contactEmail: 'dana@acme.com' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    fireEvent.blur(screen.getByLabelText('applications.detail.email.recipientEmailLabel'));
+    expect(updateApplicationMutate).not.toHaveBeenCalled();
+  });
+
+  it('tells the user these fields are the shared primary contact', () => {
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+    expect(screen.getByText('applications.detail.email.recipientHint')).toBeTruthy();
   });
 });

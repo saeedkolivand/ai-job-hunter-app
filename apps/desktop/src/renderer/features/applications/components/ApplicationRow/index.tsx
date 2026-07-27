@@ -6,13 +6,22 @@ import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
 
+import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
+import { formatSalaryRange } from '@/features/applications/lib/salary';
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
+import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
 import { useOpenExternal, useRemoveApplication, useSetApplicationStatus } from '@/services';
 
 interface ApplicationRowProps {
   application: Application;
   /** Flash + scroll this row into view once (e.g. a just-imported job). */
   highlighted?: boolean;
+  /**
+   * Show the row's own stage as a Tag. Set by the list when the active pipeline
+   * group aggregates several stages (`Closed`), so an aggregated card never
+   * hides whether a pursuit was accepted, rejected, ghosted or withdrawn.
+   */
+  showStageTag?: boolean;
 }
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
@@ -21,15 +30,23 @@ const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id
 // with no onClick, so clicks bubble to the row and never block navigation.
 const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
 
-export function ApplicationRow({ application, highlighted = false }: ApplicationRowProps) {
+export function ApplicationRow({
+  application,
+  highlighted = false,
+  showStageTag = false,
+}: ApplicationRowProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const setStatus = useSetApplicationStatus();
   const remove = useRemoveApplication();
   const openExternal = useOpenExternal();
+  const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [keepDocs, setKeepDocs] = useState(true);
+  // The status a just-applied change landed on — non-null opens the note prompt.
+  const [notePromptStatus, setNotePromptStatus] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState(false);
 
   // Bring a just-imported row into view when it becomes the highlight target.
   const rowRef = useRef<HTMLDivElement>(null);
@@ -41,8 +58,37 @@ export function ApplicationRow({ application, highlighted = false }: Application
   const nextState = nextActionLabel(application.nextActionAt);
   const days = staleDays(application.updatedAt);
 
+  // Applied date wins over updated: once a pursuit has left `saved`, "when did I
+  // apply" is the question the row answers. Both carry the full local timestamp
+  // in `title` so the relative label stays scannable without losing precision.
+  const stampAt = application.appliedAt ?? application.updatedAt;
+  const stampLabel = application.appliedAt
+    ? t('applications.row.appliedAgo', { when: formatRelative(application.appliedAt) })
+    : t('applications.row.updatedAgo', { when: formatRelative(application.updatedAt) });
+
+  const board = application.board.trim();
+  const salary = formatSalaryRange(
+    application.salaryMin,
+    application.salaryMax,
+    application.salaryCurrency
+  );
+
+  // Success/error effects run on the mutation callbacks (never optimistically):
+  // the note prompt only opens once the transition is actually persisted.
   const handleStatusChange = (status: string) => {
-    void setStatus.mutateAsync({ id: application.id, status });
+    setStatusError(false);
+    setStatus.mutate(
+      { id: application.id, status },
+      {
+        onSuccess: () => setNotePromptStatus(status),
+        onError: () => setStatusError(true),
+      }
+    );
+  };
+
+  const handleSaveNote = (note: string) => {
+    if (!notePromptStatus) return;
+    setStatus.mutate({ id: application.id, status: notePromptStatus, note });
   };
 
   const handleDelete = (keep: boolean) => {
@@ -102,6 +148,11 @@ export function ApplicationRow({ application, highlighted = false }: Application
             <span className="truncate text-sm font-semibold text-foreground/95">
               {application.title || t('applications.row.noTitle')}
             </span>
+            {showStageTag && (
+              <Tag color="default" className={STATUS_TAG}>
+                {t(`applications.status.${application.status}` as const)}
+              </Tag>
+            )}
             {stale && (
               <Tag color="warning" icon={<Clock size={8} />} className={STATUS_TAG}>
                 {t('applications.row.noReply', { days })}
@@ -115,7 +166,23 @@ export function ApplicationRow({ application, highlighted = false }: Application
               </Tag>
             )}
           </div>
-          <div className="mt-0.5 text-xs text-foreground/50">{application.company}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground/50">
+            <span className="truncate">{application.company}</span>
+            {board && (
+              <span className="shrink-0 rounded-full border border-[var(--border-soft)] bg-foreground/[0.04] px-1.5 py-px text-[9px] uppercase tracking-wider text-foreground/55">
+                {t(`jobs.boards.${board}`, { defaultValue: board })}
+              </span>
+            )}
+            {salary && <span className="shrink-0 text-[11px] text-foreground/55">{salary}</span>}
+            <span className="shrink-0 text-[11px] text-foreground/40" title={new Date(stampAt).toLocaleString()}>
+              {stampLabel}
+            </span>
+            {statusError && (
+              <span role="alert" className="shrink-0 text-[11px] text-destructive">
+                {t('applications.row.statusError')}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Status dropdown */}
@@ -170,6 +237,15 @@ export function ApplicationRow({ application, highlighted = false }: Application
           />
         </div>
       </div>
+
+      <StatusNoteModal
+        open={notePromptStatus !== null}
+        onClose={() => setNotePromptStatus(null)}
+        status={notePromptStatus ?? application.status}
+        changed
+        isSaving={setStatus.isPending}
+        onSave={handleSaveNote}
+      />
 
       <ConfirmModal
         open={deleteOpen}

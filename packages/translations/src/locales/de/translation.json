@@ -2528,7 +2528,10 @@
       "actions": "Aktionen",
       "openUrl": "Job-Link öffnen",
       "deleteKeepDocs": "Tracking entfernen (Dokumente behalten)",
-      "deleteAll": "Alles löschen"
+      "deleteAll": "Alles löschen",
+      "appliedAgo": "Beworben {{when}}",
+      "updatedAgo": "Aktualisiert {{when}}",
+      "statusError": "Phase konnte nicht aktualisiert werden."
     },
     "delete": {
       "keepTitle": "Bewerbungs-Tracking entfernen",
@@ -2589,7 +2592,8 @@
         "rewriteBodyAriaLabel": "E-Mail-Inhalt mit KI umschreiben",
         "openMailto": "Per E-Mail-Client senden",
         "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
-        "addResume": "Lebenslauf hinzufügen"
+        "addResume": "Lebenslauf hinzufügen",
+        "recipientHint": "Das ist der Hauptkontakt der Bewerbung — dieselben Felder wie im Tab Überblick."
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",
@@ -2672,7 +2676,38 @@
       "jdFetch": "Beschreibung abrufen",
       "jdPlaceholder": "Stellenbeschreibung hier einfügen…",
       "notFound": "Bewerbung nicht gefunden",
-      "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt."
+      "notFoundDesc": "Diese Bewerbung wurde möglicherweise entfernt.",
+      "followUpSection": "Nachfassen",
+      "followUpOverdue": "Überfällig {{date}}",
+      "followUpDue": "Nachfassen {{date}}",
+      "followUpOverdueHint": "Dieses Nachfassen ist überfällig.",
+      "followUpUpcomingHint": "Du wirst erinnert, sobald dieses Datum erreicht ist.",
+      "followUpNoneHint": "Lege ein Datum fest, um an den nächsten Schritt erinnert zu werden."
+    },
+    "pipeline": {
+      "aria": "Nach Pipeline-Phase filtern",
+      "saved": "Gespeichert",
+      "applied": "Beworben",
+      "screening": "Vorauswahl",
+      "interviewing": "Interview",
+      "offer": "Angebot",
+      "closed": "Abgeschlossen",
+      "overdue": "Überfällig: {{n}}"
+    },
+    "sort": {
+      "label": "Bewerbungen sortieren",
+      "updated": "Zuletzt aktualisiert",
+      "company": "Unternehmen (A–Z)",
+      "nextAction": "Nächste Aktion"
+    },
+    "note": {
+      "title": "Notiz hinzufügen",
+      "afterChange": "Auf {{stage}} gesetzt. Notiz dazu hinzufügen?",
+      "current": "Aktuelle Phase: {{stage}}",
+      "placeholder": "z. B. Recruiter-Call für Donnerstag vereinbart",
+      "save": "Notiz speichern",
+      "skip": "Überspringen",
+      "add": "Notiz hinzufügen"
     }
   },
   "notifications": {

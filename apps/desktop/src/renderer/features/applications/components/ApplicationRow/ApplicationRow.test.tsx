@@ -42,13 +42,21 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── Service hooks ─────────────────────────────────────────────────────────────
 
-const mockSetStatusMutateAsync = vi.fn().mockResolvedValue(undefined);
+/**
+ * `setStatus.mutate(vars, options)` — the fake resolves SUCCESSFULLY by invoking
+ * `options.onSuccess`, which is what opens the optional-note prompt. Individual
+ * tests can re-implement it to exercise the error branch.
+ */
+type MutateOptions = { onSuccess?: () => void; onError?: () => void };
+const mockSetStatusMutate = vi.fn((_vars: unknown, options?: MutateOptions) => {
+  options?.onSuccess?.();
+});
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockOpenExternalMutate = vi.fn();
 
 vi.mock('@/services', () => ({
   useSetApplicationStatus: () => ({
-    mutateAsync: mockSetStatusMutateAsync,
+    mutate: mockSetStatusMutate,
     isPending: false,
   }),
   useRemoveApplication: () => ({
@@ -90,61 +98,179 @@ function makeApp(overrides: Partial<Application>): Application {
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockSetStatusMutateAsync.mockClear();
+  mockSetStatusMutate.mockClear();
+  mockSetStatusMutate.mockImplementation((_vars: unknown, options?: MutateOptions) => {
+    options?.onSuccess?.();
+  });
   mockRemoveMutateAsync.mockClear();
   mockOpenExternalMutate.mockClear();
   mockNavigate.mockClear();
 });
 
+/** Opens the stage Dropdown and picks `option` (the i18n key fragment). */
+async function changeStage(currentStatus: string, option: string) {
+  fireEvent.click(
+    screen.getByRole('button', { name: new RegExp(`applications\\.status\\.${currentStatus}`, 'i') })
+  );
+  const listbox = await screen.findByRole('listbox');
+  fireEvent.click(
+    within(listbox).getByRole('option', {
+      name: new RegExp(`applications\\.status\\.${option}`, 'i'),
+    })
+  );
+}
+
 // ── Gap 5: status-change Dropdown calls setStatus mutation ──────────────
 
 describe('ApplicationRow — status change', () => {
-  it('changing the Dropdown calls setStatus.mutateAsync with the correct id and status', async () => {
+  it('changing the Dropdown calls setStatus.mutate with the correct id and status', async () => {
     const app = makeApp({ id: 'app-42', status: 'applied' });
     render(<ApplicationRow application={app} />);
 
     // @ajh/ui Dropdown renders a <button aria-haspopup="listbox"> whose
     // accessible name is the currently selected option's label. Since t() returns
     // keys, the trigger is labelled "applications.status.applied".
-    const trigger = screen.getByRole('button', {
-      name: /applications\.status\.applied/i,
-    });
-    fireEvent.click(trigger);
+    await changeStage('applied', 'interviewing');
 
-    // After opening, the listbox options become visible.
-    const listbox = await screen.findByRole('listbox');
-    const interviewingOption = within(listbox).getByRole('option', {
-      name: /applications\.status\.interviewing/i,
-    });
-    fireEvent.click(interviewingOption);
-
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledWith({
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-42',
       status: 'interviewing',
     });
   });
 
-  it('calls setStatus.mutateAsync with the correct status when selecting saved', async () => {
+  it('calls setStatus.mutate with the correct status when selecting saved', async () => {
     const app = makeApp({ id: 'app-99', status: 'applied' });
     render(<ApplicationRow application={app} />);
 
-    const trigger = screen.getByRole('button', {
-      name: /applications\.status\.applied/i,
-    });
-    fireEvent.click(trigger);
+    await changeStage('applied', 'saved');
 
-    const listbox = await screen.findByRole('listbox');
-    const savedOption = within(listbox).getByRole('option', {
-      name: /applications\.status\.saved/i,
-    });
-    fireEvent.click(savedOption);
-
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledWith({
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-99',
       status: 'saved',
     });
+  });
+
+  it('surfaces a localized inline error (and NO note prompt) when the mutation fails', async () => {
+    mockSetStatusMutate.mockImplementation((_vars: unknown, options?: MutateOptions) => {
+      options?.onError?.();
+    });
+    render(<ApplicationRow application={makeApp({ id: 'app-err', status: 'applied' })} />);
+
+    await changeStage('applied', 'offer');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.row.statusError');
+    expect(screen.queryByText('applications.note.title')).not.toBeInTheDocument();
+  });
+});
+
+// ── Optional status note — the prompt only opens on a PERSISTED change ────────
+
+describe('ApplicationRow — status note prompt', () => {
+  it('opens the note prompt after a successful stage change', async () => {
+    render(<ApplicationRow application={makeApp({ id: 'app-note', status: 'applied' })} />);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await changeStage('applied', 'interviewing');
+
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('applications.note.title');
+    expect(screen.getByPlaceholderText('applications.note.placeholder')).toBeInTheDocument();
+  });
+
+  it('saving a note writes a SAME-status setStatus carrying the trimmed note', async () => {
+    render(<ApplicationRow application={makeApp({ id: 'app-note-2', status: 'applied' })} />);
+    await changeStage('applied', 'interviewing');
+
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: '  Recruiter call booked  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.save' }));
+
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(2);
+    expect(mockSetStatusMutate.mock.calls[1]?.[0]).toEqual({
+      id: 'app-note-2',
+      status: 'interviewing',
+      note: 'Recruiter call booked',
+    });
+  });
+
+  it('skipping the prompt writes nothing extra and closes it', async () => {
+    render(<ApplicationRow application={makeApp({ id: 'app-note-3', status: 'applied' })} />);
+    await changeStage('applied', 'offer');
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.skip' }));
+
+    // Only the original transition — no second (note) call.
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('the Save button is disabled while the note is blank (no empty-note event)', async () => {
+    render(<ApplicationRow application={makeApp({ id: 'app-note-4', status: 'applied' })} />);
+    await changeStage('applied', 'offer');
+
+    const save = screen.getByRole('button', { name: 'applications.note.save' });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: '   ' },
+    });
+    expect(save).toBeDisabled();
+  });
+});
+
+// ── Richer row meta — board chip, salary, date stamp ──────────────────────────
+
+describe('ApplicationRow — row meta', () => {
+  it('renders the localized board chip for a known board id', () => {
+    render(<ApplicationRow application={makeApp({ board: 'linkedin' })} />);
+    expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
+  });
+
+  it('renders no board chip when the board is blank', () => {
+    const { container } = render(<ApplicationRow application={makeApp({ board: '   ' })} />);
+    expect(container.textContent).not.toContain('jobs.boards.');
+  });
+
+  it('renders a currency-formatted salary range when the posting carried one', () => {
+    render(
+      <ApplicationRow
+        application={makeApp({ salaryMin: 60000, salaryMax: 80000, salaryCurrency: 'EUR' })}
+      />
+    );
+    // Locale-agnostic assertion: both bounds and the en-dash separator are present.
+    const salary = screen.getByText(/60[,. ]?000.*–.*80[,. ]?000/);
+    expect(salary).toBeInTheDocument();
+  });
+
+  it('renders no salary text when the posting carried none', () => {
+    const { container } = render(<ApplicationRow application={makeApp({})} />);
+    expect(container.textContent).not.toMatch(/\d{2}[,. ]?\d{3}/);
+  });
+
+  it('labels the stamp "applied" when appliedAt is set and "updated" otherwise', () => {
+    const { unmount } = render(
+      <ApplicationRow application={makeApp({ appliedAt: RECENT_UPDATED_AT })} />
+    );
+    expect(screen.getByText('applications.row.appliedAgo')).toBeInTheDocument();
+    unmount();
+
+    render(<ApplicationRow application={makeApp({ appliedAt: undefined })} />);
+    expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
+  });
+
+  it('shows the per-stage Tag only when showStageTag is set', () => {
+    // The stage label always appears once as the Dropdown trigger's own label,
+    // so the Tag is the SECOND occurrence — count rather than presence.
+    const { unmount } = render(
+      <ApplicationRow application={makeApp({ status: 'rejected' })} showStageTag />
+    );
+    expect(screen.getAllByText('applications.status.rejected')).toHaveLength(2);
+    unmount();
+
+    render(<ApplicationRow application={makeApp({ status: 'rejected' })} />);
+    expect(screen.getAllByText('applications.status.rejected')).toHaveLength(1);
   });
 });
 

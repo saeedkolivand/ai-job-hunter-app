@@ -25,10 +25,10 @@
 
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { Application } from '@ajh/shared';
+import type { Application, StatusEvent } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -133,6 +133,12 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
 const mockUseApplication = vi.fn();
 const mockUseAiGenerations = vi.fn();
 const mockUpdateApplicationMutate = vi.fn();
+/** `setStatus.mutate(vars, options)` — resolves successfully by default so the
+ *  optional-note prompt opens (mirrors the row's mock). */
+type StatusMutateOptions = { onSuccess?: () => void; onError?: () => void };
+const mockSetStatusMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
+  options?.onSuccess?.();
+});
 // Controlled so tests can assert `keepDocuments` on the delete path.
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 // JD-fetch (useImportJobUrl) — controllable so the recovery-panel fetch tests can
@@ -146,7 +152,7 @@ let mockResolveJobUrlIsFetching = false;
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
   useSetApplicationStatus: () => ({
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutate: mockSetStatusMutate,
     isPending: false,
   }),
   useUpdateApplication: () => ({
@@ -250,6 +256,10 @@ beforeEach(() => {
   mockUseApplication.mockReset();
   mockUseAiGenerations.mockReset();
   mockUpdateApplicationMutate.mockClear();
+  mockSetStatusMutate.mockClear();
+  mockSetStatusMutate.mockImplementation((_vars: unknown, options?: StatusMutateOptions) => {
+    options?.onSuccess?.();
+  });
   mockSetApplicationApply.mockClear();
   mockRemoveMutateAsync.mockClear();
   mockNavigate.mockClear();
@@ -1226,5 +1236,145 @@ describe('ApplicationDetailPage — DocumentsTab debounced jobDescription persis
       id: 'app-jdc-cycles',
       jobDescription: 'second value',
     });
+  });
+});
+
+// ── Follow-up promotion — visible from every tab, tinted when overdue ─────────
+
+describe('ApplicationDetailPage — follow-up promotion', () => {
+  const NOW = 1_700_000_000_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const renderWith = (app: Application) => {
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  it('shows an overdue chip in the header (persists across tabs) when the date has passed', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: NOW - 1 }));
+
+    expect(screen.getByText('applications.detail.followUpOverdue')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpDue')).not.toBeInTheDocument();
+  });
+
+  it('shows an upcoming chip when the date is still in the future', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: NOW + 86_400_000 }));
+
+    expect(screen.getByText('applications.detail.followUpDue')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdue')).not.toBeInTheDocument();
+  });
+
+  it('shows no chip at all when no reminder is set', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: undefined }));
+
+    expect(screen.queryByText('applications.detail.followUpDue')).not.toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdue')).not.toBeInTheDocument();
+  });
+
+  it('leads the Overview sheet with its own Follow-up section carrying the date field', () => {
+    mockTab = 'overview';
+    renderWith(makeApp({ nextActionAt: NOW - 1 }));
+
+    expect(screen.getByText('applications.detail.followUpSection')).toBeInTheDocument();
+    // The field itself still lives under its established label (deep links + the
+    // save-on-blur tests above depend on it).
+    expect(screen.getByLabelText('applications.detail.nextActionLabel')).toBeInTheDocument();
+    expect(screen.getByText('applications.detail.followUpOverdueHint')).toBeInTheDocument();
+  });
+
+  it('uses the neutral hint when there is no reminder yet', () => {
+    mockTab = 'overview';
+    renderWith(makeApp({ nextActionAt: undefined }));
+
+    expect(screen.getByText('applications.detail.followUpNoneHint')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdueHint')).not.toBeInTheDocument();
+  });
+});
+
+// ── Interaction log — the Timeline "Add note" entry point ────────────────────
+
+describe('ApplicationDetailPage — timeline notes', () => {
+  const renderTimeline = (events: StatusEvent[]) => {
+    mockTab = 'timeline';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp({ status: 'interviewing' }), events },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  it('"Add note" writes a SAME-status setStatus carrying the trimmed note', () => {
+    renderTimeline([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.add' }));
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: '  Sent a thank-you email  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.save' }));
+
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
+      id: 'app-1',
+      status: 'interviewing',
+      note: 'Sent a thank-you email',
+    });
+  });
+
+  it('the Add-note prompt uses the plain copy, not the post-transition copy', () => {
+    renderTimeline([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.add' }));
+
+    expect(screen.getByText('applications.note.current')).toBeInTheDocument();
+    expect(screen.queryByText('applications.note.afterChange')).not.toBeInTheDocument();
+  });
+
+  it('renders a same-status note event as ONE stage (never "X → X") with its note', () => {
+    renderTimeline([
+      {
+        applicationId: 'app-1',
+        fromStatus: 'interviewing',
+        toStatus: 'interviewing',
+        at: 1_700_000_000_000,
+        note: 'Recruiter call booked',
+      },
+    ]);
+
+    // Scope to the tab panel: the header Dropdown also renders the stage label.
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('Recruiter call booked')).toBeInTheDocument();
+    // A real transition renders the "from" label too; a note event must not.
+    expect(panel.getAllByText('applications.status.interviewing')).toHaveLength(1);
+  });
+
+  it('still renders a real transition as from → to', () => {
+    renderTimeline([
+      {
+        applicationId: 'app-1',
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        at: 1_700_000_000_000,
+        note: '',
+      },
+    ]);
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('applications.status.applied')).toBeInTheDocument();
+    expect(panel.getByText('applications.status.interviewing')).toBeInTheDocument();
   });
 });

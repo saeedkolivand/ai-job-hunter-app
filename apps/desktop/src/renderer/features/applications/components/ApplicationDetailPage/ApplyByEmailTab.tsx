@@ -112,9 +112,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         topRequirements: [],
       };
 
-  // Recipient fields seeded from Application, then prefilled once from extractor
-  const [recipientName, setRecipientName] = useState(application.recipientName ?? '');
-  const [recipientEmail, setRecipientEmail] = useState(application.recipientEmail ?? '');
+  // The email recipient IS the application's primary contact — one canonical
+  // pair (`contactName`/`contactEmail`), edited here and on the Overview tab.
+  // The deprecated `recipientName`/`recipientEmail` aliases are no longer read
+  // or written by this surface.
+  const [recipientName, setRecipientName] = useState(application.contactName);
+  const [recipientEmail, setRecipientEmail] = useState(application.contactEmail);
   const [emailError, setEmailError] = useState<string | null>(null);
 
   // Prefill from job description when both fields are empty. The guard
@@ -272,16 +275,16 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
 
   const persistName = () => {
     const val = recipientName.trim();
-    if (val !== (application.recipientName ?? '')) {
-      updateApplication.mutate({ id: application.id, recipientName: val });
+    if (val !== application.contactName) {
+      updateApplication.mutate({ id: application.id, contactName: val });
     }
   };
 
   const persistEmail = (value: string) => {
     const val = value.trim();
-    if (val === (application.recipientEmail ?? '')) return;
+    if (val === application.contactEmail) return;
     updateApplication.mutate(
-      { id: application.id, recipientEmail: val },
+      { id: application.id, contactEmail: val },
       {
         onSuccess: (data) => {
           if (data.error) {
@@ -351,6 +354,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             )}
           </div>
         </div>
+
+        {/* Makes the shared binding discoverable: these are the SAME two fields
+            as the Overview tab's Contact card, not an email-only copy. */}
+        <p className="text-fine-print text-foreground/45">
+          {t('applications.detail.email.recipientHint')}
+        </p>
 
         <Button
           variant="primary"
