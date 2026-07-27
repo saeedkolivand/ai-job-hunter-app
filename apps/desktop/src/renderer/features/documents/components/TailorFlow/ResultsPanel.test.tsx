@@ -2,10 +2,15 @@ import type { ComponentProps } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+import type * as AjhTranslations from '@ajh/translations';
+
 import { ResultsPanel } from './ResultsPanel';
 
-// Echo every key verbatim — no i18next runtime needed in jsdom.
-vi.mock('@ajh/translations', () => ({
+// Echo every key verbatim — no i18next runtime needed in jsdom. Only
+// `useTranslation` is replaced; every other export stays real, so adding one
+// doesn't silently break this file.
+vi.mock('@ajh/translations', async (importOriginal) => ({
+  ...(await importOriginal<typeof AjhTranslations>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 

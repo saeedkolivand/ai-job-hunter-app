@@ -928,9 +928,11 @@ describe('GenerationOutput', () => {
   // Regression guard for the "header scrolls away" bug: the viewer used to grow
   // past its host (intrinsic `min-h-[32rem]` panel + no overflow of its own), so
   // the PARENT scrolled the whole component — header included. The scroll boundary
-  // now lives on the tabpanel and every control above it is a pinned `shrink-0`
-  // sibling, i.e. OUTSIDE the scrollport. jsdom has no layout, so these assert the
-  // structural invariants that produce the behaviour, not pixels.
+  // now lives on the tabpanel: the tab/action bar is a pinned `shrink-0` sibling
+  // OUTSIDE it, while the option strips live INSIDE and scroll with the document.
+  // jsdom has no layout, so these assert the structural invariants that produce the
+  // behaviour, not pixels — the pixel measurements come from the Chromium run
+  // recorded in the handoff.
 
   describe('scroll boundary', () => {
     const SCROLLS = /overflow-(?:y-)?(?:auto|scroll)/;
@@ -956,7 +958,20 @@ describe('GenerationOutput', () => {
       expect(root).not.toBeNull();
       expect(root?.className).toContain('min-h-0');
       expect(root?.className).toContain('flex-1');
+      expect(root?.className).toContain('overflow-hidden');
       expect(root?.className).not.toMatch(/min-h-(?!0\b)/);
+    });
+
+    it('gives the document region a floor so the scrollport can actually engage', () => {
+      // Without a floor every child is flex-1/h-full, content fits the scrollport
+      // exactly and `overflow-y-auto` can never fire (measured in Chromium:
+      // scrollHeight > clientHeight was false in 10/10 window configurations).
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const region = screen.getByTestId(TEST_IDS.documents.editableOutput).parentElement;
+      expect(region).not.toBeNull();
+      expect(region?.className).toMatch(/min-h-\[\d+rem\]/);
+      expect(region?.className).toContain('flex-1');
+      expect(screen.getByRole('tabpanel').contains(region)).toBe(true);
     });
 
     it('nothing between the root and the tabpanel is a second scroll container', () => {
@@ -984,13 +999,16 @@ describe('GenerationOutput', () => {
       );
     });
 
-    it('keeps the template / accent / letter-layout strips outside the scrollport', () => {
+    it('scrolls the template / accent / letter-layout strips WITH the document', () => {
+      // Pinning these costs 214px (résumé) / 426px (cover) of permanent chrome —
+      // measured at 17px / 0px of usable document at the 1280×800 default window,
+      // with the layout picker clipped out of reach. They belong in the scrollport.
       render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
       const panel = screen.getByRole('tabpanel');
-      expect(panel.contains(screen.getByTestId(TEST_IDS.documents.templatePicker))).toBe(false);
+      expect(panel.contains(screen.getByTestId(TEST_IDS.documents.templatePicker))).toBe(true);
       expect(
         panel.contains(screen.getByTestId(`${TEST_IDS.generation.letterLayoutOption}-classic`))
-      ).toBe(false);
+      ).toBe(true);
     });
   });
 });
