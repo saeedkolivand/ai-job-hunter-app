@@ -16,6 +16,9 @@
  *  - `job.cancelled` renders the distinct "cancelled" copy, NOT ErrorState.
  *  - Stop calls jobs.cancel with the run's jobId.
  *  - Retry-from-error restarts the run and can reach `done` again.
+ *  - A COMPLETED run offers "View application", which idempotently saves the
+ *    posting and navigates to that application; a no-id/rejected save notifies
+ *    instead, and a cancelled/in-flight run never offers it at all.
  *
  * `@ajh/ui` primitives run for real (only ModalShell is simplified, dropping
  * the portal/focus-trap plumbing, but still rendering its footer) so the test
@@ -26,7 +29,7 @@ import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import type { AgentStepEvent, JobEvent, JobRecord } from '@ajh/shared';
+import type { AgentStepEvent, ApplicationTrackRequest, JobEvent, JobRecord } from '@ajh/shared';
 import type * as AjhUi from '@ajh/ui';
 
 import type { Posting } from '@/features/jobs/types';
@@ -39,10 +42,15 @@ vi.mock('@ajh/translations', () => ({
 
 // ── @ajh/ui — keep everything real, simplify only ModalShell ────────────────
 
+const notifyError = vi.fn();
+
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
   return {
     ...actual,
+    // The real hook throws outside NotificationProvider; the panel only ever
+    // uses it to surface a failed "View application".
+    useNotification: () => ({ error: notifyError, success: vi.fn() }),
     ModalShell: ({
       open,
       header,
@@ -81,6 +89,7 @@ let stubbedJobRecord: JobRecord | undefined;
 const mockRunMutateAsync = vi.fn().mockResolvedValue({ jobId: 'job-1' });
 const mockCancelMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockConfirmMutateAsync = vi.fn().mockResolvedValue({ ok: true });
+const mockSaveFromPosting = vi.fn<(req: ApplicationTrackRequest) => Promise<{ id?: string }>>();
 
 vi.mock('@/services', () => ({
   useAgentRun: () => ({ mutateAsync: mockRunMutateAsync, isPending: false }),
@@ -94,6 +103,15 @@ vi.mock('@/services', () => ({
   useJobEvents: (cb: (event: JobEvent) => void) => {
     jobEventHandler = cb;
   },
+  useSaveFromPosting: () => ({ mutateAsync: mockSaveFromPosting, isPending: false }),
+}));
+
+// ── Router — capture the navigation target of "View application" ─────────────
+
+const navigateMock = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigateMock,
 }));
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -145,6 +163,10 @@ beforeEach(() => {
   mockCancelMutateAsync.mockClear();
   mockConfirmMutateAsync.mockClear();
   mockConfirmMutateAsync.mockResolvedValue({ ok: true });
+  mockSaveFromPosting.mockReset();
+  mockSaveFromPosting.mockResolvedValue({ id: 'app-9' });
+  navigateMock.mockClear();
+  notifyError.mockClear();
   stepHandler = undefined;
   jobEventHandler = undefined;
   stubbedJobRecord = undefined;
@@ -350,6 +372,123 @@ describe('PrepApplicationPanel — useJob reconciliation fallback (no stuck spin
 
     expect(screen.getByText('jobs.prep.stopped.cancelled')).toBeInTheDocument();
     expect(screen.queryByText('jobs.prep.starting')).not.toBeInTheDocument();
+  });
+});
+
+describe('PrepApplicationPanel — view the created application', () => {
+  /** Drive a run all the way to a completed terminal state. */
+  async function completeRun(stoppedReason = 'done') {
+    openModal();
+    await clickStart();
+    act(() => {
+      stepHandler?.(
+        turnStep({ step: 5, text: 'Proposing: move to Applied.', tools: [], kind: 'proposal' })
+      );
+    });
+    act(() => {
+      jobEventHandler?.({
+        type: 'job.completed',
+        jobId: 'job-1',
+        data: { finalText: 'Proposing: move to Applied.', steps: 4, stoppedReason },
+        ts: 0,
+      });
+    });
+  }
+
+  const clickView = async () => {
+    await act(async () => {
+      fireEvent.click(screen.getByText('jobs.prep.viewApplication'));
+    });
+  };
+
+  it('saves the posting (idempotent, dedupes by jobUrl) and navigates to that application', async () => {
+    await completeRun();
+    await clickView();
+
+    // Identity fields only — enough to dedupe by jobUrl, or to create the row
+    // when it somehow doesn't exist yet.
+    expect(mockSaveFromPosting).toHaveBeenCalledWith({
+      jobUrl: POSTING.url,
+      board: POSTING.source,
+      company: POSTING.company,
+      title: POSTING.title,
+      salaryMin: undefined,
+      salaryMax: undefined,
+      salaryCurrency: undefined,
+    });
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/applications/$id',
+      params: { id: 'app-9' },
+      search: { tab: 'documents', from: 'jobs' },
+    });
+  });
+
+  it('never sends jobDescription (the merge is non-blank-wins — it would clobber user edits)', async () => {
+    await completeRun();
+    await clickView();
+
+    const req = mockSaveFromPosting.mock.calls[0]?.[0];
+    expect(req).toBeDefined();
+    expect(req).not.toHaveProperty('jobDescription');
+    // Guard against a "send it as undefined" regression that would still read
+    // as blank server-side but re-introduce the field on the wire.
+    expect(POSTING.description).toBeTruthy(); // the posting HAS one to leak
+  });
+
+  it('notifies AND keeps the modal open when navigation itself rejects', async () => {
+    navigateMock.mockRejectedValueOnce(new Error('route blew up'));
+    await completeRun();
+    await clickView();
+
+    expect(notifyError).toHaveBeenCalledWith({ message: 'jobs.prep.viewApplicationError' });
+    // Closing before the navigation lands would bin the run log and leave the
+    // user with nothing but a toast — the proposal must still be on screen.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.viewApplication')).toBeInTheDocument();
+  });
+
+  it('notifies instead of navigating when the save returns no id', async () => {
+    mockSaveFromPosting.mockResolvedValue({});
+    await completeRun();
+    await clickView();
+
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(notifyError).toHaveBeenCalledWith({ message: 'jobs.prep.viewApplicationError' });
+  });
+
+  it('notifies instead of navigating when the save rejects', async () => {
+    mockSaveFromPosting.mockRejectedValue(new Error('boom'));
+    await completeRun();
+    await clickView();
+
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(notifyError).toHaveBeenCalledWith({ message: 'jobs.prep.viewApplicationError' });
+  });
+
+  it('is not offered for a cancelled run (no result to follow through on)', async () => {
+    openModal();
+    await clickStart();
+    act(() => {
+      jobEventHandler?.({ type: 'job.cancelled', jobId: 'job-1', ts: 0 });
+    });
+
+    expect(screen.queryByText('jobs.prep.viewApplication')).not.toBeInTheDocument();
+  });
+
+  it('is not offered when a completed payload reports a cancelled stop', async () => {
+    await completeRun('cancelled');
+
+    expect(screen.queryByText('jobs.prep.viewApplication')).not.toBeInTheDocument();
+    // The run-again affordance is still there — only the follow-through is gone.
+    expect(screen.getByText('jobs.prep.runAgain')).toBeInTheDocument();
+  });
+
+  it('is not offered while the run is still in flight', async () => {
+    openModal();
+    await clickStart();
+
+    expect(screen.queryByText('jobs.prep.viewApplication')).not.toBeInTheDocument();
   });
 });
 
