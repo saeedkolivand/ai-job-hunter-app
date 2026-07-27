@@ -1834,7 +1834,7 @@
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",
     "scanning": "Boards werden durchsucht…",
-    "scanningPercent": "Wird durchsucht: {{percent}} %",
+    "scanningPercent": "Wird durchsucht: {{percent}} %",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
@@ -1973,8 +1973,7 @@
       "hideAgency": "Vermittleranzeigen ausblenden",
       "activeLabel": "Aktive Filter",
       "searchChip": "Suche: {{query}}",
-      "remove": "Filter entfernen: {{name}}",
-      "clearAll": "Filter zurücksetzen"
+      "remove": "Filter entfernen: {{name}}"
     },
     "commandBar": {
       "label": "Jobbörsen-Steuerung",

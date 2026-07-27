@@ -30,6 +30,12 @@ export interface DropdownProps {
   icon?: ReactNode;
   /** Forwarded to the trigger button so an external `<label htmlFor>` can name the control. */
   id?: string;
+  /**
+   * Accessible name for the trigger when there is no visible label. Without it
+   * the trigger's only name is the SELECTED OPTION ("Newest first"), which says
+   * nothing about what the control does.
+   */
+  'aria-label'?: string;
   /** Override auto-search detection. Defaults to true when options.length >= 8. */
   searchable?: boolean;
   /** Tailwind max-height class applied to the options list. Defaults to 'max-h-56'. */
@@ -62,6 +68,7 @@ export function Dropdown({
   size = 'md',
   tone = 'default',
   className,
+  'aria-label': ariaLabel,
 }: DropdownProps) {
   const generatedId = useId();
   const id = idProp ?? generatedId;
@@ -174,6 +181,7 @@ export function Dropdown({
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={ariaLabel}
         onClick={() => {
           if (!disabled) {
             setOpen((o) => !o);

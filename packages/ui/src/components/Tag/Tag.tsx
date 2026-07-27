@@ -147,7 +147,9 @@ function TagBase({
           type="button"
           aria-label={closeLabel}
           onClick={handleClose}
-          className="-mr-0.5 inline-flex items-center rounded opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
+          // `-m-1 p-1` grows the hit box to ~24px (WCAG 2.5.8 Target Size)
+          // around the 11px glyph without changing an inch of the layout.
+          className="-m-1 -mr-1.5 inline-flex items-center rounded p-1 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
         >
           {closeIcon ?? <X size={11} strokeWidth={2.5} />}
         </button>

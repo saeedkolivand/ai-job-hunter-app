@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { Drawer } from './Drawer';
+import { variants } from '../../lib/motion';
+import { Dropdown } from '../Dropdown';
+import { Drawer, drawerTransition, drawerVariants } from './Drawer';
 
 /** The scrim GlassOverlay renders — the only `aria-hidden` fixed sibling. */
 function backdrop(): HTMLElement {
@@ -176,5 +178,170 @@ describe('Drawer', () => {
       </Drawer>
     );
     expect(screen.getByRole('dialog', { name: 'New scrape' })).toBeInTheDocument();
+  });
+
+  it('frosts the app shell while open and clears it on close (WebView2 workaround)', () => {
+    const { rerender } = render(
+      <Drawer open={false} onClose={() => {}} ariaLabel="Filters">
+        <p>body</p>
+      </Drawer>
+    );
+    expect(document.body.classList.contains('modal-blur-active')).toBe(false);
+
+    rerender(
+      <Drawer open onClose={() => {}} ariaLabel="Filters">
+        <p>body</p>
+      </Drawer>
+    );
+    // A portaled overlay's own backdrop-filter does not composite reliably under
+    // WebView2 — without this body class the drawer's glass is a flat scrim.
+    expect(document.body.classList.contains('modal-blur-active')).toBe(true);
+
+    rerender(
+      <Drawer open={false} onClose={() => {}} ariaLabel="Filters">
+        <p>body</p>
+      </Drawer>
+    );
+    expect(document.body.classList.contains('modal-blur-active')).toBe(false);
+  });
+
+  it('falls back to returnFocusTo when closing also unmounts the opener', async () => {
+    // Models the first-run path: the empty-state CTA opens the drawer, and the
+    // drawer's own action (start a scrape) replaces that empty state — so the
+    // opener and the drawer disappear in the SAME commit.
+    function Harness() {
+      const [phase, setPhase] = useState<'idle' | 'open' | 'done'>('idle');
+      const fallback = useRef<HTMLButtonElement>(null);
+      return (
+        <>
+          <button ref={fallback}>always here</button>
+          {phase !== 'done' && <button onClick={() => setPhase('open')}>transient opener</button>}
+          <Drawer
+            open={phase === 'open'}
+            onClose={() => setPhase('done')}
+            ariaLabel="Filters"
+            returnFocusTo={fallback}
+          >
+            <button>inside</button>
+          </Drawer>
+        </>
+      );
+    }
+    render(<Harness />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'transient opener' }));
+    await userEvent.keyboard('{Escape}');
+
+    // Without the fallback focus would land on <body> — a WCAG 2.4.3 failure.
+    expect(screen.queryByRole('button', { name: 'transient opener' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'always here' }));
+  });
+
+  it('never parks focus on <body> when the opener is already gone at open time', async () => {
+    // Degenerate case: the trigger unmounts as the drawer opens, so the captured
+    // "opener" is whatever activeElement degraded to — `<body>`.
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      const fallback = useRef<HTMLButtonElement>(null);
+      return (
+        <>
+          <button ref={fallback}>always here</button>
+          {!open && <button onClick={() => setOpen(true)}>vanishing opener</button>}
+          <Drawer
+            open={open}
+            onClose={() => setOpen(false)}
+            ariaLabel="Filters"
+            returnFocusTo={fallback}
+          >
+            <button>inside</button>
+          </Drawer>
+        </>
+      );
+    }
+    render(<Harness />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'vanishing opener' }));
+    await userEvent.keyboard('{Escape}');
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'always here' }));
+  });
+
+  it('prefers the live opener over returnFocusTo when both exist', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      const fallback = useRef<HTMLButtonElement>(null);
+      return (
+        <>
+          <button ref={fallback}>fallback</button>
+          <button onClick={() => setOpen(true)}>opener</button>
+          <Drawer
+            open={open}
+            onClose={() => setOpen(false)}
+            ariaLabel="Filters"
+            returnFocusTo={fallback}
+          >
+            <button>inside</button>
+          </Drawer>
+        </>
+      );
+    }
+    render(<Harness />);
+
+    const opener = screen.getByRole('button', { name: 'opener' });
+    await userEvent.click(opener);
+    await userEvent.keyboard('{Escape}');
+
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('lets an open popover inside consume Escape instead of closing the whole drawer', async () => {
+    const onClose = vi.fn();
+    render(
+      <Drawer open onClose={onClose} ariaLabel="Filters">
+        <Dropdown
+          options={[
+            { value: 'newest', label: 'Newest' },
+            { value: 'oldest', label: 'Oldest' },
+          ]}
+          value="newest"
+          onChange={() => {}}
+          aria-label="Sort"
+        />
+      </Drawer>
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Sort' });
+    await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    // First Escape: innermost layer only.
+    await userEvent.keyboard('{Escape}');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Second Escape, popover now closed: falls through to the drawer.
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('drawerVariants / drawerTransition — reduced-motion seam', () => {
+  it('slides horizontally at rest', () => {
+    expect(drawerVariants(false)).toBe(variants.slideOverRight);
+    expect(drawerVariants(false).initial).toMatchObject({ x: '100%' });
+  });
+
+  it('drops the translate ENTIRELY under reduce — opacity only, no positional jump', () => {
+    const reduced = drawerVariants(true);
+    expect(reduced).toBe(variants.overlay);
+    for (const phase of [reduced.initial, reduced.animate, reduced.exit]) {
+      expect(phase).not.toHaveProperty('x');
+    }
+  });
+
+  it('uses a duration proportional to the travel, and zero under reduce', () => {
+    // 180ms across a full panel width reads as a snap rather than a slide.
+    expect(drawerTransition(false)).toMatchObject({ duration: 0.22 });
+    expect(drawerTransition(true)).toMatchObject({ duration: 0 });
   });
 });

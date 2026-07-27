@@ -1826,7 +1826,7 @@
         }
       }
     },
-    "scrapeJobs": "Scrape Jobs",
+    "scrapeJobs": "Scrape jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
     "scanning": "Scanning boards…",
@@ -1969,8 +1969,7 @@
       "hideAgency": "Hide agency posts",
       "activeLabel": "Active filters",
       "searchChip": "Search: {{query}}",
-      "remove": "Remove filter: {{name}}",
-      "clearAll": "Clear filters"
+      "remove": "Remove filter: {{name}}"
     },
     "commandBar": {
       "label": "Job board controls",
