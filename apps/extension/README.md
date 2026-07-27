@@ -35,6 +35,8 @@ The desktop half (bridge server, parser, Applications store) lives in `apps/desk
 5. Desktop receives frame → fetches/parses job → creates saved Application
 ```
 
+**Known limit — assisted autofill fills the TOP-LEVEL document only.** The filler is injected without `allFrames`, so a form rendered inside an `<iframe>` (a Greenhouse/Lever/Ashby form embedded on a company careers page) is not filled — open the form on the ATS's own page and fill it there. Reaching those frames is not a flag flip: they are cross-origin, so it would require `host_permissions` for every ATS origin — far beyond the `activeTab`-scoped access this extension asks for (see "Permissions — minimal & justified") — plus cross-frame merging of the fill summary. Under-filling is the intended trade.
+
 **Rate budget:** extension imports share the desktop's scrape rate budget (30 requests/min, 2 concurrent). This is the same budget as the in-app scrape commands; a rate-limited import returns an error in the popup rather than silently queuing. See `apps/desktop/src-tauri/src/limits/mod.rs` (`SCRAPE_RATE_MAX` / `SCRAPE_CONCURRENCY_MAX`) and the `handle_import` function in `apps/desktop/src-tauri/src/extension_bridge/mod.rs`.
 
 ---
