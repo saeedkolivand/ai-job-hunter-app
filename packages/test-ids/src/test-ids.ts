@@ -117,6 +117,8 @@ export const TEST_IDS = {
     thinkingBubble: 'thinking-bubble',
     stepDots: 'step-dots',
     jobAdViewTextarea: 'job-ad-view-textarea',
+    /** GenerationOutput's scrolling document region — carries the min-height floor. */
+    documentRegion: 'document-region',
   },
 
   /** Resume shared components (ResumeInputCard) */
