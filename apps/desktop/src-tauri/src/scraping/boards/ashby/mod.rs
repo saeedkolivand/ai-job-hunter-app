@@ -3,9 +3,9 @@
 //! Endpoint: `https://api.ashbyhq.com/posting-api/job-board/{company}?includeCompensation=true`
 //! No global keyword search — requires a company slug. The engine skips this
 //! board with `"needs-company"` when `input.companies` is empty.
-use super::super::http::fetch_json;
+use super::super::http::{fetch_json, FetchOptions};
 use super::super::types::{BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode};
-use super::common::{ats_all_fetches_failed, normalize_companies};
+use super::common::{ats_all_fetches_failed, ats_failed_fetches_note, normalize_companies};
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -43,6 +43,37 @@ struct AshbyResponse {
 /// Prevents an unbounded number of outbound requests from a large IPC payload.
 const MAX_COMPANIES: usize = 50;
 
+/// Production Ashby API host. Factored into a constant (rather than inlined)
+/// purely so tests can drive [`AshbyScraper::search_with_base`] against a local
+/// `wiremock` base instead — mirrors Lever's `LEVER_BASE_URL`.
+const ASHBY_BASE_URL: &str = "https://api.ashbyhq.com";
+
+/// Fetch ONE company's whole board. Split out of the search loop so the
+/// per-company request — including the raised byte cap — is drivable against a
+/// mock host, which is what makes the partial-failure note testable without the
+/// live API.
+async fn fetch_ashby_company(
+    base_url: &str,
+    company: &str,
+    signal: tokio_util::sync::CancellationToken,
+) -> crate::error::AppResult<AshbyResponse> {
+    let url = format!(
+        "{base_url}/posting-api/job-board/{}?includeCompensation=true",
+        urlencoding::encode(company)
+    );
+
+    let opts = FetchOptions {
+        // One Ashby call returns a company's WHOLE board, so a large employer's
+        // payload can exceed the 8 MB default guard (observed: openai →
+        // "Response too large", i.e. a silently dropped company). Raise the
+        // per-request cap only here.
+        max_bytes: Some(16 * 1024 * 1024),
+        ..Default::default()
+    };
+
+    fetch_json::<AshbyResponse>(&url, opts, signal).await
+}
+
 pub struct AshbyScraper;
 
 #[async_trait]
@@ -68,6 +99,20 @@ impl Scraper for AshbyScraper {
         input: BoardSearchInput,
         ctx: ScrapeContext,
     ) -> anyhow::Result<Vec<JobPosting>> {
+        self.search_with_base(ASHBY_BASE_URL, input, ctx).await
+    }
+}
+
+impl AshbyScraper {
+    /// The real search loop, parameterized by API base URL so tests can point it
+    /// at a mock server ([`fetch_ashby_company`]). `search` supplies
+    /// [`ASHBY_BASE_URL`]; nothing else calls this.
+    async fn search_with_base(
+        &self,
+        base_url: &str,
+        input: BoardSearchInput,
+        ctx: ScrapeContext,
+    ) -> anyhow::Result<Vec<JobPosting>> {
         // Engine skips us when companies is empty; guard defensively anyway.
         if input.companies.is_empty() {
             return Ok(vec![]);
@@ -82,6 +127,7 @@ impl Scraper for AshbyScraper {
         let total = companies.len();
 
         let mut successful_fetches = 0usize;
+        let mut failed_fetches = 0usize;
         let mut first_fetch_error: Option<String> = None;
 
         for (i, company) in companies.iter().enumerate() {
@@ -89,30 +135,23 @@ impl Scraper for AshbyScraper {
                 break;
             }
 
-            let url = format!(
-                "https://api.ashbyhq.com/posting-api/job-board/{}?includeCompensation=true",
-                urlencoding::encode(company)
-            );
-
-            let data =
-                match fetch_json::<AshbyResponse>(&url, Default::default(), ctx.signal.clone())
-                    .await
-                {
-                    Ok(d) => d,
-                    Err(e) => {
-                        // Check cancellation first: a fetch that failed because
-                        // the run was cancelled is not a real board-level error.
-                        if ctx.signal.is_cancelled() {
-                            break;
-                        }
-                        log::warn!("[ashby] fetch failed for '{}': {e}", company);
-                        first_fetch_error.get_or_insert_with(|| e.to_string());
-                        if let Some(ref on_progress) = ctx.on_progress {
-                            on_progress((i + 1) as f32 / total as f32);
-                        }
-                        continue;
+            let data = match fetch_ashby_company(base_url, company, ctx.signal.clone()).await {
+                Ok(d) => d,
+                Err(e) => {
+                    // Check cancellation first: a fetch that failed because
+                    // the run was cancelled is not a real board-level error.
+                    if ctx.signal.is_cancelled() {
+                        break;
                     }
-                };
+                    log::warn!("[ashby] fetch failed for '{}': {e}", company);
+                    failed_fetches += 1;
+                    first_fetch_error.get_or_insert_with(|| e.to_string());
+                    if let Some(ref on_progress) = ctx.on_progress {
+                        on_progress((i + 1) as f32 / total as f32);
+                    }
+                    continue;
+                }
+            };
 
             // A non-2xx / schema-drift response is now an `Err` above (which records
             // `first_fetch_error`), so reaching here means a real success — count it.
@@ -156,6 +195,16 @@ impl Scraper for AshbyScraper {
             if let Some(ref on_progress) = ctx.on_progress {
                 on_progress((i + 1) as f32 / total as f32);
             }
+        }
+
+        // A PARTIAL run (some companies fetched, some failed) still returns Ok, so
+        // the failures would otherwise be log-only — surface the count as ONE
+        // informational note. NOT gated on cancellation, for the reason spelled
+        // out in `lever`'s copy: the engine cancels `ctx.signal` as soon as the
+        // central `amount` cap fills, and `failed_fetches` only counts
+        // non-cancellation errors anyway.
+        if let Some(note) = ats_failed_fetches_note(successful_fetches, failed_fetches) {
+            ctx.report_note(note);
         }
 
         // Return Err only when every attempt failed — see `ats_all_fetches_failed`.
