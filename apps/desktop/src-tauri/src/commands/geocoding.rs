@@ -116,6 +116,71 @@ pub(crate) async fn suggest(query: &str) -> Vec<Value> {
         .collect()
 }
 
+/// Whether `location` is non-empty after trimming — the only precondition for
+/// attempting a geocode lookup. Pure (no network) so it's unit-tested directly.
+fn should_derive_country_code(location: Option<&str>) -> bool {
+    location.map(str::trim).is_some_and(|s| !s.is_empty())
+}
+
+/// Pick a country code out of the geocode service's ranked suggestions: the
+/// first hit that actually CARRIES a VALID one wins (not just the first hit —
+/// an earlier suggestion with an absent/null/malformed `countryCode` must not
+/// block a usable later one), lower-cased to match
+/// `BoardSearchInput::country_code`'s convention. Each candidate is validated
+/// against the SAME 2-ASCII-letter shape `AutopilotTargetSchema.countryCode`
+/// enforces (`^[A-Za-z]{2}$`) — a geocoded value written server-side bypasses
+/// the IPC schema, so a `"USA"` / `"1a"`-style value is skipped, not accepted.
+/// Pure — no network — so this is unit-tested directly; the HTTP round trip
+/// inside [`suggest`] is not (no fixture for it).
+fn country_code_from_suggestions(suggestions: &[Value]) -> Option<String> {
+    suggestions
+        .iter()
+        .find_map(|s| {
+            s.get("countryCode")
+                .and_then(|v| v.as_str())
+                .filter(|cc| cc.len() == 2 && cc.bytes().all(|b| b.is_ascii_alphabetic()))
+        })
+        .map(str::to_lowercase)
+}
+
+/// Cap a server-side backfill lookup tighter than [`suggest`]'s own 5s reqwest
+/// timeout: that 5s is SHARED with the interactive `geocode_suggest` picker
+/// (where the user is waiting on the result and a longer wait is acceptable), so
+/// it can't be lowered there. On a backfill path this lookup is best-effort — an
+/// autopilot save / a scrape run should not stall for up to 5s on a slow
+/// geocode. On timeout we fall through to no suggestion (`None`), and the
+/// aggregator's guessed-market guard still covers the residual case.
+const BACKFILL_GEOCODE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Best-effort: when a search target has a real `location` but no
+/// `country_code` (a prefilled or typed-freehand location that never went
+/// through the picker — the aggregator zero-jobs bug), look one up via the SAME
+/// geocode service the manual picker uses and return it for backfill.
+///
+/// Shared by both entry points that can receive a location without a picked
+/// suggestion: autopilot save (`commands::autopilot`) and manual board scrape
+/// (`commands::scrape`). Without it the aggregator hardcodes a `'de'` market
+/// guess AND suppresses its sparse-city broadening, so e.g. a typed "Germany"
+/// or "Amsterdam" search silently under-returns.
+///
+/// Never blocks or fails the caller: a network error / no match / timeout just
+/// leaves `country_code` absent, exactly as it would without this fix — the
+/// aggregator's own guessed-market guard (`scraping::boards::aggregator`)
+/// covers that residual case too.
+pub(crate) async fn derive_country_code(location: Option<&str>) -> Option<String> {
+    if !should_derive_country_code(location) {
+        return None;
+    }
+    // Safe: `should_derive_country_code` just proved this is `Some`.
+    let location = location.unwrap_or_default().trim();
+    // Cap the lookup at BACKFILL_GEOCODE_TIMEOUT (see const above): a timeout
+    // yields an empty Vec -> None (best-effort), never a stalled caller.
+    let suggestions = tokio::time::timeout(BACKFILL_GEOCODE_TIMEOUT, suggest(location))
+        .await
+        .unwrap_or_default();
+    country_code_from_suggestions(&suggestions)
+}
+
 #[tauri::command]
 pub async fn geocode_suggest(query: String) -> Value {
     json!(suggest(&query).await)

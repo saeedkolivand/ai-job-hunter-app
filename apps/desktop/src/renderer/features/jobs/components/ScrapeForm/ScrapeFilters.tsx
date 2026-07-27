@@ -32,7 +32,22 @@ export function ScrapeFilters({ form, scraping, boardConnected, onFormChange, on
         <label className={LABEL}>{t('jobs.location')}</label>
         <LocationInput
           value={form.location}
-          onChange={(v) => onFormChange({ location: v })}
+          // Freehand typing invalidates the previously PICKED suggestion, so drop
+          // the whole structured payload it captured. `countryCode` is the part
+          // that changes behavior today: a stale one searches the old market AND
+          // suppresses the backend's geocode backfill (which only runs when it is
+          // absent). lat/lon go with it for consistency — no board consumes them
+          // yet, but they ride into the same `LocationSpec`, and coordinates from
+          // a city the user just typed away from would make that spec incoherent.
+          // Mirrors autopilot's StepTarget.
+          onChange={(v) =>
+            onFormChange({
+              location: v,
+              countryCode: undefined,
+              latitude: undefined,
+              longitude: undefined,
+            })
+          }
           onSelectSuggestion={(s) =>
             onFormChange({
               location: s.display,
