@@ -21,7 +21,13 @@ export interface LocationInputProps {
   className?: string;
   /** Forwarded to the trigger button so an external `<label htmlFor>` resolves. */
   id?: string;
-  onFetchSuggestions?: (query: string) => Promise<Suggestion[]>;
+  /**
+   * Required: this package ships no built-in geocoder. Callers pass their own
+   * lookup (the desktop app passes the `geocode_suggest` Tauri command), so a
+   * consumer can never accidentally emit browser-side traffic to a third-party
+   * geocoding service just by omitting a prop.
+   */
+  onFetchSuggestions: (query: string) => Promise<Suggestion[]>;
   /**
    * Fires when a value is committed (suggestion picked, custom text, or cleared)
    * with the full structured suggestion — lets callers capture country/coords

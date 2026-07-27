@@ -8,13 +8,23 @@ and no network call happens for a query the index can answer.
 | File            | Rows | Source                     | Columns                                                       |
 | --------------- | ---- | -------------------------- | ------------------------------------------------------------- |
 | `cities.tsv.gz` | ~34k | GeoNames `cities15000`     | `name · asciiname · cc · lat · lon · population · alternates` |
-| `countries.tsv` | ~250 | GeoNames `countryInfo.txt` | `cc · English name · population`                              |
+| `countries.tsv` | ~250 | GeoNames `countryInfo.txt` | `cc · ISO3 · English name · population`                       |
 
 `cities15000` is every city with a population over 15 000 plus every capital.
 `asciiname` is stored empty when it equals `name`; `alternates` is a `|`-joined
 list of the Latin-script alternate spellings (`München`, `Praha`, `Wien`) — the
 non-Latin aliases are dropped, which is what keeps the gzipped asset at ~1.6 MB
 instead of ~4 MB.
+
+ISO3 rides along so a typed country **code** (`usa`, `deu`) resolves exactly
+instead of prefix-matching an unrelated city (`usa` used to return Uşak, TR).
+Codes are matched exact-only. The small curated endonym table (`deutschland`,
+`schweiz`, …) deliberately lives in `src/commands/geocoding/geonames.rs`, not in
+the asset, so regenerating from upstream never wipes it.
+
+**Runtime cost:** the index is built once on first use and then retains
+**~10–12 MB** for the life of the process (folded search keys + display names);
+~60–78 ms to build and ~7–11 ms per query on a release build.
 
 ## License / attribution — required in distributed builds
 

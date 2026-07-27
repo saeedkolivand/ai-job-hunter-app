@@ -2,14 +2,17 @@
 //!
 //! Everything here is hermetic: the index tests run against the **real bundled
 //! asset** (that is the point — a silently-empty or mis-parsed asset must fail
-//! the build, not degrade the picker), and the fallback tests feed canned
-//! Photon GeoJSON to the pure mapper. No test touches the network.
+//! the build, not degrade the picker), the fallback mapper is fed canned Photon
+//! GeoJSON, and the two request-shape tests drive a local `wiremock` server.
+//! No test reaches the live network.
+
+use std::time::Duration;
 
 use serde_json::{json, Value};
 
 use super::{
-    dedupe_by_display, geonames, photon_suggestions, should_try_online, suggest, to_city_country,
-    MAX_SUGGESTIONS,
+    before_comma, dedupe_by_display, geonames, photon_at, photon_suggestions, should_try_online,
+    suggest, to_city_country, MAX_ONLINE_QUERY_BYTES, MAX_SUGGESTIONS,
 };
 
 // ---------------------------------------------------------------------------
@@ -39,7 +42,18 @@ fn displays(results: &[Value]) -> Vec<&str> {
 }
 
 fn search(query: &str) -> Vec<Value> {
+    geonames::search(query, MAX_SUGGESTIONS).suggestions
+}
+
+/// Offline lookup including the match-quality flag the online fallback gates on.
+fn search_hits(query: &str) -> geonames::Hits {
     geonames::search(query, MAX_SUGGESTIONS)
+}
+
+/// The country code of the first suggestion — what `commands::autopilot`'s
+/// `country_code_from_suggestions` actually persists.
+fn first_country_code(results: &[Value]) -> Option<&str> {
+    results.first().and_then(country_code)
 }
 
 // ===========================================================================
@@ -178,6 +192,128 @@ fn country_name_query_returns_a_country_level_suggestion() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Country CODES and endonyms — the prefix-accident regressions.
+//
+// Before ISO codes and the alias table, each of these prefix-matched an
+// unrelated city with five confident-looking rows: `usa`/`us` → Uşak, TR ·
+// `uk` → Ukraine · `de` → DR Congo · `gb` → Gboko, NG · `schweiz` →
+// Schweizer-Reneke, ZA. `commands::autopilot` persists suggestion[0]'s country
+// code, so "Schweiz" used to save `za` — a live Adzuna market, i.e. a silent
+// switch to South African jobs.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn iso2_and_iso3_country_codes_resolve_to_their_country() {
+    for (query, expected) in [
+        ("us", "US"),
+        ("usa", "US"),
+        ("de", "DE"),
+        ("deu", "DE"),
+        ("gb", "GB"),
+        ("gbr", "GB"),
+        ("ch", "CH"),
+        ("che", "CH"),
+    ] {
+        let results = search(query);
+        assert_eq!(
+            first_country_code(&results),
+            Some(expected),
+            "query {query:?} must resolve to {expected}, got {:?}",
+            displays(&results)
+        );
+        assert!(
+            search_hits(query).exact,
+            "a typed country code is an exact hit, not a guess ({query})"
+        );
+    }
+}
+
+#[test]
+fn country_codes_are_matched_exactly_never_as_a_prefix() {
+    // If codes were prefix-matched, every one-letter query would resolve to a
+    // pile of countries and "u" would outrank every city on earth.
+    let results = search("u");
+    assert!(
+        !results.is_empty(),
+        "a one-letter query still returns city prefixes"
+    );
+    assert!(
+        !search_hits("u").exact,
+        "one letter must never be an exact country-code hit"
+    );
+}
+
+#[test]
+fn curated_endonyms_resolve_to_the_right_country() {
+    for (query, expected) in [
+        ("deutschland", "DE"),
+        ("österreich", "AT"),
+        ("oesterreich", "AT"),
+        ("schweiz", "CH"),
+        ("suisse", "CH"),
+        ("svizzera", "CH"),
+        ("frankreich", "FR"),
+        ("uk", "GB"),
+        ("españa", "ES"),
+        ("espana", "ES"),
+        ("nederland", "NL"),
+        ("polska", "PL"),
+    ] {
+        let results = search(query);
+        assert_eq!(
+            first_country_code(&results),
+            Some(expected),
+            "endonym {query:?} must resolve to {expected}, got {:?}",
+            displays(&results)
+        );
+    }
+}
+
+#[test]
+fn schweiz_never_persists_south_africa() {
+    // The exact failure the alias table + quality gate exist to prevent.
+    let results = search("schweiz");
+    assert_ne!(
+        first_country_code(&results),
+        Some("ZA"),
+        "Schweizer-Reneke, ZA must never be the answer for 'Schweiz': {:?}",
+        displays(&results)
+    );
+    assert_eq!(first_country_code(&results), Some("CH"));
+}
+
+#[test]
+fn an_unlisted_endonym_is_reported_as_inexact_so_photon_can_answer() {
+    // The alias table is deliberately tiny; anything outside it must NOT be
+    // guessed from a prefix accident — it must be flagged inexact so
+    // `suggest` consults Photon instead of persisting a wrong country.
+    for query in ["belgique", "sverige", "danmark"] {
+        assert!(
+            !search_hits(query).exact,
+            "{query} is not an index key — it must not claim an exact match"
+        );
+        assert!(
+            should_try_online(query, !search(query).is_empty()),
+            "{query} must be allowed to reach Photon"
+        );
+    }
+}
+
+#[test]
+fn alias_keys_are_stored_pre_folded() {
+    // Matching happens on folded queries, so an alias written with an umlaut
+    // ("österreich") would silently never match. Pin the invariant.
+    for (alias, cc) in geonames::aliases() {
+        assert_eq!(
+            &crate::scraping::cluster::normalize::fold(alias),
+            alias,
+            "alias {alias:?} (for {cc}) must already be in folded form"
+        );
+        assert_eq!(cc.len(), 2, "alias target must be an ISO-2 code");
+    }
+}
+
 #[test]
 fn full_country_name_outranks_every_city() {
     // "Luxembourg" is both a country and a city; the exact-country tier wins.
@@ -243,11 +379,45 @@ fn no_match_returns_nothing() {
 
 #[tokio::test]
 async fn suggest_answers_from_the_offline_index() {
-    // No network in tests: this passing at all proves the bundled index (not
-    // Photon) served it.
+    // An exact offline hit must be returned verbatim — byte-equal to what the
+    // index produced, which is only possible if the online branch never ran.
     let results = suggest("berlin").await;
     assert_eq!(display(&results[0]), "Berlin, Germany");
     assert!(results.len() <= MAX_SUGGESTIONS);
+    assert_eq!(
+        results,
+        search("berlin"),
+        "an exact offline hit must be served as-is, with no network round trip"
+    );
+}
+
+#[tokio::test]
+async fn suggest_reresolves_the_label_it_wrote_back_offline() {
+    // The picker writes "City, Country" into the field, so the NEXT open queries
+    // that whole string — which matches no single index key. Without the
+    // before-comma retry every re-open would be a Photon request.
+    for query in ["Berlin, Germany", "Munich, Germany", "Vienna, Austria"] {
+        let hits = search_hits(query);
+        assert!(
+            !hits.exact,
+            "precondition: the full label is not itself an index key ({query})"
+        );
+
+        let results = suggest(query).await;
+        assert_eq!(
+            display(&results[0]),
+            query,
+            "re-opening the picker must resolve its own label offline"
+        );
+    }
+}
+
+#[test]
+fn before_comma_takes_the_city_half_only_when_there_is_one() {
+    assert_eq!(before_comma("Berlin, Germany"), Some("Berlin"));
+    assert_eq!(before_comma("Berlin,Germany"), Some("Berlin"));
+    assert_eq!(before_comma("Berlin"), None, "no comma → nothing to retry");
+    assert_eq!(before_comma(", Germany"), None, "empty head → nothing");
 }
 
 #[tokio::test]
@@ -259,12 +429,37 @@ async fn suggest_empty_query_never_looks_anything_up() {
 #[test]
 fn short_queries_never_reach_the_network() {
     // Fair use: an offline miss on a half-typed word must not fire a request at
-    // the free community endpoint.
-    assert!(!should_try_online("b"));
-    assert!(!should_try_online("zx"));
+    // the free community endpoint. `weak = false` is the zero-hit case.
+    assert!(!should_try_online("b", false));
+    assert!(!should_try_online("zx", false));
     // Counted in chars, not bytes — "köl" is 3 chars but 4 bytes.
-    assert!(should_try_online("köl"));
-    assert!(should_try_online("berlin"));
+    assert!(should_try_online("köl", false));
+    assert!(should_try_online("berlin", false));
+}
+
+#[test]
+fn an_inexact_hit_raises_the_online_floor_instead_of_vetoing_it() {
+    // weak = the index returned rows but matched nothing exactly. Mid-typing
+    // ("ber" → Berlin) must stay offline; a settled word that only prefix-
+    // matched ("schweiz" → Schweizer-Reneke) must be allowed to ask Photon.
+    assert!(!should_try_online("ber", true), "mid-typing stays offline");
+    assert!(
+        !should_try_online("berli", true),
+        "mid-typing stays offline"
+    );
+    assert!(should_try_online("schweiz", true));
+    assert!(should_try_online("amsterda", true));
+}
+
+#[test]
+fn an_absurdly_long_query_is_never_sent_to_a_third_party() {
+    let long = "a".repeat(MAX_ONLINE_QUERY_BYTES + 1);
+    assert!(!should_try_online(&long, false));
+    assert!(!should_try_online(&long, true));
+    assert!(
+        should_try_online(&"a".repeat(MAX_ONLINE_QUERY_BYTES), false),
+        "the limit itself is still allowed"
+    );
 }
 
 // ===========================================================================
@@ -479,6 +674,91 @@ fn photon_malformed_body_degrades_to_no_suggestions() {
             "malformed body must degrade to empty, not panic: {body}"
         );
     }
+}
+
+// ===========================================================================
+// 9. The real request path — local mock server, never the live endpoint
+// ===========================================================================
+
+#[tokio::test]
+async fn photon_request_carries_the_agreed_url_shape_and_user_agent() {
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // Every matcher below is part of the assertion: a mismatch makes wiremock
+    // answer 404, the body fails to map, and the suggestion list comes back
+    // empty — so a green assert proves the URL shape AND the UA header.
+    Mock::given(method("GET"))
+        .and(path("/api/"))
+        .and(query_param("q", "berlin brandenburg"))
+        .and(query_param("limit", "10"))
+        .and(query_param("lang", "en"))
+        .and(header("user-agent", "ai-job-hunter/1.0"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "features": [city("Berlin")] })),
+        )
+        .mount(&server)
+        .await;
+
+    let results = photon_at(
+        &format!("{}/api/", server.uri()),
+        "berlin brandenburg",
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(displays(&results), vec!["Berlin, Germany"]);
+}
+
+#[tokio::test]
+async fn photon_timeout_degrades_to_no_suggestions() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_millis(600))
+                .set_body_json(json!({ "features": [city("Berlin")] })),
+        )
+        .mount(&server)
+        .await;
+    let endpoint = format!("{}/api/", server.uri());
+
+    // Same server, same delay — only the timeout differs. The generous run
+    // proves the response itself is fine, so the tight run's empty result can
+    // only be the timeout being applied to the request.
+    let patient = photon_at(&endpoint, "berlin", Duration::from_secs(5)).await;
+    assert_eq!(displays(&patient), vec!["Berlin, Germany"]);
+
+    let impatient = photon_at(&endpoint, "berlin", Duration::from_millis(50)).await;
+    assert!(
+        impatient.is_empty(),
+        "a timed-out lookup degrades to no suggestions, got {:?}",
+        displays(&impatient)
+    );
+}
+
+#[tokio::test]
+async fn photon_non_json_body_degrades_to_no_suggestions() {
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("<html>rate limited</html>"))
+        .mount(&server)
+        .await;
+
+    let results = photon_at(
+        &format!("{}/api/", server.uri()),
+        "berlin",
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(results.is_empty(), "a 503 HTML page must not panic or leak");
 }
 
 #[test]

@@ -126,15 +126,19 @@ function buildCountries(text) {
   const rows = [];
   for (const line of text.split('\n')) {
     if (!line || line.startsWith('#')) continue;
-    // countryInfo columns: 0 ISO · 4 Country name (English) · 7 Population.
-    // Population is what lets a country and a city compete in the same ranking
-    // tier ("ber" → Berlin before Bermuda) instead of countries always winning.
+    // countryInfo columns: 0 ISO · 1 ISO3 · 4 Country name (English) · 7 Population.
+    // ISO3 rides along so the runtime can resolve a typed country CODE
+    // ("usa", "deu") exactly, instead of letting it prefix-match an unrelated
+    // city ("usa" → Uşak, TR). Population is what lets a country and a city
+    // compete in the same ranking tier ("ber" → Berlin before Bermuda) instead
+    // of countries always winning.
     const c = line.split('\t');
     const cc = (c[0] ?? '').trim().toUpperCase();
+    const iso3 = (c[1] ?? '').trim().toUpperCase();
     const name = (c[4] ?? '').trim();
     const population = Number.parseInt(c[7] ?? '0', 10) || 0;
     if (cc.length !== 2 || !name) continue;
-    rows.push(`${cc}\t${name}\t${population}`);
+    rows.push(`${cc}\t${iso3}\t${name}\t${population}`);
   }
   rows.sort();
   return rows;

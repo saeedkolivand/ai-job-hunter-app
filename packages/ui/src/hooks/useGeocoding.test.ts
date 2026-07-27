@@ -90,127 +90,24 @@ describe('useGeocoding', () => {
     expect(result.current.suggestions).toEqual([]);
   });
 
-  it('uses the default Nominatim fetch and parses the address shape', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [
-          { address: { city: 'Paris', state: 'Île-de-France', country: 'France' } },
-          { address: { town: 'Lyon', country: 'France' } },
-          { addresstype: 'country', address: { country: 'France' } },
-          { addresstype: 'road', address: { road: 'Rue de Rivoli', country: 'France' } }, // skipped — no city/town/village, not a country
-          { address: {} }, // skipped — no city/town/village
-        ],
-      })
-    );
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
-      initialProps: { q: '' },
-    });
-    rerender({ q: 'France' });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-    expect(result.current.suggestions).toEqual([
-      { display: 'Paris, France' },
-      { display: 'Lyon, France' },
-      { display: 'France' },
-    ]);
-  });
+  it('never fetches on its own — the hook has no built-in geocoder', async () => {
+    // Regression pin for the retired `defaultFetch`: the hook used to call
+    // Nominatim directly when no fetcher was passed, which shipped live in the
+    // published Storybook. `onFetchSuggestions` is now required, so the only
+    // traffic is the caller's — asserted here by proving `fetch` is untouched.
+    const globalFetch = vi.fn();
+    vi.stubGlobal('fetch', globalFetch);
+    const fetcher = vi.fn().mockResolvedValue([{ display: 'Berlin, Germany' }]);
 
-  it('returns no suggestions when the default fetch fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
+    const { rerender } = renderHook(({ q }) => useGeocoding(q, fetcher), {
       initialProps: { q: '' },
     });
-    rerender({ q: 'Nowhere' });
+    rerender({ q: 'Berlin' });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(350);
     });
-    expect(result.current.suggestions).toEqual([]);
-  });
 
-  it('resolves city from municipality when city/town/village absent', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [{ address: { municipality: 'Espoo', country: 'Finland' } }],
-      })
-    );
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
-      initialProps: { q: '' },
-    });
-    rerender({ q: 'Espoo' });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-    expect(result.current.suggestions).toEqual([{ display: 'Espoo, Finland' }]);
-  });
-
-  it('resolves city from hamlet when city/town/village/municipality absent', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [{ address: { hamlet: 'Little Snoring', country: 'United Kingdom' } }],
-      })
-    );
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
-      initialProps: { q: '' },
-    });
-    rerender({ q: 'Little Snoring' });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-    expect(result.current.suggestions).toEqual([{ display: 'Little Snoring, United Kingdom' }]);
-  });
-
-  it('deduplicates country-level results — two identical country entries produce one suggestion', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [
-          { addresstype: 'country', address: { country: 'France' } },
-          { addresstype: 'country', address: { country: 'France' } },
-        ],
-      })
-    );
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
-      initialProps: { q: '' },
-    });
-    rerender({ q: 'France' });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-    expect(result.current.suggestions).toHaveLength(1);
-    expect(result.current.suggestions).toEqual([{ display: 'France' }]);
-  });
-
-  it('skips road/POI results and does not include road names in any suggestion display', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [
-          { address: { city: 'Paris', country: 'France' } },
-          { addresstype: 'road', address: { road: 'Rue de Rivoli', country: 'France' } },
-          { address: {} },
-        ],
-      })
-    );
-    const { result, rerender } = renderHook(({ q }) => useGeocoding(q), {
-      initialProps: { q: '' },
-    });
-    rerender({ q: 'Rivoli' });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(350);
-    });
-    expect(result.current.suggestions).toHaveLength(1);
-    expect(result.current.suggestions).toEqual([{ display: 'Paris, France' }]);
-    for (const s of result.current.suggestions) {
-      expect(s.display).not.toContain('Rue de Rivoli');
-    }
+    expect(fetcher).toHaveBeenCalledWith('Berlin');
+    expect(globalFetch).not.toHaveBeenCalled();
   });
 });
