@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784807654161,
+  "lastUpdate": 1785192739012,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5579,6 +5579,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293703,
             "range": "± 2009",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "95a0656baecf8b0f05f4c5333dcc3962303af085",
+          "message": "fix: scraping response caps, country backfill, jobicy label (#884)\n\n* fix: raise lever/ashby response cap and backfill scrape country code\n\nFour scrape-trust fixes:\n\n- Lever/Ashby fetch a company's WHOLE board in one call, so a large employer\n  (veeva, openai) tripped the shared 8 MB guard and the company was dropped\n  silently. Raise max_bytes to 16 MB for these two boards only, following the\n  germantechjobs precedent.\n- Per-company ATS fetch failures were invisible whenever a sibling company\n  succeeded (the run still returns Ok). Lever/Ashby now count them and emit the\n  new companies-failed:<n> note via ctx.report_note; BoardSummaryChips maps it\n  to a localized chip (en/de).\n- Manual scrape passed req.country_code straight through, so a typed-freehand\n  location arrived with none and the aggregator hardcoded a 'de' guess and\n  suppressed broadening. derive_country_code moves from commands::autopilot to\n  commands::geocoding (next to suggest) and now also runs on the scrape path,\n  inside the spawned task so the command still returns its jobId immediately.\n- ScrapeFilters kept a stale picked countryCode/lat/lon when the location was\n  typed over; clear them on freehand input, mirroring autopilot's StepTarget.\n- Add the missing jobs.boards.jobicy label (en/de) and defaultValue fallbacks\n  at the four bare board-label call sites.\n\n* fix: close the lost-cancel window on the scrape geocode backfill\n\nReview fixes from the scraping-applier audit:\n\n- HIGH: a jobs_cancel landing during the awaited geocode backfill was silently\n  discarded — ScraperEngine::cancel removes the job slot before cancelling it,\n  so the later scrape_boards found no pre-registered token and minted a fresh,\n  un-cancelled one; the abandoned run then scraped on and its first streamed\n  item cleared the cache the user's new search was filling. Register a clone of\n  the token, race the backfill against it with a biased tokio::select!, and\n  return without starting the scrape when it is already cancelled. Engine\n  contract test pins the mint-fresh behavior the guard exists for.\n- Drop the non-cancellation gate on the new companies-failed note in lever and\n  ashby: the engine cancels ctx.signal the moment the central amount cap fills,\n  which is exactly when a long seeded company list has failures worth showing.\n  failed_fetches only ever counts non-cancellation errors, so the count is\n  honest without the gate.\n- Extract LEVER_BASE_URL + fetch_lever_company and a base-parameterized search\n  loop (the aggregator's JOOBLE_BASE_URL pattern) so the note wiring is covered\n  by two wiremock tests: 200-then-404 yields companies-failed:1 with the good\n  company's postings kept, and an all-success run emits no note.\n- Document companies-failed:<n> in the BoardScrapeSummary note vocabulary and\n  amend the at-most-one-of sentence it invalidated.\n- ScrapeFilters test: the LocationInput stub now fires onChange then\n  onSelectSuggestion in the real order and the pick assertion reads the last\n  call, so a clear-after-pick regression can actually fail it.\n- Correct the lat/lon clearing rationale: no board consumes the coordinates\n  today; they ride into LocationSpec and countryCode is what changes behavior.\n\n* fix: cancel scrape jobs in place so a pre-run stop is never lost\n\nRoot fix for the lost-cancel window plus the PR review follow-ups:\n\n- ScraperEngine::cancel now cancels the job slot in place instead of removing\n  it. Removing it meant a run reaching the engine after the cancel found no\n  slot and minted a fresh, un-cancelled token — the window spans the caller's\n  pre-scrape work AND the engine's own semaphore wait, so the abandoned run\n  could scrape on and clobber the search the user started instead. Verified no\n  leak first: every owner (commands::scrape both exits, autopilot_run's\n  scrape-Err, cancelled and success paths) already unregisters, and an\n  engine-minted slot is removed by the we_minted branch.\n- Replace the tautological map-bookkeeping test with a real one: cancel, then\n  run scrape_boards_with_resolver against FakeScraper and assert zero items\n  streamed and Err(\"scrape cancelled\"). Add an idempotent-cancel companion\n  pinning the slot-survives invariant the no-leak argument rests on.\n- Extract backfill_country_code(token, input) -> bool with an injected-lookup\n  seam, and unit-test all four cases against hung/instant/never-polled futures\n  (no network, no AppHandle): pre-cancelled never polls the lookup, a cancel\n  during the lookup wins immediately, a resolved lookup fills the country, and\n  a picked country is never clobbered. Comment now states honestly that the\n  command layer narrows the window and the engine layer closes it.\n- Ashby parity with lever: ASHBY_BASE_URL + fetch_ashby_company + a\n  base-parameterized search loop, with the same two wiremock tests\n  (partial failure yields companies-failed:1 and keeps the good company's\n  postings; a clean run emits no note).\n- JobsPage: functional setScrapeForm update so two changes dispatched in one\n  tick can't drop the first.",
+          "timestamp": "2026-07-28T00:31:15+02:00",
+          "tree_id": "9c57874ce6536a30f9d158acea9251a1bf9a58fd",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/95a0656baecf8b0f05f4c5333dcc3962303af085"
+        },
+        "date": 1785192737897,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2155166,
+            "range": "± 68469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2641056,
+            "range": "± 50287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 319309,
+            "range": "± 8889",
             "unit": "ns/iter"
           }
         ]

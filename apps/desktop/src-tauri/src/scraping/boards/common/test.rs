@@ -211,6 +211,45 @@ fn partial_note_clean_run_returns_none() {
     assert!(ats_partial_note(5, 0, 0).is_none());
 }
 
+// ── ats_failed_fetches_note (partial per-company fetch failures) ─────────────
+//
+// The gap this closes: a Lever/Ashby run where SOME companies failed (404 on a
+// rotted slug, 403, 429, a payload over the byte cap) but at least one sibling
+// succeeded returns `Ok` — so the failures were log-only and the run looked
+// complete to the user.
+
+/// SOME companies failed while ≥1 succeeded → `companies-failed:<n>` where `n`
+/// is the FAILED count (not the success count) — that is the number the chip
+/// shows, so getting it backwards would understate a mostly-broken run.
+#[test]
+fn failed_fetches_note_partial_run_reports_failed_count() {
+    assert_eq!(
+        ats_failed_fetches_note(3, 7).as_deref(),
+        Some("companies-failed:7"),
+        "a partial run must surface the FAILED company count, not the successful one",
+    );
+}
+
+/// Zero failures → no note (a clean run must stay chip-free / plain success).
+#[test]
+fn failed_fetches_note_clean_run_returns_none() {
+    assert!(ats_failed_fetches_note(5, 0).is_none());
+}
+
+/// Zero successes → `None` even with failures recorded: an all-fail run is a
+/// whole-board FAILURE (`ats_all_fetches_failed` surfaces the Err), never a
+/// note — and the engine drops notes on the Err path anyway, so emitting one
+/// here would be invisible AND wrong.
+#[test]
+fn failed_fetches_note_all_failed_returns_none() {
+    assert!(
+        ats_failed_fetches_note(0, 4).is_none(),
+        "all-failed is an error, not a partial note",
+    );
+    // Nothing attempted at all (empty/blank company list) is also not a note.
+    assert!(ats_failed_fetches_note(0, 0).is_none());
+}
+
 // ── should_propagate_page_error ──────────────────────────────────────────────
 
 #[test]

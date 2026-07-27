@@ -1596,6 +1596,7 @@
       "validation": {
         "missingFields": "Please fill in all required fields (Name, Board, and Search Query).",
         "nameRequired": "Give this search a name.",
+        "pagesRange": "Enter a whole number of pages between 1 and 10.",
         "queryRequired": "Enter a search query."
       },
       "target": {
@@ -1611,7 +1612,8 @@
         "locationPlaceholder": "e.g. Berlin, remote",
         "fromLocationSettings": "from location settings",
         "countryResolved": "Country: {{country}}",
-        "items": "Items to scrape",
+        "pages": "Pages to scrape",
+        "pagesHint": "per board — actual results vary",
         "postedWithin": "Posted within",
         "anyTime": "Any time",
         "last24h": "Last 24h",
@@ -1901,6 +1903,7 @@
       "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
+      "jobicy": "Jobicy",
       "arbeitnow": "Arbeit Now",
       "themuse": "The Muse",
       "wwr": "WWR",
@@ -1960,7 +1963,9 @@
         "slugsInvalid_one": "{{count}} company name invalid",
         "slugsInvalid_other": "{{count}} company names invalid",
         "rowsDropped_one": "{{count}} row unreadable — board format may have changed",
-        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed"
+        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed",
+        "companiesFailed_one": "{{count}} company could not be fetched",
+        "companiesFailed_other": "{{count}} companies could not be fetched"
       }
     },
     "viewList": "List",
