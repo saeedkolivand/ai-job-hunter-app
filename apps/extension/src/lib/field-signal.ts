@@ -166,17 +166,32 @@ const AMBIGUOUS_PREFIXED = /(?:^|[^a-z])(?:referr|reference|search)/;
  * optional first/last/full/middle/given/family qualifier) a REQUIRED trailing
  * `name`/`nm` token. Requiring that trailing token is what keeps
  * "work preferences" / "research experience" fillable — they have a stem but no
- * name token. The trailing side stays open (`referenceFirstName1`).
+ * name token. The trailing side stays open (`referenceFirstName1`). The
+ * kana/furigana reading is listed BOTH as a stem (`kana_last_name`) and as a
+ * trailing alternative, because that qualifier can follow the name token
+ * (`lastNameKana`).
  *
- * `referr`/`refere` additionally carry a `[^p]` guard: they are substrings of
- * "**p**referred" / "**p**reference", and "Preferred first name" is one of the
- * most common fields on an ATS form — it must keep filling (see
- * {@link AMBIGUOUS_PREFIXED}'s note; this is the same trap in camelCase form).
- * The kana/furigana alternative is written separately because the qualifier
- * follows the name token there (`lastNameKana`).
+ * The reference/referrer family lives in its own {@link AMBIGUOUS_REFERENCE_NAME}
+ * because it — and only it — needs the "preferred" exemption; keeping it out of
+ * this rule means an unrelated "prefer" elsewhere in the signal can never
+ * un-deny a spouse/middle/kana field.
  */
 const AMBIGUOUS_NAME_COMPOUND =
-  /(?:(?:^|[^p])(?:referr|refere)|spouse|child|dependen|beneficiar|former|previous|other|aka|middle|additional)[a-z]*[\s_-]*(?:first|last|full|middle|given|family)?[\s_-]*n(?:ame|m)|n(?:ame|m)[\s_-]*(?:kana|furigana)|furigana/;
+  /(?:spouse|child|dependen|beneficiar|former|previous|other|aka|also[\s_-]*known[\s_-]*as|middle|additional|kana|furigana)[a-z]*[\s_-]*(?:first|last|full|middle|given|family)?[\s_-]*n(?:ame|m)|n(?:ame|m)[\s_-]*(?:kana|furigana)|furigana/;
+
+/**
+ * {@link AMBIGUOUS_NAME_COMPOUND}'s shape for the reference/referrer family
+ * (`jobReferenceFirstName`, `myReferrerLastName`, `refereeFirstName`).
+ *
+ * Deliberately UNANCHORED, unlike {@link AMBIGUOUS_PREFIXED}: a `[^p]` character
+ * guard (the obvious way to spare "**p**referred"/"**p**reference") exempts every
+ * p-terminated prefix, and `empReferenceFirstName`,
+ * `groupReferenceFirstName`, `backupReferenceFirstName`, `topReferenceFirstName`
+ * … are ordinary HRIS spellings that were each filled with the applicant's own
+ * name. The exemption is done by WORD in {@link isAmbiguousSignal} instead.
+ */
+const AMBIGUOUS_REFERENCE_NAME =
+  /(?:referr|refere)[a-z]*[\s_-]*(?:first|last|full|middle|given|family)?[\s_-]*n(?:ame|m)/;
 
 /**
  * True when a field's {@link textSignal} is ambiguous or sensitive and must be
@@ -186,13 +201,24 @@ const AMBIGUOUS_NAME_COMPOUND =
  * leading-anchored {@link AMBIGUOUS_PREFIXED} and the compound
  * {@link AMBIGUOUS_NAME_COMPOUND} ones, so the two consumers can never disagree
  * on what counts as ambiguous.
+ *
+ * {@link AMBIGUOUS_REFERENCE_NAME} is the one rule with an exemption: a signal
+ * where "prefer" STARTS a word is the ubiquitous "Preferred first name" /
+ * `preferred_first_name` field (its `refer` exists only because "prefer"
+ * contains one) and must keep filling. The anchor is what separates it from
+ * `empReferenceFirstName` / `topReferenceFirstName`, where the same letters are
+ * a prefix + "reference". A camelCase `candidatePreferredFirstName` is
+ * collateral of that ambiguity — the two are spelled identically apart from the
+ * word boundary, so it is skipped: an under-fill, which this module prefers to
+ * writing the user's name into a reference's box.
  */
 export function isAmbiguousSignal(signal: string): boolean {
   return (
     AMBIGUOUS.some((w) => signal.includes(w)) ||
     AMBIGUOUS_WORDS.test(signal) ||
     AMBIGUOUS_PREFIXED.test(signal) ||
-    AMBIGUOUS_NAME_COMPOUND.test(signal)
+    AMBIGUOUS_NAME_COMPOUND.test(signal) ||
+    (AMBIGUOUS_REFERENCE_NAME.test(signal) && !/(?:^|[^a-z])prefer/.test(signal))
   );
 }
 

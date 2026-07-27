@@ -83,6 +83,21 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
       'formerfirstname',
       'otherlastname',
       'aka_first_name',
+      'alsoknownasfirstname',
+      'also_known_as_last_name',
+      // A leading `[^p]` character guard (the first attempt at exempting
+      // "preferred") silently exempted EVERY p-terminated prefix — these are
+      // ordinary HRIS spellings and each one was filled with the user's name.
+      'topreferencefirstname',
+      'groupreferencefirstname',
+      'helpreferencefirstname',
+      'backupreferencefirstname',
+      'signupreferencefirstname',
+      'stepreferencefirstname',
+      'shipreferencefirstname',
+      'campreferencefirstname',
+      'vipreferencefirstname',
+      'empreferencefirstname',
       // Already denied before this rule (leading-anchored / prose) — pinned so
       // the compound rule can never be "simplified" into losing them.
       'reference_first_name',
@@ -106,8 +121,12 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
       'middle-name',
       'middleinitial name',
       'additional name',
+      // The kana reading appears on BOTH sides of the name token.
       'lastnamekana',
       'name_kana',
+      'kana_last_name',
+      'kanalastname',
+      'furigana_first_name',
       'furigana',
     ]) {
       expect(isAmbiguousSignal(signal), signal).toBe(true);
@@ -129,6 +148,14 @@ describe('isAmbiguousSignal — third-party / non-fillable name COMPOUNDS', () =
     }
     // …and the camelCase spelling resolves like the prose one.
     expect(matchNamedKey('preferredfirstname')).toBe('firstName');
+    // The exemption covers ONLY the reference family, so a "preferred" that
+    // sits next to another skip-stem does not un-deny the field.
+    expect(isAmbiguousSignal('preferred middle name')).toBe(true);
+    expect(isAmbiguousSignal('preferredspousefirstname')).toBe(true);
+    // Documented collateral: "…dPreferred…" and "…pReference…" are spelled
+    // alike apart from the word boundary, so the camelCase preferred-name field
+    // is skipped rather than risk filling a reference's box.
+    expect(isAmbiguousSignal('candidatepreferredfirstname')).toBe(true);
   });
 });
 
