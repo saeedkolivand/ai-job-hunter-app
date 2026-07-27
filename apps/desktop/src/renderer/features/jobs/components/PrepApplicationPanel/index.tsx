@@ -315,8 +315,14 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
    * Open the application this run produced. `saveFromPosting` is idempotent and
    * dedupes by `jobUrl` — the same key the agent's own saves used — so it returns
    * the SAME record the run wrote to rather than creating a second one (and still
-   * yields a row to open when the user denied every save). Request shape mirrors
-   * `usePostingActions.handleTailor`, the other entry point into this record.
+   * yields a row to open when the user denied every save).
+   *
+   * `jobDescription` is deliberately OMITTED: the backend merge is a
+   * non-blank-wins `pick`, so sending the posting's ad text would overwrite a
+   * description the user edited on the detail page. This button reads as
+   * navigation, not a re-import — it must not mutate content. (Tailor sends it
+   * on purpose; that flow is an explicit import.) A brand-new row therefore
+   * lands without an ad text, which the detail page resolves from the URL.
    */
   const openApplication = async () => {
     try {
@@ -325,7 +331,6 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
         board: posting.source,
         company: posting.company,
         title: posting.title,
-        jobDescription: posting.description,
         salaryMin: posting.salaryMin,
         salaryMax: posting.salaryMax,
         salaryCurrency: posting.salaryCurrency,

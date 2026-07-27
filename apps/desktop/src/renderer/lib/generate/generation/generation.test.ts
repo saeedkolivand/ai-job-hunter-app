@@ -12,6 +12,7 @@ import {
   generateApplicationAnswer,
   generateCoverLetter,
   generateGitHubProjects,
+  generateInterviewQuestions,
   generateResume,
   lookupSalaryRange,
   researchAnswer,
@@ -1048,5 +1049,66 @@ describe('output tone wiring (Settings → Output Tone)', () => {
     done();
     await p;
     expect(systemOf(client)).toMatch(/TONE: polished, warm, and professional/);
+  });
+});
+
+describe('generateInterviewQuestions output language', () => {
+  // The grounded user prompt is always messages[1] (see streamGenerate).
+  const userOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    const messages = (call?.[0] as { messages: { role: string; content: string }[] }).messages;
+    return messages[1]?.content ?? '';
+  };
+
+  // A GERMAN job (jobCountry DE) whose ad language is German — so a language
+  // override can be seen NOT to drag the market register with it.
+  const DE_META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'de',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'de',
+    jobCountry: 'DE',
+    topRequirements: [],
+  };
+
+  const run = async (language?: string) => {
+    const client = register();
+    const p = generateInterviewQuestions({
+      resume: 'My resume',
+      jobAd: 'Backend role at Acme',
+      meta: DE_META,
+      model: 'llama3',
+      language,
+    });
+    await flushUntilStreaming();
+    emit('Q: Anything?\nWHY: because\nAUDIENCE: recruiter');
+    done();
+    await p;
+    return client;
+  };
+
+  it('resolves an allowlisted picker code to its English language name', async () => {
+    expect(userOf(await run('es'))).toContain('Write the questions entirely in Spanish');
+  });
+
+  it('keeps the market register on the job country when only the language changes', async () => {
+    const prompt = userOf(await run('es'));
+    expect(prompt).toContain('Write the questions entirely in Spanish');
+    // Register still follows the German job market, not the Spanish output.
+    expect(prompt).toMatch(/Market: Germany/);
+  });
+
+  it('passes a language outside the picker allowlist through verbatim (no English collapse)', async () => {
+    const prompt = userOf(await run('nl'));
+    expect(prompt).toContain('Write the questions entirely in nl');
+    expect(prompt).not.toContain('entirely in English');
+  });
+
+  it('falls back to the meta-derived language note when no language is given', async () => {
+    const prompt = userOf(await run());
+    expect(prompt).toContain('Write the questions in de.');
   });
 });

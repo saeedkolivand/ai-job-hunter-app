@@ -619,9 +619,11 @@ export async function generateInterviewQuestions(params: {
   seedTopics?: string[];
   /** Target interviewers (canonical audience ids) — N questions per audience. */
   audiences?: string[];
-  /** Output-language CODE ('de', 'es', …) chosen by the user; overrides
-   *  `meta.targetLanguage`. Deliberately does NOT feed `resolveMarket` — the
-   *  register stays that of the job's country even when only the language changes. */
+  /** Output language: a locale CODE ('de', 'es', …) when it came from the picker,
+   *  otherwise whatever the ad detection produced (a code outside the picker's
+   *  allowlist, or a language NAME). Overrides `meta.targetLanguage`, and
+   *  deliberately does NOT feed `resolveMarket` — the register stays that of the
+   *  job's country even when only the output language changes. */
   language?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
@@ -643,10 +645,13 @@ export async function generateInterviewQuestions(params: {
     jobCountry: meta.jobCountry,
     targetLanguage: meta.targetLanguage,
   });
-  // Same contract as generateJobAdSummary: the picker hands over a locale CODE,
-  // the prompt wants a human language NAME and streamGenerate wants the code.
-  // Resolving through OUTPUT_LANGUAGES keeps an arbitrary string out of the prompt.
+  // The prompt wants a human language NAME, streamGenerate wants a locale code.
+  // An allowlisted picker code resolves to its English name; anything else (a
+  // detected language the picker doesn't offer, e.g. 'nl') is interpolated
+  // verbatim rather than collapsed to English — the same treatment the prompt
+  // already gives `meta.targetLanguage`, so this adds no new interpolation surface.
   const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
+  const languageName = lang?.englishName ?? language;
 
   const system = buildInterviewQuestionsSystemPrompt();
   const user = buildInterviewQuestionsPrompt({
@@ -658,7 +663,7 @@ export async function generateInterviewQuestions(params: {
     audiences,
     target: profile,
     market,
-    language: lang?.englishName,
+    language: languageName,
   });
   // Interview questions are prose: keep the existing 0.5 temperature default,
   // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).

@@ -29,7 +29,7 @@ import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import type { AgentStepEvent, JobEvent, JobRecord } from '@ajh/shared';
+import type { AgentStepEvent, ApplicationTrackRequest, JobEvent, JobRecord } from '@ajh/shared';
 import type * as AjhUi from '@ajh/ui';
 
 import type { Posting } from '@/features/jobs/types';
@@ -89,7 +89,7 @@ let stubbedJobRecord: JobRecord | undefined;
 const mockRunMutateAsync = vi.fn().mockResolvedValue({ jobId: 'job-1' });
 const mockCancelMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockConfirmMutateAsync = vi.fn().mockResolvedValue({ ok: true });
-const mockSaveFromPosting = vi.fn<() => Promise<{ id?: string }>>();
+const mockSaveFromPosting = vi.fn<(req: ApplicationTrackRequest) => Promise<{ id?: string }>>();
 
 vi.mock('@/services', () => ({
   useAgentRun: () => ({ mutateAsync: mockRunMutateAsync, isPending: false }),
@@ -405,14 +405,13 @@ describe('PrepApplicationPanel — view the created application', () => {
     await completeRun();
     await clickView();
 
-    // Exactly the shape usePostingActions.handleTailor sends, so both entry
-    // points resolve to the SAME record rather than creating a second one.
+    // Identity fields only — enough to dedupe by jobUrl, or to create the row
+    // when it somehow doesn't exist yet.
     expect(mockSaveFromPosting).toHaveBeenCalledWith({
       jobUrl: POSTING.url,
       board: POSTING.source,
       company: POSTING.company,
       title: POSTING.title,
-      jobDescription: POSTING.description,
       salaryMin: undefined,
       salaryMax: undefined,
       salaryCurrency: undefined,
@@ -422,6 +421,26 @@ describe('PrepApplicationPanel — view the created application', () => {
       params: { id: 'app-9' },
       search: { tab: 'documents', from: 'jobs' },
     });
+  });
+
+  it('never sends jobDescription (the merge is non-blank-wins — it would clobber user edits)', async () => {
+    await completeRun();
+    await clickView();
+
+    const req = mockSaveFromPosting.mock.calls[0]?.[0];
+    expect(req).toBeDefined();
+    expect(req).not.toHaveProperty('jobDescription');
+    // Guard against a "send it as undefined" regression that would still read
+    // as blank server-side but re-introduce the field on the wire.
+    expect(POSTING.description).toBeTruthy(); // the posting HAS one to leak
+  });
+
+  it('notifies when navigation itself rejects', async () => {
+    navigateMock.mockRejectedValueOnce(new Error('route blew up'));
+    await completeRun();
+    await clickView();
+
+    expect(notifyError).toHaveBeenCalledWith({ message: 'jobs.prep.viewApplicationError' });
   });
 
   it('notifies instead of navigating when the save returns no id', async () => {

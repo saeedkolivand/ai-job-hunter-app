@@ -146,6 +146,18 @@ describe('buildInterviewQuestionsPrompt', () => {
     expect(prompt).toContain('Write the questions in de.');
   });
 
+  // Both meta branches stay LIVE: the caller omits `language` whenever the ad's
+  // language can't be determined, and `mismatch` still selects the firmer phrasing.
+  it('uses the firmer mismatch phrasing when no explicit language is given', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: { ...META, mismatch: true, targetLanguage: 'de' },
+    });
+    expect(prompt).toContain('Write the questions entirely in de');
+    expect(prompt).not.toContain('Write the questions in de.');
+  });
+
   it('an explicit language overrides meta.targetLanguage without touching the market register', () => {
     const prompt = buildInterviewQuestionsPrompt({
       resume: 'R',

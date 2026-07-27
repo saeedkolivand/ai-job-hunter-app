@@ -9,6 +9,7 @@ import {
   extractMetadata,
   generateInterviewQuestions,
   type GenerationMeta,
+  OUTPUT_LANGUAGES,
   parseInterviewQuestions,
   researchCompany as fetchCompanyBrief,
   safeLocale,
@@ -20,6 +21,16 @@ import type { AiProvider } from '@/store/preferences-schema';
 
 /** Default target interviewers — the two earliest rounds (recruiter/HR + hiring manager). */
 const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];
+
+/**
+ * Locale CODE the picker can display. Accepts a code ('de') OR an English
+ * language NAME ('German') — `extractMetadata`'s regex fallback can produce
+ * either — and clamps anything outside OUTPUT_LANGUAGES to English.
+ */
+function toPickerCode(value: string): string {
+  const byName = OUTPUT_LANGUAGES.find((l) => l.englishName.toLowerCase() === value.toLowerCase());
+  return safeLocale(byName?.code ?? value);
+}
 
 interface Params {
   resume: string;
@@ -46,8 +57,9 @@ interface Params {
  * per-job aiGenerations aggregate (merge-upsert by `jobUrl`).
  *
  * The output `language` defaults to the ad's language (from `meta` when given,
- * else detected from `jobDesc`) and is user-overridable via `setLanguage`; the
- * chosen code is what gets persisted as the record's `targetLanguage`.
+ * else detected from `jobDesc`) and is user-overridable via `setLanguage`. It is
+ * generation-only: the persisted record keeps the DETECTED `targetLanguage`,
+ * because that field is shared with the email/export/tailor surfaces.
  */
 export function useInterviewQuestions({
   resume,
@@ -69,12 +81,21 @@ export function useInterviewQuestions({
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Output language, as a locale CODE ('en', 'de', …) matching an OUTPUT_LANGUAGES
-  // entry. Derived during render (no effect) so the default keeps tracking the ad
-  // as `jobDesc`/`meta` load in; the user's explicit pick then wins for good.
-  // `safeLocale` clamps an unsupported/undetected language to 'en'.
+  // Output language. Derived during render (no effect) so the default keeps
+  // tracking the ad as `jobDesc`/`meta` load in; the user's explicit pick then
+  // wins for good. TWO values on purpose:
+  //  - `language` is what the picker DISPLAYS, so it must be an OUTPUT_LANGUAGES
+  //    code the Dropdown can render.
+  //  - `generationLanguage` is what the prompt gets. Until the user picks, it is
+  //    the RAW detected language, so an ad in a language the picker doesn't offer
+  //    (Dutch, Polish, Czech…) still yields questions in that language instead of
+  //    collapsing to English. `undefined` when nothing was detected — the prompt
+  //    then falls back to its `meta`-derived note.
   const [languageOverride, setLanguageOverride] = useState<string | null>(null);
-  const language = languageOverride ?? safeLocale(meta?.targetLanguage || detectLanguage(jobDesc));
+  const detectedLanguage = meta?.targetLanguage?.trim() || detectLanguage(jobDesc);
+  const language = languageOverride ?? toPickerCode(detectedLanguage);
+  const generationLanguage =
+    languageOverride ?? (detectedLanguage === 'unknown' ? undefined : detectedLanguage);
 
   const toggleAudience = (aud: string) =>
     setAudiences((prev) => (prev.includes(aud) ? prev.filter((a) => a !== aud) : [...prev, aud]));
@@ -111,7 +132,7 @@ export function useInterviewQuestions({
         companyBrief: brief,
         seedTopics: seeds,
         audiences,
-        language,
+        language: generationLanguage,
       });
       const parsed = parseInterviewQuestions(raw);
       setQuestions(parsed);
@@ -124,9 +145,12 @@ export function useInterviewQuestions({
         companyName: detected.companyName,
         resumeLanguage: detected.resumeLanguage,
         jobAdLanguage: detected.jobAdLanguage,
-        // The language the questions were actually written in — the user's pick,
-        // not the detected one, so the saved record matches what it holds.
-        targetLanguage: language,
+        // NOT the picked language. `targetLanguage` is a SHARED field on the
+        // per-job aggregate (the Rust merge is a non-blank-wins `pick`), read by
+        // the email tab, the export meta and the tailor seed — writing the
+        // questions' output language here would silently switch the email draft
+        // and the export header. The pick stays generation-only.
+        targetLanguage: detected.targetLanguage,
         mismatch: detected.mismatch,
         topRequirements: detected.topRequirements,
         mode: 'ats',

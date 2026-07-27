@@ -22,11 +22,12 @@ vi.mock('@/services/query-client', () => ({
 // can assert it lands on `questions`; `generateInterviewQuestions` is the seam we
 // assert the selected audiences flow into.
 vi.mock('@/lib/generate', async () => {
-  // `safeLocale` is the REAL clamp (the locales module is dependency-free) so the
-  // language default is exercised, not re-implemented by the mock.
-  const { safeLocale } = await import('@/lib/generate/locales');
+  // The REAL locale allowlist + clamp (that module is dependency-free), so the
+  // language default is exercised rather than re-implemented by the mock.
+  const { safeLocale, OUTPUT_LANGUAGES } = await import('@/lib/generate/locales');
   return {
     safeLocale,
+    OUTPUT_LANGUAGES,
     extractMetadata: vi.fn().mockResolvedValue({
       candidateName: 'Ada',
       jobTitle: 'Engineer',
@@ -73,6 +74,11 @@ const render = (p: Parameters<typeof useInterviewQuestions>[0] = params) =>
 const GERMAN_JD =
   'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +
   'Sie arbeiten an spannenden Projekten und stimmen sich eng mit dem Produktteam ab.';
+
+/** Dutch — detectable by franc, but NOT one of the picker's OUTPUT_LANGUAGES. */
+const DUTCH_JD =
+  'Wij zoeken een ervaren softwareontwikkelaar voor ons team in Amsterdam. ' +
+  'Je werkt aan uitdagende projecten en stemt nauw af met het productteam.';
 
 const metaWithLanguage = (targetLanguage: string): GenerationMeta => ({
   candidateName: 'Ada',
@@ -180,7 +186,7 @@ describe('useInterviewQuestions', () => {
     expect(render({ ...params, meta: metaWithLanguage('nl') }).result.current.language).toBe('en');
   });
 
-  it('passes the chosen language to the generator and persists it as targetLanguage', async () => {
+  it('passes the chosen language to the generator WITHOUT writing it to the shared record', async () => {
     // Ad is German, so the default is 'de' — the explicit pick must win over it.
     const { result } = render({ ...params, jobDesc: GERMAN_JD });
     expect(result.current.language).toBe('de');
@@ -195,9 +201,60 @@ describe('useInterviewQuestions', () => {
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'es' })
     );
-    // The saved record carries the language the questions were written in, not
-    // the 'en' that extractMetadata detected.
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'es' }));
+    // `targetLanguage` is SHARED with the email tab / export meta / tailor seed,
+    // so the picker must never write to it — the extracted value stands.
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
+    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'es' }));
+  });
+
+  it('leaves the record targetLanguage alone on the untouched default path too', async () => {
+    // franc says 'de' (the ad), extractMetadata says 'en' — they disagree, and
+    // the save must still carry the EXTRACTED value while generation uses the ad's.
+    const { result } = render({ ...params, jobDesc: GERMAN_JD });
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(generateInterviewQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'de' })
+    );
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
+  });
+
+  it('sends a detected language the picker cannot show, without collapsing it to English', async () => {
+    const { result } = render({ ...params, jobDesc: DUTCH_JD });
+    // Dutch is not in OUTPUT_LANGUAGES, so the picker falls back to English…
+    expect(result.current.language).toBe('en');
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    // …but generation still asks for Dutch.
+    expect(generateInterviewQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'nl' })
+    );
+  });
+
+  it('omits the language entirely when nothing can be detected (prompt falls back to meta)', async () => {
+    // 'JD' is below detectLanguage's length floor → 'unknown'.
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(generateInterviewQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ language: undefined })
+    );
+  });
+
+  it('accepts a language NAME from extractMetadata fallback as the picker default', () => {
+    // extractMetadata's regex fallback can yield 'German' rather than 'de'.
+    expect(render({ ...params, meta: metaWithLanguage('German') }).result.current.language).toBe(
+      'de'
+    );
   });
 
   it('does not call the generator when no audience is selected', async () => {
