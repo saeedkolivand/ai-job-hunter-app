@@ -28,7 +28,7 @@ interface StepTargetProps {
 export function StepTarget({ prefilled }: StepTargetProps) {
   const { t, i18n } = useTranslation();
   const api = useAppClient();
-  const { control, setValue } = useFormContext<WizardState>();
+  const { control, getValues, setValue } = useFormContext<WizardState>();
   const boards = useWatch({ control, name: 'boards' });
   // Country derived from the picked location suggestion — surfaced inline so the
   // user SEES which market the autopilot will search (vs. the silent save-time
@@ -149,7 +149,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                           : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'
                       )}
                     >
-                      {t(`jobs.boards.${id}`)}
+                      {t(`jobs.boards.${id}`, { defaultValue: id })}
                     </Button>
                   );
                 })}
@@ -244,17 +244,35 @@ export function StepTarget({ prefilled }: StepTargetProps) {
       <div className="grid grid-cols-1 gap-3 @xs:grid-cols-2">
         <Controller
           control={control}
-          name="amount"
-          render={({ field }) => (
-            <WizardField label={t('autopilot.wizard.target.items')}>
+          name="pages"
+          render={({ field, fieldState }) => (
+            <WizardField
+              label={t('autopilot.wizard.target.pages')}
+              hint={t('autopilot.wizard.target.pagesHint')}
+              htmlFor="autopilot-pages"
+              error={fieldState.error?.message ? t(fieldState.error.message) : undefined}
+            >
               <NumberField
+                id="autopilot-pages"
                 min={1}
-                max={500}
-                fallback={25}
+                max={10}
+                fallback={2}
                 variant="default"
                 className={fieldCls}
                 value={field.value}
                 onChange={(n) => field.onChange(n)}
+                aria-invalid={!!fieldState.error}
+                onBlur={() => {
+                  field.onBlur();
+                  // NumberField clamps to [min, max] on blur but never rounds, so a
+                  // typed "2.5" would reach the schema's .int() as invalid and make
+                  // the final Create button a silent no-op. Fold it to a whole page
+                  // here — on blur only, so the buffer isn't fought mid-typing.
+                  setValue('pages', Math.round(getValues('pages')), {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }}
               />
             </WizardField>
           )}

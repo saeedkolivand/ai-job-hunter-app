@@ -414,7 +414,11 @@ export function JobsPage() {
               scraping={scraping}
               scrapeOutcome={scrapeOutcome}
               onToggle={() => setShowScrapeForm(!showScrapeForm)}
-              onFormChange={(updates) => setScrapeForm({ ...scrapeForm, ...updates })}
+              // Functional update: two changes dispatched in one tick (e.g. a
+              // location pick firing onChange then onSelectSuggestion) would
+              // otherwise both spread the SAME captured `scrapeForm` and the
+              // first would be lost.
+              onFormChange={(updates) => setScrapeForm((f) => ({ ...f, ...updates }))}
               onStart={handleStartScrape}
               onCancel={cancelScrape}
               onGeocode={geocodeSuggest}
