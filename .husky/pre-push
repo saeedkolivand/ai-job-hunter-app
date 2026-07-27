@@ -8,7 +8,8 @@
 # `frontend`/`rust` filters in .github/workflows/ci-pipeline.yml.
 #
 # Safety: on ANY uncertainty (no push range, detached state) it falls back to the
-# FULL gate, and cross-cutting paths (packages/**, .github/**) trip both groups.
+# FULL gate; cross-cutting paths (packages/**, ci-pipeline.yml, .github/actions/**)
+# trip both groups. Other .github files only trip the workflow-catalog check.
 # Force the full gate with PREPUSH_FULL=1. CI remains the authoritative gate;
 # this is just a fast local pre-check.
 
@@ -154,10 +155,15 @@ if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
     echo "▶ Path filter: FULL gate (push range undetermined)"
   fi
 else
-  if printf '%s\n' "$CHANGED" | grep -qE '^apps/desktop/src-tauri/|(^|/)Cargo\.(toml|lock)$|\.rs$|^\.github/'; then
+  # Only the CI gate definition itself (ci-pipeline.yml) and the composite
+  # actions it runs can change what the frontend/rust gates DO — every other
+  # .github file (claude-review.yml, dependabot.yml, labeler…) can't affect a
+  # build, so it only trips the WORKFLOWS drift check below.
+  GATE_AFFECTING='^\.github/(workflows/ci-pipeline\.yml$|actions/)'
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src-tauri/|(^|/)Cargo\.(toml|lock)\$|\.rs\$|$GATE_AFFECTING"; then
     RUST=1
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE '^apps/desktop/src/|^packages/|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.mjs$|^vitest\.config\.ts$|^turbo\.json$|^\.github/'; then
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src/|^packages/|^package\.json\$|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^eslint\.config\.mjs\$|^vitest\.config\.ts\$|^turbo\.json\$|$GATE_AFFECTING"; then
     NODE=1
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^apps/landing/'; then

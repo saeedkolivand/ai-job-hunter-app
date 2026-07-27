@@ -38,7 +38,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'react developer',
     location: '',
     workType: 'any',
-    amount: 50,
+    pages: 2,
     dateFilter: '',
     watchedCompaniesOnly: false,
     minMatchScore: 0,
