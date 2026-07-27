@@ -25,6 +25,7 @@ use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db};
 use crate::error::{AppError, AppResult};
 
+mod contact;
 mod job_url;
 mod migrations;
 
@@ -262,33 +263,6 @@ pub struct Application {
     /// ISO-4217 currency for `salary_min`/`salary_max`.
     #[serde(default)]
     pub salary_currency: Option<String>,
-}
-
-impl Application {
-    /// Collapse the deprecated `recipient_*` alias pair onto the canonical
-    /// `contact_*` pair, then mirror the result back so both names carry the
-    /// same value.
-    ///
-    /// The canonical value wins whenever it is non-empty; an alias-only value is
-    /// promoted (same rule as the `unify_application_contact` migration, so a
-    /// bundle exported by a pre-unification build imports identically to how its
-    /// rows migrate in place).
-    ///
-    /// Applied ONLY where an `Application` arrives from outside this store
-    /// ([`ApplicationStore::import`]). The in-store build sites set both names
-    /// from the same resolved value explicitly instead — folding there would
-    /// resurrect a just-cleared contact from its own stale mirror.
-    fn canonicalize_contact(mut self) -> Self {
-        if self.contact_name.trim().is_empty() {
-            self.contact_name = std::mem::take(&mut self.recipient_name);
-        }
-        if self.contact_email.trim().is_empty() {
-            self.contact_email = std::mem::take(&mut self.recipient_email);
-        }
-        self.recipient_name = self.contact_name.clone();
-        self.recipient_email = self.contact_email.clone();
-        self
-    }
 }
 
 /// One Application's follow-up reminder state — the minimal projection
@@ -1030,45 +1004,68 @@ impl ApplicationStore {
     ///
     /// Rows without a `next_action_at` are filtered out in SQL (nothing to
     /// remind about), so the sweep stays cheap on a large tracker.
+    ///
+    /// A SQL failure yields an empty sweep — but it is LOGGED, never silent: a
+    /// swallowed error here would kill every reminder for the rest of the
+    /// process with no diagnostic anywhere.
     pub fn follow_up_candidates(&self) -> Vec<FollowUpCandidate> {
         let conn = self.conn.lock();
-        conn.prepare(
+        let mut stmt = match conn.prepare(
             "SELECT id, status, title, company, next_action_at, next_action_notified_at
              FROM applications WHERE next_action_at IS NOT NULL",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map([], |row| {
-                let status_raw: String = row.get(1)?;
-                Ok(FollowUpCandidate {
-                    id: row.get(0)?,
-                    status: ApplicationStatus::from_id(&status_raw),
-                    title: row.get(2)?,
-                    company: row.get(3)?,
-                    next_action_at: row.get::<_, Option<i64>>(4)?.map(ts_from_db),
-                    notified_at: row.get::<_, Option<i64>>(5)?.map(ts_from_db),
-                })
+        ) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                log::warn!("[applications] follow-up query failed to prepare: {e}");
+                return Vec::new();
+            }
+        };
+        let rows = stmt.query_map([], |row| {
+            let status_raw: String = row.get(1)?;
+            Ok(FollowUpCandidate {
+                id: row.get(0)?,
+                status: ApplicationStatus::from_id(&status_raw),
+                title: row.get(2)?,
+                company: row.get(3)?,
+                next_action_at: row.get::<_, Option<i64>>(4)?.map(ts_from_db),
+                notified_at: row.get::<_, Option<i64>>(5)?.map(ts_from_db),
             })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        })
-        .unwrap_or_default()
+        });
+        match rows {
+            Ok(rows) => rows
+                .filter_map(|r| {
+                    r.inspect_err(|e| log::warn!("[applications] skipped a follow-up row: {e}"))
+                        .ok()
+                })
+                .collect(),
+            Err(e) => {
+                log::warn!("[applications] follow-up query failed: {e}");
+                Vec::new()
+            }
+        }
     }
 
-    /// Stamp "a follow-up notification was raised for the CURRENT
-    /// `next_action_at`" so the next sweep skips this row. Cleared by
-    /// [`Self::update_fields`] whenever the due date moves.
+    /// Stamp "a follow-up notification was raised for the due date `due_at`" so
+    /// the next sweep skips this row. Cleared by [`Self::update_fields`]
+    /// whenever the due date moves.
+    ///
+    /// Returns `Ok(false)` when no row matched — the id is gone, or the user
+    /// rescheduled between the sweep's read and this write. `due_at` is in the
+    /// `WHERE` precisely for that race: an unconditional stamp would mark the
+    /// row notified for a due date the caller never evaluated, silencing the NEW
+    /// reminder forever. The caller must not notify on a `false`.
     ///
     /// Deliberately a targeted single-column `UPDATE` rather than a row rewrite:
     /// the scheduler must never clobber a field the user edited between the read
     /// and this write.
-    pub fn mark_next_action_notified(&self, id: &str, at: u64) -> AppResult<()> {
+    pub fn mark_next_action_notified(&self, id: &str, due_at: u64, at: u64) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE applications SET next_action_notified_at = ?2 WHERE id = ?1",
-            params![id, ts_to_db(at)],
+        let changed = conn.execute(
+            "UPDATE applications SET next_action_notified_at = ?3
+             WHERE id = ?1 AND next_action_at = ?2",
+            params![id, ts_to_db(due_at), ts_to_db(at)],
         )?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     /// Delete an Application and its status history. `keep_documents` is consumed

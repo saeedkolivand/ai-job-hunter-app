@@ -104,6 +104,18 @@ fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
             "recipient_email exceeds the 254-byte limit".into(),
         ));
     }
+    // No control characters or spaces ANYWHERE — a bare CR/LF in a stored address
+    // is a header-injection primitive for every downstream sink that builds a
+    // message from it (the `mailto:` href, any future SMTP send), and a legacy
+    // row's unvalidated `contact_email` now mirrors into those sinks under the
+    // `recipientEmail` name. Rejected before the shape checks so the error names
+    // the real problem. (Interior spaces are only legal in a quoted local part,
+    // which this validator has never accepted.)
+    if trimmed.chars().any(|c| c.is_control() || c == ' ') {
+        return Err(AppError::Validation(
+            "recipient_email must not contain control characters or spaces".into(),
+        ));
+    }
     // Exactly one '@', non-empty local part, domain must have a dot with a
     // non-empty label on each side of the last dot.
     if trimmed.matches('@').count() != 1 {
@@ -125,6 +137,32 @@ fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     if domain[..dot].is_empty() || domain[dot + 1..].is_empty() {
         return Err(AppError::Validation(format!(
             "recipient_email has an invalid domain: {trimmed}"
+        )));
+    }
+    Ok(Some(trimmed))
+}
+
+/// Server-side cap for the contact NAME, in BYTES. Mirrors the Zod
+/// `max(200)` on both inbound names; client validation is UX-only, so this is
+/// the real trust boundary (a direct IPC caller bypasses Zod entirely).
+const MAX_CONTACT_NAME_BYTES: usize = 200;
+
+/// Trim and bound an inbound contact name — the sibling guard to
+/// [`validate_recipient_email`], applied to BOTH inbound names (`contactName`
+/// and its deprecated alias `recipientName`) since they write the same column.
+///
+/// - `None` → `Ok(None)` (field absent — leave unchanged).
+/// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
+/// - Over the cap → `Err(AppError::Validation)`, never a silent truncation.
+fn validate_contact_name(raw: Option<String>) -> AppResult<Option<String>> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let trimmed = s.trim().to_string();
+    if trimmed.len() > MAX_CONTACT_NAME_BYTES {
+        return Err(AppError::Validation(format!(
+            "contact name exceeds the {MAX_CONTACT_NAME_BYTES}-byte limit ({} bytes)",
+            trimmed.len()
         )));
     }
     Ok(Some(trimmed))
@@ -199,9 +237,18 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
             return json!({ "error": e });
         }
     };
-    // Trim both name aliases; whitespace-only collapses to empty (clear the field).
-    let contact_name = req.contact_name.map(|s| s.trim().to_string());
-    let recipient_name = req.recipient_name.map(|s| s.trim().to_string());
+    // Trim + byte-cap both name aliases; whitespace-only collapses to empty
+    // (clear the field). Same guard for both, for the same reason as the email.
+    let (contact_name, recipient_name) = match (
+        validate_contact_name(req.contact_name),
+        validate_contact_name(req.recipient_name),
+    ) {
+        (Ok(c), Ok(r)) => (c, r),
+        (Err(e), _) | (_, Err(e)) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
     let result = store(&app).update_fields(
         &req.id,
         req.notes,
@@ -528,6 +575,80 @@ mod tests {
         let err = validate_recipient_email(Some("user@example.".into()))
             .expect_err("trailing dot (empty TLD) must be rejected");
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_control_characters_and_spaces_fail_validation() {
+        // A stored CR/LF is a header-injection primitive for every sink built
+        // from this address (the mailto: href today). Reject, never store.
+        for bad in [
+            "user@example.com\r\nBcc: attacker@evil.test",
+            "user@example.com\nBcc: attacker@evil.test",
+            "us\ter@example.com",
+            "user\u{0000}@example.com",
+            "user\u{000B}@example.com",
+            // Interior space: never legal in the unquoted local part this
+            // validator accepts, and a separator in most address parsers.
+            "user name@example.com",
+            "user@exa mple.com",
+        ] {
+            let err = validate_recipient_email(Some(bad.into()))
+                .expect_err(&format!("{bad:?} must be rejected"));
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{bad:?} must fail validation, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recipient_email_surrounding_whitespace_still_only_trims() {
+        // The control-char guard runs AFTER the trim, so a leading/trailing
+        // newline is still just whitespace to strip — not a rejection.
+        let ok = validate_recipient_email(Some("\r\n  user@example.com \t".into()))
+            .expect("surrounding whitespace is trimmed, not rejected")
+            .unwrap();
+        assert_eq!(ok, "user@example.com");
+    }
+
+    // ── contact name validation ───────────────────────────────────────────────
+
+    #[test]
+    fn contact_name_absent_is_passthrough_and_whitespace_clears() {
+        assert!(validate_contact_name(None).unwrap().is_none());
+        assert_eq!(
+            validate_contact_name(Some("   ".into())).unwrap(),
+            Some(String::new())
+        );
+    }
+
+    #[test]
+    fn contact_name_is_trimmed_and_bounded() {
+        assert_eq!(
+            validate_contact_name(Some("  Rita Recruiter  ".into())).unwrap(),
+            Some("Rita Recruiter".to_string())
+        );
+        // Exactly at the cap is accepted; one byte over is rejected (never
+        // silently truncated).
+        let at_cap = "a".repeat(MAX_CONTACT_NAME_BYTES);
+        assert_eq!(
+            validate_contact_name(Some(at_cap.clone())).unwrap(),
+            Some(at_cap)
+        );
+        let err = validate_contact_name(Some("a".repeat(MAX_CONTACT_NAME_BYTES + 1)))
+            .expect_err("an over-cap name must be rejected");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn contact_name_cap_counts_bytes_not_chars() {
+        // 'ü' is 2 UTF-8 bytes: 101 chars = 202 bytes > the 200-byte cap. A
+        // char-count cap would let this through and the store would keep a
+        // longer value than the contract promises.
+        let s = "ü".repeat(101);
+        assert!(s.chars().count() < MAX_CONTACT_NAME_BYTES);
+        assert!(s.len() > MAX_CONTACT_NAME_BYTES);
+        assert!(validate_contact_name(Some(s)).is_err());
     }
 
     #[test]

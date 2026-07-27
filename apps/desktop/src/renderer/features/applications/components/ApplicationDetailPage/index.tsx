@@ -161,12 +161,19 @@ export function ApplicationDetailPage() {
     );
   }
 
-  // Key by id so navigating between two detail pages (same route pattern, new
-  // param) remounts the loaded view and re-seeds the save-on-blur edit buffers
-  // from the new application — TanStack Router reuses the instance otherwise.
+  // Key by id AND record version so the loaded view remounts — re-seeding the
+  // save-on-blur edit buffers — both when navigating between two detail pages
+  // (same route pattern, new param; TanStack Router reuses the instance
+  // otherwise) AND after any persisted change to THIS application.
+  //
+  // The version half is load-bearing, not cosmetic: the buffers are seeded once
+  // via useState, so without it a write from another tab (the apply-by-email tab
+  // now shares the canonical contact pair) would refetch into `application`
+  // while the Overview inputs still held their stale seed — and the next blur
+  // there would persist that stale value back, wiping the contact just saved.
   return (
     <ApplicationDetailLoaded
-      key={id}
+      key={`${id}:${application.updatedAt}`}
       application={application}
       events={events}
       onBack={back}

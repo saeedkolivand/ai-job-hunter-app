@@ -462,6 +462,46 @@ describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
     expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
   });
 
+  it('does NOT wipe a contact saved elsewhere when the Overview field is blurred', () => {
+    // Regression: the apply-by-email tab and Overview now edit the SAME
+    // canonical contact pair, but the Overview buffers are seeded ONCE via
+    // useState. Sequence: Overview mounts with an empty contact → the email tab
+    // persists "Rita Recruiter" → the record refetches. If the loaded view is
+    // not re-seeded, the Overview input still holds its stale '' and the next
+    // blur there persists that empty string back, wiping what was just saved.
+    // The `key` carries `updatedAt` precisely so the remount re-seeds.
+    mockTab = 'overview';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp({ id: 'app-wipe-1', contactName: '' }), events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    const { rerender } = render(<ApplicationDetailPage />);
+
+    // The apply-by-email tab wrote the contact; the query refetches with a new
+    // `updatedAt` (every persisted change bumps it server-side).
+    mockUseApplication.mockReturnValue({
+      data: {
+        application: makeApp({
+          id: 'app-wipe-1',
+          contactName: 'Rita Recruiter',
+          updatedAt: 2000,
+        }),
+        events: [],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    const field = screen.getByLabelText('applications.detail.contactNameLabel');
+    expect((field as HTMLInputElement).value).toBe('Rita Recruiter');
+
+    fireEvent.blur(field);
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
+  });
+
   // ── contactEmail ─────────────────────────────────────────────────────────────
 
   it('blurring contactEmail with a CHANGED value calls mutate with the new contactEmail', () => {

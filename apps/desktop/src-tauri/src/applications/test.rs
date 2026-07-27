@@ -2839,15 +2839,32 @@ fn update_fields_and_merge_answers_race_never_loses_an_answer() {
 // deprecated COLUMNS untouched (additive-only, never destructive).
 
 /// Seed `applications.db` at `user_version = 6` — the pre-unification schema
-/// (recipient + salary columns present) — with one row per contact/recipient
-/// population combination. Returns the ids in the order
-/// (recipient-only, contact-only, both, neither).
-fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 4] {
+/// (recipient + salary columns present) — with one row per interesting
+/// contact/recipient population combination.
+///
+/// The four fields are independently empty-or-not (16 states); these nine rows
+/// cover every state the promotion rule can treat differently — both pairs
+/// fully populated / fully empty, EITHER pair half-populated (the cases that
+/// distinguish a pair-atomic promotion from a per-column one), a whitespace-only
+/// canonical pair, and an identical alias pair. Returns the ids in declaration
+/// order.
+fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 9] {
     let ids = [
         "app-recipient-only",
         "app-contact-only",
         "app-both",
         "app-neither",
+        // Canonical HALF-populated + a full alias pair. The per-column rule
+        // fused the two people here; a pair-atomic one must not promote at all.
+        "app-contact-name-only",
+        "app-contact-email-only",
+        // Canonical empty + an alias pair that is itself half-populated: the
+        // promotion must move BOTH columns, leaving the empty side empty.
+        "app-recipient-name-only",
+        "app-recipient-email-only",
+        // Whitespace-only canonical pair — reachable from pre-trim builds, so
+        // the emptiness test has to be TRIM-based, not `= ''`.
+        "app-whitespace-contact",
     ];
     let conn = Connection::open(dir.join("applications.db")).unwrap();
     conn.execute_batch(
@@ -2891,7 +2908,7 @@ fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 4] {
         PRAGMA user_version = 6;",
     )
     .unwrap();
-    let rows: [(&str, &str, &str, &str, &str); 4] = [
+    let rows: [(&str, &str, &str, &str, &str); 9] = [
         (ids[0], "", "", "Rita Recruiter", "rita@acme.com"),
         (ids[1], "Cora Contact", "cora@acme.com", "", ""),
         (
@@ -2902,6 +2919,23 @@ fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 4] {
             "rita@acme.com",
         ),
         (ids[3], "", "", "", ""),
+        (
+            ids[4],
+            "Cora Contact",
+            "",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (
+            ids[5],
+            "",
+            "cora@acme.com",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (ids[6], "", "", "Rita Recruiter", ""),
+        (ids[7], "", "", "", "rita@acme.com"),
+        (ids[8], "   ", "  ", "Rita Recruiter", "rita@acme.com"),
     ];
     for (id, contact_name, contact_email, recipient_name, recipient_email) in rows {
         conn.execute(
@@ -2935,36 +2969,86 @@ fn raw_column(dir: &std::path::Path, id: &str, column: &str) -> String {
 }
 
 #[test]
-fn contact_backfill_covers_every_population_combination() {
+fn contact_backfill_promotes_the_pair_atomically() {
     let dir = TempDir::new().unwrap();
-    let [recipient_only, contact_only, both, neither] = seed_pre_unification_db(dir.path());
+    let [recipient_only, contact_only, both, neither, contact_name_only, contact_email_only, recipient_name_only, recipient_email_only, whitespace_contact] =
+        seed_pre_unification_db(dir.path());
 
     // Opening runs migration 7 (unify) + 8 (reminder marker).
     let store = ApplicationStore::open(dir.path()).unwrap();
+    let contact_of = |id: &str| {
+        let a = store.get(id).unwrap();
+        (a.contact_name, a.contact_email)
+    };
 
-    // 1. recipient-only → promoted onto the canonical pair.
-    let app = store.get(recipient_only).unwrap();
-    assert_eq!(app.contact_name, "Rita Recruiter");
-    assert_eq!(app.contact_email, "rita@acme.com");
+    // 1. recipient-only → the whole pair is promoted.
+    assert_eq!(
+        contact_of(recipient_only),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
+    );
 
     // 2. contact-only → untouched.
-    let app = store.get(contact_only).unwrap();
-    assert_eq!(app.contact_name, "Cora Contact");
-    assert_eq!(app.contact_email, "cora@acme.com");
+    assert_eq!(
+        contact_of(contact_only),
+        ("Cora Contact".into(), "cora@acme.com".into())
+    );
 
-    // 3. both populated → the canonical value wins; the alias is not merged in.
-    let app = store.get(both).unwrap();
-    assert_eq!(app.contact_name, "Cora Contact");
-    assert_eq!(app.contact_email, "cora@acme.com");
+    // 3. both populated → the canonical pair wins; the alias is not merged in.
+    assert_eq!(
+        contact_of(both),
+        ("Cora Contact".into(), "cora@acme.com".into())
+    );
 
     // 4. neither → still empty (no phantom value invented).
-    let app = store.get(neither).unwrap();
-    assert_eq!(app.contact_name, "");
-    assert_eq!(app.contact_email, "");
+    assert_eq!(contact_of(neither), (String::new(), String::new()));
+
+    // 5-6. THE IDENTITY-FUSION CASES. The canonical pair is half-populated, so
+    // it already belongs to someone (Cora). A per-column promotion would fill
+    // the empty half from the alias row and hand back "Cora Contact
+    // <rita@acme.com>" — a mailto: addressed to Rita under Cora's name, or
+    // Cora's address under Rita's name. Pair-atomic: promote nothing.
+    assert_eq!(
+        contact_of(contact_name_only),
+        ("Cora Contact".into(), String::new()),
+        "a half-populated canonical pair must never absorb the alias EMAIL"
+    );
+    assert_eq!(
+        contact_of(contact_email_only),
+        (String::new(), "cora@acme.com".into()),
+        "a half-populated canonical pair must never absorb the alias NAME"
+    );
+
+    // 7-8. Canonical empty + a half-populated alias → both columns move, and the
+    // empty half stays empty (never back-filled from anywhere else).
+    assert_eq!(
+        contact_of(recipient_name_only),
+        ("Rita Recruiter".into(), String::new())
+    );
+    assert_eq!(
+        contact_of(recipient_email_only),
+        (String::new(), "rita@acme.com".into())
+    );
+
+    // 9. Whitespace-only canonical pair counts as empty (TRIM rule), so it is
+    // promoted just like a truly empty one.
+    assert_eq!(
+        contact_of(whitespace_contact),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
+    );
 
     // Every response mirrors the canonical pair onto the deprecated wire names,
     // so a renderer still reading `recipientName` sees the unified contact.
-    for id in [recipient_only, contact_only, both, neither] {
+    for id in [
+        recipient_only,
+        contact_only,
+        both,
+        neither,
+        contact_name_only,
+        contact_email_only,
+        recipient_name_only,
+        recipient_email_only,
+        whitespace_contact,
+    ] {
         let app = store.get(id).unwrap();
         assert_eq!(
             app.recipient_name, app.contact_name,
@@ -2973,6 +3057,28 @@ fn contact_backfill_covers_every_population_combination() {
         assert_eq!(
             app.recipient_email, app.contact_email,
             "{id}: recipientEmail must mirror the canonical contactEmail"
+        );
+    }
+
+    // The alias pair that was NOT promoted (it belongs to a second, distinct
+    // person) is preserved into notes — the store stops reading the deprecated
+    // columns and an export mirrors the canonical pair, so this is its only
+    // recoverable home.
+    for id in [both, contact_name_only, contact_email_only] {
+        assert!(
+            store
+                .get(id)
+                .unwrap()
+                .notes
+                .contains("Apply-by-email: Rita Recruiter <rita@acme.com>"),
+            "{id}: a dropped distinct apply-by-email contact must survive in notes"
+        );
+    }
+    // A promoted row keeps its notes clean — nothing was dropped.
+    for id in [recipient_only, whitespace_contact, neither] {
+        assert!(
+            !store.get(id).unwrap().notes.contains("Apply-by-email:"),
+            "{id}: nothing was dropped, so no note may be appended"
         );
     }
 
@@ -2993,14 +3099,36 @@ fn contact_backfill_covers_every_population_combination() {
 }
 
 #[test]
+fn contact_backfill_appends_the_preserved_note_after_existing_text() {
+    let dir = TempDir::new().unwrap();
+    seed_pre_unification_db(dir.path());
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "UPDATE applications SET notes = 'call back Tuesday' WHERE id = 'app-both'",
+            [],
+        )
+        .unwrap();
+    }
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        store.get("app-both").unwrap().notes,
+        "call back Tuesday\n\nApply-by-email: Rita Recruiter <rita@acme.com>",
+        "the user's own note must be kept, with the preserved contact appended"
+    );
+}
+
+#[test]
 fn contact_backfill_sql_is_idempotent() {
     let dir = TempDir::new().unwrap();
     let ids = seed_pre_unification_db(dir.path());
-    let snapshot = |store: &ApplicationStore| -> Vec<(String, String)> {
+    // Snapshot `notes` too: the preservation statement APPENDS, so a replay that
+    // is not guarded would stack duplicate "Apply-by-email:" lines.
+    let snapshot = |store: &ApplicationStore| -> Vec<(String, String, String)> {
         ids.iter()
             .map(|id| {
                 let a = store.get(id).unwrap();
-                (a.contact_name, a.contact_email)
+                (a.contact_name, a.contact_email, a.notes)
             })
             .collect()
     };
@@ -3116,13 +3244,17 @@ fn both_inbound_contact_names_write_the_same_storage() {
     assert_eq!(cleared.recipient_name, "");
 }
 
-#[test]
-fn importing_a_pre_unification_bundle_promotes_the_alias() {
-    let dir = TempDir::new().unwrap();
-    let store = ApplicationStore::open(dir.path()).unwrap();
-    // A bundle exported by a build that only ever wrote `recipientName`.
-    let bundle = serde_json::json!([{
-        "id": "app-imported-1",
+/// One bundle entry for a pre-unification export, with the four contact fields
+/// under test and everything else at a harmless default.
+fn imported_row(
+    id: &str,
+    contact_name: &str,
+    contact_email: &str,
+    recipient_name: &str,
+    recipient_email: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
         "status": "applied",
         "createdAt": 1000,
         "updatedAt": 1000,
@@ -3135,22 +3267,96 @@ fn importing_a_pre_unification_bundle_promotes_the_alias() {
         "brief": "",
         "notes": "",
         "comp": "",
-        "contactName": "",
-        "contactEmail": "",
-        "recipientName": "Rita Recruiter",
-        "recipientEmail": "rita@acme.com"
-    }]);
-    assert_eq!(store.import(&bundle).unwrap(), 1);
-    let app = store.get("app-imported-1").unwrap();
+        "contactName": contact_name,
+        "contactEmail": contact_email,
+        "recipientName": recipient_name,
+        "recipientEmail": recipient_email
+    })
+}
+
+#[test]
+fn importing_a_pre_unification_bundle_folds_exactly_like_the_migration() {
+    // `canonicalize_contact` is the import-time copy of the migration's rule;
+    // these are the same cases as `contact_backfill_promotes_the_pair_atomically`
+    // driven through the bundle path instead of SQL.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let bundle = serde_json::json!([
+        imported_row("imp-alias-only", "", "", "Rita Recruiter", "rita@acme.com"),
+        imported_row(
+            "imp-contact-name-only",
+            "Cora Contact",
+            "",
+            "Rita Recruiter",
+            "rita@acme.com"
+        ),
+        imported_row("imp-alias-name-only", "", "", "Rita Recruiter", ""),
+        imported_row("imp-whitespace-contact", "  ", " ", "Rita Recruiter", ""),
+    ]);
+    assert_eq!(store.import(&bundle).unwrap(), 4);
+    let contact_of = |id: &str| {
+        let a = store.get(id).unwrap();
+        (a.contact_name, a.contact_email)
+    };
+
+    // Alias-only → the whole pair is promoted.
     assert_eq!(
-        app.contact_name, "Rita Recruiter",
-        "an alias-only bundle must migrate exactly like an alias-only row"
+        contact_of("imp-alias-only"),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
     );
-    assert_eq!(app.contact_email, "rita@acme.com");
+    // …and mirrored back onto the deprecated wire name.
     assert_eq!(
-        app.recipient_name, "Rita Recruiter",
-        "and is mirrored back onto the deprecated wire name"
+        store.get("imp-alias-only").unwrap().recipient_name,
+        "Rita Recruiter"
     );
+
+    // THE FUSION CASE: a half-populated canonical pair must not absorb the alias
+    // email, or the mailto: sink would address Rita under Cora's name.
+    assert_eq!(
+        contact_of("imp-contact-name-only"),
+        ("Cora Contact".into(), String::new())
+    );
+    // The distinct contact is preserved instead of silently dropped — an export
+    // mirrors the canonical pair, so this note is its only recoverable home.
+    assert_eq!(
+        store.get("imp-contact-name-only").unwrap().notes,
+        "Apply-by-email: Rita Recruiter <rita@acme.com>"
+    );
+
+    // A half-populated ALIAS pair still moves as a unit; the empty half stays empty.
+    assert_eq!(
+        contact_of("imp-alias-name-only"),
+        ("Rita Recruiter".into(), String::new())
+    );
+    // Whitespace-only canonical counts as empty, same TRIM rule as the migration.
+    assert_eq!(
+        contact_of("imp-whitespace-contact"),
+        ("Rita Recruiter".into(), String::new())
+    );
+}
+
+#[test]
+fn re_importing_does_not_stack_duplicate_preserved_contacts() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let bundle = serde_json::json!([imported_row(
+        "imp-repeat",
+        "Cora Contact",
+        "",
+        "Rita Recruiter",
+        "rita@acme.com"
+    )]);
+    store.import(&bundle).unwrap();
+    let once = store.get("imp-repeat").unwrap().notes;
+
+    // Re-importing the SAME pre-unification bundle must not append a second copy.
+    store.import(&bundle).unwrap();
+    assert_eq!(store.get("imp-repeat").unwrap().notes, once);
+
+    // Nor does exporting the now-unified row and importing that back.
+    let round_tripped = store.export();
+    store.import(&round_tripped).unwrap();
+    assert_eq!(store.get("imp-repeat").unwrap().notes, once);
 }
 
 // ── Follow-up reminder marker (`add_applications_next_action_notified_at`) ────
@@ -3223,7 +3429,10 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
     };
 
     set_reminder(Some(5_000));
-    store.mark_next_action_notified(&id, 9_000).unwrap();
+    assert!(
+        store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "stamping the due date the sweep read must match a row"
+    );
     assert_eq!(marker(), Some(9_000), "the sweep's stamp persists");
 
     // An unrelated patch rewrites every column — the marker must NOT be lost,
@@ -3258,7 +3467,7 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
 
     // Clearing the reminder entirely also clears the marker, so re-setting the
     // same date later still notifies.
-    store.mark_next_action_notified(&id, 9_500).unwrap();
+    store.mark_next_action_notified(&id, 7_000, 9_500).unwrap();
     set_reminder(None);
     assert!(
         store.follow_up_candidates().is_empty(),
@@ -3266,4 +3475,51 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
     );
     set_reminder(Some(7_000));
     assert_eq!(marker(), None, "clearing then re-setting starts fresh");
+}
+
+#[test]
+fn stamping_a_stale_due_date_matches_nothing_and_leaves_the_new_one_notifiable() {
+    // The sweep's read → stamp window: the user reschedules in between. An
+    // unconditional stamp would mark the row notified for a due date the sweep
+    // never evaluated, silencing the NEW reminder forever.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    let set_reminder = |at: Option<u64>| {
+        store
+            .update_fields(
+                &id,
+                None,
+                Some(at),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+    };
+
+    set_reminder(Some(5_000)); // the sweep reads due = 5_000 …
+    set_reminder(Some(7_000)); // … the user reschedules before the stamp lands
+
+    assert!(
+        !store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a stamp for the OLD due date must match no row"
+    );
+    let candidate = store.follow_up_candidates();
+    assert_eq!(
+        candidate.first().and_then(|c| c.notified_at),
+        None,
+        "the new due date must stay notifiable"
+    );
+
+    // A missing id is the same no-op, not an error.
+    assert!(!store
+        .mark_next_action_notified("does-not-exist", 7_000, 9_000)
+        .unwrap());
 }

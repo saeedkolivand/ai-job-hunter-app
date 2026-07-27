@@ -103,21 +103,50 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             // `recipient_email` (the apply-by-email pair) are demoted to
             // deprecated aliases of it — see `super::Application`.
             //
-            // Backfill promotes an alias-only value onto the canonical pair; a
-            // row that already has a canonical value keeps it (canonical wins).
-            // NON-DESTRUCTIVE on purpose: the deprecated columns are left
-            // exactly as they are, so a row whose two pairs genuinely differed
-            // still has its old alias value on disk. The store simply stops
-            // reading and writing them (`super::SELECT_COLS` /
-            // `super::ApplicationStore::write_row_conn`).
+            // **PAIR-ATOMIC.** The promotion moves name AND email together, and
+            // only when the WHOLE canonical pair is empty. Promoting each column
+            // independently would fuse two different people — person A's name
+            // (already in `contact_name`) with person B's address (in
+            // `recipient_email`) — and that fused identity feeds the
+            // apply-by-email `mailto:` sink, i.e. a message addressed to B under
+            // A's name. Same rule, same emptiness test (`TRIM`, because
+            // whitespace-only values are reachable from pre-trim builds), as
+            // `super::Application::canonicalize_contact`, which applies it to an
+            // imported bundle — the two MUST stay in lockstep.
             //
-            // Idempotent: re-running finds the canonical column already
-            // non-empty (or both empty) and writes the same value back.
+            // Statement 1 preserves an apply-by-email contact that statement 2
+            // will NOT promote (the canonical pair is occupied by someone else)
+            // by appending it to `notes`. Without it that person is lost for
+            // good: the store stops reading the deprecated columns, and an
+            // export mirrors the canonical pair, so an export/import round trip
+            // could never recover them. Mirrors the note this migration's
+            // import-time twin builds — see `super::contact`.
+            //
+            // NON-DESTRUCTIVE: the deprecated columns are never written, so a
+            // row whose two pairs genuinely differed still has its old alias
+            // value on disk too. The store simply stops reading them
+            // (`super::SELECT_COLS` / `super::ApplicationStore::write_row_conn`).
+            //
+            // Idempotent: statement 1 skips a note it already appended (`instr`
+            // on the exact line), and statement 2's `WHERE` no longer matches a
+            // row it already promoted.
             conn.execute_batch(
                 "UPDATE applications
-                    SET contact_name  = COALESCE(NULLIF(contact_name,  ''), recipient_name),
-                        contact_email = COALESCE(NULLIF(contact_email, ''), recipient_email)
-                  WHERE contact_name = '' OR contact_email = '';",
+                    SET notes = CASE WHEN notes = '' THEN '' ELSE notes || char(10) || char(10) END
+                                || 'Apply-by-email: ' || recipient_name || ' <' || recipient_email || '>'
+                  WHERE (TRIM(recipient_name) <> '' OR TRIM(recipient_email) <> '')
+                    AND NOT (TRIM(contact_name) = '' AND TRIM(contact_email) = '')
+                    AND (recipient_name <> contact_name OR recipient_email <> contact_email)
+                    AND instr(
+                          notes,
+                          'Apply-by-email: ' || recipient_name || ' <' || recipient_email || '>'
+                        ) = 0;
+
+                 UPDATE applications
+                    SET contact_name  = recipient_name,
+                        contact_email = recipient_email
+                  WHERE TRIM(contact_name) = '' AND TRIM(contact_email) = ''
+                    AND (TRIM(recipient_name) <> '' OR TRIM(recipient_email) <> '');",
             )
         },
     },

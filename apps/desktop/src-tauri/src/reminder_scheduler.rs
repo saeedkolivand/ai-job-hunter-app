@@ -96,6 +96,12 @@ pub fn start(app: AppHandle) {
         tick(&app);
 
         let mut interval = tokio::time::interval(TICK_INTERVAL);
+        // `Delay`, not the default `Burst`: after the machine sleeps for hours,
+        // Burst would fire every missed tick back-to-back — draining up to
+        // MAX_PER_SWEEP notifications per catch-up tick in one blast. A reminder
+        // sweep is idempotent and state-driven, so missed ticks are worthless;
+        // resume the normal cadence from wake instead.
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         interval.tick().await; // consume the immediate tick (first sweep already ran)
         loop {
             interval.tick().await;
@@ -112,18 +118,29 @@ fn tick(app: &AppHandle) {
         return;
     };
     for c in due_follow_ups(store.follow_up_candidates(), now_ms()) {
+        // `should_notify` only accepts a candidate with a due date, so this is
+        // always `Some`; skip rather than unwrap if that ever stops holding.
+        let Some(due_at) = c.next_action_at else {
+            continue;
+        };
         // Stamp the marker FIRST, then notify — so a crash between the two
         // never re-announces the same due date (the email-watch `mark_seen`
-        // ordering). A failed stamp skips the notification entirely rather than
-        // risking an un-deduped repeat every 30 minutes.
-        if let Err(e) = store.mark_next_action_notified(&c.id, now_ms()) {
-            log::warn!(
+        // ordering). The stamp is conditional on the due date this decision was
+        // made against: `Ok(false)` means the user rescheduled (or deleted the
+        // row) since the read, so this notification is stale — drop it and let
+        // the next sweep evaluate the NEW date. A failed stamp likewise skips,
+        // rather than risking an un-deduped repeat every 30 minutes.
+        match store.mark_next_action_notified(&c.id, due_at, now_ms()) {
+            Ok(true) => notify_due(app, &c),
+            Ok(false) => log::debug!(
+                "[reminders] {} changed since the sweep read it — not notifying",
+                c.id
+            ),
+            Err(e) => log::warn!(
                 "[reminders] could not mark {} notified (skipping): {e}",
                 c.id
-            );
-            continue;
+            ),
         }
-        notify_due(app, &c);
     }
 }
 

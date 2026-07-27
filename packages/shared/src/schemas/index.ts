@@ -396,10 +396,11 @@ export const ApplicationUpdateSchema = z.object({
   nextActionAt: z.number().int().min(0).nullable().optional(),
   comp: z.string().optional(),
   // The canonical primary contact for the application (recruiter / hiring
-  // manager / apply-by-email recipient — one person, one pair). Server-side the
-  // email goes through the same address validation as `recipientEmail`.
-  contactName: z.string().optional(),
-  contactEmail: z.string().optional(),
+  // manager / apply-by-email recipient — one person, one pair). Server-side
+  // BOTH inbound names go through the same trim + byte-cap + address-format
+  // guards, so the caps here match the deprecated aliases below exactly.
+  contactName: z.string().trim().max(200).optional(),
+  contactEmail: z.string().trim().max(254).optional(),
   // The imported/pasted job description, persisted onto the Application so a JD
   // captured from the browser DOM survives to tailoring. Capped to a sane bound
   // so a pathological paste can't bloat the row. Byte-length (not char-count) so
