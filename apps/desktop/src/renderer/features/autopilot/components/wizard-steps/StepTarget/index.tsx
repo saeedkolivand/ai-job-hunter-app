@@ -149,7 +149,7 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                           : 'border-[var(--border-clear)] text-foreground/40 hover:bg-muted hover:text-foreground/65'
                       )}
                     >
-                      {t(`jobs.boards.${id}`)}
+                      {t(`jobs.boards.${id}`, { defaultValue: id })}
                     </Button>
                   );
                 })}

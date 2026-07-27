@@ -88,6 +88,14 @@ export interface BoardsContract {
  *     while the rest parsed. If EVERY row of a company dropped it's counted as
  *     a fetch failure, not a note. At most one of `slugs-invalid`/`rows-dropped`
  *     is emitted per board per run (`slugs-invalid` wins when both apply).
+ *   - `"companies-failed:<n>"` — a company-slug ATS board (Lever, Ashby) could
+ *     not fetch `<n>` of the requested companies (404 on a rotted slug, 403,
+ *     429, or a payload over the byte cap) while at least one other company
+ *     succeeded, so the run still returned results. If EVERY fetch failed it's
+ *     an `error`, not a note. Emitted independently of the
+ *     `slugs-invalid`/`rows-dropped` pair above — those come from boards that
+ *     validate slugs pre-fetch, this one from the boards that don't — but a
+ *     board still reports at most ONE note per run overall.
  *   `<cc>` is an ISO country code; the field never carries the raw location text.
  */
 export interface BoardScrapeSummary {

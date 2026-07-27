@@ -66,7 +66,7 @@ export function BoardConnectChip({ board, required = false }: BoardConnectChipPr
     }
   };
 
-  const boardLabel = t(`jobs.boards.${board}`);
+  const boardLabel = t(`jobs.boards.${board}`, { defaultValue: board });
 
   if (connected) {
     return (
