@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import type { AiGenerationRecord, Application, InterviewQuestion } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, CardSkeleton, EmptyState, SegmentedControl, TextArea } from '@ajh/ui';
+import { Button, CardSkeleton, Dropdown, EmptyState, SegmentedControl, TextArea } from '@ajh/ui';
 
 import { AudienceSelector } from '@/components/interview/AudienceSelector';
 import { InterviewPracticePanel } from '@/components/interview/InterviewPracticePanel';
@@ -12,6 +12,7 @@ import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewPractice } from '@/hooks/use-interview-practice';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
 import { useDefaultResumeId } from '@/hooks/useDefaultResumeId';
+import { OUTPUT_LANGUAGES } from '@/lib/generate';
 import { useDocuments, useDocumentText, useResolveJobUrl } from '@/services';
 
 interface Props {
@@ -66,6 +67,11 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   });
   const practice = useInterviewPractice({ resume, jobDesc, model, canUse, hasDesc });
 
+  // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
+  // is a locale CODE the generation pipeline accepts; labels are endonyms, each
+  // language shown in its own script (mirrors the tailor flow's summary picker).
+  const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
+
   if (docsQuery.isLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
     return (
       <div className="h-full overflow-y-auto px-6 py-5">
@@ -97,9 +103,24 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
         <>
           {/* Toolbar — audience selector + seed topics + generate */}
           <div className="shrink-0 space-y-2 border-b border-[var(--border-soft)] px-8 py-3">
-            <span className="block text-xs font-medium text-foreground/70">
-              {t('applications.detail.interview.audienceLabel')}
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="block text-xs font-medium text-foreground/70">
+                {t('applications.detail.interview.audienceLabel')}
+              </span>
+              {/* Output language of the generated questions. The label is
+                  visually redundant with the selected language, so sr-only keeps
+                  the toolbar uncluttered while the trigger stays named. */}
+              <label htmlFor="iq-language" className="sr-only">
+                {t('applications.detail.interview.languageLabel')}
+              </label>
+              <Dropdown
+                id="iq-language"
+                value={iq.language}
+                onChange={iq.setLanguage}
+                options={languageOptions}
+                size="sm"
+              />
+            </div>
             <AudienceSelector selected={iq.audiences} onToggle={iq.toggleAudience} />
             <label htmlFor="iq-seeds" className="block pt-1 text-xs font-medium text-foreground/70">
               {t('applications.detail.interview.seedLabel')}

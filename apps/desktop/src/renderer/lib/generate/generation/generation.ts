@@ -619,6 +619,10 @@ export async function generateInterviewQuestions(params: {
   seedTopics?: string[];
   /** Target interviewers (canonical audience ids) — N questions per audience. */
   audiences?: string[];
+  /** Output-language CODE ('de', 'es', …) chosen by the user; overrides
+   *  `meta.targetLanguage`. Deliberately does NOT feed `resolveMarket` — the
+   *  register stays that of the job's country even when only the language changes. */
+  language?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
@@ -630,6 +634,7 @@ export async function generateInterviewQuestions(params: {
     companyBrief = '',
     seedTopics = [],
     audiences = [],
+    language,
     signal,
     onToken,
   } = params;
@@ -638,6 +643,10 @@ export async function generateInterviewQuestions(params: {
     jobCountry: meta.jobCountry,
     targetLanguage: meta.targetLanguage,
   });
+  // Same contract as generateJobAdSummary: the picker hands over a locale CODE,
+  // the prompt wants a human language NAME and streamGenerate wants the code.
+  // Resolving through OUTPUT_LANGUAGES keeps an arbitrary string out of the prompt.
+  const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
 
   const system = buildInterviewQuestionsSystemPrompt();
   const user = buildInterviewQuestionsPrompt({
@@ -649,6 +658,7 @@ export async function generateInterviewQuestions(params: {
     audiences,
     target: profile,
     market,
+    language: lang?.englishName,
   });
   // Interview questions are prose: keep the existing 0.5 temperature default,
   // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
@@ -659,7 +669,7 @@ export async function generateInterviewQuestions(params: {
     user,
     onToken ?? (() => {}),
     sampling.temperature,
-    meta.targetLanguage || 'en',
+    lang?.code ?? (meta.targetLanguage || 'en'),
     signal,
     undefined,
     sampling

@@ -2624,6 +2624,7 @@
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
         "audienceLabel": "Fragen generieren für",
+        "languageLabel": "Sprache der Fragen",
         "audience": {
           "recruiter": "Recruiter / HR (1. Runde)",
           "hiringManager": "Hiring Manager",

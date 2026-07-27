@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import type { InterviewQuestion } from '@ajh/shared';
+import { detectLanguage, type InterviewQuestion } from '@ajh/shared';
 
 import { useSelectedProvider } from '@/components/ui/ModelSelector';
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
@@ -11,6 +11,7 @@ import {
   type GenerationMeta,
   parseInterviewQuestions,
   researchCompany as fetchCompanyBrief,
+  safeLocale,
 } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useHasProviderKey } from '@/services';
@@ -43,6 +44,10 @@ interface Params {
  * layer (ADR-010). Detects metadata once (reusing the tailor flow's when given),
  * generates the delimited list, parses it leniently, then persists onto the
  * per-job aiGenerations aggregate (merge-upsert by `jobUrl`).
+ *
+ * The output `language` defaults to the ad's language (from `meta` when given,
+ * else detected from `jobDesc`) and is user-overridable via `setLanguage`; the
+ * chosen code is what gets persisted as the record's `targetLanguage`.
  */
 export function useInterviewQuestions({
   resume,
@@ -64,6 +69,12 @@ export function useInterviewQuestions({
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Output language, as a locale CODE ('en', 'de', …) matching an OUTPUT_LANGUAGES
+  // entry. Derived during render (no effect) so the default keeps tracking the ad
+  // as `jobDesc`/`meta` load in; the user's explicit pick then wins for good.
+  // `safeLocale` clamps an unsupported/undetected language to 'en'.
+  const [languageOverride, setLanguageOverride] = useState<string | null>(null);
+  const language = languageOverride ?? safeLocale(meta?.targetLanguage || detectLanguage(jobDesc));
 
   const toggleAudience = (aud: string) =>
     setAudiences((prev) => (prev.includes(aud) ? prev.filter((a) => a !== aud) : [...prev, aud]));
@@ -100,6 +111,7 @@ export function useInterviewQuestions({
         companyBrief: brief,
         seedTopics: seeds,
         audiences,
+        language,
       });
       const parsed = parseInterviewQuestions(raw);
       setQuestions(parsed);
@@ -112,7 +124,9 @@ export function useInterviewQuestions({
         companyName: detected.companyName,
         resumeLanguage: detected.resumeLanguage,
         jobAdLanguage: detected.jobAdLanguage,
-        targetLanguage: detected.targetLanguage,
+        // The language the questions were actually written in — the user's pick,
+        // not the detected one, so the saved record matches what it holds.
+        targetLanguage: language,
         mismatch: detected.mismatch,
         topRequirements: detected.topRequirements,
         mode: 'ats',
@@ -136,6 +150,8 @@ export function useInterviewQuestions({
   return {
     seedTopics,
     setSeedTopics,
+    language,
+    setLanguage: setLanguageOverride,
     audiences,
     toggleAudience,
     questions,

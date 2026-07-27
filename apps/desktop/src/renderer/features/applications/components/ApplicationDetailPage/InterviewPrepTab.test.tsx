@@ -61,6 +61,8 @@ let capturedHasDesc: boolean | undefined = undefined;
 const iqMock = {
   seedTopics: '',
   setSeedTopics: vi.fn(),
+  language: 'en',
+  setLanguage: vi.fn(),
   audiences: ['recruiter'] as string[],
   toggleAudience: vi.fn(),
   questions: [] as { id: string; question: string; audience: string }[],
@@ -170,6 +172,8 @@ beforeEach(() => {
   resolveJobUrlState.data = undefined;
   resolveJobUrlState.isLoading = false;
   iqMock.questions = [];
+  iqMock.language = 'en';
+  iqMock.setLanguage.mockClear();
   iqMock.generate.mockClear();
   practiceMock.generate.mockClear();
   practiceMock.getFeedback.mockClear();
@@ -280,5 +284,41 @@ describe('InterviewPrepTab — mode toggle', () => {
 
     expect(screen.getByTestId('audience-selector')).toBeInTheDocument();
     expect(screen.queryByTestId('practice-panel')).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. Output-language selector (ask-mode toolbar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('InterviewPrepTab — output language selector', () => {
+  /** The dropdown trigger, named by the sr-only <label htmlFor="iq-language">. */
+  const trigger = () => screen.getByLabelText('applications.detail.interview.languageLabel');
+
+  it('shows the hook language as the selected option, labelled by its endonym', () => {
+    iqMock.language = 'de';
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    expect(trigger()).toHaveTextContent('Deutsch');
+  });
+
+  it('forwards a picked language to the hook as a locale CODE', () => {
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByText('Français'));
+
+    expect(iqMock.setLanguage).toHaveBeenCalledWith('fr');
+  });
+
+  it('is part of the ask-mode toolbar only (hidden in practice mode)', () => {
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+    expect(trigger()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('applications.detail.interview.toggle.practice'));
+
+    expect(
+      screen.queryByLabelText('applications.detail.interview.languageLabel')
+    ).not.toBeInTheDocument();
   });
 });

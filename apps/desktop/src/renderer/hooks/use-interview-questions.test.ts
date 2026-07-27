@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
-import { generateInterviewQuestions } from '@/lib/generate';
+import { generateInterviewQuestions, type GenerationMeta } from '@/lib/generate';
 
 import { useInterviewQuestions } from './use-interview-questions';
 
@@ -21,23 +21,29 @@ vi.mock('@/services/query-client', () => ({
 // Stub the generation pipeline. `parseInterviewQuestions` returns a fixed set so we
 // can assert it lands on `questions`; `generateInterviewQuestions` is the seam we
 // assert the selected audiences flow into.
-vi.mock('@/lib/generate', () => ({
-  extractMetadata: vi.fn().mockResolvedValue({
-    candidateName: 'Ada',
-    jobTitle: 'Engineer',
-    companyName: 'Acme',
-    resumeLanguage: 'en',
-    jobAdLanguage: 'en',
-    mismatch: false,
-    targetLanguage: 'en',
-    topRequirements: [],
-  }),
-  researchCompany: vi.fn().mockResolvedValue('BRIEF'),
-  generateInterviewQuestions: vi.fn().mockResolvedValue('RAW'),
-  parseInterviewQuestions: vi
-    .fn()
-    .mockReturnValue([{ id: 'iq-1', question: 'Q1', why: 'because', audience: 'recruiter' }]),
-}));
+vi.mock('@/lib/generate', async () => {
+  // `safeLocale` is the REAL clamp (the locales module is dependency-free) so the
+  // language default is exercised, not re-implemented by the mock.
+  const { safeLocale } = await import('@/lib/generate/locales');
+  return {
+    safeLocale,
+    extractMetadata: vi.fn().mockResolvedValue({
+      candidateName: 'Ada',
+      jobTitle: 'Engineer',
+      companyName: 'Acme',
+      resumeLanguage: 'en',
+      jobAdLanguage: 'en',
+      mismatch: false,
+      targetLanguage: 'en',
+      topRequirements: [],
+    }),
+    researchCompany: vi.fn().mockResolvedValue('BRIEF'),
+    generateInterviewQuestions: vi.fn().mockResolvedValue('RAW'),
+    parseInterviewQuestions: vi
+      .fn()
+      .mockReturnValue([{ id: 'iq-1', question: 'Q1', why: 'because', audience: 'recruiter' }]),
+  };
+});
 
 // Active provider + Ollama web-search key — controllable so we can exercise the
 // needsResearchKey hint (Ollama-family provider without the key).
@@ -60,7 +66,24 @@ const params = {
 // a QueryClientProvider.
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(QueryClientProvider, { client: new QueryClient() }, children);
-const render = (p = params) => renderHook(() => useInterviewQuestions(p), { wrapper });
+const render = (p: Parameters<typeof useInterviewQuestions>[0] = params) =>
+  renderHook(() => useInterviewQuestions(p), { wrapper });
+
+/** Long enough for the real `detectLanguage` heuristic to settle on German. */
+const GERMAN_JD =
+  'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +
+  'Sie arbeiten an spannenden Projekten und stimmen sich eng mit dem Produktteam ab.';
+
+const metaWithLanguage = (targetLanguage: string): GenerationMeta => ({
+  candidateName: 'Ada',
+  jobTitle: 'Engineer',
+  companyName: 'Acme',
+  resumeLanguage: 'en',
+  jobAdLanguage: targetLanguage,
+  mismatch: false,
+  targetLanguage,
+  topRequirements: [],
+});
 
 describe('useInterviewQuestions', () => {
   beforeEach(() => {
@@ -141,6 +164,40 @@ describe('useInterviewQuestions', () => {
     mockProvider = 'ollama';
     mockHasOllamaKey = true;
     expect(render().result.current.needsResearchKey).toBe(false);
+  });
+
+  it('defaults the output language to the one detected from the job description', () => {
+    expect(render({ ...params, jobDesc: GERMAN_JD }).result.current.language).toBe('de');
+  });
+
+  it('prefers an already-detected meta.targetLanguage over re-detecting the ad', () => {
+    // German ad text, but the tailor flow already resolved the target as French.
+    const { result } = render({ ...params, jobDesc: GERMAN_JD, meta: metaWithLanguage('fr') });
+    expect(result.current.language).toBe('fr');
+  });
+
+  it('clamps a language outside OUTPUT_LANGUAGES to English', () => {
+    expect(render({ ...params, meta: metaWithLanguage('nl') }).result.current.language).toBe('en');
+  });
+
+  it('passes the chosen language to the generator and persists it as targetLanguage', async () => {
+    // Ad is German, so the default is 'de' — the explicit pick must win over it.
+    const { result } = render({ ...params, jobDesc: GERMAN_JD });
+    expect(result.current.language).toBe('de');
+
+    act(() => result.current.setLanguage('es'));
+    expect(result.current.language).toBe('es');
+
+    await act(async () => {
+      await result.current.generate();
+    });
+
+    expect(generateInterviewQuestions).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'es' })
+    );
+    // The saved record carries the language the questions were written in, not
+    // the 'en' that extractMetadata detected.
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'es' }));
   });
 
   it('does not call the generator when no audience is selected', async () => {

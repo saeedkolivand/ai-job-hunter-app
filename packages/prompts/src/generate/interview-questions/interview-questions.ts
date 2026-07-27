@@ -106,6 +106,10 @@ export function buildInterviewQuestionsPrompt(params: {
   target?: PromptTarget;
   /** Resolved job-market id (see `resolveMarket`) — drives register. */
   market?: string;
+  /** Explicit output-language NAME ('German', 'Spanish', …) the user picked. When
+   *  set it overrides the `meta`-derived language instruction; `market` is
+   *  unaffected, so the register stays that of the job's country. */
+  language?: string;
 }): string {
   const {
     resume,
@@ -118,6 +122,7 @@ export function buildInterviewQuestionsPrompt(params: {
     count = INTERVIEW_QUESTIONS_COUNT,
     target = 'large',
     market = 'intl',
+    language,
   } = params;
 
   // Keep only canonical audience ids, in their canonical display order.
@@ -132,9 +137,13 @@ export function buildInterviewQuestionsPrompt(params: {
     : '';
 
   const conv = letterConventions(market);
-  const langNote = meta.mismatch
-    ? `Write the questions entirely in ${meta.targetLanguage}, using natural phrasing for that market.`
-    : `Write the questions in ${meta.targetLanguage || 'en'}.`;
+  // An explicit `language` is a deliberate user choice, so it wins over the
+  // `meta.mismatch` proxy (which only guesses that the ad and résumé disagree).
+  const langNote = language
+    ? `Write the questions entirely in ${language}, using natural phrasing for that market.`
+    : meta.mismatch
+      ? `Write the questions entirely in ${meta.targetLanguage}, using natural phrasing for that market.`
+      : `Write the questions in ${meta.targetLanguage || 'en'}.`;
   const marketNote = `Market: ${conv.country}. Register: ${conv.formality}. Match this market's professional conventions.`;
 
   // Audience-targeted mode (N per interviewer, each tuned to its lens) vs the

@@ -2620,6 +2620,7 @@
         "needsModel": "Select an AI model in settings to generate questions.",
         "needsJob": "A job description is needed to tailor the questions.",
         "audienceLabel": "Generate questions for",
+        "languageLabel": "Question language",
         "audience": {
           "recruiter": "Recruiter / HR (1st round)",
           "hiringManager": "Hiring manager",
