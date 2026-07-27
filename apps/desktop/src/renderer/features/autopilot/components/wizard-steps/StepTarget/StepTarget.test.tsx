@@ -18,13 +18,15 @@
 
 import { FormProvider, useForm, useFormContext } from 'react-hook-form';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
 import type * as AjhUi from '@ajh/ui';
 import { NotificationProvider } from '@ajh/ui';
 
+import { autopilotWizardSchema } from '@/features/autopilot/lib/schema';
 import type { WizardState } from '@/features/autopilot/types';
 
 import { StepTarget } from './index';
@@ -116,18 +118,9 @@ vi.mock('@/features/autopilot/components/wizard-steps/PrefilledBadge', () => ({
   PrefilledBadge: () => null,
 }));
 
-vi.mock('@/features/autopilot/components/wizard-steps/WizardField', () => ({
-  WizardField: ({
-    children,
-  }: {
-    children?: React.ReactNode;
-    label?: string;
-    htmlFor?: string;
-    hint?: string;
-    badge?: React.ReactNode;
-    error?: string;
-  }) => <>{children}</>,
-}));
+// WizardField is NOT stubbed: it is a dependency-free presentational wrapper and
+// it owns the label/`htmlFor` wiring, so stubbing it would hide a control that
+// ships without an accessible name (see the page-budget field tests below).
 
 // Render the REAL WatchedCompaniesField so its insertion into the target step is
 // actually asserted — but stub the discovery SERVICE hooks so no React Query /
@@ -148,7 +141,7 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
     query: 'react developer',
     location: '',
     workType: 'any',
-    amount: 50,
+    pages: 2,
     dateFilter: '24h',
     watchedCompaniesOnly: false,
     minMatchScore: 50,
@@ -163,16 +156,25 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   };
 }
 
-/** Exposes the live countryCode field as JSON for assertions. */
+/** Exposes the live countryCode + pages fields as JSON for assertions. */
 function Probe() {
   const { watch } = useFormContext<WizardState>();
   const countryCode = watch('countryCode');
-  return <output data-testid={TEST_IDS.autopilot.probe}>{JSON.stringify({ countryCode })}</output>;
+  const pages = watch('pages');
+  return (
+    <output data-testid={TEST_IDS.autopilot.probe}>{JSON.stringify({ countryCode, pages })}</output>
+  );
 }
 
 function renderStep(overrides: Partial<WizardState> = {}) {
   function Host() {
-    const methods = useForm<WizardState>({ defaultValues: makeForm(overrides) });
+    // Same resolver + mode as CreationWizard, so validation-driven UI (inline
+    // error text, aria-invalid) is exercised here rather than assumed.
+    const methods = useForm<WizardState>({
+      defaultValues: makeForm(overrides),
+      resolver: zodResolver(autopilotWizardSchema),
+      mode: 'onChange',
+    });
     return (
       <NotificationProvider>
         <FormProvider {...methods}>
@@ -185,9 +187,9 @@ function renderStep(overrides: Partial<WizardState> = {}) {
   return render(<Host />);
 }
 
-function readProbe(): { countryCode: string | undefined } {
+function readProbe(): { countryCode: string | undefined; pages: number } {
   const text = screen.getByTestId(TEST_IDS.autopilot.probe).textContent ?? '{}';
-  return JSON.parse(text) as { countryCode: string | undefined };
+  return JSON.parse(text) as { countryCode: string | undefined; pages: number };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -263,6 +265,102 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
     await user.click(screen.getByTestId('location-input-stub'));
 
     expect(readProbe().countryCode).toBeUndefined();
+  });
+});
+
+// ── Page-budget field ───────────────────────────────────────────────────────
+// The control used to be an "Items to scrape" count (1–500) that the save step
+// divided by 25, so every value above 250 collapsed to the same 10 pages and
+// silently did nothing. It is now the page budget itself, bounded to the
+// backend's AutopilotTargetSchema range.
+
+describe('StepTarget — page budget field', () => {
+  it('bounds the control to the backend 1–10 page range and seeds the form value', () => {
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    expect(input).toHaveAttribute('min', '1');
+    expect(input).toHaveAttribute('max', '10');
+    expect(input.value).toBe('2');
+  });
+
+  it('gives the control an accessible name via the label/htmlFor pair', () => {
+    // WizardField renders its <label> as a SIBLING of the control, so without
+    // matching htmlFor/id the input announces as "spinbutton, blank".
+    renderStep({ pages: 2 });
+
+    expect(screen.getByLabelText('autopilot.wizard.target.pages')).toBe(
+      screen.getByRole('spinbutton')
+    );
+  });
+
+  it('marks the field invalid inline while a non-integer is still unblurred', async () => {
+    // The blur-round below is not guaranteed to run: on WKWebView a click does
+    // not focus the clicked button, so "Next" can be pressed without the input
+    // ever blurring. The resolver then rejects `pages` and — before this wiring
+    // — the only feedback was the wizard's generic "missing fields" banner,
+    // with nothing marking the offending control for sighted or SR users.
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+
+    // The message is an i18n KEY resolved through WizardField's `error` prop
+    // (t is mocked to identity here), never zod's raw English default.
+    expect(await screen.findByText('autopilot.wizard.validation.pagesRange')).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('clears the inline error once the value is valid again', async () => {
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+    await screen.findByText('autopilot.wizard.validation.pagesRange');
+
+    fireEvent.blur(input); // rounds to 3 → valid
+    await waitFor(() => {
+      expect(screen.queryByText('autopilot.wizard.validation.pagesRange')).toBeNull();
+    });
+    expect(input).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('rounds a non-integer entry on blur so it can never reach the .int() schema', () => {
+    // NumberField clamps to [min, max] on blur but never rounds. An unrounded
+    // 2.5 fails the resolver, and the final Create button runs through
+    // handleSubmit with no onInvalid branch — it would just do nothing.
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    fireEvent.change(input, { target: { value: '2.5' } });
+    expect(readProbe().pages).toBe(2.5); // unrounded while the field is focused
+
+    fireEvent.blur(input);
+    expect(readProbe().pages).toBe(3);
+    expect(input.value).toBe('3'); // the displayed buffer follows the rounded value
+  });
+
+  it('writes a typed page count straight into the form (no ×25 item detour)', async () => {
+    const user = userEvent.setup();
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole('spinbutton');
+    await user.clear(input);
+    await user.type(input, '7');
+
+    expect(readProbe().pages).toBe(7);
+  });
+
+  it('clamps an over-range entry down to 10 on blur instead of accepting a no-op value', async () => {
+    const user = userEvent.setup();
+    renderStep({ pages: 2 });
+
+    const input = screen.getByRole('spinbutton');
+    await user.clear(input);
+    await user.type(input, '40');
+    await user.tab();
+
+    expect(readProbe().pages).toBe(10);
   });
 });
 
