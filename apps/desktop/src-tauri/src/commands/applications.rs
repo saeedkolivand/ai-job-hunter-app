@@ -77,7 +77,12 @@ fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
     }
 }
 
-/// Validate and normalise an inbound recipient email address (the apply-by-email sink).
+/// Validate and normalise an inbound contact email address (the apply-by-email sink).
+///
+/// Applied to BOTH inbound names for the unified contact pair — `contactEmail`
+/// and its deprecated alias `recipientEmail` (see
+/// [`crate::applications::Application::recipient_name`]) — since they write the
+/// same column; validating only one would leave a bypass under the other name.
 ///
 /// - `None` → `Ok(None)` (field absent — leave unchanged in the store).
 /// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
@@ -160,6 +165,13 @@ pub async fn applications_set_status(
     }
 }
 
+/// Patch the user-editable tracking fields of one Application.
+///
+/// **Contact fields converge:** `contactName`/`contactEmail` are canonical and
+/// `recipientName`/`recipientEmail` are accepted deprecated aliases of them — a
+/// write under either name lands in the same storage, and every response carries
+/// both names populated with that single value. When a caller sends both, the
+/// canonical one wins. See [`crate::applications::Application::recipient_name`].
 #[tauri::command]
 pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) -> Value {
     let span = Span::begin("applications", format!("update id={}", req.id));
@@ -173,25 +185,30 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
             return json!({ "error": e });
         }
     };
-    // Server-side recipient_email validation: trim, whitespace-only → clear,
+    // Server-side contact-email validation: trim, whitespace-only → clear,
     // bad format → Validation error. This is the apply-by-email sink — a bad
-    // address must never be stored.
-    let recipient_email = match validate_recipient_email(req.recipient_email) {
-        Ok(v) => v,
-        Err(e) => {
+    // address must never be stored. Both inbound names hit the same column
+    // (contact unification), so both go through the same guard.
+    let (contact_email, recipient_email) = match (
+        validate_recipient_email(req.contact_email),
+        validate_recipient_email(req.recipient_email),
+    ) {
+        (Ok(c), Ok(r)) => (c, r),
+        (Err(e), _) | (_, Err(e)) => {
             span.end_with(&e.to_string(), false);
             return json!({ "error": e });
         }
     };
-    // Trim recipient_name; whitespace-only collapses to empty (clear the field).
+    // Trim both name aliases; whitespace-only collapses to empty (clear the field).
+    let contact_name = req.contact_name.map(|s| s.trim().to_string());
     let recipient_name = req.recipient_name.map(|s| s.trim().to_string());
     let result = store(&app).update_fields(
         &req.id,
         req.notes,
         next_action_at,
         req.comp,
-        req.contact_name,
-        req.contact_email,
+        contact_name,
+        contact_email,
         req.job_description,
         req.job_summary,
         recipient_name,

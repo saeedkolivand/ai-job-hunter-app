@@ -390,8 +390,14 @@ export const ApplicationUpdateSchema = z.object({
   // Non-negative: the server-side guard (`parse_next_action_at`) rejects a
   // negative epoch-ms, so the wire contract mirrors it rather than silently
   // clearing the reminder on a bad value.
+  // Clearing the reminder (explicit null) or moving it to a new date also
+  // resets the backend's follow-up-notification marker, so the new due date
+  // notifies once. Setting the SAME value again is not a reschedule.
   nextActionAt: z.number().int().min(0).nullable().optional(),
   comp: z.string().optional(),
+  // The canonical primary contact for the application (recruiter / hiring
+  // manager / apply-by-email recipient — one person, one pair). Server-side the
+  // email goes through the same address validation as `recipientEmail`.
   contactName: z.string().optional(),
   contactEmail: z.string().optional(),
   // The imported/pasted job description, persisted onto the Application so a JD
@@ -407,8 +413,10 @@ export const ApplicationUpdateSchema = z.object({
     })
     .optional(),
   jobSummary: z.string().max(50_000).optional(),
-  // Employer-side contact for a direct "apply by email" approach — distinct from
-  // the applicant's own contactName/contactEmail on the Application.
+  // DEPRECATED aliases of contactName/contactEmail, still accepted so existing
+  // callers (the apply-by-email tab, the extension) keep working: a write under
+  // either name lands in the SAME storage, and both names come back populated
+  // with that one value. Sending both in one patch → the canonical one wins.
   recipientName: z.string().trim().max(200).optional(),
   recipientEmail: z.string().trim().max(254).optional(),
 });

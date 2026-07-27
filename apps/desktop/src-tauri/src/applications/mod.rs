@@ -22,8 +22,15 @@ use uuid::Uuid;
 
 use crate::ai_generations::ApplicationAnswer;
 use crate::data_store::DataStore;
-use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
+use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db};
 use crate::error::{AppError, AppResult};
+
+mod job_url;
+mod migrations;
+
+// Re-exported so `crate::applications::normalize_job_url` keeps resolving after
+// the split (see `job_url` — a verbatim move, no behaviour change).
+pub use job_url::normalize_job_url;
 
 /// The user-mutable lifecycle of an [`Application`].
 ///
@@ -222,17 +229,27 @@ pub struct Application {
     pub next_action_at: Option<u64>,
     #[serde(default)]
     pub comp: String,
+    /// **The** primary contact for this pursuit (recruiter / hiring manager /
+    /// apply-by-email recipient — one person, one field). Canonical: this is the
+    /// only contact pair the store reads or writes.
     #[serde(default)]
     pub contact_name: String,
+    /// Canonical primary contact email — see [`Application::contact_name`].
     #[serde(default)]
     pub contact_email: String,
     #[serde(default)]
     pub job_summary: String,
-    /// Employer-side contact name for a direct "apply by email" approach.
-    /// Distinct from the applicant's own `contact_name` on the Application.
+    /// **Deprecated alias** of [`Application::contact_name`], kept on the wire so
+    /// existing renderer/extension callers keep working. Reads always mirror the
+    /// canonical value (see [`row_to_application`]); writes fold onto the
+    /// canonical pair (see [`ApplicationStore::update_fields`] /
+    /// [`Application::canonicalize_contact`]). The `recipient_*` COLUMNS still
+    /// exist in SQLite (migrations are additive-only) but are no longer read or
+    /// written.
     #[serde(default)]
     pub recipient_name: String,
-    /// Employer-side contact email for a direct "apply by email" approach.
+    /// **Deprecated alias** of [`Application::contact_email`] — see
+    /// [`Application::recipient_name`].
     #[serde(default)]
     pub recipient_email: String,
     /// Scraped salary range (Adzuna only, today) — grounds the salary application
@@ -245,6 +262,51 @@ pub struct Application {
     /// ISO-4217 currency for `salary_min`/`salary_max`.
     #[serde(default)]
     pub salary_currency: Option<String>,
+}
+
+impl Application {
+    /// Collapse the deprecated `recipient_*` alias pair onto the canonical
+    /// `contact_*` pair, then mirror the result back so both names carry the
+    /// same value.
+    ///
+    /// The canonical value wins whenever it is non-empty; an alias-only value is
+    /// promoted (same rule as the `unify_application_contact` migration, so a
+    /// bundle exported by a pre-unification build imports identically to how its
+    /// rows migrate in place).
+    ///
+    /// Applied ONLY where an `Application` arrives from outside this store
+    /// ([`ApplicationStore::import`]). The in-store build sites set both names
+    /// from the same resolved value explicitly instead — folding there would
+    /// resurrect a just-cleared contact from its own stale mirror.
+    fn canonicalize_contact(mut self) -> Self {
+        if self.contact_name.trim().is_empty() {
+            self.contact_name = std::mem::take(&mut self.recipient_name);
+        }
+        if self.contact_email.trim().is_empty() {
+            self.contact_email = std::mem::take(&mut self.recipient_email);
+        }
+        self.recipient_name = self.contact_name.clone();
+        self.recipient_email = self.contact_email.clone();
+        self
+    }
+}
+
+/// One Application's follow-up reminder state — the minimal projection
+/// [`crate::reminder_scheduler`] sweeps. Not a wire type: `notified_at` is
+/// backend-only bookkeeping and never reaches the renderer.
+#[derive(Debug, Clone)]
+pub struct FollowUpCandidate {
+    pub id: String,
+    pub status: ApplicationStatus,
+    pub title: String,
+    pub company: String,
+    /// The user-set reminder timestamp (ms). Always `Some` as returned by
+    /// [`ApplicationStore::follow_up_candidates`] (the query filters NULLs), but
+    /// kept optional so the decision function owns the "unset" case explicitly.
+    pub next_action_at: Option<u64>,
+    /// When a notification was already raised for the CURRENT `next_action_at`
+    /// (ms). `None` = not yet announced; cleared whenever the due date changes.
+    pub notified_at: Option<u64>,
 }
 
 /// One append-only status-history row.
@@ -265,98 +327,13 @@ pub struct ApplicationStore {
 }
 
 impl ApplicationStore {
-    const MIGRATIONS: &'static [Migration] = &[
-        Migration {
-            name: "create_applications",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS applications (
-                        id              TEXT PRIMARY KEY,
-                        status          TEXT NOT NULL DEFAULT 'saved',
-                        applied_at      INTEGER,
-                        created_at      INTEGER NOT NULL,
-                        updated_at      INTEGER NOT NULL,
-                        job_url         TEXT NOT NULL DEFAULT '',
-                        board           TEXT NOT NULL DEFAULT '',
-                        company         TEXT NOT NULL DEFAULT '',
-                        title           TEXT NOT NULL DEFAULT '',
-                        candidate       TEXT NOT NULL DEFAULT '',
-                        answers         TEXT NOT NULL DEFAULT '[]',
-                        brief           TEXT NOT NULL DEFAULT '',
-                        notes           TEXT NOT NULL DEFAULT '',
-                        next_action_at  INTEGER,
-                        comp            TEXT NOT NULL DEFAULT '',
-                        contact_name    TEXT NOT NULL DEFAULT '',
-                        contact_email   TEXT NOT NULL DEFAULT ''
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_applications_job_url
-                        ON applications(job_url);",
-                )
-            },
-        },
-        Migration {
-            name: "create_status_events",
-            up: |conn| {
-                conn.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS status_events (
-                        application_id  TEXT NOT NULL,
-                        from_status     TEXT NOT NULL DEFAULT '',
-                        to_status       TEXT NOT NULL,
-                        at              INTEGER NOT NULL,
-                        note            TEXT NOT NULL DEFAULT ''
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_status_events_app
-                        ON status_events(application_id);",
-                )
-            },
-        },
-        Migration {
-            name: "add_applications_job_description",
-            up: |conn| {
-                conn.execute_batch(
-                    "ALTER TABLE applications ADD COLUMN job_description TEXT NOT NULL DEFAULT '';",
-                )
-            },
-        },
-        Migration {
-            name: "add_applications_job_summary",
-            up: |conn| {
-                conn.execute_batch(
-                    "ALTER TABLE applications ADD COLUMN job_summary TEXT NOT NULL DEFAULT ''",
-                )
-            },
-        },
-        Migration {
-            name: "add_applications_recipient",
-            up: |conn| {
-                conn.execute_batch(
-                    "ALTER TABLE applications ADD COLUMN recipient_name TEXT NOT NULL DEFAULT '';
-                     ALTER TABLE applications ADD COLUMN recipient_email TEXT NOT NULL DEFAULT '';",
-                )
-            },
-        },
-        Migration {
-            name: "add_applications_salary",
-            up: |conn| {
-                // Nullable, NOT text-default: NULL means "unknown salary" (mirrors
-                // applied_at/next_action_at), never 0 — a 0 would read as a real
-                // (wrong) salary downstream.
-                conn.execute_batch(
-                    "ALTER TABLE applications ADD COLUMN salary_min REAL;
-                     ALTER TABLE applications ADD COLUMN salary_max REAL;
-                     ALTER TABLE applications ADD COLUMN salary_currency TEXT;",
-                )
-            },
-        },
-    ];
-
     /// Open `applications.db`, run migrations, then run the one-time backfill from
     /// the sibling `ai_generations.db` (idempotent — safe on every boot).
     pub fn open(data_dir: &Path) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("applications.db");
         let mut conn = crate::db::open(&path)?;
-        run_migrations(&mut conn, Self::MIGRATIONS)?;
+        run_migrations(&mut conn, migrations::MIGRATIONS)?;
         let store = Self {
             conn: Mutex::new(conn),
         };
@@ -653,8 +630,10 @@ impl ApplicationStore {
                 contact_name: existing.contact_name.clone(),
                 contact_email: existing.contact_email.clone(),
                 job_summary: pick(&meta.job_summary, &existing.job_summary),
-                recipient_name: existing.recipient_name.clone(),
-                recipient_email: existing.recipient_email.clone(),
+                // Deprecated aliases: always the canonical value, never a
+                // second source of truth (see `Application::recipient_name`).
+                recipient_name: existing.contact_name.clone(),
+                recipient_email: existing.contact_email.clone(),
                 // COALESCE(new, old): a re-scrape/re-track fills salary the first
                 // time it becomes known, but never clobbers an already-known value
                 // with an unknown (`None`) one.
@@ -974,6 +953,15 @@ impl ApplicationStore {
 
     /// Patch the user-editable tracking fields. Each `None` leaves its field
     /// unchanged; bumps `updated_at` whenever called.
+    ///
+    /// **Contact unification:** `recipient_name`/`recipient_email` are deprecated
+    /// aliases of `contact_name`/`contact_email` (see
+    /// [`Application::recipient_name`]) — both inbound names patch the SAME
+    /// canonical storage. When a caller sends both, the canonical one wins.
+    ///
+    /// **Reminders:** changing (or clearing) `next_action_at` drops the
+    /// `next_action_notified_at` dedupe marker in the same transaction, so a
+    /// rescheduled follow-up notifies again exactly once.
     #[allow(clippy::too_many_arguments)]
     pub fn update_fields(
         &self,
@@ -988,29 +976,99 @@ impl ApplicationStore {
         recipient_name: Option<String>,
         recipient_email: Option<String>,
     ) -> AppResult<()> {
-        // ONE lock spans lookup+write (`row_by_id_conn`, not self-locking `get`): the
-        // write rewrites EVERY column, so releasing it between let a commit be lost.
-        let conn = self.conn.lock();
-        let existing = Self::row_by_id_conn(&conn, id)?
+        // ONE lock/transaction spans lookup + write + the marker clear
+        // (`row_by_id_conn`, not self-locking `get`): the write rewrites EVERY
+        // column, so releasing the lock between them let a commit be lost, and
+        // the marker clear must land with the row or not at all.
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let existing = Self::row_by_id_conn(&tx, id)?
             .ok_or_else(|| AppError::Validation(format!("application not found: {id}")))?;
+        let next_action_at = next_action_at.unwrap_or(existing.next_action_at);
+        let reminder_rescheduled = next_action_at != existing.next_action_at;
+        // Canonical pair wins over the deprecated alias when both are supplied;
+        // otherwise whichever one was supplied patches it; absent in both leaves
+        // the stored value alone.
+        let contact_name = contact_name
+            .or(recipient_name)
+            .unwrap_or(existing.contact_name);
+        let contact_email = contact_email
+            .or(recipient_email)
+            .unwrap_or(existing.contact_email);
         let app = Application {
             notes: notes.unwrap_or(existing.notes),
-            next_action_at: next_action_at.unwrap_or(existing.next_action_at),
+            next_action_at,
             comp: comp.unwrap_or(existing.comp),
-            contact_name: contact_name.unwrap_or(existing.contact_name),
-            contact_email: contact_email.unwrap_or(existing.contact_email),
             // Clamp Some(s) at the store boundary; None still preserves the stored JD
             // (the IPC arg is attacker-reachable and bypasses the renderer Zod cap).
             job_description: job_description
                 .map(clamp_job_description)
                 .unwrap_or(existing.job_description),
             job_summary: job_summary.unwrap_or(existing.job_summary),
-            recipient_name: recipient_name.unwrap_or(existing.recipient_name),
-            recipient_email: recipient_email.unwrap_or(existing.recipient_email),
+            recipient_name: contact_name.clone(),
+            recipient_email: contact_email.clone(),
+            contact_name,
+            contact_email,
             updated_at: now_ms(),
             ..existing
         };
-        Self::write_row_conn(&conn, &app)
+        Self::write_row_conn(&tx, &app)?;
+        if reminder_rescheduled {
+            // A new (or cleared) due date is a NEW reminder — forget that the old
+            // one was already announced so the scheduler can fire once for it.
+            tx.execute(
+                "UPDATE applications SET next_action_notified_at = NULL WHERE id = ?1",
+                params![id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Every Application carrying a follow-up reminder, with the dedupe marker
+    /// the scheduler needs — the read side of [`crate::reminder_scheduler`].
+    ///
+    /// Rows without a `next_action_at` are filtered out in SQL (nothing to
+    /// remind about), so the sweep stays cheap on a large tracker.
+    pub fn follow_up_candidates(&self) -> Vec<FollowUpCandidate> {
+        let conn = self.conn.lock();
+        conn.prepare(
+            "SELECT id, status, title, company, next_action_at, next_action_notified_at
+             FROM applications WHERE next_action_at IS NOT NULL",
+        )
+        .ok()
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| {
+                let status_raw: String = row.get(1)?;
+                Ok(FollowUpCandidate {
+                    id: row.get(0)?,
+                    status: ApplicationStatus::from_id(&status_raw),
+                    title: row.get(2)?,
+                    company: row.get(3)?,
+                    next_action_at: row.get::<_, Option<i64>>(4)?.map(ts_from_db),
+                    notified_at: row.get::<_, Option<i64>>(5)?.map(ts_from_db),
+                })
+            })
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default()
+    }
+
+    /// Stamp "a follow-up notification was raised for the CURRENT
+    /// `next_action_at`" so the next sweep skips this row. Cleared by
+    /// [`Self::update_fields`] whenever the due date moves.
+    ///
+    /// Deliberately a targeted single-column `UPDATE` rather than a row rewrite:
+    /// the scheduler must never clobber a field the user edited between the read
+    /// and this write.
+    pub fn mark_next_action_notified(&self, id: &str, at: u64) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE applications SET next_action_notified_at = ?2 WHERE id = ?1",
+            params![id, ts_to_db(at)],
+        )?;
+        Ok(())
     }
 
     /// Delete an Application and its status history. `keep_documents` is consumed
@@ -1034,13 +1092,21 @@ impl ApplicationStore {
     fn write_row_conn(conn: &Connection, app: &Application) -> AppResult<()> {
         let answers_json = serde_json::to_string(&app.answers).unwrap_or_else(|_| "[]".into());
         let job_summary = truncate_on_char_boundary(&app.job_summary, MAX_JOB_SUMMARY_BYTES);
+        // The deprecated `recipient_name`/`recipient_email` columns are NOT in
+        // this statement: the canonical pair is `contact_name`/`contact_email`
+        // (migration `unify_application_contact`). Omitting them means a new row
+        // gets their `DEFAULT ''` and an existing row keeps its pre-unification
+        // value untouched — additive, never destructive.
+        // `next_action_notified_at` is likewise omitted: it is reminder
+        // bookkeeping owned by `mark_next_action_notified` / cleared by
+        // `update_fields`, and must survive an unrelated row rewrite.
         conn.execute(
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
                  comp, contact_name, contact_email, job_description, job_summary,
-                 recipient_name, recipient_email, salary_min, salary_max, salary_currency)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
+                 salary_min, salary_max, salary_currency)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -1059,8 +1125,6 @@ impl ApplicationStore {
                 contact_email = excluded.contact_email,
                 job_description = excluded.job_description,
                 job_summary = excluded.job_summary,
-                recipient_name = excluded.recipient_name,
-                recipient_email = excluded.recipient_email,
                 salary_min = excluded.salary_min,
                 salary_max = excluded.salary_max,
                 salary_currency = excluded.salary_currency",
@@ -1084,8 +1148,6 @@ impl ApplicationStore {
                 app.contact_email,
                 app.job_description,
                 job_summary,
-                app.recipient_name,
-                app.recipient_email,
                 app.salary_min,
                 app.salary_max,
                 app.salary_currency,
@@ -1148,15 +1210,24 @@ impl ApplicationStore {
 const MAX_JOB_SUMMARY_BYTES: usize = 50_000;
 
 /// Column projection shared by `list`/`get`/`find_by_job_url` so order lives once.
+///
+/// The deprecated `recipient_name`/`recipient_email` COLUMNS are deliberately
+/// absent: since `unify_application_contact` the canonical pair is
+/// `contact_name`/`contact_email`, and the struct's alias fields are mirrored
+/// from it in [`row_to_application`].
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
             comp, contact_name, contact_email, job_description, job_summary,
-            recipient_name, recipient_email, salary_min, salary_max, salary_currency
+            salary_min, salary_max, salary_currency
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
     let status_raw: String = row.get(1)?;
     let answers_json: String = row.get(10)?;
+    // Canonical contact pair, read once and mirrored onto the deprecated
+    // `recipient_*` alias fields below (see `Application::recipient_name`).
+    let contact_name: String = row.get(15)?;
+    let contact_email: String = row.get(16)?;
     Ok(Application {
         id: row.get(0)?,
         status: ApplicationStatus::from_id(&status_raw),
@@ -1173,147 +1244,17 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         notes: row.get(12)?,
         next_action_at: row.get::<_, Option<i64>>(13)?.map(ts_from_db),
         comp: row.get(14)?,
-        contact_name: row.get(15)?,
-        contact_email: row.get(16)?,
         job_description: row.get(17)?,
         job_summary: row.get(18)?,
-        recipient_name: row.get(19)?,
-        recipient_email: row.get(20)?,
+        recipient_name: contact_name.clone(),
+        recipient_email: contact_email.clone(),
+        contact_name,
+        contact_email,
         // NULL (unknown salary, e.g. a pre-migration row) → None, never 0.
-        salary_min: row.get(21)?,
-        salary_max: row.get(22)?,
-        salary_currency: row.get(23)?,
+        salary_min: row.get(19)?,
+        salary_max: row.get(20)?,
+        salary_currency: row.get(21)?,
     })
-}
-
-/// Extract an explicit URL scheme (the `scheme:` prefix per RFC 3986§3.1) if
-/// one is present, lowercased. A scheme is `ALPHA *( ALPHA / DIGIT / "+" / "-" /
-/// "." )` immediately followed by `:`, and it MUST appear before any `/`, `?`, or
-/// `#` — so `javascript:alert(1)` and `data:text/html,…` are schemes, but a
-/// scheme-less `host/path?x=a:b` (colon in the path/query) is not. Used to reject
-/// dangerous schemes; returns `None` for scheme-less input.
-fn explicit_scheme(input: &str) -> Option<String> {
-    // Only the authority-less head, before the first path/query/fragment delimiter,
-    // can carry a scheme. This keeps a `:` inside a path or query from looking like one.
-    let head = input.split(['/', '?', '#']).next().unwrap_or(input);
-    let (candidate, _) = head.split_once(':')?;
-    if candidate.is_empty() {
-        return None;
-    }
-    let mut chars = candidate.chars();
-    let first = chars.next()?;
-    if !first.is_ascii_alphabetic() {
-        return None;
-    }
-    if !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) {
-        return None;
-    }
-    Some(candidate.to_ascii_lowercase())
-}
-
-/// Normalize a job URL into a stable dedup key: lowercase host, strip a leading
-/// `www.`, drop the fragment (`#…`), retain only per-host *identifying* query
-/// params (e.g. Indeed `jk`) while dropping every other query param (utm_*, ref,
-/// tracking), and trim a trailing `/`. The scheme is preserved (lowercased). Empty
-/// input returns empty.
-///
-/// Security chokepoint: an input carrying an explicit scheme other than
-/// `http`/`https` (e.g. `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`) is
-/// neutralized to an empty string — i.e. "no url" — so an import-borne or
-/// manually-entered payload can never be stored as an openable link. Scheme-less
-/// input and `http(s)` keep their exact prior normalization.
-///
-/// No existing centralized URL normalizer was found in `net`/`scraping` (only
-/// host-only helpers like `contact_profile::host_of`), so this is the single
-/// owner for Application url identity.
-pub fn normalize_job_url(url: &str) -> String {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    // Reject dangerous explicit schemes at the single backend chokepoint. Only
-    // `http`/`https` may round-trip; any other explicit scheme yields "no url".
-    if let Some(scheme) = explicit_scheme(trimmed) {
-        if scheme != "http" && scheme != "https" {
-            return String::new();
-        }
-    }
-    let lower = trimmed.to_lowercase();
-    let (scheme, rest) = match lower.split_once("://") {
-        Some((s, r)) => (Some(s.to_string()), r.to_string()),
-        None => (None, lower.clone()),
-    };
-    // Drop the fragment (`#…`) unconditionally, then split the query off the path so
-    // per-host identifying params can be selectively retained below.
-    let no_frag = rest.split('#').next().unwrap_or(&rest);
-    let (path_part, query) = match no_frag.split_once('?') {
-        Some((p, q)) => (p, q),
-        None => (no_frag, ""),
-    };
-    let (host, path) = match path_part.split_once('/') {
-        Some((h, p)) => (h.to_string(), Some(p.to_string())),
-        None => (path_part.to_string(), None),
-    };
-    let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
-    // Keep ONLY the host's identifying query params (utm_*, ref, … are dropped);
-    // hosts with no allowlist entry drop the whole query, exactly as before.
-    let retained_query = retain_identifying_params(&host, query);
-    let mut out = String::new();
-    if let Some(s) = scheme {
-        out.push_str(&s);
-        out.push_str("://");
-    }
-    out.push_str(&host);
-    if let Some(p) = path {
-        let p = p.trim_end_matches('/');
-        if !p.is_empty() {
-            out.push('/');
-            out.push_str(p);
-        }
-    }
-    if !retained_query.is_empty() {
-        out.push('?');
-        out.push_str(&retained_query);
-    }
-    out
-}
-
-/// Per-host allowlist of *identifying* query params that must survive normalization
-/// (every other query param — utm_*, ref, tracking — is dropped, and hosts absent
-/// here drop the entire query, so a host whose id lives in the QUERY collapses to
-/// one key for every job). Keep in sync with every canonical URL builder that does
-/// that: Indeed (`/viewjob?jk=<id>`) and Hacker News (`/item?id=<id>`, built by
-/// `boards::ycombinator` when a job story has no external url). Path-based ids
-/// (LinkedIn et al.) need no entry.
-fn identifying_query_params(host: &str) -> &'static [&'static str] {
-    if host == "indeed.com" || host.ends_with(".indeed.com") {
-        &["jk"]
-    } else if host == "news.ycombinator.com" {
-        &["id"]
-    } else {
-        &[]
-    }
-}
-
-/// Rebuild the query string keeping only `identifying_query_params(host)`, emitted
-/// in the allowlist's own fixed order so the input param ordering can never change
-/// the dedup key. A param with an empty value is skipped. Returns "" when nothing is
-/// retained (the common, path-based case).
-fn retain_identifying_params(host: &str, query: &str) -> String {
-    let allow = identifying_query_params(host);
-    if allow.is_empty() || query.is_empty() {
-        return String::new();
-    }
-    allow
-        .iter()
-        .filter_map(|key| {
-            query.split('&').find_map(|pair| {
-                let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-                (k == *key && !v.is_empty()).then(|| format!("{key}={v}"))
-            })
-        })
-        .collect::<Vec<_>>()
-        .join("&")
 }
 
 /// Truncate `s` to at most `max_bytes`, never splitting a UTF-8 char.
@@ -1366,9 +1307,18 @@ impl DataStore for ApplicationStore {
             .ok_or_else(|| AppError::Parse("applications: expected an array".into()))?;
         // Deserialize EVERY Application before mutating, so a malformed row aborts
         // the import without having cleared the existing tables.
+        // `canonicalize_contact` folds a bundle exported by a pre-unification
+        // build (`recipientName` only) onto the canonical contact pair, exactly
+        // as the `unify_application_contact` migration does for rows in place —
+        // otherwise the store would drop it, since it no longer writes the
+        // deprecated columns.
         let apps: Vec<Application> = items
             .iter()
-            .map(|item| serde_json::from_value(item.clone()).map_err(AppError::from))
+            .map(|item| {
+                serde_json::from_value::<Application>(item.clone())
+                    .map(Application::canonicalize_contact)
+                    .map_err(AppError::from)
+            })
             .collect::<AppResult<_>>()?;
 
         // Clear (both tables) + repopulate (each row + its seed event) in ONE
