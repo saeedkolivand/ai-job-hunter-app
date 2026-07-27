@@ -22,6 +22,7 @@
  */
 
 import {
+  attributeSignal,
   autocompleteToken,
   isAmbiguousSignal,
   isHidden,
@@ -122,13 +123,23 @@ export function splitName(fullName: string): { first: string; last: string } {
 }
 
 /**
- * The baseline gate shared by every fill tier: a fillable input TYPE, visible,
- * empty, not a card/password autocomplete token, and not matching the ambiguous/
- * sensitive denylist ({@link isAmbiguousSignal}). Extracted so the extra-link
- * matcher (Tier 2) applies the exact same discipline as the named-key matcher below.
+ * The baseline gate shared by every fill tier: a fillable input TYPE, writable
+ * (not `disabled`/`readonly`), visible, empty, not a card/password autocomplete
+ * token, and not matching the ambiguous/sensitive denylist
+ * ({@link isAmbiguousSignal}). Extracted so the extra-link matcher (Tier 2)
+ * applies the exact same discipline as the named-key matcher below.
  */
 function isCandidateField(el: HTMLInputElement): boolean {
   if (!FILLABLE_TYPES.has(el.type)) return false;
+  // A `disabled`/`readonly` field is one the page has declared un-editable: a
+  // disabled input is never even submitted, and writing to a readonly one (via
+  // the native setter, which bypasses the UI guard) puts a value where the user
+  // cannot correct it — and would then be COUNTED in the summary as filled,
+  // making the report a lie. `:disabled` rather than the `disabled` property so
+  // the check also covers a field disabled by an ancestor `<fieldset disabled>`
+  // (the property reflects only the element's OWN attribute) — ATS forms disable
+  // whole sections that way, and those fields are just as unsubmittable.
+  if (el.matches(':disabled') || el.readOnly) return false;
   if (isHidden(el)) return false;
   if (el.value.trim() !== '') return false; // never overwrite
 
@@ -157,8 +168,10 @@ function matchFieldKey(el: HTMLInputElement): string | null {
   if (tier1) return tier1;
 
   // ── Tier 2: unambiguous free-text signal (shared with answers-capture's
-  // exclude-identity-fields check — see `matchNamedKey`) ────────────────────
-  return matchNamedKey(signal);
+  // exclude-identity-fields check — see `matchNamedKey`). The field's own
+  // ATTRIBUTE signal goes along separately so a group label in the prose can't
+  // out-vote it (see `attributeSignal`). ────────────────────────────────────
+  return matchNamedKey(signal, attributeSignal(el));
 }
 
 /**
