@@ -1,6 +1,7 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 
@@ -216,6 +217,8 @@ export function GenerationOutput({
   // pushes the scroll boundary back up to the caller and the header scrolls away with
   // the document (the bug this fixes). `overflow-hidden` keeps the rounded border a
   // real clip; every popover inside is portalled/fixed, so nothing is lost to it.
+  // The height chain above this component is load-bearing too — see TailorFlow's
+  // `min-h-0 flex-1` stage body (asserted in TailorFlow.test.tsx).
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
       <div className="shrink-0 flex items-center justify-between border-b border-foreground/[0.06] px-3 py-2">
@@ -258,10 +261,10 @@ export function GenerationOutput({
         </div>
       </div>
       {/* The scrollport. ONLY the tab/action bar above pins — the option strips
-          scroll WITH the document. Pinning them was measured at 214px (résumé) /
-          426px (cover) of permanent chrome, which leaves 17px / 0px of document at
-          the 1280×800 default window and clips the layout picker out of reach; the
-          strips are occasional controls, the document is the content.
+          scroll WITH the document: pinning them too costs more permanent chrome
+          than a small window can spare, collapsing the document to nothing and
+          clipping the last strip out of reach. They are occasional controls; the
+          document is the content.
           The document region below carries a `min-h-[20rem]` FLOOR — that is what
           makes this a real scrollport. Without it every child is `flex-1`/`h-full`,
           content always fits exactly and `overflow-y-auto` can never engage.
@@ -357,7 +360,10 @@ export function GenerationOutput({
         {/* Document region — grows to fill the scrollport, but never shrinks below
             the floor, so a short window scrolls instead of collapsing the document
             to a few pixels. */}
-        <div className="flex min-h-[20rem] flex-1 flex-col px-3 py-2">
+        <div
+          data-testid={TEST_IDS.documents.documentRegion}
+          className="flex min-h-[20rem] flex-1 flex-col px-3 py-2"
+        >
           {view === 'jobAd' ? (
             <JobAdView
               jobDesc={jobDesc}

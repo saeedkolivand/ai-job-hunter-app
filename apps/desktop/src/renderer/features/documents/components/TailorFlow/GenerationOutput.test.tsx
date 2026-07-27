@@ -963,14 +963,12 @@ describe('GenerationOutput', () => {
     });
 
     it('gives the document region a floor so the scrollport can actually engage', () => {
-      // Without a floor every child is flex-1/h-full, content fits the scrollport
-      // exactly and `overflow-y-auto` can never fire (measured in Chromium:
-      // scrollHeight > clientHeight was false in 10/10 window configurations).
+      // Without a floor every child is flex-1/h-full, the content fits the
+      // scrollport exactly and `overflow-y-auto` can never fire.
       render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
-      const region = screen.getByTestId(TEST_IDS.documents.editableOutput).parentElement;
-      expect(region).not.toBeNull();
-      expect(region?.className).toMatch(/min-h-\[\d+rem\]/);
-      expect(region?.className).toContain('flex-1');
+      const region = screen.getByTestId(TEST_IDS.documents.documentRegion);
+      expect(region.className).toMatch(/min-h-\[\d+rem\]/);
+      expect(region.className).toContain('flex-1');
       expect(screen.getByRole('tabpanel').contains(region)).toBe(true);
     });
 
@@ -1000,9 +998,9 @@ describe('GenerationOutput', () => {
     });
 
     it('scrolls the template / accent / letter-layout strips WITH the document', () => {
-      // Pinning these costs 214px (résumé) / 426px (cover) of permanent chrome —
-      // measured at 17px / 0px of usable document at the 1280×800 default window,
-      // with the layout picker clipped out of reach. They belong in the scrollport.
+      // Pinning these costs more permanent chrome than a small window can spare:
+      // the document collapses to nothing and the last strip is clipped out of
+      // reach behind the root's overflow-hidden. They belong in the scrollport.
       render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
       const panel = screen.getByRole('tabpanel');
       expect(panel.contains(screen.getByTestId(TEST_IDS.documents.templatePicker))).toBe(true);
