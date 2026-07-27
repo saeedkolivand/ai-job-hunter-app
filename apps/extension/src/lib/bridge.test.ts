@@ -1202,6 +1202,33 @@ describe('BridgeClient – v2 mutual handshake', () => {
     client.dispose();
   });
 
+  it('does NOT authenticate a handshake whose socket died during the serverProof await', async () => {
+    // WS5: `authenticated` is set AFTER `await computeProof(...)`. If the socket
+    // closes inside that await, `onClose` clears the flag and this continuation
+    // would set it straight back — leaving `authenticated === true` with
+    // `transport === null` until the next `attach`. Not reachable by an
+    // unverified peer (only a VALID serverProof gets this far), but a
+    // stale-true auth flag on the bridge is worth zero tolerance: the next
+    // frame delivered on that dead transport would be treated as trusted.
+    const onTokenRevoked = vi.fn(() => Promise.resolve());
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN, onTokenRevoked);
+
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    // A genuine auth.ok — then the socket dies before the verdict is applied.
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    socket.simulateClose();
+    await connectPromise;
+
+    // The verdict belonged to a transport that no longer exists: it must not
+    // resurrect the session, nor claim `connected` on a null transport.
+    expect(client.status().phase).not.toBe('connected');
+    sendTokenRevoked(socket);
+    expect(onTokenRevoked).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
   it('ignores a stale `token.revoked` delivered after the socket already closed', async () => {
     // The session dies with the socket, so a late/queued frame on the dead
     // transport's listener must not still count as authenticated. This is the

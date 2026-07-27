@@ -1645,6 +1645,19 @@ export class BridgeClient {
       return this.finishHandshake('bad_token');
     }
 
+    // The verdict is only valid for the transport that EARNED it. `await`ing
+    // the proof above yields, so the socket can close (or be replaced by a
+    // newer attach) in the gap — and `onClose` clears `authenticated`. Setting
+    // it here regardless would resurrect the flag on a transport that no longer
+    // exists (stale-true until the next attach), and `setPhase('connected')`
+    // would claim a live session over a null transport.
+    //
+    // Plain `return`, deliberately NOT `finishHandshake`: whatever ended this
+    // transport already set its own phase and armed its own reconnect, and
+    // `finishHandshake` would null + close `this.transport` — which, in the
+    // replaced case, is a DIFFERENT and perfectly healthy socket.
+    if (this.transport !== transport) return;
+
     // Mutual auth complete — the socket is authenticated. This is the ONE place
     // that may set `authenticated`: everything before it (including a peer that
     // sent a well-formed `challenge`) has proven nothing about the token.
