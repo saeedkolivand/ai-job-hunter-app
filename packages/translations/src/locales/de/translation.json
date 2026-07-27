@@ -1600,6 +1600,7 @@
       "validation": {
         "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage).",
         "nameRequired": "Geben Sie dieser Suche einen Namen.",
+        "pagesRange": "Geben Sie eine ganze Seitenzahl zwischen 1 und 10 ein.",
         "queryRequired": "Geben Sie eine Suchanfrage ein."
       },
       "target": {
@@ -1615,7 +1616,8 @@
         "locationPlaceholder": "z.B. Berlin, remote",
         "fromLocationSettings": "aus Standortseinstellungen",
         "countryResolved": "Land: {{country}}",
-        "items": "Zu scrapende Einträge",
+        "pages": "Zu scrapende Seiten",
+        "pagesHint": "pro Board — tatsächliche Ergebnisse variieren",
         "postedWithin": "Veröffentlicht innerhalb",
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",
