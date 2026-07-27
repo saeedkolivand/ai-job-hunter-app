@@ -30,20 +30,21 @@
 
    MOBILE (the clipMobile/connectorsMobile variants are the opt-in mobile version;
    the rest of the phone handling below is always on)
-     The engine is phone-aware out of the box: on a coarse-pointer / ≤860px viewport it
+     The engine is phone-aware out of the box: on a phone (coarse pointer + phone-sized screen) it
        - loads `clipMobile` / `connectorsMobile` when provided (encode these smaller +
          tighter-GOP — seek cost on a phone decoder is dominated by frames-from-keyframe,
          so a 720p, -g 4 file scrubs far smoother than the 1080p desktop master; see
          pipeline.md). Falls back to the desktop `clip` if no mobile variant is given.
        - uses `stillMobile` as the scene poster when provided (pair it with native 9:16
          clipMobile renders so the poster matches the portrait video's first frame instead
-         of flashing from a landscape crop). Chosen once at mount; a desktop resize into
-         phone width keeps the desktop poster (clips still switch via isMobile()).
+         of flashing from a landscape crop). The phone/desktop split is decided once at
+         mount, so posters and clips always come from the same set (never a mix).
        - coalesces seeks (never issues a new currentTime while the decoder is still
          `seeking`) so fast flicks can't pile up and freeze the video.
        - keeps the still as a live poster until the clip actually paints its first frame,
-         and primes each video (muted play→pause) on first touch — this is what stops iOS
-         from showing a blank scene before the first seek.
+         and primes each video (muted play→pause) on every touch and again whenever a clip
+         is created after the first touch — this is what stops iOS from showing a blank
+         scene (iOS won't load media data for a video created outside a gesture).
        - drops the drifting particles and ignores URL-bar-only resizes (no scroll jump).
      Nothing here is required — a config with only `clip`/`connectors` still works on
      phones; the mobile variants just make it lighter and smoother.
@@ -65,12 +66,17 @@
 
 function mountScrollWorld(container, config) {
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // Phone detection. `coarse` is captured once (input type doesn't change mid-session);
-  // the ≤860px query is read live via isMobile() so a desktop resize/DevTools toggle
-  // switches sources and seek behaviour without a reload.
+  // Phone detection, decided ONCE at mount so a rotation/resize can never mix two device
+  // sets mid-session. `coarse` on its own matches tablets and touch laptops at ANY width,
+  // so a large screen has to override it: a phone is a coarse pointer AND a phone-sized
+  // screen. The screen's SHORT side is the test — rotation-proof and independent of the
+  // URL bar (iPhone Pro Max ≈440 → phone, iPad mini 744 → desktop). Non-touch windows keep
+  // the old ≤860px rule so a narrow desktop browser still gets the lighter encodes, just
+  // frozen at mount instead of read live.
   const coarse = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-  const smallMQ = window.matchMedia('(max-width: 860px)');
-  const isMobile = () => coarse || smallMQ.matches;
+  const isMobile = coarse
+    ? Math.min(window.screen.width, window.screen.height) <= 500
+    : window.matchMedia('(max-width: 860px)').matches;
   const SECTIONS = config.sections || [];
   const CONNECTORS = config.connectors || [];
   const CONNECTORS_M = config.connectorsMobile || [];
@@ -171,7 +177,7 @@ function mountScrollWorld(container, config) {
     img.alt = '';
     img.decoding = 'async';
     img.loading = 'lazy';
-    const poster = isMobile() && s.stillM ? s.stillM : s.still;
+    const poster = isMobile && s.stillM ? s.stillM : s.still;
     if (poster) img.src = poster;
     scene.appendChild(img);
     stage.appendChild(scene);
@@ -181,6 +187,8 @@ function mountScrollWorld(container, config) {
     s.hasClip = false;
     s.loading = false;
     s.ready = false;
+    s.primed = false;
+    s.tries = 0;
     s.cur = 0;
     s.target = 0;
     s.visible = false;
@@ -266,10 +274,13 @@ function mountScrollWorld(container, config) {
   function loadClip(s) {
     // Under prefers-reduced-motion we never load the clips at all — the stills stay up
     // and simply cross-dissolve as you scroll. No scrubbed video motion, no decode cost.
-    if (reduce || s.loading || !s.clip) return;
+    // A clip whose fetch or decode keeps failing must not refetch on every scroll tick:
+    // a failure clears `loading` so a later scroll can retry, and `tries` bounds it.
+    if (reduce || s.loading || !s.clip || s.tries >= 3) return;
     s.loading = true;
+    s.tries++;
     // Serve the lighter mobile encode on phones when one was provided.
-    const url = isMobile() && s.clipM ? s.clipM : s.clip;
+    const url = isMobile && s.clipM ? s.clipM : s.clip;
     fetch(url)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('404'))))
       .then((blob) => {
@@ -299,11 +310,28 @@ function mountScrollWorld(container, config) {
           try {
             v.pause();
           } catch (e) {}
-          if (userReady) primeVideo(v);
+          if (userReady) primeVideo(s);
+        });
+        // A decode/network error must not latch `loading` forever, and a dead <video>
+        // must not sit on top of the poster. Reset the segment back to its still so a
+        // later scroll can retry (bounded by `tries`).
+        v.addEventListener('error', () => {
+          if (v.parentNode) v.parentNode.removeChild(v);
+          if (s.video === v) s.video = null;
+          s.el.classList.remove('has-clip');
+          s.hasClip = false;
+          s.ready = false;
+          s.primed = false;
+          s.loading = false;
         });
         s.el.appendChild(v);
         s.video = v;
         s.hasClip = true;
+        // iOS won't load media data for a video created outside a user gesture, so a clip
+        // that appears after the first touch never fires loadeddata and would keep showing
+        // its poster forever. A muted+playsinline play() IS permitted there and forces the
+        // load, so prime the moment the clip exists once the user has interacted.
+        if (userReady) primeVideo(s);
       })
       .catch(() => {
         s.loading = false;
@@ -376,7 +404,7 @@ function mountScrollWorld(container, config) {
   }
 
   function raf() {
-    const eps = isMobile() ? 0.02 : 0.008; // coarser seek step on phones = fewer decodes
+    const eps = isMobile ? 0.02 : 0.008; // coarser seek step on phones = fewer decodes
     for (let i = 0; i < NSEG; i++) {
       const s = SEGMENTS[i];
       if (!s.hasClip || !s.ready || !s.video) continue;
@@ -397,13 +425,21 @@ function mountScrollWorld(container, config) {
     requestAnimationFrame(raf);
   }
 
-  // iOS needs a user gesture before a muted video will decode/paint reliably. On the
-  // first touch we prime every loaded clip (muted play→pause) so the first seek is
-  // instant instead of showing a blank frame. `userReady` also makes freshly-loaded
-  // clips prime themselves (see loadClip).
+  // iOS needs a user gesture before a muted video will decode/paint reliably, and it
+  // won't load media data at all for a video created outside one — so a one-shot
+  // {once:true} primer only ever reaches the clips that existed at the first touch, and
+  // every later scene stays stuck on its poster. The listeners therefore stay registered:
+  // on any touch, every clip that exists but hasn't been primed yet is primed (muted
+  // play→pause). That also covers a first touch landing while clip 0's fetch is
+  // still in flight. `s.primed` keeps it to one play() per segment; `userReady` lets a
+  // freshly-created clip prime itself (see loadClip). Gated on `coarse`, not `isMobile`:
+  // this is a WebKit-on-touch policy, not an asset-tier choice — iPads need it too even
+  // though they now take the desktop set.
   let userReady = false;
-  function primeVideo(v) {
-    if (!isMobile() || !v) return;
+  function primeVideo(s) {
+    const v = s.video;
+    if (!coarse || !v || s.primed) return;
+    s.primed = true;
     try {
       const p = v.play();
       if (p && p.then)
@@ -411,18 +447,23 @@ function mountScrollWorld(container, config) {
           try {
             v.pause();
           } catch (e) {}
-        }).catch(() => {});
-    } catch (e) {}
+        }).catch(() => {
+          s.primed = false; // priming was refused — let the next gesture try again
+        });
+    } catch (e) {
+      s.primed = false;
+    }
   }
-  function onFirstGesture() {
-    if (userReady) return;
+  function onGesture() {
     userReady = true;
-    SEGMENTS.forEach((s) => primeVideo(s.video));
+    SEGMENTS.forEach((s) => primeVideo(s));
   }
-  window.addEventListener('pointerdown', onFirstGesture, { once: true, passive: true });
-  window.addEventListener('touchstart', onFirstGesture, { once: true, passive: true });
+  window.addEventListener('pointerdown', onGesture, { passive: true });
+  window.addEventListener('touchstart', onGesture, { passive: true });
 
-  // Particles are a per-frame cost we can't afford alongside video scrubbing on a phone.
+  // Particles are a per-frame cost we can't afford alongside video scrubbing on a touch
+  // device — gated on `coarse` (not `isMobile`) so tablets stay light too. Same for the
+  // URL-bar resize guard below: both are touch-browser traits, not asset-tier choices.
   seedParticles(particles, reduce || coarse);
   window.addEventListener(
     'scroll',
