@@ -42,6 +42,21 @@ describe('buildInterviewQuestionsSystemPrompt', () => {
   it('carries the positive HUMANIZE_PROSE cadence anchor (candidate voice, not just bans)', () => {
     expect(buildInterviewQuestionsSystemPrompt()).toContain('CADENCE');
   });
+
+  it('selects the anti-AI-tell ruleset for the output language, not always English', () => {
+    const en = buildInterviewQuestionsSystemPrompt('en');
+    const de = buildInterviewQuestionsSystemPrompt('de');
+    const nl = buildInterviewQuestionsSystemPrompt('nl');
+
+    // German questions policed by the English tell-list was the bug.
+    expect(de).not.toBe(en);
+    expect(de).toBe(buildInterviewQuestionsSystemPrompt('de'));
+    // A language with no curated list still gets its own generic ruleset.
+    expect(nl).not.toBe(en);
+    expect(nl).toMatch(/Dutch/);
+    // No argument keeps the previous English default.
+    expect(buildInterviewQuestionsSystemPrompt()).toBe(en);
+  });
 });
 
 describe('buildInterviewQuestionsPrompt', () => {
@@ -135,5 +150,51 @@ describe('buildInterviewQuestionsPrompt', () => {
   it('preserves benign job-ad text byte-identical (no forged tags)', () => {
     const prompt = buildInterviewQuestionsPrompt({ resume: 'R', jobAd: 'JD', meta: META });
     expect(prompt).toContain('JD');
+  });
+
+  it('writes in meta.targetLanguage when no explicit language is given', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: { ...META, targetLanguage: 'de' },
+    });
+    expect(prompt).toContain('Write the questions in de.');
+  });
+
+  // Both meta branches stay LIVE: the caller omits `language` whenever the ad's
+  // language can't be determined, and `mismatch` still selects the firmer phrasing.
+  it('uses the firmer mismatch phrasing when no explicit language is given', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: { ...META, mismatch: true, targetLanguage: 'de' },
+    });
+    expect(prompt).toContain('Write the questions entirely in de');
+    expect(prompt).not.toContain('Write the questions in de.');
+  });
+
+  it('an explicit language overrides meta.targetLanguage without touching the market register', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: { ...META, targetLanguage: 'de' },
+      market: 'de',
+      language: 'Spanish',
+    });
+    expect(prompt).toContain('Write the questions entirely in Spanish');
+    expect(prompt).not.toContain('Write the questions in de.');
+    // Register still follows the job's market, not the output language.
+    expect(prompt).toMatch(/Market: Germany/i);
+  });
+
+  it('an explicit language wins over the meta.mismatch phrasing', () => {
+    const prompt = buildInterviewQuestionsPrompt({
+      resume: 'R',
+      jobAd: 'JD',
+      meta: { ...META, mismatch: true, targetLanguage: 'de' },
+      language: 'French',
+    });
+    expect(prompt).toContain('Write the questions entirely in French');
+    expect(prompt).not.toContain('entirely in de');
   });
 });
