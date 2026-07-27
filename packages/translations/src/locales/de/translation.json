@@ -2627,6 +2627,7 @@
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
         "audienceLabel": "Fragen generieren für",
         "languageLabel": "Sprache der Fragen",
+        "languageAuto": "Sprache der Stellenanzeige",
         "audience": {
           "recruiter": "Recruiter / HR (1. Runde)",
           "hiringManager": "Hiring Manager",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { detectLanguage, type InterviewQuestion } from '@ajh/shared';
@@ -12,7 +12,6 @@ import {
   OUTPUT_LANGUAGES,
   parseInterviewQuestions,
   researchCompany as fetchCompanyBrief,
-  safeLocale,
 } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useHasProviderKey } from '@/services';
@@ -23,13 +22,23 @@ import type { AiProvider } from '@/store/preferences-schema';
 const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];
 
 /**
- * Locale CODE the picker can display. Accepts a code ('de') OR an English
- * language NAME ('German') — `extractMetadata`'s regex fallback can produce
- * either — and clamps anything outside OUTPUT_LANGUAGES to English.
+ * Normalize a detected language to a locale CODE. Accepts a code ('de') OR an
+ * English language NAME ('German') — `extractMetadata`'s regex fallback can
+ * produce either. `'unknown'` (detectLanguage's sentinel) and blanks become `''`,
+ * meaning "not determined": the picker then shows its auto option and the prompt
+ * falls back to its `meta`-derived language note.
+ *
+ * Deliberately NOT clamped to OUTPUT_LANGUAGES — a language the picker doesn't
+ * offer (Dutch, Polish, Czech…) must survive to both the prompt and the picker
+ * label, or the UI would read "English" while generating Dutch.
  */
-function toPickerCode(value: string): string {
-  const byName = OUTPUT_LANGUAGES.find((l) => l.englishName.toLowerCase() === value.toLowerCase());
-  return safeLocale(byName?.code ?? value);
+function toLanguageCode(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === 'unknown') return '';
+  const byName = OUTPUT_LANGUAGES.find(
+    (l) => l.englishName.toLowerCase() === trimmed.toLowerCase()
+  );
+  return byName?.code ?? trimmed;
 }
 
 interface Params {
@@ -83,19 +92,18 @@ export function useInterviewQuestions({
   const [error, setError] = useState<string | null>(null);
   // Output language. Derived during render (no effect) so the default keeps
   // tracking the ad as `jobDesc`/`meta` load in; the user's explicit pick then
-  // wins for good. TWO values on purpose:
-  //  - `language` is what the picker DISPLAYS, so it must be an OUTPUT_LANGUAGES
-  //    code the Dropdown can render.
-  //  - `generationLanguage` is what the prompt gets. Until the user picks, it is
-  //    the RAW detected language, so an ad in a language the picker doesn't offer
-  //    (Dutch, Polish, Czech…) still yields questions in that language instead of
-  //    collapsing to English. `undefined` when nothing was detected — the prompt
-  //    then falls back to its `meta`-derived note.
+  // wins for good. ONE effective value — what the picker shows IS what generates
+  // (the UI adds an option for `detectedLanguage` when it isn't one of the
+  // picker's own, so a Dutch ad reads as "Dutch", never as "English").
+  // `''` means "not determined": the prompt then falls back to its `meta` note.
   const [languageOverride, setLanguageOverride] = useState<string | null>(null);
-  const detectedLanguage = meta?.targetLanguage?.trim() || detectLanguage(jobDesc);
-  const language = languageOverride ?? toPickerCode(detectedLanguage);
-  const generationLanguage =
-    languageOverride ?? (detectedLanguage === 'unknown' ? undefined : detectedLanguage);
+  // franc is not free, and this hook re-renders on every seed-topics keystroke.
+  const detectedLanguage = useMemo(
+    () => toLanguageCode(meta?.targetLanguage ?? '') || toLanguageCode(detectLanguage(jobDesc)),
+    [meta?.targetLanguage, jobDesc]
+  );
+  const language = languageOverride ?? detectedLanguage;
+  const generationLanguage = language || undefined;
 
   const toggleAudience = (aud: string) =>
     setAudiences((prev) => (prev.includes(aud) ? prev.filter((a) => a !== aud) : [...prev, aud]));
@@ -175,6 +183,9 @@ export function useInterviewQuestions({
     seedTopics,
     setSeedTopics,
     language,
+    /** The ad's own language (`''` when undetermined) — the UI offers it as an
+     *  option when the picker's list doesn't already contain it. */
+    detectedLanguage,
     setLanguage: setLanguageOverride,
     audiences,
     toggleAudience,

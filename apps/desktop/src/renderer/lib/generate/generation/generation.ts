@@ -50,7 +50,7 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { GitHubRepo } from '@ajh/shared';
-import { detectLanguages } from '@ajh/shared/language-detection';
+import { detectLanguages, getLanguageName } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -647,13 +647,16 @@ export async function generateInterviewQuestions(params: {
   });
   // The prompt wants a human language NAME, streamGenerate wants a locale code.
   // An allowlisted picker code resolves to its English name; anything else (a
-  // detected language the picker doesn't offer, e.g. 'nl') is interpolated
-  // verbatim rather than collapsed to English — the same treatment the prompt
-  // already gives `meta.targetLanguage`, so this adds no new interpolation surface.
+  // detected language the picker doesn't offer, e.g. 'nl') goes through
+  // `getLanguageName` — 28 codes, degrading to the code itself — rather than
+  // being collapsed to English or interpolated as a bare ISO code.
   const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
-  const languageName = lang?.englishName ?? language;
+  const languageName = lang?.englishName ?? (language ? getLanguageName(language) : undefined);
+  // The anti-AI-tell lexicon is per-language: without this, questions written in
+  // German were still policed by the English tell-list.
+  const languageCode = lang?.code ?? language ?? meta.targetLanguage;
 
-  const system = buildInterviewQuestionsSystemPrompt();
+  const system = buildInterviewQuestionsSystemPrompt(languageCode);
   const user = buildInterviewQuestionsPrompt({
     resume,
     jobAd,
@@ -674,7 +677,9 @@ export async function generateInterviewQuestions(params: {
     user,
     onToken ?? (() => {}),
     sampling.temperature,
-    lang?.code ?? (meta.targetLanguage || 'en'),
+    // Same code the lexicon uses; `streamGenerate` clamps it via `safeLocale`,
+    // so a language outside the supported set falls back to 'en' here only.
+    languageCode || 'en',
     signal,
     undefined,
     sampling

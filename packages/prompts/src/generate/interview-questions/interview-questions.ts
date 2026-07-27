@@ -59,8 +59,14 @@ const AUDIENCE_FOCUS: Record<InterviewAudience, string> = {
 /** The per-item delimited markers the model must emit and the client parses. */
 export const INTERVIEW_QUESTION_MARKERS = { question: 'Q:', why: 'WHY:', audience: 'AUDIENCE:' };
 
-/** System prompt — the quality bar for questions that land positively. */
-export function buildInterviewQuestionsSystemPrompt(): string {
+/**
+ * System prompt — the quality bar for questions that land positively.
+ * `language` (ISO-639-1, e.g. the picked output language or `meta.targetLanguage`)
+ * selects the anti-AI-tell ruleset (see {@link antiAiTellProse}); defaults to
+ * English. Without it, questions written in German were still policed by the
+ * English tell-list.
+ */
+export function buildInterviewQuestionsSystemPrompt(language?: string): string {
   return `You are helping a job candidate prepare SHARP questions to ASK their interviewer.
 
 GOAL: questions that leave a strong positive impression — each one signals genuine interest, real research, and seniority, and opens a substantive conversation.
@@ -79,7 +85,7 @@ Q: <the question, a single sentence>
 WHY: <one short line: what asking it signals / why it lands>
 AUDIENCE: <recruiter | hiringManager | team | leadership | general>
 
-${antiAiTellProse()}
+${antiAiTellProse(language)}
 ${HUMANIZE_PROSE}`;
 }
 

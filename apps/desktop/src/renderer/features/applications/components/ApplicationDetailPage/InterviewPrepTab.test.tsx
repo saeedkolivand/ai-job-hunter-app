@@ -62,6 +62,7 @@ const iqMock = {
   seedTopics: '',
   setSeedTopics: vi.fn(),
   language: 'en',
+  detectedLanguage: 'en',
   setLanguage: vi.fn(),
   audiences: ['recruiter'] as string[],
   toggleAudience: vi.fn(),
@@ -173,6 +174,7 @@ beforeEach(() => {
   resolveJobUrlState.isLoading = false;
   iqMock.questions = [];
   iqMock.language = 'en';
+  iqMock.detectedLanguage = 'en';
   iqMock.setLanguage.mockClear();
   iqMock.generate.mockClear();
   practiceMock.generate.mockClear();
@@ -309,6 +311,49 @@ describe('InterviewPrepTab — output language selector', () => {
     fireEvent.click(screen.getByText('Français'));
 
     expect(iqMock.setLanguage).toHaveBeenCalledWith('fr');
+  });
+
+  it('names a detected language the picker does not stock, instead of showing English', () => {
+    // Dutch is not in OUTPUT_LANGUAGES, but it IS what generation will use.
+    iqMock.language = 'nl';
+    iqMock.detectedLanguage = 'nl';
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    expect(trigger()).toHaveTextContent('Dutch');
+    expect(trigger()).not.toHaveTextContent('English');
+  });
+
+  it('offers the ad-language option as "match the job ad" when nothing was detected', () => {
+    iqMock.language = '';
+    iqMock.detectedLanguage = '';
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    expect(trigger()).toHaveTextContent('applications.detail.interview.languageAuto');
+  });
+
+  it('keeps the ad-language option reachable after an explicit pick', () => {
+    // The user picked Spanish, but the ad is Dutch — the Dutch option must still
+    // be listed so the choice can be undone.
+    iqMock.language = 'es';
+    iqMock.detectedLanguage = 'nl';
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    expect(trigger()).toHaveTextContent('Español');
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByText('Dutch'));
+
+    expect(iqMock.setLanguage).toHaveBeenCalledWith('nl');
+  });
+
+  it('does not duplicate a detected language the picker already stocks', () => {
+    iqMock.language = 'de';
+    iqMock.detectedLanguage = 'de';
+    render(<InterviewPrepTab application={makeApp()} matchingGenerations={[]} />);
+
+    fireEvent.click(trigger());
+    // Exactly one "Deutsch" OPTION — no synthetic duplicate alongside the real
+    // one. (Scoped to role=option: the trigger also renders the selected label.)
+    expect(screen.getAllByRole('option', { name: 'Deutsch' })).toHaveLength(1);
   });
 
   it('is part of the ask-mode toolbar only (hidden in practice mode)', () => {

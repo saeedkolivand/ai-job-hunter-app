@@ -2623,6 +2623,7 @@
         "needsJob": "A job description is needed to tailor the questions.",
         "audienceLabel": "Generate questions for",
         "languageLabel": "Question language",
+        "languageAuto": "Match the job ad",
         "audience": {
           "recruiter": "Recruiter / HR (1st round)",
           "hiringManager": "Hiring manager",

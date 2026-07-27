@@ -339,12 +339,14 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
         notify.error({ message: t('jobs.prep.viewApplicationError') });
         return;
       }
-      setOpen(false);
+      // Close only AFTER the navigation lands: closing first would tear the run
+      // log down and leave a failed navigation showing nothing but a toast.
       await navigate({
         to: '/applications/$id',
         params: { id: res.id },
         search: { tab: 'documents', from: 'jobs' },
       });
+      setOpen(false);
     } catch {
       notify.error({ message: t('jobs.prep.viewApplicationError') });
     }

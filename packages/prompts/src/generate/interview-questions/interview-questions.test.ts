@@ -42,6 +42,21 @@ describe('buildInterviewQuestionsSystemPrompt', () => {
   it('carries the positive HUMANIZE_PROSE cadence anchor (candidate voice, not just bans)', () => {
     expect(buildInterviewQuestionsSystemPrompt()).toContain('CADENCE');
   });
+
+  it('selects the anti-AI-tell ruleset for the output language, not always English', () => {
+    const en = buildInterviewQuestionsSystemPrompt('en');
+    const de = buildInterviewQuestionsSystemPrompt('de');
+    const nl = buildInterviewQuestionsSystemPrompt('nl');
+
+    // German questions policed by the English tell-list was the bug.
+    expect(de).not.toBe(en);
+    expect(de).toBe(buildInterviewQuestionsSystemPrompt('de'));
+    // A language with no curated list still gets its own generic ruleset.
+    expect(nl).not.toBe(en);
+    expect(nl).toMatch(/Dutch/);
+    // No argument keeps the previous English default.
+    expect(buildInterviewQuestionsSystemPrompt()).toBe(en);
+  });
 });
 
 describe('buildInterviewQuestionsPrompt', () => {

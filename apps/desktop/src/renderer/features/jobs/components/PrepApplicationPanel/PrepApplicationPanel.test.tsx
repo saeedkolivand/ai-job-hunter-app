@@ -435,12 +435,17 @@ describe('PrepApplicationPanel — view the created application', () => {
     expect(POSTING.description).toBeTruthy(); // the posting HAS one to leak
   });
 
-  it('notifies when navigation itself rejects', async () => {
+  it('notifies AND keeps the modal open when navigation itself rejects', async () => {
     navigateMock.mockRejectedValueOnce(new Error('route blew up'));
     await completeRun();
     await clickView();
 
     expect(notifyError).toHaveBeenCalledWith({ message: 'jobs.prep.viewApplicationError' });
+    // Closing before the navigation lands would bin the run log and leave the
+    // user with nothing but a toast — the proposal must still be on screen.
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.proposalTitle')).toBeInTheDocument();
+    expect(screen.getByText('jobs.prep.viewApplication')).toBeInTheDocument();
   });
 
   it('notifies instead of navigating when the save returns no id', async () => {

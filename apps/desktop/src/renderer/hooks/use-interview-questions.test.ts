@@ -70,6 +70,13 @@ const wrapper = ({ children }: { children: ReactNode }) =>
 const render = (p: Parameters<typeof useInterviewQuestions>[0] = params) =>
   renderHook(() => useInterviewQuestions(p), { wrapper });
 
+/** Same, but props-driven so a test can `rerender` with different inputs. */
+const renderProps = (initialProps: Parameters<typeof useInterviewQuestions>[0]) =>
+  renderHook((p: Parameters<typeof useInterviewQuestions>[0]) => useInterviewQuestions(p), {
+    wrapper,
+    initialProps,
+  });
+
 /** Long enough for the real `detectLanguage` heuristic to settle on German. */
 const GERMAN_JD =
   'Wir suchen einen erfahrenen Softwareentwickler für unser Team in München. ' +
@@ -182,8 +189,12 @@ describe('useInterviewQuestions', () => {
     expect(result.current.language).toBe('fr');
   });
 
-  it('clamps a language outside OUTPUT_LANGUAGES to English', () => {
-    expect(render({ ...params, meta: metaWithLanguage('nl') }).result.current.language).toBe('en');
+  it('keeps a language outside OUTPUT_LANGUAGES instead of clamping it to English', () => {
+    // The picker renders it as an extra option; clamping here would make the UI
+    // claim "English" while generation produced Dutch.
+    const { result } = render({ ...params, meta: metaWithLanguage('nl') });
+    expect(result.current.language).toBe('nl');
+    expect(result.current.detectedLanguage).toBe('nl');
   });
 
   it('passes the chosen language to the generator WITHOUT writing it to the shared record', async () => {
@@ -222,24 +233,26 @@ describe('useInterviewQuestions', () => {
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ targetLanguage: 'en' }));
   });
 
-  it('sends a detected language the picker cannot show, without collapsing it to English', async () => {
+  it('generates in a detected language the picker cannot name, and says so', async () => {
     const { result } = render({ ...params, jobDesc: DUTCH_JD });
-    // Dutch is not in OUTPUT_LANGUAGES, so the picker falls back to English…
-    expect(result.current.language).toBe('en');
+    // What the picker displays IS what generates — no silent "English".
+    expect(result.current.language).toBe('nl');
+    expect(result.current.detectedLanguage).toBe('nl');
 
     await act(async () => {
       await result.current.generate();
     });
 
-    // …but generation still asks for Dutch.
     expect(generateInterviewQuestions).toHaveBeenCalledWith(
       expect.objectContaining({ language: 'nl' })
     );
   });
 
   it('omits the language entirely when nothing can be detected (prompt falls back to meta)', async () => {
-    // 'JD' is below detectLanguage's length floor → 'unknown'.
+    // 'JD' is below detectLanguage's length floor → 'unknown' → '' (the picker's
+    // "match the job ad" slot), and no language on the request.
     const { result } = render();
+    expect(result.current.language).toBe('');
 
     await act(async () => {
       await result.current.generate();
@@ -255,6 +268,81 @@ describe('useInterviewQuestions', () => {
     expect(render({ ...params, meta: metaWithLanguage('German') }).result.current.language).toBe(
       'de'
     );
+  });
+
+  it('keeps an explicit pick across a jobDesc/meta change (the default must not win back)', () => {
+    const { result, rerender } = renderProps({ ...params, jobDesc: GERMAN_JD });
+    expect(result.current.language).toBe('de');
+
+    act(() => result.current.setLanguage('it'));
+    expect(result.current.language).toBe('it');
+
+    // The ad is replaced (and metadata arrives) — the derived default would now
+    // say 'nl'/'fr', but the user's choice owns the value from here on.
+    rerender({ ...params, jobDesc: DUTCH_JD, meta: metaWithLanguage('fr') });
+
+    expect(result.current.language).toBe('it');
+    expect(result.current.detectedLanguage).toBe('fr');
+  });
+
+  describe('generate() failure handling', () => {
+    it('surfaces the error message and clears the generating flag', async () => {
+      vi.mocked(generateInterviewQuestions).mockRejectedValueOnce(new Error('model exploded'));
+      const { result } = render();
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(result.current.error).toBe('model exploded');
+      expect(result.current.generating).toBe(false);
+      // A failed run must not half-populate the UI or persist anything.
+      expect(result.current.questions).toEqual([]);
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a fixed message when the rejection is not an Error', async () => {
+      vi.mocked(generateInterviewQuestions).mockRejectedValueOnce('just a string');
+      const { result } = render();
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(result.current.error).toBe('Failed to generate interview questions');
+      expect(result.current.generating).toBe(false);
+    });
+
+    it('clears a previous error when a later run succeeds', async () => {
+      vi.mocked(generateInterviewQuestions).mockRejectedValueOnce(new Error('transient'));
+      const { result } = render();
+
+      await act(async () => {
+        await result.current.generate();
+      });
+      expect(result.current.error).toBe('transient');
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.questions).toHaveLength(1);
+    });
+
+    it('reports a failure raised by the persistence step, not just the generator', async () => {
+      save.mockRejectedValueOnce(new Error('disk full'));
+      const { result } = render();
+
+      await act(async () => {
+        await result.current.generate();
+      });
+
+      expect(result.current.error).toBe('disk full');
+      expect(result.current.generating).toBe(false);
+      // The questions still parsed, so the UI keeps them despite the save failing.
+      expect(result.current.questions).toHaveLength(1);
+    });
   });
 
   it('does not call the generator when no audience is selected', async () => {

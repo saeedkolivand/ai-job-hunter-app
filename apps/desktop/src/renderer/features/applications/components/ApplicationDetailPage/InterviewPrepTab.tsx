@@ -1,7 +1,12 @@
 import { MessagesSquare, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
-import type { AiGenerationRecord, Application, InterviewQuestion } from '@ajh/shared';
+import {
+  type AiGenerationRecord,
+  type Application,
+  getLanguageName,
+  type InterviewQuestion,
+} from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, CardSkeleton, Dropdown, EmptyState, SegmentedControl, TextArea } from '@ajh/ui';
 
@@ -70,7 +75,27 @@ export function InterviewPrepTab({ application, matchingGenerations }: Props) {
   // Sourced from OUTPUT_LANGUAGES (the single locale source of truth) so each value
   // is a locale CODE the generation pipeline accepts; labels are endonyms, each
   // language shown in its own script (mirrors the tailor flow's summary picker).
-  const languageOptions = OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym }));
+  //
+  // Prepended: the ad's OWN language, whenever the list above doesn't already
+  // offer it. Questions are generated in the detected language whether or not the
+  // picker can name it, so without this a Dutch ad would display "English" while
+  // producing Dutch. Value `''` (nothing detected) keeps the same slot as an
+  // explicit "match the job ad" choice, and pinning the option to the DETECTED
+  // language — not the current selection — keeps it reachable after a manual pick.
+  const detected = iq.detectedLanguage;
+  const languageOptions = [
+    ...(OUTPUT_LANGUAGES.some((l) => l.code === detected)
+      ? []
+      : [
+          {
+            value: detected,
+            label: detected
+              ? getLanguageName(detected)
+              : t('applications.detail.interview.languageAuto'),
+          },
+        ]),
+    ...OUTPUT_LANGUAGES.map((l) => ({ value: l.code, label: l.endonym })),
+  ];
 
   if (docsQuery.isLoading || (!!defaultResumeId && resumeQuery.isLoading)) {
     return (

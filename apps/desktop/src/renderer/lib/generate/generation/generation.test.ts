@@ -1053,12 +1053,14 @@ describe('output tone wiring (Settings → Output Tone)', () => {
 });
 
 describe('generateInterviewQuestions output language', () => {
-  // The grounded user prompt is always messages[1] (see streamGenerate).
-  const userOf = (client: ReturnType<typeof register>) => {
+  // System prompt is messages[0], the grounded user prompt messages[1].
+  const messageAt = (client: ReturnType<typeof register>, index: number) => {
     const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
     const messages = (call?.[0] as { messages: { role: string; content: string }[] }).messages;
-    return messages[1]?.content ?? '';
+    return messages[index]?.content ?? '';
   };
+  const systemOf = (client: ReturnType<typeof register>) => messageAt(client, 0);
+  const userOf = (client: ReturnType<typeof register>) => messageAt(client, 1);
 
   // A GERMAN job (jobCountry DE) whose ad language is German — so a language
   // override can be seen NOT to drag the market register with it.
@@ -1101,14 +1103,38 @@ describe('generateInterviewQuestions output language', () => {
     expect(prompt).toMatch(/Market: Germany/);
   });
 
-  it('passes a language outside the picker allowlist through verbatim (no English collapse)', async () => {
+  it('names a language outside the picker allowlist instead of emitting a bare ISO code', async () => {
     const prompt = userOf(await run('nl'));
-    expect(prompt).toContain('Write the questions entirely in nl');
+    expect(prompt).toContain('Write the questions entirely in Dutch');
+    expect(prompt).not.toContain('entirely in nl');
     expect(prompt).not.toContain('entirely in English');
   });
 
   it('falls back to the meta-derived language note when no language is given', async () => {
     const prompt = userOf(await run());
     expect(prompt).toContain('Write the questions in de.');
+  });
+
+  it('selects the anti-AI-tell lexicon for the picked language, not the ad language', async () => {
+    // German ad, Spanish output → the tell-list must follow the OUTPUT language.
+    const system = systemOf(await run('es'));
+    expect(system).toMatch(/Spanish/);
+  });
+
+  it('falls back to the ad language for the lexicon when nothing is picked', async () => {
+    // meta.targetLanguage is 'de', and German has a curated tell-list.
+    expect(systemOf(await run())).not.toBe(systemOf(await run('en')));
+  });
+
+  it('sends the output language as the request locale', async () => {
+    const localeOf = (client: ReturnType<typeof register>) => {
+      const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+      return (call?.[0] as { locale: string }).locale;
+    };
+    expect(localeOf(await run('es'))).toBe('es');
+    // Unsupported locales clamp (safeLocale) rather than reaching the backend raw.
+    expect(localeOf(await run('nl'))).toBe('en');
+    // No pick → the ad's language.
+    expect(localeOf(await run())).toBe('de');
   });
 });
