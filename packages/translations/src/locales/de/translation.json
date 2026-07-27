@@ -2575,6 +2575,7 @@
         "regenerate": "Neu generieren",
         "generating": "Generiere…",
         "genError": "Generierung fehlgeschlagen – bitte erneut versuchen.",
+        "saveFailed": "Dieser Entwurf konnte nicht gespeichert werden und geht beim Verlassen des Tabs verloren. Kopiere ihn oder generiere ihn erneut.",
         "empty": "Noch keine Bewerbungs-E-Mail",
         "emptyDesc": "Generiere eine kurze, professionelle E-Mail, die du direkt an den Ansprechpartner senden kannst.",
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um eine E-Mail zu generieren.",

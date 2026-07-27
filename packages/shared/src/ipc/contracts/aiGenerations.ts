@@ -86,9 +86,22 @@ export interface AiGenerationUpdateRequest {
   coverLetterText?: string;
 }
 
+/**
+ * Result of `save` — matches the Rust `{ id, success } | { error }` shape the
+ * command actually returns. Every field is optional because the two arms are
+ * disjoint: a failed save carries only `error`, so a caller that wants to know
+ * whether the write landed must check it (the command reports failure in-band
+ * rather than rejecting the promise).
+ */
+export interface AiGenerationSaveResult {
+  id?: string;
+  success?: boolean;
+  error?: string;
+}
+
 export interface AiGenerationsContract {
   list(): Promise<AiGenerationRecord[]>;
-  save(req: AiGenerationSaveRequest): Promise<{ id: string; success: boolean }>;
+  save(req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult>;
   update(req: AiGenerationUpdateRequest): Promise<void>;
   remove(id: string): Promise<void>;
   removeBulk(ids: string[]): Promise<void>;

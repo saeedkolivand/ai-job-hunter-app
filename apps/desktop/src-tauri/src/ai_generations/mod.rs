@@ -558,6 +558,19 @@ fn merge_application(
     // `mismatch` defaults to `false` — not a real verdict.
     let incoming_has_languages =
         !incoming.resume_language.trim().is_empty() && !incoming.job_ad_language.trim().is_empty();
+    // Subject and body are ONE draft: the email surface always writes both
+    // together, so they merge together. Picking them independently let a
+    // regeneration whose output broke the `Subject:` line contract (parsed
+    // subject = "") keep the PREVIOUS subject glued onto the NEW body — a
+    // mismatched email the user never wrote. Either field carrying content means
+    // "this save owns the draft"; neither means the save is about something else
+    // (résumé, answers, interview questions) and the stored draft is kept.
+    let (email_subject, email_body) =
+        if incoming.email_subject.trim().is_empty() && incoming.email_body.trim().is_empty() {
+            (existing.email_subject, existing.email_body)
+        } else {
+            (incoming.email_subject, incoming.email_body)
+        };
     AiGenerationRecord {
         id: existing.id,
         created_at: existing.created_at,
@@ -599,12 +612,9 @@ fn merge_application(
         } else {
             incoming.interview_questions
         },
-        // Same rule as `cover_letter_text`: a regenerated / rewritten email
-        // overwrites the stored draft, while a save from any other surface
-        // (résumé, answers, interview questions) leaves it alone. Subject and
-        // body `pick` independently so a subject-only rewrite can't blank the body.
-        email_subject: pick(incoming.email_subject, existing.email_subject),
-        email_body: pick(incoming.email_body, existing.email_body),
+        // Merged as one atomic draft — see the binding above.
+        email_subject,
+        email_body,
         application_id: incoming.application_id.or(existing.application_id),
     }
 }

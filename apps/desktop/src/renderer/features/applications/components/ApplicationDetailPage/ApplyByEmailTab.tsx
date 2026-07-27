@@ -136,6 +136,9 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const [streamText, setStreamText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // The draft is on screen but did NOT reach the store, so it will not survive a
+  // tab switch — say so instead of implying it was saved.
+  const [saveFailed, setSaveFailed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // Mutable draft populated once generation completes, so a select-to-rewrite
   // result can be spliced back in. `null` while streaming / before the first
@@ -187,33 +190,57 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
    * upserts the parent Application with a Generate origin, which advances a
    * still-`saved` Application to `applied`. It never demotes a later stage.
    *
-   * The language pair is echoed from the saved record rather than from `meta` —
-   * this tab runs no language detection, so its fallback `en`/`en` is a
-   * placeholder, and sending it would let the backend merge treat this save as a
-   * language-bearing one and clear a real prior mismatch verdict.
+   * Every field this surface does not itself compute is echoed from the saved
+   * record instead of from `meta`, and a blank makes the backend merge keep the
+   * stored value. `meta`'s own fallbacks (`en`/`en`, no mismatch, `ats`) are
+   * placeholders, not measurements — sending them would clobber real stored
+   * values whenever `saved` is undefined while a row exists (an orphaned FK, or
+   * the generations query simply not having loaded yet), and the language pair
+   * would additionally make the merge treat this as a language-bearing save and
+   * clear a genuine mismatch verdict.
    */
   const persistDraft = (next: { subject: string; body: string }) => {
+    // A URL-less Application cannot be saved onto. `ai_generations_save` keys
+    // BOTH the parent-Application upsert and the generation merge on the job
+    // url, and both treat '' as "no match" — so each save would mint a fresh
+    // `applied` Application (sorted to the top of the list) plus a generation
+    // row whose FK points at that phantom, which `matchingGenerations` (an FK
+    // join) can never surface. The draft would still be lost on a tab switch,
+    // now with duplicate applications as a parting gift. Staying session-only
+    // for these is strictly better until the save can be keyed on the id.
+    if (!application.jobUrl.trim()) return;
     if (!next.subject.trim() && !next.body.trim()) return;
-    saveGeneration.mutate({
-      candidateName: meta.candidateName,
-      jobTitle: meta.jobTitle,
-      companyName: meta.companyName,
-      resumeLanguage: saved?.resumeLanguage ?? '',
-      jobAdLanguage: saved?.jobAdLanguage ?? '',
-      targetLanguage: meta.targetLanguage,
-      mismatch: saved?.mismatch ?? false,
-      topRequirements: meta.topRequirements,
-      mode: saved?.mode ?? 'ats',
-      // Blank so the merge keeps whatever the tailor flow stored — this surface
-      // owns only the email fields.
-      resumeText: '',
-      coverLetterText: '',
-      jobAd: jobDesc,
-      jobUrl: application.jobUrl,
-      board: application.board ?? '',
-      emailSubject: next.subject,
-      emailBody: next.body,
-    });
+    setSaveFailed(false);
+    saveGeneration.mutate(
+      {
+        candidateName: meta.candidateName,
+        jobTitle: meta.jobTitle,
+        companyName: meta.companyName,
+        resumeLanguage: saved?.resumeLanguage ?? '',
+        jobAdLanguage: saved?.jobAdLanguage ?? '',
+        targetLanguage: saved?.targetLanguage ?? '',
+        mismatch: saved?.mismatch ?? false,
+        topRequirements: meta.topRequirements,
+        mode: saved?.mode ?? '',
+        // Blank so the merge keeps whatever the tailor flow stored — this
+        // surface owns only the email fields.
+        resumeText: '',
+        coverLetterText: '',
+        jobAd: jobDesc,
+        jobUrl: application.jobUrl,
+        board: application.board ?? '',
+        emailSubject: next.subject,
+        emailBody: next.body,
+      },
+      {
+        // The command reports failure IN-BAND (`{ error }`) rather than
+        // rejecting, so onError never fires for a store failure — mirror
+        // `persistEmail` below and inspect the payload, or the UI would show a
+        // draft it silently failed to persist.
+        onSuccess: (data) => setSaveFailed(!!data.error),
+        onError: () => setSaveFailed(true),
+      }
+    );
   };
 
   const handleGenerate = async () => {
@@ -481,6 +508,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         {genError && (
           <p className="text-fine-print text-destructive" role="alert">
             {genError}
+          </p>
+        )}
+
+        {saveFailed && (
+          <p className="text-fine-print text-amber-400/80" role="status">
+            {t('applications.detail.email.saveFailed')}
           </p>
         )}
 

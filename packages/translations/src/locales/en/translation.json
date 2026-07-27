@@ -2571,6 +2571,7 @@
         "regenerate": "Regenerate",
         "generating": "Generating…",
         "genError": "Generation failed — please try again.",
+        "saveFailed": "This draft couldn't be saved, so it will be lost when you leave this tab. Copy it or generate again.",
         "empty": "No application email yet",
         "emptyDesc": "Generate a short, professional email to send directly to the employer contact.",
         "needsModel": "Select an AI model in settings to generate an email.",

@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   AiGenerationRecord,
   AiGenerationSaveRequest,
+  // Imported so the mutation's inferred type stays nameable from this module
+  // (TS2883) now that `save` resolves to a named result rather than an inline one.
+  AiGenerationSaveResult,
   AiGenerationUpdateRequest,
 } from '@ajh/shared/ipc';
 
@@ -22,8 +25,17 @@ export const useSaveAiGeneration = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: AiGenerationSaveRequest) => api.aiGenerations.save(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.aiGenerations.all }),
+    mutationFn: (req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult> =>
+      api.aiGenerations.save(req),
+    // The command also upserts the parent Application (ADR-0001) — a Generate
+    // origin advances a still-`saved` row to `applied`. Invalidating only the
+    // generations left the applications list, the detail page's status chip and
+    // its status timeline showing the pre-save status (30 s staleTime, no
+    // refetch on focus), so invalidate both sides of that one write.
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
+      void qc.invalidateQueries({ queryKey: keys.applications.all });
+    },
   });
 };
 

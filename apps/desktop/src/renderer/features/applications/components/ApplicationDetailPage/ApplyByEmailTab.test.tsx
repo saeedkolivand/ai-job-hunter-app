@@ -62,7 +62,14 @@ vi.mock('@/services', () => ({
 }));
 
 // Persistence — the save mutation onto the per-job aiGenerations aggregate.
-const saveGenerationMock = vi.fn();
+// Mirrors React Query's `mutate(vars, { onSuccess })` so a test can drive the
+// in-band `{ error }` payload the Rust command actually returns.
+type SaveResult = { id?: string; success?: boolean; error?: string };
+type SaveCallbacks = { onSuccess?: (d: SaveResult) => void; onError?: () => void };
+const saveResultMock = vi.fn<() => SaveResult>();
+const saveGenerationMock = vi.fn((_req: unknown, cbs?: SaveCallbacks) => {
+  cbs?.onSuccess?.(saveResultMock());
+});
 
 vi.mock('@/services/use-ai-generations', () => ({
   useSaveAiGeneration: () => ({ mutate: saveGenerationMock }),
@@ -174,7 +181,9 @@ beforeEach(() => {
   contactProfileMock.mockReturnValue({ data: { fullName: 'Jane Applicant' } });
   resolveJobUrlMock.mockReset();
   resolveJobUrlMock.mockReturnValue({ data: undefined, isFetching: false });
-  saveGenerationMock.mockReset();
+  saveGenerationMock.mockClear();
+  saveResultMock.mockReset();
+  saveResultMock.mockReturnValue({ id: 'gen-1', success: true });
   window.getSelection()?.removeAllRanges();
 });
 
@@ -402,16 +411,60 @@ describe('ApplyByEmailTab — draft persistence', () => {
         // This surface owns only the email fields.
         resumeText: '',
         coverLetterText: '',
-      })
+      }),
+      expect.anything()
     );
   });
 
-  it('sends no language pair when there is no saved record, so the merge cannot fabricate a verdict', async () => {
+  // Every field this tab does not itself measure goes out blank, so the backend
+  // `pick` merge keeps whatever is stored. `meta`'s fallbacks (en/en, ats) are
+  // placeholders and would clobber real values whenever `saved` is undefined
+  // while a row exists (orphaned FK, or the query simply not loaded yet).
+  it('blanks the language pair, target language and mode when there is no saved record', async () => {
     await renderWithDraft();
 
     expect(saveGenerationMock).toHaveBeenCalledWith(
-      expect.objectContaining({ resumeLanguage: '', jobAdLanguage: '', mismatch: false })
+      expect.objectContaining({
+        resumeLanguage: '',
+        jobAdLanguage: '',
+        targetLanguage: '',
+        mode: '',
+        mismatch: false,
+      }),
+      expect.anything()
     );
+  });
+
+  it('never saves for a URL-less application, which would fork a phantom applied application', async () => {
+    render(
+      <ApplyByEmailTab application={makeApp({ jobUrl: '' })} matchingGenerations={NO_GENERATIONS} />
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.generate' }));
+    });
+    await screen.findByText(BODY);
+
+    // The draft is on screen (session-only) but nothing was written: an empty
+    // jobUrl can match neither the Application nor the generation aggregate.
+    expect(saveGenerationMock).not.toHaveBeenCalled();
+    // And it must not masquerade as a save failure — it is a deliberate skip.
+    expect(screen.queryByText('applications.detail.email.saveFailed')).toBeNull();
+  });
+
+  it('warns that the draft is unsaved when the command reports an in-band error', async () => {
+    saveResultMock.mockReturnValue({ error: 'disk full' });
+
+    await renderWithDraft();
+
+    // The command resolves with `{ error }` rather than rejecting, so onError
+    // never fires — the payload must be inspected or the failure is invisible.
+    expect(await screen.findByText('applications.detail.email.saveFailed')).toBeTruthy();
+  });
+
+  it('shows no warning when the save succeeds', async () => {
+    await renderWithDraft();
+
+    expect(screen.queryByText('applications.detail.email.saveFailed')).toBeNull();
   });
 
   it('echoes the saved language pair + mismatch verdict back, never clobbering it', async () => {
@@ -423,7 +476,14 @@ describe('ApplyByEmailTab — draft persistence', () => {
     await screen.findByText(BODY);
 
     expect(saveGenerationMock).toHaveBeenCalledWith(
-      expect.objectContaining({ resumeLanguage: 'de', jobAdLanguage: 'en', mismatch: true })
+      expect.objectContaining({
+        resumeLanguage: 'de',
+        jobAdLanguage: 'en',
+        targetLanguage: 'en',
+        mode: 'ats',
+        mismatch: true,
+      }),
+      expect.anything()
     );
   });
 
@@ -444,7 +504,8 @@ describe('ApplyByEmailTab — draft persistence', () => {
       expect.objectContaining({
         emailSubject: SUBJECT,
         emailBody: 'Hello, I am REWRITTEN in the role.',
-      })
+      }),
+      expect.anything()
     );
   });
 
@@ -493,7 +554,8 @@ describe('ApplyByEmailTab — draft persistence', () => {
       expect.objectContaining({
         emailSubject: 'Saved subject',
         emailBody: 'Saved body from a REWRITTEN session.',
-      })
+      }),
+      expect.anything()
     );
   });
 

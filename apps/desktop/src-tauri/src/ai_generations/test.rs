@@ -260,12 +260,21 @@ fn merge_email_draft_overwrites_on_regeneration_and_survives_other_saves() {
     assert_eq!(merged.email_subject, "OLD SUBJECT", "draft is not wiped");
     assert_eq!(merged.email_body, "OLD BODY", "draft is not wiped");
 
-    // Subject and body `pick` independently: a body-only save keeps the subject.
-    let mut body_only = record("g4", "https://acme.com/job/1");
-    body_only.email_body = "BODY ONLY".into();
-    let merged = merge_application(existing, body_only);
-    assert_eq!(merged.email_subject, "OLD SUBJECT");
-    assert_eq!(merged.email_body, "BODY ONLY");
+    // Subject and body merge ATOMICALLY: a save that carries a body but an empty
+    // subject owns the whole draft, so the stale subject must NOT survive glued
+    // onto the new body. This is the model breaking the `Subject:` line contract
+    // (the renderer's `splitEmail` then yields subject == "" and body == the raw
+    // output) — the one case that actually reaches here, since the email surface
+    // always writes both fields together.
+    let mut preamble_output = record("g4", "https://acme.com/job/1");
+    preamble_output.email_subject = String::new();
+    preamble_output.email_body = "Sure! Here is your email: Hello,".into();
+    let merged = merge_application(existing, preamble_output);
+    assert_eq!(
+        merged.email_subject, "",
+        "a stale subject must not be glued onto a newly generated body"
+    );
+    assert_eq!(merged.email_body, "Sure! Here is your email: Hello,");
 }
 
 /// End-to-end through the store: an email save must land on the SAME aggregate
