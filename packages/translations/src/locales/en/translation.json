@@ -2577,7 +2577,7 @@
         "needsJob": "A job description is needed to generate the email.",
         "subjectLabel": "Subject",
         "bodyLabel": "Body",
-        "copy": "Copy",
+        "copy": "Copy body",
         "copied": "Copied!",
         "copySubject": "Copy subject",
         "rewrite": "Rewrite with AI",

@@ -2581,7 +2581,7 @@
         "needsJob": "Für die E-Mail-Generierung wird eine Stellenbeschreibung benötigt.",
         "subjectLabel": "Betreff",
         "bodyLabel": "Inhalt",
-        "copy": "Kopieren",
+        "copy": "Inhalt kopieren",
         "copied": "Kopiert!",
         "copySubject": "Betreff kopieren",
         "rewrite": "Mit KI umschreiben",
