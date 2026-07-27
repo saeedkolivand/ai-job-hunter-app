@@ -93,7 +93,44 @@ function trackPriming(playResult: 'resolve' | 'reject' | 'no-promise') {
   ) {
     paused.push(this);
   });
+  // The engine calls load() when tearing a failed clip down; jsdom's stub only emits
+  // a virtual-console error, so silence it to keep failures readable.
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
   return { played, paused };
+}
+
+/**
+ * Makes a <video> scrubbable in jsdom (which has no media stack) and reports the
+ * currentTime the engine seeks it to.
+ */
+function fakeMedia(video: HTMLVideoElement) {
+  const state = { currentTime: 0 };
+  Object.defineProperty(video, 'duration', { configurable: true, value: 1 });
+  Object.defineProperty(video, 'seeking', { configurable: true, value: false });
+  Object.defineProperty(video, 'currentTime', {
+    configurable: true,
+    get: () => state.currentTime,
+    set: (t: number) => {
+      state.currentTime = t;
+    },
+  });
+  return state;
+}
+
+/** Captures the engine's rAF callbacks so a single frame can be driven by hand. */
+function captureFrames() {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+  return () => {
+    const frame = frames[0];
+    if (!frame) throw new Error('engine never scheduled a frame');
+    frame(0);
+  };
+}
+
+/** Puts the page mid-scroll so segment 0 has a non-zero seek target. */
+function stubScrollY(y: number) {
+  Object.defineProperty(window, 'scrollY', { configurable: true, value: y });
 }
 
 const inside = (els: HTMLMediaElement[], container: HTMLElement) =>
@@ -119,6 +156,7 @@ afterEach(() => {
   URL.createObjectURL = originalCreateObjectURL;
   URL.revokeObjectURL = originalRevokeObjectURL;
   stubTouchPoints(0);
+  stubScrollY(0);
   document.body.replaceChildren();
 });
 
@@ -153,6 +191,40 @@ describe('device classification picks the asset set', () => {
     expect(poster).toBe(set === 'mobile' ? '/cls/m0.png' : '/cls/d0.png');
     expect(urls).toContain(set === 'mobile' ? '/cls/m0.mp4' : '/cls/d0.mp4');
     expect(urls).not.toContain(set === 'mobile' ? '/cls/d0.mp4' : '/cls/m0.mp4');
+  });
+
+  // The third consumer of the frozen classification, and the one the poster/clip
+  // assertions above can't see: raf()'s seek step (`eps`). A re-vendor that restored
+  // a live `isMobile()` at this call site alone would slip past every other test.
+  it('scrubs a tablet at the desktop seek step and a phone at the coarser one', async () => {
+    async function seekAfterOneFrame(prefix: string, w: number, h: number) {
+      const runFrame = captureFrames();
+      stubMatchMedia({ coarse: true, narrow: true, reduce: false });
+      stubScreen(w, h);
+      stubTouchPoints(5);
+      URL.createObjectURL = () => 'blob:scrub-engine-test';
+      trackPriming('resolve');
+      stubFetch('ok');
+      const container = mount(prefix);
+      await flush();
+
+      const video = container.querySelector('video');
+      if (!video) throw new Error('engine did not create a clip');
+      const media = fakeMedia(video);
+      video.dispatchEvent(new Event('loadedmetadata'));
+      runFrame();
+      return media.currentTime;
+    }
+
+    // Same scroll offset and the same 0.18 lerp for both, so the single lerped step
+    // is identical — it just lands between the two thresholds (0.008 and 0.02).
+    stubScrollY(60);
+    const tablet = await seekAfterOneFrame('epstab', 800, 1280);
+    const phone = await seekAfterOneFrame('epsphone', 430, 932);
+
+    expect(tablet).toBeGreaterThan(0.008);
+    expect(tablet).toBeLessThan(0.02);
+    expect(phone).toBe(0); // below the coarse step, so the seek is coalesced away
   });
 });
 
@@ -262,6 +334,22 @@ describe('iOS video priming', () => {
     expect(inside(played, container)).toHaveLength(0);
   });
 
+  it('gives up re-priming after 3 refusals rather than retrying on every touch', async () => {
+    const { played } = touchDeviceWithVideos('reject');
+    stubFetch('ok');
+    const container = mount('primecap');
+    await flush();
+
+    for (let i = 0; i < 6; i++) {
+      window.dispatchEvent(new Event('pointerdown'));
+      await flush();
+    }
+
+    const clips = container.querySelectorAll('video.sw-scene__video').length;
+    expect(clips).toBeGreaterThan(0);
+    expect(inside(played, container)).toHaveLength(clips * 3);
+  });
+
   it('pauses straight away when play() returns no promise (pre-promise WebKit)', async () => {
     const { played, paused } = touchDeviceWithVideos('no-promise');
     stubFetch('ok');
@@ -311,12 +399,59 @@ describe('clip failure recovery', () => {
     expect(attempts()).toBe(1);
 
     // orientationchange re-runs layout()→read() synchronously, i.e. a scroll tick.
+    // NOTE: the engine has no teardown API, so every mount from an earlier test in
+    // this file is still listening and will re-run its own read() on this event.
+    // That is why `configFor` gives each mount unique asset paths and every
+    // assertion here filters by prefix or by `container.contains`. A new assertion
+    // over an unscoped global (total fetch count, prototype spy call counts, a
+    // document-wide querySelectorAll) will pick up those foreign mounts — scope it.
     for (let i = 0; i < 5; i++) {
       window.dispatchEvent(new Event('orientationchange'));
       await flush();
       failClip();
     }
     expect(attempts()).toBe(3);
+  });
+
+  it('ignores late loadedmetadata / seeked from a video the segment has replaced', async () => {
+    // Tablet-classified so eps is the fine 0.008 — a wrongly-ready segment would
+    // visibly seek the live clip, which is what makes this assertion meaningful.
+    stubScrollY(60);
+    stubMatchMedia({ coarse: true, narrow: true, reduce: false });
+    stubScreen(800, 1280);
+    stubTouchPoints(5);
+    URL.createObjectURL = () => 'blob:scrub-engine-test';
+    URL.revokeObjectURL = () => {};
+    trackPriming('resolve');
+    const runFrame = captureFrames();
+    stubFetch('ok');
+    const container = mount('latemeta');
+    await flush();
+
+    const scene = sceneOf(container);
+    const first = scene.querySelector('video');
+    first?.dispatchEvent(new Event('error'));
+    window.dispatchEvent(new Event('orientationchange'));
+    await flush();
+
+    const second = scene.querySelector('video');
+    if (!second) throw new Error('engine did not retry the clip');
+    expect(second).not.toBe(first);
+    const media = fakeMedia(second);
+
+    // The discarded element finally reports metadata and a seek. Unguarded, this
+    // flags the segment ready and reveals it while the LIVE clip has no metadata,
+    // so raf() then scrubs it against the `duration || 1` fallback.
+    first?.dispatchEvent(new Event('loadedmetadata'));
+    first?.dispatchEvent(new Event('seeked'));
+    expect(scene.classList.contains('has-clip')).toBe(false);
+    runFrame();
+    expect(media.currentTime).toBe(0);
+
+    // Sanity: the live element's own metadata does mark the segment ready.
+    second.dispatchEvent(new Event('loadedmetadata'));
+    runFrame();
+    expect(media.currentTime).toBeGreaterThan(0);
   });
 
   it('ignores a late error from a video the segment has already replaced', async () => {

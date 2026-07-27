@@ -45,7 +45,11 @@
          and primes each video (muted play→pause) on every touch and again whenever a clip
          is created after the first touch — this is what stops iOS from showing a blank
          scene (iOS won't load media data for a video created outside a gesture).
-       - drops the drifting particles and ignores URL-bar-only resizes (no scroll jump).
+       - drops the drifting particles and ignores URL-bar-only resizes (no scroll jump)
+         — these two key off the coarse pointer ALONE, so tablets get them as well.
+     Priming keys off neither tier: it needs only touch capability (maxTouchPoints),
+     because a trackpad-attached iPad reports a FINE pointer yet still gates media
+     loading on a gesture. Three separate gates, deliberately — see mountScrollWorld.
      Nothing here is required — a config with only `clip`/`connectors` still works on
      phones; the mobile variants just make it lighter and smoother.
 
@@ -195,6 +199,7 @@ function mountScrollWorld(container, config) {
     s.loading = false;
     s.ready = false;
     s.primed = false;
+    s.primeTries = 0;
     s.tries = 0;
     s.cur = 0;
     s.target = 0;
@@ -299,7 +304,14 @@ function mountScrollWorld(container, config) {
         v.setAttribute('muted', '');
         v.setAttribute('playsinline', '');
         v.src = URL.createObjectURL(blob);
+        // Every listener below checks this first. A media element keeps firing after the
+        // segment has torn it down and replaced it (see the error handler), and a late
+        // event from a discarded element would otherwise mutate the LIVE clip's state —
+        // e.g. flagging `ready` while the live video has no metadata at all, after which
+        // raf() seeks it against the `duration || 1` fallback.
+        const live = () => s.video === v;
         v.addEventListener('loadedmetadata', () => {
+          if (!live()) return;
           s.ready = true;
           read();
         });
@@ -309,6 +321,7 @@ function mountScrollWorld(container, config) {
         v.addEventListener(
           'seeked',
           () => {
+            if (!live()) return;
             s.el.classList.add('has-clip');
           },
           { once: true }
@@ -317,7 +330,7 @@ function mountScrollWorld(container, config) {
           try {
             v.pause();
           } catch (e) {}
-          if (userReady) primeVideo(s);
+          if (live() && userReady) primeVideo(s);
         });
         // A decode/network error must not latch `loading` forever, and a dead <video>
         // must not sit on top of the poster. Reset the segment back to its still so a
@@ -325,17 +338,22 @@ function mountScrollWorld(container, config) {
         v.addEventListener('error', () => {
           // A late error from an element this segment has already replaced must not
           // reset the live clip (that would freeze it and stack a second <video>).
-          if (s.video !== v) return;
+          if (!live()) return;
           if (v.parentNode) v.parentNode.removeChild(v);
-          // Live clips keep their blob URL for the page's lifetime by design, but a
-          // torn-down one is dead weight — release it or a failing segment leaks
-          // multi-MB blobs once per retry.
-          URL.revokeObjectURL(v.src);
+          // Clear the source and re-run the load algorithm BEFORE revoking: a detached
+          // element can hold decoder resources until its source is dropped, and the retry
+          // path can make up to three of these per segment. Live clips keep their blob URL
+          // for the page's lifetime by design — a torn-down one is just dead weight.
+          const dead = v.src;
+          v.removeAttribute('src');
+          v.load();
+          URL.revokeObjectURL(dead);
           s.video = null;
           s.el.classList.remove('has-clip');
           s.hasClip = false;
           s.ready = false;
           s.primed = false;
+          s.primeTries = 0;
           s.loading = false;
         });
         s.el.appendChild(v);
@@ -453,8 +471,11 @@ function mountScrollWorld(container, config) {
   let userReady = false;
   function primeVideo(s) {
     const v = s.video;
-    if (!canTouch || !v || s.primed) return;
+    // `primeTries` mirrors `tries`: a browser that refuses muted playback outright would
+    // otherwise take a fresh play() on every pointerdown for the life of the page.
+    if (!canTouch || !v || s.primed || s.primeTries >= 3) return;
     s.primed = true;
+    s.primeTries++;
     try {
       const p = v.play();
       if (p && p.then)

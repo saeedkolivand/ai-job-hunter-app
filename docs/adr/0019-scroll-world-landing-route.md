@@ -103,19 +103,26 @@ The priming gate is `canTouch = navigator.maxTouchPoints > 0`, evaluated once at
 
 `maxTouchPoints` catches every touch-capable browser. The cost is a harmless muted `play()`→`pause()` on Windows touch laptops; a real desktop reports `0` and never primes at all (locked by a test, since that guard is the only thing standing between desktop and a burst of spurious `play()` calls).
 
-`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber.
+`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber. A per-segment `s.primeTries` caps priming at 3 attempts, mirroring `s.tries` in D4 — a browser that refuses muted playback outright would otherwise take a fresh `play()` on every `pointerdown` for the life of the page, since a refusal deliberately clears `s.primed`.
 
 ### D4 — bounded clip-failure recovery
 
 Upstream latched `s.loading = true` forever on success (a clip that then failed to decode wedged its scene on the poster with no path back) while a failing `fetch` cleared the latch and re-requested on **every scroll tick**. An `error` listener on the video now removes the dead element, drops `has-clip`, and resets the segment so a later scroll can retry; a per-segment `s.tries` counter caps that at 3 attempts, so neither failure mode storms or wedges.
 
-The handler's first line is an identity guard, `if (s.video !== v) return;`. Media elements can fire `error` more than once and a discarded element outlives its replacement, so without it a late error from an already-replaced `<video>` resets the segment while the **live** clip is still mounted — freezing that clip and stacking a second `<video>` into the scene on the next tick.
+**Every** listener on the clip now opens with a shared liveness check, `const live = () => s.video === v;`. Media elements keep firing after a segment has torn them down and replaced them, and a discarded element outlives its replacement, so an unguarded late event mutates the state of the **live** clip:
 
-Teardown also calls `URL.revokeObjectURL(v.src)`. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a torn-down element is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry.
+- `error` — resets the segment while the live clip is mounted, freezing it and stacking a second `<video>` into the scene on the next tick.
+- `loadedmetadata` — sets `s.ready = true` when the live video has no metadata at all, after which `raf()` scrubs it against the `duration || 1` fallback.
+- `seeked` (`{once:true}`) — adds `has-clip`, hiding the poster to reveal a video that was never painted.
+- `loadeddata` — `v.pause()` stays unguarded (it must pause the element that fired), but the priming decision is gated.
+
+Teardown order matters: `v.removeAttribute('src')` + `v.load()` run **before** `URL.revokeObjectURL(...)`, because a detached element can hold decoder resources until its source is dropped and the load algorithm re-run — and the retry path can produce up to three such elements per segment. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a torn-down element is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry.
 
 ### D5 — header doc comment
 
 The file's usage/`MOBILE` comment block was updated to describe D2–D4 accurately (frozen phone/desktop split, continuous priming). No behaviour.
+
+It also no longer lists the particle drop and the URL-bar resize guard as phone-tier behaviours: both key off the coarse pointer **alone**, so tablets get them too. As written before, the header contradicted the inline comments and D2. The block now states all three gates explicitly.
 
 ### Runtime consequence of D2 for AV1
 
