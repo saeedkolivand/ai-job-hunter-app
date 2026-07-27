@@ -1,15 +1,29 @@
-import { ChevronDown, ChevronRight, ClipboardList, Plus, Search } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Plus,
+  Search,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, EmptyState, ErrorState, Input, RowSkeleton, transition } from '@ajh/ui';
+import { Button, Dropdown, EmptyState, ErrorState, Input, RowSkeleton, transition } from '@ajh/ui';
 
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
+import { PipelineStrip } from '@/features/applications/components/PipelineStrip';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
+import {
+  APPLICATION_SORTS,
+  sortApplications,
+  stagesForGroup,
+  toApplicationSort,
+} from '@/features/applications/lib/pipeline';
 import { Route } from '@/routes/applications.index';
 import { useApplications } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
@@ -17,7 +31,8 @@ import { useSessionStore } from '@/store/session-store';
 export function ApplicationsPage() {
   const { t } = useTranslation();
   const { applications: appsSlice, setApplications, toggleApplicationSection } = useSessionStore();
-  const { collapsedSections, filter } = appsSlice;
+  const { collapsedSections, filter, stageGroup } = appsSlice;
+  const sort = toApplicationSort(appsSlice.sort);
 
   const [trackOpen, setTrackOpen] = useState(false);
 
@@ -38,17 +53,23 @@ export function ApplicationsPage() {
     void navigate({ to: '/applications', search: {}, replace: true });
   }, [highlight, navigate]);
 
-  // A just-imported job (notification "View" deep-link) must be visible:
-  // un-collapse its stage section so the highlighted row isn't hidden.
+  // A deep-linked application (notification "View") must be visible, and the
+  // highlight wins over BOTH things that can hide it: its stage section is
+  // un-collapsed, and an active pipeline-strip filter that excludes it is
+  // CLEARED outright. Clearing beats widening the filter — the user then sees
+  // the same full list the notification implied, with no half-applied filter.
   useEffect(() => {
     if (!highlightId) return;
     const target = allApps.find((a) => a.id === highlightId);
-    if (target && collapsedSections.includes(target.status)) {
-      setApplications({
-        collapsedSections: collapsedSections.filter((id) => id !== target.status),
-      });
+    if (!target) return;
+    const patch: { collapsedSections?: string[]; stageGroup?: string | null } = {};
+    if (collapsedSections.includes(target.status)) {
+      patch.collapsedSections = collapsedSections.filter((id) => id !== target.status);
     }
-  }, [highlightId, allApps, collapsedSections, setApplications]);
+    const activeStages = stagesForGroup(stageGroup);
+    if (activeStages && !activeStages.includes(target.status)) patch.stageGroup = null;
+    if (Object.keys(patch).length > 0) setApplications(patch);
+  }, [highlightId, allApps, collapsedSections, stageGroup, setApplications]);
 
   // Clear the local flash after ~3.5s so it fires once, not indefinitely.
   useEffect(() => {
@@ -72,15 +93,28 @@ export function ApplicationsPage() {
     [allApps, q]
   );
 
-  // Group by stage in APPLICATION_STAGES order; hide stages with no applications.
+  // Pipeline-strip stage-group filter (null = every stage).
+  const activeStages = stagesForGroup(stageGroup);
+
+  // Group by stage in APPLICATION_STAGES order; hide stages with no applications
+  // and stages outside the active group. Rows are sorted within each section.
   const sections = useMemo(
     () =>
-      APPLICATION_STAGES.map((stage) => ({
-        stage,
-        apps: filtered.filter((a) => a.status === stage.id),
-      })).filter((s) => s.apps.length > 0),
-    [filtered]
+      APPLICATION_STAGES.filter((stage) => !activeStages || activeStages.includes(stage.id))
+        .map((stage) => ({
+          stage,
+          apps: sortApplications(
+            filtered.filter((a) => a.status === stage.id),
+            sort
+          ),
+        }))
+        .filter((s) => s.apps.length > 0),
+    [filtered, activeStages, sort]
   );
+
+  // A group covering several stages (only `closed` today) tags each row with its
+  // own stage, so an aggregated card never hides HOW a pursuit ended.
+  const showStageTag = (activeStages?.length ?? 0) > 1;
 
   const actions = (
     <div className="flex items-center gap-2">
@@ -94,6 +128,20 @@ export function ApplicationsPage() {
         wrapperClassName="h-8"
         allowClear
       />
+      {/* `role="group"` + aria-label rather than a <label for>: a <label> pointing
+          at the Dropdown's <button> would REPLACE its accessible name (the current
+          sort) instead of adding context to it. */}
+      <div role="group" aria-label={t('applications.sort.label')} className="w-44">
+        <Dropdown
+          options={APPLICATION_SORTS.map((s) => ({
+            value: s,
+            label: t(`applications.sort.${s}` as const),
+          }))}
+          value={sort}
+          onChange={(value) => setApplications({ sort: value })}
+          icon={<ArrowDownWideNarrow size={12} />}
+        />
+      </div>
       <Button variant="primary" onClick={() => setTrackOpen(true)}>
         <Plus size={12} />
         {t('applications.trackButton')}
@@ -139,6 +187,16 @@ export function ApplicationsPage() {
           />
         )}
 
+        {!isLoading && !isError && allApps.length > 0 && (
+          <div className="pt-4">
+            <PipelineStrip
+              applications={allApps}
+              active={stageGroup}
+              onSelect={(groupId) => setApplications({ stageGroup: groupId })}
+            />
+          </div>
+        )}
+
         {!isLoading && !isError && allApps.length > 0 && sections.length === 0 && (
           <EmptyState icon={Search} title={t('applications.noResults')} className="py-10" />
         )}
@@ -178,6 +236,7 @@ export function ApplicationsPage() {
                             key={app.id}
                             application={app}
                             highlighted={app.id === highlightId}
+                            showStageTag={showStageTag}
                           />
                         ))}
                       </div>
