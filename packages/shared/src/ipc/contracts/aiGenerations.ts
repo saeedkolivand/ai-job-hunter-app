@@ -26,6 +26,13 @@ export interface AiGenerationRecord {
   /** AI-suggested questions the candidate can ASK the interviewer, if any. */
   interviewQuestions: InterviewQuestion[];
   /**
+   * The persisted apply-by-email draft (subject line + body). Optional because
+   * records serialised before these columns existed — e.g. an older exported
+   * backup replayed through a test fixture — carry neither field.
+   */
+  emailSubject?: string;
+  emailBody?: string;
+  /**
    * Parent Application FK — set at save time (and backfilled at boot for legacy
    * rows). The Application detail page joins this generation's docs by this id, not
    * by url, because the Application stores the NORMALIZED url and the generation the
@@ -57,6 +64,13 @@ export interface AiGenerationSaveRequest {
   companyBrief?: string;
   /** AI-suggested interview questions to persist on the (per-job) record. */
   interviewQuestions?: InterviewQuestion[];
+  /**
+   * The apply-by-email draft to persist on the (per-job) record. Merged like
+   * `coverLetterText`: a non-blank value overwrites the stored draft, a blank
+   * one leaves it untouched — so a résumé/answers save can't wipe the email.
+   */
+  emailSubject?: string;
+  emailBody?: string;
 }
 
 /**

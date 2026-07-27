@@ -992,6 +992,8 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         application_answers: vec![],
         company_brief: String::new(),
         interview_questions: vec![],
+        email_subject: String::new(),
+        email_body: String::new(),
         application_id: None,
     };
     gen_store.save_application(rec1).unwrap();
@@ -1026,6 +1028,8 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         application_answers: vec![],
         company_brief: String::new(),
         interview_questions: vec![],
+        email_subject: String::new(),
+        email_body: String::new(),
         application_id: None,
     };
     // AiGenerationStore::save_application merges same-url into one gen row.
