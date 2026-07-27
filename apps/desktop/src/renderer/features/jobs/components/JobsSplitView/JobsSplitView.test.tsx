@@ -529,3 +529,56 @@ describe('JobsSplitView — scroll persist (RAF-throttled)', () => {
     expect(useSessionStore.getState().jobs.listScrollTop).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Responsive width contract (narrow-window regression)
+// ─────────────────────────────────────────────────────────────────────────────
+// `md:` is ALWAYS active (900px window floor — docs/PATTERNS.md §15), so the
+// old fixed `md:w-[420px]` ladder left the detail pane ~248px at the floor and
+// clipped its action cluster. jsdom has no layout engine, so the contract is
+// asserted on the classes that produce it — the same seam the ModalShell
+// responsive test uses.
+
+describe('JobsSplitView — responsive width contract', () => {
+  function panes(): { root: HTMLElement; aside: HTMLElement; detail: HTMLElement } {
+    const aside = screen.getByRole('complementary');
+    const root = aside.parentElement;
+    const detail = screen.getByTestId('job-detail').closest('section');
+    if (!root || !detail) throw new Error('split panes not rendered');
+    return { root, aside, detail };
+  }
+
+  it('sizes the list pane proportionally with a floor and a ceiling, not a fixed px ladder', () => {
+    renderSplit();
+    const { aside } = panes();
+
+    expect(aside.className).toContain('md:w-[34%]');
+    expect(aside.className).toContain('md:min-w-[280px]');
+    expect(aside.className).toContain('md:max-w-[480px]');
+    // The fixed ladder is what starved the detail pane at the 900px floor.
+    expect(aside.className).not.toContain('md:w-[420px]');
+    expect(aside.className).not.toContain('xl:w-[480px]');
+    expect(aside.className).not.toContain('2xl:w-[520px]');
+  });
+
+  it('keeps the list pane from being squeezed by detail-pane content', () => {
+    renderSplit();
+    expect(panes().aside.className).toContain('md:shrink-0');
+  });
+
+  it('lets the root fill the results card instead of resolving to max-content', () => {
+    renderSplit();
+    const { root } = panes();
+    // Without w-full + min-w-0 this lone flex child sizes to max-content and the
+    // two panes overflow the card (which clips with overflow-hidden).
+    expect(root.className).toContain('w-full');
+    expect(root.className).toContain('min-w-0');
+  });
+
+  it('keeps the detail pane shrinkable (min-w-0) so it can compress rather than overflow', () => {
+    renderSplit();
+    const { detail } = panes();
+    expect(detail.className).toContain('min-w-0');
+    expect(detail.className).toContain('flex-1');
+  });
+});

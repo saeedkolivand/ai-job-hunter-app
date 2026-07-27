@@ -111,14 +111,23 @@ export function JobsSplitView({
 
   return (
     // flex-col on mobile, flex-row on md+. min-h-0 required for nested overflow.
-    <div className="flex h-full min-h-0 flex-col md:flex-row">
+    // w-full + min-w-0: this element is the lone flex child of the results card,
+    // so without them its main size resolves to max-content and the two panes
+    // overflow (clipped by the card's overflow-hidden) instead of sharing the
+    // available width.
+    <div className="flex h-full w-full min-h-0 min-w-0 flex-col md:flex-row">
       {/* ── Left: list pane ── */}
-      {/* Narrow: hidden when a job is selected. Wide: fixed width, always visible. */}
+      {/* Narrow: hidden when a job is selected. Wide: always visible.
+          Width is proportional-with-bounds (the utility equivalent of
+          `clamp(280px, 34%, 480px)`) rather than a fixed 420/480/520px ladder:
+          at the 900px window floor a fixed 420px left over ~248px for the detail
+          pane, which is what clipped its action cluster. `shrink-0` keeps the
+          percentage authoritative once the detail pane's content grows. */}
       <aside
         className={[
           'flex flex-col overflow-hidden border-r border-[var(--border-clear)]',
           selectedPosting ? 'hidden md:flex' : 'flex',
-          'md:w-[420px] xl:w-[480px] 2xl:w-[520px]',
+          'md:w-[34%] md:min-w-[280px] md:max-w-[480px] md:shrink-0',
         ].join(' ')}
       >
         {/* List scroll container — virtualizer targets this.
