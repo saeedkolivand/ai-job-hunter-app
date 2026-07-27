@@ -2678,7 +2678,8 @@
       "followUpDue": "Follow up {{date}}",
       "followUpOverdueHint": "This follow-up is overdue.",
       "followUpUpcomingHint": "You will be reminded when this date arrives.",
-      "followUpNoneHint": "Set a date to get a reminder for the next step."
+      "followUpNoneHint": "Set a date to get a reminder for the next step.",
+      "contactSaveError": "This contact could not be saved."
     },
     "pipeline": {
       "aria": "Filter by pipeline stage",
@@ -2688,7 +2689,9 @@
       "interviewing": "Interviewing",
       "offer": "Offer",
       "closed": "Closed",
-      "overdue": "Overdue: {{n}}"
+      "overdue": "Overdue: {{n}}",
+      "filtered": "Showing {{stage}} applications only.",
+      "filterCleared": "Showing applications in every stage."
     },
     "sort": {
       "label": "Sort applications",
@@ -2703,7 +2706,8 @@
       "placeholder": "e.g. Recruiter call scheduled for Thursday",
       "save": "Save note",
       "skip": "Skip",
-      "add": "Add note"
+      "add": "Add note",
+      "saveError": "The note could not be saved — try again."
     }
   },
   "notifications": {

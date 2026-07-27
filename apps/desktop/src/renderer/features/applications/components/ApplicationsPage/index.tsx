@@ -17,6 +17,7 @@ import { Button, Dropdown, EmptyState, ErrorState, Input, RowSkeleton, transitio
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
 import { PipelineStrip } from '@/features/applications/components/PipelineStrip';
+import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
 import {
   APPLICATION_SORTS,
@@ -25,7 +26,7 @@ import {
   toApplicationSort,
 } from '@/features/applications/lib/pipeline';
 import { Route } from '@/routes/applications.index';
-import { useApplications } from '@/services/use-applications';
+import { useApplications, useSetApplicationStatus } from '@/services/use-applications';
 import { useSessionStore } from '@/store/session-store';
 
 export function ApplicationsPage() {
@@ -37,6 +38,30 @@ export function ApplicationsPage() {
   const [trackOpen, setTrackOpen] = useState(false);
 
   const { data: allApps = [], isLoading, isError } = useApplications();
+
+  // Optional-note prompt, held PAGE-level and keyed by application id. It cannot
+  // live on the row: the invalidation refetch that follows the status write moves
+  // that row into a different (keyed) stage section, so React unmounts it — and
+  // any prompt state with it — before the user can type.
+  const [notePromptId, setNotePromptId] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState(false);
+  const noteStatus = useSetApplicationStatus();
+  // Re-read from the CURRENT list, not from a value captured when the prompt
+  // opened, so a stage change landing in between is never reverted by the note.
+  const notePromptApp = notePromptId ? allApps.find((a) => a.id === notePromptId) : undefined;
+
+  const handleSaveNote = (note: string) => {
+    if (!notePromptApp) return;
+    setNoteError(false);
+    noteStatus.mutate(
+      { id: notePromptApp.id, status: notePromptApp.status, note },
+      {
+        onSuccess: () => setNotePromptId(null),
+        // Keep the dialog open on failure so the typed note is not discarded.
+        onError: () => setNoteError(true),
+      }
+    );
+  };
 
   // `?highlight=<applicationId>` deep-link (notification "View"). Seed a LOCAL
   // flash id from the param so the flash lives in component state, not the URL;
@@ -237,6 +262,7 @@ export function ApplicationsPage() {
                             application={app}
                             highlighted={app.id === highlightId}
                             showStageTag={showStageTag}
+                            onStatusChanged={() => setNotePromptId(app.id)}
                           />
                         ))}
                       </div>
@@ -248,6 +274,16 @@ export function ApplicationsPage() {
           })}
         </div>
       </PageShell>
+
+      <StatusNoteModal
+        open={notePromptApp !== undefined}
+        onClose={() => setNotePromptId(null)}
+        status={notePromptApp?.status ?? ''}
+        changed
+        isSaving={noteStatus.isPending}
+        error={noteError ? t('applications.note.saveError') : null}
+        onSave={handleSaveNote}
+      />
 
       <TrackJobModal open={trackOpen} onClose={() => setTrackOpen(false)} />
     </>

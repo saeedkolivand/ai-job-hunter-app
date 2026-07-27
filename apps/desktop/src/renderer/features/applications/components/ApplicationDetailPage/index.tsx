@@ -123,6 +123,50 @@ export function ApplicationDetailPage() {
   const application = data?.application ?? null;
   const events = data?.events ?? [];
 
+  // The optional-note prompt lives HERE, above `ApplicationDetailLoaded`, because
+  // saving a status writes the record and the invalidation refetch re-renders the
+  // loaded view — state held inside it does not reliably survive that churn (and
+  // did not at all while the view was keyed by `updatedAt`). Declared before the
+  // early returns so the hook order is stable across loading/error/loaded.
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [noteAfterChange, setNoteAfterChange] = useState(false);
+  const [noteError, setNoteError] = useState(false);
+  const noteStatus = useSetApplicationStatus();
+
+  const openNotePrompt = (status: string, changed: boolean) => {
+    setNoteError(false);
+    setNoteAfterChange(changed);
+    setNoteFor(status);
+  };
+
+  // Re-read the CURRENT status at save time rather than re-writing the stage
+  // captured when the prompt opened: a transition landing in between (another
+  // tab, the extension bridge) would otherwise be silently reverted by the note.
+  const handleSaveNote = (note: string) => {
+    if (!application) return;
+    setNoteError(false);
+    noteStatus.mutate(
+      { id: application.id, status: application.status, note },
+      {
+        onSuccess: () => setNoteFor(null),
+        // Keep the dialog open on failure so the typed note is not discarded.
+        onError: () => setNoteError(true),
+      }
+    );
+  };
+
+  const noteModal = (
+    <StatusNoteModal
+      open={noteFor !== null}
+      onClose={() => setNoteFor(null)}
+      status={application?.status ?? noteFor ?? ''}
+      changed={noteAfterChange}
+      isSaving={noteStatus.isPending}
+      error={noteError ? t('applications.note.saveError') : null}
+      onSave={handleSaveNote}
+    />
+  );
+
   const { from } = Route.useSearch();
   const backTarget = from ? BACK_TO[from] : '/applications';
   const back = () => void navigate({ to: backTarget });
@@ -161,24 +205,26 @@ export function ApplicationDetailPage() {
     );
   }
 
-  // Key by id AND record version so the loaded view remounts — re-seeding the
-  // save-on-blur edit buffers — both when navigating between two detail pages
-  // (same route pattern, new param; TanStack Router reuses the instance
-  // otherwise) AND after any persisted change to THIS application.
-  //
-  // The version half is load-bearing, not cosmetic: the buffers are seeded once
-  // via useState, so without it a write from another tab (the apply-by-email tab
-  // now shares the canonical contact pair) would refetch into `application`
-  // while the Overview inputs still held their stale seed — and the next blur
-  // there would persist that stale value back, wiping the contact just saved.
+  // Key by id ONLY. Navigating between two detail pages (same route pattern, new
+  // param) must remount — TanStack Router reuses the instance otherwise — but a
+  // refetch of the SAME record must NOT: remounting on every persisted write
+  // destroys keyboard focus, discards text typed into another field while the
+  // first write is in flight, and tears down the whole TailorFlow sub-tree.
+  // Re-seeding the save-on-blur buffers after an out-of-band write (the
+  // apply-by-email tab shares the canonical contact pair) is handled per-field
+  // inside `ApplicationDetailLoaded` instead — see `useSyncedBuffer`.
   return (
-    <ApplicationDetailLoaded
-      key={`${id}:${application.updatedAt}`}
-      application={application}
-      events={events}
-      onBack={back}
-      backLabel={backLabel}
-    />
+    <>
+      <ApplicationDetailLoaded
+        key={id}
+        application={application}
+        events={events}
+        onBack={back}
+        backLabel={backLabel}
+        onNotePrompt={openNotePrompt}
+      />
+      {noteModal}
+    </>
   );
 }
 
@@ -222,14 +268,43 @@ function PanelShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Save-on-blur edit buffer that adopts an out-of-band server change WITHOUT a
+ * remount (React's "adjust state during render" pattern).
+ *
+ * Per FIELD, deliberately: the buffer re-seeds only when the server value for
+ * THIS field changed since the previous render, so a write landing for a sibling
+ * field (or a status/note write, which also bumps the record) never clobbers
+ * text the user is still typing here. Replaces the `key={id}:{updatedAt}`
+ * remount, which fixed the same stale-seed wipe but destroyed focus, uncommitted
+ * input and the whole TailorFlow sub-tree on every persisted write.
+ */
+function useSyncedBuffer(serverValue: string): [string, (value: string) => void] {
+  const [value, setValue] = useState(serverValue);
+  const [seen, setSeen] = useState(serverValue);
+  if (seen !== serverValue) {
+    setSeen(serverValue);
+    setValue(serverValue);
+  }
+  return [value, setValue];
+}
+
 interface LoadedProps {
   application: Application;
   events: StatusEvent[];
   onBack: () => void;
   backLabel: string;
+  /** Ask the page (which outlives a refetch) to open the optional-note prompt. */
+  onNotePrompt: (status: string, changed: boolean) => void;
 }
 
-function ApplicationDetailLoaded({ application, events, onBack, backLabel }: LoadedProps) {
+function ApplicationDetailLoaded({
+  application,
+  events,
+  onBack,
+  backLabel,
+  onNotePrompt,
+}: LoadedProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
@@ -283,44 +358,43 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
     onBack();
   };
 
-  // Save-on-blur editable buffers, seeded once from the loaded application.
-  const [notes, setNotes] = useState(application.notes);
-  const [contactName, setContactName] = useState(application.contactName);
-  const [contactEmail, setContactEmail] = useState(application.contactEmail);
-  const [comp, setComp] = useState(application.comp);
-  const [nextActionAt, setNextActionAt] = useState(toDateInputValue(application.nextActionAt));
+  // Save-on-blur editable buffers. Each re-seeds independently when ITS server
+  // value changes (see `useSyncedBuffer`) — no remount, so focus and sibling
+  // uncommitted text survive a write landing.
+  const [notes, setNotes] = useSyncedBuffer(application.notes);
+  const [contactName, setContactName] = useSyncedBuffer(application.contactName);
+  const [contactEmail, setContactEmail] = useSyncedBuffer(application.contactEmail);
+  const [comp, setComp] = useSyncedBuffer(application.comp);
+  const [nextActionAt, setNextActionAt] = useSyncedBuffer(
+    toDateInputValue(application.nextActionAt)
+  );
 
   const stageOptions = STATUS_OPTIONS.map((o) => ({
     value: o.value,
     label: t(`applications.status.${o.value}` as const),
   }));
 
-  // Optional-note prompt. `noteFor` holds the stage the note attaches to and
-  // `noteAfterChange` distinguishes the post-transition prompt from the
-  // Timeline's explicit "Add note" (same modal, different copy).
-  const [noteFor, setNoteFor] = useState<string | null>(null);
-  const [noteAfterChange, setNoteAfterChange] = useState(false);
   const [statusError, setStatusError] = useState(false);
+  // Surfaced when the backend rejects a contact write (e.g. a malformed email) —
+  // mirrors ApplyByEmailTab, which edits the SAME canonical pair.
+  const [contactNameError, setContactNameError] = useState(false);
+  const [contactEmailError, setContactEmailError] = useState(false);
 
   // Success/error effects run on the mutation callbacks — the note prompt only
   // opens once the transition is actually persisted.
   const handleStatusChange = (status: string) => {
+    // Dropdown.select fires onChange even when the current option is re-picked;
+    // without this a no-op re-pick would append a status event and prompt for a
+    // note about a transition that never happened.
+    if (status === application.status) return;
     setStatusError(false);
     setStatus.mutate(
       { id: application.id, status },
       {
-        onSuccess: () => {
-          setNoteAfterChange(true);
-          setNoteFor(status);
-        },
+        onSuccess: () => onNotePrompt(status, true),
         onError: () => setStatusError(true),
       }
     );
-  };
-
-  const handleSaveNote = (note: string) => {
-    if (!noteFor) return;
-    setStatus.mutate({ id: application.id, status: noteFor, note });
   };
 
   const nextState = nextActionLabel(application.nextActionAt);
@@ -549,13 +623,27 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             variant="default"
                             placeholder={t('applications.detail.contactNamePlaceholder')}
                             value={contactName}
-                            onChange={(e) => setContactName(e.target.value)}
+                            onChange={(e) => {
+                              setContactName(e.target.value);
+                              setContactNameError(false);
+                            }}
                             onBlur={() => {
                               if (contactName !== application.contactName) {
-                                updateApplication.mutate({ id: application.id, contactName });
+                                // A rejected write returns `{ error }` rather than
+                                // throwing — surface it here exactly as
+                                // ApplyByEmailTab does for the same canonical pair.
+                                updateApplication.mutate(
+                                  { id: application.id, contactName },
+                                  { onSuccess: (data) => setContactNameError(!!data.error) }
+                                );
                               }
                             }}
                           />
+                          {contactNameError && (
+                            <p className="text-fine-print text-destructive" role="alert">
+                              {t('applications.detail.contactSaveError')}
+                            </p>
+                          )}
                         </div>
 
                         <div className="flex flex-col gap-1.5">
@@ -571,13 +659,24 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             type="email"
                             placeholder={t('applications.detail.contactEmailPlaceholder')}
                             value={contactEmail}
-                            onChange={(e) => setContactEmail(e.target.value)}
+                            onChange={(e) => {
+                              setContactEmail(e.target.value);
+                              setContactEmailError(false);
+                            }}
                             onBlur={() => {
                               if (contactEmail !== application.contactEmail) {
-                                updateApplication.mutate({ id: application.id, contactEmail });
+                                updateApplication.mutate(
+                                  { id: application.id, contactEmail },
+                                  { onSuccess: (data) => setContactEmailError(!!data.error) }
+                                );
                               }
                             }}
                           />
+                          {contactEmailError && (
+                            <p className="text-fine-print text-destructive" role="alert">
+                              {t('applications.detail.email.emailInvalid')}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </OverviewSection>
@@ -622,10 +721,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                         variant="glass"
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => {
-                          setNoteAfterChange(false);
-                          setNoteFor(application.status);
-                        }}
+                        onClick={() => onNotePrompt(application.status, false)}
                       >
                         <MessageSquarePlus size={12} />
                         {t('applications.note.add')}
@@ -702,15 +798,6 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
           </div>
         </PanelShell>
       </div>
-
-      <StatusNoteModal
-        open={noteFor !== null}
-        onClose={() => setNoteFor(null)}
-        status={noteFor ?? application.status}
-        changed={noteAfterChange}
-        isSaving={setStatus.isPending}
-        onSave={handleSaveNote}
-      />
 
       <ConfirmModal
         open={deleteOpen}

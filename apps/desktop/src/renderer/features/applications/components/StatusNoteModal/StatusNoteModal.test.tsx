@@ -42,7 +42,7 @@ describe('StatusNoteModal', () => {
     expect(screen.getByText('applications.note.current')).toBeInTheDocument();
   });
 
-  it('saves the trimmed note and closes', () => {
+  it('reports the trimmed note but does NOT close itself (the owner closes on success)', () => {
     const onSave = vi.fn();
     const onClose = vi.fn();
     render(<StatusNoteModal open onClose={onClose} status="offer" onSave={onSave} />);
@@ -53,7 +53,30 @@ describe('StatusNoteModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'applications.note.save' }));
 
     expect(onSave).toHaveBeenCalledWith('spoke to the recruiter');
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Closing on Save would discard the text if the write then failed.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('renders a failed-save message while keeping the typed note', () => {
+    render(
+      <StatusNoteModal
+        open
+        onClose={vi.fn()}
+        status="offer"
+        error="applications.note.saveError"
+        onSave={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: 'keep me' },
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.note.saveError');
+    expect(
+      screen.getByPlaceholderText<HTMLTextAreaElement>('applications.note.placeholder').value
+    ).toBe('keep me');
   });
 
   it('Skip closes WITHOUT saving', () => {

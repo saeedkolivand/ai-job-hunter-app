@@ -110,7 +110,9 @@ beforeEach(() => {
 /** Opens the stage Dropdown and picks `option` (the i18n key fragment). */
 async function changeStage(currentStatus: string, option: string) {
   fireEvent.click(
-    screen.getByRole('button', { name: new RegExp(`applications\\.status\\.${currentStatus}`, 'i') })
+    screen.getByRole('button', {
+      name: new RegExp(`applications\\.status\\.${currentStatus}`, 'i'),
+    })
   );
   const listbox = await screen.findByRole('listbox');
   fireEvent.click(
@@ -152,71 +154,69 @@ describe('ApplicationRow — status change', () => {
     });
   });
 
-  it('surfaces a localized inline error (and NO note prompt) when the mutation fails', async () => {
+  it('surfaces a localized inline error (and NO note callback) when the mutation fails', async () => {
     mockSetStatusMutate.mockImplementation((_vars: unknown, options?: MutateOptions) => {
       options?.onError?.();
     });
-    render(<ApplicationRow application={makeApp({ id: 'app-err', status: 'applied' })} />);
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-err', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
 
     await changeStage('applied', 'offer');
 
     expect(screen.getByRole('alert')).toHaveTextContent('applications.row.statusError');
-    expect(screen.queryByText('applications.note.title')).not.toBeInTheDocument();
+    expect(onStatusChanged).not.toHaveBeenCalled();
+  });
+
+  // Dropdown.select fires onChange even when the CURRENT option is re-picked.
+  it('re-picking the current stage writes nothing and raises no note prompt', async () => {
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-noop', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
+
+    await changeStage('applied', 'applied');
+
+    expect(mockSetStatusMutate).not.toHaveBeenCalled();
+    expect(onStatusChanged).not.toHaveBeenCalled();
   });
 });
 
-// ── Optional status note — the prompt only opens on a PERSISTED change ────────
+// ── Optional status note — the row only REPORTS a persisted change ───────────
+//
+// The prompt deliberately does NOT live here: the invalidation refetch that
+// follows the write re-sections the list and unmounts this row, taking any local
+// prompt state with it. The row raises `onStatusChanged`; the page owns the
+// dialog (see ApplicationsPage.notes.test.tsx, which drives the refetch).
 
-describe('ApplicationRow — status note prompt', () => {
-  it('opens the note prompt after a successful stage change', async () => {
-    render(<ApplicationRow application={makeApp({ id: 'app-note', status: 'applied' })} />);
+describe('ApplicationRow — status note handoff', () => {
+  it('reports the new stage to the page after a successful change', async () => {
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-note', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await changeStage('applied', 'interviewing');
 
-    expect(screen.getByRole('dialog')).toHaveAccessibleName('applications.note.title');
-    expect(screen.getByPlaceholderText('applications.note.placeholder')).toBeInTheDocument();
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+    expect(onStatusChanged).toHaveBeenCalledWith('interviewing');
   });
 
-  it('saving a note writes a SAME-status setStatus carrying the trimmed note', async () => {
+  it('renders no dialog of its own (state here would not survive the refetch)', async () => {
     render(<ApplicationRow application={makeApp({ id: 'app-note-2', status: 'applied' })} />);
     await changeStage('applied', 'interviewing');
 
-    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
-      target: { value: '  Recruiter call booked  ' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'applications.note.save' }));
-
-    expect(mockSetStatusMutate).toHaveBeenCalledTimes(2);
-    expect(mockSetStatusMutate.mock.calls[1]?.[0]).toEqual({
-      id: 'app-note-2',
-      status: 'interviewing',
-      note: 'Recruiter call booked',
-    });
-  });
-
-  it('skipping the prompt writes nothing extra and closes it', async () => {
-    render(<ApplicationRow application={makeApp({ id: 'app-note-3', status: 'applied' })} />);
-    await changeStage('applied', 'offer');
-
-    fireEvent.click(screen.getByRole('button', { name: 'applications.note.skip' }));
-
-    // Only the original transition — no second (note) call.
-    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('the Save button is disabled while the note is blank (no empty-note event)', async () => {
-    render(<ApplicationRow application={makeApp({ id: 'app-note-4', status: 'applied' })} />);
-    await changeStage('applied', 'offer');
-
-    const save = screen.getByRole('button', { name: 'applications.note.save' });
-    expect(save).toBeDisabled();
-
-    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
-      target: { value: '   ' },
-    });
-    expect(save).toBeDisabled();
   });
 });
 

@@ -15,7 +15,15 @@ interface StatusNoteModalProps {
    */
   changed?: boolean;
   isSaving?: boolean;
-  /** Receives the trimmed note. Never called with an empty string. */
+  /**
+   * Localized message for a FAILED save. Non-null keeps the dialog open with the
+   * typed note intact, so a rejected write never silently discards it.
+   */
+  error?: string | null;
+  /**
+   * Receives the trimmed note. Never called with an empty string. The CALLER
+   * closes the dialog (by flipping `open`) once the write actually lands.
+   */
   onSave: (note: string) => void;
 }
 
@@ -27,6 +35,11 @@ interface StatusNoteModalProps {
  * "just move it to Applied" path costs one keystroke. Saving writes a SAME-status
  * `setStatus({ note })`, i.e. one extra append-only status event carrying the
  * note; the Timeline collapses a `from === to` event to a plain note entry.
+ *
+ * The dialog is CONTROLLED: it does not close itself on Save — the owner closes
+ * it from the mutation's `onSuccess`, so a failed write keeps the text on screen.
+ * The owner also lives above the invalidation refetch, which is why `open` is a
+ * prop rather than local state.
  */
 export function StatusNoteModal({
   open,
@@ -34,6 +47,7 @@ export function StatusNoteModal({
   status,
   changed = false,
   isSaving = false,
+  error = null,
   onSave,
 }: StatusNoteModalProps) {
   const { t } = useTranslation();
@@ -41,18 +55,21 @@ export function StatusNoteModal({
   const titleId = useId();
   const fieldId = useId();
 
-  // Both exits clear the draft, so re-opening the modal never resurrects a note
-  // the user walked away from (no effect needed — ModalShell keeps this mounted).
-  const close = () => {
-    setNote('');
-    onClose();
-  };
+  // Clear the draft when the dialog OPENS (not when it closes): a fresh prompt
+  // always starts empty, while a failed save — which keeps `open` true — keeps
+  // the text the user just typed.
+  const [seenOpen, setSeenOpen] = useState(open);
+  if (seenOpen !== open) {
+    setSeenOpen(open);
+    if (open) setNote('');
+  }
+
+  const close = () => onClose();
 
   const save = () => {
     const trimmed = note.trim();
     if (!trimmed) return;
     onSave(trimmed);
-    close();
   };
 
   const stageLabel = t(`applications.status.${status}` as const);
@@ -103,6 +120,11 @@ export function StatusNoteModal({
           onChange={(e) => setNote(e.target.value)}
           placeholder={t('applications.note.placeholder')}
         />
+        {error && (
+          <p className="mt-2 text-fine-print text-destructive" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     </ModalShell>
   );

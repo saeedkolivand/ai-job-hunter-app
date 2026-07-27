@@ -2682,7 +2682,8 @@
       "followUpDue": "Nachfassen {{date}}",
       "followUpOverdueHint": "Dieses Nachfassen ist überfällig.",
       "followUpUpcomingHint": "Du wirst erinnert, sobald dieses Datum erreicht ist.",
-      "followUpNoneHint": "Lege ein Datum fest, um an den nächsten Schritt erinnert zu werden."
+      "followUpNoneHint": "Lege ein Datum fest, um an den nächsten Schritt erinnert zu werden.",
+      "contactSaveError": "Dieser Kontakt konnte nicht gespeichert werden."
     },
     "pipeline": {
       "aria": "Nach Pipeline-Phase filtern",
@@ -2692,7 +2693,9 @@
       "interviewing": "Interview",
       "offer": "Angebot",
       "closed": "Abgeschlossen",
-      "overdue": "Überfällig: {{n}}"
+      "overdue": "Überfällig: {{n}}",
+      "filtered": "Es werden nur Bewerbungen in {{stage}} angezeigt.",
+      "filterCleared": "Es werden Bewerbungen aus allen Phasen angezeigt."
     },
     "sort": {
       "label": "Bewerbungen sortieren",
@@ -2707,7 +2710,8 @@
       "placeholder": "z. B. Recruiter-Call für Donnerstag vereinbart",
       "save": "Notiz speichern",
       "skip": "Überspringen",
-      "add": "Notiz hinzufügen"
+      "add": "Notiz hinzufügen",
+      "saveError": "Die Notiz konnte nicht gespeichert werden — bitte erneut versuchen."
     }
   },
   "notifications": {

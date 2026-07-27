@@ -32,6 +32,7 @@ export function PipelineStrip({ applications, active, onSelect }: PipelineStripP
   const { t } = useTranslation();
   const counts = pipelineCounts(applications);
   const overdue = overdueCount(applications);
+  const activeGroup = PIPELINE_GROUPS.find((g) => g.id === active);
 
   return (
     <div className="@container">
@@ -68,6 +69,16 @@ export function PipelineStrip({ applications, active, onSelect }: PipelineStripP
           );
         })}
       </div>
+
+      {/* Toggling a card silently re-filters the list below; announce the new
+          scope so the change is not sighted-only. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {activeGroup
+          ? t('applications.pipeline.filtered', {
+              stage: t(`applications.pipeline.${activeGroup.id}` as const),
+            })
+          : t('applications.pipeline.filterCleared')}
+      </span>
 
       {overdue > 0 && (
         <div className="mt-2 flex justify-end">

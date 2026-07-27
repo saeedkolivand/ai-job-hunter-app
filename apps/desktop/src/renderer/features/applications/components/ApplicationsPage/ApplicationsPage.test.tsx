@@ -68,6 +68,9 @@ const mockUseApplications = vi.fn();
 
 vi.mock('@/services/use-applications', () => ({
   useApplications: () => mockUseApplications(),
+  // The page owns the optional-note prompt (see ApplicationsPage.notes.test.tsx);
+  // inert here — these tests never change a stage.
+  useSetApplicationStatus: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ── ApplicationRow stub — renders a deterministic marker per application ──────

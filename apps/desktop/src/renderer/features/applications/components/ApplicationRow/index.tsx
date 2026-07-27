@@ -6,7 +6,6 @@ import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
 
-import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
 import { formatSalaryRange } from '@/features/applications/lib/salary';
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
@@ -22,6 +21,13 @@ interface ApplicationRowProps {
    * hides whether a pursuit was accepted, rejected, ghosted or withdrawn.
    */
   showStageTag?: boolean;
+  /**
+   * Fired with the newly-persisted stage so the LIST can offer an optional note.
+   * The prompt cannot live in this row: the invalidation refetch that follows the
+   * write re-sorts/re-sections the list, unmounting this row (and any state on
+   * it) before the user could type. The page owns the dialog instead.
+   */
+  onStatusChanged?: (status: string) => void;
 }
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
@@ -34,6 +40,7 @@ export function ApplicationRow({
   application,
   highlighted = false,
   showStageTag = false,
+  onStatusChanged,
 }: ApplicationRowProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -44,8 +51,6 @@ export function ApplicationRow({
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [keepDocs, setKeepDocs] = useState(true);
-  // The status a just-applied change landed on — non-null opens the note prompt.
-  const [notePromptStatus, setNotePromptStatus] = useState<string | null>(null);
   const [statusError, setStatusError] = useState(false);
 
   // Bring a just-imported row into view when it becomes the highlight target.
@@ -76,19 +81,18 @@ export function ApplicationRow({
   // Success/error effects run on the mutation callbacks (never optimistically):
   // the note prompt only opens once the transition is actually persisted.
   const handleStatusChange = (status: string) => {
+    // Dropdown.select fires onChange even when the current option is re-picked;
+    // without this a no-op re-pick would append a status event and prompt for a
+    // note about a transition that never happened.
+    if (status === application.status) return;
     setStatusError(false);
     setStatus.mutate(
       { id: application.id, status },
       {
-        onSuccess: () => setNotePromptStatus(status),
+        onSuccess: () => onStatusChanged?.(status),
         onError: () => setStatusError(true),
       }
     );
-  };
-
-  const handleSaveNote = (note: string) => {
-    if (!notePromptStatus) return;
-    setStatus.mutate({ id: application.id, status: notePromptStatus, note });
   };
 
   const handleDelete = (keep: boolean) => {
@@ -174,7 +178,10 @@ export function ApplicationRow({
               </span>
             )}
             {salary && <span className="shrink-0 text-[11px] text-foreground/55">{salary}</span>}
-            <span className="shrink-0 text-[11px] text-foreground/40" title={new Date(stampAt).toLocaleString()}>
+            <span
+              className="shrink-0 text-[11px] text-foreground/40"
+              title={new Date(stampAt).toLocaleString()}
+            >
               {stampLabel}
             </span>
             {statusError && (
@@ -237,15 +244,6 @@ export function ApplicationRow({
           />
         </div>
       </div>
-
-      <StatusNoteModal
-        open={notePromptStatus !== null}
-        onClose={() => setNotePromptStatus(null)}
-        status={notePromptStatus ?? application.status}
-        changed
-        isSaving={setStatus.isPending}
-        onSave={handleSaveNote}
-      />
 
       <ConfirmModal
         open={deleteOpen}

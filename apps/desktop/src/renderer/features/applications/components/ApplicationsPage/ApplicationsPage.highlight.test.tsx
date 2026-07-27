@@ -52,6 +52,8 @@ const mockUseApplications = vi.fn();
 
 vi.mock('@/services/use-applications', () => ({
   useApplications: () => mockUseApplications(),
+  // Inert: the highlight flow never changes a stage.
+  useSetApplicationStatus: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ── ApplicationRow stub — exposes `highlighted` as a data attribute ────────────
