@@ -244,8 +244,7 @@ impl BridgeState {
     /// and the factory-reset hook ([`crate::data_store::Resettable`]) both come
     /// through here, so revocation can't apply to one and not the other.
     ///
-    /// Order (inside the token lock, so a handshake can't interleave between
-    /// the two halves):
+    /// Order:
     /// 1. signal [`Self::subscribe_revoke`]'s receivers — each live connection
     ///    task sends `token.revoked` on its socket **if that socket is
     ///    authenticated** and then closes it (see `handle_connection`);
@@ -255,17 +254,28 @@ impl BridgeState {
     ///    [`Self::dec_connected`] then saturates at zero, never wrapping);
     /// 3. rotate + persist the secret.
     ///
+    /// **What actually makes this race-free is NOT the lock** (see the body):
+    /// it is that every connection subscribes at ACCEPT time and
+    /// `broadcast::Sender::send` buffers into the ring for every receiver that
+    /// already exists. So a socket whose proof happens to verify against the
+    /// stale token clone still has the signal pending on its receiver, and its
+    /// very next read-loop iteration resolves `Revoked` and tears it down. A
+    /// refactor may move the lock; it must NOT move the subscribe-at-accept.
+    ///
     /// Any socket that re-runs the v2 handshake afterwards with the old token
     /// fails the client-proof check and must re-pair with the new value.
     pub fn regenerate_token(&self) -> String {
         let fresh = new_token();
         {
-            // Held across all three steps: `advance_auth` reads the token
-            // through this same lock, so a handshake either verified BEFORE the
-            // revoke went out (its connection task is subscribed, so it is torn
-            // down with the rest) or reads the ALREADY-ROTATED token and fails.
-            // There is no window where a socket authenticates against the old
-            // token and misses the revoke.
+            // The lock gives ORDERING, not mutual exclusion with a handshake:
+            // `advance_auth` verifies the proof OUTSIDE it (it calls `token()`,
+            // which clones and releases), so a socket CAN still authenticate on
+            // the stale clone just after this block. Holding it here only
+            // guarantees that any reader observing the NEW token also observes
+            // a revoke that was already broadcast. The subscribe-at-accept +
+            // buffered-broadcast invariant above is what actually covers that
+            // socket — and its `dec_connected` on teardown is what unwinds the
+            // count it may have incremented after step 2.
             let mut token = self.token.lock();
             let _ = self.revoke_tx.send(());
             self.connected.store(0, Ordering::Relaxed);
@@ -635,11 +645,17 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // counted. Tracked per-connection so teardown below only decrements a
     // socket that actually incremented (never on an unauthenticated close).
     let mut authenticated = false;
-    // Subscribed HERE — before the handshake, not at `AuthOk` — so a rotation
-    // that races this socket's handshake still reaches it (see
-    // `BridgeState::regenerate_token`'s ordering note). Signalling an
-    // unauthenticated socket is safe: the read loop closes it WITHOUT the
-    // `token.revoked` frame, i.e. the same silent close a failed proof gets.
+    // Subscribed HERE — before the handshake, not at `AuthOk`. This is the
+    // load-bearing half of the rotation race (see
+    // `BridgeState::regenerate_token`): the proof is verified OUTSIDE the token
+    // lock, so a socket can still authenticate on a stale token clone; because
+    // its receiver already existed when the rotation broadcast, the signal is
+    // buffered and its next read-loop iteration tears it down anyway. Moving
+    // this subscription later would reopen that window.
+    //
+    // Signalling an unauthenticated socket is safe: the read loop closes it
+    // WITHOUT the `token.revoked` frame — the same silent close a failed proof
+    // gets, so no frame ever confirms a token guess.
     let mut revoked_rx = state.subscribe_revoke();
 
     let (writer, mut reader) = ws.split();

@@ -1192,7 +1192,72 @@ describe('BridgeClient – v2 mutual handshake', () => {
     // the background's `computeStatus` folds into `not_paired`, i.e. the popup
     // shows the pairing view instead of a permanent "app not running".
     expect(reprobe.send).not.toHaveBeenCalled();
+
+    // …and that unpaired socket reached `connected` WITHOUT any handshake, so
+    // it must not itself be revokable: `authenticated` was cleared on the close
+    // and nothing re-earned it. Otherwise whoever holds the port could keep
+    // firing revokes at the re-probe socket forever.
+    sendTokenRevoked(reprobe);
+    expect(onTokenRevoked).toHaveBeenCalledTimes(1);
     client.dispose();
+  });
+
+  it('ignores a stale `token.revoked` delivered after the socket already closed', async () => {
+    // The session dies with the socket, so a late/queued frame on the dead
+    // transport's listener must not still count as authenticated. This is the
+    // window the `attach` reset does NOT cover — it lands before any re-attach.
+    const { client, socket, onTokenRevoked } = await authenticatedClientThatCanUnpair();
+
+    socket.simulateClose(); // ordinary close, no revoke
+    sendTokenRevoked(socket); // late frame on the now-dead transport
+
+    expect(onTokenRevoked).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it('stays coherent if the desktop sends `token.revoked` but never closes', async () => {
+    // Degradation path claimed by `handleTokenRevoked`'s doc: we deliberately
+    // do NOT close the transport ourselves. If the close never comes, the
+    // socket stays open with no stored token — which `computeStatus` already
+    // folds into `not_paired`, the same end state, so nothing is stranded.
+    const { client, socket, onTokenRevoked } = await authenticatedClientThatCanUnpair();
+
+    sendTokenRevoked(socket);
+
+    expect(onTokenRevoked).toHaveBeenCalledTimes(1);
+    expect(client.status().phase).toBe('connected'); // + no token ⇒ not_paired
+    client.dispose();
+  });
+
+  it('IGNORES `token.revoked` from an UNAUTHENTICATED peer mid-handshake', async () => {
+    // The attack this closes: a port-squatter needs ZERO token knowledge to
+    // send a syntactically-valid `challenge` (the nonce is just random hex).
+    // `handshakeFrame` is a step-in-flight LATCH, not an auth check —
+    // `awaitHandshakeFrame`'s `settle` nulls it the instant the challenge is
+    // consumed, so the very NEXT frame, delivered while `computeProof` is
+    // still awaiting, falls straight through to the type dispatch. Honoring
+    // `token.revoked` there would let any process that wins the loopback port
+    // destroy the user's stored pairing credential — and, because the revoke
+    // close path resets the backoff and re-probes immediately, do it in a
+    // tight loop. Only a session that completed mutual auth may revoke.
+    const onTokenRevoked = vi.fn(() => Promise.resolve());
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN, onTokenRevoked);
+
+    const { helloReqId } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId); // valid SHAPE, proves nothing
+    sendTokenRevoked(socket); // lands in the post-settle / pre-auth.ok window
+
+    // Let the handshake run past the `computeProof` await (the `auth` frame is
+    // the observable proof we got through that window).
+    await vi.waitFor(() => {
+      expect(socket.send.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(onTokenRevoked).not.toHaveBeenCalled();
+    client.dispose();
+    await connectPromise.catch(() => {
+      /* handshake abandoned by dispose */
+    });
   });
 
   it('ignores a duplicate `token.revoked` (un-pairs once, not per frame)', async () => {
