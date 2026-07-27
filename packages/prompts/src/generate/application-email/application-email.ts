@@ -102,17 +102,21 @@ Line 3+ is the email body.`;
  * Sanitize a recipient name before it is interpolated into the prompt greeting.
  *
  * Removes control characters (including bare newlines / carriage returns) so a
- * crafted multi-line "name" cannot inject prompt instructions. Collapses
- * internal whitespace to a single space, trims edges, and caps at 80 chars.
- * Returns an empty string when the result is blank, which makes the caller fall
- * back to the market's generic salutation.
+ * crafted multi-line "name" cannot inject prompt instructions, and the three
+ * delimiter characters this builder itself relies on: `"` (which would close the
+ * quoted greeting) and `{`/`}` (which would forge a convention placeholder).
+ * Collapses internal whitespace to a single space, trims edges, and caps at 80
+ * CODE POINTS — not UTF-16 units, so the cut can never split a surrogate pair
+ * into a lone half. Returns an empty string when the result is blank, which
+ * makes the caller fall back to the market's generic salutation.
  */
 function sanitizeRecipientName(raw: string): string {
-  return raw
+  const cleaned = raw
     .replace(/[\p{Cc}]+/gu, ' ') // fold control chars + newlines into a space
+    .replace(/["{}]/g, ' ') // cannot close the quoted greeting or forge a placeholder
     .replace(/\s+/g, ' ') // collapse consecutive spaces
-    .trim()
-    .slice(0, 80);
+    .trim();
+  return [...cleaned].slice(0, 80).join('').trim();
 }
 
 /**
@@ -122,8 +126,12 @@ function sanitizeRecipientName(raw: string): string {
  * name, so the name slot ({lastName}, else {firstName}) takes it — every
  * occurrence, since gendered patterns repeat it — and the remaining
  * placeholders are dropped, then stray whitespace is collapsed.
- * Patterns without any placeholder (e.g. `fr`: "Madame, / Monsieur,") are
- * returned as-is: that market does not name the recipient in the salutation.
+ *
+ * Returns `''` when the pattern has NO name slot (e.g. `fr`:
+ * "Madame, / Monsieur,"): that market does not name the recipient, so the
+ * caller uses the generic salutation instead. Rendering such a pattern would
+ * print gendered alternatives while the recipient's name appears nowhere in the
+ * prompt — a coin-flip the model cannot win.
  */
 function renderNamedSalutation(pattern: string, name: string): string {
   const slot = pattern.includes('{lastName}')
@@ -131,7 +139,10 @@ function renderNamedSalutation(pattern: string, name: string): string {
     : pattern.includes('{firstName}')
       ? '{firstName}'
       : '';
-  return (slot ? pattern.split(slot).join(name) : pattern)
+  if (!slot) return '';
+  return pattern
+    .split(slot)
+    .join(name)
     .replace(/\{[A-Za-z]+\}/g, '') // drop placeholders we cannot fill
     .replace(/\s+/g, ' ')
     .replace(/\s+([,.:;!?，、。：！])/g, '$1')
@@ -175,17 +186,25 @@ export function buildApplicationEmailPrompt(
   // CONTEXT) so they can never disagree.
   const c = letterConventions(market);
   const sameLanguage = c.nativeLanguage === lang.slice(0, 2).toLowerCase();
-  const salutation = recipientName
+  // A named salutation is only usable when the market's pattern has a name slot
+  // to fill; `renderNamedSalutation` returns '' otherwise and we fall back to the
+  // generic form (see its doc comment).
+  const namedSalutation = recipientName
     ? renderNamedSalutation(c.salutations.named, recipientName)
-    : c.salutations.generic;
-  // Gendered / either-or patterns ("… Frau X, / … Herr X,", "Dear Mr/Ms X") list
-  // alternatives that a free-text name cannot resolve — the writer picks one and
-  // trims the name to the form that market uses (DACH addresses by surname).
-  // Markets whose pattern has no alternatives (the en/intl baseline) get no such
-  // clause, so their greeting stays exactly what it has always been.
-  const pickOne = salutation.includes('/')
-    ? " Write exactly one variant — the one that fits the recipient, in this market's form of address (surname only where that is the convention) — never the alternatives together."
     : '';
+  const salutation = namedSalutation || c.salutations.generic;
+  // Gendered / either-or NAMED patterns ("… Frau X, / … Herr X,", "Dear Mr/Ms X")
+  // list alternatives a free-text name cannot resolve — the writer picks one and
+  // trims the name to the form that market uses (DACH addresses by surname).
+  // Two deliberate gates: the clause is derived from the CONVENTION template, never
+  // from the rendered string (a "/" inside a real name like "Alex/Bob" must not tell
+  // the model to drop half of it), and only when a name was actually substituted
+  // (with no recipient there is nobody to disambiguate — es's generic
+  // "Estimado/a Sr./Sra.:" must not be turned into a gender guess).
+  const pickOne =
+    namedSalutation && c.salutations.named.includes('/')
+      ? " Write exactly one variant — the one that fits the recipient, in this market's form of address (surname only where that is the convention) — never the alternatives together."
+      : '';
   const greeting = sameLanguage
     ? `"${salutation}"${pickOne}`
     : `the formal ${lang} equivalent of "${salutation}", at this market's level of formality (never a casual greeting).${pickOne}`;

@@ -10,6 +10,7 @@ import { createMockClient } from '../../mock-client';
 import {
   extractMetadata,
   generateApplicationAnswer,
+  generateApplicationEmail,
   generateCoverLetter,
   generateGitHubProjects,
   generateResume,
@@ -1038,6 +1039,28 @@ describe('output tone wiring (Settings → Output Tone)', () => {
     done();
     await p;
     expect(systemOf(client)).toMatch(/TONE: a more narrative, distinctive voice/);
+  });
+
+  it('threads the store outputTone AND the resolved market into the application-email prompt', async () => {
+    usePreferencesStore.setState({ outputTone: 'formal' });
+    const client = register();
+    // English email for a German job: only the market resolved from `jobCountry`
+    // can put a German salutation in the prompt — drop the `market` argument and
+    // this falls back to the international "Dear Hiring Manager,".
+    const p = generateApplicationEmail({
+      resume: 'My resume',
+      jobAd: 'Backend role in Berlin',
+      meta: { ...META, jobCountry: 'DE' },
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Subject: Application\n\nGreeting.');
+    done();
+    await p;
+    const system = systemOf(client);
+    expect(system).toMatch(/TONE: formal and precise/);
+    expect(system).toContain('Sehr geehrte Damen und Herren,');
+    expect(system).not.toContain('Dear Hiring Manager,');
   });
 
   it('resolves to the professional tone directive by default (outputTone: professional)', async () => {
