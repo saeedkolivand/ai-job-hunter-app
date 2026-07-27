@@ -1,6 +1,7 @@
 import { Check, Copy, Download, FileText, LayoutTemplate } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 
+import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 
@@ -209,8 +210,17 @@ export function GenerationOutput({
     }
   };
 
+  // Three-part shape (mirrors the AI-Generate viewer + ModalShell, docs/PATTERNS.md §13):
+  // the root is HEIGHT-BOUNDED (`min-h-0 flex-1` inside the caller's `h-full` column)
+  // instead of growing past it, so the tab/action header stays put and the scrollport
+  // below it does the scrolling. Never give the root an intrinsic min-height — that
+  // pushes the scroll boundary back up to the caller and the header scrolls away with
+  // the document (the bug this fixes). `overflow-hidden` keeps the rounded border a
+  // real clip; every popover inside is portalled/fixed, so nothing is lost to it.
+  // The height chain above this component is load-bearing too — see TailorFlow's
+  // `min-h-0 flex-1` stage body (asserted in TailorFlow.test.tsx).
   return (
-    <div className="flex min-h-56 flex-1 flex-col rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-foreground/[0.06] bg-foreground/[0.02]">
       <div className="shrink-0 flex items-center justify-between border-b border-foreground/[0.06] px-3 py-2">
         <Tabs
           ariaLabel={t('autopilot.apply.tabs.outputTabs')}
@@ -250,130 +260,151 @@ export function GenerationOutput({
           />
         </div>
       </div>
-      {/* Filename + LIVE template picker strip (parity with the AI Generate done step).
-          The single chosen template/ATS drive BOTH docs' preview + export, so the
-          picker is shown on BOTH doc tabs (résumé AND cover) — never on the job-ad
-          tab. The ATS-safe toggle stays résumé-only (ATS single-column linearization
-          is a résumé concept; cover letters aren't two-column). */}
-      {view === 'doc' && (
-        <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
-          {meta && (
-            <>
-              <FileText size={10} />
-              <span className="font-mono">{buildFilename(meta, docType, 'pdf')}</span>
-            </>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            {/* Template dropdown — render-time switch (drives BOTH docs' preview +
-                export), no regeneration. */}
-            <div className="w-40">
-              <Dropdown
-                id="template-picker"
-                options={templateOptions}
-                value={templateId}
-                onChange={handleTemplateChange}
-                icon={<LayoutTemplate size={11} />}
-                listClassName="max-h-48"
-              />
-            </div>
-            {/* ATS-safe toggle — résumé-only + only meaningful for design-tier
-                templates (two-column OR photo, incl. Lebenslauf; copies
-                StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
-            {activeOut === 'resume' && isDesignTier(templateId) && (
-              <div
-                title={t(
-                  isTwoColumnTemplate(templateId)
-                    ? 'aiGenerate.atsModeHintTwoColumn'
-                    : 'aiGenerate.atsModeHintPhoto'
-                )}
-                className={cn(
-                  'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
-                  atsMode
-                    ? 'border-brand/35 bg-brand/8 text-foreground/80'
-                    : 'border-foreground/[0.06] bg-transparent text-foreground/45'
-                )}
-              >
-                {/* Real <label htmlFor> so clicking the text toggles the switch
-                    (whole-control click) and supplies its accessible name. */}
-                <label
-                  htmlFor={atsSwitchId}
-                  className="cursor-pointer select-none text-[10px] font-medium"
-                >
-                  {t('aiGenerate.atsMode')}
-                </label>
-                <Switch
-                  id={atsSwitchId}
-                  size="sm"
-                  checked={atsMode}
-                  onCheckedChange={onAtsModeChange}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {/* Document-accent strip — render-time colour override; drives BOTH docs'
-          preview + export, mirroring the template picker above. */}
-      {view === 'doc' && (
-        <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
-          <AccentPicker value={accent} onChange={onAccentChange} />
-        </div>
-      )}
-      {/* Letter-layout strip — cover-only (the layout only affects the letter; the
-          résumé is unaffected, so it's the cover-doc counterpart to the résumé-only
-          ATS toggle). Drives the cover preview + export. */}
-      {view === 'doc' && activeOut === 'cover' && (
-        <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
-          <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
-        </div>
-      )}
+      {/* The scrollport. ONLY the tab/action bar above pins — the option strips
+          scroll WITH the document: pinning them too costs more permanent chrome
+          than a small window can spare, collapsing the document to nothing and
+          clipping the last strip out of reach. They are occasional controls; the
+          document is the content.
+          The document region below carries a `min-h-[20rem]` FLOOR — that is what
+          makes this a real scrollport. Without it every child is `flex-1`/`h-full`,
+          content always fits exactly and `overflow-y-auto` can never engage.
+          The pinned header is a flex SIBLING of this box (not sticky chrome
+          overlaying it), so it cannot obscure a focused element inside
+          (WCAG 2.4.11) and needs no scroll-margin; `tabIndex={0}` keeps the
+          scrollport keyboard-scrollable. */}
       <div
         role="tabpanel"
         id={activePanelId}
         aria-labelledby={activeTabId}
         tabIndex={0}
-        className="flex min-h-[32rem] flex-1 flex-col px-3 py-2"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       >
-        {view === 'jobAd' ? (
-          <JobAdView
-            jobDesc={jobDesc}
-            onJobDescChange={onJobDescChange}
-            summary={jobAdSummary.summary}
-            generating={jobAdSummary.generating}
-            error={jobAdSummary.error}
-            onGenerateSummary={jobAdSummary.generate}
-            language={jobAdSummary.language}
-            onLanguageChange={jobAdSummary.setLanguage}
-            hasDesc={hasDesc}
-            fetchingDesc={fetchingDesc}
-            jobUrl={jobUrl}
-          />
-        ) : (
-          <EditableOutput
-            value={output}
-            onChange={handleEdit}
-            onBlur={handleBlur}
-            isPending={pending}
-            disabled={!editable}
-            docType={docType}
-            meta={meta}
-            className="flex h-full flex-col overflow-hidden"
-            textAreaClassName="h-full w-full bg-transparent text-[11px] leading-relaxed text-foreground/75 placeholder:text-foreground/20"
-            previewSlot={
-              <PdfPreview
-                text={committed[activeOut]}
-                docType={docType}
-                meta={meta}
-                templateId={templateId}
-                atsMode={atsMode}
-                accent={accent}
-                letterLayoutId={letterLayoutId}
-                paused={!editable}
-                className="h-full w-full"
-              />
-            }
-          />
+        {/* Filename + LIVE template picker strip (parity with the AI Generate done step).
+            The single chosen template/ATS drive BOTH docs' preview + export, so the
+            picker is shown on BOTH doc tabs (résumé AND cover) — never on the job-ad
+            tab. The ATS-safe toggle stays résumé-only (ATS single-column linearization
+            is a résumé concept; cover letters aren't two-column). */}
+        {view === 'doc' && (
+          <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] px-3 py-1.5 text-[10px] text-foreground/30">
+            {meta && (
+              <>
+                <FileText size={10} />
+                <span className="font-mono">{buildFilename(meta, docType, 'pdf')}</span>
+              </>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {/* Template dropdown — render-time switch (drives BOTH docs' preview +
+                  export), no regeneration. Its list is portalled to <body> (fixed),
+                  so the scrollport around it never clips the options. */}
+              <div className="w-40">
+                <Dropdown
+                  id="template-picker"
+                  options={templateOptions}
+                  value={templateId}
+                  onChange={handleTemplateChange}
+                  icon={<LayoutTemplate size={11} />}
+                  listClassName="max-h-48"
+                />
+              </div>
+              {/* ATS-safe toggle — résumé-only + only meaningful for design-tier
+                  templates (two-column OR photo, incl. Lebenslauf; copies
+                  StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
+              {activeOut === 'resume' && isDesignTier(templateId) && (
+                <div
+                  title={t(
+                    isTwoColumnTemplate(templateId)
+                      ? 'aiGenerate.atsModeHintTwoColumn'
+                      : 'aiGenerate.atsModeHintPhoto'
+                  )}
+                  className={cn(
+                    'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
+                    atsMode
+                      ? 'border-brand/35 bg-brand/8 text-foreground/80'
+                      : 'border-foreground/[0.06] bg-transparent text-foreground/45'
+                  )}
+                >
+                  {/* Real <label htmlFor> so clicking the text toggles the switch
+                      (whole-control click) and supplies its accessible name. */}
+                  <label
+                    htmlFor={atsSwitchId}
+                    className="cursor-pointer select-none text-[10px] font-medium"
+                  >
+                    {t('aiGenerate.atsMode')}
+                  </label>
+                  <Switch
+                    id={atsSwitchId}
+                    size="sm"
+                    checked={atsMode}
+                    onCheckedChange={onAtsModeChange}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         )}
+        {/* Document-accent strip — render-time colour override; drives BOTH docs'
+            preview + export, mirroring the template picker above. */}
+        {view === 'doc' && (
+          <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
+            <AccentPicker value={accent} onChange={onAccentChange} />
+          </div>
+        )}
+        {/* Letter-layout strip — cover-only (the layout only affects the letter; the
+            résumé is unaffected, so it's the cover-doc counterpart to the résumé-only
+            ATS toggle). Drives the cover preview + export. */}
+        {view === 'doc' && activeOut === 'cover' && (
+          <div className="shrink-0 border-b border-foreground/[0.06] px-3 py-2">
+            <LetterLayoutPicker value={letterLayoutId} onChange={onLetterLayoutChange} />
+          </div>
+        )}
+        {/* Document region — grows to fill the scrollport, but never shrinks below
+            the floor, so a short window scrolls instead of collapsing the document
+            to a few pixels. */}
+        <div
+          data-testid={TEST_IDS.documents.documentRegion}
+          className="flex min-h-[20rem] flex-1 flex-col px-3 py-2"
+        >
+          {view === 'jobAd' ? (
+            <JobAdView
+              jobDesc={jobDesc}
+              onJobDescChange={onJobDescChange}
+              summary={jobAdSummary.summary}
+              generating={jobAdSummary.generating}
+              error={jobAdSummary.error}
+              onGenerateSummary={jobAdSummary.generate}
+              language={jobAdSummary.language}
+              onLanguageChange={jobAdSummary.setLanguage}
+              hasDesc={hasDesc}
+              fetchingDesc={fetchingDesc}
+              jobUrl={jobUrl}
+            />
+          ) : (
+            <EditableOutput
+              value={output}
+              onChange={handleEdit}
+              onBlur={handleBlur}
+              isPending={pending}
+              disabled={!editable}
+              docType={docType}
+              meta={meta}
+              className="flex h-full flex-col overflow-hidden"
+              textAreaClassName="h-full w-full bg-transparent text-[11px] leading-relaxed text-foreground/75 placeholder:text-foreground/20"
+              previewSlot={
+                <PdfPreview
+                  text={committed[activeOut]}
+                  docType={docType}
+                  meta={meta}
+                  templateId={templateId}
+                  atsMode={atsMode}
+                  accent={accent}
+                  letterLayoutId={letterLayoutId}
+                  paused={!editable}
+                  className="h-full w-full"
+                />
+              }
+            />
+          )}
+        </div>
       </div>
     </div>
   );
