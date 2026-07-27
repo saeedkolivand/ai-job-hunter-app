@@ -1,9 +1,28 @@
-import { CheckCircle2, Circle, CircleMinus, Loader2, Sparkles, Square, X } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  CircleMinus,
+  Loader2,
+  Sparkles,
+  Square,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 
 import type { AgentConfirmPayload, AgentStepEvent, JobEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, EmptyState, ErrorState, GlassCard, ModalShell, StreamingText, Tag } from '@ajh/ui';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  GlassCard,
+  ModalShell,
+  StreamingText,
+  Tag,
+  useNotification,
+} from '@ajh/ui';
 
 import { AgentConfirm } from '@/features/jobs/components/AgentConfirm';
 import type { Posting } from '@/features/jobs/types';
@@ -17,6 +36,7 @@ import {
   useGenerateConfig,
   useJob,
   useJobEvents,
+  useSaveFromPosting,
 } from '@/services';
 
 interface AgentRunResult {
@@ -99,6 +119,8 @@ function findLastMatch(steps: AgentStepEvent[], item: ChecklistItem): AgentStepE
  */
 export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   const { t } = useTranslation();
+  const notify = useNotification();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
   const resumeId = useDefaultResumeId();
@@ -133,6 +155,7 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
 
   const runAgent = useAgentRun();
   const cancelJob = useCancelJob();
+  const saveFromPosting = useSaveFromPosting();
 
   const isBusy =
     machineState !== 'idle' &&
@@ -288,6 +311,40 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
     void cancelJob.mutateAsync(runJobId).catch(() => {});
   };
 
+  /**
+   * Open the application this run produced. `saveFromPosting` is idempotent and
+   * dedupes by `jobUrl` — the same key the agent's own saves used — so it returns
+   * the SAME record the run wrote to rather than creating a second one (and still
+   * yields a row to open when the user denied every save). Request shape mirrors
+   * `usePostingActions.handleTailor`, the other entry point into this record.
+   */
+  const openApplication = async () => {
+    try {
+      const res = await saveFromPosting.mutateAsync({
+        jobUrl: posting.url,
+        board: posting.source,
+        company: posting.company,
+        title: posting.title,
+        jobDescription: posting.description,
+        salaryMin: posting.salaryMin,
+        salaryMax: posting.salaryMax,
+        salaryCurrency: posting.salaryCurrency,
+      });
+      if (!res?.id) {
+        notify.error({ message: t('jobs.prep.viewApplicationError') });
+        return;
+      }
+      setOpen(false);
+      await navigate({
+        to: '/applications/$id',
+        params: { id: res.id },
+        search: { tab: 'documents', from: 'jobs' },
+      });
+    } catch {
+      notify.error({ message: t('jobs.prep.viewApplicationError') });
+    }
+  };
+
   const rows = CHECKLIST.map((item) => {
     const match = findLastMatch(steps, item);
     const isLatest = !!match && steps[steps.length - 1] === match;
@@ -324,6 +381,13 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   const showEmpty = machineState === 'idle' && steps.length === 0;
   const showStarting = isBusy && steps.length === 0;
   const showLog = steps.length > 0;
+  // Only a run that actually COMPLETED gets the follow-through action: a stopped
+  // or failed run produces no `result`, and a `cancelled` stoppedReason means the
+  // agent never reached its proposal (`finishRun` only sets `result` on
+  // completion, so this is belt-and-suspenders against a completed-but-cancelled
+  // payload).
+  const showViewApplication =
+    machineState === 'done' && !!result && result.stoppedReason !== 'cancelled';
   const showFooter = (isBusy && !!runJobId) || canRunAgain;
 
   return (
@@ -386,12 +450,25 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
               )}
               {canRunAgain && (
                 <Button
-                  variant="primary"
+                  // Re-running is the secondary action once there's an
+                  // application to open — one primary per footer.
+                  variant={showViewApplication ? 'glass' : 'primary'}
                   onClick={() => void start()}
                   className="w-full justify-center gap-1.5"
                 >
                   <Sparkles size={12} />{' '}
                   {machineState === 'done' ? t('jobs.prep.runAgain') : t('jobs.prep.start')}
+                </Button>
+              )}
+              {showViewApplication && (
+                <Button
+                  variant="primary"
+                  disabled={saveFromPosting.isPending}
+                  loading={saveFromPosting.isPending}
+                  onClick={() => void openApplication()}
+                  className="w-full justify-center gap-1.5"
+                >
+                  {t('jobs.prep.viewApplication')} <ArrowRight size={12} />
                 </Button>
               )}
             </div>

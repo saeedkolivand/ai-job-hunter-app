@@ -1795,7 +1795,9 @@
         "propose": "Proposing next step"
       },
       "proposalTitle": "Proposed next step",
-      "proposalHint": "Display-only for now — nothing is applied automatically.",
+      "proposalHint": "Nothing is submitted or applied automatically. Anything you approved during the run is saved on this application.",
+      "viewApplication": "View application",
+      "viewApplicationError": "Couldn't open the application. Please try again.",
       "stopped": {
         "done": "Completed",
         "truncated": "Stopped early — output was truncated",

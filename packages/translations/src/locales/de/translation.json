@@ -1799,7 +1799,9 @@
         "propose": "Nächster Schritt wird vorgeschlagen"
       },
       "proposalTitle": "Vorgeschlagener nächster Schritt",
-      "proposalHint": "Momentan nur zur Anzeige — es wird nichts automatisch übernommen.",
+      "proposalHint": "Es wird nichts automatisch abgeschickt oder übernommen. Alles, was du während des Laufs genehmigt hast, ist in dieser Bewerbung gespeichert.",
+      "viewApplication": "Bewerbung ansehen",
+      "viewApplicationError": "Die Bewerbung konnte nicht geöffnet werden. Bitte erneut versuchen.",
       "stopped": {
         "done": "Abgeschlossen",
         "truncated": "Vorzeitig gestoppt — Ausgabe wurde gekürzt",
