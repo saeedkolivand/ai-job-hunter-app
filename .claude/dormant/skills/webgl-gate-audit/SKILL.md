@@ -11,7 +11,7 @@ output only. **Semantic-layer gates are the exception**: copy parity, real crawl
 no-GL fallback rendering, and canvas absence are DOM facts, not pixels, and REQUIRE DOM inspection
 (accessibility snapshot / `eval` querying the DOM / DevTools Elements panel), not screenshots -
 see Copy parity and Reduced-motion + no-GL fallback render below. Contract + numbers live in
-`.claude/skills/webgl-standards/SKILL.md`; experience decisions in
+`.claude/dormant/skills/webgl-standards/SKILL.md`; experience decisions in
 `docs/adr/0016-terminal-velocity-scroll-film-landing.md`.
 
 ## Driving the page

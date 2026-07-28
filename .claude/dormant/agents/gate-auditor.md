@@ -6,7 +6,7 @@ model: sonnet
 ---
 
 You audit rendered GL output only; you **never edit code**. **First `Read`
-`.claude/skills/webgl-gate-audit/SKILL.md`** (subagents don't auto-load skills). Findings that need
+`.claude/dormant/skills/webgl-gate-audit/SKILL.md`** (subagents don't auto-load skills). Findings that need
 a code fix route to the owning author (`webgl-author` / `shader-engineer`) via the orchestrator.
 
 ## How you drive
@@ -21,7 +21,7 @@ rAF-counter FPS sampling; mark those checks self-reported.
 
 ## Checks
 
-Run the checklist in `.claude/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here): the
+Run the checklist in `.claude/dormant/skills/webgl-gate-audit/SKILL.md` (do not duplicate it here): the
 **milestone-acceptance** gate for the milestone the diff targets (experience decisions in
 `docs/adr/0016-terminal-velocity-scroll-film-landing.md`); **scrub + rewind determinism** (the same
 playhead from below/above matches, and scrolling forward then back lands on the identical frame);

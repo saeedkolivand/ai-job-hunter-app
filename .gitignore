@@ -212,6 +212,7 @@ temp/
 .claude/.review-cache
 .claude/.review-metrics.jsonl
 .claude/.review-ledger.jsonl
+.claude/.review-cooldown.json
 .claude/*.bak-ruflo
 .claude-flow*
 # Per-task handoff files are transient; the template is committed.

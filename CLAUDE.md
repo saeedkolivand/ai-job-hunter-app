@@ -1,34 +1,31 @@
 # AI Job Hunter — Project Rules for AI Assistants
 
-Single source of truth for AI assistants. Rules below are enforced by ESLint, TypeScript, commitlint, and CI — violations block commits and fail the build. This file is an **index**: terse rules inline, detail behind pointers.
+Single source of truth for AI assistants. Rules are enforced by ESLint, TypeScript, commitlint, and CI — violations block commits and fail the build. This file is an **index**: terse rules inline, detail behind pointers.
 
 ---
 
 ## Auto-invoked skills (always on — no slash command)
 
-Re-injected every session by the `SessionStart` hook (`.claude/hooks/style-policy.mjs`, wired in `.claude/settings.json`), so activation is deterministic even if this file is summarized.
+Re-injected every session by the `SessionStart` hook (`.claude/hooks/style-policy.mjs`).
 
-- **`ponytail`** — lazy-senior-dev default: laziest solution that works (YAGNI, stdlib/native over deps, one line over fifty). Intensity `full`; `/ponytail lite|full|ultra`. Off: `stop ponytail` / `normal mode`. Source: `ponytail@ponytail` plugin.
-- **`grill-with-docs`** — before finalizing any non-trivial plan/design (incl. before `ExitPlanMode`), stress-test it against the domain model + ADRs, one question at a time. Skip for trivial/one-line/docs changes. Source: `~/.claude/skills/grill-with-docs/SKILL.md`.
-
----
+- **`ponytail`** — lazy-senior-dev default: laziest solution that works (YAGNI, stdlib/native over deps). Intensity `full`; off: `stop ponytail` / `normal mode`. Source: `ponytail@ponytail` plugin.
+- **`grill-with-docs`** — before finalizing any non-trivial plan/design (incl. before `ExitPlanMode`), stress-test it against the domain model + ADRs. Skip for trivial/one-line/docs changes. Source: the user-level `grill-with-docs` skill.
 
 ## Path privacy
 
-Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, stack traces, PRs, commits, markdown). Always repo-relative (`apps/desktop/src-tauri/src/main.rs`, not `C:\Users\…`). Git Bash form: `/c/Users/…`.
+Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, PRs, commits, docs). Always repo-relative (`apps/desktop/src-tauri/src/main.rs`); the same rule applies to Git Bash-style paths.
 
 ## Shell & tooling
 
-- Use the **Bash tool** (never PowerShell).
-- `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`. Never `find -exec`.
+Use the **Bash tool** (never PowerShell). `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`. Never `find -exec`.
 
 ---
 
 ## Architecture
 
-Local-first desktop app, pnpm monorepo. **Tauri is the shell.** Full detail → `docs/ARCHITECTURE.md`, status → `docs/ARCHITECTURE_STATUS.md`, principles → `docs/PATTERNS.md` §13.
+Local-first desktop app, pnpm monorepo. **Tauri is the shell.** Detail → `docs/ARCHITECTURE.md`, status → `docs/ARCHITECTURE_STATUS.md`, principles → `docs/PATTERNS.md` §13.
 
-```
+```text
 packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
 packages/ui           ← React component library + design system → @ajh/ui (no app logic)
 packages/prompts      ← AI prompt templates, provider-aware + locale-driven (pure TS, zero deps)
@@ -47,13 +44,13 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 0. **PRs only, never push to `main`.** Branch → commit → push → `gh pr create` → wait for approval.
 1. **No `window.api` in UI.** Use service hooks from `apps/desktop/src/renderer/services/` (React Query).
 2. **i18n from `@ajh/translations`,** never `react-i18next`/`i18next` directly. Init shim: `@/i18n`.
-3. **No hardcoded brand colors.** Use `text-brand`/`bg-brand`/… or `var(--color-brand)`. `[#RRGGBB]` errors.
-4. **No inline transition objects.** `import { transition } from '@ajh/ui'` (`.fast`/`.normal`/`.spring`/…).
+3. **No hardcoded brand colors.** `text-brand`/`bg-brand`/… or `var(--color-brand)`. `[#RRGGBB]` errors.
+4. **No inline transition objects.** `import { transition } from '@ajh/ui'`.
 5. **Always `@ajh/ui` primitives** — Button, Input, TextArea, NumberField, SelectDropdown, Switch, ModalShell, ConfirmModal, EmptyState, ErrorState, RowSkeleton/CardSkeleton, GlassCard, SettingsSection, OptionTile, StreamingText. Raw `<button>`/`<select>`/`<textarea>` error (except `<input type=range|file|checkbox|radio|hidden>`). `PageShell` from `@/components/layout/PageShell`; `UpdateBanner` from `@/components/ui/UpdateBanner`.
 6. **Package entrypoints, not deep paths.** `@ajh/ui` directly; prefer `React.ComponentProps<typeof X>`.
 7. **Import order** (blank line between): `node:*` → external → `@ajh/*` → `@/*` → relative. `pnpm lint:fix`.
 8. **`import type` for pure types** (auto-fixed; never suppress).
-9. **File placement** under `renderer/`: `features/` (one route), `components/ui/` (re-exports), `components/layout/` (chrome), `services/` (IPC hooks), `lib/` (pure utils + `machines/`), `hooks/`, `providers/`, `store/`. Never import across feature dirs.
+9. **File placement** under `renderer/`: `features/` (one route), `components/ui/`, `components/layout/`, `services/` (IPC hooks), `lib/` (pure utils + `machines/`), `hooks/`, `providers/`, `store/`. Never import across feature dirs.
 10. **State machines** for 3+ states → `lib/machines/` + `useMachine` from `@/hooks/use-machine`.
 11. **Remote data via React Query service hooks** — no `useState + useEffect` fetching.
 12. **Package boundaries:** `shared` no React/Node · `ui` no Zustand/IPC/routing · `prompts` no UI/`window` · `translations` no app/IPC imports.
@@ -73,67 +70,61 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 | State machines                             | `apps/desktop/src/renderer/lib/machines/`                                                                                |
 | i18n                                       | `@ajh/translations`; init shim `apps/desktop/src/renderer/i18n/index.ts`                                                 |
 | Rust: config/paths · HTTP · errors · spans | `platform/config.rs` · `net/http.rs` · `error.rs` · `observability.rs`                                                   |
-| Board registry                             | `scraping/boards/mod.rs` (`SCRAPERS`) — no applier registry (apply engine removed)                                       |
+| Board registry                             | `scraping/boards/mod.rs` (`SCRAPERS`)                                                                                    |
 | Docs                                       | `docs/PATTERNS.md` · `docs/DESIGN_SYSTEM.md` · `docs/DEVELOPMENT.md` · `docs/EXPORT_TEMPLATES.md`                        |
 
 ---
 
 ## Release & commits
 
-**Manual release** — Actions → "🚀 Release" → `action: release`. Nothing auto-runs on push to `main`; do not tag/bump manually. semantic-release derives the bump. Config: `release.config.mjs`, `commitlint.config.mjs`.
+**Manual release** — Actions → "🚀 Release" → `action: release`. Never tag/bump manually; semantic-release derives the bump (`release.config.mjs`). `feat:` minor · `fix:`/`perf:` patch · `BREAKING CHANGE` minor while 0.x · `refactor/ui/style/test/docs/build/ci/chore/revert` none.
 
-| Commit prefix | Release                |
-| ------------- | ---------------------- |
-| `feat:`       | minor · `fix:`/`perf:` | patch · `BREAKING CHANGE` footer | minor (while 0.x — `release.config.mjs` maps breaking→minor pre-1.0) · `refactor/ui/style/test/docs/build/ci/chore/revert` | none |
-
-**Commit format** (commitlint, `commit-msg` hook — fails the commit): lowercase subject (acronyms too: `URL`→`url`), ≤100 chars, imperative, no trailing period; body lines ≤200 chars, blank line after subject; type ∈ `feat fix perf refactor ui style test docs build ci chore revert`.
+**Commit format** (commitlint, `commit-msg` hook): lowercase subject (acronyms too: `URL`→`url`), ≤100 chars, imperative, no trailing period; body lines ≤200 chars, blank line after subject; type ∈ `feat fix perf refactor ui style test docs build ci chore revert`.
 
 ---
 
 ## Code intelligence: graphify + codegraph
 
-Two graphs back codebase questions — **prefer them over raw `rg`/`fd`/file-browsing** for "where/what calls/impact" and architecture questions.
-
-- **codegraph** (structural, zero-token, SQLite `.codegraph/`, auto-synced) — symbols, calls, imports, impact. MCP `codegraph_explore` first; CLI `codegraph callers|callees|impact|query`. For "who calls / what breaks if I change X".
-- **graphify** (semantic, `graphify-out/`) — meaning, rationale, cross-doc. MCP `query_graph`/`shortest_path`/`get_*` (`.mcp.json` → `graphify-mcp`); CLI `graphify query|path|explain`. Broad nav: `graphify-out/wiki/index.md`; `GRAPH_REPORT.md` only for whole-architecture review.
-- **Routing:** structural → codegraph · semantic/rationale → graphify · `rg`/`fd` only when neither answers.
-- **After code changes:** `graphify update .` then `codegraph sync`.
+Prefer the graphs over raw `rg`/`fd`/file-browsing for "where/what calls/impact" and architecture questions. **codegraph** (structural, zero-token, auto-synced via file watcher) — MCP `codegraph_explore` first; CLI `codegraph callers/callees/impact/query`. **graphify** (semantic) — MCP `query_graph`/`shortest_path`/`get_*`; CLI `graphify query/path/explain`; broad nav `graphify-out/wiki/index.md`. Routing: structural → codegraph · semantic → graphify · `rg` only when neither answers. **After code changes:** `graphify update .` (codegraph syncs itself).
 
 ---
 
-## Knowledge base & agent system
+## Agent system
 
-Full pipeline, model tiering, and rationale → **`.claude/`** (agents/skills/commands), routing → **`.claude/review-routes.json`**, visual map → **`apps/landing/src/app/agent-system/`**, knowledge base → **`docs/knowledge/`** (thin pointers into source — no copied literals). The drift guard `pnpm check:agent-system` (pre-push + CI) keeps agents ⇄ routes ⇄ this file ⇄ explainer ⇄ docs in sync.
+Domain pairs — a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Full pipeline detail → `.claude/` (agents/skills/commands), routing → `.claude/review-routes.json`, knowledge base → `docs/knowledge/`. Drift guard: `pnpm check:agent-system` (pre-push + CI).
 
-**Default: every change auto-routes through the agent fleet** — no slash command needed. Each domain is a **pair**: a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Pick by touched area:
+| Touched area                                                | Author                          | Critic(s)                                        |
+| ----------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| React renderer                                              | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX) |
+| Landing site (apps/landing — Next.js 16 static export)      | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual)    |
+| Rust/Tauri backend                                          | `rust-backend-author`           | `rust-backend-architect`                         |
+| Resume/export, DocumentModel, templates, theme, locale      | `pdf-docx-generator`            | `resume-export-expert`                           |
+| ATS scoring, job analysis, matching, cover-letter relevance | `job-match-author`              | `job-match-expert`                               |
+| AI providers, routing, embeddings, prompts, streaming       | `ai-provider-author`            | `ai-provider-expert`                             |
+| Scraping, browser automation, registries                    | `scraping-applier-author`       | `scraping-applier-expert`                        |
+| Browser extension + bridge + protocol                       | `extension-author`              | `extension-reviewer`                             |
+| Tests                                                       | `test-author`                   | `testing-reviewer`                               |
+| Code quality (on-demand)                                    | `code-quality-author`           | `code-quality-reviewer`                          |
+| Docs / knowledge / ADRs / lessons / release                 | `project-steward` (sole writer) | `project-steward`                                |
 
-| Touched area                                                                                                                                                                            | Author                          | Critic(s)                                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
-| React renderer                                                                                                                                                                          | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual/UX) |
-| Landing site (apps/landing — Next.js 16 static export; DORMANT GL fleet: `webgl-author`, `shader-engineer`, `webgl-reviewer`, `gate-auditor` idle until a GL surface returns, ADR-0017) | `frontend-author`               | `frontend-reviewer` · `ui-ux-expert` (visual)    |
-| Rust/Tauri backend                                                                                                                                                                      | `rust-backend-author`           | `rust-backend-architect`                         |
-| Resume/export, DocumentModel, templates, theme, locale                                                                                                                                  | `pdf-docx-generator`            | `resume-export-expert`                           |
-| ATS scoring, job analysis, matching, cover-letter relevance                                                                                                                             | `job-match-author`              | `job-match-expert`                               |
-| AI providers, routing, embeddings, prompts, streaming                                                                                                                                   | `ai-provider-author`            | `ai-provider-expert`                             |
-| Scraping, browser automation, registries                                                                                                                                                | `scraping-applier-author`       | `scraping-applier-expert`                        |
-| Browser extension + bridge + protocol                                                                                                                                                   | `extension-author`              | `extension-reviewer`                             |
-| Tests                                                                                                                                                                                   | `test-author`                   | `testing-reviewer`                               |
-| Code quality (on-demand)                                                                                                                                                                | `code-quality-author`           | `code-quality-reviewer`                          |
-| Docs / knowledge / ADRs / lessons / release                                                                                                                                             | `project-steward` (sole writer) | `project-steward`                                |
+Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (Secondary on risk-bearing changes), `performance-profiler` (perf-sensitive only), `cleanup` (dead-code, pre-PR), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (per-finding judge for /review, ≤5 spawns). The dormant GL fleet + skills live in `.claude/dormant/` (no GL surface since ADR-0017). Every critic loads `.claude/skills/critic-contract/SKILL.md`; every author loads `author-contract`.
 
-Cross-cutting critics (no author — fixes route to the owning domain author): `tauri-security-reviewer` (default Secondary on any risk-bearing change), `performance-profiler` (perf-sensitive only), `webgl-perf-profiler` (GL frame rate only — dormant, no GL surface since ADR-0017), `cleanup` (dead-code, always just before steward), `pr-reviewer` (strict pre-PR gate), `finding-verifier` (utility judge — one fresh haiku context per single-source /review finding, drops anything scoring <80).
+**Per-change defaults (cost-tiered — ADR-025):**
 
-Every critic loads `.claude/skills/critic-contract/SKILL.md` before reviewing — adversarial stance (the handoff is context, never evidence), empirical verification of runtime-behavior claims, and a mandatory self-red-team section before any APPROVE.
+- **Trivial diffs** (docs/config/comments/renames/single-file ≤10 lines): the **main session edits directly** — no swarm. The deterministic Tier-0 Stop gate + the pre-push AI review still cover them.
+- **Single-domain, non-risk changes**: author → **ONE sibling critic** (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer`.
+- **Risk-bearing** (any `tauri-security-reviewer` secondary glob) **or multi-domain**: full trio incl. security critic (≤3 critics/task).
+- `project-steward` closes **once per PR** (docs/lessons sync + `graphify update .`), not once per change. Context flows via `.claude/scratch/<task>.md`. Orchestrate all sub-agents from the main session (agents can't call agents).
+- **Before a PR:** `/review-security` (HIGH/CRITICAL block) then `/review` (🔴+🟠 block) — both complement CodeRabbit.
 
-**Per-change sequence** (skip what doesn't apply): author implements → sibling critic audits (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer` → `cleanup` → `project-steward` closes (docs/lessons sync + `graphify update .` + `codegraph sync`). Context flows via the per-task handoff file `.claude/scratch/<task>.md`. **≤3 critics/task.** Critic count scales with risk: trivial diffs rely on the Stop review-gate alone; small single-domain diffs get ONE sibling critic; the full trio (incl. security) only for risk-bearing/multi-domain changes. Orchestrate all sub-agents from the main session (agents can't call agents). **Before a PR:** `/review-security` (`tauri-security-reviewer`) — HIGH/CRITICAL block — then `/review` (`pr-reviewer`) as the final gate (🔴+🟠 block); both complement CodeRabbit.
+**Review gates:** the Stop hook (`.claude/hooks/review-gate.mjs`) is **deterministic-only** (ast-grep Tier-0 + ledger re-emits — near-free, blocks on introduced arch violations and unresolved findings). The **LLM review runs at pre-push** (`scripts/pre-push-review.mjs`, ADR-0008 ratchet) and in CI; metrics in `.claude/.review-metrics.jsonl` now include token usage + cost.
 
 **Hard rules:**
 
-- **Main session never edits source directly** — delegate all code changes to a domain author via `Agent`. Exceptions: `CLAUDE.md`, `.claude/**` meta-config, plan files, single-char typo fixes.
-- **Trivial diffs skip the swarm** (docs/config/rename/one-liners) — the Stop review-gate (`.claude/hooks/review-gate.mjs`) reviews the full branch diff (committed + working tree) regardless; blocks on parsed HIGH/CRITICAL findings with confidence ≥ 0.6 (deterministic verdict, schema-1 JSON — never prose matching), once per finish-chain, inert in plan mode. Every run logs to `.claude/.review-metrics.jsonl`.
+- Non-trivial source changes go through a domain author via `Agent`; the main session edits directly only for trivial diffs (above), `CLAUDE.md`, `.claude/**` meta-config, and plan files.
 - **Lessons** (`.claude/memory/lessons.jsonl`) — only `project-steward` writes; others propose via `LESSON · category · Context/Decision/Outcome`.
-- **Cross-session recall** — all agents may call `mcp__mcp-search` (claude-mem: `search`/`timeline`/`get_observations`/`memory_search`/`memory_context`) for prior-session context. Provided by the user-installed `thedotmack/claude-mem` plugin, not the repo — absent if the plugin isn't installed (the allowlist entry then just no-ops). Honor `docs/` path-privacy + `<private>` for PII.
+- **Cross-session recall** — agents may call `mcp__mcp-search` (claude-mem plugin; absent if not installed). Honor `docs/` path-privacy + `<private>` for PII.
 
-**Model & effort tiering** (per agent `model:`/`effort:` frontmatter; aliases auto-track the current family — Opus 5 / Sonnet 5 / Haiku 4.5): Opus for last-line critics (`rust-backend-architect`, `tauri-security-reviewer`, `ai-provider-expert`, `job-match-expert`, `pr-reviewer`, `webgl-reviewer`); Sonnet for authors + balanced critics; Haiku for `project-steward` + `finding-verifier`. Effort (adaptive thinking replaced "extended thinking" in the 5 family): default `high` everywhere; the Opus critics pin `effort: xhigh` in frontmatter; `low` is fine for mechanical steward runs. Authors escalate to Opus per spawn for genuinely hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration); escalate a spawn to Fable (Agent `model: "fable"`) only for genuinely hard, ambiguous, cross-domain work — never as a frontmatter default, and never for security review.
+**Model & effort tiering** (per-agent frontmatter; aliases track the current family): Opus for last-line critics — `pr-reviewer` + `tauri-security-reviewer` pin `effort: xhigh`; the other Opus critics (`rust-backend-architect`, `ai-provider-expert`, `job-match-expert`) run `high`. Sonnet for authors + balanced critics (default `high`). Haiku for `project-steward` + `finding-verifier` (`low` fine for mechanical runs). Escalate a spawn to Opus for genuinely hard work; to Fable only for hard, ambiguous, cross-domain work — never as a frontmatter default, never for security review.
 
 **Context priority:** codegraph/graphify → source → `docs/knowledge/` → lessons. Read the minimum; stop at ~90% confidence.
