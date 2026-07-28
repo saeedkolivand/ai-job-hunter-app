@@ -510,3 +510,31 @@ describe('ApplicationRow — nextActionAt badge', () => {
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
   });
 });
+
+// ── Post-change note affordance (the list's zero-keystroke alternative) ───────
+
+describe('ApplicationRow — note chip', () => {
+  it('renders the chip only when the page asks for it', () => {
+    const { unmount } = render(<ApplicationRow application={makeApp({})} />);
+    expect(
+      screen.queryByRole('button', { name: 'applications.row.addNoteHint' })
+    ).not.toBeInTheDocument();
+    unmount();
+
+    render(<ApplicationRow application={makeApp({})} showNoteHint />);
+    expect(
+      screen.getByRole('button', { name: 'applications.row.addNoteHint' })
+    ).toBeInTheDocument();
+  });
+
+  it('clicking the chip asks for the note dialog WITHOUT navigating to the detail page', () => {
+    const onAddNote = vi.fn();
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.row.addNoteHint' }));
+
+    expect(onAddNote).toHaveBeenCalledTimes(1);
+    // The chip sits inside the row's click target — it must stop propagation.
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});

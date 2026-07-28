@@ -2506,7 +2506,7 @@
       "offer": "Angebot",
       "accepted": "Angenommen",
       "rejected": "Abgelehnt",
-      "ghosted": "Kein Rückmeldung",
+      "ghosted": "Keine Rückmeldung",
       "withdrawn": "Zurückgezogen"
     },
     "stages": {
@@ -2517,7 +2517,7 @@
       "offer": "Angebot",
       "accepted": "Angenommen",
       "rejected": "Abgelehnt",
-      "ghosted": "Kein Rückmeldung",
+      "ghosted": "Keine Rückmeldung",
       "withdrawn": "Zurückgezogen"
     },
     "row": {
@@ -2531,7 +2531,8 @@
       "deleteAll": "Alles löschen",
       "appliedAgo": "Beworben {{when}}",
       "updatedAgo": "Aktualisiert {{when}}",
-      "statusError": "Phase konnte nicht aktualisiert werden."
+      "statusError": "Phase konnte nicht aktualisiert werden.",
+      "addNoteHint": "Notiz hinzufügen?"
     },
     "delete": {
       "keepTitle": "Bewerbungs-Tracking entfernen",
@@ -2593,7 +2594,7 @@
         "openMailto": "Per E-Mail-Client senden",
         "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
         "addResume": "Lebenslauf hinzufügen",
-        "recipientHint": "Das ist der Hauptkontakt der Bewerbung — dieselben Felder wie im Tab Überblick."
+        "recipientHint": "Wird als Hauptkontakt dieser Bewerbung gespeichert — Änderungen hier wirken auch im Tab Überblick."
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",
@@ -2611,7 +2612,6 @@
       "compPlaceholder": "z. B. 90.000 € / verhandelbar",
       "nextActionLabel": "Erinnerung für nächste Aktion",
       "contactSection": "Kontakt",
-      "trackingSection": "Nachverfolgung",
       "briefTitle": "Unternehmens-Briefing",
       "answersTitle": "Bewerbungsantworten",
       "jobLink": "Job-Link",
@@ -2683,17 +2683,13 @@
       "followUpOverdueHint": "Dieses Nachfassen ist überfällig.",
       "followUpUpcomingHint": "Du wirst erinnert, sobald dieses Datum erreicht ist.",
       "followUpNoneHint": "Lege ein Datum fest, um an den nächsten Schritt erinnert zu werden.",
-      "contactSaveError": "Dieser Kontakt konnte nicht gespeichert werden."
+      "contactSaveError": "Dieser Kontakt konnte nicht gespeichert werden.",
+      "compensationSection": "Vergütung"
     },
     "pipeline": {
       "aria": "Nach Pipeline-Phase filtern",
-      "saved": "Gespeichert",
-      "applied": "Beworben",
-      "screening": "Vorauswahl",
-      "interviewing": "Interview",
-      "offer": "Angebot",
       "closed": "Abgeschlossen",
-      "overdue": "Überfällig: {{n}}",
+      "overdue": "{{n}} überfällige Nachfassaktionen",
       "filtered": "Es werden nur Bewerbungen in {{stage}} angezeigt.",
       "filterCleared": "Es werden Bewerbungen aus allen Phasen angezeigt."
     },
@@ -2712,7 +2708,11 @@
       "skip": "Überspringen",
       "add": "Notiz hinzufügen",
       "saveError": "Die Notiz konnte nicht gespeichert werden — bitte erneut versuchen."
-    }
+    },
+    "noResultsStage": "Aktuell ist keine Bewerbung in {{stage}}.",
+    "noResultsQuery": "Nichts passt zu \"{{query}}\".",
+    "noResultsBoth": "In {{stage}} passt nichts zu \"{{query}}\".",
+    "showAll": "Alle Bewerbungen anzeigen"
   },
   "notifications": {
     "title": "Benachrichtigungen",

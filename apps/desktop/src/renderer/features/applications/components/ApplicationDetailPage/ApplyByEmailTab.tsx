@@ -315,10 +315,13 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
           <div className="flex flex-col gap-1">
             <label
               htmlFor="applyemail-recipient-name"
-              className="text-xs font-medium text-foreground/70"
+              className="text-xs font-semibold text-foreground/70"
             >
               {t('applications.detail.email.recipientNameLabel')}
             </label>
+            {/* The hint rides on the field itself (Input wires `aria-describedby`)
+                so a screen-reader user hears the consequence while focused here,
+                instead of it floating as loose text under the whole toolbar. */}
             <Input
               id="applyemail-recipient-name"
               variant="default"
@@ -326,12 +329,13 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
               onBlur={persistName}
+              hint={t('applications.detail.email.recipientHint')}
             />
           </div>
           <div className="flex flex-col gap-1">
             <label
               htmlFor="applyemail-recipient-email"
-              className="text-xs font-medium text-foreground/70"
+              className="text-xs font-semibold text-foreground/70"
             >
               {t('applications.detail.email.recipientEmailLabel')}
             </label>
@@ -346,20 +350,15 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
                 setEmailError(null);
               }}
               onBlur={(e) => persistEmail(e.target.value)}
+              hint={t('applications.detail.email.recipientHint')}
             />
             {emailError && (
-              <p className="text-fine-print text-destructive" role="alert">
+              <p className="text-fine-print text-red-400" role="alert">
                 {emailError}
               </p>
             )}
           </div>
         </div>
-
-        {/* Makes the shared binding discoverable: these are the SAME two fields
-            as the Overview tab's Contact card, not an email-only copy. */}
-        <p className="text-fine-print text-foreground/45">
-          {t('applications.detail.email.recipientHint')}
-        </p>
 
         <Button
           variant="primary"
@@ -425,7 +424,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         )}
 
         {genError && (
-          <p className="text-fine-print text-destructive" role="alert">
+          <p className="text-fine-print text-red-400" role="alert">
             {genError}
           </p>
         )}

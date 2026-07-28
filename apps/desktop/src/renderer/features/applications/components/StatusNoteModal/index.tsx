@@ -9,6 +9,9 @@ interface StatusNoteModalProps {
   onClose: () => void;
   /** The stage the note attaches to (already applied when `changed`). */
   status: string;
+  /** Company + job title — names WHICH application this note lands on. */
+  company?: string;
+  title?: string;
   /**
    * `true` when the modal follows a just-applied stage change (the copy then
    * reads "moved to X"); `false` for the Timeline's explicit "Add note".
@@ -45,6 +48,8 @@ export function StatusNoteModal({
   open,
   onClose,
   status,
+  company = '',
+  title = '',
   changed = false,
   isSaving = false,
   error = null,
@@ -73,6 +78,7 @@ export function StatusNoteModal({
   };
 
   const stageLabel = t(`applications.status.${status}` as const);
+  const subject = [company, title].filter((s) => s.trim().length > 0).join(' · ');
 
   return (
     <ModalShell
@@ -80,40 +86,39 @@ export function StatusNoteModal({
       onClose={close}
       maxWidth="max-w-md"
       ariaLabelledby={titleId}
-      header={
-        <div className="border-b border-[var(--border-soft)] px-5 py-4">
-          <h2 id={titleId} className="text-sm font-semibold text-foreground/90">
-            {t('applications.note.title')}
-          </h2>
-          <p className="mt-0.5 text-fine-print text-foreground/50">
-            {changed
-              ? t('applications.note.afterChange', { stage: stageLabel })
-              : t('applications.note.current', { stage: stageLabel })}
-          </p>
-        </div>
-      }
-      footer={
-        <div className="flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-5 py-3">
-          <Button variant="ghost" onClick={close}>
-            {t('applications.note.skip')}
-          </Button>
-          <Button
-            variant="primary"
-            onClick={save}
-            disabled={note.trim().length === 0}
-            loading={isSaving}
-          >
-            {t('applications.note.save')}
-          </Button>
-        </div>
-      }
+      // Typed text is unsaved work: a stray backdrop click must not throw it
+      // away. Escape and Skip stay available (both are explicit).
+      closeOnBackdrop={false}
     >
+      {/*
+        Header/footer are rendered as children rather than slots so the whole
+        dialog scrolls as one — the note field is the only tall element.
+      */}
+      <div className="border-b border-[var(--border-soft)] px-5 py-4">
+        <h2 id={titleId} className="text-sm font-semibold text-foreground/90">
+          {t('applications.note.title')}
+        </h2>
+        {subject && (
+          <p className="mt-0.5 truncate text-fine-print font-semibold text-foreground/80">
+            {subject}
+          </p>
+        )}
+        <p className="mt-0.5 text-fine-print text-foreground/70">
+          {changed
+            ? t('applications.note.afterChange', { stage: stageLabel })
+            : t('applications.note.current', { stage: stageLabel })}
+        </p>
+      </div>
+
       <div className="px-5 py-4">
         <label htmlFor={fieldId} className="sr-only">
           {t('applications.note.title')}
         </label>
+        {/* `glass` gives the field a visible boundary — the default transparent
+            variant measured 1.00:1 against the modal panel. */}
         <TextArea
           id={fieldId}
+          variant="glass"
           autoFocus
           rows={4}
           value={note}
@@ -121,10 +126,24 @@ export function StatusNoteModal({
           placeholder={t('applications.note.placeholder')}
         />
         {error && (
-          <p className="mt-2 text-fine-print text-destructive" role="alert">
+          <p className="mt-2 text-fine-print text-red-400" role="alert">
             {error}
           </p>
         )}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 border-t border-[var(--border-soft)] px-5 py-3">
+        <Button variant="ghost" onClick={close} className="text-foreground/70">
+          {t('applications.note.skip')}
+        </Button>
+        <Button
+          variant="primary"
+          onClick={save}
+          disabled={note.trim().length === 0}
+          loading={isSaving}
+        >
+          {t('applications.note.save')}
+        </Button>
       </div>
     </ModalShell>
   );

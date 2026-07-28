@@ -2527,7 +2527,8 @@
       "deleteAll": "Delete everything",
       "appliedAgo": "Applied {{when}}",
       "updatedAgo": "Updated {{when}}",
-      "statusError": "Could not update the stage."
+      "statusError": "Could not update the stage.",
+      "addNoteHint": "Add a note?"
     },
     "delete": {
       "keepTitle": "Remove application tracking",
@@ -2589,7 +2590,7 @@
         "openMailto": "Send via mail client",
         "needsResume": "Add your résumé to generate an application email.",
         "addResume": "Add a résumé",
-        "recipientHint": "This is the application's primary contact — the same fields as the Overview tab."
+        "recipientHint": "Saved as this application's primary contact — editing here also updates the Overview tab."
       },
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
@@ -2607,7 +2608,6 @@
       "compPlaceholder": "e.g. $120,000 / negotiable",
       "nextActionLabel": "Next action reminder",
       "contactSection": "Contact",
-      "trackingSection": "Tracking",
       "briefTitle": "Company brief",
       "answersTitle": "Application answers",
       "jobLink": "Job link",
@@ -2679,17 +2679,13 @@
       "followUpOverdueHint": "This follow-up is overdue.",
       "followUpUpcomingHint": "You will be reminded when this date arrives.",
       "followUpNoneHint": "Set a date to get a reminder for the next step.",
-      "contactSaveError": "This contact could not be saved."
+      "contactSaveError": "This contact could not be saved.",
+      "compensationSection": "Compensation"
     },
     "pipeline": {
       "aria": "Filter by pipeline stage",
-      "saved": "Saved",
-      "applied": "Applied",
-      "screening": "Screening",
-      "interviewing": "Interviewing",
-      "offer": "Offer",
-      "closed": "Closed",
-      "overdue": "Overdue: {{n}}",
+      "closed": "Finished",
+      "overdue": "{{n}} follow-ups overdue",
       "filtered": "Showing {{stage}} applications only.",
       "filterCleared": "Showing applications in every stage."
     },
@@ -2708,7 +2704,11 @@
       "skip": "Skip",
       "add": "Add note",
       "saveError": "The note could not be saved — try again."
-    }
+    },
+    "noResultsStage": "No applications are in {{stage}} right now.",
+    "noResultsQuery": "Nothing matches \"{{query}}\".",
+    "noResultsBoth": "Nothing in {{stage}} matches \"{{query}}\".",
+    "showAll": "Show all applications"
   },
   "notifications": {
     "title": "Notifications",

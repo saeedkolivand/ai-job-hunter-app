@@ -58,6 +58,28 @@ describe('StatusNoteModal', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('names the application the note lands on', () => {
+    render(
+      <StatusNoteModal
+        open
+        onClose={vi.fn()}
+        status="offer"
+        company="Acme"
+        title="Senior Engineer"
+        onSave={vi.fn()}
+      />
+    );
+    expect(screen.getByText('Acme · Senior Engineer')).toBeInTheDocument();
+  });
+
+  // The note field previously had NO visible boundary against the modal panel.
+  it('gives the note field a visible boundary', () => {
+    render(<StatusNoteModal open onClose={vi.fn()} status="offer" onSave={vi.fn()} />);
+    expect(screen.getByPlaceholderText('applications.note.placeholder').className).toContain(
+      'glass-dropdown'
+    );
+  });
+
   it('renders a failed-save message while keeping the typed note', () => {
     render(
       <StatusNoteModal

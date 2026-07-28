@@ -73,4 +73,123 @@ describe('useFocusTrap', () => {
     // Tab from the NEW last element must wrap to "first", not escape the trap.
     expect(screen.getByRole('button', { name: 'first' })).toHaveFocus();
   });
+
+  // Closing dumped focus on <body>: a keyboard user restarted from the top of
+  // the document instead of the control that opened the dialog.
+  describe('return focus', () => {
+    it('hands focus back to the opener when the trap deactivates', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+          <Trapped active={false} />
+        </>
+      );
+
+      const opener = screen.getByRole('button', { name: 'opener' });
+      opener.focus();
+      expect(opener).toHaveFocus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <Trapped active />
+        </>
+      );
+      expect(screen.getByRole('button', { name: 'first' })).toHaveFocus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <Trapped active={false} />
+        </>
+      );
+      expect(opener).toHaveFocus();
+    });
+
+    it('restores on unmount too (the dialog is removed, not just deactivated)', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+        </>
+      );
+      const opener = screen.getByRole('button', { name: 'opener' });
+      opener.focus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <Trapped active />
+        </>
+      );
+      expect(screen.getByRole('button', { name: 'first' })).toHaveFocus();
+
+      rerender(
+        <>
+          <button>opener</button>
+        </>
+      );
+      expect(opener).toHaveFocus();
+    });
+
+    // The restore is a FALLBACK: a wrapper with its own return-focus target
+    // (e.g. a Drawer's `returnFocusTo`) must still win.
+    it('does NOT steal focus that something else already moved somewhere meaningful', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+          <button>elsewhere</button>
+          <Trapped active={false} />
+        </>
+      );
+
+      screen.getByRole('button', { name: 'opener' }).focus();
+      rerender(
+        <>
+          <button>opener</button>
+          <button>elsewhere</button>
+          <Trapped active />
+        </>
+      );
+
+      // Someone else claims focus before the trap tears down.
+      const elsewhere = screen.getByRole('button', { name: 'elsewhere' });
+      elsewhere.focus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <button>elsewhere</button>
+          <Trapped active={false} />
+        </>
+      );
+      expect(elsewhere).toHaveFocus();
+    });
+
+    it('does nothing when the remembered element has left the DOM', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+          <Trapped active={false} />
+        </>
+      );
+      screen.getByRole('button', { name: 'opener' }).focus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <Trapped active />
+        </>
+      );
+
+      // The opener unmounts while the trap is open — restoring to it would throw
+      // or focus a detached node.
+      expect(() =>
+        rerender(
+          <>
+            <Trapped active={false} />
+          </>
+        )
+      ).not.toThrow();
+    });
+  });
 });

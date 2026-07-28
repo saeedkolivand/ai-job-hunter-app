@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
+import { TEST_IDS } from '@ajh/test-ids';
 
 import { useSessionStore } from '@/store/session-store';
 
@@ -152,10 +153,17 @@ async function moveA1To(stage: string) {
   );
 }
 
+/** Clicks the transient "Add a note?" chip the changed row offers. */
+function openNotePrompt() {
+  fireEvent.click(screen.getByRole('button', { name: 'applications.row.addNoteHint' }));
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('ApplicationsPage — status note across the refetch', () => {
-  it('keeps the note prompt open after the refetch re-sections the changed row', async () => {
+  // A stage change on the LIST must not seize the screen: moving several rows is
+  // a batch action, so the row offers a chip instead of a modal.
+  it('offers a chip (no dialog) after a stage change, and the chip survives the refetch', async () => {
     const { rerender } = render(<ApplicationsPage />);
 
     // Capture a1's row node (both rows share an aria-label because `t` echoes
@@ -174,19 +182,47 @@ describe('ApplicationsPage — status note across the refetch', () => {
     // Proof the churn actually happened: a new stage section exists AND the old
     // row node is gone from the document — any state it had owned died with it.
     expect(
-      screen.getByRole('button', { name: (n) => n.includes('applications.stages.interviewing') })
-    ).toBeInTheDocument();
+      screen
+        .getAllByRole('button', { name: (n) => n.includes('applications.stages.interviewing') })
+        .filter((el) => el.getAttribute('data-testid') !== TEST_IDS.applications.pipelineCard)
+    ).toHaveLength(1);
     expect(rowBefore?.isConnected).toBe(false);
 
-    // …and the dialog survived it, because the PAGE owns it.
+    // No modal was forced…
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // …and the offer survived the churn because the PAGE holds it, keyed by id.
+    expect(
+      screen.getByRole('button', { name: 'applications.row.addNoteHint' })
+    ).toBeInTheDocument();
+  });
+
+  it('the chip opens the note dialog, which also survives the refetch', async () => {
+    const { rerender } = render(<ApplicationsPage />);
+    await moveA1To('interviewing');
+    rerender(<ApplicationsPage />);
+
+    openNotePrompt();
+    rerender(<ApplicationsPage />);
+
     expect(screen.getByRole('dialog')).toHaveAccessibleName('applications.note.title');
     expect(screen.getByPlaceholderText('applications.note.placeholder')).toBeInTheDocument();
+    // The dialog names WHICH application the note lands on.
+    expect(screen.getByText('Alpha · Alpha Role')).toBeInTheDocument();
+  });
+
+  it('only the changed row offers the chip', async () => {
+    const { rerender } = render(<ApplicationsPage />);
+    await moveA1To('interviewing');
+    rerender(<ApplicationsPage />);
+
+    expect(screen.getAllByRole('button', { name: 'applications.row.addNoteHint' })).toHaveLength(1);
   });
 
   it('saves a same-status note carrying the trimmed text, then closes', async () => {
     const { rerender } = render(<ApplicationsPage />);
     await moveA1To('interviewing');
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
       target: { value: '  Recruiter call booked  ' },
@@ -212,6 +248,7 @@ describe('ApplicationsPage — status note across the refetch', () => {
     // the prompt is open. The note must not revert that.
     apps = apps.map((a) => (a.id === 'a1' ? { ...a, status: 'offer', updatedAt: 5000 } : a));
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
       target: { value: 'Follow-up sent' },
@@ -230,6 +267,7 @@ describe('ApplicationsPage — status note across the refetch', () => {
     const { rerender } = render(<ApplicationsPage />);
     await moveA1To('interviewing');
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
       target: { value: 'Do not lose me' },
@@ -248,6 +286,7 @@ describe('ApplicationsPage — status note across the refetch', () => {
     const { rerender } = render(<ApplicationsPage />);
     await moveA1To('interviewing');
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     fireEvent.click(screen.getByRole('button', { name: 'applications.note.skip' }));
     rerender(<ApplicationsPage />);
@@ -260,6 +299,7 @@ describe('ApplicationsPage — status note across the refetch', () => {
     const { rerender } = render(<ApplicationsPage />);
     await moveA1To('interviewing');
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
       target: { value: 'abandoned draft' },
@@ -273,9 +313,32 @@ describe('ApplicationsPage — status note across the refetch', () => {
     const listbox = await screen.findByRole('listbox');
     fireEvent.click(within(listbox).getByRole('option', { name: /applications\.status\.offer/i }));
     rerender(<ApplicationsPage />);
+    openNotePrompt();
 
     expect(
       screen.getByPlaceholderText<HTMLTextAreaElement>('applications.note.placeholder').value
     ).toBe('');
+  });
+
+  // Unsaved work: a stray click outside must not destroy the typed note.
+  it('a backdrop click does NOT close the dialog', async () => {
+    const { rerender } = render(<ApplicationsPage />);
+    await moveA1To('interviewing');
+    rerender(<ApplicationsPage />);
+    openNotePrompt();
+
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: 'still here' },
+    });
+
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement as HTMLElement;
+    fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText<HTMLTextAreaElement>('applications.note.placeholder').value
+    ).toBe('still here');
   });
 });

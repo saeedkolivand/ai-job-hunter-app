@@ -86,6 +86,8 @@ export const TEST_IDS = {
     list: 'applications-list',
     row: 'application-row',
     trackJobModal: 'track-job-modal',
+    /** One pipeline-strip stat card; `data-group` carries the stage-group id. */
+    pipelineCard: 'pipeline-card',
   },
 
   /**

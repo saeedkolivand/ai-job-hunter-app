@@ -160,6 +160,20 @@ beforeEach(() => {
 });
 
 /** Row ids in DOM order — the assertion surface for the sort tests. */
+/** Stage-section headers only — the strip cards now share their labels. */
+const sectionHeaders = (match: (name: string) => boolean) =>
+  screen
+    // `queryAll`, not `getAll`: "no section header matched" is a legitimate
+    // expected outcome (flat aggregated group), not a test-setup failure.
+    .queryAllByRole('button', { name: (n) => match(n) })
+    .filter((el) => el.getAttribute('data-testid') !== TEST_IDS.applications.pipelineCard);
+
+/** One pipeline-strip card by stage-group id. */
+const pipelineCard = (group: string) =>
+  screen
+    .getAllByTestId(TEST_IDS.applications.pipelineCard)
+    .find((c) => c.getAttribute('data-group') === group) as HTMLElement;
+
 const rowIds = () =>
   screen.getAllByTestId(TEST_IDS.applications.row).map((r) => r.getAttribute('data-appid'));
 
@@ -183,13 +197,11 @@ describe('ApplicationsPage — grouped rendering', () => {
       'applications.stages.applied',
       'applications.stages.interviewing',
     ];
-    const sectionHeaders = screen.getAllByRole('button', {
-      name: (name) => stageKeys.some((key) => name.includes(key)),
-    });
-    expect(sectionHeaders).toHaveLength(3);
+    const headers = sectionHeaders((name) => stageKeys.some((key) => name.includes(key)));
+    expect(headers).toHaveLength(3);
 
     // Verify APPLICATION_STAGES order: saved comes before applied comes before interviewing.
-    const headerTexts = sectionHeaders.map((h) => h.textContent ?? '');
+    const headerTexts = headers.map((h) => h.textContent ?? '');
     const savedIdx = headerTexts.findIndex((t) => t.includes('saved'));
     const appliedIdx = headerTexts.findIndex((t) => t.includes('applied'));
     const interviewingIdx = headerTexts.findIndex((t) => t.includes('interviewing'));
@@ -250,13 +262,9 @@ describe('ApplicationsPage — grouped rendering', () => {
     render(<ApplicationsPage />);
 
     // Only 'offer' section header should appear (name includes the count badge).
-    expect(
-      screen.getByRole('button', { name: (n) => n.includes('applications.stages.offer') })
-    ).toBeInTheDocument();
+    expect(sectionHeaders((n) => n.includes('applications.stages.offer'))).toHaveLength(1);
     // 'applied' section must NOT be rendered.
-    expect(
-      screen.queryByRole('button', { name: (n) => n.includes('applications.stages.applied') })
-    ).not.toBeInTheDocument();
+    expect(sectionHeaders((n) => n.includes('applications.stages.applied'))).toHaveLength(0);
   });
 
   it('renders loading skeletons while isLoading=true and no rows', () => {
@@ -335,6 +343,56 @@ describe('ApplicationsPage — grouped rendering', () => {
     expect(screen.getByText('applications.noResults')).toBeInTheDocument();
     expect(screen.queryByTestId(TEST_IDS.applications.row)).not.toBeInTheDocument();
   });
+
+  // An unexplained empty list right after clicking a stage card reads as data loss.
+  it('names the active filters in the empty state and offers a way out', () => {
+    mockUseApplications.mockReturnValue({
+      data: APPS_MULTI_STAGE,
+      isLoading: false,
+      isError: false,
+    });
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'offer', filter: 'zzz' },
+    }));
+
+    render(<ApplicationsPage />);
+
+    expect(screen.getByText('applications.noResultsBoth')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.showAll' }));
+
+    const { applications } = useSessionStore.getState();
+    expect(applications.stageGroup).toBeNull();
+    expect(applications.filter).toBe('');
+  });
+
+  it('explains a stage-only and a query-only empty result differently', () => {
+    mockUseApplications.mockReturnValue({
+      data: APPS_MULTI_STAGE,
+      isLoading: false,
+      isError: false,
+    });
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'offer', filter: '' },
+    }));
+    const { unmount } = render(<ApplicationsPage />);
+    expect(screen.getByText('applications.noResultsStage')).toBeInTheDocument();
+    unmount();
+
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: null, filter: 'zzz' },
+    }));
+    render(<ApplicationsPage />);
+    expect(screen.getByText('applications.noResultsQuery')).toBeInTheDocument();
+  });
+
+  // The strip's footprint must be held during load or the rows jump ~150px.
+  it('reserves the strip footprint while loading', () => {
+    mockUseApplications.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    const { container } = render(<ApplicationsPage />);
+
+    expect(container.querySelectorAll('.surface-card')).toHaveLength(6);
+  });
 });
 
 // ── Pipeline strip — stage-group filtering ────────────────────────────────────
@@ -349,7 +407,7 @@ describe('ApplicationsPage — pipeline strip filter', () => {
   it('renders the strip only once there is at least one application', () => {
     mockUseApplications.mockReturnValue({ data: [], isLoading: false, isError: false });
     const { unmount } = render(<ApplicationsPage />);
-    expect(screen.queryByText('applications.pipeline.saved')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId(TEST_IDS.applications.pipelineCard)).toHaveLength(0);
     unmount();
 
     mockUseApplications.mockReturnValue({
@@ -358,7 +416,7 @@ describe('ApplicationsPage — pipeline strip filter', () => {
       isError: false,
     });
     render(<ApplicationsPage />);
-    expect(screen.getByText('applications.pipeline.saved')).toBeInTheDocument();
+    expect(screen.getAllByTestId(TEST_IDS.applications.pipelineCard)).toHaveLength(6);
   });
 
   it('clicking a card narrows the list to that stage group and marks it pressed', () => {
@@ -369,15 +427,12 @@ describe('ApplicationsPage — pipeline strip filter', () => {
     });
     render(<ApplicationsPage />);
 
-    fireEvent.click(screen.getByText('applications.pipeline.applied'));
+    fireEvent.click(pipelineCard('applied'));
 
     expect(useSessionStore.getState().applications.stageGroup).toBe('applied');
     // a1 + a2 are `applied`; the saved / interviewing rows are filtered out.
     expect(rowIds().sort()).toEqual(['a1', 'a2']);
-    expect(screen.getByText('applications.pipeline.applied').closest('button')).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
+    expect(pipelineCard('applied')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('clicking the active card again clears the filter', () => {
@@ -392,13 +447,13 @@ describe('ApplicationsPage — pipeline strip filter', () => {
     render(<ApplicationsPage />);
     expect(rowIds()).toHaveLength(2);
 
-    fireEvent.click(screen.getByText('applications.pipeline.applied'));
+    fireEvent.click(pipelineCard('applied'));
 
     expect(useSessionStore.getState().applications.stageGroup).toBeNull();
     expect(rowIds()).toHaveLength(4);
   });
 
-  it('the Closed group shows all four end-states and tags each row with its own stage', () => {
+  it('the Finished group renders ONE flat list, each row tagged with its own stage', () => {
     useSessionStore.setState((s) => ({
       applications: { ...s.applications, stageGroup: 'closed' },
     }));
@@ -406,10 +461,13 @@ describe('ApplicationsPage — pipeline strip filter', () => {
     render(<ApplicationsPage />);
 
     expect(rowIds().sort()).toEqual(['c1', 'c2']);
-    // The multi-stage group turns on the per-row stage Tag.
+    // The multi-stage group turns on the per-row stage Tag…
     screen
       .getAllByTestId(TEST_IDS.applications.row)
       .forEach((row) => expect(row.getAttribute('data-stagetag')).toBe('true'));
+    // …and drops the per-stage headers, which would print the stage twice per row.
+    expect(sectionHeaders((n) => n.includes('applications.stages.accepted'))).toHaveLength(0);
+    expect(sectionHeaders((n) => n.includes('applications.stages.rejected'))).toHaveLength(0);
   });
 
   it('a single-stage group does NOT turn on the per-row stage Tag (the section header names it)', () => {
@@ -450,9 +508,7 @@ describe('ApplicationsPage — pipeline strip filter', () => {
     });
     render(<ApplicationsPage />);
 
-    expect(screen.getByText('applications.pipeline.applied').closest('button')).toHaveTextContent(
-      '2'
-    );
+    expect(pipelineCard('applied')).toHaveTextContent('2');
     expect(rowIds()).toEqual(['a4']);
   });
 });

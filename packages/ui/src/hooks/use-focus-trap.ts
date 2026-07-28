@@ -10,8 +10,14 @@ const FOCUSABLE = [
 ].join(', ');
 
 /**
- * Traps keyboard focus inside `containerRef` while `active` is true.
- * Returns the ref to attach to the container element.
+ * Traps keyboard focus inside `containerRef` while `active` is true, and hands
+ * focus back to whatever had it before the trap opened.
+ *
+ * Return-focus is a FALLBACK, not an override: a wrapper that owns its own
+ * return target (e.g. a Drawer's `returnFocusTo`) runs its cleanup around this
+ * one, so we only restore when focus was left orphaned — on `<body>`, on nothing,
+ * or still inside the container being torn down. If something already moved focus
+ * somewhere meaningful, or the remembered element has left the DOM, we do nothing.
  */
 export function useFocusTrap(active: boolean) {
   const containerRef = useRef<HTMLElement | null>(null);
@@ -20,6 +26,12 @@ export function useFocusTrap(active: boolean) {
     if (!active || !containerRef.current) return;
 
     const container = containerRef.current;
+
+    // Captured before the auto-focus below moves it into the trap. Without this,
+    // Escape/Cancel dropped focus on <body> and a keyboard user restarted from
+    // the top of the document instead of the control they opened the dialog with.
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     // Queried fresh on every Tab/Shift-Tab below (not captured once here) —
     // the trapped content can change shape while open (a loading state
@@ -55,7 +67,12 @@ export function useFocusTrap(active: boolean) {
     };
 
     container.addEventListener('keydown', onKeyDown);
-    return () => container.removeEventListener('keydown', onKeyDown);
+    return () => {
+      container.removeEventListener('keydown', onKeyDown);
+      const current = document.activeElement;
+      const orphaned = current === null || current === document.body || container.contains(current);
+      if (orphaned && previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
   }, [active]);
 
   return containerRef;

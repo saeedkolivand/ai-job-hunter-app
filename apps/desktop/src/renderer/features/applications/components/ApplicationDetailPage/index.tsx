@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Banknote,
   CalendarClock,
   ExternalLink,
   FileText,
@@ -160,6 +161,8 @@ export function ApplicationDetailPage() {
       open={noteFor !== null}
       onClose={() => setNoteFor(null)}
       status={application?.status ?? noteFor ?? ''}
+      company={application?.company ?? ''}
+      title={application?.title ?? ''}
       changed={noteAfterChange}
       isSaving={noteStatus.isPending}
       error={noteError ? t('applications.note.saveError') : null}
@@ -464,7 +467,7 @@ function ApplicationDetailLoaded({
             <div className="truncate text-[11px] text-foreground/40">{application.company}</div>
           )}
           {statusError && (
-            <p role="alert" className="text-fine-print text-destructive">
+            <p role="alert" className="text-fine-print text-red-400">
               {t('applications.row.statusError')}
             </p>
           )}
@@ -549,7 +552,7 @@ function ApplicationDetailLoaded({
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-next-action"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.nextActionLabel')}
                           </label>
@@ -573,7 +576,7 @@ function ApplicationDetailLoaded({
                           <p
                             className={cn(
                               'text-fine-print',
-                              nextState === 'overdue' ? 'text-destructive' : 'text-foreground/45'
+                              nextState === 'overdue' ? 'text-red-400' : 'text-foreground/70'
                             )}
                           >
                             {nextState === 'overdue'
@@ -614,7 +617,7 @@ function ApplicationDetailLoaded({
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-contact-name"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.contactNameLabel')}
                           </label>
@@ -640,7 +643,7 @@ function ApplicationDetailLoaded({
                             }}
                           />
                           {contactNameError && (
-                            <p className="text-fine-print text-destructive" role="alert">
+                            <p className="text-fine-print text-red-400" role="alert">
                               {t('applications.detail.contactSaveError')}
                             </p>
                           )}
@@ -649,7 +652,7 @@ function ApplicationDetailLoaded({
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-contact-email"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.contactEmailLabel')}
                           </label>
@@ -673,7 +676,7 @@ function ApplicationDetailLoaded({
                             }}
                           />
                           {contactEmailError && (
-                            <p className="text-fine-print text-destructive" role="alert">
+                            <p className="text-fine-print text-red-400" role="alert">
                               {t('applications.detail.email.emailInvalid')}
                             </p>
                           )}
@@ -682,14 +685,14 @@ function ApplicationDetailLoaded({
                     </OverviewSection>
 
                     <OverviewSection
-                      icon={CalendarClock}
-                      label={t('applications.detail.trackingSection')}
+                      icon={Banknote}
+                      label={t('applications.detail.compensationSection')}
                     >
                       <div className="grid gap-4 @md:grid-cols-2">
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-comp"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.compLabel')}
                           </label>

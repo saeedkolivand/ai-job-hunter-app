@@ -4,7 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 
 import { type Application, APPLICATION_STAGES } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { ActionMenu, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
+import { ActionMenu, Button, cn, ConfirmModal, Dropdown, Tag } from '@ajh/ui';
 
 import { formatSalaryRange } from '@/features/applications/lib/salary';
 import { isStale, nextActionLabel, staleDays } from '@/features/applications/lib/stale';
@@ -28,19 +28,26 @@ interface ApplicationRowProps {
    * it) before the user could type. The page owns the dialog instead.
    */
   onStatusChanged?: (status: string) => void;
+  /** Show the transient "Add a note?" affordance after a just-persisted change. */
+  showNoteHint?: boolean;
+  /** Fired when that affordance is clicked — the page opens the note dialog. */
+  onAddNote?: () => void;
 }
 
 const STATUS_OPTIONS = APPLICATION_STAGES.map((s) => ({ value: s.id, label: s.id }));
 
-// Tiny status-pill shape for the in-row display Tags. Plain Tags render a <span>
-// with no onClick, so clicks bubble to the row and never block navigation.
-const STATUS_TAG = 'rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider';
+// Compact status-pill shape for the in-row display Tags. Plain Tags render a
+// <span> with no onClick, so clicks bubble to the row and never block navigation.
+// `shrink-0` keeps a tag from being crushed when the title row wraps.
+const STATUS_TAG = 'shrink-0 rounded-full px-1.5 py-0.5 text-xs uppercase tracking-wider';
 
 export function ApplicationRow({
   application,
   highlighted = false,
   showStageTag = false,
   onStatusChanged,
+  showNoteHint = false,
+  onAddNote,
 }: ApplicationRowProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -148,8 +155,14 @@ export function ApplicationRow({
 
         {/* Main info */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-foreground/95">
+          {/* `flex-wrap` + `min-w-0`: at 900px (and at the large text scale) three
+              tags beside the title squeezed it to 0px and overlapped the stage
+              Dropdown. Tags now drop to a second line instead of pushing. */}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className="min-w-0 truncate text-sm font-semibold text-foreground/95"
+              title={application.title || t('applications.row.noTitle')}
+            >
               {application.title || t('applications.row.noTitle')}
             </span>
             {showStageTag && (
@@ -158,7 +171,7 @@ export function ApplicationRow({
               </Tag>
             )}
             {stale && (
-              <Tag color="warning" icon={<Clock size={8} />} className={STATUS_TAG}>
+              <Tag color="warning" icon={<Clock size={10} />} className={STATUS_TAG}>
                 {t('applications.row.noReply', { days })}
               </Tag>
             )}
@@ -169,23 +182,46 @@ export function ApplicationRow({
                   : t('applications.row.followUp')}
               </Tag>
             )}
+            {showNoteHint && (
+              // Zero-keystroke follow-on to a stage change: no dialog is forced,
+              // the affordance is transient and ignoring it costs nothing.
+              <Button
+                variant="unstyled"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddNote?.();
+                }}
+                className={cn(
+                  'shrink-0 rounded-full border border-brand/40 px-2 py-0.5',
+                  'text-xs font-semibold text-brand-soft transition-shadow',
+                  'hover:ring-1 hover:ring-inset hover:ring-brand/40'
+                )}
+              >
+                {t('applications.row.addNoteHint')}
+              </Button>
+            )}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground/50">
+          {/* Sizes stay on the 12px floor — the meta items are told apart by
+              weight and caps, not by phantom sub-12px steps that all render at
+              the same size anyway. */}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-foreground/70">
             <span className="truncate">{application.company}</span>
             {board && (
-              <span className="shrink-0 rounded-full border border-[var(--border-soft)] bg-foreground/[0.04] px-1.5 py-px text-[9px] uppercase tracking-wider text-foreground/55">
+              <span className="shrink-0 rounded-full border border-[var(--border-soft)] bg-foreground/[0.04] px-1.5 py-0.5 text-xs font-semibold uppercase leading-none tracking-wider text-foreground/70">
                 {t(`jobs.boards.${board}`, { defaultValue: board })}
               </span>
             )}
-            {salary && <span className="shrink-0 text-[11px] text-foreground/55">{salary}</span>}
+            {salary && (
+              <span className="shrink-0 text-xs font-semibold text-foreground/70">{salary}</span>
+            )}
             <span
-              className="shrink-0 text-[11px] text-foreground/40"
+              className="shrink-0 text-xs text-foreground/70"
               title={new Date(stampAt).toLocaleString()}
             >
               {stampLabel}
             </span>
             {statusError && (
-              <span role="alert" className="shrink-0 text-[11px] text-destructive">
+              <span role="alert" className="shrink-0 text-xs text-red-400">
                 {t('applications.row.statusError')}
               </span>
             )}
