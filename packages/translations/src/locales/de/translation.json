@@ -568,7 +568,8 @@
       "pitch": "Wenn diese App dir einige Nächte erspart hat, kannst du etwas zurückgeben — jeder Beitrag hilft.",
       "githubSponsors": "Auf GitHub sponsern",
       "kofi": "Einen Kaffee auf Ko-fi spendieren",
-      "paypal": "Trinkgeld via PayPal senden"
+      "paypal": "Trinkgeld via PayPal senden",
+      "dataAttribution": "Ortsdaten © GeoNames (geonames.org), CC BY 4.0. Online-Ortsvorschläge über Photon (komoot) — © OpenStreetMap-Mitwirkende, ODbL."
     },
     "profile": {
       "title": "Profil",
@@ -866,7 +867,7 @@
       "resetAppDescription": "Alle Daten und Einstellungen löschen. Kehrt zum Willkommensbildschirm zurück.",
       "reset": "Zurücksetzen",
       "resetAppConfirmTitle": "App auf Werkseinstellungen zurücksetzen",
-      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
+      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Jeder gekoppelte Browser wird getrennt, Sie müssen die Erweiterung also erneut koppeln. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
       "resetAppConfirm": "Alles zurücksetzen",
       "resetAppPartial": "App zurückgesetzt, aber einige Board-Anmeldesitzungen konnten nicht vollständig gelöscht werden.",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",
@@ -2590,6 +2591,7 @@
         "regenerate": "Neu generieren",
         "generating": "Generiere…",
         "genError": "Generierung fehlgeschlagen – bitte erneut versuchen.",
+        "saveFailed": "Dieser Entwurf konnte nicht gespeichert werden und geht beim Verlassen des Tabs verloren. Kopiere ihn oder generiere ihn erneut.",
         "empty": "Noch keine Bewerbungs-E-Mail",
         "emptyDesc": "Generiere eine kurze, professionelle E-Mail, die du direkt an den Ansprechpartner senden kannst.",
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um eine E-Mail zu generieren.",

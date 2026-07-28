@@ -16,16 +16,23 @@ const twoSuggestions = vi.fn().mockResolvedValue(TWO_SUGGESTIONS);
 describe('LocationInput', () => {
   it('shows the placeholder when empty and the value otherwise', () => {
     const { rerender } = render(
-      <LocationInput value="" onChange={() => {}} placeholder="Any location" />
+      <LocationInput
+        value=""
+        onChange={() => {}}
+        onFetchSuggestions={noSuggestions}
+        placeholder="Any location"
+      />
     );
     expect(screen.getByText('Any location')).toBeInTheDocument();
-    rerender(<LocationInput value="Berlin" onChange={() => {}} />);
+    rerender(
+      <LocationInput value="Berlin" onChange={() => {}} onFetchSuggestions={noSuggestions} />
+    );
     expect(screen.getByText('Berlin')).toBeInTheDocument();
   });
 
   it('clears the value via the clear affordance', () => {
     const onChange = vi.fn();
-    render(<LocationInput value="Berlin" onChange={onChange} />);
+    render(<LocationInput value="Berlin" onChange={onChange} onFetchSuggestions={noSuggestions} />);
     const clear = screen.getByRole('button', { name: '' });
     fireEvent.click(clear);
     expect(onChange).toHaveBeenCalledWith('');
@@ -142,7 +149,12 @@ describe('LocationInput', () => {
     const onChange = vi.fn();
     const onSelectSuggestion = vi.fn();
     render(
-      <LocationInput value="Berlin" onChange={onChange} onSelectSuggestion={onSelectSuggestion} />
+      <LocationInput
+        value="Berlin"
+        onChange={onChange}
+        onFetchSuggestions={noSuggestions}
+        onSelectSuggestion={onSelectSuggestion}
+      />
     );
     const clear = screen.getByRole('button', { name: '' });
     fireEvent.click(clear);

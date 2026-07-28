@@ -170,10 +170,25 @@ function getClient(): BridgeClient {
         void broadcastStatus();
       },
       // Provide the stored token so the bridge can perform the auth handshake on connect.
-      getToken
+      getToken,
+      // The desktop rotated its pairing secret (Settings → "Regenerate", or a
+      // factory reset) and told us over the authenticated session. Un-pair
+      // through the SAME path the popup's "Unpair" button uses, so a
+      // desktop-initiated and a user-initiated un-pair can't drift.
+      unpairLocally
     );
   }
   return client;
+}
+
+/**
+ * Drop the stored pairing token and clear any auth block, leaving the bridge
+ * ready to pair again. Shared by the popup's "Unpair" (`clearToken`) and the
+ * desktop-initiated `token.revoked` frame.
+ */
+async function unpairLocally(): Promise<void> {
+  await clearToken();
+  getClient().resetForNewToken();
 }
 
 /** Fold raw bridge phase + token presence into the popup-facing status. */
@@ -935,9 +950,9 @@ async function dispatchRequest(req: PopupRequest): Promise<PopupResponse> {
         return { ok: true, kind: 'token' };
       }
       case 'clearToken': {
-        await clearToken();
-        // Also reset the bad-token block so the bridge returns to searching state.
-        getClient().resetForNewToken();
+        // Same local un-pair the desktop's `token.revoked` triggers — clears
+        // the stored token and any bad-token block (bridge → searching).
+        await unpairLocally();
         return { ok: true, kind: 'token' };
       }
       case 'reconnect': {

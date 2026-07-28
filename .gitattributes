@@ -1,1 +1,4 @@
 * text=auto eol=lf
+# Bundled binary assets (e.g. apps/desktop/src-tauri/geodata/cities.tsv.gz):
+# never line-ending-normalized, never diffed as text.
+*.gz binary

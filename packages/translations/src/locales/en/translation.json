@@ -568,7 +568,8 @@
       "pitch": "If this app saved you some 3am despair, you can chip in — any amount helps keep it going.",
       "githubSponsors": "Sponsor on GitHub",
       "kofi": "Buy a coffee on Ko-fi",
-      "paypal": "Send a tip via PayPal"
+      "paypal": "Send a tip via PayPal",
+      "dataAttribution": "Location data © GeoNames (geonames.org), CC BY 4.0. Online location suggestions via Photon (komoot) — © OpenStreetMap contributors, ODbL."
     },
     "profile": {
       "title": "Profile",
@@ -866,7 +867,7 @@
       "resetAppDescription": "Wipe all data and preferences. Returns to the welcome screen.",
       "reset": "Reset",
       "resetAppConfirmTitle": "Reset App to Factory Defaults",
-      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. You will be taken back to the welcome screen. This cannot be undone.",
+      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. Any paired browser is disconnected, so you will need to pair the extension again. You will be taken back to the welcome screen. This cannot be undone.",
       "resetAppConfirm": "Reset Everything",
       "resetAppPartial": "App reset, but some board login sessions couldn't be fully cleared.",
       "somethingWentWrong": "Something went wrong.",
@@ -2586,6 +2587,7 @@
         "regenerate": "Regenerate",
         "generating": "Generating…",
         "genError": "Generation failed — please try again.",
+        "saveFailed": "This draft couldn't be saved, so it will be lost when you leave this tab. Copy it or generate again.",
         "empty": "No application email yet",
         "emptyDesc": "Generate a short, professional email to send directly to the employer contact.",
         "needsModel": "Select an AI model in settings to generate an email.",
