@@ -67,7 +67,6 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/RowSkeleton',
   '@/components/ui/SectionHeader',
   '@/components/ui/SectionLabel',
-  '@/components/ui/SelectDropdown',
   '@/components/ui/SettingsSection',
   '@/components/ui/Skeleton',
   '@/components/ui/SourceBadge',

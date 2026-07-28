@@ -76,4 +76,4 @@ Prefer the graphs over raw `rg`/`fd`/file-browsing for "where/what calls/impact"
 
 ## Review conventions (all tools)
 
-Agents that cannot spawn Claude Code's subagent fleet still follow the same flow: route the change to the owning domain, implement → review → tests if logic changed → docs sync last. Only HIGH/CRITICAL findings block; style and naming are advisory. The ownership table and the full pipeline live in `CLAUDE.md`.
+Agents that cannot spawn Claude Code's subagent fleet still follow the same flow: implement → review → tests if logic changed → docs sync last. Only HIGH/CRITICAL findings block; style and naming are advisory. Route a change by the area it touches — renderer/landing, Rust backend, resume/export, ATS & matching, AI providers, scraping, extension, tests, docs — and stay inside that area unless the change genuinely spans two.

@@ -238,6 +238,11 @@ const POINTER_MAX_BYTES = 1024;
 // Real config files (settings, not rules) — they must still point at AGENTS.md, but
 // growing past the pointer cap is legitimate for them.
 const SIZE_EXEMPT = new Set(['.aider.conf.yml']);
+// Claude loads AGENTS.md + CLAUDE.md in full every session, and adherence drops as they
+// grow — Anthropic targets <200 lines. Capped here so the budget is enforced, not audited
+// by hand; if a rule genuinely needs the room, move a section to .claude/rules/ with a
+// `paths:` frontmatter so it loads only for matching files.
+const CANONICAL_MAX_LINES = 200;
 
 function checkAiConfigs() {
   // The whole rule set hangs on these two facts; nothing else asserts them. Without the
@@ -250,11 +255,29 @@ function checkAiConfigs() {
       `CLAUDE.md imports it — every tool's rule set is empty without it`
     );
   }
-  if (exists(CLAUDE_MD) && !/^@AGENTS\.md\s*$/m.test(read(CLAUDE_MD))) {
+  // Import parsing skips code spans AND fenced blocks, so strip fences before testing —
+  // `^` under /m matches inside a fence too, and a fenced import would otherwise pass green.
+  // Inline backticks need no stripping: the line no longer starts with `@`.
+  if (exists(CLAUDE_MD)) {
+    const importable = read(CLAUDE_MD).replace(/^(```|~~~)[\s\S]*?^\1/gm, '');
+    if (!/^@AGENTS\.md\s*$/m.test(importable)) {
+      fail(
+        'CLAUDE.md ∌ @AGENTS.md',
+        CLAUDE_MD,
+        'the import that loads the canonical rules is missing, fenced, or in backticks (imports skip code spans/blocks)'
+      );
+    }
+  }
+
+  const loadedLines = CANONICAL_RULES.filter(exists).reduce(
+    (n, f) => n + read(f).split('\n').length,
+    0
+  );
+  if (loadedLines > CANONICAL_MAX_LINES) {
     fail(
-      'CLAUDE.md ∌ @AGENTS.md',
-      CLAUDE_MD,
-      'the import that loads the canonical rules is missing or fenced (imports skip code spans/blocks)'
+      'Canonical rules too long',
+      CANONICAL_RULES.join(' + '),
+      `${loadedLines} lines > ${CANONICAL_MAX_LINES} — loaded in full every session; trim or move a section to .claude/rules/ with paths: frontmatter`
     );
   }
 

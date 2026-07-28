@@ -228,8 +228,10 @@ temp/
 #   CLAUDE.md  → Claude Code: imports @AGENTS.md, adds Claude-only orchestration
 #   Thin pointers to AGENTS.md (kept only for tools that don't read it natively / in full):
 #     .clinerules → Cline · .github/copilot-instructions.md → GitHub Copilot
-#     .aider.conf.yml + .aider/system-prompt.md → Aider · .jba/guidelines.md → JetBrains AI
-#   Never fork rules into these — `pnpm check:agent-system` caps them at 1KB.
+#     .codexrules → Codex · .roorules → Roo · .jba/guidelines.md → JetBrains AI
+#     .aider/system-prompt.md → Aider (settings live in .aider.conf.yml)
+#   Never fork rules into these — `pnpm check:agent-system` caps pointers at 1KB
+#   (.aider.conf.yml is exempt: real settings, not rules).
 
 # ── Misc ───────────────────────────────────────────────────────────────────────
 *.pid
