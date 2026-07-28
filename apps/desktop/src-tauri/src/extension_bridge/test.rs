@@ -335,7 +335,10 @@ fn token_revoked_frame_carries_no_token_material() {
     assert!(parsed["payload"].is_null(), "the frame carries no payload");
     // The whole point of the no-oracle rule: a revoked peer learns that its
     // pairing is dead and NOTHING about either secret.
-    assert!(!frame.contains(&old), "the old token must never be on the wire");
+    assert!(
+        !frame.contains(&old),
+        "the old token must never be on the wire"
+    );
     assert!(!frame.contains(&new), "nor the new one");
 }
 

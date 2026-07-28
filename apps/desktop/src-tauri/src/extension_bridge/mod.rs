@@ -680,52 +680,51 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     let assist_streams = std::sync::Arc::new(stream::AssistStreamRegistry::default());
 
     loop {
-        let frame = match stream::next_step(reader.next(), &mut writer_task, revoked_rx.recv())
-            .await
-        {
-            stream::NextStep::Frame(frame) => frame,
-            stream::NextStep::Revoked => {
-                // The pairing token was rotated out from under this socket
-                // (Settings → "Regenerate", or a factory reset). Tell an
-                // AUTHENTICATED peer — and ONLY an authenticated one — that its
-                // pairing is dead, so the extension drops its stored token and
-                // shows the pairing view instead of retrying the now-invalid
-                // secret forever against a silent-closing handshake.
-                //
-                // An unauthenticated socket (mid-handshake, or one that never
-                // got past `hello`) is told NOTHING and simply closes: sending
-                // it `token.revoked` would confirm the token it was proving
-                // against had been the real one — precisely the oracle the
-                // silent `Unauthorized` close denies (ADR-0010).
-                //
-                // The frame is enqueued, not awaited: `run_writer` outlives
-                // this loop (it holds the sink until its channel drains), so
-                // the frame reaches the peer before the close does.
-                if authenticated {
-                    log::info!(
-                        "[extension_bridge] pairing token rotated — revoking an authenticated \
+        let frame =
+            match stream::next_step(reader.next(), &mut writer_task, revoked_rx.recv()).await {
+                stream::NextStep::Frame(frame) => frame,
+                stream::NextStep::Revoked => {
+                    // The pairing token was rotated out from under this socket
+                    // (Settings → "Regenerate", or a factory reset). Tell an
+                    // AUTHENTICATED peer — and ONLY an authenticated one — that its
+                    // pairing is dead, so the extension drops its stored token and
+                    // shows the pairing view instead of retrying the now-invalid
+                    // secret forever against a silent-closing handshake.
+                    //
+                    // An unauthenticated socket (mid-handshake, or one that never
+                    // got past `hello`) is told NOTHING and simply closes: sending
+                    // it `token.revoked` would confirm the token it was proving
+                    // against had been the real one — precisely the oracle the
+                    // silent `Unauthorized` close denies (ADR-0010).
+                    //
+                    // The frame is enqueued, not awaited: `run_writer` outlives
+                    // this loop (it holds the sink until its channel drains), so
+                    // the frame reaches the peer before the close does.
+                    if authenticated {
+                        log::info!(
+                            "[extension_bridge] pairing token rotated — revoking an authenticated \
                          session and closing it"
-                    );
-                    let _ = out_tx.send(Message::text(token_revoked_reply()));
-                    let _ = out_tx.send(Message::Close(None));
+                        );
+                        let _ = out_tx.send(Message::text(token_revoked_reply()));
+                        let _ = out_tx.send(Message::Close(None));
+                    }
+                    break;
                 }
-                break;
-            }
-            stream::NextStep::WriterEnded => {
-                // See `next_step`'s doc + `handle_connection`'s own doc: the
-                // writer task ending (a `WRITE_STALL` timeout or a send error)
-                // must tear this connection down immediately, not wait for
-                // this loop's own next inbound frame — which, for a
-                // stalled-but-open or quiet/idle connection, may never come.
-                // Falls through to the SAME cancel_all + dec_connected
-                // cleanup below as every other exit path.
-                log::warn!(
-                    "[extension_bridge] writer task ended (write-stall timeout or a \
+                stream::NextStep::WriterEnded => {
+                    // See `next_step`'s doc + `handle_connection`'s own doc: the
+                    // writer task ending (a `WRITE_STALL` timeout or a send error)
+                    // must tear this connection down immediately, not wait for
+                    // this loop's own next inbound frame — which, for a
+                    // stalled-but-open or quiet/idle connection, may never come.
+                    // Falls through to the SAME cancel_all + dec_connected
+                    // cleanup below as every other exit path.
+                    log::warn!(
+                        "[extension_bridge] writer task ended (write-stall timeout or a \
                      send error) — tearing down the connection"
-                );
-                break;
-            }
-        };
+                    );
+                    break;
+                }
+            };
         let Some(frame) = frame else {
             break;
         };
