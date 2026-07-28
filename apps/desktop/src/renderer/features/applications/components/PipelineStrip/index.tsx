@@ -86,7 +86,12 @@ export function PipelineStrip({
                 <span className="flex w-3 shrink-0 justify-center">
                   {selected && <Check size={11} className="text-brand-soft" aria-hidden="true" />}
                 </span>
-                <span className={CARD_LABEL}>{groupLabel(group.id)}</span>
+                {/* `title` so a truncated label stays readable — the German
+                    "Abgeschlossen" clips at the large text scale (mirrors the
+                    row title). */}
+                <span className={CARD_LABEL} title={groupLabel(group.id)}>
+                  {groupLabel(group.id)}
+                </span>
               </span>
               <span
                 className={cn(
