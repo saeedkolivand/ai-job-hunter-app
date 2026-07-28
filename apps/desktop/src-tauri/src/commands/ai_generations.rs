@@ -50,6 +50,8 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
                 audience: q.audience,
             })
             .collect(),
+        email_subject: req.email_subject,
+        email_body: req.email_body,
         application_id: None,
     };
 
