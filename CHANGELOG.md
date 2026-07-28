@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.130.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.130.0...v0.130.1) (2026-07-28)
+
+### 🐛 Bug Fixes
+
+* **ai:** claude 5 family support — adaptive thinking, sampling gates, model lists, spend rates ([#901](https://github.com/saeedkolivand/ai-job-hunter-app/issues/901)) ([0ad1647](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0ad1647aa43456e1e57264b516995064e0a002d4))
+
+### 📚 Documentation
+
+* modernize agent-system model and effort tiering for the claude 5 family ([#900](https://github.com/saeedkolivand/ai-job-hunter-app/issues/900)) ([3e2f648](https://github.com/saeedkolivand/ai-job-hunter-app/commit/3e2f64863f9143fb5385764a883f042492ad0f7e))
+
 ## [0.130.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.129.1...v0.130.0) (2026-07-28)
 
 ### ✨ Features
