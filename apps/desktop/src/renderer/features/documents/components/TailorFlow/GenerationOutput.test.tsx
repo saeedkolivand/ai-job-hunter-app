@@ -923,4 +923,90 @@ describe('GenerationOutput', () => {
       expect(screen.getByRole('tabpanel')).toHaveAttribute('tabindex', '0');
     });
   });
+
+  // ── 10. Scroll boundary — the tab/action header stays pinned ─────────────────
+  // Regression guard for the "header scrolls away" bug: the viewer used to grow
+  // past its host (intrinsic `min-h-[32rem]` panel + no overflow of its own), so
+  // the PARENT scrolled the whole component — header included. The scroll boundary
+  // now lives on the tabpanel: the tab/action bar is a pinned `shrink-0` sibling
+  // OUTSIDE it, while the option strips live INSIDE and scroll with the document.
+  // jsdom has no layout, so these assert the structural invariants that produce the
+  // behaviour, not pixels — the pixel measurements come from the Chromium run
+  // recorded in the handoff.
+
+  describe('scroll boundary', () => {
+    const SCROLLS = /overflow-(?:y-)?(?:auto|scroll)/;
+
+    it('the tabpanel owns the vertical scroll', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      expect(screen.getByRole('tabpanel').className).toMatch(SCROLLS);
+    });
+
+    it('the tabpanel is bounded by its host, with no intrinsic min-height', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.className).toContain('min-h-0');
+      expect(panel.className).toContain('flex-1');
+      // An arbitrary min-height (e.g. `min-h-[32rem]`) makes the panel taller than
+      // its host again, which pushes the scroll back up to the caller.
+      expect(panel.className).not.toMatch(/min-h-(?!0\b)/);
+    });
+
+    it('the root is height-bounded so the caller never has to scroll it', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const root = screen.getByRole('tabpanel').parentElement;
+      expect(root).not.toBeNull();
+      expect(root?.className).toContain('min-h-0');
+      expect(root?.className).toContain('flex-1');
+      expect(root?.className).toContain('overflow-hidden');
+      expect(root?.className).not.toMatch(/min-h-(?!0\b)/);
+    });
+
+    it('gives the document region a floor so the scrollport can actually engage', () => {
+      // Without a floor every child is flex-1/h-full, the content fits the
+      // scrollport exactly and `overflow-y-auto` can never fire.
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const region = screen.getByTestId(TEST_IDS.documents.documentRegion);
+      expect(region.className).toMatch(/min-h-\[\d+rem\]/);
+      expect(region.className).toContain('flex-1');
+      expect(screen.getByRole('tabpanel').contains(region)).toBe(true);
+    });
+
+    it('nothing between the root and the tabpanel is a second scroll container', () => {
+      const { container } = render(
+        <GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />
+      );
+      for (
+        let el = screen.getByRole('tabpanel').parentElement;
+        el !== null && el !== container;
+        el = el.parentElement
+      ) {
+        expect(el.className).not.toMatch(SCROLLS);
+      }
+    });
+
+    it('keeps the tabs and the Copy/Export actions outside the scrollport', () => {
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'resume' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.contains(screen.getByRole('tablist'))).toBe(false);
+      expect(panel.contains(screen.getByRole('button', { name: /autopilot\.apply\.copy/i }))).toBe(
+        false
+      );
+      expect(panel.contains(screen.getByRole('button', { name: /aiGenerate\.export/i }))).toBe(
+        false
+      );
+    });
+
+    it('scrolls the template / accent / letter-layout strips WITH the document', () => {
+      // Pinning these costs more permanent chrome than a small window can spare:
+      // the document collapses to nothing and the last strip is clipped out of
+      // reach behind the root's overflow-hidden. They belong in the scrollport.
+      render(<GenerationOutput {...makeProps({ target: 'both', activeOut: 'cover' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.contains(screen.getByTestId(TEST_IDS.documents.templatePicker))).toBe(true);
+      expect(
+        panel.contains(screen.getByTestId(`${TEST_IDS.generation.letterLayoutOption}-classic`))
+      ).toBe(true);
+    });
+  });
 });

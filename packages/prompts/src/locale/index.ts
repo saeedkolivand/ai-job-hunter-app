@@ -765,6 +765,49 @@ export function hasLetterConventions(market?: string): boolean {
 }
 
 /**
+ * How a market's native-language conventions map onto the language a document is
+ * actually written in. See {@link marketLanguageFit}.
+ */
+export interface MarketLanguageFit {
+  /** Resolved conventions for the market (intl baseline for unknown ids). */
+  conventions: LetterMarketConventions;
+  /** True when the output language IS this market's native language. */
+  sameLanguage: boolean;
+  /**
+   * Phrase one native-language convention string for the output language:
+   * quoted verbatim when the languages match, otherwise `the formal <language>
+   * equivalent of "<native>"`. Callers append their own surrounding guidance
+   * (formality note, named-vs-generic wording), so each surface keeps its voice.
+   */
+  inOutputLanguage: (native: string) => string;
+  /** {@link inOutputLanguage} applied to the market's default (most formal) sign-off. */
+  signoff: string;
+}
+
+/**
+ * Resolve a market plus the "write it in the market's own words, or ask for the
+ * formal equivalent in the output language" rule — the decision every surface
+ * that renders a salutation/sign-off has to make (letter language, market
+ * etiquette).
+ *
+ * Shared by the cover-letter and application-email builders on purpose: those
+ * two derived the same rule independently, and the drift between them is
+ * exactly how an English "Dear Hiring Manager," survived on German jobs.
+ */
+export function marketLanguageFit(market: string | undefined, language: string): MarketLanguageFit {
+  const conventions = letterConventions(market);
+  const sameLanguage = conventions.nativeLanguage === (language || 'en').slice(0, 2).toLowerCase();
+  const inOutputLanguage = (native: string): string =>
+    sameLanguage ? `"${native}"` : `the formal ${language} equivalent of "${native}"`;
+  return {
+    conventions,
+    sameLanguage,
+    inOutputLanguage,
+    signoff: inOutputLanguage(conventions.signoffs[0] ?? ''),
+  };
+}
+
+/**
  * ISO-3166 alpha-2 country → market id. Country splits that matter (US vs UK,
  * DE/AT/CH) are explicit; English-speaking peers map to the closest convention
  * set, and most Spanish-/Portuguese-speaking countries share es/pt.
