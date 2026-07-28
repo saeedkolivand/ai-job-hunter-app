@@ -15,7 +15,8 @@
 //   4. Agents ↔ CLAUDE.md — every agent appears in the project CLAUDE.md routing table.
 //   5. Author/critic pairs — each declared author + its independent critic both exist.
 //   6. Explainer complete — apps/landing/src/data/agent-fleet.ts exists and names every agent.
-//   7. AI configs → CLAUDE.md — each parallel rule file points at CLAUDE.md (single source).
+//   7. AI configs → AGENTS.md — AGENTS.md exists, CLAUDE.md imports it unfenced, and every
+//      tool rule file is a thin pointer at it (single source) rather than a forked copy.
 //   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
 //   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
 //      explainer roster has a matching .claude/agents/<name>.md (reverse of 4 & 6).
@@ -63,7 +64,8 @@ const PAIRS = [
 // The canonical rule files: AGENTS.md holds the portable rules every tool reads, CLAUDE.md
 // imports it (`@AGENTS.md`) and adds Claude-only orchestration. Scanned for stale tokens, but
 // exempt from the pointer checks below — they are the source, not deferrers to it.
-const CANONICAL_RULES = ['AGENTS.md', 'CLAUDE.md'];
+const AGENTS_MD = 'AGENTS.md';
+const CANONICAL_RULES = [AGENTS_MD, CLAUDE_MD];
 
 // Tool-specific rule files that must stay thin pointers to AGENTS.md, never forked copies.
 const AI_CONFIGS = [
@@ -230,11 +232,32 @@ function checkExplainer() {
 // ── Check 7: AI configs → AGENTS.md ──────────────────────────────────────────
 // AGENTS.md is canonical (every tool reads it, natively or via a pointer); CLAUDE.md
 // imports it with `@AGENTS.md` and adds Claude-only orchestration. A tool file that
-// restates rules instead of deferring is how the nine-copy drift started — so each one
+// restates rules instead of deferring is how the 13-copy drift started — so each one
 // must name the canonical file, and stay short enough that it can't hide a forked ruleset.
 const POINTER_MAX_BYTES = 1024;
+// Real config files (settings, not rules) — they must still point at AGENTS.md, but
+// growing past the pointer cap is legitimate for them.
+const SIZE_EXEMPT = new Set(['.aider.conf.yml']);
 
 function checkAiConfigs() {
+  // The whole rule set hangs on these two facts; nothing else asserts them. Without the
+  // import, Claude Code loads CLAUDE.md's orchestration with zero coding rules while every
+  // pointer file still truthfully says "read AGENTS.md" — a silent, total loss of rules.
+  if (!exists(AGENTS_MD)) {
+    fail(
+      'Canonical rules missing',
+      AGENTS_MD,
+      `CLAUDE.md imports it — every tool's rule set is empty without it`
+    );
+  }
+  if (exists(CLAUDE_MD) && !/^@AGENTS\.md\s*$/m.test(read(CLAUDE_MD))) {
+    fail(
+      'CLAUDE.md ∌ @AGENTS.md',
+      CLAUDE_MD,
+      'the import that loads the canonical rules is missing or fenced (imports skip code spans/blocks)'
+    );
+  }
+
   const configs = [...AI_CONFIGS, '.aider.conf.yml', ...walk('.cursor', (n) => n.endsWith('.mdc'))];
   for (const file of configs) {
     if (!exists(file)) continue;
@@ -246,7 +269,7 @@ function checkAiConfigs() {
         'should defer to AGENTS.md as the single source of truth'
       );
     }
-    if (Buffer.byteLength(text, 'utf8') > POINTER_MAX_BYTES) {
+    if (!SIZE_EXEMPT.has(file) && Buffer.byteLength(text, 'utf8') > POINTER_MAX_BYTES) {
       fail(
         'AI config too long',
         file,

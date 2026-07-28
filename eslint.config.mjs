@@ -295,7 +295,7 @@ export default tseslint.config(
         },
         {
           selector: RAW_SELECT,
-          message: "Use <SelectDropdown> from '@ajh/ui' instead of raw <select>.",
+          message: "Use <Dropdown> from '@ajh/ui' instead of raw <select>.",
         },
         {
           selector: RAW_TEXTAREA,
