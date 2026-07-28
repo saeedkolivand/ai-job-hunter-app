@@ -160,3 +160,36 @@ redesign.)
 
 A freshly-inserted generation renders its badge row before the derived metadata exists, so
 empty badges flash. Either derive the badges synchronously or reserve the row.
+
+---
+
+# Follow-ups from PRs #896–#897 (2026-07-28)
+
+## 20. Metered scraping has no daily backstop
+
+AI providers carry a coarse per-provider, per-UTC-day runaway-cost ceiling
+(`PROVIDER_DAILY_MAX` in `apps/desktop/src-tauri/src/limits/mod.rs`). Scraping has only a
+rolling-window rate limit (`SCRAPE_RATE_MAX` per `RATE_WINDOW`) plus a concurrency cap — no
+daily equivalent — yet Adzuna/JSearch/Apify all cost real money or quota. The window ceiling
+was raised twice during the #896 review as paging multiplied the per-search call count, which
+is the signal that the window is the wrong shape for the risk: it bounds burst rate, not the
+day's spend. Add a per-provider daily charge on the metered aggregator providers, mirroring
+`Limiter::charge_provider_daily`.
+
+## 21. Byte-aware client guard for the status-note cap
+
+`MAX_STATUS_NOTE_BYTES` (`apps/desktop/src-tauri/src/commands/applications.rs`) bounds a
+status note in BYTES — consistent with every other server cap in that module — while the
+renderer's `StatusNoteModal` `maxLength` counts CHARS. For multi-byte text (German, any
+non-ASCII), a note the textarea accepts can exceed the server cap, so the user gets a
+Validation error at save time instead of being stopped while typing. Correct and recoverable,
+but the client should measure bytes (e.g. `TextEncoder`) so the two agree.
+
+## 22. No UI signal that scheduled runs skip the paid LinkedIn tier
+
+PR #896 deliberately stopped scheduled/autopilot runs from buying Apify LinkedIn results:
+`apify_cap()` returns `0` when a search carries no upstream spend target, and only the manual
+search path sets one. The Apify opt-in toggle in Settings still reads as simply "on", so a
+user who enabled and paid for it has no way to learn their scheduled runs never use it.
+Surface it where the toggle lives (and/or in the autopilot run step log). See
+`docs/knowledge/scraping-domain.md` § Aggregator page loop & spend budget.
