@@ -10,6 +10,7 @@ fn make_input(query: &str, location: Option<&str>) -> BoardSearchInput {
         location: location.map(|s| s.to_string()),
         amount: 10,
         pages: 1,
+        provider_amount: None,
         date_filter: None,
         job_type: None,
         work_type: None,
@@ -347,6 +348,7 @@ fn page_count_clamps_to_at_least_one() {
 fn requested_pages_clamps_into_one_to_max_pages_range() {
     let want_zero = BoardSearchInput {
         pages: 0,
+        provider_amount: None,
         ..make_input("", None)
     };
     assert_eq!(
@@ -357,12 +359,14 @@ fn requested_pages_clamps_into_one_to_max_pages_range() {
 
     let want_one = BoardSearchInput {
         pages: 1,
+        provider_amount: None,
         ..make_input("", None)
     };
     assert_eq!(want_one.pages.clamp(1, MAX_PAGES), 1);
 
     let want_oversized = BoardSearchInput {
         pages: 100,
+        provider_amount: None,
         ..make_input("", None)
     };
     assert_eq!(
