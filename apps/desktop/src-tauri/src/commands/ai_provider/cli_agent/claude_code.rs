@@ -18,7 +18,7 @@ use super::{CliAgentBackend, CliEvent, CliInvocation, PromptDelivery};
 /// side effects. Read-only tools are additionally constrained by the temp cwd.
 const DISALLOWED_TOOLS: &str = "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task";
 
-const MODELS: &[&str] = &["sonnet", "opus", "haiku"];
+const MODELS: &[&str] = &["sonnet", "opus", "haiku", "fable"];
 
 pub struct ClaudeCodeAgent;
 

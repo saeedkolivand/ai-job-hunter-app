@@ -374,6 +374,12 @@ const RATES: &[(&str, f64, f64)] = &[
     // OpenAI
     ("gpt-4o-mini", 0.15, 0.60),
     ("gpt-4o", 2.50, 10.00),
+    // GPT-4 Turbo's 1106 snapshot ("gpt-4-1106-preview"/"-vision-preview") must
+    // precede the "gpt-4.1" rows below: post dot/dash normalization, bare
+    // "gpt-4.1" becomes the prefix "gpt-4-1", which is ALSO a prefix of
+    // "gpt-4-1106-preview" — without this row, that 1106 id silently matched
+    // the $2/$8 gpt-4.1 rate instead of its own $10/$30 list price.
+    ("gpt-4-1106", 10.00, 30.00),
     ("gpt-4.1-mini", 0.40, 1.60),
     ("gpt-4.1-nano", 0.10, 0.40),
     ("gpt-4.1", 2.00, 8.00),
@@ -389,8 +395,15 @@ const RATES: &[(&str, f64, f64)] = &[
     ("claude-3-5-haiku", 0.80, 4.00),
     ("claude-3-haiku", 0.25, 1.25),
     ("claude-haiku-4", 1.00, 5.00),
+    ("claude-fable-5", 10.00, 50.00),
+    ("claude-opus-5", 5.00, 25.00),
+    ("claude-opus-4-5", 5.00, 25.00),
+    ("claude-opus-4-6", 5.00, 25.00),
+    ("claude-opus-4-7", 5.00, 25.00),
+    ("claude-opus-4-8", 5.00, 25.00),
     ("claude-opus-4", 15.00, 75.00),
     ("claude-3-opus", 15.00, 75.00),
+    ("claude-sonnet-5", 3.00, 15.00),
     ("claude-sonnet-4", 3.00, 15.00),
     ("claude-3-7-sonnet", 3.00, 15.00),
     ("claude-3-5-sonnet", 3.00, 15.00),
@@ -417,18 +430,54 @@ const RATES: &[(&str, f64, f64)] = &[
 /// code change to show *some* estimate; the table can be tightened later.
 const DEFAULT_RATE: (f64, f64) = (3.00, 15.00);
 
+/// True if `candidate` starts with `prefix`, treating `.` and `-` as
+/// equivalent on BOTH sides — a model id spelled with a dot
+/// (`claude-opus-4.7`) must still match a dash-form row (`claude-opus-4-7`).
+/// Normalizing only `candidate` would corrupt the OpenAI/Gemini rows that use
+/// a literal dot for their own version number (`gpt-4.1-mini`,
+/// `gemini-2.5-flash`) — e.g. `"gpt-4.1-mini-2024".replace('.', "-")` no
+/// longer starts with the literal `"gpt-4.1-mini"` prefix. Normalizing both
+/// sides identically keeps every existing match intact — but it also *adds*
+/// matches, not just the intended dot/dash equivalence: post-normalization,
+/// `"gpt-4.1"` becomes the prefix `"gpt-4-1"`, which now ALSO matches ids like
+/// `"gpt-4-1106-preview"` that were never meant to hit that row (see the
+/// `("gpt-4-1106", ...)` row in [`RATES`], added specifically to out-rank this
+/// side effect via ordering).
+fn prefix_matches(candidate: &str, prefix: &str) -> bool {
+    candidate
+        .replace('.', "-")
+        .starts_with(&prefix.replace('.', "-"))
+}
+
+/// The [`RATES`] row matched for `model` (case-insensitive prefix match), or
+/// `None` if it falls through to [`DEFAULT_RATE`]. Exposes the matched
+/// **prefix**, not just the resulting price — several rows share a price
+/// (e.g. `claude-sonnet-5`'s rate equals `DEFAULT_RATE`), so a price-only
+/// assertion can pass even when the wrong row (or no row) matched; tests use
+/// this to pin the actual match. Shared by [`estimate_cost`] so the
+/// normalization (strip a leading `models/`, then a vendor prefix) lives in
+/// one place.
+fn rate_for(model: &str) -> Option<&'static (&'static str, f64, f64)> {
+    // Gemini ids can arrive prefixed (`models/gemini-2.5-flash`); strip it
+    // before matching so it isn't silently mismatched to DEFAULT_RATE.
+    let lower = model.to_ascii_lowercase();
+    let m = lower.strip_prefix("models/").unwrap_or(&lower);
+    // Vendor-prefixed ids (`anthropic/claude-fable-5`, as seen through an
+    // OpenRouter-style gateway) must match on the bare model name — keep only
+    // the segment after the last `/`, so the row lookup below isn't silently
+    // mismatched to DEFAULT_RATE.
+    let last_segment = m.rsplit('/').next().unwrap_or(m);
+    RATES
+        .iter()
+        .find(|(prefix, _, _)| prefix_matches(last_segment, prefix))
+}
+
 /// Estimated USD cost for one call, from the static [`RATES`] table (or
 /// [`DEFAULT_RATE`] for an unrecognized model). Pure — callers gate local/
 /// CLI-agent providers to $0 via [`is_free_provider`] before calling this, so
 /// this function never needs to know about providers at all.
 pub fn estimate_cost(model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
-    // Gemini ids can arrive prefixed (`models/gemini-2.5-flash`); strip it
-    // before matching so it isn't silently mismatched to DEFAULT_RATE.
-    let lower = model.to_ascii_lowercase();
-    let m = lower.strip_prefix("models/").unwrap_or(&lower);
-    let (in_rate, out_rate) = RATES
-        .iter()
-        .find(|(prefix, _, _)| m.starts_with(prefix))
+    let (in_rate, out_rate) = rate_for(model)
         .map(|(_, i, o)| (*i, *o))
         .unwrap_or(DEFAULT_RATE);
     (f64::from(input_tokens) / 1_000_000.0) * in_rate

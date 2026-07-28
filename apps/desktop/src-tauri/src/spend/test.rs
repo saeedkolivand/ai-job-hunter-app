@@ -65,6 +65,139 @@ fn estimate_cost_strips_a_leading_models_prefix() {
 }
 
 #[test]
+fn estimate_cost_matches_the_claude_5_family_rates() {
+    // Each Claude 5 model must hit its own row, not DEFAULT_RATE and not a
+    // same-tier 4.x row it happens to share a numeric substring with.
+    let fable = estimate_cost("claude-fable-5", 1_000_000, 1_000_000);
+    let opus5 = estimate_cost("claude-opus-5-20260201", 1_000_000, 1_000_000);
+    assert!((fable - (10.00 + 50.00)).abs() < 1e-9, "got {fable}");
+    assert!((opus5 - (5.00 + 25.00)).abs() < 1e-9, "got {opus5}");
+    // "claude-sonnet-5"'s $3/$15 list price is numerically identical to
+    // DEFAULT_RATE, so a price-only assertion here is vacuous (it would pass
+    // even if sonnet-5 fell straight through to DEFAULT_RATE without
+    // matching any row). Assert the matched PREFIX instead.
+    assert_eq!(
+        rate_for("claude-sonnet-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-5"),
+        "claude-sonnet-5 must hit its own row, not fall through to DEFAULT_RATE"
+    );
+}
+
+#[test]
+fn estimate_cost_claude_5_and_4_prefixes_do_not_shadow_each_other() {
+    // "claude-opus-5"/"claude-sonnet-5" must never fall through to the
+    // "claude-opus-4"/"claude-sonnet-4" rows (or vice versa) — the digit
+    // makes the prefixes distinct, but a future reordering could still break
+    // this, so pin it.
+    let opus5 = estimate_cost("claude-opus-5", 1_000_000, 0);
+    let opus4 = estimate_cost("claude-opus-4-20250514", 1_000_000, 0);
+    assert!((opus5 - 5.00).abs() < 1e-9, "got {opus5}");
+    assert!((opus4 - 15.00).abs() < 1e-9, "got {opus4}");
+
+    // "claude-sonnet-5" and "claude-sonnet-4-5" (Sonnet 4.5) happen to share
+    // the same $3/$15 price — and DEFAULT_RATE is *also* $3/$15 — so a
+    // price-only assertion here would pass even if sonnet-5 fell straight
+    // through to DEFAULT_RATE without matching any row at all. Assert the
+    // matched PREFIX instead.
+    assert_eq!(
+        rate_for("claude-sonnet-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-5"),
+        "claude-sonnet-5 must hit its own row, not fall through to DEFAULT_RATE"
+    );
+    assert_eq!(
+        rate_for("claude-sonnet-4-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-4")
+    );
+}
+
+#[test]
+fn rate_for_gives_opus_4_5_its_own_row_instead_of_the_shorter_opus_4_prefix() {
+    // Before the "claude-opus-4-5" row existed, an Opus 4.5 model id matched
+    // the shorter "claude-opus-4" prefix and was billed at its $15/$75 rate —
+    // a 3x overestimate of Opus 4.5's actual $5/$25 pricing.
+    assert_eq!(
+        rate_for("claude-opus-4-5-20260101").map(|(p, _, _)| *p),
+        Some("claude-opus-4-5")
+    );
+    let cost = estimate_cost("claude-opus-4-5-20260101", 1_000_000, 1_000_000);
+    assert!((cost - (5.00 + 25.00)).abs() < 1e-9, "got {cost}");
+    // Same shadowing bug, same fix, for Opus 4.7 (VERIFIED $5/$25 pricing,
+    // platform.claude.com legacy models table) — before its own row existed
+    // it also fell through to the $15/$75 "claude-opus-4" row.
+    assert_eq!(
+        rate_for("claude-opus-4-7-20260101").map(|(p, _, _)| *p),
+        Some("claude-opus-4-7")
+    );
+    let opus47_cost = estimate_cost("claude-opus-4-7-20260101", 1_000_000, 1_000_000);
+    assert!(
+        (opus47_cost - (5.00 + 25.00)).abs() < 1e-9,
+        "got {opus47_cost}"
+    );
+    // Plain Opus 4 (no point-release suffix) must still hit the original,
+    // more expensive row.
+    assert_eq!(
+        rate_for("claude-opus-4-20250514").map(|(p, _, _)| *p),
+        Some("claude-opus-4")
+    );
+}
+
+#[test]
+fn rate_for_gives_gpt_4_1106_its_own_row_instead_of_the_normalized_gpt_4_1_prefix() {
+    // Post dot/dash normalization, "gpt-4.1" becomes the prefix "gpt-4-1",
+    // which is ALSO a prefix of "gpt-4-1106-preview" — without its own row,
+    // GPT-4 Turbo's 1106 snapshot silently matched the $2/$8 gpt-4.1 rate
+    // instead of its actual $10/$30 list price.
+    assert_eq!(
+        rate_for("gpt-4-1106-preview").map(|(p, _, _)| *p),
+        Some("gpt-4-1106")
+    );
+    assert_eq!(
+        rate_for("gpt-4-1106-vision-preview").map(|(p, _, _)| *p),
+        Some("gpt-4-1106")
+    );
+    let cost = estimate_cost("gpt-4-1106-preview", 1_000_000, 1_000_000);
+    assert!((cost - (10.00 + 30.00)).abs() < 1e-9, "got {cost}");
+    // Bare "gpt-4.1" itself must still hit its own row, unaffected.
+    assert_eq!(
+        rate_for("gpt-4.1-2025-04-14").map(|(p, _, _)| *p),
+        Some("gpt-4.1")
+    );
+}
+
+#[test]
+fn rate_for_matches_a_dot_form_id_against_a_dash_form_row() {
+    // "claude-opus-4.7" (dot form) must hit the "claude-opus-4-7" row, not
+    // fall through the shorter "claude-opus-4" row (or DEFAULT_RATE).
+    assert_eq!(
+        rate_for("claude-opus-4.7").map(|(p, _, _)| *p),
+        Some("claude-opus-4-7")
+    );
+    let cost = estimate_cost("claude-opus-4.7", 1_000_000, 1_000_000);
+    assert!((cost - (5.00 + 25.00)).abs() < 1e-9, "got {cost}");
+    // The dot/dash equivalence must NOT corrupt OpenAI's own literal-dot
+    // version rows (`gpt-4.1-mini`) — normalizing both sides identically
+    // keeps this match intact.
+    assert_eq!(
+        rate_for("gpt-4.1-mini-2025-04-14").map(|(p, _, _)| *p),
+        Some("gpt-4.1-mini")
+    );
+}
+
+#[test]
+fn estimate_cost_strips_a_vendor_prefix_before_matching() {
+    // An id seen through an OpenRouter-style gateway (`anthropic/claude-fable-5`)
+    // must hit the bare model's row, not silently fall through to DEFAULT_RATE.
+    assert_eq!(
+        rate_for("anthropic/claude-fable-5").map(|(p, _, _)| *p),
+        Some("claude-fable-5")
+    );
+    let prefixed = estimate_cost("anthropic/claude-fable-5", 1_000_000, 1_000_000);
+    let bare = estimate_cost("claude-fable-5", 1_000_000, 1_000_000);
+    assert!((prefixed - bare).abs() < 1e-9);
+    assert!((prefixed - (10.00 + 50.00)).abs() < 1e-9, "got {prefixed}");
+}
+
+#[test]
 fn is_free_provider_covers_local_and_cli_agents_only() {
     for p in [
         "ollama",

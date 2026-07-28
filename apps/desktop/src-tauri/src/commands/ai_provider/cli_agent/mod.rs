@@ -113,7 +113,7 @@ pub trait CliAgentBackend: Send + Sync {
     fn default_binary(&self) -> &'static str;
     /// Env var that overrides the binary path (e.g. `"CLAUDE_CODE_BIN"`).
     fn env_override(&self) -> &'static str;
-    /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku"]`).
+    /// Model aliases offered in the UI (e.g. `["sonnet", "opus", "haiku", "fable"]`).
     fn models(&self) -> &'static [&'static str];
 
     /// The npm package that provides this agent's binary, for the in-app install

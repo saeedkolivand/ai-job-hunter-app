@@ -24,10 +24,10 @@ import { OllamaCheckingState } from '../ollama/OllamaCheckingState';
 import { OllamaNotInstalled } from '../ollama/OllamaNotInstalled';
 import { type TabMode, TabSwitcher } from '../ollama/TabSwitcher';
 
-const CLOUD_DEFAULT_MODELS: Record<string, string> = {
+export const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   'ollama-cloud': 'gpt-oss:120b',
   openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-4-6',
+  anthropic: 'claude-sonnet-5',
   gemini: 'gemini-2.0-flash',
   'openai-compatible': 'gpt-4o',
 };

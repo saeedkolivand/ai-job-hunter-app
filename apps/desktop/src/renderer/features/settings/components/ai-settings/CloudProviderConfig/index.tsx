@@ -63,6 +63,20 @@ export function CloudProviderConfig({
   const setProviderSettings = useSetProviderSettings();
   const [changing, setChanging] = useState(false);
 
+  const modelOptions =
+    expandedModels.length > 0
+      ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
+      : (meta.models ?? []).map((n) => ({ value: n, label: n }));
+
+  // Keep a stored selection that fell out of the curated/live list selectable
+  // — otherwise the trigger falls back to the placeholder and reads as a
+  // reset config, when it's really just an unlisted model id (self-heals
+  // once the live list includes it again).
+  const options =
+    providerModel && !modelOptions.some((o) => o.value === providerModel)
+      ? [...modelOptions, { value: providerModel, label: providerModel }]
+      : modelOptions;
+
   // Collapse the editor only after a save cycle COMPLETES (isSaving true→false)
   // and the parent has cleared the input (its success signal). Gating on the
   // falling edge is what stops the editor snapping shut the instant the user
@@ -239,14 +253,7 @@ export function CloudProviderConfig({
             {t('settings.aiModel.title')}
           </div>
           <Dropdown
-            options={
-              expandedModels.length > 0
-                ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
-                : (meta.models ?? []).map((n) => ({
-                    value: n,
-                    label: n,
-                  }))
-            }
+            options={options}
             value={providerModel}
             onChange={onSelectModel}
             placeholder="Select a model…"
