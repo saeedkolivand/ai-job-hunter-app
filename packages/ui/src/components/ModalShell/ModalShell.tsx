@@ -4,28 +4,9 @@ import { createPortal } from 'react-dom';
 
 import { useFocusTrap } from '../../hooks/use-focus-trap';
 import { cn } from '../../lib/cn';
+import { setModalBlur } from '../../lib/modal-blur';
 import { transition, variants } from '../../lib/motion';
 import { GlassOverlay } from '../GlassOverlay';
-
-/**
- * Number of currently-open ModalShells. WebView2 does not reliably composite the
- * portaled overlay's `backdrop-filter`, so the frosted-glass effect comes from
- * blurring the in-flow app shell instead (see the `.modal-blur-active` rule in
- * the app CSS). The class is ref-counted so stacked modals keep the blur until
- * the last one closes. Toggling a body class keeps this primitive app-agnostic.
- */
-let openModalCount = 0;
-
-function setModalBlur(active: boolean): void {
-  if (typeof document === 'undefined') return;
-  if (active) {
-    openModalCount += 1;
-    document.body.classList.add('modal-blur-active');
-  } else {
-    openModalCount = Math.max(0, openModalCount - 1);
-    if (openModalCount === 0) document.body.classList.remove('modal-blur-active');
-  }
-}
 
 export interface ModalShellProps {
   open: boolean;
@@ -80,11 +61,8 @@ export function ModalShell({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Frost the app shell behind the modal. GlassOverlay supplies the dim scrim,
-  // but its `backdrop-filter` blur is unreliable across WebView2 portal stacking
-  // contexts, so the actual blur is an in-flow `filter` on the app shell driven
-  // by this body class (see `.modal-blur-active` in the app CSS). Ref-counted via
-  // `setModalBlur` so stacked modals don't clear it early.
+  // Frost the app shell behind the modal — see `lib/modal-blur` for why the blur
+  // can't live on the portaled overlay itself under WebView2.
   useEffect(() => {
     if (!open) return;
     setModalBlur(true);
