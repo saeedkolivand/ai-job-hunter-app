@@ -25,10 +25,10 @@
 
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import type { Application } from '@ajh/shared';
+import type { Application, StatusEvent } from '@ajh/shared';
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { TEST_IDS } from '@ajh/test-ids';
 
@@ -133,6 +133,12 @@ vi.mock('@/features/documents/components/GenerationCard', () => ({
 const mockUseApplication = vi.fn();
 const mockUseAiGenerations = vi.fn();
 const mockUpdateApplicationMutate = vi.fn();
+/** `setStatus.mutate(vars, options)` — resolves successfully by default so the
+ *  optional-note prompt opens (mirrors the row's mock). */
+type StatusMutateOptions = { onSuccess?: () => void; onError?: () => void };
+const mockSetStatusMutate = vi.fn((_vars: unknown, options?: StatusMutateOptions) => {
+  options?.onSuccess?.();
+});
 // Controlled so tests can assert `keepDocuments` on the delete path.
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 // JD-fetch (useImportJobUrl) — controllable so the recovery-panel fetch tests can
@@ -146,7 +152,7 @@ let mockResolveJobUrlIsFetching = false;
 vi.mock('@/services', () => ({
   useApplication: () => mockUseApplication(),
   useSetApplicationStatus: () => ({
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    mutate: mockSetStatusMutate,
     isPending: false,
   }),
   useUpdateApplication: () => ({
@@ -249,7 +255,13 @@ beforeEach(() => {
   mockTab = 'overview';
   mockUseApplication.mockReset();
   mockUseAiGenerations.mockReset();
-  mockUpdateApplicationMutate.mockClear();
+  // `mockReset` (not `mockClear`): the contact-rejection tests install an
+  // implementation that would otherwise leak into every later test.
+  mockUpdateApplicationMutate.mockReset();
+  mockSetStatusMutate.mockClear();
+  mockSetStatusMutate.mockImplementation((_vars: unknown, options?: StatusMutateOptions) => {
+    options?.onSuccess?.();
+  });
   mockSetApplicationApply.mockClear();
   mockRemoveMutateAsync.mockClear();
   mockNavigate.mockClear();
@@ -437,7 +449,9 @@ describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
     fireEvent.blur(field);
 
     expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
-    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+    // Second arg is the mutation's result callbacks (the write's `{ error }` is
+    // surfaced inline) — assert only the payload.
+    expect(mockUpdateApplicationMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-cn-1',
       contactName: 'Bob',
     });
@@ -452,6 +466,47 @@ describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
     expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
   });
 
+  it('does NOT wipe a contact saved elsewhere when the Overview field is blurred', () => {
+    // Regression: the apply-by-email tab and Overview now edit the SAME
+    // canonical contact pair, but the Overview buffers are seeded ONCE via
+    // useState. Sequence: Overview mounts with an empty contact → the email tab
+    // persists "Rita Recruiter" → the record refetches. If the loaded view is
+    // not re-seeded, the Overview input still holds its stale '' and the next
+    // blur there persists that empty string back, wiping what was just saved.
+    // `useSyncedBuffer` re-seeds THIS field (and only this field) when its server
+    // value changes — the fix that replaced the whole-view `updatedAt` remount.
+    mockTab = 'overview';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp({ id: 'app-wipe-1', contactName: '' }), events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    const { rerender } = render(<ApplicationDetailPage />);
+
+    // The apply-by-email tab wrote the contact; the query refetches with a new
+    // `updatedAt` (every persisted change bumps it server-side).
+    mockUseApplication.mockReturnValue({
+      data: {
+        application: makeApp({
+          id: 'app-wipe-1',
+          contactName: 'Rita Recruiter',
+          updatedAt: 2000,
+        }),
+        events: [],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    const field = screen.getByLabelText('applications.detail.contactNameLabel');
+    expect((field as HTMLInputElement).value).toBe('Rita Recruiter');
+
+    fireEvent.blur(field);
+    expect(mockUpdateApplicationMutate).not.toHaveBeenCalled();
+  });
+
   // ── contactEmail ─────────────────────────────────────────────────────────────
 
   it('blurring contactEmail with a CHANGED value calls mutate with the new contactEmail', () => {
@@ -463,7 +518,7 @@ describe('ApplicationDetailPage — save-on-blur (Overview tab)', () => {
     fireEvent.blur(field);
 
     expect(mockUpdateApplicationMutate).toHaveBeenCalledTimes(1);
-    expect(mockUpdateApplicationMutate).toHaveBeenCalledWith({
+    expect(mockUpdateApplicationMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-ce-1',
       contactEmail: 'b@b.com',
     });
@@ -1226,5 +1281,338 @@ describe('ApplicationDetailPage — DocumentsTab debounced jobDescription persis
       id: 'app-jdc-cycles',
       jobDescription: 'second value',
     });
+  });
+});
+
+// ── Follow-up promotion — visible from every tab, tinted when overdue ─────────
+
+describe('ApplicationDetailPage — follow-up promotion', () => {
+  const NOW = 1_700_000_000_000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const renderWith = (app: Application) => {
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  it('shows an overdue chip in the header (persists across tabs) when the date has passed', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: NOW - 86_400_000 }));
+
+    expect(screen.getByText('applications.detail.followUpOverdue')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpDue')).not.toBeInTheDocument();
+  });
+
+  it('shows an upcoming chip when the date is still in the future', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: NOW + 86_400_000 }));
+
+    expect(screen.getByText('applications.detail.followUpDue')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdue')).not.toBeInTheDocument();
+  });
+
+  it('shows no chip at all when no reminder is set', () => {
+    mockTab = 'documents';
+    renderWith(makeApp({ nextActionAt: undefined }));
+
+    expect(screen.queryByText('applications.detail.followUpDue')).not.toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdue')).not.toBeInTheDocument();
+  });
+
+  it('leads the Overview sheet with its own Follow-up section carrying the date field', () => {
+    mockTab = 'overview';
+    renderWith(makeApp({ nextActionAt: NOW - 86_400_000 }));
+
+    expect(screen.getByText('applications.detail.followUpSection')).toBeInTheDocument();
+    // The field itself still lives under its established label (deep links + the
+    // save-on-blur tests above depend on it).
+    expect(screen.getByLabelText('applications.detail.nextActionLabel')).toBeInTheDocument();
+    expect(screen.getByText('applications.detail.followUpOverdueHint')).toBeInTheDocument();
+  });
+
+  it('uses the neutral hint when there is no reminder yet', () => {
+    mockTab = 'overview';
+    renderWith(makeApp({ nextActionAt: undefined }));
+
+    expect(screen.getByText('applications.detail.followUpNoneHint')).toBeInTheDocument();
+    expect(screen.queryByText('applications.detail.followUpOverdueHint')).not.toBeInTheDocument();
+  });
+});
+
+// ── Interaction log — the Timeline "Add note" entry point ────────────────────
+
+describe('ApplicationDetailPage — timeline notes', () => {
+  const renderTimeline = (events: StatusEvent[]) => {
+    mockTab = 'timeline';
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp({ status: 'interviewing' }), events },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  it('"Add note" writes a SAME-status setStatus carrying the trimmed note', () => {
+    renderTimeline([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.add' }));
+    fireEvent.change(screen.getByPlaceholderText('applications.note.placeholder'), {
+      target: { value: '  Sent a thank-you email  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.save' }));
+
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
+      id: 'app-1',
+      status: 'interviewing',
+      note: 'Sent a thank-you email',
+    });
+  });
+
+  it('the Add-note prompt uses the plain copy, not the post-transition copy', () => {
+    renderTimeline([]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.note.add' }));
+
+    expect(screen.getByText('applications.note.current')).toBeInTheDocument();
+    expect(screen.queryByText('applications.note.afterChange')).not.toBeInTheDocument();
+  });
+
+  it('renders a same-status note event as ONE stage (never "X → X") with its note', () => {
+    renderTimeline([
+      {
+        applicationId: 'app-1',
+        fromStatus: 'interviewing',
+        toStatus: 'interviewing',
+        at: 1_700_000_000_000,
+        note: 'Recruiter call booked',
+      },
+    ]);
+
+    // Scope to the tab panel: the header Dropdown also renders the stage label.
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('Recruiter call booked')).toBeInTheDocument();
+    // A real transition renders the "from" label too; a note event must not.
+    expect(panel.getAllByText('applications.status.interviewing')).toHaveLength(1);
+  });
+
+  it('still renders a real transition as from → to', () => {
+    renderTimeline([
+      {
+        applicationId: 'app-1',
+        fromStatus: 'applied',
+        toStatus: 'interviewing',
+        at: 1_700_000_000_000,
+        note: '',
+      },
+    ]);
+
+    const panel = within(screen.getByRole('tabpanel'));
+    expect(panel.getByText('applications.status.applied')).toBeInTheDocument();
+    expect(panel.getByText('applications.status.interviewing')).toBeInTheDocument();
+  });
+});
+
+// ── No remount on refetch — focus + uncommitted input survive a landing write ──
+//
+// The loaded view was briefly keyed by `${id}:${updatedAt}`, which fixed the
+// stale-seed contact wipe by remounting on EVERY persisted write — destroying
+// focus, discarding text typed while a sibling write was in flight, and tearing
+// down the whole TailorFlow sub-tree. The buffers now re-seed per field instead.
+
+describe('ApplicationDetailPage — refetch does not remount the loaded view', () => {
+  const renderOverview = (app: Application) => {
+    mockTab = 'overview';
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    return render(<ApplicationDetailPage />);
+  };
+
+  it('an uncommitted sibling edit and its caret survive another field write landing', () => {
+    const { rerender } = renderOverview(makeApp({ id: 'app-live-1', notes: '', comp: '' }));
+
+    // The user edits Notes and blurs it (write in flight), then types into Comp
+    // WITHOUT blurring, leaving the caret there.
+    const notes = screen.getByLabelText('applications.detail.notesLabel');
+    fireEvent.change(notes, { target: { value: 'called the recruiter' } });
+    fireEvent.blur(notes);
+
+    const comp = screen.getByLabelText('applications.detail.compLabel');
+    comp.focus();
+    fireEvent.change(comp, { target: { value: '90k' } });
+    expect(document.activeElement).toBe(comp);
+
+    // The notes write lands: the record refetches with the new notes AND a bumped
+    // updatedAt. Comp is untouched server-side.
+    mockUseApplication.mockReturnValue({
+      data: {
+        application: makeApp({
+          id: 'app-live-1',
+          notes: 'called the recruiter',
+          comp: '',
+          updatedAt: 9999,
+        }),
+        events: [],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    // The uncommitted "90k" is still there…
+    const compAfter = screen.getByLabelText<HTMLInputElement>('applications.detail.compLabel');
+    expect(compAfter.value).toBe('90k');
+    // …and so is the caret (no remount ⇒ the same node keeps focus).
+    expect(document.activeElement).toBe(compAfter);
+    // The committed field shows the server value.
+    expect(screen.getByLabelText<HTMLTextAreaElement>('applications.detail.notesLabel').value).toBe(
+      'called the recruiter'
+    );
+  });
+
+  it('a bumped updatedAt alone does not reset an untouched buffer', () => {
+    const { rerender } = renderOverview(makeApp({ id: 'app-live-2', comp: '' }));
+
+    const comp = screen.getByLabelText('applications.detail.compLabel');
+    fireEvent.change(comp, { target: { value: 'draft only' } });
+
+    // An unrelated write (a status change / note) bumps the record.
+    mockUseApplication.mockReturnValue({
+      data: { application: makeApp({ id: 'app-live-2', comp: '', updatedAt: 4242 }), events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ApplicationDetailPage />);
+
+    expect(screen.getByLabelText<HTMLInputElement>('applications.detail.compLabel').value).toBe(
+      'draft only'
+    );
+  });
+});
+
+// ── Status change — no-op guard + failure surface ─────────────────────────────
+
+describe('ApplicationDetailPage — header stage Dropdown', () => {
+  const renderHeader = (app: Application) => {
+    mockTab = 'overview';
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  /** Opens the header stage Dropdown and picks `option`. */
+  const pickStage = async (current: string, option: string) => {
+    fireEvent.click(
+      screen.getByRole('button', { name: new RegExp(`applications\\.status\\.${current}`, 'i') })
+    );
+    const listbox = await screen.findByRole('listbox');
+    fireEvent.click(
+      within(listbox).getByRole('option', {
+        name: new RegExp(`applications\\.status\\.${option}`, 'i'),
+      })
+    );
+  };
+
+  it('re-picking the CURRENT stage writes nothing and opens no note prompt', async () => {
+    renderHeader(makeApp({ id: 'app-noop', status: 'applied' }));
+
+    await pickStage('applied', 'applied');
+
+    expect(mockSetStatusMutate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('surfaces a localized error (and no note prompt) when the transition FAILS', async () => {
+    mockSetStatusMutate.mockImplementation((_vars: unknown, options?: StatusMutateOptions) => {
+      options?.onError?.();
+    });
+    renderHeader(makeApp({ id: 'app-fail', status: 'applied' }));
+
+    await pickStage('applied', 'offer');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.row.statusError');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the note prompt after a PERSISTED transition', async () => {
+    renderHeader(makeApp({ id: 'app-ok', status: 'applied' }));
+
+    await pickStage('applied', 'offer');
+
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('applications.note.title');
+  });
+});
+
+// ── Contact writes surface a rejected result (same field as ApplyByEmailTab) ───
+
+describe('ApplicationDetailPage — contact write rejection', () => {
+  const renderOverview = (app: Application) => {
+    mockTab = 'overview';
+    mockUseApplication.mockReturnValue({
+      data: { application: app, events: [] },
+      isLoading: false,
+      isError: false,
+    });
+    mockUseAiGenerations.mockReturnValue({ data: [] });
+    render(<ApplicationDetailPage />);
+  };
+
+  const rejectWith = (error?: string) =>
+    mockUpdateApplicationMutate.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: (data: { error?: string }) => void }) => {
+        options?.onSuccess?.(error ? { error } : {});
+      }
+    );
+
+  it('shows an alert when the backend rejects the contact email', () => {
+    rejectWith('invalid email');
+    renderOverview(makeApp({ id: 'app-ce', contactEmail: '' }));
+
+    const field = screen.getByLabelText('applications.detail.contactEmailLabel');
+    fireEvent.change(field, { target: { value: 'not-an-email' } });
+    fireEvent.blur(field);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.email.emailInvalid');
+  });
+
+  it('shows an alert when the backend rejects the contact name', () => {
+    rejectWith('rejected');
+    renderOverview(makeApp({ id: 'app-cn', contactName: '' }));
+
+    const field = screen.getByLabelText('applications.detail.contactNameLabel');
+    fireEvent.change(field, { target: { value: 'Dana' } });
+    fireEvent.blur(field);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.contactSaveError');
+  });
+
+  it('shows no alert when the write is accepted', () => {
+    rejectWith(undefined);
+    renderOverview(makeApp({ id: 'app-ok2', contactEmail: '' }));
+
+    const field = screen.getByLabelText('applications.detail.contactEmailLabel');
+    fireEvent.change(field, { target: { value: 'dana@acme.com' } });
+    fireEvent.blur(field);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

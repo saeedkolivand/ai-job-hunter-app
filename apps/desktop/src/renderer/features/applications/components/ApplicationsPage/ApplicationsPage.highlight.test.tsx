@@ -52,6 +52,8 @@ const mockUseApplications = vi.fn();
 
 vi.mock('@/services/use-applications', () => ({
   useApplications: () => mockUseApplications(),
+  // Inert: the highlight flow never changes a stage.
+  useSetApplicationStatus: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // ── ApplicationRow stub — exposes `highlighted` as a data attribute ────────────
@@ -124,7 +126,13 @@ const APPS = [
 
 beforeEach(() => {
   useSessionStore.setState((s) => ({
-    applications: { ...s.applications, collapsedSections: [], filter: '' },
+    applications: {
+      ...s.applications,
+      collapsedSections: [],
+      filter: '',
+      stageGroup: null,
+      sort: 'updated',
+    },
   }));
   mockUseApplications.mockReset();
   mockNavigate.mockReset();
@@ -273,5 +281,56 @@ describe('ApplicationsPage — ?highlight consumption', () => {
     // No section was un-collapsed (nothing to find).
     const { applications } = useSessionStore.getState();
     expect(applications.collapsedSections).not.toContain('applied');
+  });
+
+  // ── highlight vs. the pipeline-strip filter ────────────────────────────────
+  //
+  // Decision: a highlight CLEARS an excluding stage filter outright (rather than
+  // widening it) so a follow-up notification always lands on a visible row.
+
+  it('clears an active stage filter that would hide the highlighted row', async () => {
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'offer' },
+    }));
+    currentSearch = { highlight: TARGET_ID }; // TARGET_ID is `applied`, not `offer`
+    mockUseApplications.mockReturnValue({ data: APPS, isLoading: false, isError: false });
+
+    await act(async () => {
+      render(<ApplicationsPage />);
+    });
+
+    expect(useSessionStore.getState().applications.stageGroup).toBeNull();
+    const targetRow = screen
+      .getAllByTestId(TEST_IDS.applications.row)
+      .find((el) => el.getAttribute('data-appid') === TARGET_ID);
+    expect(targetRow?.getAttribute('data-highlighted')).toBe('true');
+  });
+
+  it('KEEPS a stage filter that already includes the highlighted row', async () => {
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'applied' },
+    }));
+    currentSearch = { highlight: TARGET_ID };
+    mockUseApplications.mockReturnValue({ data: APPS, isLoading: false, isError: false });
+
+    await act(async () => {
+      render(<ApplicationsPage />);
+    });
+
+    expect(useSessionStore.getState().applications.stageGroup).toBe('applied');
+  });
+
+  it('leaves the stage filter alone when the highlight id matches nothing', async () => {
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'offer' },
+    }));
+    currentSearch = { highlight: 'nonexistent-id' };
+    mockUseApplications.mockReturnValue({ data: APPS, isLoading: false, isError: false });
+
+    await act(async () => {
+      render(<ApplicationsPage />);
+    });
+
+    expect(useSessionStore.getState().applications.stageGroup).toBe('offer');
   });
 });

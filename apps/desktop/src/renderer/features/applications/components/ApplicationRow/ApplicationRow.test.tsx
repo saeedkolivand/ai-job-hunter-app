@@ -42,13 +42,21 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── Service hooks ─────────────────────────────────────────────────────────────
 
-const mockSetStatusMutateAsync = vi.fn().mockResolvedValue(undefined);
+/**
+ * `setStatus.mutate(vars, options)` — the fake resolves SUCCESSFULLY by invoking
+ * `options.onSuccess`, which is what opens the optional-note prompt. Individual
+ * tests can re-implement it to exercise the error branch.
+ */
+type MutateOptions = { onSuccess?: () => void; onError?: () => void };
+const mockSetStatusMutate = vi.fn((_vars: unknown, options?: MutateOptions) => {
+  options?.onSuccess?.();
+});
 const mockRemoveMutateAsync = vi.fn().mockResolvedValue(undefined);
 const mockOpenExternalMutate = vi.fn();
 
 vi.mock('@/services', () => ({
   useSetApplicationStatus: () => ({
-    mutateAsync: mockSetStatusMutateAsync,
+    mutate: mockSetStatusMutate,
     isPending: false,
   }),
   useRemoveApplication: () => ({
@@ -90,61 +98,179 @@ function makeApp(overrides: Partial<Application>): Application {
 // ── Reset mocks between tests ─────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockSetStatusMutateAsync.mockClear();
+  mockSetStatusMutate.mockClear();
+  mockSetStatusMutate.mockImplementation((_vars: unknown, options?: MutateOptions) => {
+    options?.onSuccess?.();
+  });
   mockRemoveMutateAsync.mockClear();
   mockOpenExternalMutate.mockClear();
   mockNavigate.mockClear();
 });
 
+/** Opens the stage Dropdown and picks `option` (the i18n key fragment). */
+async function changeStage(currentStatus: string, option: string) {
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: new RegExp(`applications\\.status\\.${currentStatus}`, 'i'),
+    })
+  );
+  const listbox = await screen.findByRole('listbox');
+  fireEvent.click(
+    within(listbox).getByRole('option', {
+      name: new RegExp(`applications\\.status\\.${option}`, 'i'),
+    })
+  );
+}
+
 // ── Gap 5: status-change Dropdown calls setStatus mutation ──────────────
 
 describe('ApplicationRow — status change', () => {
-  it('changing the Dropdown calls setStatus.mutateAsync with the correct id and status', async () => {
+  it('changing the Dropdown calls setStatus.mutate with the correct id and status', async () => {
     const app = makeApp({ id: 'app-42', status: 'applied' });
     render(<ApplicationRow application={app} />);
 
     // @ajh/ui Dropdown renders a <button aria-haspopup="listbox"> whose
     // accessible name is the currently selected option's label. Since t() returns
     // keys, the trigger is labelled "applications.status.applied".
-    const trigger = screen.getByRole('button', {
-      name: /applications\.status\.applied/i,
-    });
-    fireEvent.click(trigger);
+    await changeStage('applied', 'interviewing');
 
-    // After opening, the listbox options become visible.
-    const listbox = await screen.findByRole('listbox');
-    const interviewingOption = within(listbox).getByRole('option', {
-      name: /applications\.status\.interviewing/i,
-    });
-    fireEvent.click(interviewingOption);
-
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledWith({
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-42',
       status: 'interviewing',
     });
   });
 
-  it('calls setStatus.mutateAsync with the correct status when selecting saved', async () => {
+  it('calls setStatus.mutate with the correct status when selecting saved', async () => {
     const app = makeApp({ id: 'app-99', status: 'applied' });
     render(<ApplicationRow application={app} />);
 
-    const trigger = screen.getByRole('button', {
-      name: /applications\.status\.applied/i,
-    });
-    fireEvent.click(trigger);
+    await changeStage('applied', 'saved');
 
-    const listbox = await screen.findByRole('listbox');
-    const savedOption = within(listbox).getByRole('option', {
-      name: /applications\.status\.saved/i,
-    });
-    fireEvent.click(savedOption);
-
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledTimes(1);
-    expect(mockSetStatusMutateAsync).toHaveBeenCalledWith({
+    expect(mockSetStatusMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetStatusMutate.mock.calls[0]?.[0]).toEqual({
       id: 'app-99',
       status: 'saved',
     });
+  });
+
+  it('surfaces a localized inline error (and NO note callback) when the mutation fails', async () => {
+    mockSetStatusMutate.mockImplementation((_vars: unknown, options?: MutateOptions) => {
+      options?.onError?.();
+    });
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-err', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
+
+    await changeStage('applied', 'offer');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.row.statusError');
+    expect(onStatusChanged).not.toHaveBeenCalled();
+  });
+
+  // Dropdown.select fires onChange even when the CURRENT option is re-picked.
+  it('re-picking the current stage writes nothing and raises no note prompt', async () => {
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-noop', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
+
+    await changeStage('applied', 'applied');
+
+    expect(mockSetStatusMutate).not.toHaveBeenCalled();
+    expect(onStatusChanged).not.toHaveBeenCalled();
+  });
+});
+
+// ── Optional status note — the row only REPORTS a persisted change ───────────
+//
+// The prompt deliberately does NOT live here: the invalidation refetch that
+// follows the write re-sections the list and unmounts this row, taking any local
+// prompt state with it. The row raises `onStatusChanged`; the page owns the
+// dialog (see ApplicationsPage.notes.test.tsx, which drives the refetch).
+
+describe('ApplicationRow — status note handoff', () => {
+  it('reports the new stage to the page after a successful change', async () => {
+    const onStatusChanged = vi.fn();
+    render(
+      <ApplicationRow
+        application={makeApp({ id: 'app-note', status: 'applied' })}
+        onStatusChanged={onStatusChanged}
+      />
+    );
+
+    await changeStage('applied', 'interviewing');
+
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+    expect(onStatusChanged).toHaveBeenCalledWith('interviewing');
+  });
+
+  it('renders no dialog of its own (state here would not survive the refetch)', async () => {
+    render(<ApplicationRow application={makeApp({ id: 'app-note-2', status: 'applied' })} />);
+    await changeStage('applied', 'interviewing');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
+// ── Richer row meta — board chip, salary, date stamp ──────────────────────────
+
+describe('ApplicationRow — row meta', () => {
+  it('renders the localized board chip for a known board id', () => {
+    render(<ApplicationRow application={makeApp({ board: 'linkedin' })} />);
+    expect(screen.getByText('jobs.boards.linkedin')).toBeInTheDocument();
+  });
+
+  it('renders no board chip when the board is blank', () => {
+    const { container } = render(<ApplicationRow application={makeApp({ board: '   ' })} />);
+    expect(container.textContent).not.toContain('jobs.boards.');
+  });
+
+  it('renders a currency-formatted salary range when the posting carried one', () => {
+    render(
+      <ApplicationRow
+        application={makeApp({ salaryMin: 60000, salaryMax: 80000, salaryCurrency: 'EUR' })}
+      />
+    );
+    // Locale-agnostic assertion: both bounds and the en-dash separator are present.
+    const salary = screen.getByText(/60[,. ]?000.*–.*80[,. ]?000/);
+    expect(salary).toBeInTheDocument();
+  });
+
+  it('renders no salary text when the posting carried none', () => {
+    const { container } = render(<ApplicationRow application={makeApp({})} />);
+    expect(container.textContent).not.toMatch(/\d{2}[,. ]?\d{3}/);
+  });
+
+  it('labels the stamp "applied" when appliedAt is set and "updated" otherwise', () => {
+    const { unmount } = render(
+      <ApplicationRow application={makeApp({ appliedAt: RECENT_UPDATED_AT })} />
+    );
+    expect(screen.getByText('applications.row.appliedAgo')).toBeInTheDocument();
+    unmount();
+
+    render(<ApplicationRow application={makeApp({ appliedAt: undefined })} />);
+    expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
+  });
+
+  it('shows the per-stage Tag only when showStageTag is set', () => {
+    // The stage label always appears once as the Dropdown trigger's own label,
+    // so the Tag is the SECOND occurrence — count rather than presence.
+    const { unmount } = render(
+      <ApplicationRow application={makeApp({ status: 'rejected' })} showStageTag />
+    );
+    expect(screen.getAllByText('applications.status.rejected')).toHaveLength(2);
+    unmount();
+
+    render(<ApplicationRow application={makeApp({ status: 'rejected' })} />);
+    expect(screen.getAllByText('applications.status.rejected')).toHaveLength(1);
   });
 });
 
@@ -364,7 +490,7 @@ describe('ApplicationRow — nextActionAt badge', () => {
   });
 
   it('renders the "overdue" badge when nextActionAt is in the past', () => {
-    const app = makeApp({ nextActionAt: FIXED_NOW - 1, updatedAt: FIXED_NOW });
+    const app = makeApp({ nextActionAt: FIXED_NOW - 86_400_000, updatedAt: FIXED_NOW });
     render(<ApplicationRow application={app} />);
     expect(screen.getByText('applications.row.overdue')).toBeInTheDocument();
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
@@ -382,5 +508,56 @@ describe('ApplicationRow — nextActionAt badge', () => {
     render(<ApplicationRow application={app} />);
     expect(screen.queryByText('applications.row.overdue')).not.toBeInTheDocument();
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
+  });
+});
+
+// ── Post-change note affordance (the list's zero-keystroke alternative) ───────
+
+describe('ApplicationRow — note chip', () => {
+  it('renders the chip only when the page asks for it', () => {
+    const { unmount } = render(<ApplicationRow application={makeApp({})} />);
+    expect(
+      screen.queryByRole('button', { name: 'applications.row.addNoteHint' })
+    ).not.toBeInTheDocument();
+    unmount();
+
+    render(<ApplicationRow application={makeApp({})} showNoteHint />);
+    expect(
+      screen.getByRole('button', { name: 'applications.row.addNoteHint' })
+    ).toBeInTheDocument();
+  });
+
+  // Enter/Space on a focused <button> fires a native click AND bubbles the
+  // keydown — without stopPropagation the row's own handler opens the detail
+  // page underneath the note dialog.
+  it('Enter on the chip does NOT navigate to the detail page', () => {
+    const onAddNote = vi.fn();
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
+
+    const chip = screen.getByRole('button', { name: 'applications.row.addNoteHint' });
+    fireEvent.keyDown(chip, { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('Space on the chip does NOT navigate to the detail page', () => {
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={vi.fn()} />);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'applications.row.addNoteHint' }), {
+      key: ' ',
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('clicking the chip asks for the note dialog WITHOUT navigating to the detail page', () => {
+    const onAddNote = vi.fn();
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'applications.row.addNoteHint' }));
+
+    expect(onAddNote).toHaveBeenCalledTimes(1);
+    // The chip sits inside the row's click target — it must stop propagation.
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

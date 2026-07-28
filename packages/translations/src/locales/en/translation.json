@@ -2540,7 +2540,11 @@
       "actions": "Actions",
       "openUrl": "Open job link",
       "deleteKeepDocs": "Remove tracking (keep documents)",
-      "deleteAll": "Delete everything"
+      "deleteAll": "Delete everything",
+      "appliedAgo": "Applied {{when}}",
+      "updatedAgo": "Updated {{when}}",
+      "statusError": "Could not update the stage.",
+      "addNoteHint": "Add a note?"
     },
     "delete": {
       "keepTitle": "Remove application tracking",
@@ -2602,7 +2606,8 @@
         "rewriteBodyAriaLabel": "Rewrite the email body with AI",
         "openMailto": "Send via mail client",
         "needsResume": "Add your résumé to generate an application email.",
-        "addResume": "Add a résumé"
+        "addResume": "Add a résumé",
+        "recipientHint": "Saved as this application's primary contact — editing here also updates the Overview tab."
       },
       "tabsLabel": "Application detail tabs",
       "timelineTitle": "Timeline",
@@ -2620,7 +2625,6 @@
       "compPlaceholder": "e.g. $120,000 / negotiable",
       "nextActionLabel": "Next action reminder",
       "contactSection": "Contact",
-      "trackingSection": "Tracking",
       "briefTitle": "Company brief",
       "answersTitle": "Application answers",
       "jobLink": "Job link",
@@ -2687,8 +2691,44 @@
       "jdFetch": "Fetch description",
       "jdPlaceholder": "Paste the job description here…",
       "notFound": "Application not found",
-      "notFoundDesc": "This application may have been removed."
-    }
+      "notFoundDesc": "This application may have been removed.",
+      "followUpSection": "Follow-up",
+      "followUpOverdue": "Overdue {{date}}",
+      "followUpDue": "Follow up {{date}}",
+      "followUpOverdueHint": "This follow-up is overdue.",
+      "followUpUpcomingHint": "You will be reminded when this date arrives.",
+      "followUpNoneHint": "Set a date to get a reminder for the next step.",
+      "contactSaveError": "This contact could not be saved.",
+      "compensationSection": "Compensation"
+    },
+    "pipeline": {
+      "aria": "Filter by pipeline stage",
+      "closed": "Finished",
+      "filtered": "Showing {{stage}} applications only.",
+      "filterCleared": "Showing applications in every stage.",
+      "overdue_one": "1 follow-up overdue",
+      "overdue_other": "{{count}} follow-ups overdue"
+    },
+    "sort": {
+      "label": "Sort applications",
+      "updated": "Last updated",
+      "company": "Company (A–Z)",
+      "nextAction": "Next action"
+    },
+    "note": {
+      "title": "Add a note",
+      "afterChange": "Moved to {{stage}}. Add a note about what happened?",
+      "current": "Current stage: {{stage}}",
+      "placeholder": "e.g. Recruiter call scheduled for Thursday",
+      "save": "Save note",
+      "skip": "Skip",
+      "add": "Add note",
+      "saveError": "The note could not be saved — try again."
+    },
+    "noResultsStage": "No applications are in {{stage}} right now.",
+    "noResultsQuery": "Nothing matches \"{{query}}\".",
+    "noResultsBoth": "Nothing in {{stage}} matches \"{{query}}\".",
+    "showAll": "Show all applications"
   },
   "notifications": {
     "title": "Notifications",
