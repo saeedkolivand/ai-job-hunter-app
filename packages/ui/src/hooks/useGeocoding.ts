@@ -7,52 +7,17 @@ interface Suggestion {
   countryCode?: string | null;
 }
 
-async function defaultFetch(query: string): Promise<Suggestion[]> {
-  const url =
-    `https://nominatim.openstreetmap.org/search` +
-    `?q=${encodeURIComponent(query)}` +
-    `&format=json&addressdetails=1&limit=6`;
-  try {
-    const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
-    if (!res.ok) return [];
-    const data = (await res.json()) as Array<{
-      addresstype?: string;
-      address?: {
-        city?: string;
-        town?: string;
-        village?: string;
-        municipality?: string;
-        hamlet?: string;
-        state?: string;
-        country?: string;
-      };
-    }>;
-    const seen = new Set<string>();
-    return data.flatMap((item) => {
-      const addr = item.address ?? {};
-      const city = addr.city ?? addr.town ?? addr.village ?? addr.municipality ?? addr.hamlet ?? '';
-      // City-level: "City, Country". Country-level: just the country.
-      // Anything else (road/POI/region) is dropped.
-      let display: string;
-      if (city) {
-        display = [city, addr.country].filter(Boolean).join(', ');
-      } else if (item.addresstype === 'country' && addr.country) {
-        display = addr.country;
-      } else {
-        return [];
-      }
-      if (seen.has(display)) return [];
-      seen.add(display);
-      return [{ display }];
-    });
-  } catch {
-    return [];
-  }
-}
-
+/**
+ * Debounced location typeahead. The lookup itself is **always** the caller's —
+ * this package deliberately has no built-in geocoder. It used to default to a
+ * direct browser-side Nominatim call, which violated that endpoint's
+ * no-autocomplete usage policy and shipped live in the published Storybook; the
+ * desktop app passes the `geocode_suggest` Tauri command (bundled offline
+ * GeoNames index, Photon fallback) instead.
+ */
 export function useGeocoding(
   query: string,
-  onFetchSuggestions: (query: string) => Promise<Suggestion[]> = defaultFetch
+  onFetchSuggestions: (query: string) => Promise<Suggestion[]>
 ) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
