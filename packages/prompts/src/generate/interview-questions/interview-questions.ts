@@ -20,7 +20,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { buildCompanyResearchBlock, buildJobAdBlock } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { antiAiTellProse, HUMANIZE_PROSE } from '../natural-voice/index.js';
+import { antiAiTellProse, HUMANIZE_PROSE, languageDisplayName } from '../natural-voice/index.js';
 
 /** Default number of suggested questions when no audiences are targeted (legacy path). */
 export const INTERVIEW_QUESTIONS_COUNT = 6;
@@ -143,13 +143,18 @@ export function buildInterviewQuestionsPrompt(params: {
     : '';
 
   const conv = letterConventions(market);
+  // Every branch renders a language NAME, never a bare ISO code: "Write the
+  // questions in de." is a weaker directive than "…in German." (and models do
+  // occasionally echo the code back). `languageDisplayName` passes a value that is
+  // already a name through unchanged, so it is safe on either form.
+  const metaLanguage = languageDisplayName(meta.targetLanguage || 'en');
   // An explicit `language` is a deliberate user choice, so it wins over the
   // `meta.mismatch` proxy (which only guesses that the ad and résumé disagree).
   const langNote = language
     ? `Write the questions entirely in ${language}, using natural phrasing for that market.`
     : meta.mismatch
-      ? `Write the questions entirely in ${meta.targetLanguage}, using natural phrasing for that market.`
-      : `Write the questions in ${meta.targetLanguage || 'en'}.`;
+      ? `Write the questions entirely in ${metaLanguage}, using natural phrasing for that market.`
+      : `Write the questions in ${metaLanguage}.`;
   const marketNote = `Market: ${conv.country}. Register: ${conv.formality}. Match this market's professional conventions.`;
 
   // Audience-targeted mode (N per interviewer, each tuned to its lens) vs the
