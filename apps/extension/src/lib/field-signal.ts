@@ -148,18 +148,77 @@ const AMBIGUOUS_WORDS = /\b(?:dni|bsn|urgence)\b/;
 const AMBIGUOUS_PREFIXED = /(?:^|[^a-z])(?:referr|reference|search)/;
 
 /**
+ * Name fields that belong to SOMEONE ELSE (a reference, a referrer, a spouse /
+ * child / dependent / beneficiary) or to a name we hold no value for (a former /
+ * previous / other / middle / additional name, a Japanese kana reading) — all
+ * must be SKIPPED.
+ *
+ * Why a dedicated rule rather than more {@link AMBIGUOUS} entries: that list is
+ * PROSE-shaped (plain substrings of a rendered label) and
+ * {@link AMBIGUOUS_PREFIXED} is LEADING-anchored, so both miss the camelCase
+ * ATTRIBUTE spellings that {@link NAMED_KEY_PATTERNS} now matches —
+ * `jobReferenceFirstName`, `myReferrerFirstName`, `spouseFirstName`,
+ * `dependentLastName`, `previousLastName`. Widening the name patterns without
+ * this rule would write the USER's name into a third party's box: a mis-fill,
+ * which this module's contract forbids.
+ *
+ * Shape: a relation/qualifier stem, then (after any run of separators, and an
+ * optional first/last/full/middle/given/family qualifier) a REQUIRED trailing
+ * `name`/`nm` token. Requiring that trailing token is what keeps
+ * "work preferences" / "research experience" fillable — they have a stem but no
+ * name token. The trailing side stays open (`referenceFirstName1`). The
+ * kana/furigana reading is listed BOTH as a stem (`kana_last_name`) and as a
+ * trailing alternative, because that qualifier can follow the name token
+ * (`lastNameKana`).
+ *
+ * The reference/referrer family lives in its own {@link AMBIGUOUS_REFERENCE_NAME}
+ * because it — and only it — needs the "preferred" exemption; keeping it out of
+ * this rule means an unrelated "prefer" elsewhere in the signal can never
+ * un-deny a spouse/middle/kana field.
+ */
+const AMBIGUOUS_NAME_COMPOUND =
+  /(?:spouse|child|dependen|beneficiar|former|previous|other|aka|also[\s_-]*known[\s_-]*as|middle|additional|kana|furigana)[a-z]*[\s_-]*(?:first|last|full|middle|given|family)?[\s_-]*n(?:ame|m)|n(?:ame|m)[\s_-]*(?:kana|furigana)|furigana/;
+
+/**
+ * {@link AMBIGUOUS_NAME_COMPOUND}'s shape for the reference/referrer family
+ * (`jobReferenceFirstName`, `myReferrerLastName`, `refereeFirstName`).
+ *
+ * Deliberately UNANCHORED, unlike {@link AMBIGUOUS_PREFIXED}: a `[^p]` character
+ * guard (the obvious way to spare "**p**referred"/"**p**reference") exempts every
+ * p-terminated prefix, and `empReferenceFirstName`,
+ * `groupReferenceFirstName`, `backupReferenceFirstName`, `topReferenceFirstName`
+ * … are ordinary HRIS spellings that were each filled with the applicant's own
+ * name. The exemption is done by WORD in {@link isAmbiguousSignal} instead.
+ */
+const AMBIGUOUS_REFERENCE_NAME =
+  /(?:referr|refere)[a-z]*[\s_-]*(?:first|last|full|middle|given|family)?[\s_-]*n(?:ame|m)/;
+
+/**
  * True when a field's {@link textSignal} is ambiguous or sensitive and must be
  * SKIPPED by both autofill ({@link textSignal} → `isCandidateField`) and
  * answers-capture (`isCapturable`). Combines the plain-substring {@link AMBIGUOUS}
- * denylist with the word-anchored {@link AMBIGUOUS_WORDS} and the
- * leading-anchored {@link AMBIGUOUS_PREFIXED} ones, so the two consumers can
- * never disagree on what counts as ambiguous.
+ * denylist with the word-anchored {@link AMBIGUOUS_WORDS}, the
+ * leading-anchored {@link AMBIGUOUS_PREFIXED} and the compound
+ * {@link AMBIGUOUS_NAME_COMPOUND} ones, so the two consumers can never disagree
+ * on what counts as ambiguous.
+ *
+ * {@link AMBIGUOUS_REFERENCE_NAME} is the one rule with an exemption: a signal
+ * where "prefer" STARTS a word is the ubiquitous "Preferred first name" /
+ * `preferred_first_name` field (its `refer` exists only because "prefer"
+ * contains one) and must keep filling. The anchor is what separates it from
+ * `empReferenceFirstName` / `topReferenceFirstName`, where the same letters are
+ * a prefix + "reference". A camelCase `candidatePreferredFirstName` is
+ * collateral of that ambiguity — the two are spelled identically apart from the
+ * word boundary, so it is skipped: an under-fill, which this module prefers to
+ * writing the user's name into a reference's box.
  */
 export function isAmbiguousSignal(signal: string): boolean {
   return (
     AMBIGUOUS.some((w) => signal.includes(w)) ||
     AMBIGUOUS_WORDS.test(signal) ||
-    AMBIGUOUS_PREFIXED.test(signal)
+    AMBIGUOUS_PREFIXED.test(signal) ||
+    AMBIGUOUS_NAME_COMPOUND.test(signal) ||
+    (AMBIGUOUS_REFERENCE_NAME.test(signal) && !/(?:^|[^a-z])prefer/.test(signal))
   );
 }
 
@@ -212,6 +271,14 @@ export function isHidden(el: HTMLElement): boolean {
   return false;
 }
 
+/** Per-source character cap for {@link labelText}. A label is a short phrase;
+ *  an `aria-labelledby` id may point at a whole CONTAINER (a fieldset, a card),
+ *  whose `textContent` is unbounded — and this string is persisted as the
+ *  answers-capture question key and sent over the bridge, so it must not grow
+ *  without limit. 300 is far above any real label and well below "swallowed the
+ *  page". */
+const LABEL_SOURCE_MAX = 300;
+
 /** CSS.escape when available (jsdom + browsers), else a conservative fallback. */
 function escapeId(id: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(id);
@@ -219,19 +286,50 @@ function escapeId(id: string): string {
 }
 
 /** The associated label text for a form element: `<label for>` + any wrapping
- *  `<label>`. Takes `HTMLElement` (not just `HTMLInputElement`) so it works
- *  identically for `<textarea>`/`<select>` — every member it touches
- *  (`id`/`closest`) is generic to `Element`, not input-specific. */
+ *  `<label>` + every element referenced by `aria-labelledby`. Takes
+ *  `HTMLElement` (not just `HTMLInputElement`) so it works identically for
+ *  `<textarea>`/`<select>` — every member it touches (`id`/`closest`/
+ *  `getAttribute`) is generic to `Element`, not input-specific.
+ *
+ *  `aria-labelledby` is the ONLY label many modern ATS forms expose: Workday and
+ *  Ashby render their field labels as sibling `<div>`/`<span>`s wired by id
+ *  rather than a `<label for>`, so without this resolution those fields carried
+ *  an empty label and were matched from `name`/`id`/`placeholder` alone (or, for
+ *  answers-capture, skipped as unlabelled). The attribute is an id LIST
+ *  (space-separated, in reference order) — each referenced element's
+ *  `textContent` is appended, same shape as the label text above. `getElementById`
+ *  needs no escaping (unlike the `label[for=…]` selector) and is jsdom-safe; no
+ *  layout/computed-style read is involved.
+ *
+ *  Each source element is counted ONCE (`seen`): the common React-Aria /
+ *  headless-UI shape points `aria-labelledby` at the very `<label for>` that is
+ *  already picked up above (and a wrapping `<label for>` matches twice on its
+ *  own), which would otherwise yield "First name First name" — harmless for
+ *  keyword matching, but `answers-capture.ts` persists this string as the
+ *  QUESTION key, so a duplicated label is a duplicated stored question. */
 export function labelText(el: HTMLElement): string {
   const doc = el.ownerDocument;
+  const seen = new Set<Element>();
   let text = '';
-  if (el.id) {
-    const forLabel = doc.querySelector(`label[for="${escapeId(el.id)}"]`);
-    if (forLabel?.textContent) text += ` ${forLabel.textContent}`;
+  const append = (node: Element | null): void => {
+    if (!node || seen.has(node) || !node.textContent) return;
+    seen.add(node);
+    text += ` ${node.textContent.slice(0, LABEL_SOURCE_MAX)}`;
+  };
+
+  if (el.id) append(doc.querySelector(`label[for="${escapeId(el.id)}"]`));
+  append(el.closest('label'));
+  const labelledBy = el.getAttribute('aria-labelledby');
+  if (labelledBy) {
+    for (const id of labelledBy.split(/\s+/)) {
+      if (id) append(doc.getElementById(id));
+    }
   }
-  const wrapping = el.closest('label');
-  if (wrapping?.textContent) text += ` ${wrapping.textContent}`;
-  return text;
+  // Collapse the source markup's newlines/indentation into single spaces: this
+  // string is not only matched against, it is PERSISTED as the answers-capture
+  // question key and sent over the bridge, so "Why\n    this role?" and
+  // "Why this role?" must be one question, not two.
+  return text.replace(/\s+/g, ' ');
 }
 
 /** Fold an accented EU label to ASCII so it matches the accent-free keyword
@@ -269,6 +367,22 @@ export function textSignal(el: HTMLElement): string {
       el.getAttribute('aria-label') ?? '',
       labelText(el),
     ].join(' ')
+  ).toLowerCase();
+}
+
+/** The same normalization as {@link textSignal}, but from the field's OWN
+ *  ATTRIBUTES only (`name`/`id`/`autocomplete`) — no placeholder, aria-label or
+ *  label prose.
+ *
+ *  {@link matchNamedKey} takes this as a second, narrower signal because the two
+ *  carry different EVIDENCE. Prose is written for a human and freely names both
+ *  halves of a name ("First and Last Name" is a single full-name box; a "Full
+ *  Name" group heading sits above separate first/last boxes), while an attribute
+ *  names the ONE field it is on. A rule that must not be fooled by a group
+ *  heading — the `fullName` row's `denyAttribute` — therefore reads only this. */
+export function attributeSignal(el: HTMLElement): string {
+  return stripDiacritics(
+    [el.getAttribute('name') ?? '', el.id, el.getAttribute('autocomplete') ?? ''].join(' ')
   ).toLowerCase();
 }
 
@@ -352,7 +466,66 @@ export function matchAutocompleteKey(token: string): string | null {
  * is NOT in this table — it runs last, in {@link matchNamedKey}, only after
  * every specific pattern misses.
  */
-const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
+/**
+ * The owner of a "name" that is NOT the applicant: an account/system name
+ * (user/file/nick/screen/display), an organization, or a
+ * school/course/degree/major.
+ * Localized (accent-free — the signal is diacritic-stripped) so
+ * "Name der Schule" / "Nom de l'entreprise" never receive the person's name.
+ *
+ * `\bfirma\b` is anchored — a bare `firma` substring wrongly matches the English
+ * words "affirmative"/"confirmation", which would stop a legitimate
+ * "Name (Affirmative Action)" EEO field from filling.
+ *
+ * Hoisted to a const because it now gates TWO places that must never drift: the
+ * bare-"Name" catch-all in {@link matchNamedKey} (where it has always run) and
+ * the `fullName` row's {@link NamedKeyPattern.deny} below — without the latter,
+ * the attribute spellings the row gained (`school_full_name`,
+ * `universityFullName`, `degreeFullName`, …) walked straight past a denylist the
+ * prose spelling ("University Name") has always respected.
+ */
+const NON_PERSON_NAME_OWNER =
+  /user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|major|certificat|schule|hochschule|universitat|benutzer|\bfirma\b|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/;
+
+/**
+ * The first/last spellings, as the `fullName` row's
+ * {@link NamedKeyPattern.denyAttribute} — matched against the ATTRIBUTE signal
+ * ({@link attributeSignal}) only, never the prose one.
+ *
+ * A GROUP label reaches a field's signal through `aria-labelledby` (and, for a
+ * wrapping `<label>`, through {@link labelText}), so a "Full Name" group heading
+ * above `first_name` / `last_name` boxes lands the phrase "full name" in BOTH
+ * their signals. Since the `fullName` row runs first, each box would then take
+ * the WHOLE name. When the field's OWN ATTRIBUTE says first/last, that is the
+ * more specific evidence and wins.
+ *
+ * Reading only the attribute signal is load-bearing, not a refinement: the
+ * separator class accepts a space, so against the full signal this also matched
+ * PROSE — the single full-name box placeheld "First and Last Name" was vetoed
+ * out of `fullName` and fell through to `lastName`, receiving only the surname.
+ * (Dropping `\s` from the class is NOT the fix — it re-opens the mirror case, a
+ * prose `aria-label="First name"` under a "Full Name" heading.) The DE/ES/IT/PL
+ * combined phrases contain none of these tokens either way.
+ */
+const ATTRIBUTE_FIRST_LAST_NAME =
+  /(?:first|given|fore)[\s_-]*(?:name|nm)|(?:^|[^a-z])fname|(?:last|family)[\s_-]*(?:name|nm)|(?:^|[^a-z])lname/;
+
+/** One row of {@link NAMED_KEY_PATTERNS}: the key it resolves to, the signal
+ *  pattern that claims it, and optional vetoes — the row-scoped equivalent of
+ *  the catch-all's own denylist. A veto makes the matcher fall through to the
+ *  rows below, and finally to the catch-all. */
+interface NamedKeyPattern {
+  key: string;
+  pattern: RegExp;
+  /** Vetoes the row when it matches the FULL signal (attributes + prose). */
+  deny?: RegExp;
+  /** Vetoes the row only when it matches the field's own ATTRIBUTE signal
+   *  ({@link attributeSignal}) — for evidence that a human-facing label may
+   *  legitimately carry but an attribute may not. */
+  denyAttribute?: RegExp;
+}
+
+const NAMED_KEY_PATTERNS: readonly NamedKeyPattern[] = [
   { key: 'linkedin', pattern: /linkedin/ },
   { key: 'github', pattern: /github/ },
   { key: 'website', pattern: /portfolio|personal (web ?site|site)/ },
@@ -387,22 +560,62 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   // ("Vor- und Nachname", "Nombre y apellidos", "Nome e cognome"), which would
   // otherwise PARTIALLY fill via the first/last patterns below (nachname →
   // lastName, nombre → firstName). `-?` tolerates the elided-hyphen DE/NL forms.
+  //
+  // `full[\s_-]*name` (was the space-only `\bfull name\b`) so the ATTRIBUTE
+  // spellings resolve here too — `fullname`, `full_name`, `full-name`, and the
+  // camelCase `fullName` (which flattens to `fullname` in the lowercased
+  // signal). Left unanchored on both sides, unlike `phone`/`city`: no English or
+  // EU word CONTAINS "fullname", so there is no collision to guard against,
+  // while an anchor would break the very common `candidateFullName`-style
+  // compound.
   {
     key: 'fullName',
+    // The English conjunction forms ("First and Last Name", "First name & last
+    // name", "first/last name") join the localized ones: a SINGLE box asking for
+    // both halves is a full-name field, and without them it fell to the
+    // `lastName` row below (its `last name` matches) and received only the
+    // surname.
     pattern:
-      /\bfull name\b|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
+      /full[\s_-]*name|first[\s_-]*(?:name)?[\s_-]*(?:and|&|\+|\/)[\s_-]*last[\s_-]*name|vollstandiger name|vor-? und nachname|nom complet|prenom et nom|nombre completo|nombre y apellidos?|nome completo|nome e cognome|imie i nazwisko|volledige naam|voor-? en achternaam|fullstandigt namn/,
+    // Veto 1 (whole signal): a non-person owner — the same denylist the
+    // bare-"Name" catch-all applies, so "University Full Name" is refused in
+    // prose AND attribute spellings.
+    deny: NON_PERSON_NAME_OWNER,
+    // Veto 2 (ATTRIBUTE signal only): the field's own name/id says first/last,
+    // so a "Full Name" GROUP heading in its prose must not win. See the const.
+    denyAttribute: ATTRIBUTE_FIRST_LAST_NAME,
   },
+  // First/last name — the separator between the two words is OPTIONAL
+  // (`[\s_-]*`), because a form field's strongest signal is usually its
+  // `name`/`id` ATTRIBUTE, not a prose label: `first_name`, `firstName`
+  // (→ `firstname` once lowercased), `given-name` and Greenhouse's
+  // `job_application[first_name]` are all the same field as a "First name"
+  // label. Before this, the space-only `first name`/`last name` patterns missed
+  // every one of them, and the HYPHENATED spellings were actively harmful: `-`
+  // is a non-word character, so `first-name`/`family-name` fell through to the
+  // generic `\bname\b` catch-all in `matchNamedKey` and received the FULL name
+  // in BOTH boxes.
+  //
+  // Anchoring follows the `phone`/`city` rule — anchor only what collides.
+  // `first`/`given`/`fore`/`last`/`family` + `name` collide with nothing, so
+  // they stay open on both sides (`applicantFirstName`, `first_name_1` and
+  // `firstNameInput` must all keep matching). The bare abbreviations DO collide
+  // and are LEADING-anchored: `lname` ⊂ "fullname" (which must stay `fullName`,
+  // not `lastName`) and `fname` is short enough to hide inside a future
+  // compound. The trailing side stays open for `fname_1`/`lnameInput`.
+  // `nm` is Taleo's abbreviation (`firstNm`/`lastNm`).
+  //
   // `nombre` (ES) and `nome` (IT/PT) mean "name" — excluded when they head a
   // username/company/full-name phrase so they only fire for a real first name.
   {
     key: 'firstName',
     pattern:
-      /first name|given name|forename|vorname|prenom|voornaam|fornamn|fornavn|etunimi|\bimie\b|\bnombre\b(?!\s*(?:de\b|completo))|\bnome\b(?!\s*(?:completo|utente|de\b|da\b|del))/,
+      /(?:first|given|fore)[\s_-]*(?:name|nm)|(?:^|[^a-z])fname|vorname|prenom|voornaam|fornamn|fornavn|etunimi|\bimie\b|\bnombre\b(?!\s*(?:de\b|completo))|\bnome\b(?!\s*(?:completo|utente|de\b|da\b|del))/,
   },
   {
     key: 'lastName',
     pattern:
-      /last name|surname|family name|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
+      /(?:last|family)[\s_-]*(?:name|nm)|(?:^|[^a-z])lname|surname|nachname|familienname|nom de famille|\bapellidos?\b|cognome|achternaam|nazwisko|apelido|sobrenome|efternamn|efternavn|etternavn|sukunimi/,
   },
   // `city`/`town` are anchored on their LEADING side (see the `phone` note
   // above): bare `city` ⊂ "ethnicity", so an EEO "Ethnicity" field was resolving
@@ -421,25 +634,23 @@ const NAMED_KEY_PATTERNS: readonly { key: string; pattern: RegExp }[] = [
   },
 ];
 
-export function matchNamedKey(signal: string): string | null {
-  for (const { key, pattern } of NAMED_KEY_PATTERNS) {
-    if (pattern.test(signal)) return key;
+/**
+ * @param signal the full {@link textSignal} (attributes + prose).
+ * @param attributes the narrower {@link attributeSignal}; defaults to `signal`,
+ *   which is the pre-split behavior — every DOM caller passes it explicitly, and
+ *   only a row's {@link NamedKeyPattern.denyAttribute} reads it.
+ */
+export function matchNamedKey(signal: string, attributes: string = signal): string | null {
+  for (const { key, pattern, deny, denyAttribute } of NAMED_KEY_PATTERNS) {
+    if (!pattern.test(signal)) continue;
+    if (deny?.test(signal)) continue;
+    if (denyAttribute?.test(attributes)) continue;
+    return key;
   }
-  // Generic catch-all: a bare "Name" field → full name, UNLESS it's a
-  // user/file/nick/display/business/org field OR a school/company/user-account
-  // "name" field. The denylist is localized (accent-free — the signal is
-  // diacritic-stripped) so "Name der Schule" / "Name des Unternehmens" /
-  // "Nom de l'entreprise"-style fields never receive the person's name.
-  if (
-    /\bname\b/.test(signal) &&
-    // `\bfirma\b` is anchored — a bare `firma` substring wrongly matches the
-    // English words "affirmative"/"confirmation", which would stop a legitimate
-    // "Name (Affirmative Action)" EEO field from filling.
-    !/user|file|nick|screen|display|business|org|school|institution|university|college|degree|course|program|certificat|schule|hochschule|universitat|benutzer|\bfirma\b|unternehmen|ecole|universite|entreprise|societe|utilisateur|escuela|universidad|empresa|usuario|scuola|universita|azienda|utente|szkola|uczelnia|uzytkownik|gebruiker|bedrijf|foretag|anvandare|virksomhed|bruger|yritys|kayttaja/.test(
-      signal
-    )
-  )
-    return 'fullName';
+  // Generic catch-all: a bare "Name" field → full name, UNLESS the name belongs
+  // to a non-person owner ({@link NON_PERSON_NAME_OWNER}) — a school, a company,
+  // or a user account.
+  if (/\bname\b/.test(signal) && !NON_PERSON_NAME_OWNER.test(signal)) return 'fullName';
 
   return null;
 }
