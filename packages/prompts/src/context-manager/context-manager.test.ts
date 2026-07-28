@@ -85,6 +85,13 @@ describe('detectModelSize / getModelTier', () => {
     }
   });
 
+  it('classifies the bare Claude Code "fable" alias as large (not the small default)', () => {
+    // Claude Code's flagship alias has no "claude" substring on its own, so it
+    // needs its own entry alongside sonnet/opus/haiku or it falls through.
+    expect(detectModelSize('fable')).toBe('large');
+    expect(detectModelSize('claude-fable-5')).toBe('large');
+  });
+
   it('classifies known small local models', () => {
     for (const name of ['llama3.2:1b', 'phi-3', 'gemma:2b', 'tinyllama', 'qwen2.5:3b']) {
       expect(detectModelSize(name)).toBe('small');

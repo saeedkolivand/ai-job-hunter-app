@@ -65,6 +65,35 @@ fn estimate_cost_strips_a_leading_models_prefix() {
 }
 
 #[test]
+fn estimate_cost_matches_the_claude_5_family_rates() {
+    // Each Claude 5 model must hit its own row, not DEFAULT_RATE and not a
+    // same-tier 4.x row it happens to share a numeric substring with.
+    let fable = estimate_cost("claude-fable-5", 1_000_000, 1_000_000);
+    let opus5 = estimate_cost("claude-opus-5-20260201", 1_000_000, 1_000_000);
+    let sonnet5 = estimate_cost("claude-sonnet-5", 1_000_000, 1_000_000);
+    assert!((fable - (10.00 + 50.00)).abs() < 1e-9, "got {fable}");
+    assert!((opus5 - (5.00 + 25.00)).abs() < 1e-9, "got {opus5}");
+    assert!((sonnet5 - (3.00 + 15.00)).abs() < 1e-9, "got {sonnet5}");
+}
+
+#[test]
+fn estimate_cost_claude_5_and_4_prefixes_do_not_shadow_each_other() {
+    // "claude-opus-5"/"claude-sonnet-5" must never fall through to the
+    // "claude-opus-4"/"claude-sonnet-4" rows (or vice versa) — the digit
+    // makes the prefixes distinct, but a future reordering could still break
+    // this, so pin it.
+    let opus5 = estimate_cost("claude-opus-5", 1_000_000, 0);
+    let opus4 = estimate_cost("claude-opus-4-20250514", 1_000_000, 0);
+    assert!((opus5 - 5.00).abs() < 1e-9, "got {opus5}");
+    assert!((opus4 - 15.00).abs() < 1e-9, "got {opus4}");
+
+    let sonnet5 = estimate_cost("claude-sonnet-5", 1_000_000, 0);
+    let sonnet4 = estimate_cost("claude-sonnet-4-5", 1_000_000, 0);
+    assert!((sonnet5 - 3.00).abs() < 1e-9, "got {sonnet5}");
+    assert!((sonnet4 - 3.00).abs() < 1e-9, "got {sonnet4}");
+}
+
+#[test]
 fn is_free_provider_covers_local_and_cli_agents_only() {
     for p in [
         "ollama",
