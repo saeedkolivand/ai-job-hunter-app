@@ -26,6 +26,13 @@ export interface AiGenerationRecord {
   /** AI-suggested questions the candidate can ASK the interviewer, if any. */
   interviewQuestions: InterviewQuestion[];
   /**
+   * The persisted apply-by-email draft (subject line + body). Optional because
+   * records serialised before these columns existed — e.g. an older exported
+   * backup replayed through a test fixture — carry neither field.
+   */
+  emailSubject?: string;
+  emailBody?: string;
+  /**
    * Parent Application FK — set at save time (and backfilled at boot for legacy
    * rows). The Application detail page joins this generation's docs by this id, not
    * by url, because the Application stores the NORMALIZED url and the generation the
@@ -57,6 +64,13 @@ export interface AiGenerationSaveRequest {
   companyBrief?: string;
   /** AI-suggested interview questions to persist on the (per-job) record. */
   interviewQuestions?: InterviewQuestion[];
+  /**
+   * The apply-by-email draft to persist on the (per-job) record. Merged like
+   * `coverLetterText`: a non-blank value overwrites the stored draft, a blank
+   * one leaves it untouched — so a résumé/answers save can't wipe the email.
+   */
+  emailSubject?: string;
+  emailBody?: string;
 }
 
 /**
@@ -72,9 +86,19 @@ export interface AiGenerationUpdateRequest {
   coverLetterText?: string;
 }
 
+/**
+ * Result of `save` — the Rust command reports failure IN-BAND (it resolves with
+ * `{ error }` instead of rejecting), so a caller's `onError` never fires for a
+ * store failure. Modelled as a union of the two disjoint arms the command
+ * actually returns, which makes the compiler refuse a bare `result.id` until
+ * the failure arm has been narrowed out (`'error' in result`) — the check is
+ * otherwise trivially forgotten, which is exactly how it was missed here.
+ */
+export type AiGenerationSaveResult = { id: string; success: true } | { error: string };
+
 export interface AiGenerationsContract {
   list(): Promise<AiGenerationRecord[]>;
-  save(req: AiGenerationSaveRequest): Promise<{ id: string; success: boolean }>;
+  save(req: AiGenerationSaveRequest): Promise<AiGenerationSaveResult>;
   update(req: AiGenerationUpdateRequest): Promise<void>;
   remove(id: string): Promise<void>;
   removeBulk(ids: string[]): Promise<void>;

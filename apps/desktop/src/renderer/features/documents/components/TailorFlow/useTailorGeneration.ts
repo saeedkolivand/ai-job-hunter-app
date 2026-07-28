@@ -143,9 +143,13 @@ export function useTailorGeneration({
         companyBrief,
       })
       .then((res) => {
+        // The command reports a store failure IN-BAND (`{ error }`) instead of
+        // rejecting, so `.catch` below never sees it. Bail before reading `id`:
+        // nothing was written, so there is nothing to invalidate either.
+        if ('error' in res) return;
         // Stash the persisted id on the session so later inline edits can patch
         // this exact record (F1) without a separate save.
-        if (res?.id) setSavedIdInStore(contextId, res.id);
+        setSavedIdInStore(contextId, res.id);
         void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
         void qc.invalidateQueries({ queryKey: keys.autopilot.all });
       })

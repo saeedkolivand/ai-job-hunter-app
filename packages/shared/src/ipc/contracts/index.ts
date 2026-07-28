@@ -157,6 +157,7 @@ export {
   AI_GENERATIONS_CHANNELS,
   type AiGenerationRecord,
   type AiGenerationSaveRequest,
+  type AiGenerationSaveResult,
   type AiGenerationsContract,
   type AiGenerationUpdateRequest,
 } from './aiGenerations.js';
