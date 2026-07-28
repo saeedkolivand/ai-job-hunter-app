@@ -224,7 +224,8 @@ temp/
 .impeccable/
 
 # NOTE: Project-level AI instruction files ARE committed (not ignored):
-#   AGENTS.md  → CANONICAL rules; read natively by Copilot, Cursor, Windsurf, Codex et al.
+#   AGENTS.md  → CANONICAL rules; read natively by Cursor, Windsurf, Codex et al.
+#                (Copilot too, but not in every feature — hence its pointer below)
 #   CLAUDE.md  → Claude Code: imports @AGENTS.md, adds Claude-only orchestration
 #   Thin pointers to AGENTS.md (kept only for tools that don't read it natively / in full):
 #     .clinerules → Cline · .github/copilot-instructions.md → GitHub Copilot

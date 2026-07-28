@@ -259,7 +259,9 @@ function checkAiConfigs() {
   // `^` under /m matches inside a fence too, and a fenced import would otherwise pass green.
   // Inline backticks need no stripping: the line no longer starts with `@`.
   if (exists(CLAUDE_MD)) {
-    const importable = read(CLAUDE_MD).replace(/^(```|~~~)[\s\S]*?^\1/gm, '');
+    // Match the FULL opening run (`{3,}) so a 3-tick inner fence can't close a 4-tick outer
+    // one, and allow the 1-3 leading spaces CommonMark still treats as a fence.
+    const importable = read(CLAUDE_MD).replace(/^ {0,3}(`{3,}|~{3,})[\s\S]*?^ {0,3}\1/gm, '');
     if (!/^@AGENTS\.md\s*$/m.test(importable)) {
       fail(
         'CLAUDE.md ∌ @AGENTS.md',

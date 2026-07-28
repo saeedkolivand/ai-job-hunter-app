@@ -44,7 +44,7 @@ Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/de
 11. **Remote data via React Query service hooks** — no `useState + useEffect` fetching.
 12. **Package boundaries:** `shared` no React/Node · `ui` no Zustand/IPC/routing · `prompts` no UI/`window` · `translations` no app/IPC imports.
 13. **Stale-branch check before work:** `git fetch origin && git branch -r | rg $(git branch --show-current)`.
-14. **New IPC capability** (5 steps): `ipc/contracts/` → `commands.rs` → `tauri-client.ts` → a `services/` hook → query key in `services/query-client.ts`.
+14. **New IPC capability** (5 steps): `ipc/contracts/` → `commands/` → `tauri-client/` → a `services/` hook → query key in `services/query-client/`.
 15. **Never bypass ESLint** — no `// eslint-disable`, no `@ts-ignore`. Scoped override in `eslint.config.mjs` with a reason. CI runs `lint:strict --max-warnings 0`.
 
 ---
