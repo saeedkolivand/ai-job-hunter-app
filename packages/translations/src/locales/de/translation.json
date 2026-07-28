@@ -1746,9 +1746,7 @@
     }
   },
   "jobs": {
-    "eyebrow": "Live-Anzeigen",
     "title": "Jobbörse",
-    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, öffnen und Bewerbung anpassen.",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort filtern…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
@@ -1840,7 +1838,7 @@
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",
     "scanning": "Boards werden durchsucht…",
-    "scanningPercent": "Wird durchsucht: {{percent}} %",
+    "scanningPercent": "Wird durchsucht: {{percent}} %",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
@@ -1979,7 +1977,16 @@
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "agencyChip": "Personalvermittler",
     "filters": {
-      "hideAgency": "Vermittleranzeigen ausblenden"
+      "hideAgency": "Vermittleranzeigen ausblenden",
+      "activeLabel": "Aktive Filter",
+      "searchChip": "Suche: {{query}}",
+      "remove": "Filter entfernen: {{name}}"
+    },
+    "commandBar": {
+      "label": "Jobbörsen-Steuerung",
+      "shownCount": "{{shown}} von {{total}} Jobs angezeigt",
+      "statusRow": "Status des letzten Scrapings",
+      "filterLabel": "Jobs filtern"
     },
     "cluster": {
       "alsoOn": "Auch auf",

@@ -92,6 +92,7 @@ export {
 
 // ── Overlays & Modals ─────────────────────────────────────────────────────
 export { ConfirmModal } from './components/ConfirmModal/index';
+export { Drawer, type DrawerProps } from './components/Drawer/index';
 export { GlassOverlay } from './components/GlassOverlay/index';
 export { HoverPopover, type HoverPopoverProps } from './components/HoverPopover/index';
 export { ModalShell, type ModalShellProps } from './components/ModalShell/index';
