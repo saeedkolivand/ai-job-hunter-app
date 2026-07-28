@@ -4,4 +4,8 @@
 // deliberate: the JS module accepts any plain config object, and `object`
 // accepts WorldClient.tsx's typed WORLD_CONFIG (world-config.ts) without
 // TS demanding a matching index signature on that named interface.
-export function mountScrollWorld(container: HTMLElement, config: object): void;
+// Returns a disposer: it removes every window listener, cancels the rAF loop,
+// releases each clip's decoder + blob URL and empties the container, so the
+// engine can be mounted again (StrictMode's double-invoke, a route change, a
+// test). See ADR-0019's deviation log — upstream returns nothing.
+export function mountScrollWorld(container: HTMLElement, config: object): () => void;
