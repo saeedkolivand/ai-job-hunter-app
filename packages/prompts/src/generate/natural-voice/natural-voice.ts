@@ -96,6 +96,11 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
  * still gets a correct, if slightly terser, directive with zero change here.
  */
 const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
+  // `en`/`de` have curated lexicons so the generic builders never look them up,
+  // but they belong here so this stays a complete display-name lookup for the
+  // other prompt builders that render a language into their directives.
+  en: 'English',
+  de: 'German',
   fr: 'French',
   es: 'Spanish',
   it: 'Italian',
@@ -108,7 +113,12 @@ const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
   nl: 'Dutch',
 };
 
-function languageDisplayName(code: string): string {
+/**
+ * Human-readable name for a language CODE, for interpolation into a directive.
+ * A value that is already a name (or an unlisted code) is returned unchanged, so
+ * this is safe to call on either form.
+ */
+export function languageDisplayName(code: string): string {
   return LANGUAGE_DISPLAY_NAMES[code] ?? code;
 }
 
