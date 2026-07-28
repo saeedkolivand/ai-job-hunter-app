@@ -1618,6 +1618,7 @@
         "countryResolved": "Land: {{country}}",
         "pages": "Zu scrapende Seiten",
         "pagesHint": "pro Board — tatsächliche Ergebnisse variieren",
+        "pagesAggregatorOnly": "vom Aggregator-Board nicht genutzt — dort zählt die Ergebnisanzahl",
         "postedWithin": "Veröffentlicht innerhalb",
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",

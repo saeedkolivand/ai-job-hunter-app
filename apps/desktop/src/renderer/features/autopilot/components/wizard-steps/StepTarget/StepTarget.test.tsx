@@ -99,8 +99,16 @@ vi.mock('@/providers/AppClientProvider', () => ({
 // — explicitly typed so `seededCompanies` is a valid (optional) fixture field.
 type CatalogBoardFixture = { id: string; listed: boolean; seededCompanies?: string[] };
 
+// Two listed boards so a non-aggregator / MIXED selection is expressible: the
+// board-normalization effect drops any selected id missing from the catalog, so
+// the page-budget tests below could not select anything else without this.
+const DEFAULT_CATALOG: CatalogBoardFixture[] = [
+  { id: 'aggregator', listed: true },
+  { id: 'greenhouse', listed: true },
+];
+
 const boardsCatalogImpl = vi.fn((): { data: CatalogBoardFixture[]; isLoading: boolean } => ({
-  data: [{ id: 'aggregator', listed: true }],
+  data: DEFAULT_CATALOG,
   isLoading: false,
 }));
 
@@ -275,19 +283,26 @@ describe('StepTarget — countryCode wiring (Fix A)', () => {
 // backend's AutopilotTargetSchema range.
 
 describe('StepTarget — page budget field', () => {
+  // A pages-HONOURING board is selected throughout: the field is deliberately
+  // inert (disabled) when the aggregator is the only target — see the
+  // "inert page budget" describe below.
+  const renderPagesStep = (overrides: Partial<WizardState> = {}) =>
+    renderStep({ boards: ['greenhouse'], ...overrides });
+
   it('bounds the control to the backend 1–10 page range and seeds the form value', () => {
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole<HTMLInputElement>('spinbutton');
     expect(input).toHaveAttribute('min', '1');
     expect(input).toHaveAttribute('max', '10');
     expect(input.value).toBe('2');
+    expect(input).toBeEnabled();
   });
 
   it('gives the control an accessible name via the label/htmlFor pair', () => {
     // WizardField renders its <label> as a SIBLING of the control, so without
     // matching htmlFor/id the input announces as "spinbutton, blank".
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     expect(screen.getByLabelText('autopilot.wizard.target.pages')).toBe(
       screen.getByRole('spinbutton')
@@ -300,7 +315,7 @@ describe('StepTarget — page budget field', () => {
     // ever blurring. The resolver then rejects `pages` and — before this wiring
     // — the only feedback was the wizard's generic "missing fields" banner,
     // with nothing marking the offending control for sighted or SR users.
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole<HTMLInputElement>('spinbutton');
     fireEvent.change(input, { target: { value: '2.5' } });
@@ -312,7 +327,7 @@ describe('StepTarget — page budget field', () => {
   });
 
   it('clears the inline error once the value is valid again', async () => {
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole<HTMLInputElement>('spinbutton');
     fireEvent.change(input, { target: { value: '2.5' } });
@@ -329,7 +344,7 @@ describe('StepTarget — page budget field', () => {
     // NumberField clamps to [min, max] on blur but never rounds. An unrounded
     // 2.5 fails the resolver, and the final Create button runs through
     // handleSubmit with no onInvalid branch — it would just do nothing.
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole<HTMLInputElement>('spinbutton');
     fireEvent.change(input, { target: { value: '2.5' } });
@@ -342,7 +357,7 @@ describe('StepTarget — page budget field', () => {
 
   it('writes a typed page count straight into the form (no ×25 item detour)', async () => {
     const user = userEvent.setup();
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole('spinbutton');
     await user.clear(input);
@@ -353,7 +368,7 @@ describe('StepTarget — page budget field', () => {
 
   it('clamps an over-range entry down to 10 on blur instead of accepting a no-op value', async () => {
     const user = userEvent.setup();
-    renderStep({ pages: 2 });
+    renderPagesStep({ pages: 2 });
 
     const input = screen.getByRole('spinbutton');
     await user.clear(input);
@@ -361,6 +376,55 @@ describe('StepTarget — page budget field', () => {
     await user.tab();
 
     expect(readProbe().pages).toBe(10);
+  });
+});
+
+// ── Inert page budget for an aggregator-only target (WS11) ──────────────────
+// The aggregator board never reads `pages` — its providers page by the requested
+// result AMOUNT instead (Adzuna's free tier is a daily call quota). An editable
+// control that changes nothing is dishonest UI, so it is disabled — and ONLY when
+// the aggregator is the sole target; every other board still honours the budget.
+
+describe('StepTarget — page budget is inert for an aggregator-only target', () => {
+  it('disables the control and swaps in the "not used" hint when aggregator is the only board', () => {
+    renderStep({ boards: ['aggregator'], pages: 2 });
+
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    expect(screen.getByText('autopilot.wizard.target.pagesAggregatorOnly')).toBeInTheDocument();
+    // The generic per-board hint must be REPLACED, not shown alongside — it
+    // claims the budget applies, which is exactly what is false here.
+    expect(screen.queryByText('autopilot.wizard.target.pagesHint')).toBeNull();
+  });
+
+  it('keeps the control live for a MIXED selection that includes the aggregator', () => {
+    // greenhouse honours the page budget, so the knob is real again.
+    renderStep({ boards: ['aggregator', 'greenhouse'], pages: 2 });
+
+    expect(screen.getByRole('spinbutton')).toBeEnabled();
+    expect(screen.getByText('autopilot.wizard.target.pagesHint')).toBeInTheDocument();
+    expect(screen.queryByText('autopilot.wizard.target.pagesAggregatorOnly')).toBeNull();
+  });
+
+  it('keeps the control live when the aggregator is not selected at all', () => {
+    renderStep({ boards: ['greenhouse'], pages: 2 });
+
+    expect(screen.getByRole('spinbutton')).toBeEnabled();
+    expect(screen.getByText('autopilot.wizard.target.pagesHint')).toBeInTheDocument();
+  });
+
+  it('preserves the stored page value while the control is disabled', async () => {
+    // Disabling must not silently rewrite the saved budget: re-adding a
+    // pages-honouring board has to bring the user's own number back.
+    const user = userEvent.setup();
+    renderStep({ boards: ['aggregator'], pages: 7 });
+
+    expect(readProbe().pages).toBe(7);
+
+    // Selecting a second board un-inerts the field with the value intact.
+    await user.click(screen.getByRole('button', { name: 'jobs.boards.greenhouse' }));
+
+    expect(screen.getByRole('spinbutton')).toBeEnabled();
+    expect(readProbe().pages).toBe(7);
   });
 });
 
@@ -390,10 +454,7 @@ describe('StepTarget — location filter note (PR F integration)', () => {
 
 describe('StepTarget — seeded companies disclosure (#621 integration)', () => {
   afterEach(() => {
-    boardsCatalogImpl.mockReturnValue({
-      data: [{ id: 'aggregator', listed: true }],
-      isLoading: false,
-    });
+    boardsCatalogImpl.mockReturnValue({ data: DEFAULT_CATALOG, isLoading: false });
   });
 
   it('shows the disclosure for a selected board with seededCompanies, truncated to 5 names + more', () => {

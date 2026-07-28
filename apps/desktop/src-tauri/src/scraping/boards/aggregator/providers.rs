@@ -1,14 +1,14 @@
-/// The three `JobProvider` implementations backing the aggregator board: Adzuna
-/// (primary), JSearch (paid fallback), and Apify LinkedIn (additive, opt-in,
-/// paid). Split out of `mod.rs` (R8 module-size guard) — fallback orchestration
-/// (`primary_chain`/`search_with_providers`) and the `Scraper` impl stay there.
+/// The `JobProvider` implementations backing the aggregator board's non-primary
+/// tiers: JSearch (paid fallback), Jooble (last-resort fallback), and Apify
+/// LinkedIn (additive, opt-in, paid). Split out of `mod.rs` (R8 module-size
+/// guard) — fallback orchestration (`primary_chain`/`search_with_providers`) and
+/// the `Scraper` impl stay there, and the PRIMARY tier lives in `adzuna.rs`
+/// (split out of this file by the same guard).
 ///
 /// Visibility: items here are `pub(super)` (visible to `aggregator` and its
 /// descendants, including `test.rs`) rather than fully private, purely to
 /// preserve this behavior-preserving move — no API surface beyond `aggregator`
 /// is intended.
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde::Deserialize;
 
@@ -19,27 +19,7 @@ use super::JobProvider;
 
 // ── Serde helpers ─────────────────────────────────────────────────────────────
 
-/// Accept either a JSON string or a JSON integer for the Adzuna `id` field,
-/// normalizing both to `String`.  Adzuna documents the field as a string but
-/// the live API returns it as an integer (e.g. `331705081`).
-fn de_string_or_number<'de, D>(de: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StringOrNumber {
-        Str(String),
-        Num(i64),
-    }
-
-    match StringOrNumber::deserialize(de)? {
-        StringOrNumber::Str(s) => Ok(s),
-        StringOrNumber::Num(n) => Ok(n.to_string()),
-    }
-}
-
-/// Like [`de_string_or_number`] but for an OPTIONAL field, tolerating `null` /
+/// Like `adzuna::de_string_or_number` but for an OPTIONAL field, tolerating `null` /
 /// absent / string / number. Used for the Apify actor's loosely-typed `id` and
 /// `postedAt`, which vary by run (string id, numeric id, or omitted).
 fn de_opt_string_or_number<'de, D>(de: D) -> Result<Option<String>, D::Error>
@@ -55,61 +35,6 @@ where
 }
 
 // ── Date-filter helpers ────────────────────────────────────────────────────────
-
-/// Map a UI date-filter token to Adzuna's `max_days_old` integer (whole days).
-///
-// ponytail: Adzuna's recency granularity is whole days — it can't do sub-day. A
-// 1-day ceiling zeroed out autopilot "recent" filters on quiet days (a normal
-// query returns near-nothing in a single day), so sub-day windows FLOOR at 3 days
-// and rely on the query's `sort_by=date` for freshness instead of a hard clamp.
-// No filter / unrecognized token caps at 30 days so the aggregator never surfaces
-// postings older than a month. (Coarse mapping; 3-day floor / 30-day ceiling.)
-pub(super) fn adzuna_max_days_old(date_filter: Option<&str>) -> u32 {
-    match date_filter {
-        Some("15m" | "30m" | "1h" | "2h" | "4h" | "8h" | "24h") => 3,
-        Some("week") => 7,
-        _ => 30,
-    }
-}
-
-/// Whether to broaden a sparse Adzuna result to a country-wide (`where=""`) retry.
-/// Only for an explicitly-supplied country (`!country_guessed`) — broadening a
-/// GUESSED market would defeat primary_chain's guessed-market → JSearch fallback,
-/// which keys off Adzuna returning empty.
-pub(super) fn should_broaden(country_guessed: bool, where_val: &str, count: usize) -> bool {
-    !country_guessed && !where_val.is_empty() && count < super::ADZUNA_BROADEN_FLOOR
-}
-
-/// User-facing note token when a GUESSED market (no `country_code` was supplied)
-/// returned an AUTHORITATIVE result set — `count` at or above the broaden floor,
-/// so [`super::primary_chain`] returns it as-is instead of routing to the global
-/// (JSearch) fallback. Surfaces the otherwise-silent market guess so the user can
-/// set a country for deterministic results.
-///
-/// `None` for an explicit country, an empty location, or a sub-floor count (which
-/// `primary_chain` re-routes to the global fallback, so no guessed-market results
-/// are actually shown — flagging the guess there would mislead). Country code
-/// only — never the raw location (free-text PII).
-pub(super) fn guessed_market_note(
-    country_guessed: bool,
-    location: &str,
-    count: usize,
-    country: &str,
-) -> Option<String> {
-    // `.trim()` here is defensive for direct unit-test callers — the real call
-    // site (`AdzunaProvider::search`) already passes a caller-trimmed `location`.
-    (country_guessed && !location.trim().is_empty() && count >= super::ADZUNA_BROADEN_FLOOR)
-        .then(|| format!("guessed-market:{country}"))
-}
-
-/// Adzuna's `where` wants a place *inside* the market (the country is already the
-/// URL path segment), so a trailing ", Germany"/", Deutschland" just over-narrows the
-/// geocode. Keep the first comma-segment (the city/region), trimmed.
-// ponytail: first-segment heuristic. A country-name-only location (e.g. "germany")
-// already returns Adzuna's full page, so no country-name table is needed.
-pub(super) fn adzuna_where(location: &str) -> &str {
-    location.split(',').next().map(str::trim).unwrap_or("")
-}
 
 /// Map a UI date-filter token to JSearch's `date_posted` query token
 /// (`all|today|3days|week|month`). Sub-day windows floor at `3days` — like Adzuna,
@@ -134,337 +59,53 @@ pub(super) fn jsearch_date_posted(date_filter: Option<&str>) -> &'static str {
     }
 }
 
-// ── Adzuna supported-country allowlist ───────────────────────────────────────
+// ── JSearch paging budget ─────────────────────────────────────────────────────
 
-/// ISO 3166-1 alpha-2 country codes hosted by Adzuna's job-search API.
+/// Production JSearch host (RapidAPI). Tests pass a local `wiremock` base —
+/// mirrors [`JOOBLE_BASE_URL`] / `adzuna::ADZUNA_BASE_URL`.
+pub(super) const JSEARCH_BASE_URL: &str = "https://jsearch.p.rapidapi.com";
+
+/// Results JSearch returns per page.
+pub(super) const JSEARCH_PAGE_SIZE: u32 = 10;
+
+/// Hard ceiling on JSearch's `num_pages`.
 ///
-/// Source: Adzuna API documentation at <https://api.adzuna.com/v1/doc>
-/// (path-parameter enumeration visible in the interactive endpoint reference).
-/// Verified against the known set as of 2026-06-23; update this list if
-/// Adzuna adds new markets (the path `/v1/api/jobs/{country}/search/1` returns
-/// a non-2xx error body for any code not in this set, which is indistinguishable
-/// from an auth failure without real keys — see code comment in `search`).
-pub(super) const ADZUNA_SUPPORTED_COUNTRIES: &[&str] = &[
-    "at", // Austria
-    "au", // Australia
-    "be", // Belgium
-    "br", // Brazil
-    "ca", // Canada
-    "ch", // Switzerland
-    "de", // Germany
-    "es", // Spain
-    "fr", // France
-    "gb", // United Kingdom
-    "in", // India
-    "it", // Italy
-    "mx", // Mexico
-    "nl", // Netherlands
-    "nz", // New Zealand
-    "pl", // Poland
-    "sg", // Singapore
-    "us", // United States
-    "za", // South Africa
-];
+// ponytail: JSearch is billed PER REQUEST and `num_pages` is charged
+// multiplicatively (a 3-page request costs 3 calls), and it is only the FALLBACK
+// tier — it fires when Adzuna is unconfigured or failed. 3 pages (≤30 postings)
+// buys a usable result set without turning one fallback search into a double-digit
+// bill. Like Adzuna's budget this is driven by the requested AMOUNT, never by
+// `BoardSearchInput::pages`.
+pub(super) const JSEARCH_MAX_PAGES: u32 = 3;
 
-#[inline]
-pub(super) fn adzuna_supports_country(country: &str) -> bool {
-    ADZUNA_SUPPORTED_COUNTRIES.contains(&country)
-}
-
-/// ISO-4217 currency for an Adzuna market. Adzuna's search API returns
-/// `salary_min`/`salary_max` as bare numbers with no currency field, so the
-/// currency has to be derived from the country the search targeted — one entry
-/// per code in [`ADZUNA_SUPPORTED_COUNTRIES`]. `None` for any country not in
-/// that list (the salary answer then falls back to a web lookup for currency
-/// instead of guessing).
-#[inline]
-pub(super) fn adzuna_currency_for_country(country: &str) -> Option<&'static str> {
-    Some(match country {
-        "at" | "be" | "de" | "es" | "fr" | "it" | "nl" => "EUR",
-        "au" => "AUD",
-        "br" => "BRL",
-        "ca" => "CAD",
-        "ch" => "CHF",
-        "gb" => "GBP",
-        "in" => "INR",
-        "mx" => "MXN",
-        "nz" => "NZD",
-        "pl" => "PLN",
-        "sg" => "SGD",
-        "us" => "USD",
-        "za" => "ZAR",
-        _ => return None,
+/// JSearch `num_pages` for a target result count: `ceil(amount / 10)` clamped to
+/// [`JSEARCH_MAX_PAGES`]. `None` → 1 (the pre-paging, cheapest behavior);
+/// `amount = 0` still asks for one page, never zero.
+pub(super) fn jsearch_num_pages(amount: Option<u32>) -> u32 {
+    amount.map_or(1, |a| {
+        a.div_ceil(JSEARCH_PAGE_SIZE).clamp(1, JSEARCH_MAX_PAGES)
     })
 }
 
-// ── Adzuna provider ───────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AdzunaCompany {
-    pub(super) display_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AdzunaLocation {
-    pub(super) display_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AdzunaJob {
-    #[serde(deserialize_with = "de_string_or_number")]
-    pub(super) id: String,
-    pub(super) title: String,
-    pub(super) company: Option<AdzunaCompany>,
-    pub(super) location: Option<AdzunaLocation>,
-    pub(super) redirect_url: String,
-    pub(super) description: Option<String>,
-    pub(super) created: Option<String>,
-    pub(super) salary_min: Option<f64>,
-    pub(super) salary_max: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AdzunaResp {
-    pub(super) results: Vec<AdzunaJob>,
-}
-
-pub(crate) struct AdzunaProvider {
-    pub(super) app_id: Option<String>,
-    pub(super) app_key: Option<String>,
-    /// Optional side-channel for user-facing location-policy notes (guessed
-    /// market, sparse city → country-wide broadening). Injected by
-    /// `AggregatorScraper::search` from the `ScrapeContext`; `None` in unit tests
-    /// and credential-state probes. `Arc` (Send + Sync) so the provider stays
-    /// `Sync` while it holds the sink across `.await`.
-    pub(super) note_sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
-}
-
-impl AdzunaProvider {
-    pub(super) fn new() -> Self {
-        use crate::ipc_contracts::provider_slots::{ADZUNA_APP_ID, ADZUNA_APP_KEY};
-        Self {
-            app_id: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_ID}"))
-                .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {ADZUNA_APP_ID} keyring error: {e}");
-                    None
-                }),
-            app_key: crate::credentials::read_credential(&format!("ai:{ADZUNA_APP_KEY}"))
-                .unwrap_or_else(|e| {
-                    log::warn!("[aggregator] {ADZUNA_APP_KEY} keyring error: {e}");
-                    None
-                }),
-            note_sink: None,
-        }
-    }
-
-    /// Attach a location-policy note sink (from the aggregator's `ScrapeContext`).
-    pub(super) fn with_note_sink(
-        mut self,
-        sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
-    ) -> Self {
-        self.note_sink = sink;
-        self
-    }
-
-    /// Emit an informational location-policy note through the injected sink, if any.
-    fn report_note(&self, note: String) {
-        if let Some(ref sink) = self.note_sink {
-            sink(note);
-        }
-    }
-}
-
-#[async_trait]
-impl JobProvider for AdzunaProvider {
-    fn provider_id(&self) -> &'static str {
-        "adzuna"
-    }
-
-    fn is_configured(&self) -> bool {
-        self.app_id.is_some() && self.app_key.is_some()
-    }
-
-    async fn search(
-        &self,
-        query: &str,
-        location: &str,
-        country: &str,
-        country_guessed: bool,
-        date_filter: Option<&str>,
-        _amount: Option<u32>,
-        signal: tokio_util::sync::CancellationToken,
-    ) -> anyhow::Result<Vec<JobPosting>> {
-        if !self.is_configured() {
-            return Err(anyhow::anyhow!("adzuna: not configured"));
-        }
-
-        // Reject unsupported countries before issuing any HTTP request.
-        // Adzuna only hosts a fixed set of markets; an unsupported country code
-        // would produce a non-2xx response (indistinguishable from an auth error
-        // at the HTTP level without real keys). Returning Err here lets the
-        // `search_with_providers` fallback chain transparently route to JSearch
-        // (which uses free-text location and is globally scoped).
-        let country = if country.is_empty() { "de" } else { country };
-        if !adzuna_supports_country(country) {
-            return Err(anyhow::anyhow!(
-                "adzuna: country '{country}' is not in Adzuna's supported market list \
-                 (supported: {}); configure a JSearch key for global coverage",
-                ADZUNA_SUPPORTED_COUNTRIES.join(", ")
-            ));
-        }
-
-        let app_id = self.app_id.as_deref().unwrap_or("");
-        let app_key = self.app_key.as_deref().unwrap_or("");
-
-        // Drop redundant country suffixes so a ", Germany"/", Deutschland" tail
-        // doesn't over-narrow the geocode (the country is already the URL path).
-        let where_hygienic = adzuna_where(location);
-
-        let postings = fetch_adzuna_page(
-            country,
-            app_id,
-            app_key,
-            query,
-            where_hygienic,
-            date_filter,
-            signal.clone(),
-        )
-        .await?;
-
-        // Surface the guessed-market policy when this guess produced the
-        // authoritative result (>= floor, so `primary_chain` keeps it). `broaden`
-        // never fires for a guessed market, so `postings.len()` here is final for
-        // that branch. Country code only — the raw location is never emitted.
-        if let Some(note) = guessed_market_note(country_guessed, location, postings.len(), country)
-        {
-            self.report_note(note);
-        }
-
-        // Broaden on near-empty: even a hygienic `where` can over-narrow a sparse
-        // market, so if a real Adzuna market returned under the floor, retry ONCE
-        // country-wide (`where=""`) — same `what`, sort, and `max_days_old` — and
-        // keep whichever set is larger. A transient error on the retry keeps the
-        // narrow result rather than discarding it.
-        //
-        // GUARD: never broaden a GUESSED market (`country_guessed`). Turning a
-        // guessed-market empty/near-empty into a non-empty country-wide result
-        // would defeat `primary_chain`'s guessed-market guard, which relies on
-        // an empty Adzuna result to fall through to JSearch (global, free-text
-        // location) when the guess is probably wrong (e.g. "London" defaulting
-        // to "de"). Only broaden for an explicitly-supplied country.
-        if should_broaden(country_guessed, where_hygienic, postings.len()) {
-            match fetch_adzuna_page(country, app_id, app_key, query, "", date_filter, signal).await
-            {
-                Ok(broadened) if broadened.len() > postings.len() => {
-                    // PRIVACY: never log the raw `where`/location — free-text PII.
-                    log::info!(
-                        "[aggregator] adzuna sparse result ({}), broadened country-wide ({})",
-                        postings.len(),
-                        broadened.len()
-                    );
-                    // Surface the sparse-city → country-wide broadening. Country
-                    // code only — never the raw location (free-text PII).
-                    self.report_note(format!("broadened:{country}"));
-                    return Ok(broadened);
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    log::warn!(
-                        "[aggregator] adzuna broaden retry failed, keeping narrow result: {e}"
-                    )
-                }
-            }
-        }
-
-        Ok(postings)
-    }
-}
-
-/// Map one Adzuna result to a [`JobPosting`], deriving `extra.salaryCurrency`
-/// from `country` (Adzuna reports bare salary numbers with no currency field).
-/// Pulled out of `AdzunaProvider::search` so it's unit-testable without a
-/// network call.
-pub(super) fn adzuna_job_to_posting(j: AdzunaJob, country: &str, now: i64) -> JobPosting {
-    let mut extra = std::collections::HashMap::new();
-    let has_salary = j.salary_min.is_some() || j.salary_max.is_some();
-    if let Some(min) = j.salary_min {
-        extra.insert("salaryMin".to_string(), serde_json::json!(min));
-    }
-    if let Some(max) = j.salary_max {
-        extra.insert("salaryMax".to_string(), serde_json::json!(max));
-    }
-    // Currency is only meaningful alongside an amount; an unmapped country
-    // omits it so the downstream salary answer falls back to a web lookup
-    // instead of showing a wrong/absent currency.
-    if has_salary {
-        if let Some(currency) = adzuna_currency_for_country(country) {
-            extra.insert("salaryCurrency".to_string(), serde_json::json!(currency));
-        }
-    }
-    JobPosting {
-        id: format!("aggregator:adzuna-{}", j.id),
-        external_id: Some(format!("adzuna-{}", j.id)),
-        title: j.title,
-        company: j.company.and_then(|c| c.display_name).unwrap_or_default(),
-        location: j.location.and_then(|l| l.display_name),
-        url: j.redirect_url,
-        source: "aggregator".to_string(),
-        description: j.description.map(|d| html_to_markdown(&d)),
-        requirements: None,
-        posted_at: j
-            .created
-            .as_deref()
-            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.timestamp_millis()),
-        captured_at: now,
-        extra,
-    }
-}
-
-/// Build + fetch + parse ONE Adzuna page for a given `where` value.
+/// Build the JSearch search endpoint. Factored out of `JSearchProvider::search`
+/// (mirrors [`jooble_endpoint`]) so the amount → `num_pages` mapping is pinned to
+/// the URL that actually goes on the wire, without a network round trip.
 ///
-/// Factored out of `AdzunaProvider::search` so the near-empty broaden retry can
-/// reissue the exact same request (same `what`, `sort_by=date`, `results_per_page`,
-/// and `max_days_old`) with only `where` changed. Called at most twice per search.
-async fn fetch_adzuna_page(
-    country: &str,
-    app_id: &str,
-    app_key: &str,
-    query: &str,
-    where_val: &str,
+/// `sort_by=date` pairs with the widened `date_posted` window: JSearch defaults to
+/// relevance, which does NOT put the freshest posting on top, so the sort param is
+/// what makes the freshness guarantee documented on [`jsearch_date_posted`] true.
+pub(super) fn jsearch_url(
+    base_url: &str,
+    combined_query: &str,
     date_filter: Option<&str>,
-    signal: tokio_util::sync::CancellationToken,
-) -> anyhow::Result<Vec<JobPosting>> {
-    // Sort newest-first (Adzuna defaults to relevance, which floats stale postings
-    // up) and always bound the window with max_days_old so nothing older than the
-    // cap (30 days, or the user's tighter pick) is returned.
-    let url = format!(
-        "https://api.adzuna.com/v1/api/jobs/{}/search/1\
-         ?app_id={}&app_key={}&what={}&where={}&results_per_page=50&content-type=application/json\
-         &sort_by=date&sort_direction=down&max_days_old={}",
-        urlencoding::encode(country),
-        urlencoding::encode(app_id),
-        urlencoding::encode(app_key),
-        urlencoding::encode(query),
-        urlencoding::encode(where_val),
-        adzuna_max_days_old(date_filter),
-    );
-
-    // A non-2xx or schema-drift response propagates as `Err` from `fetch_json`
-    // (carrying the HTTP status); `?` surfaces it as a provider failure. The
-    // "adzuna:" prefix is required — the aggregator board fronts three
-    // providers, so an unattributed "HTTP 403" in BoardScrapeSummary.error
-    // wouldn't say which one failed.
-    let resp = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal)
-        .await
-        .map_err(|e| anyhow::anyhow!("adzuna: {e}"))?;
-
-    let now = chrono::Utc::now().timestamp_millis();
-    Ok(resp
-        .results
-        .into_iter()
-        .map(|j| adzuna_job_to_posting(j, country, now))
-        .collect())
+    amount: Option<u32>,
+) -> String {
+    format!(
+        "{base_url}/search?query={}&page=1&num_pages={}&date_posted={}&sort_by=date",
+        urlencoding::encode(combined_query),
+        jsearch_num_pages(amount),
+        jsearch_date_posted(date_filter),
+    )
 }
 
 // ── JSearch provider ──────────────────────────────────────────────────────────
@@ -521,7 +162,7 @@ impl JobProvider for JSearchProvider {
         _country: &str,
         _country_guessed: bool,
         date_filter: Option<&str>,
-        _amount: Option<u32>,
+        amount: Option<u32>,
         signal: tokio_util::sync::CancellationToken,
     ) -> anyhow::Result<Vec<JobPosting>> {
         if !self.is_configured() {
@@ -536,20 +177,9 @@ impl JobProvider for JSearchProvider {
         } else {
             format!("{query} in {location}")
         };
-        let q_enc = urlencoding::encode(&combined);
-        let mut url = format!(
-            "https://jsearch.p.rapidapi.com/search?query={}&page=1&num_pages=1",
-            q_enc
-        );
-
-        // Sort newest-first (JSearch defaults to relevance, which does NOT put the
-        // freshest posting on top) so the widened `date_posted` window still surfaces
-        // the most-recent jobs first — matching Adzuna's `sort_by=date` and honouring
-        // the freshness guarantee documented on `jsearch_date_posted`.
-        url.push_str(&format!(
-            "&date_posted={}&sort_by=date",
-            jsearch_date_posted(date_filter)
-        ));
+        // Unlike Adzuna, JSearch returns N pages from ONE request (`num_pages`),
+        // so the amount budget is a query param, not a loop.
+        let url = jsearch_url(JSEARCH_BASE_URL, &combined, date_filter, amount);
 
         // A non-2xx or schema-drift response propagates as `Err` from `fetch_json`
         // (carrying the HTTP status); `?` surfaces it as a provider failure. The

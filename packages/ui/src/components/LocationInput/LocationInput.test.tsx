@@ -100,6 +100,44 @@ describe('LocationInput', () => {
     expect(onSelectSuggestion).toHaveBeenCalledWith(TWO_SUGGESTIONS[0]);
   });
 
+  it('fires onChange BEFORE onSelectSuggestion when a suggestion is picked', async () => {
+    // Load-bearing ORDER, pinned at the source. Consumers (ScrapeFilters, the
+    // autopilot StepTarget) wire `onChange` to "location edited → clear the
+    // resolved countryCode" and `onSelectSuggestion` to "write the picked
+    // suggestion's countryCode". Reversing the two calls inside `select()` would
+    // let the onChange handler wipe the country the pick just resolved — a
+    // silent geo-targeting regression with every consumer test still green
+    // (their doubles copy the order rather than depend on it).
+    const onChange = vi.fn();
+    const onSelectSuggestion = vi.fn();
+    render(
+      <LocationInput
+        value=""
+        onChange={onChange}
+        onFetchSuggestions={twoSuggestions}
+        onSelectSuggestion={onSelectSuggestion}
+      />
+    );
+    await userEvent.click(screen.getByRole('button'));
+    const search = await screen.findByPlaceholderText('Search city or postcode…');
+
+    fireEvent.change(search, { target: { value: 'Be' } });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 350));
+    });
+
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    fireEvent.keyDown(search, { key: 'Enter' });
+
+    // vitest stamps every mock call with a global monotonic sequence number, so
+    // this compares the two callbacks across mocks (a per-mock call index cannot).
+    const changeOrder = onChange.mock.invocationCallOrder;
+    const selectOrder = onSelectSuggestion.mock.invocationCallOrder;
+    expect(changeOrder).not.toHaveLength(0);
+    expect(selectOrder).not.toHaveLength(0);
+    expect(Math.min(...changeOrder)).toBeLessThan(Math.min(...selectOrder));
+  });
+
   it('onSelectSuggestion is called with { display: "" } on clear', () => {
     const onChange = vi.fn();
     const onSelectSuggestion = vi.fn();

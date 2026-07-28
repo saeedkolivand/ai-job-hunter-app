@@ -30,17 +30,21 @@
 /// through `scraping::http::fetch_json` (which checks `ctx.signal` and calls
 /// the per-host `rate_limiter`).
 ///
-/// The `JobProvider` impls (Adzuna/JSearch/Jooble/Apify) live in `providers.rs`
-/// (split out to stay under the R8 module-size cap); this file holds the shared
-/// `JobProvider` trait, the fallback orchestration (`primary_chain` /
-/// `search_with_providers`), the credential-state helpers, and the `Scraper` impl.
+/// The `JobProvider` impls live next door, split out to stay under the R8
+/// module-size cap: the PRIMARY tier (Adzuna — market allowlist, page loop,
+/// broaden retry) in `adzuna.rs`, the remaining tiers (JSearch/Jooble/Apify) in
+/// `providers.rs`. This file holds the shared `JobProvider` trait, the fallback
+/// orchestration (`primary_chain` / `search_with_providers`), the
+/// credential-state helpers, and the `Scraper` impl.
 use async_trait::async_trait;
 
 use crate::scraping::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 
+mod adzuna;
 mod providers;
+use adzuna::*;
 use providers::*;
 
 /// Below this many results from a supported market, a non-empty `where` retries
@@ -62,9 +66,12 @@ pub(crate) trait JobProvider: Send + Sync {
     fn is_configured(&self) -> bool;
     /// Run a search.  Non-2xx or network errors are returned as `Err`.
     ///
-    /// `amount` is a provider-specific result cap that callers may pass to
-    /// cost-bounded providers (currently Apify only).  Providers that have no
-    /// concept of a cap ignore it (`_amount`).
+    /// `amount` is the caller's target result count, passed to every provider
+    /// that can bound its own spend by it: Adzuna pages by it
+    /// (`adzuna_page_budget`), JSearch maps it to `num_pages`
+    /// (`jsearch_num_pages`), and Apify uses it as a hard `maxItems` cap.
+    /// Providers with no such knob ignore it (`_amount`). `None` means "no
+    /// target" and every provider degrades to its cheapest single-request form.
     ///
     /// `country_guessed` is true when the caller supplied no explicit
     /// `country_code` (see `AggregatorScraper::search`). Providers that don't
@@ -131,6 +138,7 @@ async fn primary_chain(
     country: &str,
     country_guessed: bool,
     date_filter: Option<&str>,
+    amount: Option<u32>,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     if signal.is_cancelled() {
@@ -174,7 +182,7 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
-                    None,
+                    amount,
                     signal.clone(),
                 )
                 .await
@@ -244,7 +252,7 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
-                    None,
+                    amount,
                     signal.clone(),
                 )
                 .await
@@ -277,6 +285,10 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
+                    // Deliberately NOT `amount`: Jooble's knob is `ResultOnPage`
+                    // (page SIZE, not a page count) and its rate limit is
+                    // undocumented, so raising it is a separate decision from the
+                    // amount-bounded page loop. Unchanged from before that loop.
                     None,
                     signal,
                 )
@@ -441,6 +453,11 @@ async fn search_with_providers(
     amount: usize,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
+    // Target result count as the providers' own spend bound: Adzuna pages by it,
+    // JSearch maps it to `num_pages`. Saturating cast — `amount` is clamped to the
+    // request cap (100) upstream, so this never truncates in practice.
+    let amount_target = u32::try_from(amount).unwrap_or(u32::MAX);
+
     let primary = primary_chain(
         providers,
         query,
@@ -448,6 +465,7 @@ async fn search_with_providers(
         country,
         country_guessed,
         date_filter,
+        Some(amount_target),
         signal.clone(),
     )
     .await;

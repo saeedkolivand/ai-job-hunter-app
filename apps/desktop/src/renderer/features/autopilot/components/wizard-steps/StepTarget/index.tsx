@@ -70,6 +70,14 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   );
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
+  // The page budget is an INERT knob when the aggregator is the only target: the
+  // aggregator board never reads `pages` — its providers page by the requested
+  // result amount instead (Adzuna's free tier is a daily call quota, so a
+  // pages-driven loop would multiply every search's spend). Showing an editable
+  // field that changes nothing is dishonest, so disable it and say why. A MIXED
+  // selection keeps it live — every other board still honours the budget.
+  const pagesInert = aggregatorSelected && boards.length === 1;
+
   return (
     <div className="space-y-4">
       <div>
@@ -248,7 +256,11 @@ export function StepTarget({ prefilled }: StepTargetProps) {
           render={({ field, fieldState }) => (
             <WizardField
               label={t('autopilot.wizard.target.pages')}
-              hint={t('autopilot.wizard.target.pagesHint')}
+              hint={
+                pagesInert
+                  ? t('autopilot.wizard.target.pagesAggregatorOnly')
+                  : t('autopilot.wizard.target.pagesHint')
+              }
               htmlFor="autopilot-pages"
               error={fieldState.error?.message ? t(fieldState.error.message) : undefined}
             >
@@ -258,7 +270,8 @@ export function StepTarget({ prefilled }: StepTargetProps) {
                 max={10}
                 fallback={2}
                 variant="default"
-                className={fieldCls}
+                className={cn(fieldCls, 'disabled:opacity-40 disabled:cursor-not-allowed')}
+                disabled={pagesInert}
                 value={field.value}
                 onChange={(n) => field.onChange(n)}
                 aria-invalid={!!fieldState.error}

@@ -3431,3 +3431,291 @@ fn cross_board_same_job_from_gtj_feed_and_adzuna_json_forms_one_cluster() {
         "the aggregator copy is a non-canonical member"
     );
 }
+
+// ── Amount-bounded aggregator page loop (WS11) ───────────────────────────────
+//
+// The loop is driven by the requested AMOUNT, never by `BoardSearchInput::pages`:
+// the manual search path hardcodes `pages = MAX_PAGE_BUDGET`, and Adzuna's free
+// tier is a DAILY call quota, so a pages-driven loop would multiply the quota
+// cost of every search. The tests below pin each clause of that contract.
+
+/// One Adzuna response page carrying `count` results with sequential ids offset
+/// by `first_id`. Only the three non-optional `AdzunaJob` fields are populated —
+/// the rest are `Option` and legitimately absent from real sparse rows.
+fn adzuna_body(first_id: u32, count: u32) -> serde_json::Value {
+    let results: Vec<serde_json::Value> = (first_id..first_id + count)
+        .map(|i| {
+            serde_json::json!({
+                "id": i,
+                "title": format!("Engineer {i}"),
+                "redirect_url": format!("https://example.test/job/{i}"),
+            })
+        })
+        .collect();
+    serde_json::json!({ "count": results.len(), "results": results })
+}
+
+fn adzuna_req(base_url: &str) -> AdzunaPageRequest<'_> {
+    AdzunaPageRequest {
+        base_url,
+        country: "de",
+        app_id: "fake-id",
+        app_key: "fake-key",
+        query: "engineer",
+        where_val: "Berlin",
+        date_filter: None,
+    }
+}
+
+/// Adzuna's page number is a 1-based PATH segment: `…/search/{page}`.
+fn adzuna_path(page: u32) -> String {
+    format!("/v1/api/jobs/de/search/{page}")
+}
+
+/// `adzuna_page_budget` maps the requested amount onto a bounded page count.
+/// The clamp is the quota guard: nothing the UI can request (amount is capped at
+/// 100 upstream) may cost more than `ADZUNA_MAX_PAGES` calls, and no amount —
+/// including 0 — may cost zero (that would silently return no jobs).
+#[test]
+fn adzuna_page_budget_is_amount_driven_and_clamped() {
+    assert_eq!(adzuna_page_budget(None), 1, "no target → cheapest form");
+    assert_eq!(adzuna_page_budget(Some(0)), 1, "0 must never mean 0 calls");
+    assert_eq!(adzuna_page_budget(Some(1)), 1);
+    assert_eq!(
+        adzuna_page_budget(Some(ADZUNA_PAGE_SIZE as u32)),
+        1,
+        "a full single page must not spill into a second request"
+    );
+    assert_eq!(
+        adzuna_page_budget(Some(ADZUNA_PAGE_SIZE as u32 + 1)),
+        2,
+        "one item past a page is what buys the second call"
+    );
+    assert_eq!(adzuna_page_budget(Some(100)), 2);
+    assert_eq!(
+        adzuna_page_budget(Some(u32::MAX)),
+        ADZUNA_MAX_PAGES,
+        "an absurd amount is clamped, never unbounded paging"
+    );
+}
+
+/// THE quota-neutral guarantee: an amount that fits in one page issues exactly
+/// ONE request — even when that page comes back FULL (which is precisely when a
+/// pages-driven loop would keep going). The second-page mock's `.expect(0)` is
+/// verified when the `MockServer` drops.
+#[tokio::test]
+async fn adzuna_amount_within_one_page_issues_exactly_one_request() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(51, 50)))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let items = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(50), make_token())
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 50, "the single page's results are returned");
+}
+
+/// A larger amount pages, and a SHORT page ends the loop: page 2 comes back under
+/// `ADZUNA_PAGE_SIZE`, so the loop stops there. Page 2 also REPEATS one of page 1's
+/// postings (the `sort_by=date` window shifts as new jobs land between requests),
+/// which must be de-duplicated rather than returned twice.
+#[tokio::test]
+async fn adzuna_pages_until_a_short_page_and_dedupes_across_pages() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // ids 50, 51, 52 — id 50 repeats page 1's last posting.
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(50, 3)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let items = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), make_token())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        items.len(),
+        52,
+        "50 from page 1 + 2 NEW from page 2 (the repeat is dropped)"
+    );
+    let unique: std::collections::HashSet<&str> = items.iter().map(|p| p.id.as_str()).collect();
+    assert_eq!(unique.len(), items.len(), "no duplicate ids may survive");
+    assert!(
+        items
+            .iter()
+            .any(|p| p.external_id.as_deref() == Some("adzuna-52")),
+        "page 2's new postings must be merged in"
+    );
+}
+
+/// Mid-loop failure FAILS OPEN — page 2 returning 500 keeps page 1's results
+/// instead of discarding a page of real jobs (same policy as the broaden retry).
+#[tokio::test]
+async fn adzuna_mid_loop_failure_keeps_the_pages_already_collected() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .mount(&server)
+        .await;
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(500).set_body_string("upstream boom"))
+        .mount(&server)
+        .await;
+
+    let items = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), make_token())
+        .await
+        .expect("a later page's failure must not fail the whole search");
+
+    assert_eq!(items.len(), 50, "page 1 survives page 2's failure");
+}
+
+/// The fail-open policy must NOT extend to page 1: it IS the provider's result,
+/// and `primary_chain` relies on that `Err` to fall through to JSearch. A page-1
+/// failure that silently returned `Ok(vec![])` would be the silent-empty bug.
+#[tokio::test]
+async fn adzuna_first_page_failure_still_propagates_as_an_error() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(403).set_body_string("bad key"))
+        .mount(&server)
+        .await;
+
+    let err = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), make_token())
+        .await
+        .expect_err("page 1 failure must surface, not degrade to an empty Ok");
+    assert!(
+        err.to_string().contains("403"),
+        "the HTTP status must be carried; got: {err}"
+    );
+}
+
+/// Cancellation landing BETWEEN pages: the responder cancels the token while
+/// serving page 1, so the loop sees a cancelled signal immediately after that
+/// page lands. The run must resolve to `Ok(page 1)` — a user pressing Stop keeps
+/// what was already found and spends no further quota, rather than getting an
+/// error or an empty result.
+#[tokio::test]
+async fn adzuna_cancellation_between_pages_keeps_page_one_and_stops() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    /// Cancels the shared token as page 1 is served — deterministic, unlike a
+    /// timer race.
+    struct CancelWhileServing {
+        token: tokio_util::sync::CancellationToken,
+        body: serde_json::Value,
+    }
+    impl Respond for CancelWhileServing {
+        fn respond(&self, _req: &Request) -> ResponseTemplate {
+            self.token.cancel();
+            ResponseTemplate::new(200).set_body_json(self.body.clone())
+        }
+    }
+
+    let signal = make_token();
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(CancelWhileServing {
+            token: signal.clone(),
+            body: adzuna_body(1, 50),
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Never reached: the loop breaks on the cancelled signal. (`fetch_json` also
+    // refuses to send on a cancelled token — this mock pins that NO request is
+    // issued either way, i.e. a Stop can never cost another quota call.)
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(51, 50)))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let items = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), signal)
+        .await
+        .expect("a cancel between pages is a clean stop, not a failure");
+
+    assert_eq!(items.len(), 50, "page 1's results are kept on cancel");
+}
+
+// ── JSearch num_pages mapping ────────────────────────────────────────────────
+
+/// JSearch returns 10 per page and bills `num_pages` multiplicatively, so the
+/// mapping is `ceil(amount / 10)` hard-clamped to `JSEARCH_MAX_PAGES`.
+#[test]
+fn jsearch_num_pages_is_amount_driven_and_clamped() {
+    assert_eq!(jsearch_num_pages(None), 1, "no target → cheapest form");
+    assert_eq!(jsearch_num_pages(Some(0)), 1, "0 must never mean 0 pages");
+    assert_eq!(jsearch_num_pages(Some(1)), 1);
+    assert_eq!(
+        jsearch_num_pages(Some(JSEARCH_PAGE_SIZE)),
+        1,
+        "an exact page does not spill into a second billed page"
+    );
+    assert_eq!(jsearch_num_pages(Some(JSEARCH_PAGE_SIZE + 1)), 2);
+    assert_eq!(jsearch_num_pages(Some(25)), 3);
+    assert_eq!(
+        jsearch_num_pages(Some(100)),
+        JSEARCH_MAX_PAGES,
+        "the UI's max amount is still capped at the billing ceiling"
+    );
+    assert_eq!(jsearch_num_pages(Some(u32::MAX)), JSEARCH_MAX_PAGES);
+}
+
+/// The mapping has to reach the WIRE, not just the helper: `jsearch_url` builds
+/// exactly what `JSearchProvider::search` sends, so the `num_pages` it carries is
+/// the billed page count.
+#[test]
+fn jsearch_url_carries_the_amount_derived_num_pages() {
+    let one = jsearch_url(JSEARCH_BASE_URL, "engineer in Berlin", None, Some(10));
+    assert!(
+        one.contains("num_pages=1"),
+        "an amount within one page must stay a single-page request; got: {one}"
+    );
+
+    let three = jsearch_url(
+        JSEARCH_BASE_URL,
+        "engineer in Berlin",
+        Some("week"),
+        Some(100),
+    );
+    assert!(
+        three.contains(&format!("num_pages={JSEARCH_MAX_PAGES}")),
+        "a large amount must request the clamped page count; got: {three}"
+    );
+    // The paging change must not disturb the freshness contract.
+    assert!(
+        three.contains("date_posted=week") && three.contains("sort_by=date"),
+        "date window + newest-first sort must survive; got: {three}"
+    );
+    assert!(
+        three.contains("query=engineer%20in%20Berlin"),
+        "the combined query must stay URL-encoded; got: {three}"
+    );
+}

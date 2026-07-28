@@ -603,10 +603,15 @@ async fn a_cancel_before_the_run_reaches_the_engine_is_honored() {
     );
 }
 
-/// Companion: `cancel` must LEAVE the slot in place (that is what makes the
-/// mint-fresh path unreachable above), so a second cancel for the same job — a
-/// double-click on Stop, or a tray cancel racing the UI — still resolves to the
-/// same token rather than silently doing nothing.
+/// `cancel` is IDEMPOTENT: a second cancel for the same job — a double-click on
+/// Stop, or a tray cancel racing the UI — still resolves to the same token rather
+/// than silently doing nothing, and the slot survives so the owner's
+/// `unregister_token` stays its single remover.
+///
+/// Scope note: this asserts idempotence only. The *semantics* that keeping the
+/// slot in place buys — a cancel arriving before the run reaches the engine is
+/// still honoured (rather than lost to a freshly minted token) — are guarded by
+/// `a_cancel_before_the_run_reaches_the_engine_is_honored` above, not here.
 #[tokio::test]
 async fn cancel_leaves_the_slot_in_place_and_is_idempotent() {
     let engine = ScraperEngine::new();
