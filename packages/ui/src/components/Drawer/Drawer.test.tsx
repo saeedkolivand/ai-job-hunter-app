@@ -332,7 +332,17 @@ describe('Drawer', () => {
     const onClose = vi.fn();
     render(
       <Drawer open onClose={onClose} ariaLabel="Filters">
-        <LocationInput id="loc" value="" onChange={() => {}} placeholder="Any location" />
+        {/* `onFetchSuggestions` is required: the component ships no built-in
+            geocoder, so a test must supply one rather than fall back to live
+            third-party autocomplete. This case is about Escape layering, so an
+            empty result set is all it needs. */}
+        <LocationInput
+          id="loc"
+          value=""
+          onChange={() => {}}
+          onFetchSuggestions={async () => []}
+          placeholder="Any location"
+        />
       </Drawer>
     );
 
