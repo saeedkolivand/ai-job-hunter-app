@@ -21,18 +21,31 @@ use super::{
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
 
-/// Whether a model should be sent the `thinking` block (extended thinking).
+/// Whether a model should be sent the classic `thinking: {type:"enabled",
+/// budget_tokens}` block (extended thinking).
 ///
 /// Anthropic's extended-thinking mode forces `temperature=1.0` and consumes extra
 /// output tokens; a model that does **not** support it answers a `thinking`
-/// request with a 400. Only the Claude 3.7+ / 4.x families support it, so gate on
-/// the model id (mirrors [`gemini_supports_thinking`](super::gemini)). Older 3.0–
-/// 3.5 models and any explicitly-tagged non-thinking name are excluded. Unknown
-/// future names default to **off** — a graceful miss (no thinking) is always safe;
-/// a wrongful `thinking` request 400s the whole generation.
+/// request with a 400. Only the Claude 3.7+ / 4.x families (incl. Haiku 4.5) use
+/// this classic budget-token mechanism, so gate on the model id (mirrors
+/// [`gemini_supports_thinking`](super::gemini)). Older 3.0–3.5 models are
+/// excluded (never supported it).
+///
+/// The Claude 5 family (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`) is
+/// **deliberately** excluded too: it replaced classic budget-token thinking with
+/// adaptive thinking (an internally effort-controlled mode, always-on for Fable)
+/// that this predicate does not gate — sending nothing extra to a 5-family model
+/// is correct, not a gap. They still emit `thinking_delta` stream frames, which
+/// [`parse_anthropic_frames`] handles unconditionally regardless of what the
+/// request asked for, so the app's thinking view keeps working. Unknown future
+/// names default to **off** — a graceful miss (no thinking) is always safe; a
+/// wrongful `thinking` request 400s the whole generation.
 fn anthropic_supports_thinking(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
     // Claude 3.7 (the first extended-thinking model) and the 4.x families.
+    // Deliberately does NOT match "claude-opus-5"/"claude-sonnet-5"/
+    // "claude-fable-5" — the 5 family uses adaptive thinking, not this
+    // mechanism. Do not widen this to a bare "claude-" match.
     m.contains("claude-3-7")
         || m.contains("claude-3.7")
         || m.contains("claude-4")
@@ -794,6 +807,37 @@ mod tests {
                 !anthropic_supports_thinking(m),
                 "{m} must not request thinking (it 400s)"
             );
+        }
+    }
+
+    #[test]
+    fn thinking_gate_excludes_the_claude_5_family() {
+        // The 5 family (Opus 5, Sonnet 5, Fable 5) replaced classic
+        // budget-token thinking with adaptive thinking — sending the classic
+        // `thinking` block to them would 400, so the gate must stay off.
+        for m in ["claude-opus-5", "claude-sonnet-5", "claude-fable-5"] {
+            assert!(
+                !anthropic_supports_thinking(m),
+                "{m} must not request classic thinking (it 400s; uses adaptive thinking instead)"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_stream_body_sends_no_thinking_block_for_claude_5_family() {
+        // End-to-end: the request body builder must not attach `thinking` for
+        // any Claude 5 model, even with a large max_tokens budget that would
+        // trip the classic-thinking threshold on a 3.7/4.x model.
+        for m in ["claude-opus-5", "claude-sonnet-5", "claude-fable-5"] {
+            let mut req = base_request(m);
+            req.max_tokens = Some(4096);
+            let body = build_chat_stream_body(&req);
+            assert!(
+                body.get("thinking").is_none(),
+                "{m} must not receive a classic thinking block"
+            );
+            // Not forced into thinking's temperature=1.0 override either.
+            assert_eq!(body["temperature"], json!(0.8));
         }
     }
 

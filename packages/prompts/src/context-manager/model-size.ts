@@ -14,8 +14,8 @@ import {
  * name→tier path. The **provider kind** (ollama / cloud / cli) is decided by the
  * provider layer (`resolveProfile`), not here — a CLI agent gets the task brief by
  * its `kind`, regardless of size. We still recognise hosted + CLI-agent model
- * names (incl. Claude Code's sonnet/opus/haiku and codex) as `large` so they get
- * the full prompt rather than falling through to the small default.
+ * names (incl. Claude Code's sonnet/opus/haiku/fable and codex) as `large` so
+ * they get the full prompt rather than falling through to the small default.
  *
  * For local models the **parameter size** is parsed generically from the tag
  * (`:1b`, `-3.2-1b`, `:7b`, `70b`, with quant / `-instruct` suffixes) →
@@ -34,6 +34,7 @@ export function detectModelSize(modelName: string): 'large' | 'medium' | 'small'
     name.includes('sonnet') ||
     name.includes('opus') ||
     name.includes('haiku') ||
+    name.includes('fable') ||
     name.includes('codex') ||
     name.includes('gemini') ||
     name.includes('command-r') ||
