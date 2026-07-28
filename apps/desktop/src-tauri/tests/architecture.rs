@@ -581,7 +581,7 @@ fn r7_allowlist_has_no_dead_entries() {
 }
 
 // ── R8: oversized-module watch (hard cap prevents new mega-files) ────────────────────
-const HARD_CAP_LOC: usize = 1400; // current ceiling: export/pdf_renderer/mod.rs (~1343)
+const HARD_CAP_LOC: usize = 1400; // current ceiling: extension_bridge/mod.rs (~1398) — split it before growing it
 const SOFT_LOC: usize = 600;
 
 #[test]

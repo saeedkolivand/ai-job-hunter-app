@@ -1619,6 +1619,7 @@
         "countryResolved": "Land: {{country}}",
         "pages": "Zu scrapende Seiten",
         "pagesHint": "pro Board — tatsächliche Ergebnisse variieren",
+        "pagesAggregatorOnly": "vom Aggregator-Board nicht genutzt — dessen Job-APIs sind pro Aufruf kontingentiert",
         "postedWithin": "Veröffentlicht innerhalb",
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",

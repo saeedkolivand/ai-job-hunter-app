@@ -970,10 +970,12 @@ impl ScraperEngine {
     ///
     /// No leak: the slot is owned by whoever registered it, and every owner
     /// removes it on EVERY exit path — `commands::scrape::scrape_boards` (both
-    /// the early cancelled return and after the engine call) and
+    /// the early cancelled return and after the engine call),
     /// `commands::autopilot::autopilot_run` (scrape-Err, cancelled, and success
-    /// paths) — while an engine-minted slot is removed by the `we_minted` branch.
-    /// An unknown id still inserts nothing.
+    /// paths), and `commands::agent::agent_run` (every validation failure via
+    /// `fail_run`, plus the spawned loop's own exit) — while an engine-minted
+    /// slot is removed by the `we_minted` branch. An unknown id still inserts
+    /// nothing.
     pub async fn cancel(&self, job_id: &str) {
         let jobs = self.jobs.lock().await;
         if let Some(token) = jobs.get(job_id) {

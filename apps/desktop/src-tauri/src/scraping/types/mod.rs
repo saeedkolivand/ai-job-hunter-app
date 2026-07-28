@@ -33,10 +33,30 @@ pub struct BoardSearchInput {
     pub location: Option<String>,
     /// Target number of postings to collect (the user's requested item count,
     /// clamped to 100). The engine caps streamed/returned items to this centrally.
+    ///
+    /// **Not a spend signal.** Callers with no item-count intent set it to the
+    /// 100 ceiling as a "don't cap me" SENTINEL (`autopilot_helpers`), so a
+    /// cost-metered board must never read it as "the user asked for 100" — use
+    /// [`Self::provider_amount`] for that.
     pub amount: u32,
     /// Per-board page request BUDGET. Each board clamps this down to its own max
     /// page count; it bounds how many requests we make, independent of `amount`.
+    ///
+    /// Also sentinel-prone in the other direction: the manual search path has no
+    /// page intent and pins this to `MAX_PAGE_BUDGET`.
     pub pages: u32,
+    /// Explicit per-run spend target for boards whose upstream is METERED — today
+    /// only the aggregator (Adzuna bills a daily CALL quota; JSearch bills per
+    /// request, multiplied by `num_pages`). It bounds how many upstream calls one
+    /// search may buy.
+    ///
+    /// `None` means "no target": every metered provider stays at its cheapest
+    /// single-request form. That is the default precisely BECAUSE `amount` and
+    /// `pages` are both sentinel-prone (see above) — inferring spend from either
+    /// silently multiplies the cost of every scheduled run. Only a path where the
+    /// USER expressed a real result count sets it (`commands::scrape`);
+    /// `autopilot_helpers` deliberately leaves it `None`.
+    pub provider_amount: Option<u32>,
     pub date_filter: Option<String>,
     pub job_type: Option<String>, // 'F' (Full-time), 'P' (Part-time), etc.
     pub work_type: Option<String>, // '1' (On-site), '2' (Remote), '3' (Hybrid)

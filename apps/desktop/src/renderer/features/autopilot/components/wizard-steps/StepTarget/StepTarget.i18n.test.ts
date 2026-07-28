@@ -11,7 +11,13 @@ import { describe, expect, it } from 'vitest';
 import i18n from '@ajh/translations';
 
 const LOCALES = ['en', 'de'] as const;
-const KEYS = ['autopilot.wizard.target.pages', 'autopilot.wizard.target.pagesHint'] as const;
+const KEYS = [
+  'autopilot.wizard.target.pages',
+  'autopilot.wizard.target.pagesHint',
+  // Replaces `pagesHint` when the aggregator is the only selected board — the
+  // field is inert there (the aggregator pages by result count, not by pages).
+  'autopilot.wizard.target.pagesAggregatorOnly',
+] as const;
 
 describe.each(LOCALES)('autopilot page-budget i18n — %s', (lng) => {
   it.each(KEYS)('resolves %s to real copy', (key) => {

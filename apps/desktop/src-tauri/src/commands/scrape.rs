@@ -98,7 +98,8 @@ async fn backfill_country_code(
 
 /// [`backfill_country_code`] with the geocode lookup injected, so the
 /// cancellation behavior is testable against a hung / instant / never-polled
-/// future instead of the real Nominatim round trip (no network in tests).
+/// future instead of the real geocode lookup (no network, and no bundled-index
+/// build, in tests).
 ///
 /// `lookup` is only ever POLLED when `country_code` is absent — an existing
 /// (picked) country is never clobbered and costs no request.
@@ -141,12 +142,21 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    // The count the USER actually typed, bounded once. Both budgets below are
+    // THIS number on the manual path, so it is bound once rather than clamped
+    // twice — two independent `.clamp` calls could silently drift apart.
+    let requested_amount = req.amount.clamp(1, 100);
     let mut input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
         // `amount` is the per-board cap: each board returns up to this many results.
-        amount: req.amount.clamp(1, 100),
+        amount: requested_amount,
         pages: MAX_PAGE_BUDGET,
+        // The ONLY path that sets a real provider spend target: here `amount` is
+        // the count the USER actually typed, so a metered board (the aggregator)
+        // may buy upstream calls up to it. Scheduled runs leave this `None` — see
+        // `BoardSearchInput::provider_amount`.
+        provider_amount: Some(requested_amount),
         date_filter: req.date_filter.clone(),
         // Structured search filters from the IPC request (ScrapeBoardsRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
@@ -676,7 +686,7 @@ mod test {
     // ── backfill_country_code (pre-scrape cancellation) ──────────────────────
     //
     // Driven through the injected-lookup seam so every case is hermetic: no
-    // Nominatim round trip, no `AppHandle`, no timing sleeps.
+    // geocode round trip, no `AppHandle`, no timing sleeps.
 
     fn input_with(location: Option<&str>, country_code: Option<&str>) -> BoardSearchInput {
         BoardSearchInput {
@@ -684,6 +694,7 @@ mod test {
             location: location.map(str::to_string),
             amount: 25,
             pages: 1,
+            provider_amount: None,
             date_filter: None,
             job_type: None,
             work_type: None,
@@ -728,7 +739,7 @@ mod test {
 
     /// A cancel landing WHILE the lookup is in flight wins immediately — the run
     /// is abandoned instead of waiting out the 2s geocode cap. `pending()` stands
-    /// in for a hung Nominatim call: without the select the test would hang.
+    /// in for a hung Photon-fallback call: without the select the test would hang.
     #[tokio::test]
     async fn cancel_during_the_lookup_abandons_the_run() {
         let token = tokio_util::sync::CancellationToken::new();
