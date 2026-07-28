@@ -1,6 +1,6 @@
 # Scraping domain (boards, company-scoped, aggregator)
 
-Last updated: 2026-07-27
+Last updated: 2026-07-28
 
 Describes the job-scraping subsystem: board registry (24 active scrapers), company-scoped ATS boards, and the Adzuna/JSearch aggregator. **Shape only** — refer to source for implementation detail. See `docs/SCRAPING_ENDPOINTS.md` for verified endpoint snapshots (external reconnaissance) and `docs/knowledge/decision-records/adr-026-retire-anti-bot-boards.md` for the retirement rationale.
 
@@ -120,6 +120,16 @@ Location input policy is now visible via per-board summary notes. When a search 
 - **Frontend rendering:** Chips mapped via `BoardSummaryChips.tsx` `ChipTone 'note'` (informational blue); locale-keyed labels `jobs.boardSummary.note.{broadened, guessed}` with country name via `Intl.DisplayNames({type:'region'})` for user-friendly labels (en + de).
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
 - **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
+
+## Geocoding — offline first (PR #893, 2026-07-27)
+
+Where a `LocationSpec` pick comes from. Owner: `apps/desktop/src-tauri/src/commands/geocoding.rs` + `commands/geocoding/geonames.rs`.
+
+- **Offline index first.** A bundled GeoNames dataset (`apps/desktop/src-tauri/geodata/` — `cities.tsv.gz` from `cities15000`, `countries.tsv` from `countryInfo.txt`) is compiled into the binary via `include_bytes!`/`include_str!`. **Nothing is fetched at build time**, and a query the index answers makes **no network call at all**. Regenerate with `pnpm gen:geonames` (`scripts/build-geonames-index.mjs`); embedded SHA-256 digests are asserted by `embedded_assets_match_their_recorded_digests`, so a regeneration that skips recording the digest fails the suite instead of shipping data of unknown origin. Row counts, memory/latency figures and the digests live in `apps/desktop/src-tauri/geodata/README.md` — **not** duplicated here.
+- **Photon is the fallback only.** `photon.komoot.io` (OpenStreetMap/ODbL) is reached only when the offline lookup cannot match. The fallback is gated on match **quality**, not on the offline result being empty — a prefix accident (`schweiz` prefix-matching a South African town) looks like confident rows, and autopilot persists `suggestion[0]`'s `countryCode`, so a weak hit must not veto the lookup that would have said Switzerland. Endpoint + timeout constants live in `geocoding.rs`; `suggest_at(endpoint, query)` is the injectable seam that makes the online branch testable against a mock server.
+- **Nominatim is retired.** Its usage policy explicitly forbids autocomplete, and its rate limiting degraded the picker to "no suggestions" exactly when a user typed fastest. Historical mentions in `geocoding.rs` / `useGeocoding.ts` are deliberate ("the Nominatim era"), not stale pointers.
+- **Attribution is mandatory, not decorative.** GeoNames is **CC BY 4.0** and Photon serves **ODbL** OpenStreetMap data — both require credit in a distributed build. The credit line renders in Settings → About (`settings.about.dataAttribution`) at a contrast level chosen to clear WCAG AA; it must not be dropped or dimmed to the surrounding fine-print level.
+- **Privacy boundary.** [ADR 0005](../adr/0005-network-egress-privacy-boundary.md) class 5, plus the exemption clause that PR #893 added: rule 6's opt-in/default-OFF requirement governs _enrichment_ (a call the app makes on its own initiative), not a lookup the user directly invoked by typing into a field. Location autocomplete and job search qualify only while all three hold — user-initiated, no personal data beyond the typed text, and issued Rust-side through `net::http`.
 
 ## Canonical location model & central filter (PR F, 2026-07-11)
 
@@ -404,20 +414,24 @@ When a board achieves partial success (some companies reached, some invalid slug
 
 - **`slugs-invalid:<n>`** — `<n>` = count of company slugs rejected by SSRF/DNS-label validator. Emitted ONLY when `successful_fetches > 0` (at least one company reached) and some slugs were invalid. All-invalid case is the error instead (`ats_finish_search` Err). All 7 ATS slug-validating boards: bamboohr, breezy, pinpoint, rippling, workable, recruitee, personio.
 - **`rows-dropped:<n>`** — `<n>` = total rows dropped by per-row deserialize across successful companies (partial parse failure, not fetch failure). Breezy, rippling, workable only (the 3 ATS boards with per-row parsing; bamboohr, pinpoint, recruitee deserialize atomically and pass `rows_dropped=0`).
-- **Token emission** — via `ctx.report_note` (PR D side-channel), gated on `!ctx.signal.is_cancelled()`. At most ONE token per board per run; `slugs-invalid` wins when both apply (precedence order below).
+- **`companies-failed:<n>`** (2026-07-27, PR #884) — `<n>` = per-company fetches that failed (404 on a rotted slug, 403, 429, or a body over the byte cap) on the ATS boards that fetch one company at a time **without** a pre-fetch slug validator (Ashby, Lever), while at least one sibling company succeeded. Emitted only when `successful_fetches > 0`; an all-fail run stays an `Err`, never a note. Company **names** are deliberately not in the token (it crosses IPC into a chip) — the per-company detail stays in each board's `log::warn!`. Source: `ats_failed_fetches_note` in `apps/desktop/src-tauri/src/scraping/boards/common.rs`. Unlike `ats_partial_note`, its callers do **not** gate emission on cancellation: the engine cancels as soon as the central item cap fills, which is exactly when failures have accumulated; the count stays honest because a fetch that failed _because of_ cancellation is never counted.
+- **Token emission** — via `ctx.report_note` (PR D side-channel), gated on `!ctx.signal.is_cancelled()` **except for `companies-failed`**, whose Ashby/Lever emitters deliberately have no cancel gate (see the carve-out above). At most ONE token per board per run; `slugs-invalid` wins when both apply (precedence order below).
 - **Frontend rendering** — `BoardSummaryChips.tsx` maps both tokens: numeric gate `n > 0` (strict; these tokens only emitted for n>0), tone `processing` (informational blue). No precedence change within the chip severity order (error > skipped > truncated > note > success); both are `note` tone.
-- **I18n keys** — `jobs.boardSummary.note.slugsInvalid` (en "{{count}} company name(s) invalid", de "{{count}} Firmenname(n) ungültig") and `jobs.boardSummary.note.rowsDropped` (en "{{count}} row(s) unreadable — board format may have changed", de "{{count}} Zeile(n) unlesbar — Board-Format evtl. geändert"). Pluralized via i18next `_one`/`_other`.
+- **I18n keys** — `jobs.boardSummary.note.slugsInvalid` (en "{{count}} company name(s) invalid", de "{{count}} Firmenname(n) ungültig") and `jobs.boardSummary.note.rowsDropped` (en "{{count}} row(s) unreadable — board format may have changed", de "{{count}} Zeile(n) unlesbar — Board-Format evtl. geändert"). Pluralized via i18next `_one`/`_other`. `companies-failed` adds `jobs.boardSummary.note.companiesFailed` (same `_one`/`_other` shape, same `processing`/note tone) — see `BoardSummaryChips.tsx` for the mapping and `BoardSummaryChips.i18n.test.ts` for the both-locale resolution pin.
 
-**Note precedence table (all 4 note types):**
+**Note precedence table (all note types):**
 
-| note token                                     | condition                                 | winner            | tone        | example                        |
-| ---------------------------------------------- | ----------------------------------------- | ----------------- | ----------- | ------------------------------ |
-| board-native (`slugs-invalid`, `rows-dropped`) | present                                   | board-native wins | note (blue) | 3 invalid company slugs        |
-| `location-filtered`                            | non-supporting board + location requested | fallback          | note (blue) | 5 off-location results hidden  |
-| `broadened`/`guessed`                          | aggregator location heuristic             | aggregator-only   | note (blue) | broadened from city to country |
-| error                                          | fatal (all-fail, all-reject)              | error not note    | error (red) | all hosts failed               |
+| note token                                     | condition                                            | winner            | tone        | example                          |
+| ---------------------------------------------- | ---------------------------------------------------- | ----------------- | ----------- | -------------------------------- |
+| board-native (`slugs-invalid`, `rows-dropped`) | present                                              | board-native wins | note (blue) | 3 invalid company slugs          |
+| `companies-failed`                             | slug-validator-less ATS board, partial fetch failure | n/a (disjoint)    | note (blue) | 2 companies could not be fetched |
+| `location-filtered`                            | non-supporting board + location requested            | fallback          | note (blue) | 5 off-location results hidden    |
+| `broadened`/`guessed`                          | aggregator location heuristic                        | aggregator-only   | note (blue) | broadened from city to country   |
+| error                                          | fatal (all-fail, all-reject)                         | error not note    | error (red) | all hosts failed                 |
 
-**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. Source: `apps/desktop/src-tauri/src/scraping/boards/common.rs:210-222` + `scraping/engine/mod.rs:791-800`.
+`companies-failed` and the `slugs-invalid`/`rows-dropped` pair are emitted by **disjoint** board sets (validator-less vs. slug-validating), so they never contend; a board still reports at most ONE note per run overall.
+
+**Implementation:** `location-filtered` uses `note.get_or_insert_with()` (fills empty slot only). `ats_partial_note(successful_fetches, rejected_slugs, rows_dropped)` returns `Option<String>` (None for clean runs) via sequential if checks: `successful_fetches==0` → None (all-fail is an error); `rejected_slugs>0` → `"slugs-invalid:{n}"` (preferred, wins); else `rows_dropped>0` → `"rows-dropped:{n}"`. `ats_failed_fetches_note(successful_fetches, failed_fetches)` is its companion for the validator-less boards. Source: both in `apps/desktop/src-tauri/src/scraping/boards/common.rs`, wired through `scraping/engine/mod.rs`.
 
 ## Job-search trust program — COMPLETE (PRs A–H, 2026-07-10/11)
 
@@ -425,7 +439,7 @@ When a board achieves partial success (some companies reached, some invalid slug
 
 **Fast-follow work items (deferred, not blocking):**
 
-1. **`fetches-failed:<n>` token** — partial fetch-error runs (some companies 404/5xx while others succeed on the SAME board) stay log-only; a dedicated note token was deferred as an explicit fast-follow for the next scraping PR. Not required for PR H; tracked for context.
+1. **[CLOSED] `fetches-failed:<n>` token** — shipped 2026-07-27 (PR #884) as **`companies-failed:<n>`** (`ats_failed_fetches_note`, see the partial-failure notes section above). Partial fetch-error runs on Ashby/Lever now surface a chip instead of vanishing into the log.
 2. **LinkedIn geoId via fetch_json** — routing LinkedIn's geographic typeahead through `fetch_json` (for UA-override + size-cap + rate-limit parity) requires teaching `fetch_text` to let a caller UA header OVERRIDE the default. Security LOW; deferred pending concrete use case.
 3. **LinkedIn soft-block telemetry** — verify the 200-zero-cards soft-block detector against real LinkedIn changes; currently unverified post-launch (unlike the verified 200-zero-cards claim in the code comments).
 4. **Per-posting truncation signal** — forwarding a per-posting `truncated` flag from scrapers (for JSearch vs Adzuna distinction in Autopilot) enables smarter provisional-score derivation; currently the flag keys on `source=="aggregator"` (conservative, flags JSearch as provisional). Deferred to avoid a schema change in Scope A.

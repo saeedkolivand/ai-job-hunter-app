@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-07-21 (audit refresh: shipped features moved, missing sections added, TypeScript version corrected)
+Last updated: 2026-07-28 (bug batch #883–#895: jobs command bar + Drawer primitive, offline geocoding, email-draft persistence, bridge revocation)
 
 ---
 
@@ -62,38 +62,43 @@ former `packages/ai` and `packages/data` Node packages were removed.
 
 ## Scraping (`apps/desktop/src-tauri/src/scraping/`)
 
-Active scrapers: 21 boards. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
+The registry `SCRAPERS` in `apps/desktop/src-tauri/src/scraping/boards/mod.rs` is the single source of truth for which boards are active and in what catalog order — count it there rather than trusting a number in this file. Five boards (Indeed, StepStone, Xing, Workday, Glassdoor) were retired as direct scrapers in 2026-06-21 and are now covered by the Aggregator (Adzuna/JSearch). See ADR-026.
 
-| Board                              | Status  | Notes                                                                                                                                 |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Aggregator (Adzuna/JSearch/Jooble) | ✅      | Bring-your-own-key; Jooble is third-tier fallback (~67 countries); covers Indeed/StepStone/Xing/Workday/Glassdoor                     |
-| LinkedIn                           | ✅      | Session cookie required for higher rate limits                                                                                        |
-| Greenhouse                         | ✅      | ATS platform; company-scoped                                                                                                          |
-| Lever                              | ✅      | ATS platform; company-scoped                                                                                                          |
-| Ashby                              | ✅      | ATS platform; company-scoped                                                                                                          |
-| SmartRecruiters                    | ✅      | Company-scoped                                                                                                                        |
-| Recruitee                          | ✅      | Company-scoped                                                                                                                        |
-| Personio                           | ✅      | Company-scoped                                                                                                                        |
-| BambooHR                           | ✅      | Company-scoped                                                                                                                        |
-| Breezy HR                          | ✅      | Company-scoped                                                                                                                        |
-| Pinpoint                           | ✅      | Company-scoped                                                                                                                        |
-| Rippling                           | ✅      | Company-scoped                                                                                                                        |
-| RemoteOK                           | ✅      |                                                                                                                                       |
-| Remotive                           | ✅      |                                                                                                                                       |
-| Arbeitsagentur                     | ✅      | German federal job agency                                                                                                             |
-| BerlinStartupJobs                  | ✅      |                                                                                                                                       |
-| GermanTechJobs                     | ✅      |                                                                                                                                       |
-| ArbeitNow                          | ✅      |                                                                                                                                       |
-| The Muse                           | ✅      | Keyword aggregator; no server-side search, client-side filter                                                                         |
-| YCombinator (Work at a Startup)    | ✅      |                                                                                                                                       |
-| We Work Remotely                   | ✅      | RSS feed                                                                                                                              |
-| Indeed                             | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
-| StepStone                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
-| Xing                               | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
-| Workday                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
-| Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                      |
-| Cross-board clustering             | ✅      | Fuzzy recompute-at-ingest, pair tombstones in `dedup.db`, canonical member selection, source chips, "not a duplicate" split (ADR-029) |
-| ATS slug harvesting                | ✅      | Passive extract_ats_ref over posting urls at ingest/import; discovered_companies store (dedup per ADR-022/009); ADR-030               |
+| Board                              | Status  | Notes                                                                                                                                                                                                                           |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Aggregator (Adzuna/JSearch/Jooble) | ✅      | Bring-your-own-key; Jooble is third-tier fallback (~67 countries); covers Indeed/StepStone/Xing/Workday/Glassdoor                                                                                                               |
+| LinkedIn                           | ✅      | Session cookie required for higher rate limits                                                                                                                                                                                  |
+| Greenhouse                         | ✅      | ATS platform; company-scoped                                                                                                                                                                                                    |
+| Lever                              | ✅      | ATS platform; company-scoped                                                                                                                                                                                                    |
+| Ashby                              | ✅      | ATS platform; company-scoped                                                                                                                                                                                                    |
+| SmartRecruiters                    | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| Recruitee                          | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| Personio                           | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| BambooHR                           | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| Breezy HR                          | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| Pinpoint                           | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| Workable                           | ✅      | Company-scoped; per-company careers-widget JSON; engine skips it `needs-company` when no slug is supplied                                                                                                                       |
+| Comeet                             | ✅      | Company-scoped; needs a company UID + API token read from the OS keyring at scrape time                                                                                                                                         |
+| Jobicy                             | ✅      | Keyless public API, remote-only; returns the full description inline (no detail-fetch wall). Attribution required by its ToS                                                                                                    |
+| Rippling                           | ✅      | Company-scoped                                                                                                                                                                                                                  |
+| RemoteOK                           | ✅      |                                                                                                                                                                                                                                 |
+| Remotive                           | ✅      |                                                                                                                                                                                                                                 |
+| Arbeitsagentur                     | ✅      | German federal job agency                                                                                                                                                                                                       |
+| BerlinStartupJobs                  | ✅      |                                                                                                                                                                                                                                 |
+| GermanTechJobs                     | ✅      |                                                                                                                                                                                                                                 |
+| ArbeitNow                          | ✅      |                                                                                                                                                                                                                                 |
+| The Muse                           | ✅      | Keyword aggregator; no server-side search, client-side filter                                                                                                                                                                   |
+| YCombinator (Work at a Startup)    | ✅      |                                                                                                                                                                                                                                 |
+| We Work Remotely                   | ✅      | RSS feed                                                                                                                                                                                                                        |
+| Indeed                             | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                |
+| StepStone                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                |
+| Xing                               | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                |
+| Workday                            | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                |
+| Glassdoor                          | Retired | Anti-bot walls; covered via Aggregator (ADR-026)                                                                                                                                                                                |
+| Cross-board clustering             | ✅      | Fuzzy recompute-at-ingest, pair tombstones in `dedup.db`, canonical member selection, source chips, "not a duplicate" split (ADR-029)                                                                                           |
+| ATS slug harvesting                | ✅      | Passive extract_ats_ref over posting urls at ingest/import; discovered_companies store (dedup per ADR-022/009); ADR-030                                                                                                         |
+| Offline geocoding                  | ✅      | Bundled GeoNames index (`src-tauri/geodata/`, CC BY 4.0) answers the common case with zero egress; Photon (ODbL) fallback only; Nominatim retired. Attribution renders in Settings → About. ADR-0005 exemption clause (PR #893) |
+| Autopilot page budget              | ✅      | The wizard's scrape target is a true `pages` field mirroring `AutopilotTargetSchema` (1–10), not an item count converted at save time (PR #885)                                                                                 |
 
 ---
 
@@ -213,9 +218,12 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 
 ## Jobs UI
 
-| Feature            | Status | Notes                                                                         |
-| ------------------ | ------ | ----------------------------------------------------------------------------- |
-| ATS slug typeahead | ✅     | CompanyTypeahead (packages/ui) + discovery IPC; curated seeds merged; ADR-030 |
+| Feature                     | Status | Notes                                                                                                                                         |
+| --------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| ATS slug typeahead          | ✅     | CompanyTypeahead (packages/ui) + discovery IPC; curated seeds merged; ADR-030                                                                 |
+| Command bar + scrape drawer | ✅     | `JobsCommandBar` replaces the inline form; `ScrapeForm` moves into a `Drawer` (new `@ajh/ui` primitive: portal + scrim + focus trap + Escape) |
+| Responsive split view       | ✅     | `JobsSplitView` + `JobDetailPane`; results list and detail pane share the shell (PR #892)                                                     |
+| Per-board summary chips     | ✅     | `BoardSummaryChips` note tokens incl. `companies-failed:<n>` — partial per-company ATS failures surface instead of vanishing (PR #884)        |
 
 ---
 
@@ -223,13 +231,15 @@ Five-step IPC agentic loop: `agent_run` command → validated request → spawne
 
 Persistent job-application records with rich metadata and automation.
 
-| Feature                             | Status | Notes                                                                                                                                     |
-| ----------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Application record model            | ✅     | Per-job Application aggregate; linked to ai_generations, interaction_history, interview_questions, answers                                |
-| Status pipeline                     | ✅     | saved → applied → (interviewing/rejected/offer/accepted); auto-derived `applied` from `ai_generations.job_url`                            |
-| Saved answers per job               | ✅     | ApplicationAnswer array persisted; extension suggests matches for new applications (extension_bridge answers_suggest)                     |
-| Interview Q&A storage               | ✅     | InterviewQuestion array on Application aggregate; suggested via `suggest_interview_questions` agent tool                                  |
-| Candidate questions for interviewer | ✅     | Suggest interview questions to ask the interviewer; stored on Application for reuse (PR #383, v0.104.0 + practice mode PR #623, v0.126.0) |
+| Feature                             | Status | Notes                                                                                                                                                                                                                                             |
+| ----------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application record model            | ✅     | Per-job Application aggregate; linked to ai_generations, interaction_history, interview_questions, answers                                                                                                                                        |
+| Status pipeline                     | ✅     | saved → applied → (interviewing/rejected/offer/accepted); auto-derived `applied` from `ai_generations.job_url`                                                                                                                                    |
+| Saved answers per job               | ✅     | ApplicationAnswer array persisted; extension suggests matches for new applications (extension_bridge answers_suggest)                                                                                                                             |
+| Interview Q&A storage               | ✅     | InterviewQuestion array on Application aggregate; suggested via `suggest_interview_questions` agent tool                                                                                                                                          |
+| Candidate questions for interviewer | ✅     | Suggest interview questions to ask the interviewer; stored on Application for reuse (PR #383, v0.104.0 + practice mode PR #623, v0.126.0)                                                                                                         |
+| Apply-by-email draft                | ✅     | Subject + body persisted on the generation aggregate (`email_subject`/`email_body`), so a tab switch no longer discards the draft (PR #894). Keyed on the normalized `jobUrl` — a URL-less Application cannot be saved onto yet (see NEXT_ISSUES) |
+| Localized email salutation          | ✅     | Greeting follows the target locale; the redundant contact line was dropped from the generated body (PR #887)                                                                                                                                      |
 
 ---
 
@@ -249,16 +259,18 @@ Auto-detect applications via email confirmation watches (IMAP polling foundation
 
 MV3 extension (`apps/extension`) published on Chrome Web Store + Firefox AMO; bridges desktop via loopback native messaging with HMAC authentication (ADR-0010, PR #627).
 
-| Feature                   | Status | Notes                                                                                                                                   |
-| ------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Job import from boards    | ✅     | Canonical URL resolution for LinkedIn/Indeed (PR #390); deferred: Glassdoor/Xing/StepStone                                              |
-| Opt-in contact autofill   | ✅     | Click-to-fill contact profile on any form; two-gate consent, fetch-fresh no-persist, never-submit; generic matcher (PR #625, ADR-0009)  |
-| Answers capture + replay  | ✅     | Save application-form question/answer pairs; suggest matched answers from prior applications (PR #637, deferred: HMAC bridge signature) |
-| AI answer draft + rewrite | ✅     | Generate or rewrite application answers from the extension with streaming; opt-in gates per question (PR #649, #675)                    |
-| Check-fit scoring         | ✅     | Resume matching against job ad; displayed inline on job posting                                                                         |
-| Mark as applied           | ✅     | Record application from the job board                                                                                                   |
-| Auto-track on form submit | ✅     | Opt-in listener detects form submissions, auto-records application (Layer A, PR #687, v0.126.0)                                         |
-| HMAC bridge protocol v2   | ✅     | Mutual HMAC-SHA256 challenge-response; token never on wire; closes port-squat deferral (ADR-0010, PR #627)                              |
+| Feature                    | Status | Notes                                                                                                                                                                                                      |
+| -------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Job import from boards     | ✅     | Canonical URL resolution for LinkedIn/Indeed (PR #390); deferred: Glassdoor/Xing/StepStone                                                                                                                 |
+| Opt-in contact autofill    | ✅     | Click-to-fill contact profile on any form; two-gate consent, fetch-fresh no-persist, never-submit; generic matcher (PR #625, ADR-0009)                                                                     |
+| Answers capture + replay   | ✅     | Save application-form question/answer pairs; suggest matched answers from prior applications (PR #637, deferred: HMAC bridge signature)                                                                    |
+| AI answer draft + rewrite  | ✅     | Generate or rewrite application answers from the extension with streaming; opt-in gates per question (PR #649, #675)                                                                                       |
+| Check-fit scoring          | ✅     | Resume matching against job ad; displayed inline on job posting                                                                                                                                            |
+| Mark as applied            | ✅     | Record application from the job board                                                                                                                                                                      |
+| Auto-track on form submit  | ✅     | Opt-in listener detects form submissions, auto-records application (Layer A, PR #687, v0.126.0)                                                                                                            |
+| HMAC bridge protocol v2    | ✅     | Mutual HMAC-SHA256 challenge-response; token never on wire; closes port-squat deferral (ADR-0010, PR #627)                                                                                                 |
+| Pairing revocation         | ✅     | `token.revoked` on token rotation / factory reset — authenticated sockets only, preserving ADR-0010's no-oracle close (PR #895). Reaches only browsers live at rotation; bounded-retry hint is a follow-up |
+| Autofill matcher hardening | ✅     | Attribute-only and hyphenated name fields now match (PR #889). **Both this and the revoke protocol need a Chrome Web Store + Firefox AMO re-release before users see them**                                |
 
 ---
 
