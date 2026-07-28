@@ -22,6 +22,8 @@ fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         application_answers: vec![],
         company_brief: String::new(),
         interview_questions: vec![],
+        email_subject: String::new(),
+        email_body: String::new(),
         application_id: None,
     }
 }
@@ -106,6 +108,33 @@ fn migration_defaults_link_fields_for_legacy_records() {
     assert!(list[0].application_answers.is_empty());
     assert_eq!(list[0].company_brief, "");
     assert!(list[0].interview_questions.is_empty());
+    assert_eq!(list[0].email_subject, "");
+    assert_eq!(list[0].email_body, "");
+}
+
+/// A backup round-trip must carry the email draft — otherwise restoring a
+/// backup silently drops the user's saved application email.
+#[test]
+fn export_import_round_trip_preserves_the_email_draft() {
+    let src_dir = TempDir::new().unwrap();
+    let src = AiGenerationStore::open(&src_dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.email_subject = "Application: Engineer".into();
+    rec.email_body = "Hello,\n\nI'd like to apply.".into();
+    src.insert(&rec).unwrap();
+
+    let exported = crate::data_store::DataStore::export(&src);
+
+    let dst_dir = TempDir::new().unwrap();
+    let dst = AiGenerationStore::open(&dst_dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&dst, &exported).unwrap(),
+        1
+    );
+
+    let list = dst.list();
+    assert_eq!(list[0].email_subject, "Application: Engineer");
+    assert_eq!(list[0].email_body, "Hello,\n\nI'd like to apply.");
 }
 
 #[test]
@@ -132,6 +161,183 @@ fn insert_round_trips_interview_questions() {
 
     let list = store.list();
     assert_eq!(list[0].interview_questions, rec.interview_questions);
+}
+
+#[test]
+fn insert_round_trips_the_email_draft() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.email_subject = "Application: Engineer".into();
+    rec.email_body = "Hello,\n\nI'd like to apply.".into();
+    store.insert(&rec).unwrap();
+
+    let list = store.list();
+    assert_eq!(list[0].email_subject, "Application: Engineer");
+    assert_eq!(list[0].email_body, "Hello,\n\nI'd like to apply.");
+}
+
+/// Re-opening the same data dir must re-run `run_migrations` as a no-op: the
+/// `add_email_draft` `ALTER TABLE` would fail with "duplicate column" if the
+/// `PRAGMA user_version` guard did not skip it, and any row written before the
+/// re-open must still be readable through the new projection.
+#[test]
+fn reopening_the_store_reapplies_no_migration_and_keeps_email_data() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().to_path_buf();
+    {
+        let store = AiGenerationStore::open(&path).unwrap();
+        let mut rec = record("g1", "https://acme.com/job/1");
+        rec.email_subject = "S".into();
+        rec.email_body = "B".into();
+        store.insert(&rec).unwrap();
+    }
+
+    // Second open on the SAME file — migrations must be skipped, not replayed.
+    let reopened = AiGenerationStore::open(&path).unwrap();
+    let list = reopened.list();
+    assert_eq!(list.len(), 1, "the prior row must survive the re-open");
+    assert_eq!(list[0].email_subject, "S");
+    assert_eq!(list[0].email_body, "B");
+}
+
+/// A DB created before `add_email_draft` (schema at the previous migration) must
+/// gain the columns with '' defaults for every existing row, not lose data.
+#[test]
+fn add_email_draft_migration_backfills_legacy_rows_with_empty_strings() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("ai_generations.db");
+    {
+        // Build the store at the PREVIOUS schema version by running every
+        // migration except the last one (`add_email_draft`).
+        let mut conn = crate::db::open(&path).unwrap();
+        let previous = &AiGenerationStore::MIGRATIONS[..AiGenerationStore::MIGRATIONS.len() - 1];
+        crate::db::run_migrations(&mut conn, previous).unwrap();
+        assert!(
+            !crate::db::column_exists(&conn, "ai_generations", "email_subject"),
+            "precondition: the legacy schema has no email columns"
+        );
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text)
+             VALUES ('legacy', 1000, 'R', 'C')",
+            [],
+        )
+        .unwrap();
+    }
+
+    // Opening with the full migration list applies `add_email_draft` in place.
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let list = store.list();
+    assert_eq!(list.len(), 1, "the legacy row must survive the migration");
+    assert_eq!(list[0].id, "legacy");
+    assert_eq!(list[0].resume_text, "R", "existing data is untouched");
+    assert_eq!(list[0].email_subject, "", "new column defaults to empty");
+    assert_eq!(list[0].email_body, "");
+}
+
+/// The email fields merge exactly like `cover_letter_text` (`pick`): a save that
+/// carries a draft OVERWRITES the stored one (so re-generating replaces it),
+/// while a save from another surface leaves it alone.
+#[test]
+fn merge_email_draft_overwrites_on_regeneration_and_survives_other_saves() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.email_subject = "OLD SUBJECT".into();
+    existing.email_body = "OLD BODY".into();
+
+    // A regenerated email carries both fields → both are replaced.
+    let mut regenerated = record("g2", "https://acme.com/job/1");
+    regenerated.email_subject = "NEW SUBJECT".into();
+    regenerated.email_body = "NEW BODY".into();
+    let merged = merge_application(existing.clone(), regenerated);
+    assert_eq!(merged.email_subject, "NEW SUBJECT");
+    assert_eq!(merged.email_body, "NEW BODY");
+    assert_eq!(merged.cover_letter_text, "C", "cover is untouched");
+
+    // A résumé/answers save carries no email → the stored draft is preserved.
+    let mut answers_only = record("g3", "https://acme.com/job/1");
+    answers_only.application_answers = vec![answer("why-company")];
+    let merged = merge_application(existing.clone(), answers_only);
+    assert_eq!(merged.email_subject, "OLD SUBJECT", "draft is not wiped");
+    assert_eq!(merged.email_body, "OLD BODY", "draft is not wiped");
+
+    // Subject and body merge ATOMICALLY: a save that carries a body but an empty
+    // subject owns the whole draft, so the stale subject must NOT survive glued
+    // onto the new body. This is the model breaking the `Subject:` line contract
+    // (the renderer's `splitEmail` then yields subject == "" and body == the raw
+    // output) — the one case that actually reaches here, since the email surface
+    // always writes both fields together.
+    let mut preamble_output = record("g4", "https://acme.com/job/1");
+    preamble_output.email_subject = String::new();
+    preamble_output.email_body = "Sure! Here is your email: Hello,".into();
+    let merged = merge_application(existing.clone(), preamble_output);
+    assert_eq!(
+        merged.email_subject, "",
+        "a stale subject must not be glued onto a newly generated body"
+    );
+    assert_eq!(merged.email_body, "Sure! Here is your email: Hello,");
+
+    // Mirror case: a subject with an empty body also owns the whole draft, so
+    // the stale body must not survive under a newly generated subject.
+    let mut subject_only = record("g5", "https://acme.com/job/1");
+    subject_only.email_subject = "NEW SUBJECT".into();
+    subject_only.email_body = String::new();
+    let merged = merge_application(existing, subject_only);
+    assert_eq!(merged.email_subject, "NEW SUBJECT");
+    assert_eq!(
+        merged.email_body, "",
+        "a stale body must not survive under a newly generated subject"
+    );
+}
+
+/// End-to-end through the store: an email save must land on the SAME aggregate
+/// row the tailor flow wrote (dedupe key = normalized job_url), not fork a
+/// second row, and must not disturb the résumé/cover already stored there.
+#[test]
+fn save_application_merges_an_email_draft_onto_the_existing_aggregate() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    // Tailor flow first: résumé + cover for the job (raw url with tracking params).
+    store
+        .save_application(record("g1", "https://acme.com/job/1?utm_source=indeed"))
+        .unwrap();
+
+    // Then the email tab saves its draft — no résumé/cover, different raw url.
+    let mut email_save = record("g2", "https://acme.com/job/1#apply");
+    email_save.resume_text = String::new();
+    email_save.cover_letter_text = String::new();
+    email_save.email_subject = "Application: Engineer".into();
+    email_save.email_body = "Hello,".into();
+    store.save_application(email_save).unwrap();
+
+    let list = store.list();
+    assert_eq!(list.len(), 1, "one aggregate row per job");
+    assert_eq!(list[0].id, "g1", "merged into the tailor-flow row");
+    assert_eq!(list[0].resume_text, "R", "résumé preserved");
+    assert_eq!(list[0].cover_letter_text, "C", "cover preserved");
+    assert_eq!(list[0].email_subject, "Application: Engineer");
+    assert_eq!(list[0].email_body, "Hello,");
+}
+
+/// The UNIQUE index is partial on `job_url != ''`, so unlinked email saves (an
+/// unusable url normalizes to '') must still insert as separate rows.
+#[test]
+fn save_application_keeps_empty_job_url_email_saves_separate() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let mut first = record("g1", "");
+    first.email_subject = "A".into();
+    let mut second = record("g2", "");
+    second.email_subject = "B".into();
+    store.save_application(first).unwrap();
+    store.save_application(second).unwrap();
+
+    let list = store.list();
+    assert_eq!(list.len(), 2, "empty-url saves must not collide");
+    let subjects: std::collections::HashSet<&str> =
+        list.iter().map(|r| r.email_subject.as_str()).collect();
+    assert!(subjects.contains("A") && subjects.contains("B"));
 }
 
 #[test]

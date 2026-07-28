@@ -393,6 +393,8 @@ mod tests {
                 application_answers: vec![],
                 company_brief: String::new(),
                 interview_questions: vec![],
+                email_subject: String::new(),
+                email_body: String::new(),
                 application_id: None,
             })
             .unwrap();

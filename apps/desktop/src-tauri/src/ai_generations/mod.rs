@@ -77,6 +77,13 @@ pub struct AiGenerationRecord {
     /// distinct from `application_answers` above. Stored as JSON.
     #[serde(rename = "interviewQuestions", default)]
     pub interview_questions: Vec<InterviewQuestion>,
+    /// The apply-by-email draft generated in the Application detail tab: the
+    /// subject line and the body, kept as two plain columns (they are edited and
+    /// copied independently by the UI, so a JSON blob would only add parsing).
+    #[serde(rename = "emailSubject", default)]
+    pub email_subject: String,
+    #[serde(rename = "emailBody", default)]
+    pub email_body: String,
     /// Parent Application FK (NULL when unlinked). Carried through export/import so
     /// a backup round-trip preserves the application↔generation link; otherwise
     /// `remove_for_application`/`detach_application` stop matching restored rows.
@@ -202,6 +209,22 @@ impl AiGenerationStore {
                 )
             },
         },
+        // Additive: the apply-by-email draft (subject + body) produced by the
+        // Application detail "Apply by email" tab, which until now lived only in
+        // React state and was lost on a tab switch. Two plain columns rather than
+        // one JSON field — the UI edits/copies subject and body independently.
+        // Old rows default to '' (an empty draft, exactly what they had).
+        // Purely forward-safe: `ADD COLUMN` with a NOT NULL default never touches
+        // existing data, and dropping the feature just leaves two unread columns.
+        Migration {
+            name: "add_email_draft",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN email_subject TEXT NOT NULL DEFAULT '';
+                     ALTER TABLE ai_generations ADD COLUMN email_body    TEXT NOT NULL DEFAULT '';",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -226,7 +249,7 @@ impl AiGenerationStore {
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
                     job_url, board, application_answers, company_brief, application_id,
-                    interview_questions
+                    interview_questions, email_subject, email_body
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
@@ -250,7 +273,7 @@ impl AiGenerationStore {
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
                     job_url, board, application_answers, company_brief, application_id,
-                    interview_questions
+                    interview_questions, email_subject, email_body
              FROM ai_generations WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1",
         )
         .ok()
@@ -269,8 +292,8 @@ impl AiGenerationStore {
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
               job_url, board, application_answers, company_brief, application_id,
-              interview_questions)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+              interview_questions, email_subject, email_body)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
             params![
                 rec.id,
                 ts_to_db(rec.created_at),
@@ -292,6 +315,8 @@ impl AiGenerationStore {
                 rec.company_brief,
                 rec.application_id,
                 interview_questions_json,
+                rec.email_subject,
+                rec.email_body,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -312,7 +337,7 @@ impl AiGenerationStore {
               mismatch = ?8, top_requirements = ?9, mode = ?10, resume_text = ?11,
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
               application_answers = ?16, company_brief = ?17, application_id = ?18,
-              interview_questions = ?19
+              interview_questions = ?19, email_subject = ?20, email_body = ?21
              WHERE id = ?1",
             params![
                 rec.id,
@@ -334,6 +359,8 @@ impl AiGenerationStore {
                 rec.company_brief,
                 rec.application_id,
                 interview_questions_json,
+                rec.email_subject,
+                rec.email_body,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -484,7 +511,7 @@ impl AiGenerationStore {
     }
 }
 
-/// Map a DB row (the full 19-column projection) to a record. Shared by `list`
+/// Map a DB row (the full 22-column projection) to a record. Shared by `list`
 /// and `find_by_job_url` so the column order lives in one place.
 fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let top_req_json: String = row.get(9)?;
@@ -511,6 +538,8 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
         company_brief: row.get(17)?,
         application_id: row.get(18)?,
         interview_questions: serde_json::from_str(&interview_questions_json).unwrap_or_default(),
+        email_subject: row.get(20)?,
+        email_body: row.get(21)?,
     })
 }
 
@@ -529,6 +558,19 @@ fn merge_application(
     // `mismatch` defaults to `false` — not a real verdict.
     let incoming_has_languages =
         !incoming.resume_language.trim().is_empty() && !incoming.job_ad_language.trim().is_empty();
+    // Subject and body are ONE draft: the email surface always writes both
+    // together, so they merge together. Picking them independently let a
+    // regeneration whose output broke the `Subject:` line contract (parsed
+    // subject = "") keep the PREVIOUS subject glued onto the NEW body — a
+    // mismatched email the user never wrote. Either field carrying content means
+    // "this save owns the draft"; neither means the save is about something else
+    // (résumé, answers, interview questions) and the stored draft is kept.
+    let (email_subject, email_body) =
+        if incoming.email_subject.trim().is_empty() && incoming.email_body.trim().is_empty() {
+            (existing.email_subject, existing.email_body)
+        } else {
+            (incoming.email_subject, incoming.email_body)
+        };
     AiGenerationRecord {
         id: existing.id,
         created_at: existing.created_at,
@@ -570,6 +612,9 @@ fn merge_application(
         } else {
             incoming.interview_questions
         },
+        // Merged as one atomic draft — see the binding above.
+        email_subject,
+        email_body,
         application_id: incoming.application_id.or(existing.application_id),
     }
 }
@@ -614,8 +659,8 @@ impl DataStore for AiGenerationStore {
                   resume_language, job_ad_language, target_language, mismatch,
                   top_requirements, mode, resume_text, cover_letter_text, job_ad,
                   job_url, board, application_answers, company_brief, application_id,
-                  interview_questions)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+                  interview_questions, email_subject, email_body)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
                 params![
                     rec.id,
                     ts_to_db(rec.created_at),
@@ -637,6 +682,8 @@ impl DataStore for AiGenerationStore {
                     rec.company_brief,
                     rec.application_id,
                     interview_questions_json,
+                    rec.email_subject,
+                    rec.email_body,
                 ],
             )?;
         }
