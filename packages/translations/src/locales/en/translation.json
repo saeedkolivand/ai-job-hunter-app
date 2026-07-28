@@ -568,7 +568,8 @@
       "pitch": "If this app saved you some 3am despair, you can chip in — any amount helps keep it going.",
       "githubSponsors": "Sponsor on GitHub",
       "kofi": "Buy a coffee on Ko-fi",
-      "paypal": "Send a tip via PayPal"
+      "paypal": "Send a tip via PayPal",
+      "dataAttribution": "Location data © GeoNames (geonames.org), CC BY 4.0. Online location suggestions via Photon (komoot) — © OpenStreetMap contributors, ODbL."
     },
     "profile": {
       "title": "Profile",
