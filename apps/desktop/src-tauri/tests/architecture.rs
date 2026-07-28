@@ -97,6 +97,11 @@ const L2: &[&str] = &[
     // module in the family that spawns from setup and reaches up into
     // `commands::notifications::push_and_notify`.
     "email_watch_scheduler",
+    // Follow-up reminder sweep — same split for the same reason: the L1
+    // `applications` aggregate owns the data (`follow_up_candidates` /
+    // `mark_next_action_notified`) and stays Tauri-free, while this module
+    // spawns from setup and pushes the notification.
+    "reminder_scheduler",
 ];
 const L3: &[&str] = &[
     "commands",
@@ -304,6 +309,11 @@ const R2_ALLOW: &[&str] = &[
     // `async_runtime::spawn` to run its own background loop, exactly like
     // `autopilot_scheduler.rs` above.
     "email_watch_scheduler.rs",
+    // Follow-up reminder sweep (L2) — same shape and same reason as the two
+    // schedulers above: `tauri::AppHandle` + `async_runtime::spawn` for its own
+    // background loop. Its decision logic (`should_notify`/`due_follow_ups`) is
+    // pure and AppHandle-free.
+    "reminder_scheduler.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
     "pipeline/mod.rs",
@@ -360,6 +370,10 @@ const R3_ALLOW: &[&str] = &[
     "ai_generations/mod.rs",
     "spend/mod.rs",
     "applications/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the follow-up reminder
+    // read + its atomic claim. Persistence still lives entirely inside the
+    // `applications` domain store — see applications::reminders.
+    "applications/reminders.rs",
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
@@ -505,6 +519,12 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // payload types `push_and_notify` takes — both live in the L3
     // `notifications` module (the persisted Notification Center store).
     ("email_watch_scheduler", "notifications"),
+    // Follow-up reminder sweep (L2): identical shell-reach to the email-watch
+    // scheduler above — `commands::notifications::push_and_notify` plus the
+    // `NewNotification`/`NotificationRoute` payload types — deliberately kept
+    // OFF the L1 `applications` store.
+    ("reminder_scheduler", "commands"),
+    ("reminder_scheduler", "notifications"),
 ];
 
 #[test]

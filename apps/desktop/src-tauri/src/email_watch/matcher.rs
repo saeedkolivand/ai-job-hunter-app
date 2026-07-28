@@ -158,6 +158,7 @@ mod tests {
             job_description: String::new(),
             notes: String::new(),
             next_action_at: None,
+            next_action_notified_at: None,
             comp: String::new(),
             contact_name: String::new(),
             contact_email: String::new(),

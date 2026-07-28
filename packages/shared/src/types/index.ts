@@ -410,17 +410,34 @@ export interface Application {
   notes: string;
   /** User-set reminder timestamp (ms) for the next action. Absent = unset. */
   nextActionAt?: number;
+  /** Backend bookkeeping: when the follow-up notification for the CURRENT
+   *  {@link Application.nextActionAt} was already raised (ms). Absent = not yet
+   *  announced; the backend clears it whenever the due date moves.
+   *
+   *  Not for display — it exists on the wire so a backup round trip preserves it
+   *  (`export`/`import` serialize this aggregate; dropping it made restoring a
+   *  backup re-announce every reminder the user had already seen). The renderer
+   *  must not write it: `update()` has no such field. */
+  nextActionNotifiedAt?: number;
   comp: string;
+  /** **The** primary contact for this pursuit (recruiter / hiring manager /
+   *  apply-by-email recipient — one person, one field). Canonical: the only
+   *  contact pair the backend stores. */
   contactName: string;
+  /** Canonical primary contact email — see {@link Application.contactName}. */
   contactEmail: string;
   /** The imported/pasted job description (from the captured DOM at import, or a
    *  later manual paste / retry-resolve). Empty when unknown. */
   jobDescription: string;
   /** Persisted AI-generated job-ad summary (server-capped at 50 KB). */
   jobSummary: string;
-  /** Employer-side contact name for a direct "apply by email" approach. */
+  /** @deprecated Alias of {@link Application.contactName}. Always present and
+   *  always equal to `contactName` — the backend mirrors the canonical value
+   *  onto this name so pre-unification callers keep working. Read
+   *  `contactName`; new UI should not use this. */
   recipientName?: string;
-  /** Employer-side contact email for a direct "apply by email" approach. */
+  /** @deprecated Alias of {@link Application.contactEmail} — see
+   *  {@link Application.recipientName}. */
   recipientEmail?: string;
   /** Scraped salary range (Adzuna only, today) — grounds the salary application
    *  answer before it falls back to a web lookup. Absent when unknown. */

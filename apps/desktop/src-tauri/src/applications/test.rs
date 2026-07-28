@@ -64,6 +64,59 @@ fn open_gen_db_with_app_id_col(dir: &std::path::Path) -> Connection {
     Connection::open(dir.join("ai_generations.db")).unwrap()
 }
 
+/// Named-field view of [`ApplicationStore::update_fields`]' ten positional
+/// arguments, for tests.
+///
+/// `update_fields(&id, None, None, None, None, None, None, None, Some(x), None)`
+/// is unreadable and silently wrong if an argument shifts; `Patch { recipient_name:
+/// Some(x), ..Default::default() }` names what the test actually means and is
+/// checked by the compiler. Adding a field to `update_fields` breaks
+/// [`patch`] once, here, instead of every call site.
+#[derive(Default)]
+struct Patch {
+    notes: Option<String>,
+    /// Outer `None` = leave the reminder alone; `Some(None)` = clear it.
+    next_action_at: Option<Option<u64>>,
+    comp: Option<String>,
+    contact_name: Option<String>,
+    contact_email: Option<String>,
+    job_description: Option<String>,
+    job_summary: Option<String>,
+    recipient_name: Option<String>,
+    recipient_email: Option<String>,
+}
+
+/// Forward a [`Patch`] to [`ApplicationStore::update_fields`] in the one place
+/// the positional order has to be spelled out.
+fn patch(store: &ApplicationStore, id: &str, p: Patch) -> AppResult<()> {
+    store.update_fields(
+        id,
+        p.notes,
+        p.next_action_at,
+        p.comp,
+        p.contact_name,
+        p.contact_email,
+        p.job_description,
+        p.job_summary,
+        p.recipient_name,
+        p.recipient_email,
+    )
+}
+
+/// Shorthand for the overwhelmingly common single-field case: set/clear the
+/// follow-up reminder.
+fn set_reminder(store: &ApplicationStore, id: &str, at: Option<u64>) {
+    patch(
+        store,
+        id,
+        Patch {
+            next_action_at: Some(at),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
 fn meta(company: &str, title: &str) -> ApplicationMeta {
     ApplicationMeta {
         company: company.into(),
@@ -111,6 +164,33 @@ fn rejects_dangerous_url_schemes_to_empty() {
     assert_eq!(normalize_job_url("blob:https://evil.example/uuid"), "");
     // Case-insensitive scheme detection: mixed-case dangerous scheme still rejected.
     assert_eq!(normalize_job_url("JavaScript:alert(1)"), "");
+}
+
+#[test]
+fn embedded_control_characters_cannot_smuggle_a_scheme_past_the_guard() {
+    // HTML and the WHATWG URL parser REMOVE embedded tab/CR/LF before parsing, so
+    // this string is `javascript:` to any consumer — while a raw-byte scheme scan
+    // sees the scheme-less `"java"` and would store the payload verbatim.
+    // Stripping C0 controls first makes the guard see what a consumer sees.
+    assert_eq!(normalize_job_url("java\nscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("java\tscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("java\rscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("ja\u{0}vascript:alert(1)"), "");
+    assert_eq!(normalize_job_url("da\u{7F}ta:text/html,x"), "");
+
+    // A control character anywhere else is removed too, so nothing unprintable is
+    // ever stored as part of the dedup key.
+    assert_eq!(
+        normalize_job_url("https://example.com/job/\u{0}1"),
+        "https://example.com/job/1"
+    );
+    // Leading whitespace exposed by the removal is still trimmed away.
+    assert_eq!(
+        normalize_job_url("\u{0} https://example.com/job/1"),
+        "https://example.com/job/1"
+    );
+    // A control-only input degrades to "no url" rather than a bare host.
+    assert_eq!(normalize_job_url("\u{0}\u{1}"), "");
 }
 
 #[test]
@@ -2874,5 +2954,1046 @@ fn update_fields_and_merge_answers_race_never_loses_an_answer() {
         app.notes.starts_with("note-"),
         "the last update_fields patch must survive, got {:?}",
         app.notes
+    );
+}
+
+// ── Contact unification (migration `unify_application_contact`) ───────────────
+//
+// `contact_name`/`contact_email` became THE single primary contact per
+// application; `recipient_name`/`recipient_email` are deprecated aliases. The
+// migration promotes an alias-only value onto the canonical pair and leaves the
+// deprecated COLUMNS untouched (additive-only, never destructive).
+
+/// Seed `applications.db` at `user_version = 6` — the pre-unification schema
+/// (recipient + salary columns present) — with one row per interesting
+/// contact/recipient population combination.
+///
+/// The four fields are independently empty-or-not (16 states); these rows cover
+/// every state the promotion rule can treat differently — both pairs fully
+/// populated / fully empty, EITHER pair half-populated (the cases that
+/// distinguish a pair-atomic promotion from a per-column one), each flavour of
+/// whitespace-only canonical pair, and an identical alias pair. Returns the ids
+/// in declaration order.
+fn seed_pre_unification_db(dir: &std::path::Path) -> [&'static str; 12] {
+    let ids = [
+        "app-recipient-only",
+        "app-contact-only",
+        "app-both",
+        "app-neither",
+        // Canonical HALF-populated + a full alias pair. The per-column rule
+        // fused the two people here; a pair-atomic one must not promote at all.
+        "app-contact-name-only",
+        "app-contact-email-only",
+        // Canonical empty + an alias pair that is itself half-populated: the
+        // promotion must move BOTH columns, leaving the empty side empty.
+        "app-recipient-name-only",
+        "app-recipient-email-only",
+        // Whitespace-only canonical pairs — reachable from pre-trim builds. Each
+        // flavour is seeded separately because SQLite's BARE `TRIM(x)` strips
+        // only U+0020: a TAB or an NBSP (endemic in text copied out of scraped
+        // HTML) read as non-empty in SQL while `str::trim` calls them empty, so
+        // the same row folded one way in place and the other way through a
+        // restored bundle until the migration passed an explicit charset.
+        "app-space-contact",
+        "app-tab-contact",
+        "app-nbsp-contact",
+        // Alias pair IDENTICAL to the canonical one — nothing is being dropped,
+        // so the `<>` distinctness guard must suppress the preserved note.
+        "app-identical-pair",
+    ];
+    let conn = Connection::open(dir.join("applications.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE applications (
+            id              TEXT PRIMARY KEY,
+            status          TEXT NOT NULL DEFAULT 'saved',
+            applied_at      INTEGER,
+            created_at      INTEGER NOT NULL,
+            updated_at      INTEGER NOT NULL,
+            job_url         TEXT NOT NULL DEFAULT '',
+            board           TEXT NOT NULL DEFAULT '',
+            company         TEXT NOT NULL DEFAULT '',
+            title           TEXT NOT NULL DEFAULT '',
+            candidate       TEXT NOT NULL DEFAULT '',
+            answers         TEXT NOT NULL DEFAULT '[]',
+            brief           TEXT NOT NULL DEFAULT '',
+            notes           TEXT NOT NULL DEFAULT '',
+            next_action_at  INTEGER,
+            comp            TEXT NOT NULL DEFAULT '',
+            contact_name    TEXT NOT NULL DEFAULT '',
+            contact_email   TEXT NOT NULL DEFAULT '',
+            job_description TEXT NOT NULL DEFAULT '',
+            job_summary     TEXT NOT NULL DEFAULT '',
+            recipient_name  TEXT NOT NULL DEFAULT '',
+            recipient_email TEXT NOT NULL DEFAULT '',
+            salary_min      REAL,
+            salary_max      REAL,
+            salary_currency TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_applications_job_url
+            ON applications(job_url);
+        CREATE TABLE status_events (
+            application_id  TEXT NOT NULL,
+            from_status     TEXT NOT NULL DEFAULT '',
+            to_status       TEXT NOT NULL,
+            at              INTEGER NOT NULL,
+            note            TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_status_events_app
+            ON status_events(application_id);
+        PRAGMA user_version = 6;",
+    )
+    .unwrap();
+    let rows: [(&str, &str, &str, &str, &str); 12] = [
+        (ids[0], "", "", "Rita Recruiter", "rita@acme.com"),
+        (ids[1], "Cora Contact", "cora@acme.com", "", ""),
+        (
+            ids[2],
+            "Cora Contact",
+            "cora@acme.com",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (ids[3], "", "", "", ""),
+        (
+            ids[4],
+            "Cora Contact",
+            "",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (
+            ids[5],
+            "",
+            "cora@acme.com",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (ids[6], "", "", "Rita Recruiter", ""),
+        (ids[7], "", "", "", "rita@acme.com"),
+        (ids[8], "   ", "  ", "Rita Recruiter", "rita@acme.com"),
+        (ids[9], "\t", "\t\t", "Rita Recruiter", "rita@acme.com"),
+        (
+            ids[10],
+            "\u{A0}",
+            "\u{A0} \u{A0}",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+        (
+            ids[11],
+            "Rita Recruiter",
+            "rita@acme.com",
+            "Rita Recruiter",
+            "rita@acme.com",
+        ),
+    ];
+    for (id, contact_name, contact_email, recipient_name, recipient_email) in rows {
+        conn.execute(
+            "INSERT INTO applications
+             (id, status, created_at, updated_at, contact_name, contact_email,
+              recipient_name, recipient_email)
+             VALUES (?1, 'applied', 1000, 1000, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                id,
+                contact_name,
+                contact_email,
+                recipient_name,
+                recipient_email
+            ],
+        )
+        .unwrap();
+    }
+    ids
+}
+
+/// Read a raw column straight from SQLite, bypassing the store's projection —
+/// used to assert the DEPRECATED columns were left alone by the migration.
+fn raw_column(dir: &std::path::Path, id: &str, column: &str) -> String {
+    let conn = Connection::open(dir.join("applications.db")).unwrap();
+    conn.query_row(
+        &format!("SELECT {column} FROM applications WHERE id = ?1"),
+        rusqlite::params![id],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn contact_backfill_promotes_the_pair_atomically() {
+    let dir = TempDir::new().unwrap();
+    let [recipient_only, contact_only, both, neither, contact_name_only, contact_email_only, recipient_name_only, recipient_email_only, space_contact, tab_contact, nbsp_contact, identical_pair] =
+        seed_pre_unification_db(dir.path());
+
+    // Opening runs migration 7 (unify) + 8 (reminder marker).
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let contact_of = |id: &str| {
+        let a = store.get(id).unwrap();
+        (a.contact_name, a.contact_email)
+    };
+
+    // 1. recipient-only → the whole pair is promoted.
+    assert_eq!(
+        contact_of(recipient_only),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
+    );
+
+    // 2. contact-only → untouched.
+    assert_eq!(
+        contact_of(contact_only),
+        ("Cora Contact".into(), "cora@acme.com".into())
+    );
+
+    // 3. both populated → the canonical pair wins; the alias is not merged in.
+    assert_eq!(
+        contact_of(both),
+        ("Cora Contact".into(), "cora@acme.com".into())
+    );
+
+    // 4. neither → still empty (no phantom value invented).
+    assert_eq!(contact_of(neither), (String::new(), String::new()));
+
+    // 5-6. THE IDENTITY-FUSION CASES. The canonical pair is half-populated, so
+    // it already belongs to someone (Cora). A per-column promotion would fill
+    // the empty half from the alias row and hand back "Cora Contact
+    // <rita@acme.com>" — a mailto: addressed to Rita under Cora's name, or
+    // Cora's address under Rita's name. Pair-atomic: promote nothing.
+    assert_eq!(
+        contact_of(contact_name_only),
+        ("Cora Contact".into(), String::new()),
+        "a half-populated canonical pair must never absorb the alias EMAIL"
+    );
+    assert_eq!(
+        contact_of(contact_email_only),
+        (String::new(), "cora@acme.com".into()),
+        "a half-populated canonical pair must never absorb the alias NAME"
+    );
+
+    // 7-8. Canonical empty + a half-populated alias → both columns move, and the
+    // empty half stays empty (never back-filled from anywhere else).
+    assert_eq!(
+        contact_of(recipient_name_only),
+        ("Rita Recruiter".into(), String::new())
+    );
+    assert_eq!(
+        contact_of(recipient_email_only),
+        (String::new(), "rita@acme.com".into())
+    );
+
+    // 9-11. A whitespace-only canonical pair counts as EMPTY and is promoted like
+    // a truly empty one — for every flavour of whitespace, not just U+0020.
+    // SQLite's bare `TRIM(x)` strips only spaces, so the TAB and NBSP rows failed
+    // to promote here while `str::trim` (the import path) folded them: the same
+    // row ended up with a different contact depending on whether it migrated in
+    // place or came back through a restored bundle.
+    for (id, flavour) in [
+        (space_contact, "spaces"),
+        (tab_contact, "tabs"),
+        (nbsp_contact, "NBSP"),
+    ] {
+        assert_eq!(
+            contact_of(id),
+            ("Rita Recruiter".into(), "rita@acme.com".into()),
+            "a canonical pair holding only {flavour} must count as empty and promote"
+        );
+    }
+
+    // 12. Alias pair IDENTICAL to the canonical one: nothing is being dropped, so
+    // the `<>` distinctness guard must suppress the preserved note (asserted
+    // below) while the contact itself stays exactly as it was.
+    assert_eq!(
+        contact_of(identical_pair),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
+    );
+
+    // Every response mirrors the canonical pair onto the deprecated wire names,
+    // so a renderer still reading `recipientName` sees the unified contact.
+    for id in [
+        recipient_only,
+        contact_only,
+        both,
+        neither,
+        contact_name_only,
+        contact_email_only,
+        recipient_name_only,
+        recipient_email_only,
+        space_contact,
+        tab_contact,
+        nbsp_contact,
+        identical_pair,
+    ] {
+        let app = store.get(id).unwrap();
+        assert_eq!(
+            app.recipient_name, app.contact_name,
+            "{id}: recipientName must mirror the canonical contactName"
+        );
+        assert_eq!(
+            app.recipient_email, app.contact_email,
+            "{id}: recipientEmail must mirror the canonical contactEmail"
+        );
+    }
+
+    // The alias pair that was NOT promoted (it belongs to a second, distinct
+    // person) is preserved into notes — the store stops reading the deprecated
+    // columns and an export mirrors the canonical pair, so this is its only
+    // recoverable home.
+    for id in [both, contact_name_only, contact_email_only] {
+        assert!(
+            store
+                .get(id)
+                .unwrap()
+                .notes
+                .contains("Apply-by-email: Rita Recruiter <rita@acme.com>"),
+            "{id}: a dropped distinct apply-by-email contact must survive in notes"
+        );
+    }
+    // Nothing was dropped for these, so no note may be appended: the promoted
+    // rows (their alias pair BECAME the contact), the empty one, and — the case
+    // the `<>` distinctness guard exists for — the row whose alias pair was
+    // already identical to its canonical pair.
+    for id in [
+        recipient_only,
+        space_contact,
+        tab_contact,
+        nbsp_contact,
+        neither,
+        identical_pair,
+    ] {
+        assert!(
+            !store.get(id).unwrap().notes.contains("Apply-by-email:"),
+            "{id}: nothing was dropped, so no note may be appended"
+        );
+    }
+
+    // Non-destructive: the DEPRECATED columns keep their original values on disk
+    // (the migration only ever writes the canonical pair).
+    assert_eq!(
+        raw_column(dir.path(), both, "recipient_name"),
+        "Rita Recruiter"
+    );
+    assert_eq!(
+        raw_column(dir.path(), both, "recipient_email"),
+        "rita@acme.com"
+    );
+    assert_eq!(
+        raw_column(dir.path(), recipient_only, "recipient_name"),
+        "Rita Recruiter"
+    );
+}
+
+#[test]
+fn contact_backfill_appends_the_preserved_note_after_existing_text() {
+    let dir = TempDir::new().unwrap();
+    seed_pre_unification_db(dir.path());
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "UPDATE applications SET notes = 'call back Tuesday' WHERE id = 'app-both'",
+            [],
+        )
+        .unwrap();
+    }
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        store.get("app-both").unwrap().notes,
+        "call back Tuesday\n\nApply-by-email: Rita Recruiter <rita@acme.com>",
+        "the user's own note must be kept, with the preserved contact appended"
+    );
+}
+
+#[test]
+fn contact_backfill_sql_is_idempotent() {
+    let dir = TempDir::new().unwrap();
+    let ids = seed_pre_unification_db(dir.path());
+    // Snapshot `notes` too: the preservation statement APPENDS, so a replay that
+    // is not guarded would stack duplicate "Apply-by-email:" lines.
+    let snapshot = |store: &ApplicationStore| -> Vec<(String, String, String)> {
+        ids.iter()
+            .map(|id| {
+                let a = store.get(id).unwrap();
+                (a.contact_name, a.contact_email, a.notes)
+            })
+            .collect()
+    };
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let before = snapshot(&store);
+    drop(store);
+
+    // Re-run the migration BODY itself (not just `run_migrations`, which
+    // short-circuits on user_version) — the SQL must be safe to replay.
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        let unify = &super::migrations::MIGRATIONS[6];
+        assert_eq!(
+            unify.name, "unify_application_contact",
+            "migration order is pinned — entries are append-only"
+        );
+        (unify.up)(&conn).unwrap();
+        (unify.up)(&conn).unwrap();
+    }
+
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    assert_eq!(
+        before,
+        snapshot(&store),
+        "replaying the backfill must change nothing"
+    );
+}
+
+#[test]
+fn both_inbound_contact_names_write_the_same_storage() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+
+    // Alias write (what ApplyByEmailTab sends today) lands on the canonical pair.
+    patch(
+        &store,
+        &id,
+        Patch {
+            recipient_name: Some("Rita Recruiter".into()),
+            recipient_email: Some("rita@acme.com".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.contact_name, "Rita Recruiter");
+    assert_eq!(app.contact_email, "rita@acme.com");
+    assert_eq!(app.recipient_name, "Rita Recruiter");
+
+    // A canonical write is visible under BOTH names too.
+    patch(
+        &store,
+        &id,
+        Patch {
+            contact_name: Some("Cora Contact".into()),
+            contact_email: Some("cora@acme.com".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let app = store.get(&id).unwrap();
+    assert_eq!(app.contact_name, "Cora Contact");
+    assert_eq!(app.recipient_name, "Cora Contact");
+    assert_eq!(app.recipient_email, "cora@acme.com");
+
+    // Both names in ONE patch: the canonical one wins.
+    patch(
+        &store,
+        &id,
+        Patch {
+            contact_name: Some("Canonical".into()),
+            recipient_name: Some("Alias".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(store.get(&id).unwrap().contact_name, "Canonical");
+
+    // Clearing through the alias clears the canonical pair — the stale mirror
+    // must never resurrect the old value.
+    patch(
+        &store,
+        &id,
+        Patch {
+            recipient_name: Some(String::new()),
+            recipient_email: Some(String::new()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let cleared = store.get(&id).unwrap();
+    assert_eq!(cleared.contact_name, "");
+    assert_eq!(cleared.contact_email, "");
+    assert_eq!(cleared.recipient_name, "");
+}
+
+/// One bundle entry for a pre-unification export, with the four contact fields
+/// under test and everything else at a harmless default.
+fn imported_row(
+    id: &str,
+    contact_name: &str,
+    contact_email: &str,
+    recipient_name: &str,
+    recipient_email: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "status": "applied",
+        "createdAt": 1000,
+        "updatedAt": 1000,
+        "jobUrl": "",
+        "board": "",
+        "company": "Acme",
+        "title": "Engineer",
+        "candidate": "Jane",
+        "answers": [],
+        "brief": "",
+        "notes": "",
+        "comp": "",
+        "contactName": contact_name,
+        "contactEmail": contact_email,
+        "recipientName": recipient_name,
+        "recipientEmail": recipient_email
+    })
+}
+
+#[test]
+fn importing_a_pre_unification_bundle_folds_exactly_like_the_migration() {
+    // `canonicalize_contact` is the import-time copy of the migration's rule;
+    // these are the same cases as `contact_backfill_promotes_the_pair_atomically`
+    // driven through the bundle path instead of SQL.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let bundle = serde_json::json!([
+        imported_row("imp-alias-only", "", "", "Rita Recruiter", "rita@acme.com"),
+        imported_row(
+            "imp-contact-name-only",
+            "Cora Contact",
+            "",
+            "Rita Recruiter",
+            "rita@acme.com"
+        ),
+        imported_row("imp-alias-name-only", "", "", "Rita Recruiter", ""),
+        imported_row("imp-whitespace-contact", "  ", " ", "Rita Recruiter", ""),
+        // The lockstep case: a blank canonical pair facing an equally blank
+        // ALIAS pair. The migration's WHERE requires a non-blank alias, so SQL
+        // leaves this row alone — and after the ruling in `contact.rs` so does
+        // the import path. Before it, Rust promoted on `canonical_empty` alone
+        // and OVERWROTE the stored whitespace with the empty alias.
+        imported_row("imp-blank-both", " ", "", "\t", "  "),
+    ]);
+    assert_eq!(store.import(&bundle).unwrap(), 5);
+    let contact_of = |id: &str| {
+        let a = store.get(id).unwrap();
+        (a.contact_name, a.contact_email)
+    };
+
+    // Alias-only → the whole pair is promoted.
+    assert_eq!(
+        contact_of("imp-alias-only"),
+        ("Rita Recruiter".into(), "rita@acme.com".into())
+    );
+    // …and mirrored back onto the deprecated wire name.
+    assert_eq!(
+        store.get("imp-alias-only").unwrap().recipient_name,
+        "Rita Recruiter"
+    );
+
+    // THE FUSION CASE: a half-populated canonical pair must not absorb the alias
+    // email, or the mailto: sink would address Rita under Cora's name.
+    assert_eq!(
+        contact_of("imp-contact-name-only"),
+        ("Cora Contact".into(), String::new())
+    );
+    // The distinct contact is preserved instead of silently dropped — an export
+    // mirrors the canonical pair, so this note is its only recoverable home.
+    assert_eq!(
+        store.get("imp-contact-name-only").unwrap().notes,
+        "Apply-by-email: Rita Recruiter <rita@acme.com>"
+    );
+
+    // A half-populated ALIAS pair still moves as a unit; the empty half stays empty.
+    assert_eq!(
+        contact_of("imp-alias-name-only"),
+        ("Rita Recruiter".into(), String::new())
+    );
+    // Whitespace-only canonical counts as empty, same TRIM rule as the migration.
+    assert_eq!(
+        contact_of("imp-whitespace-contact"),
+        ("Rita Recruiter".into(), String::new())
+    );
+    // LOCKSTEP: nothing to promote → no write at all, byte-for-byte what the
+    // migration's `WHERE … AND (TRIM(recipient_name) <> '' OR …)` leaves on disk.
+    assert_eq!(
+        contact_of("imp-blank-both"),
+        (" ".to_string(), String::new()),
+        "an empty alias pair must never overwrite the canonical pair"
+    );
+    // …and no preservation note is invented for a contact that does not exist.
+    assert_eq!(store.get("imp-blank-both").unwrap().notes, "");
+}
+
+#[test]
+fn re_importing_does_not_stack_duplicate_preserved_contacts() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let bundle = serde_json::json!([imported_row(
+        "imp-repeat",
+        "Cora Contact",
+        "",
+        "Rita Recruiter",
+        "rita@acme.com"
+    )]);
+    store.import(&bundle).unwrap();
+    let once = store.get("imp-repeat").unwrap().notes;
+
+    // Re-importing the SAME pre-unification bundle must not append a second copy.
+    store.import(&bundle).unwrap();
+    assert_eq!(store.get("imp-repeat").unwrap().notes, once);
+
+    // Nor does exporting the now-unified row and importing that back.
+    let round_tripped = store.export();
+    store.import(&round_tripped).unwrap();
+    assert_eq!(store.get("imp-repeat").unwrap().notes, once);
+}
+
+// ── Follow-up reminder marker (`add_applications_next_action_notified_at`) ────
+
+#[test]
+fn follow_up_candidates_only_carry_rows_with_a_reminder() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let with_reminder = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    let without = store
+        .track_manual("", "", &meta("Globex", "Designer"))
+        .unwrap();
+    set_reminder(&store, &with_reminder, Some(5_000));
+
+    let candidates = store.follow_up_candidates();
+    let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
+    assert_eq!(ids, vec![with_reminder.as_str()]);
+    assert!(!ids.contains(&without.as_str()));
+    let c = candidates.first().expect("one candidate");
+    assert_eq!(c.next_action_at, Some(5_000));
+    assert_eq!(c.notified_at, None, "a fresh reminder starts un-notified");
+    assert_eq!(c.company, "Acme");
+    assert_eq!(c.title, "Engineer");
+    assert_eq!(c.status, ApplicationStatus::Applied);
+}
+
+#[test]
+fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    let marker = || {
+        store
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at)
+    };
+
+    set_reminder(&store, &id, Some(5_000));
+    assert!(
+        store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "stamping the due date the sweep read must match a row"
+    );
+    assert_eq!(marker(), Some(9_000), "the sweep's stamp persists");
+
+    // An unrelated patch rewrites every column — the marker must NOT be lost,
+    // or a still-overdue reminder would re-notify on the very next sweep.
+    patch(
+        &store,
+        &id,
+        Patch {
+            notes: Some("called them".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(marker(), Some(9_000), "an unrelated edit must not clear it");
+
+    // Patching next_action_at to the SAME value is not a reschedule.
+    set_reminder(&store, &id, Some(5_000));
+    assert_eq!(
+        marker(),
+        Some(9_000),
+        "an unchanged due date is not a reschedule"
+    );
+
+    // Moving the due date IS — the new date must be announceable once.
+    set_reminder(&store, &id, Some(7_000));
+    assert_eq!(marker(), None, "rescheduling clears the marker");
+
+    // Clearing the reminder entirely also clears the marker, so re-setting the
+    // same date later still notifies.
+    store.mark_next_action_notified(&id, 7_000, 9_500).unwrap();
+    set_reminder(&store, &id, None);
+    assert!(
+        store.follow_up_candidates().is_empty(),
+        "a cleared reminder leaves no candidate"
+    );
+    set_reminder(&store, &id, Some(7_000));
+    assert_eq!(marker(), None, "clearing then re-setting starts fresh");
+}
+
+#[test]
+fn stamping_a_stale_due_date_matches_nothing_and_leaves_the_new_one_notifiable() {
+    // The sweep's read → stamp window: the user reschedules in between. An
+    // unconditional stamp would mark the row notified for a due date the sweep
+    // never evaluated, silencing the NEW reminder forever.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+
+    set_reminder(&store, &id, Some(5_000)); // the sweep reads due = 5_000 …
+    set_reminder(&store, &id, Some(7_000)); // … the user reschedules before the stamp lands
+
+    assert!(
+        !store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a stamp for the OLD due date must match no row"
+    );
+    let candidate = store.follow_up_candidates();
+    assert_eq!(
+        candidate.first().and_then(|c| c.notified_at),
+        None,
+        "the new due date must stay notifiable"
+    );
+
+    // A missing id is the same no-op, not an error.
+    assert!(!store
+        .mark_next_action_notified("does-not-exist", 7_000, 9_000)
+        .unwrap());
+}
+
+#[test]
+fn a_status_change_to_terminal_between_the_read_and_the_stamp_blocks_the_claim() {
+    // The sweep reads candidates under one lock and stamps under another. In the
+    // window between, the user can close the pursuit — and a Rust-side
+    // `is_terminal` re-check would have that exact same window. Only the
+    // predicate INSIDE the stamping UPDATE closes it.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+
+    // 1. The sweep reads: due, un-notified, not terminal → it would notify.
+    let read = store
+        .follow_up_candidates()
+        .into_iter()
+        .next()
+        .expect("one candidate");
+    assert!(
+        !read.status.is_terminal(),
+        "baseline: notifiable at read time"
+    );
+    assert_eq!(read.notified_at, None);
+
+    // 2. The user rejects the application, inside the window.
+    store
+        .set_status(&id, ApplicationStatus::Rejected, "")
+        .unwrap();
+
+    // 3. The claim must lose.
+    assert!(
+        !store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a pursuit that went terminal after the read must not be claimed"
+    );
+    assert_eq!(
+        store
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        None,
+        "a refused claim leaves the row unstamped, so reviving it still reminds"
+    );
+
+    // Reviving it makes the very same claim succeed — the ONLY thing that
+    // changed is the status, which is what pins the predicate.
+    store
+        .set_status(&id, ApplicationStatus::Interviewing, "")
+        .unwrap();
+    assert!(
+        store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a revived pursuit is claimable again"
+    );
+}
+
+#[test]
+fn every_terminal_status_blocks_the_claim_and_ghosted_does_not() {
+    // The predicate must track `is_terminal` exactly — `ghosted` is deliberately
+    // soft-terminal (a ghosted pursuit can revive), so it still reminds.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    for status in ApplicationStatus::ALL {
+        let id = store
+            .track_manual("", "", &meta("Acme", "Engineer"))
+            .unwrap();
+        set_reminder(&store, &id, Some(5_000));
+        store.set_status(&id, *status, "").unwrap();
+        assert_eq!(
+            store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+            !status.is_terminal(),
+            "{status:?}: claimability must follow is_terminal()"
+        );
+    }
+}
+
+#[test]
+fn a_broken_follow_up_query_degrades_to_an_empty_sweep_instead_of_panicking() {
+    // The reminder sweep is this query's only consumer. If a schema change ever
+    // renames or drops a column it reads, an `unwrap` would take the scheduler
+    // task down and a bare `.ok()` would silently kill EVERY reminder for the
+    // rest of the process. It must return empty and log. Forced with the same
+    // second-raw-connection trick as
+    // `transition_status_if_rolls_back_status_when_event_insert_fails`.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert_eq!(
+        store.follow_up_candidates().len(),
+        1,
+        "baseline: the row IS a candidate before the table goes away"
+    );
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute("DROP TABLE applications", []).unwrap();
+    }
+
+    // SQLite compiles a statement against the CONNECTION's cached schema, and
+    // only reloads it when a statement actually steps. So the same broken schema
+    // surfaces through two different arms, in this order — both are exercised
+    // here, and both must degrade to an empty sweep rather than a panic.
+    //
+    // Arm 1 — the store has not noticed yet: `prepare` succeeds against the
+    // stale schema and the failure arrives while iterating (`SQLITE_SCHEMA` →
+    // re-prepare → "no such table"), i.e. the per-row arm.
+    assert!(
+        store.follow_up_candidates().is_empty(),
+        "a mid-iteration schema failure must yield an empty sweep, never a panic"
+    );
+
+    // Arm 2 — that step reloaded the schema, so `prepare` itself now fails. This
+    // is the arm a renamed/dropped COLUMN hits on every subsequent sweep, i.e.
+    // the one that would silence reminders forever if it were swallowed.
+    assert!(
+        store.follow_up_candidates().is_empty(),
+        "a prepare failure must yield an empty sweep, never a panic"
+    );
+    // Verified empirically, not assumed: replacing the `match conn.prepare(…)`
+    // guard with `.expect(…)` panics on THIS second call with
+    // `no such table: applications` (and passes on the first).
+
+    // (The remaining arm — `query_map` itself returning `Err` — is unreachable
+    // for this statement: `query_map` only fails while binding, and the
+    // statement takes zero parameters. It stays a defensive `match` arm rather
+    // than an `unwrap` so a future parameterised rewrite cannot become a panic.)
+}
+
+#[test]
+fn a_follow_up_row_that_fails_to_decode_is_skipped_and_the_healthy_ones_still_sweep() {
+    // The per-row arm: one corrupted row must not cost the user every OTHER
+    // reminder. A `next_action_at` holding text SQLite cannot coerce to an
+    // integer is what a hand-edited or partially-restored db looks like — it
+    // passes the `IS NOT NULL` filter, then fails `row.get::<_, i64>`.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let good = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &good, Some(5_000));
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at, next_action_at)
+             VALUES ('bad-row', 'applied', 1000, 1000, 'not-a-timestamp')",
+            [],
+        )
+        .unwrap();
+        // Fixture sanity: INTEGER affinity keeps a non-numeric string as TEXT,
+        // which is what makes the row undecodable in the first place.
+        let kind: String = conn
+            .query_row(
+                "SELECT typeof(next_action_at) FROM applications WHERE id = 'bad-row'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "text", "fixture must store a non-integer value");
+    }
+
+    let ids: Vec<String> = store
+        .follow_up_candidates()
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec![good],
+        "the undecodable row is skipped; the healthy reminder still sweeps"
+    );
+}
+
+// ── Migration 8 backfill (no banner storm on the first post-upgrade sweep) ────
+
+#[test]
+fn migration_8_pre_marks_already_due_reminders_so_the_first_sweep_is_quiet() {
+    // Without the backfill every pre-existing overdue reminder is NULL after the
+    // upgrade, so the first sweep treats the user's whole backlog as brand new
+    // and announces it. MAX_PER_SWEEP paces that; it does not suppress it.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("applications.db");
+    let conn = crate::db::open(&path).unwrap();
+
+    // Build the schema up to — but NOT including — the marker migration.
+    let all = super::migrations::MIGRATIONS;
+    for m in &all[..7] {
+        (m.up)(&conn).unwrap();
+    }
+    let seed = |id: &str, next: Option<i64>| {
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at, next_action_at)
+             VALUES (?1, 'applied', 1000, 1000, ?2)",
+            rusqlite::params![id, next],
+        )
+        .unwrap();
+    };
+    let before = now_ms();
+    seed("long-overdue", Some(1_000));
+    seed("due-a-minute-ago", Some(ts_to_db(before - 60_000)));
+    seed("due-later-today", Some(ts_to_db(before + 3_600_000)));
+    seed("no-reminder", None);
+
+    let m8 = &all[7];
+    assert_eq!(
+        m8.name, "add_applications_next_action_notified_at",
+        "migration order is pinned — entries are append-only"
+    );
+    (m8.up)(&conn).unwrap();
+    let after = now_ms();
+
+    let marker = |id: &str| -> Option<i64> {
+        conn.query_row(
+            "SELECT next_action_notified_at FROM applications WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    for id in ["long-overdue", "due-a-minute-ago"] {
+        let stamped = marker(id).unwrap_or_else(|| panic!("{id} must be pre-marked as announced"));
+        assert!(
+            stamped >= ts_to_db(before) && stamped <= ts_to_db(after),
+            "{id} must carry the migration's own timestamp, got {stamped}"
+        );
+    }
+    assert_eq!(
+        marker("due-later-today"),
+        None,
+        "a reminder that has NOT come due yet must still be announceable"
+    );
+    assert_eq!(
+        marker("no-reminder"),
+        None,
+        "a row with no reminder is untouched"
+    );
+
+    // End to end: the sweep's own read now reports the backlog as delivered and
+    // the future one as pending — exactly what `should_notify` filters on.
+    // (`user_version` is set by hand because the bodies were replayed directly;
+    // `ApplicationStore::open` would otherwise try to re-run all eight.)
+    conn.execute_batch("PRAGMA user_version = 8").unwrap();
+    drop(conn);
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let pending: Vec<String> = store
+        .follow_up_candidates()
+        .into_iter()
+        .filter(|c| c.notified_at.is_none())
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(
+        pending,
+        vec!["due-later-today"],
+        "only the not-yet-due reminder may still notify after the upgrade"
+    );
+}
+
+#[test]
+fn a_re_upsert_of_the_same_job_url_carries_the_notified_marker_forward() {
+    // `write_row_conn` now WRITES this column, so every `Application` literal has
+    // to carry the stored value forward. `update_fields` gets it free via
+    // `..existing`; `upsert_internal`'s merge branch enumerates all fields, and
+    // that is the one a re-scrape/re-track goes through. Getting it wrong there
+    // re-arms an already-announced reminder on the next scrape.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.example/job/1";
+    let id = store
+        .track_manual(url, "b", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert!(store.mark_next_action_notified(&id, 5_000, 9_000).unwrap());
+
+    // Same URL again — merges into the SAME row through `upsert_internal`.
+    let same = store
+        .track_manual(url, "b", &meta("Acme Corp", "Senior Engineer"))
+        .unwrap();
+    assert_eq!(
+        same, id,
+        "fixture sanity: the re-track must merge, not create"
+    );
+    assert_eq!(
+        store
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        Some(9_000),
+        "a re-upsert must not resurrect an already-announced reminder"
+    );
+}
+
+#[test]
+fn the_notified_marker_survives_an_export_import_round_trip() {
+    // `export`/`import` is the backup path. Dropping the marker there meant
+    // restoring a backup re-fired every reminder the user had already seen.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert!(store.mark_next_action_notified(&id, 5_000, 9_000).unwrap());
+
+    let bundle = store.export();
+    assert_eq!(
+        bundle[0]["nextActionNotifiedAt"],
+        serde_json::json!(9_000),
+        "the marker must be on the wire, under the camelCase name the TS type declares"
+    );
+
+    let restore_dir = TempDir::new().unwrap();
+    let restored = ApplicationStore::open(restore_dir.path()).unwrap();
+    restored.import(&bundle).unwrap();
+    assert_eq!(
+        restored
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        Some(9_000),
+        "a restored backup must not re-announce an already-delivered reminder"
+    );
+
+    // A bundle exported by a build that predates the marker simply has no such
+    // key — it must still import (serde default) and start un-notified.
+    let mut legacy = bundle.clone();
+    legacy[0]
+        .as_object_mut()
+        .unwrap()
+        .remove("nextActionNotifiedAt")
+        .expect("the field was present before removal");
+    restored.import(&legacy).unwrap();
+    assert_eq!(
+        restored
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        None,
+        "a pre-marker bundle deserializes and starts un-notified"
     );
 }

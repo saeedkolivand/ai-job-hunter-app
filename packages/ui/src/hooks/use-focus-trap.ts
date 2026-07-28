@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 const FOCUSABLE = [
   'a[href]',
@@ -10,11 +10,30 @@ const FOCUSABLE = [
 ].join(', ');
 
 /**
- * Traps keyboard focus inside `containerRef` while `active` is true.
- * Returns the ref to attach to the container element.
+ * Traps keyboard focus inside `containerRef` while `active` is true, and hands
+ * focus back to whatever had it before the trap opened.
+ *
+ * Return-focus is a FALLBACK, not an override: a wrapper that owns its own
+ * return target (e.g. a Drawer's `returnFocusTo`) runs its cleanup around this
+ * one, so we only restore when focus was left orphaned — on `<body>`, on nothing,
+ * or still inside the container being torn down. If something already moved focus
+ * somewhere meaningful, or the remembered element has left the DOM, we do nothing.
  */
 export function useFocusTrap(active: boolean) {
   const containerRef = useRef<HTMLElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // Captured in a LAYOUT effect, which runs before any passive effect can move
+  // focus — a descendant `useEffect` calling `.focus()` would otherwise be
+  // remembered as "the opener", and closing would then try to restore a node
+  // that unmounts with the dialog (leaving focus on <body>). Nothing inside the
+  // dialog may claim `autoFocus` for the same reason: React applies that during
+  // commit, ahead of every effect.
+  useLayoutEffect(() => {
+    if (!active) return;
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [active]);
 
   useEffect(() => {
     if (!active || !containerRef.current) return;
@@ -55,7 +74,13 @@ export function useFocusTrap(active: boolean) {
     };
 
     container.addEventListener('keydown', onKeyDown);
-    return () => container.removeEventListener('keydown', onKeyDown);
+    return () => {
+      container.removeEventListener('keydown', onKeyDown);
+      const current = document.activeElement;
+      const orphaned = current === null || current === document.body || container.contains(current);
+      const previouslyFocused = previouslyFocusedRef.current;
+      if (orphaned && previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
   }, [active]);
 
   return containerRef;

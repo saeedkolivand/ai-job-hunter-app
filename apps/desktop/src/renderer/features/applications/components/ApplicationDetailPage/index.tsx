@@ -1,10 +1,12 @@
 import {
   ArrowLeft,
+  Banknote,
   CalendarClock,
   ExternalLink,
   FileText,
   HelpCircle,
   type LucideIcon,
+  MessageSquarePlus,
   MessagesSquare,
   StickyNote,
   Trash2,
@@ -27,6 +29,7 @@ import {
   ActionMenu,
   Button,
   CardSkeleton,
+  cn,
   ConfirmModal,
   Dropdown,
   ErrorState,
@@ -36,11 +39,15 @@ import {
   RowSkeleton,
   SectionLabel,
   Tabs,
+  Tag,
   TextArea,
   Timeline,
   transition,
 } from '@ajh/ui';
 
+import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
+import { nextActionLabel } from '@/features/applications/lib/stale';
+import { useSyncedBuffer } from '@/features/applications/lib/use-synced-buffer';
 import {
   TailorFlow,
   type TailorFlowController,
@@ -118,6 +125,52 @@ export function ApplicationDetailPage() {
   const application = data?.application ?? null;
   const events = data?.events ?? [];
 
+  // The optional-note prompt lives HERE, above `ApplicationDetailLoaded`, because
+  // saving a status writes the record and the invalidation refetch re-renders the
+  // loaded view — state held inside it does not reliably survive that churn (and
+  // did not at all while the view was keyed by `updatedAt`). Declared before the
+  // early returns so the hook order is stable across loading/error/loaded.
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [noteAfterChange, setNoteAfterChange] = useState(false);
+  const [noteError, setNoteError] = useState(false);
+  const noteStatus = useSetApplicationStatus();
+
+  const openNotePrompt = (status: string, changed: boolean) => {
+    setNoteError(false);
+    setNoteAfterChange(changed);
+    setNoteFor(status);
+  };
+
+  // Re-read the CURRENT status at save time rather than re-writing the stage
+  // captured when the prompt opened: a transition landing in between (another
+  // tab, the extension bridge) would otherwise be silently reverted by the note.
+  const handleSaveNote = (note: string) => {
+    if (!application) return;
+    setNoteError(false);
+    noteStatus.mutate(
+      { id: application.id, status: application.status, note },
+      {
+        onSuccess: () => setNoteFor(null),
+        // Keep the dialog open on failure so the typed note is not discarded.
+        onError: () => setNoteError(true),
+      }
+    );
+  };
+
+  const noteModal = (
+    <StatusNoteModal
+      open={noteFor !== null}
+      onClose={() => setNoteFor(null)}
+      status={application?.status ?? noteFor ?? ''}
+      company={application?.company ?? ''}
+      title={application?.title ?? ''}
+      changed={noteAfterChange}
+      isSaving={noteStatus.isPending}
+      error={noteError ? t('applications.note.saveError') : null}
+      onSave={handleSaveNote}
+    />
+  );
+
   const { from } = Route.useSearch();
   const backTarget = from ? BACK_TO[from] : '/applications';
   const back = () => void navigate({ to: backTarget });
@@ -156,17 +209,26 @@ export function ApplicationDetailPage() {
     );
   }
 
-  // Key by id so navigating between two detail pages (same route pattern, new
-  // param) remounts the loaded view and re-seeds the save-on-blur edit buffers
-  // from the new application — TanStack Router reuses the instance otherwise.
+  // Key by id ONLY. Navigating between two detail pages (same route pattern, new
+  // param) must remount — TanStack Router reuses the instance otherwise — but a
+  // refetch of the SAME record must NOT: remounting on every persisted write
+  // destroys keyboard focus, discards text typed into another field while the
+  // first write is in flight, and tears down the whole TailorFlow sub-tree.
+  // Re-seeding the save-on-blur buffers after an out-of-band write (the
+  // apply-by-email tab shares the canonical contact pair) is handled per-field
+  // inside `ApplicationDetailLoaded` instead — see `useSyncedBuffer`.
   return (
-    <ApplicationDetailLoaded
-      key={id}
-      application={application}
-      events={events}
-      onBack={back}
-      backLabel={backLabel}
-    />
+    <>
+      <ApplicationDetailLoaded
+        key={id}
+        application={application}
+        events={events}
+        onBack={back}
+        backLabel={backLabel}
+        onNotePrompt={openNotePrompt}
+      />
+      {noteModal}
+    </>
   );
 }
 
@@ -215,9 +277,17 @@ interface LoadedProps {
   events: StatusEvent[];
   onBack: () => void;
   backLabel: string;
+  /** Ask the page (which outlives a refetch) to open the optional-note prompt. */
+  onNotePrompt: (status: string, changed: boolean) => void;
 }
 
-function ApplicationDetailLoaded({ application, events, onBack, backLabel }: LoadedProps) {
+function ApplicationDetailLoaded({
+  application,
+  events,
+  onBack,
+  backLabel,
+  onNotePrompt,
+}: LoadedProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const formatRelative = useFormatRelativeTime(t, 'resumes.relativeTime');
@@ -271,21 +341,46 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
     onBack();
   };
 
-  // Save-on-blur editable buffers, seeded once from the loaded application.
-  const [notes, setNotes] = useState(application.notes);
-  const [contactName, setContactName] = useState(application.contactName);
-  const [contactEmail, setContactEmail] = useState(application.contactEmail);
-  const [comp, setComp] = useState(application.comp);
-  const [nextActionAt, setNextActionAt] = useState(toDateInputValue(application.nextActionAt));
+  // Save-on-blur editable buffers. Each re-seeds independently when ITS server
+  // value changes (see `useSyncedBuffer`) — no remount, so focus and sibling
+  // uncommitted text survive a write landing.
+  const [notes, setNotes] = useSyncedBuffer(application.notes);
+  const [contactName, setContactName] = useSyncedBuffer(application.contactName);
+  const [contactEmail, setContactEmail] = useSyncedBuffer(application.contactEmail);
+  const [comp, setComp] = useSyncedBuffer(application.comp);
+  const [nextActionAt, setNextActionAt] = useSyncedBuffer(
+    toDateInputValue(application.nextActionAt)
+  );
 
   const stageOptions = STATUS_OPTIONS.map((o) => ({
     value: o.value,
     label: t(`applications.status.${o.value}` as const),
   }));
 
+  const [statusError, setStatusError] = useState(false);
+  // Surfaced when the backend rejects a contact write (e.g. a malformed email) —
+  // mirrors ApplyByEmailTab, which edits the SAME canonical pair.
+  const [contactNameError, setContactNameError] = useState(false);
+  const [contactEmailError, setContactEmailError] = useState(false);
+
+  // Success/error effects run on the mutation callbacks — the note prompt only
+  // opens once the transition is actually persisted.
   const handleStatusChange = (status: string) => {
-    void setStatus.mutateAsync({ id: application.id, status });
+    // Dropdown.select fires onChange even when the current option is re-picked;
+    // without this a no-op re-pick would append a status event and prompt for a
+    // note about a transition that never happened.
+    if (status === application.status) return;
+    setStatusError(false);
+    setStatus.mutate(
+      { id: application.id, status },
+      {
+        onSuccess: () => onNotePrompt(status, true),
+        onError: () => setStatusError(true),
+      }
+    );
   };
+
+  const nextState = nextActionLabel(application.nextActionAt);
 
   // Documents are display-joined to this application by the `applicationId` FK
   // (set on the generation at save time; legacy rows are backfilled at boot). A
@@ -330,9 +425,31 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                 {t('autopilot.apply.match')}
               </span>
             )}
+            {/* Follow-up reminder, promoted out of the Overview tab so it is
+                visible from every tab (and tinted when it has already passed). */}
+            {nextState !== 'none' && application.nextActionAt && (
+              <Tag
+                color={nextState === 'overdue' ? 'error' : 'processing'}
+                icon={<CalendarClock size={9} />}
+                className="shrink-0 rounded-full px-2 py-0.5 text-[9px] uppercase tracking-wider"
+              >
+                {nextState === 'overdue'
+                  ? t('applications.detail.followUpOverdue', {
+                      date: formatEventDate(application.nextActionAt),
+                    })
+                  : t('applications.detail.followUpDue', {
+                      date: formatEventDate(application.nextActionAt),
+                    })}
+              </Tag>
+            )}
           </div>
           {application.company && (
             <div className="truncate text-[11px] text-foreground/40">{application.company}</div>
+          )}
+          {statusError && (
+            <p role="alert" className="text-fine-print text-red-400">
+              {t('applications.row.statusError')}
+            </p>
           )}
         </div>
 
@@ -405,6 +522,53 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
               >
                 {tab === 'overview' && (
                   <div className="@container h-full overflow-y-auto px-6">
+                    {/* Follow-up leads the sheet: the one field that drives the
+                        backend reminder sweep, so it must not sit last. */}
+                    <OverviewSection
+                      icon={CalendarClock}
+                      label={t('applications.detail.followUpSection')}
+                    >
+                      <div className="grid gap-4 @md:grid-cols-2">
+                        <div className="flex flex-col gap-1.5">
+                          <label
+                            htmlFor="appdetail-next-action"
+                            className="text-xs font-semibold text-foreground/70"
+                          >
+                            {t('applications.detail.nextActionLabel')}
+                          </label>
+                          <Input
+                            id="appdetail-next-action"
+                            variant="default"
+                            type="date"
+                            value={nextActionAt}
+                            onChange={(e) => setNextActionAt(e.target.value)}
+                            onBlur={() => {
+                              const next = fromDateInputValue(nextActionAt);
+                              if (next !== (application.nextActionAt ?? null)) {
+                                updateApplication.mutate({
+                                  id: application.id,
+                                  nextActionAt: next,
+                                });
+                              }
+                            }}
+                            className="w-full"
+                          />
+                          <p
+                            className={cn(
+                              'text-fine-print',
+                              nextState === 'overdue' ? 'text-red-400' : 'text-foreground/70'
+                            )}
+                          >
+                            {nextState === 'overdue'
+                              ? t('applications.detail.followUpOverdueHint')
+                              : nextState === 'upcoming'
+                                ? t('applications.detail.followUpUpcomingHint')
+                                : t('applications.detail.followUpNoneHint')}
+                          </p>
+                        </div>
+                      </div>
+                    </OverviewSection>
+
                     <OverviewSection icon={StickyNote} label={t('applications.detail.notesLabel')}>
                       <label htmlFor="appdetail-notes" className="sr-only">
                         {t('applications.detail.notesLabel')}
@@ -433,7 +597,7 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-contact-name"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.contactNameLabel')}
                           </label>
@@ -442,19 +606,36 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             variant="default"
                             placeholder={t('applications.detail.contactNamePlaceholder')}
                             value={contactName}
-                            onChange={(e) => setContactName(e.target.value)}
+                            onChange={(e) => {
+                              setContactName(e.target.value);
+                              setContactNameError(false);
+                            }}
                             onBlur={() => {
                               if (contactName !== application.contactName) {
-                                updateApplication.mutate({ id: application.id, contactName });
+                                // A rejected write returns `{ error }` rather than
+                                // throwing — surface it here exactly as
+                                // ApplyByEmailTab does for the same canonical pair.
+                                updateApplication.mutate(
+                                  { id: application.id, contactName },
+                                  {
+                                    onSuccess: (data) => setContactNameError(!!data.error),
+                                    onError: () => setContactNameError(true),
+                                  }
+                                );
                               }
                             }}
                           />
+                          {contactNameError && (
+                            <p className="text-fine-print text-red-400" role="alert">
+                              {t('applications.detail.contactSaveError')}
+                            </p>
+                          )}
                         </div>
 
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-contact-email"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.contactEmailLabel')}
                           </label>
@@ -464,26 +645,40 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             type="email"
                             placeholder={t('applications.detail.contactEmailPlaceholder')}
                             value={contactEmail}
-                            onChange={(e) => setContactEmail(e.target.value)}
+                            onChange={(e) => {
+                              setContactEmail(e.target.value);
+                              setContactEmailError(false);
+                            }}
                             onBlur={() => {
                               if (contactEmail !== application.contactEmail) {
-                                updateApplication.mutate({ id: application.id, contactEmail });
+                                updateApplication.mutate(
+                                  { id: application.id, contactEmail },
+                                  {
+                                    onSuccess: (data) => setContactEmailError(!!data.error),
+                                    onError: () => setContactEmailError(true),
+                                  }
+                                );
                               }
                             }}
                           />
+                          {contactEmailError && (
+                            <p className="text-fine-print text-red-400" role="alert">
+                              {t('applications.detail.email.emailInvalid')}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </OverviewSection>
 
                     <OverviewSection
-                      icon={CalendarClock}
-                      label={t('applications.detail.trackingSection')}
+                      icon={Banknote}
+                      label={t('applications.detail.compensationSection')}
                     >
                       <div className="grid gap-4 @md:grid-cols-2">
                         <div className="flex flex-col gap-1.5">
                           <label
                             htmlFor="appdetail-comp"
-                            className="text-xs font-medium text-foreground/70"
+                            className="text-xs font-semibold text-foreground/70"
                           >
                             {t('applications.detail.compLabel')}
                           </label>
@@ -500,32 +695,6 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                             }}
                           />
                         </div>
-
-                        <div className="flex flex-col gap-1.5">
-                          <label
-                            htmlFor="appdetail-next-action"
-                            className="text-xs font-medium text-foreground/70"
-                          >
-                            {t('applications.detail.nextActionLabel')}
-                          </label>
-                          <Input
-                            id="appdetail-next-action"
-                            variant="default"
-                            type="date"
-                            value={nextActionAt}
-                            onChange={(e) => setNextActionAt(e.target.value)}
-                            onBlur={() => {
-                              const next = fromDateInputValue(nextActionAt);
-                              if (next !== (application.nextActionAt ?? null)) {
-                                updateApplication.mutate({
-                                  id: application.id,
-                                  nextActionAt: next,
-                                });
-                              }
-                            }}
-                            className="w-full"
-                          />
-                        </div>
                       </div>
                     </OverviewSection>
                   </div>
@@ -533,9 +702,20 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
 
                 {tab === 'timeline' && (
                   <TabScroll>
-                    <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
-                      {t('applications.detail.timelineTitle')}
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">
+                        {t('applications.detail.timelineTitle')}
+                      </span>
+                      <Button
+                        variant="glass"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => onNotePrompt(application.status, false)}
+                      >
+                        <MessageSquarePlus size={12} />
+                        {t('applications.note.add')}
+                      </Button>
+                    </div>
                     {orderedEvents.length === 0 ? (
                       <p className="text-xs text-foreground/45">
                         {t('applications.detail.timelineEmpty')}
@@ -548,7 +728,10 @@ function ApplicationDetailLoaded({ application, events, onBack, backLabel }: Loa
                           children: (
                             <>
                               <span className="flex items-center gap-1.5">
-                                {e.fromStatus ? (
+                                {/* `from === to` is a NOTE event (an "Add note" /
+                                    post-change note writes a same-status event) —
+                                    render it as one stage, never "X → X". */}
+                                {e.fromStatus && e.fromStatus !== e.toStatus ? (
                                   <>
                                     <span className="text-foreground/55">
                                       {statusLabel(e.fromStatus)}
@@ -774,7 +957,9 @@ function BriefTab({ application }: { application: Application }) {
               )}
             </div>
             {fetchFailed && (
-              <p className="text-[11px] text-destructive">{t('jobUrlImport.failed')}</p>
+              <p className="text-xs text-red-400" role="alert">
+                {t('jobUrlImport.failed')}
+              </p>
             )}
           </div>
         )}

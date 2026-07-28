@@ -88,6 +88,10 @@ vi.mock('motion/react', async () => {
     motion,
     AnimatePresence: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
+    // App-root provider (`reducedMotion="user"`) — a passthrough here, but it
+    // must EXIST or every test rendering the root layout crashes on undefined.
+    MotionConfig: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
     useReducedMotion: () => false,
     // Also export create as a named export in case anything imports it directly.
     create: motionCreate,

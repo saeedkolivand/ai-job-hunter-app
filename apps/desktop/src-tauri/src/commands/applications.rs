@@ -77,7 +77,12 @@ fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
     }
 }
 
-/// Validate and normalise an inbound recipient email address (the apply-by-email sink).
+/// Validate and normalise an inbound contact email address (the apply-by-email sink).
+///
+/// Applied to BOTH inbound names for the unified contact pair — `contactEmail`
+/// and its deprecated alias `recipientEmail` (see
+/// [`crate::applications::Application::recipient_name`]) — since they write the
+/// same column; validating only one would leave a bypass under the other name.
 ///
 /// - `None` → `Ok(None)` (field absent — leave unchanged in the store).
 /// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
@@ -85,6 +90,13 @@ fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
 ///   (non-empty local part, exactly one `@`, non-empty domain label + TLD with
 ///   a dot). Returns `Ok(Some(email))` on success, `Err(AppError::Validation)` on
 ///   invalid input so the renderer can surface a clear reason.
+///
+/// Every rejection names the field the way the UI labels it — **"contact
+/// email"** (`applications.detail.contactEmail`), not the storage/alias
+/// identifier `recipient_email`. These strings are rendered verbatim to the user
+/// by the inline `role="alert"` on both contact surfaces, and there is no
+/// backend i18n catalogue to translate them through, so naming a field the user
+/// cannot see made the error unactionable.
 fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     let Some(s) = raw else {
         return Ok(None);
@@ -96,33 +108,116 @@ fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     // Byte-length cap — mirrors the Zod max(254); this is the real trust boundary.
     if trimmed.len() > 254 {
         return Err(AppError::Validation(
-            "recipient_email exceeds the 254-byte limit".into(),
+            "contact email exceeds the 254-byte limit".into(),
+        ));
+    }
+    // No control characters or spaces ANYWHERE — a bare CR/LF in a stored address
+    // is a header-injection primitive for every downstream sink that builds a
+    // message from it (the `mailto:` href, any future SMTP send), and a legacy
+    // row's unvalidated `contact_email` now mirrors into those sinks under the
+    // `recipientEmail` name. Rejected before the shape checks so the error names
+    // the real problem. (Interior spaces are only legal in a quoted local part,
+    // which this validator has never accepted.)
+    if trimmed.chars().any(|c| c.is_control() || c == ' ') {
+        return Err(AppError::Validation(
+            "contact email must not contain control characters or spaces".into(),
         ));
     }
     // Exactly one '@', non-empty local part, domain must have a dot with a
     // non-empty label on each side of the last dot.
     if trimmed.matches('@').count() != 1 {
         return Err(AppError::Validation(format!(
-            "recipient_email is not a valid address: {trimmed}"
+            "contact email is not a valid address: {trimmed}"
         )));
     }
     let (local, domain) = trimmed.split_once('@').unwrap();
     if local.is_empty() {
         return Err(AppError::Validation(
-            "recipient_email local part must not be empty".into(),
+            "contact email local part must not be empty".into(),
         ));
     }
     let Some(dot) = domain.rfind('.') else {
         return Err(AppError::Validation(format!(
-            "recipient_email domain must contain a dot: {trimmed}"
+            "contact email domain must contain a dot: {trimmed}"
         )));
     };
     if domain[..dot].is_empty() || domain[dot + 1..].is_empty() {
         return Err(AppError::Validation(format!(
-            "recipient_email has an invalid domain: {trimmed}"
+            "contact email has an invalid domain: {trimmed}"
         )));
     }
     Ok(Some(trimmed))
+}
+
+/// Server-side cap for the contact NAME, in BYTES. Mirrors the Zod
+/// `max(200)` on both inbound names; client validation is UX-only, so this is
+/// the real trust boundary (a direct IPC caller bypasses Zod entirely).
+const MAX_CONTACT_NAME_BYTES: usize = 200;
+
+/// Trim and bound an inbound contact name — the sibling guard to
+/// [`validate_recipient_email`], applied to BOTH inbound names (`contactName`
+/// and its deprecated alias `recipientName`) since they write the same column.
+///
+/// - `None` → `Ok(None)` (field absent — leave unchanged).
+/// - Whitespace-only → `Ok(Some(String::new()))` (clear the field).
+/// - Over the cap → `Err(AppError::Validation)`, never a silent truncation.
+/// - Containing a control character → `Err(AppError::Validation)`.
+///
+/// Interior SPACES are legal here (unlike in an address) — names have them. But
+/// control characters are not: this value is interpolated verbatim into the
+/// `Apply-by-email: <name> <<email>>` line the contact unification writes into
+/// `notes`, and into the display-name half of any future message header, where a
+/// bare CR/LF is an injection primitive exactly like the one
+/// [`validate_recipient_email`] rejects in the address.
+fn validate_contact_name(raw: Option<String>) -> AppResult<Option<String>> {
+    let Some(s) = raw else {
+        return Ok(None);
+    };
+    let trimmed = s.trim().to_string();
+    if trimmed.len() > MAX_CONTACT_NAME_BYTES {
+        return Err(AppError::Validation(format!(
+            "contact name exceeds the {MAX_CONTACT_NAME_BYTES}-byte limit ({} bytes)",
+            trimmed.len()
+        )));
+    }
+    // After the trim, so a surrounding newline is still just whitespace to strip
+    // (mirrors the ordering in `validate_recipient_email`).
+    if trimmed.chars().any(char::is_control) {
+        return Err(AppError::Validation(
+            "contact name must not contain control characters".into(),
+        ));
+    }
+    Ok(Some(trimmed))
+}
+
+/// Server-side cap for a status-change note, in BYTES. Mirrors the renderer's
+/// `NOTE_MAX_LENGTH` (`features/applications/components/StatusNoteModal`); that
+/// `maxLength` is a UX guard on one textarea, so THIS is the real bound — a
+/// direct IPC caller never passes through it, and the note is appended to the
+/// permanent `status_events` history where nothing else bounds it.
+const MAX_STATUS_NOTE_BYTES: usize = 2_000;
+
+/// Trim and bound an inbound status note.
+///
+/// REJECTS rather than truncates, consistent with [`validate_contact_name`]:
+/// this note is the user's own interaction log, and a silently-halved entry is
+/// worse than a visible "too long" they can act on (both surfaces already render
+/// the returned `{ error }` inline). `None`/absent and empty are always fine —
+/// most transitions carry no note at all.
+///
+/// Bytes, not chars, matching every other server cap in this module. That is a
+/// slightly tighter bound than the client's char-based `maxLength` for
+/// multi-byte text; the mismatch surfaces as a clear, recoverable error rather
+/// than a silent loss.
+fn validate_status_note(raw: Option<String>) -> AppResult<String> {
+    let trimmed = raw.unwrap_or_default().trim().to_string();
+    if trimmed.len() > MAX_STATUS_NOTE_BYTES {
+        return Err(AppError::Validation(format!(
+            "note exceeds the {MAX_STATUS_NOTE_BYTES}-byte limit ({} bytes)",
+            trimmed.len()
+        )));
+    }
+    Ok(trimmed)
 }
 
 #[tauri::command]
@@ -147,7 +242,15 @@ pub async fn applications_set_status(
 ) -> Value {
     let span = Span::begin("applications", format!("set_status id={id} to={status}"));
     let to = ApplicationStatus::from_id(&status);
-    let note = note.unwrap_or_default();
+    // The note lands in the append-only history, so bound it here — before any
+    // store work — rather than trusting the textarea's `maxLength`.
+    let note = match validate_status_note(note) {
+        Ok(note) => note,
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
     match store(&app).set_status(&id, to, &note) {
         Ok(()) => {
             span.end(true);
@@ -160,6 +263,13 @@ pub async fn applications_set_status(
     }
 }
 
+/// Patch the user-editable tracking fields of one Application.
+///
+/// **Contact fields converge:** `contactName`/`contactEmail` are canonical and
+/// `recipientName`/`recipientEmail` are accepted deprecated aliases of them — a
+/// write under either name lands in the same storage, and every response carries
+/// both names populated with that single value. When a caller sends both, the
+/// canonical one wins. See [`crate::applications::Application::recipient_name`].
 #[tauri::command]
 pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) -> Value {
     let span = Span::begin("applications", format!("update id={}", req.id));
@@ -173,25 +283,39 @@ pub async fn applications_update(app: AppHandle, req: ApplicationUpdateRequest) 
             return json!({ "error": e });
         }
     };
-    // Server-side recipient_email validation: trim, whitespace-only → clear,
+    // Server-side contact-email validation: trim, whitespace-only → clear,
     // bad format → Validation error. This is the apply-by-email sink — a bad
-    // address must never be stored.
-    let recipient_email = match validate_recipient_email(req.recipient_email) {
-        Ok(v) => v,
-        Err(e) => {
+    // address must never be stored. Both inbound names hit the same column
+    // (contact unification), so both go through the same guard.
+    let (contact_email, recipient_email) = match (
+        validate_recipient_email(req.contact_email),
+        validate_recipient_email(req.recipient_email),
+    ) {
+        (Ok(c), Ok(r)) => (c, r),
+        (Err(e), _) | (_, Err(e)) => {
             span.end_with(&e.to_string(), false);
             return json!({ "error": e });
         }
     };
-    // Trim recipient_name; whitespace-only collapses to empty (clear the field).
-    let recipient_name = req.recipient_name.map(|s| s.trim().to_string());
+    // Trim + byte-cap both name aliases; whitespace-only collapses to empty
+    // (clear the field). Same guard for both, for the same reason as the email.
+    let (contact_name, recipient_name) = match (
+        validate_contact_name(req.contact_name),
+        validate_contact_name(req.recipient_name),
+    ) {
+        (Ok(c), Ok(r)) => (c, r),
+        (Err(e), _) | (_, Err(e)) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
     let result = store(&app).update_fields(
         &req.id,
         req.notes,
         next_action_at,
         req.comp,
-        req.contact_name,
-        req.contact_email,
+        contact_name,
+        contact_email,
         req.job_description,
         req.job_summary,
         recipient_name,
@@ -511,6 +635,148 @@ mod tests {
         let err = validate_recipient_email(Some("user@example.".into()))
             .expect_err("trailing dot (empty TLD) must be rejected");
         assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn recipient_email_control_characters_and_spaces_fail_validation() {
+        // A stored CR/LF is a header-injection primitive for every sink built
+        // from this address (the mailto: href today). Reject, never store.
+        for bad in [
+            "user@example.com\r\nBcc: attacker@evil.test",
+            "user@example.com\nBcc: attacker@evil.test",
+            "us\ter@example.com",
+            "user\u{0000}@example.com",
+            "user\u{000B}@example.com",
+            // Interior space: never legal in the unquoted local part this
+            // validator accepts, and a separator in most address parsers.
+            "user name@example.com",
+            "user@exa mple.com",
+        ] {
+            let err = validate_recipient_email(Some(bad.into()))
+                .expect_err(&format!("{bad:?} must be rejected"));
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{bad:?} must fail validation, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn recipient_email_surrounding_whitespace_still_only_trims() {
+        // The control-char guard runs AFTER the trim, so a leading/trailing
+        // newline is still just whitespace to strip — not a rejection.
+        let ok = validate_recipient_email(Some("\r\n  user@example.com \t".into()))
+            .expect("surrounding whitespace is trimmed, not rejected")
+            .unwrap();
+        assert_eq!(ok, "user@example.com");
+    }
+
+    // ── contact name validation ───────────────────────────────────────────────
+
+    #[test]
+    fn contact_name_absent_is_passthrough_and_whitespace_clears() {
+        assert!(validate_contact_name(None).unwrap().is_none());
+        assert_eq!(
+            validate_contact_name(Some("   ".into())).unwrap(),
+            Some(String::new())
+        );
+    }
+
+    #[test]
+    fn contact_name_is_trimmed_and_bounded() {
+        assert_eq!(
+            validate_contact_name(Some("  Rita Recruiter  ".into())).unwrap(),
+            Some("Rita Recruiter".to_string())
+        );
+        // Exactly at the cap is accepted; one byte over is rejected (never
+        // silently truncated).
+        let at_cap = "a".repeat(MAX_CONTACT_NAME_BYTES);
+        assert_eq!(
+            validate_contact_name(Some(at_cap.clone())).unwrap(),
+            Some(at_cap)
+        );
+        let err = validate_contact_name(Some("a".repeat(MAX_CONTACT_NAME_BYTES + 1)))
+            .expect_err("an over-cap name must be rejected");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn contact_name_control_characters_are_rejected_but_spaces_are_kept() {
+        // The name is interpolated verbatim into the migration's
+        // "Apply-by-email: <name> <<email>>" note and into the display-name half
+        // of any future message header, so a bare CR/LF is the same injection
+        // primitive the address guard rejects.
+        for bad in [
+            "Rita\r\nBcc: attacker@evil.test",
+            "Rita\nRecruiter",
+            "Rita\tRecruiter",
+            "Rita\u{0000}",
+        ] {
+            let err = validate_contact_name(Some(bad.into()))
+                .expect_err(&format!("{bad:?} must be rejected"));
+            assert!(
+                matches!(err, AppError::Validation(_)),
+                "{bad:?} must fail validation, got {err:?}"
+            );
+        }
+        // Interior SPACES are legal in a name (unlike in an address) — real
+        // names have them, so the guard must not borrow the email rule wholesale.
+        assert_eq!(
+            validate_contact_name(Some("Rita von der Recruiter".into())).unwrap(),
+            Some("Rita von der Recruiter".to_string())
+        );
+    }
+
+    #[test]
+    fn contact_name_cap_counts_bytes_not_chars() {
+        // 'ü' is 2 UTF-8 bytes: 101 chars = 202 bytes > the 200-byte cap. A
+        // char-count cap would let this through and the store would keep a
+        // longer value than the contract promises.
+        let s = "ü".repeat(101);
+        assert!(s.chars().count() < MAX_CONTACT_NAME_BYTES);
+        assert!(s.len() > MAX_CONTACT_NAME_BYTES);
+        assert!(validate_contact_name(Some(s)).is_err());
+    }
+
+    // ── status-note cap ───────────────────────────────────────────────────────
+
+    #[test]
+    fn status_note_absent_empty_and_at_cap_are_accepted() {
+        // Most transitions carry no note at all.
+        assert_eq!(validate_status_note(None).unwrap(), "");
+        assert_eq!(validate_status_note(Some(String::new())).unwrap(), "");
+        // Surrounding whitespace is trimmed, not rejected.
+        assert_eq!(
+            validate_status_note(Some("  called the recruiter  ".into())).unwrap(),
+            "called the recruiter"
+        );
+        // Exactly at the cap passes — the guard rejects only what is over it.
+        let at_cap = "a".repeat(MAX_STATUS_NOTE_BYTES);
+        assert_eq!(validate_status_note(Some(at_cap.clone())).unwrap(), at_cap);
+    }
+
+    #[test]
+    fn status_note_over_the_cap_is_rejected_not_truncated() {
+        // One byte over → a typed Validation error naming the limit. Rejecting
+        // (not truncating) matches `validate_contact_name`: a silently halved
+        // interaction-log entry is worse than a visible, recoverable error.
+        let over = "a".repeat(MAX_STATUS_NOTE_BYTES + 1);
+        let err = validate_status_note(Some(over)).expect_err("over-cap note must be rejected");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+        assert!(
+            err.to_string().contains(&MAX_STATUS_NOTE_BYTES.to_string()),
+            "the message must name the byte cap, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn status_note_cap_counts_bytes_not_chars() {
+        // 'ü' is 2 UTF-8 bytes: 1_001 chars = 2_002 bytes, over the 2_000-byte
+        // cap even though a char-count guard would wave it through.
+        let s = "ü".repeat(MAX_STATUS_NOTE_BYTES / 2 + 1);
+        assert!(s.chars().count() < MAX_STATUS_NOTE_BYTES);
+        assert!(s.len() > MAX_STATUS_NOTE_BYTES);
+        assert!(validate_status_note(Some(s)).is_err());
     }
 
     #[test]

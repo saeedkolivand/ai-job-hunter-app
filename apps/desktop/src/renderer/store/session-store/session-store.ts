@@ -155,12 +155,18 @@ interface ApplicationApplySlice {
  * Applications-page UI state.
  * collapsedSections — stage ids currently collapsed; all sections expanded by default.
  * filter — text filter applied across company/title/candidate.
+ * stageGroup — pipeline-strip stage-group filter; null = every stage.
+ * sort — list sort key applied within each stage section.
  * (The "flash a just-imported row once" highlight is now a `?highlight` search
  *  param consumed locally by `ApplicationsPage`, not session state.)
  */
 interface ApplicationsSlice {
   collapsedSections: string[];
   filter: string;
+  /** Active pipeline-strip stage group (see `features/applications/lib/pipeline`), or null for all. */
+  stageGroup: string | null;
+  /** Active list sort key (`updated` | `company` | `nextAction`). */
+  sort: string;
 }
 
 // Defaults
@@ -287,7 +293,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     lastAppliedJobUrl: null,
   },
   applicationApply: { ...APPLICATION_APPLY_DEFAULTS },
-  applications: { collapsedSections: [], filter: '' },
+  applications: { collapsedSections: [], filter: '', stageGroup: null, sort: 'updated' },
   jobSummaryCache: {},
   setCachedJobSummary: (key, summary) =>
     set((s) => ({ jobSummaryCache: { ...s.jobSummaryCache, [key]: summary } })),

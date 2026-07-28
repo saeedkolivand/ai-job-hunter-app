@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, MotionConfig } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import {
   createRootRoute,
@@ -207,51 +207,57 @@ function RootLayout() {
   // Redirect genuinely-unknown paths to home (matched dynamic/param routes are kept).
   useEffect(() => installUnknownPathRedirect(router), [router]);
 
+  // `reducedMotion="user"` makes EVERY motion component in the app honour the OS
+  // "reduce motion" setting (transforms are dropped, opacity still cross-fades)
+  // without each call site gating itself. CSS `@media (prefers-reduced-motion)`
+  // rules never reached motion's JS-driven animations.
   return (
-    <NotificationProvider>
-      <MenuNavigationBridge />
-      <ApplicationEventsBridge />
-      <NotificationEventsBridge />
-      <ExtensionBridgeEventsBridge />
-      <AccentEventsBridge />
-      <NotificationToastBridge />
-      <ProtocolVersionGate>
-        <CapabilityProvider>
-          <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
-            <CinematicBackground />
-            <Titlebar />
-            <div className="flex flex-1 overflow-hidden">
-              {/* Unmount (not just shrink) the sidebar when collapsed so its links
+    <MotionConfig reducedMotion="user">
+      <NotificationProvider>
+        <MenuNavigationBridge />
+        <ApplicationEventsBridge />
+        <NotificationEventsBridge />
+        <ExtensionBridgeEventsBridge />
+        <AccentEventsBridge />
+        <NotificationToastBridge />
+        <ProtocolVersionGate>
+          <CapabilityProvider>
+            <div className="app-content relative flex h-screen flex-col overflow-hidden pt-3">
+              <CinematicBackground />
+              <Titlebar />
+              <div className="flex flex-1 overflow-hidden">
+                {/* Unmount (not just shrink) the sidebar when collapsed so its links
                   leave the tab order and stay out of reach of keyboard/SR users. */}
-              <AnimatePresence initial={false}>
-                {!isCollapsed && (
-                  <motion.div
-                    key="sidebar"
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 'auto', opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    transition={transition.normal}
-                    className="flex overflow-hidden"
-                    style={{ flexShrink: 0 }}
-                  >
-                    <Sidebar />
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <div className="relative flex flex-1 overflow-hidden">
-                <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
-                  <Outlet />
-                </main>
+                <AnimatePresence initial={false}>
+                  {!isCollapsed && (
+                    <motion.div
+                      key="sidebar"
+                      initial={{ width: 0, opacity: 0 }}
+                      animate={{ width: 'auto', opacity: 1 }}
+                      exit={{ width: 0, opacity: 0 }}
+                      transition={transition.normal}
+                      className="flex overflow-hidden"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <Sidebar />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <div className="relative flex flex-1 overflow-hidden">
+                  <main className="app-main glass-surface m-3 flex-1 overflow-hidden rounded-2xl">
+                    <Outlet />
+                  </main>
+                </div>
               </div>
+              <StatusBar />
+              <OnboardingWizard />
+              <UpdateBanner />
+              <ShortcutsOverlay />
             </div>
-            <StatusBar />
-            <OnboardingWizard />
-            <UpdateBanner />
-            <ShortcutsOverlay />
-          </div>
-        </CapabilityProvider>
-      </ProtocolVersionGate>
-    </NotificationProvider>
+          </CapabilityProvider>
+        </ProtocolVersionGate>
+      </NotificationProvider>
+    </MotionConfig>
   );
 }
 

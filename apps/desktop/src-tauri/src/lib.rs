@@ -50,6 +50,7 @@ pub mod postings;
 pub mod profile_import;
 pub mod recommend;
 pub mod referrals;
+pub mod reminder_scheduler;
 pub mod salary_research;
 pub mod scraping;
 pub mod spend;
@@ -784,6 +785,12 @@ pub fn run() {
             // disabled/no credential; see `email_watch_scheduler` for the
             // due/backoff logic.
             email_watch_scheduler::start(handle.clone());
+
+            // Start the follow-up reminder sweep: a due/overdue `nextActionAt`
+            // on an open Application raises one notification per due date. No
+            // network, one indexed SQLite read per tick — see
+            // `reminder_scheduler` for the dedupe/cap rules.
+            reminder_scheduler::start(handle.clone());
 
             // Start the browser-extension WS bridge (loopback only). Fire-and-
             // forget on the tokio runtime; a bind failure logs + disables the
