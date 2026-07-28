@@ -54,3 +54,26 @@ FK permits many, reserved for a future flow that splits them.
   intact.
 - New top-level `/applications` route (grouped/sectioned collapsible list by stage, with
   per-row status selector) and a new `applications` IPC namespace (5-step capability flow).
+
+## Addendum (2026-07-28, PR #897): the `/applications` list shape is superseded
+
+**Superseded:** the last Consequence bullet's "grouped/sectioned collapsible list by stage"
+as the route's only list shape. Everything else in this ADR — the aggregate split, the
+`status_events` history, the "applied" redefinition, the delete semantics, the IPC
+namespace — is unchanged and still current.
+
+The route now leads with a **pipeline strip** of stage cards above the list, and the list
+shape is conditional on filter state:
+
+- **Unfiltered** — stage sections, as originally decided; the sections _are_ the navigation.
+- **Any active filter** (a strip card, search, or another facet) — **one flat list**. With a
+  filter on, a section header either repeats the strip card selected directly above it or
+  reprints each row's own stage tag, and its collapse toggle is meaningless when there is
+  only one section.
+
+Owning source: `apps/desktop/src/renderer/features/applications/lib/pipeline.ts`
+(`PIPELINE_GROUPS`, `stagesForGroup`) and the `sections` memo in
+`features/applications/components/ApplicationsPage/index.tsx`. The strip's grouping is a UI
+decision, deliberately hand-derived rather than read from `APPLICATION_STAGES`;
+`lib/pipeline.test.ts` pins it against the domain stage list so a new backend stage cannot
+silently fall out of the strip. Count the cards there rather than trusting a number here.
