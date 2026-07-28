@@ -92,6 +92,15 @@ describe('detectModelSize / getModelTier', () => {
     expect(detectModelSize('claude-fable-5')).toBe('large');
   });
 
+  it('does not misclassify a small local model merely named after "fable"', () => {
+    // "fable" is checked with an exact match, not `.includes` — a genuinely
+    // small local model coincidentally named "fable-1b"/"my-fable-local"
+    // must fall through to param-size parsing (or the small default), not
+    // get swept into "large" by a broad substring check.
+    expect(detectModelSize('fable-1b')).toBe('small');
+    expect(detectModelSize('my-fable-local')).toBe('small');
+  });
+
   it('classifies known small local models', () => {
     for (const name of ['llama3.2:1b', 'phi-3', 'gemma:2b', 'tinyllama', 'qwen2.5:3b']) {
       expect(detectModelSize(name)).toBe('small');

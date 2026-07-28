@@ -374,6 +374,12 @@ const RATES: &[(&str, f64, f64)] = &[
     // OpenAI
     ("gpt-4o-mini", 0.15, 0.60),
     ("gpt-4o", 2.50, 10.00),
+    // GPT-4 Turbo's 1106 snapshot ("gpt-4-1106-preview"/"-vision-preview") must
+    // precede the "gpt-4.1" rows below: post dot/dash normalization, bare
+    // "gpt-4.1" becomes the prefix "gpt-4-1", which is ALSO a prefix of
+    // "gpt-4-1106-preview" — without this row, that 1106 id silently matched
+    // the $2/$8 gpt-4.1 rate instead of its own $10/$30 list price.
+    ("gpt-4-1106", 10.00, 30.00),
     ("gpt-4.1-mini", 0.40, 1.60),
     ("gpt-4.1-nano", 0.10, 0.40),
     ("gpt-4.1", 2.00, 8.00),
@@ -431,8 +437,12 @@ const DEFAULT_RATE: (f64, f64) = (3.00, 15.00);
 /// a literal dot for their own version number (`gpt-4.1-mini`,
 /// `gemini-2.5-flash`) — e.g. `"gpt-4.1-mini-2024".replace('.', "-")` no
 /// longer starts with the literal `"gpt-4.1-mini"` prefix. Normalizing both
-/// sides identically keeps every existing match intact while adding the
-/// dot/dash equivalence.
+/// sides identically keeps every existing match intact — but it also *adds*
+/// matches, not just the intended dot/dash equivalence: post-normalization,
+/// `"gpt-4.1"` becomes the prefix `"gpt-4-1"`, which now ALSO matches ids like
+/// `"gpt-4-1106-preview"` that were never meant to hit that row (see the
+/// `("gpt-4-1106", ...)` row in [`RATES`], added specifically to out-rank this
+/// side effect via ordering).
 fn prefix_matches(candidate: &str, prefix: &str) -> bool {
     candidate
         .replace('.', "-")
@@ -460,15 +470,6 @@ fn rate_for(model: &str) -> Option<&'static (&'static str, f64, f64)> {
     RATES
         .iter()
         .find(|(prefix, _, _)| prefix_matches(last_segment, prefix))
-        // Fall back to matching the FULL (un-split) string: a hypothetical
-        // `model/suffix` shape (suffix after the model id, not a vendor
-        // prefix before it) would otherwise under-report to DEFAULT_RATE even
-        // though the id itself is recognizable.
-        .or_else(|| {
-            RATES
-                .iter()
-                .find(|(prefix, _, _)| prefix_matches(m, prefix))
-        })
 }
 
 /// Estimated USD cost for one call, from the static [`RATES`] table (or

@@ -202,6 +202,41 @@ fn unrecognized_claude_family_fails_safe_to_no_temperature() {
 }
 
 #[test]
+fn unrecognized_claude_family_fails_safe_even_behind_a_vendor_prefix() {
+    // A vendor-prefixed id (as seen through an OpenRouter-style gateway) must
+    // classify identically to its bare form — before stripping the prefix in
+    // `normalize_model_id`, "anthropic/claude-zephyr-6" failed the
+    // `starts_with("claude-")` check (it starts with "anthropic/" instead),
+    // silently disarming the new-family fail-safe and sending a non-default
+    // temperature that would 400 if this actually were a new adaptive family.
+    assert!(!anthropic_supports_temperature("anthropic/claude-zephyr-6"));
+    assert!(!caps_for("anthropic/claude-zephyr-6").supports_temperature);
+
+    let mut req = base_request("anthropic/claude-zephyr-6");
+    req.max_tokens = Some(4096);
+    let body = build_chat_stream_body(&req);
+    assert!(
+        body.get("temperature").is_none(),
+        "a vendor-prefixed unrecognized claude- family must still fail safe"
+    );
+}
+
+#[test]
+fn version_needles_are_boundary_aware_not_raw_substring() {
+    // "claude-opus-4-70" contains "opus-4-7" as a raw substring but is NOT
+    // Opus 4.7 (a different, unclassified point release) — a boundary-aware
+    // match must not misclassify it as the adaptive-only opus-4-7/4-8 shape.
+    assert!(!anthropic_uses_adaptive_thinking("claude-opus-4-70"));
+    // It's still a plain 4.x id, so it's fine (and correct) for it to keep
+    // matching the broader classic "claude-opus-4" gate.
+    assert!(anthropic_supports_thinking("claude-opus-4-70"));
+
+    // Same class of bug for "opus-5": "claude-opus-50" must not be treated
+    // as the Opus 5 (adaptive) family.
+    assert!(!anthropic_uses_adaptive_thinking("claude-opus-50"));
+}
+
+#[test]
 fn legacy_pre_thinking_models_keep_temperature_despite_matching_neither_gate() {
     // These also match neither `anthropic_supports_thinking` nor
     // `anthropic_uses_adaptive_thinking` (they predate thinking entirely)

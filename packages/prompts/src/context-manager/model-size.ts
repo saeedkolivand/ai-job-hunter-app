@@ -21,6 +21,11 @@ import {
  * (`:1b`, `-3.2-1b`, `:7b`, `70b`, with quant / `-instruct` suffixes) →
  * `<4B small · 4–14B medium · >14B large`. An unrecognised LOCAL model (no size,
  * not a known hosted name) defaults to the smaller/safer `small` prompt.
+ *
+ * `fable` is checked with an EXACT match (`name === 'fable'`), not `.includes`
+ * like the other aliases: `claude-fable-5` already matches the `claude` needle
+ * above, and a broad substring check would misclassify a genuinely small local
+ * model merely named after it (`fable-1b`, `my-fable-local`) as `large`.
  */
 export function detectModelSize(modelName: string): 'large' | 'medium' | 'small' {
   const name = modelName.toLowerCase();
@@ -34,7 +39,7 @@ export function detectModelSize(modelName: string): 'large' | 'medium' | 'small'
     name.includes('sonnet') ||
     name.includes('opus') ||
     name.includes('haiku') ||
-    name.includes('fable') ||
+    name === 'fable' ||
     name.includes('codex') ||
     name.includes('gemini') ||
     name.includes('command-r') ||

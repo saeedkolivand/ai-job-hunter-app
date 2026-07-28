@@ -46,7 +46,7 @@ fn anthropic_supports_thinking(model: &str) -> bool {
     let m = normalize_model_id(model);
     // Opus 4.7/4.8 are adaptive-only (see doc comment) — carve them out before
     // the "claude-opus-4" substring below would otherwise catch them.
-    if m.contains("opus-4-7") || m.contains("opus-4-8") {
+    if contains_version_needle(&m, "opus-4-7") || contains_version_needle(&m, "opus-4-8") {
         return false;
     }
     // Claude 3.7 (the first extended-thinking model) and the 4.x families.
@@ -54,11 +54,11 @@ fn anthropic_supports_thinking(model: &str) -> bool {
     // "claude-fable-5"/mythos — the 5 family (and later adaptive families)
     // use adaptive thinking, not this mechanism. Do not widen this to a bare
     // "claude-" match.
-    m.contains("claude-3-7")
-        || m.contains("claude-4")
-        || m.contains("claude-opus-4")
-        || m.contains("claude-sonnet-4")
-        || m.contains("claude-haiku-4")
+    contains_version_needle(&m, "claude-3-7")
+        || contains_version_needle(&m, "claude-4")
+        || contains_version_needle(&m, "claude-opus-4")
+        || contains_version_needle(&m, "claude-sonnet-4")
+        || contains_version_needle(&m, "claude-haiku-4")
 }
 
 /// Whether a model should be sent Anthropic's **adaptive** thinking block
@@ -87,21 +87,46 @@ fn anthropic_supports_thinking(model: &str) -> bool {
 /// keeps a wrong guess from 400ing on the sampling-parameter side either.
 fn anthropic_uses_adaptive_thinking(model: &str) -> bool {
     let m = normalize_model_id(model);
-    m.contains("opus-4-7")
-        || m.contains("opus-4-8")
-        || m.contains("opus-5")
-        || m.contains("sonnet-5")
-        || m.contains("fable-5")
+    contains_version_needle(&m, "opus-4-7")
+        || contains_version_needle(&m, "opus-4-8")
+        || contains_version_needle(&m, "opus-5")
+        || contains_version_needle(&m, "sonnet-5")
+        || contains_version_needle(&m, "fable-5")
         || m.contains("mythos")
 }
 
-/// Shared normalization for the two thinking-mode predicates above: lowercase,
-/// then collapse dot-form version separators to dashes, so a model id spelled
-/// `claude-opus-4.7` (dot form) still matches the `opus-4-7` needle instead of
-/// falling through to the classic `claude-opus-4` gate and 400ing (adaptive
-/// models reject the classic `thinking.enabled` shape).
+/// Shared normalization for the two thinking-mode predicates above:
+/// **strip a vendor prefix** (an OpenRouter-style `anthropic/claude-...` id —
+/// keep only the segment after the last `/`, so a vendor-prefixed id is
+/// classified identically to its bare form on every predicate, including
+/// [`anthropic_supports_temperature`]'s new-family fail-safe, which otherwise
+/// silently disarms on a prefixed id since it no longer starts with
+/// `"claude-"`), then lowercase, then collapse dot-form version separators to
+/// dashes, so a model id spelled `claude-opus-4.7` (dot form) still matches
+/// the `opus-4-7` needle instead of falling through to the classic
+/// `claude-opus-4` gate and 400ing (adaptive models reject the classic
+/// `thinking.enabled` shape).
 fn normalize_model_id(model: &str) -> String {
-    model.to_ascii_lowercase().replace('.', "-")
+    let bare = model.rsplit('/').next().unwrap_or(model);
+    bare.to_ascii_lowercase().replace('.', "-")
+}
+
+/// Boundary-aware substring check for the version needles used by the
+/// thinking-mode predicates above: `haystack` must contain `needle`, and the
+/// character immediately following the match must be either end-of-string or
+/// a non-digit. A raw [`str::contains`] has no such boundary — it would let
+/// `opus-4-70`/`opus-4-71`/… wrongly match the `opus-4-7` needle, and
+/// `sonnet-50`/`sonnet-58`/… wrongly match `sonnet-5`, exactly the class of
+/// prefix-collision bug this file already patched once with the explicit
+/// opus-4-7/4-8 carve-out above `claude-opus-4`.
+fn contains_version_needle(haystack: &str, needle: &str) -> bool {
+    haystack.match_indices(needle).any(|(idx, _)| {
+        let after = idx + needle.len();
+        haystack
+            .as_bytes()
+            .get(after)
+            .is_none_or(|b| !b.is_ascii_digit())
+    })
 }
 
 /// True for Anthropic's pre-thinking-era ids — Claude 1.x, 2.x, and 3.x below

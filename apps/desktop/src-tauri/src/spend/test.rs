@@ -70,10 +70,17 @@ fn estimate_cost_matches_the_claude_5_family_rates() {
     // same-tier 4.x row it happens to share a numeric substring with.
     let fable = estimate_cost("claude-fable-5", 1_000_000, 1_000_000);
     let opus5 = estimate_cost("claude-opus-5-20260201", 1_000_000, 1_000_000);
-    let sonnet5 = estimate_cost("claude-sonnet-5", 1_000_000, 1_000_000);
     assert!((fable - (10.00 + 50.00)).abs() < 1e-9, "got {fable}");
     assert!((opus5 - (5.00 + 25.00)).abs() < 1e-9, "got {opus5}");
-    assert!((sonnet5 - (3.00 + 15.00)).abs() < 1e-9, "got {sonnet5}");
+    // "claude-sonnet-5"'s $3/$15 list price is numerically identical to
+    // DEFAULT_RATE, so a price-only assertion here is vacuous (it would pass
+    // even if sonnet-5 fell straight through to DEFAULT_RATE without
+    // matching any row). Assert the matched PREFIX instead.
+    assert_eq!(
+        rate_for("claude-sonnet-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-5"),
+        "claude-sonnet-5 must hit its own row, not fall through to DEFAULT_RATE"
+    );
 }
 
 #[test]
@@ -135,15 +142,25 @@ fn rate_for_gives_opus_4_5_its_own_row_instead_of_the_shorter_opus_4_prefix() {
 }
 
 #[test]
-fn rate_for_falls_back_to_the_full_string_when_the_last_segment_matches_nothing() {
-    // A hypothetical `model/suffix` shape (suffix AFTER the model id, unlike
-    // the vendor-prefix `vendor/model` shape) must still recognize the model:
-    // the last `/`-segment ("beta") matches no row, so the lookup must fall
-    // back to matching the full string instead of silently under-reporting
-    // to DEFAULT_RATE.
+fn rate_for_gives_gpt_4_1106_its_own_row_instead_of_the_normalized_gpt_4_1_prefix() {
+    // Post dot/dash normalization, "gpt-4.1" becomes the prefix "gpt-4-1",
+    // which is ALSO a prefix of "gpt-4-1106-preview" — without its own row,
+    // GPT-4 Turbo's 1106 snapshot silently matched the $2/$8 gpt-4.1 rate
+    // instead of its actual $10/$30 list price.
     assert_eq!(
-        rate_for("claude-fable-5/beta").map(|(p, _, _)| *p),
-        Some("claude-fable-5")
+        rate_for("gpt-4-1106-preview").map(|(p, _, _)| *p),
+        Some("gpt-4-1106")
+    );
+    assert_eq!(
+        rate_for("gpt-4-1106-vision-preview").map(|(p, _, _)| *p),
+        Some("gpt-4-1106")
+    );
+    let cost = estimate_cost("gpt-4-1106-preview", 1_000_000, 1_000_000);
+    assert!((cost - (10.00 + 30.00)).abs() < 1e-9, "got {cost}");
+    // Bare "gpt-4.1" itself must still hit its own row, unaffected.
+    assert_eq!(
+        rate_for("gpt-4.1-2025-04-14").map(|(p, _, _)| *p),
+        Some("gpt-4.1")
     );
 }
 
