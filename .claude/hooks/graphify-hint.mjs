@@ -3,6 +3,7 @@
 // nudge toward `graphify query/explain` (scoped subgraph) instead of scanning raw files.
 // Cross-platform, fast, non-blocking: any error → exit 0.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 let p = {};
@@ -12,8 +13,16 @@ try {
 try {
   const cmd = (p.tool_input && p.tool_input.command) || '';
   const cwd = p.cwd || process.cwd();
+  // once per session — repeating the same ~350B nudge on every grep-ish Bash call
+  // costs tokens dozens of times per search-heavy session for zero new information
+  const sid = String(p.session_id || 'nosession').replace(/[^\w-]/g, '');
+  const marker = path.join(os.tmpdir(), `graphify-hint-${sid}`);
+  if (fs.existsSync(marker)) process.exit(0);
   const hasGraph = fs.existsSync(path.join(cwd, 'graphify-out', 'graph.json'));
   if (hasGraph && /\b(grep|rg|ripgrep|find|fd|ack|ag)\b/.test(cmd)) {
+    try {
+      fs.writeFileSync(marker, '1');
+    } catch {}
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {

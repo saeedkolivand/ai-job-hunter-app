@@ -20,6 +20,22 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 - **Visual explainer:** `apps/landing/src/app/agent-system/` documents the system (data roster: `apps/landing/src/data/agent-fleet.ts`).
 - **Guard enforcement:** `scripts/check-agent-system.mjs` runs in pre-push hook and CI to keep agent definitions, routes, and configs in sync.
 
+## Amendment: cost-tiered per-change defaults (2026-07-28)
+
+The initial design routed **every change** through the agent fleet (author + sibling critic minimum, full trio on risk-bearing work). Practice over 6.5 months revealed the per-finish LLM review in the Stop hook was the setup's largest recurring token cost: 830 stop-gate runs over 17 days, 74.7% timeout failures (fail-open budget), 68 findings with only 8 critical blocks ever shipped.
+
+**New model:** per-change cost tiering scales review depth to actual risk.
+
+- **Trivial diffs** (docs, config, one-liners, rename/renames): main session direct edit (no agent), Stop gate review-only (deterministic AST + ledger re-emits).
+- **Single-domain non-risk** (e.g., UI component, single Rust module): ONE sibling critic (author + critic pair).
+- **Full trio** (risk-bearing, multi-domain, security, breaking changes): author + both critics.
+- **Pre-PR security gate** (`/review-security`): always tauri-security-reviewer (Opus xhigh).
+- **Pre-PR logic gate** (`/review`): always pr-reviewer (Opus xhigh) as the final fence before merge.
+
+**Telemetry shift:** usage/cost metrics (scripts/pre-push-review.mjs) exist **before** a review surface ships, not after. Pre-push MCP boot-timeout is hardcoded (fail-close on timeout, never retry), so stuck pushes are detectable as MCP-server metrics rather than silent stalls.
+
+**Consequence:** the Stop hook's per-finish LLM review is retired; review depth is author-side determinism + risk-based critic assignment + pre-push/pre-PR explicit gates. Full rigor remains on demand via `/review` + `/review-security` + CI + CodeRabbit.
+
 ## Related
 
 - `.claude/agents/` — agent definitions (author + critic per domain; roster enforced by `scripts/check-agent-system.mjs`)

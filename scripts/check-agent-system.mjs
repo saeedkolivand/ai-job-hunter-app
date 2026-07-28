@@ -56,8 +56,8 @@ const PAIRS = [
   ['code-quality-author', 'code-quality-reviewer'],
   ['pdf-docx-generator', 'resume-export-expert'],
   ['extension-author', 'extension-reviewer'],
-  ['webgl-author', 'webgl-reviewer'],
-  ['shader-engineer', 'webgl-reviewer'],
+  // webgl-author/shader-engineer/webgl-reviewer are dormant (.claude/dormant/agents/,
+  // ADR-0017) — not part of the active roster this check enforces.
 ];
 
 // Parallel AI-assistant rule files that must defer to CLAUDE.md as the single source.
@@ -296,8 +296,8 @@ function checkReferencedAgents() {
 // ── Check 10: model tiering ↔ CLAUDE.md policy ───────────────────────────────
 // model: must pin an explicit tier (opus/sonnet/haiku) — never 'inherit' or a full model
 // ID — so it auto-tracks the current family under that tier; the opus/haiku sets and the
-// effort: xhigh pin must match the "Model & effort tiering" paragraph in CLAUDE.md (single
-// source — read as data, not duplicated here).
+// effort: high|xhigh pin must match the "Model & effort tiering" paragraph in CLAUDE.md
+// (single source — read as data, not duplicated here).
 function checkModelTiering() {
   if (!exists(CLAUDE_MD)) return;
   const policyLine = read(CLAUDE_MD)
@@ -306,11 +306,15 @@ function checkModelTiering() {
   if (!policyLine)
     return fail('Model tiering', CLAUDE_MD, 'no "Model & effort tiering" paragraph found');
 
+  // Only backticked kebab-case tokens are agent names — excludes `effort: xhigh`/`high`/`low`
+  // asides that also live inside these sentences.
   const backticked = (re) => {
     const m = policyLine.match(re);
-    return new Set(m ? [...m[1].matchAll(/`([^`]+)`/g)].map((g) => g[1]) : []);
+    return new Set(
+      m ? [...m[1].matchAll(/`([a-z][a-z0-9]*(?:-[a-z0-9]+)+)`/g)].map((g) => g[1]) : []
+    );
   };
-  const wantOpus = backticked(/Opus for last-line critics \(([^)]+)\)/);
+  const wantOpus = backticked(/Opus for last-line critics(.*?)\.\s+Sonnet for/);
   const wantHaiku = backticked(/Haiku for ([^.]+)\./);
 
   const unquote = (v) => v?.replace(/^['"]|['"]$/g, '');
@@ -338,10 +342,10 @@ function checkModelTiering() {
     }
     if (model === 'opus') gotOpus.add(name);
     if (model === 'haiku') gotHaiku.add(name);
-    // Only the opus ⇔ xhigh pin is enforced — CLAUDE.md's "default high everywhere" /
+    // Only the opus ⇔ high|xhigh pin is enforced — CLAUDE.md's "default high everywhere" /
     // "low fine for steward runs" describe harness defaults, not frontmatter to check.
-    if (model === 'opus' && effort !== 'xhigh')
-      fail('Model tiering', file, 'model: opus requires effort: xhigh');
+    if (model === 'opus' && effort !== 'high' && effort !== 'xhigh')
+      fail('Model tiering', file, 'model: opus requires effort: high or effort: xhigh');
     if (model !== 'opus' && effort === 'xhigh')
       fail('Model tiering', file, `model: ${model} must not set effort: xhigh (opus-only)`);
   }

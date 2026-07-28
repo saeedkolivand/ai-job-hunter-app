@@ -207,6 +207,8 @@ ${diff}
   // before this was caught via the metrics log)
   const r = runClaudeReview({ cwd, prompt, model, timeoutMs: 300000 });
   metric.parse_retries = r.parseRetries;
+  metric.usage = r.usage;
+  metric.cost_usd = r.costUsd;
   if (r.error === 'llm_unavailable' || r.parseFailed) {
     say(
       `⚠ AI review: reviewer ${r.error ? 'unavailable' : 'output unparseable'} — passing (CI is the backstop).`
@@ -215,6 +217,7 @@ ${diff}
       outcome: r.error ? 'llm-unavailable' : 'parse-failed',
       blocked: false,
       error: r.error || undefined,
+      cooldown: r.error ? r.cooldown : undefined,
     });
     process.exit(0);
   }

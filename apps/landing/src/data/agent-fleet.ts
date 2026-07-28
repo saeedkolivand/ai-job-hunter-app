@@ -3,6 +3,10 @@
 // for scripts/check-agent-system.mjs — every `.claude/agents/*.md` name must
 // appear here (check 6), and the roster tuples below feed its reverse-check
 // (check 9). Keep the `[name, role, …]` tuple shape so that guard keeps working.
+//
+// The GL fleet (webgl-author, shader-engineer, webgl-reviewer, gate-auditor,
+// webgl-perf-profiler) is dormant — moved to .claude/dormant/, no GL surface
+// since ADR-0017 — and intentionally absent from the roster below.
 
 export type AgentRole = 'author' | 'critic' | 'cross';
 
@@ -81,22 +85,6 @@ export const AUTHORS: readonly AgentTuple[] = [
     '↔ critic extension-reviewer (+ tauri-security-reviewer on auth/permission/data risk)',
     'apps/extension/** · apps/desktop/src-tauri/src/extension_bridge/** · packages/shared/src/ipc/extension-protocol*',
     'Use extension-author to add a new extension message type.',
-  ],
-  [
-    'webgl-author',
-    'author',
-    'Implements the apps/landing WebGL experience — scenes, engine, scroll rig, a11y overlay, semantic layer, content, and fallback; everything scroll-driven as a pure function of t.',
-    'reviewed by webgl-reviewer (+ gate-auditor on rendered output)',
-    'apps/landing/src/** — scenes, engine, a11y, semantic (not GLSL/post)',
-    'Use webgl-author to add a new landing scene and wire it into the scroll rig.',
-  ],
-  [
-    'shader-engineer',
-    'author',
-    'Owns all GLSL in apps/landing — material shaders, the post-processing chain, procedural textures, and vertex shaders; writes shaders to spec, never touches scene layout or engine wiring.',
-    'reviewed by webgl-reviewer',
-    'apps/landing GLSL — materials, post chain, procedural textures',
-    'Use shader-engineer to write a new material shader for a landing scene.',
   ],
 ];
 
@@ -197,14 +185,6 @@ export const CRITICS: readonly AgentTuple[] = [
     'apps/extension/** · extension_bridge/** · extension-protocol*',
     '/review-extension on the new message type.',
   ],
-  [
-    'webgl-reviewer',
-    'critic',
-    'Read-only last-line critic over the diffs from both GL authors — webgl-author (scenes/engine) and shader-engineer (GLSL/post) — checking scrub-safety, resource disposal, per-frame allocation, uniform-vs-recompile correctness, draw-call budgets, semantic-layer parity, and gate integrity.',
-    'audits webgl-author + shader-engineer',
-    'apps/landing/src/**',
-    '/review-webgl on the new landing scene.',
-  ],
 ];
 
 export const CROSS: readonly AgentTuple[] = [
@@ -240,26 +220,10 @@ export const CROSS: readonly AgentTuple[] = [
     'any changed files (diff-scoped)',
     '/review before opening a PR.',
   ],
-  [
-    'gate-auditor',
-    'cross',
-    'Rendered-output auditor — drives the dev server via Chrome DevTools MCP to exact playhead positions, screenshots, traces, and console; runs the milestone gates, scrub determinism, draw-call probe, strobe budget, and copy parity. Never edits code.',
-    'runs the visual gate on apps/landing rendered-output changes',
-    'apps/landing (dev server on :3000)',
-    '/gate on the current landing milestone.',
-  ],
-  [
-    'webgl-perf-profiler',
-    'cross',
-    'GL frame-rate lens for apps/landing — traces the worst scroll segments, then applies the webgl-standards degradation ladder in order (pixel ratio, post samples, geometry density, effect toggles), stopping at the first rung that passes. Distinct from performance-profiler.',
-    'Secondary on apps/landing GL frame rate',
-    'apps/landing/src/** (GL frame loop)',
-    'Use webgl-perf-profiler when a landing scroll segment drops below target FPS.',
-  ],
 ];
 
-// Author → its independent critic(s). A critic shared by two authors
-// (webgl-reviewer) is listed under each; the map renders it once.
+// Author → its independent critic(s). A critic shared by two authors is
+// listed under each; the map renders it once.
 export const PAIRS: readonly (readonly [string, readonly string[]])[] = [
   ['rust-backend-author', ['rust-backend-architect']],
   ['frontend-author', ['frontend-reviewer', 'ui-ux-expert']],
@@ -270,8 +234,6 @@ export const PAIRS: readonly (readonly [string, readonly string[]])[] = [
   ['test-author', ['testing-reviewer']],
   ['code-quality-author', ['code-quality-reviewer']],
   ['extension-author', ['extension-reviewer']],
-  ['webgl-author', ['webgl-reviewer']],
-  ['shader-engineer', ['webgl-reviewer']],
 ];
 
 // Cross-cutting / risk agents — they ride along, no author pairing.
@@ -279,8 +241,6 @@ export const CROSS_NODES: readonly string[] = [
   'finding-verifier',
   'tauri-security-reviewer',
   'performance-profiler',
-  'webgl-perf-profiler',
-  'gate-auditor',
   'cleanup',
   'project-steward',
   'pr-reviewer',
