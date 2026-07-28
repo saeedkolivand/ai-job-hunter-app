@@ -1287,6 +1287,74 @@ describe('BridgeClient – v2 mutual handshake', () => {
     });
   });
 
+  it('honors a `token.revoked` that arrives right behind auth.ok', async () => {
+    // The mirror of the unauthenticated-drop guard: the desktop marks a socket
+    // authenticated when it SENDS `auth.ok`, so it can rotate and revoke in the
+    // very next frame. If any `await` sits between our receipt of `auth.ok` and
+    // the `authenticated` set, that legitimate revoke is dropped as
+    // "unauthenticated" and the extension is stranded on a dead token. One
+    // microtask flush stands in for the real task boundary between two socket
+    // messages — step 5 must already have completed by then.
+    const onTokenRevoked = vi.fn(() => Promise.resolve());
+    const { client, socket, connectPromise } = await clientWithToken(FAKE_TOKEN, onTokenRevoked);
+
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    // Exactly ONE microtask turn — NOT `await connectPromise`, which would let
+    // the whole handshake finish and make this pass either way. This is the gap
+    // a real socket leaves between two consecutive messages: step 5 must be
+    // fully synchronous to have completed inside it.
+    await Promise.resolve();
+    sendTokenRevoked(socket);
+
+    expect(onTokenRevoked).toHaveBeenCalledTimes(1);
+    await connectPromise;
+    client.dispose();
+  });
+
+  it('surfaces bad_token when the stored token could NOT be cleared', async () => {
+    // Every other revoke case resolves `onTokenRevoked`, leaving the failure
+    // branch untested. If storage refuses the delete, the token we KNOW is dead
+    // is still on disk — reconnecting would handshake it, get the silent
+    // failed-proof close, and resume the exact forever-retry loop this whole
+    // frame exists to end. So: no re-probe at all, and `bad_token`, whose popup
+    // view is the re-pair prompt.
+    let socketCount = 0;
+    restoreWS();
+    restoreWS = installFakeWS((ws) => {
+      socketCount += 1;
+      latestSocket = ws;
+    });
+
+    const onTokenRevoked = vi.fn(() => Promise.reject(new Error('storage')));
+    const getStoredToken = vi.fn<[], Promise<string | null>>().mockResolvedValue(FAKE_TOKEN);
+    const client = new BridgeClient(vi.fn(), getStoredToken, onTokenRevoked);
+    const connectPromise = client.ensureConnected();
+    await vi.waitFor(() => {
+      expect(latestSocket).toBeDefined();
+    });
+    const socket = latestSocket!;
+    socket.simulateOpen();
+    const { helloReqId, clientNonce } = await awaitHello(socket);
+    sendChallenge(socket, helloReqId);
+    const { authReqId } = await awaitAuth(socket);
+    await sendAuthOk(socket, authReqId, FAKE_TOKEN, clientNonce, 'valid');
+    await connectPromise;
+
+    const socketsBefore = socketCount;
+    sendTokenRevoked(socket);
+    socket.simulateClose();
+
+    await vi.waitFor(() => {
+      expect(client.status().phase).toBe('bad_token');
+    });
+    // No re-probe: the dead secret is never put back on the wire.
+    expect(socketCount).toBe(socketsBefore);
+    client.dispose();
+  });
+
   it('ignores a duplicate `token.revoked` (un-pairs once, not per frame)', async () => {
     const { client, socket, onTokenRevoked } = await authenticatedClientThatCanUnpair();
 

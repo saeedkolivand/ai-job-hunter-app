@@ -47,7 +47,7 @@
 
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -78,6 +78,8 @@ mod match_live;
 pub mod msg;
 pub mod native_host;
 pub mod register;
+/// The `token.revoked` wire surface + its no-oracle gate — see its module doc.
+mod revoke;
 mod status_update;
 mod stream;
 #[cfg(test)]
@@ -195,6 +197,18 @@ pub struct BridgeState {
     /// which is what lets the sync `Resettable::reset(&self)` hook reach the
     /// async socket tasks at all.
     revoke_tx: tokio::sync::broadcast::Sender<()>,
+    /// Monotonic rotation counter, bumped inside the same lock hold that sends
+    /// the revoke and zeroes `connected`. It exists to stop a REVOKED socket's
+    /// late teardown from decrementing a count that no longer belongs to it:
+    /// a socket parked in a long dispatch await (an `import.request` fetch, a
+    /// `match.live` scrape) may not poll its revoke receiver until well after a
+    /// browser has already re-paired on the NEW token, and a blind
+    /// `dec_connected` there would take that live pairing's count 1→0 —
+    /// under-reporting a genuinely connected extension until its socket
+    /// happens to close. Each connection records the epoch it counted itself
+    /// under and only decrements while it still matches
+    /// ([`Self::dec_connected_for_epoch`]).
+    rotation_epoch: AtomicU64,
     /// App data dir — where the token file lives.
     data_dir: PathBuf,
 }
@@ -218,6 +232,7 @@ impl BridgeState {
             // `RecvError::Lagged` — which the read loop treats exactly like the
             // signal itself (it still means "your pairing is gone").
             revoke_tx: tokio::sync::broadcast::channel(1).0,
+            rotation_epoch: AtomicU64::new(0),
             data_dir: data_dir.to_path_buf(),
         }
     }
@@ -244,41 +259,48 @@ impl BridgeState {
     /// and the factory-reset hook ([`crate::data_store::Resettable`]) both come
     /// through here, so revocation can't apply to one and not the other.
     ///
-    /// Order:
+    /// Order, all four steps under ONE hold of the token lock:
     /// 1. signal [`Self::subscribe_revoke`]'s receivers — each live connection
     ///    task sends `token.revoked` on its socket **if that socket is
     ///    authenticated** and then closes it (see `handle_connection`);
     /// 2. zero the live-connection count — no pairing survives a rotation, so
     ///    [`Self::is_connected`] must read false immediately rather than
-    ///    waiting on every socket's teardown (a revoked socket's own
-    ///    [`Self::dec_connected`] then saturates at zero, never wrapping);
-    /// 3. rotate + persist the secret.
+    ///    waiting on every socket's teardown;
+    /// 3. bump [`Self::rotation_epoch`], which is what stops a revoked socket's
+    ///    LATE teardown from decrementing a count that a newly re-paired
+    ///    browser now owns (see [`Self::dec_connected_for_epoch`]);
+    /// 4. rotate + persist the secret.
     ///
-    /// **What actually makes this race-free is NOT the lock** (see the body):
-    /// it is that every connection subscribes at ACCEPT time and
-    /// `broadcast::Sender::send` buffers into the ring for every receiver that
-    /// already exists. So a socket whose proof happens to verify against the
-    /// stale token clone still has the signal pending on its receiver, and its
-    /// very next read-loop iteration resolves `Revoked` and tears it down. A
-    /// refactor may move the lock; it must NOT move the subscribe-at-accept.
+    /// **TWO invariants are load-bearing here — a refactor must preserve BOTH:**
+    /// - **The single lock hold around steps 1–4.** `revoke_tx.send()` must not
+    ///   move outside it. The lock is what orders the revoke against the swap:
+    ///   any reader that observes the NEW token is guaranteed to observe a
+    ///   revoke that was ALREADY broadcast, so no socket can read a fresh token
+    ///   and still be missed by the signal.
+    /// - **Subscribe-at-accept** (in `handle_connection`), because the proof is
+    ///   verified OUTSIDE this lock: a socket can still authenticate on a stale
+    ///   token clone read just before step 1. Because its receiver already
+    ///   existed, `broadcast::Sender::send` buffered the signal for it, so its
+    ///   very next read-loop iteration resolves `Revoked` and tears it down.
     ///
-    /// Any socket that re-runs the v2 handshake afterwards with the old token
-    /// fails the client-proof check and must re-pair with the new value.
+    /// Drop either one and that window reopens. Any socket that re-runs the v2
+    /// handshake afterwards with the old token fails the client-proof check and
+    /// must re-pair with the new value.
     pub fn regenerate_token(&self) -> String {
         let fresh = new_token();
         {
-            // The lock gives ORDERING, not mutual exclusion with a handshake:
-            // `advance_auth` verifies the proof OUTSIDE it (it calls `token()`,
-            // which clones and releases), so a socket CAN still authenticate on
-            // the stale clone just after this block. Holding it here only
-            // guarantees that any reader observing the NEW token also observes
-            // a revoke that was already broadcast. The subscribe-at-accept +
-            // buffered-broadcast invariant above is what actually covers that
-            // socket — and its `dec_connected` on teardown is what unwinds the
-            // count it may have incremented after step 2.
+            // One hold, four steps — see the doc above for why BOTH this lock
+            // scope and the subscribe-at-accept in `handle_connection` are
+            // load-bearing. The lock alone does NOT exclude a concurrent
+            // handshake (`advance_auth` verifies outside it, via a `token()`
+            // clone); it orders the revoke ahead of the swap. The buffered
+            // broadcast is what catches a socket that authenticated on the
+            // stale clone, and `dec_connected_for_epoch` is what stops that
+            // socket's late teardown from stealing a newer pairing's count.
             let mut token = self.token.lock();
             let _ = self.revoke_tx.send(());
             self.connected.store(0, Ordering::Relaxed);
+            self.rotation_epoch.fetch_add(1, Ordering::Relaxed);
             *token = fresh.clone();
         }
         if let Err(e) = persist_token(&self.data_dir, &fresh) {
@@ -367,6 +389,31 @@ impl BridgeState {
             })
             .unwrap_or(0);
         prev == 1
+    }
+
+    /// The rotation epoch a socket must record (AFTER its [`Self::inc_connected`])
+    /// so its teardown can prove the count it wants to give back is still its
+    /// own. Read after the increment, never before: a rotation landing between
+    /// the two would otherwise leave the socket holding a stale epoch for a
+    /// count it added AFTER the reset, and it could never give that count back.
+    pub(super) fn rotation_epoch(&self) -> u64 {
+        self.rotation_epoch.load(Ordering::Relaxed)
+    }
+
+    /// [`Self::dec_connected`], but ONLY while `epoch` is still the current
+    /// rotation. A revoked socket that finally tears down after a rotation
+    /// (typically one parked in a long dispatch await — an `import.request`
+    /// fetch, a `match.live` scrape — that had not polled its revoke receiver
+    /// yet) must NOT decrement: [`Self::regenerate_token`] already zeroed the
+    /// count on its behalf, and by then a browser may have re-paired on the new
+    /// token, so a blind decrement would take THAT live pairing 1→0 and make
+    /// `is_connected()` under-report a genuinely connected extension. Returns
+    /// `false` (no transition) whenever the epoch has moved on.
+    pub(super) fn dec_connected_for_epoch(&self, epoch: u64) -> bool {
+        if self.rotation_epoch() != epoch {
+            return false;
+        }
+        self.dec_connected()
     }
 }
 
@@ -645,6 +692,10 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // counted. Tracked per-connection so teardown below only decrements a
     // socket that actually incremented (never on an unauthenticated close).
     let mut authenticated = false;
+    // Which rotation the `connected` count this socket adds belongs to — set
+    // alongside `authenticated` at `AuthOk`. Only meaningful while
+    // `authenticated`; see `BridgeState::dec_connected_for_epoch`.
+    let mut counted_epoch = 0u64;
     // Subscribed HERE — before the handshake, not at `AuthOk`. This is the
     // load-bearing half of the rotation race (see
     // `BridgeState::regenerate_token`): the proof is verified OUTSIDE the token
@@ -685,29 +736,44 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                 stream::NextStep::Frame(frame) => frame,
                 stream::NextStep::Revoked => {
                     // The pairing token was rotated out from under this socket
-                    // (Settings → "Regenerate", or a factory reset). Tell an
-                    // AUTHENTICATED peer — and ONLY an authenticated one — that its
-                    // pairing is dead, so the extension drops its stored token and
-                    // shows the pairing view instead of retrying the now-invalid
-                    // secret forever against a silent-closing handshake.
-                    //
-                    // An unauthenticated socket (mid-handshake, or one that never
-                    // got past `hello`) is told NOTHING and simply closes: sending
-                    // it `token.revoked` would confirm the token it was proving
-                    // against had been the real one — precisely the oracle the
-                    // silent `Unauthorized` close denies (ADR-0010).
-                    //
-                    // The frame is enqueued, not awaited: `run_writer` outlives
-                    // this loop (it holds the sink until its channel drains), so
-                    // the frame reaches the peer before the close does.
+                    // (Settings → "Regenerate", or a factory reset). WHICH frames
+                    // go out — and whether any go out at all — is decided by the
+                    // pure [`revoke_frames`], which is where the no-oracle rule is
+                    // pinned by tests: an unauthenticated socket gets NOTHING and
+                    // just closes, because telling it its pairing was revoked
+                    // would confirm the token it was proving against had been the
+                    // real one (ADR-0010).
                     if authenticated {
                         log::info!(
                             "[extension_bridge] pairing token rotated — revoking an authenticated \
                          session and closing it"
                         );
-                        let _ = out_tx.send(Message::text(token_revoked_reply()));
-                        let _ = out_tx.send(Message::Close(None));
                     }
+                    // Cancel BEFORE enqueueing the close: a streaming task holds
+                    // its own `out_tx` clone, so a still-running generation would
+                    // otherwise keep pushing `assist.chunk`s AFTER the `Close` we
+                    // just queued (frames behind a close frame), and keep burning
+                    // billable provider spend for a session that is already gone.
+                    // The post-loop `cancel_all` stays as the catch-all for every
+                    // other exit path; calling it twice is a no-op.
+                    assist_streams.cancel_all(&app);
+                    // Enqueued, not awaited: `run_writer` outlives this loop (it
+                    // holds the sink until its channel drains), so the revoke
+                    // frame reaches the peer before the close does.
+                    for frame in revoke::revoke_frames(authenticated) {
+                        let _ = out_tx.send(frame);
+                    }
+                    break;
+                }
+                stream::NextStep::RevokeWatchLost => {
+                    // The revocation channel closed (shutdown, or a refactor that
+                    // dropped the sender). Tear down like any other transport end
+                    // — deliberately WITHOUT a `token.revoked`, so a channel
+                    // lifecycle change can never unpair every browser at once.
+                    log::warn!(
+                        "[extension_bridge] revocation channel closed — closing this connection \
+                         without sending a revoke"
+                    );
                     break;
                 }
                 stream::NextStep::WriterEnded => {
@@ -790,6 +856,11 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
                     // 30s poll.
                     emit_event(&app, EXTENSION_BRIDGE_CHANGED, json!({ "connected": true }));
                 }
+                // Read AFTER the increment (see `rotation_epoch`'s doc): this
+                // stamps WHICH rotation the count we just added belongs to, so
+                // the teardown below can only give it back while it is still
+                // ours.
+                counted_epoch = state.rotation_epoch();
                 Some(reply)
             }
             FrameDecision::Reply(text) => Some(text),
@@ -866,11 +937,14 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
     // the count above) decrements it here — an unauthenticated socket's
     // teardown (a rejected origin, a failed proof, an over-cap/outdated first
     // frame) must never touch the count. After a REVOKE the count was already
-    // zeroed by `regenerate_token`, so this decrement saturates at zero and
-    // reports no transition — the rotation path owns that notification (the
-    // Settings mutation refetches the status; a factory reset emits the event
-    // itself), and a saturating decrement can never wrap the count back up.
-    if authenticated && state.dec_connected() {
+    // zeroed by `regenerate_token`, and the epoch moved on — so this decrement
+    // is SKIPPED entirely rather than merely saturating: by the time a socket
+    // parked in a long dispatch await gets here, a browser may already have
+    // re-paired on the new token, and giving back a count we no longer own
+    // would take that live pairing 1→0. The rotation path owns the
+    // notification instead (the Settings mutation refetches the status; a
+    // factory reset emits the event itself).
+    if authenticated && state.dec_connected_for_epoch(counted_epoch) {
         // 1→0: the last paired browser disconnected — with two browsers
         // sharing one token, this now only fires once the SECOND socket also
         // closes, not on whichever one happens to close first.
@@ -1162,25 +1236,6 @@ fn update_required_reply(req_id: &str) -> String {
         "payload": {
             "error": "Update the AI Job Hunter browser extension to reconnect (bridge protocol v2)."
         },
-    })
-    .to_string()
-}
-
-/// Envelope `reqId` for the desktop-initiated [`msg::TOKEN_REVOKED`] frame.
-/// Every other frame echoes the caller's id, but this one answers no request —
-/// a fixed, non-empty sentinel keeps the envelope shape (`reqId` is required on
-/// both sides) without pretending to correlate to anything.
-const REVOKE_REQ_ID: &str = "token-revoked";
-
-/// Build the `token.revoked` frame. NO payload and, deliberately, no token
-/// material of any kind: a revoked peer is told only that its pairing is dead,
-/// never anything about the old or the new secret. Sent exclusively on an
-/// already-authenticated session (see `handle_connection`'s `Revoked` arm).
-fn token_revoked_reply() -> String {
-    json!({
-        "type": msg::TOKEN_REVOKED,
-        "reqId": REVOKE_REQ_ID,
-        "payload": Value::Null,
     })
     .to_string()
 }

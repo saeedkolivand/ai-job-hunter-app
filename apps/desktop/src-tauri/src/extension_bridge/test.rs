@@ -7,6 +7,7 @@
 //! exact string literal on the TS side. If either side renames a wire `type`
 //! without the other, this fails — the two can't drift.
 
+use super::revoke::{revoke_frames, token_revoked_reply, REVOKE_REQ_ID};
 use super::*;
 
 /// Path from this crate's manifest dir to the shared TS protocol constants
@@ -318,6 +319,78 @@ fn factory_reset_revokes_live_sockets_too() {
         "a factory reset revokes live pairings, not just Settings → Regenerate"
     );
     assert!(!s.is_connected());
+}
+
+#[test]
+fn a_revoked_sockets_late_teardown_cannot_steal_a_newer_pairings_count() {
+    // The count-theft race: socket A is parked in a long dispatch await (an
+    // `import.request` fetch, a `match.live` scrape), so it has NOT polled its
+    // revoke receiver yet when the token rotates. Meanwhile browser C re-pairs
+    // on the NEW token. When A finally drains the buffered revoke and tears
+    // down, a blind `dec_connected` would take C's live pairing 1→0 — leaving
+    // `is_connected()` reporting "no extension" while C is genuinely paired,
+    // with nothing to correct it until C's own socket closes.
+    let dir = tempfile::tempdir().unwrap();
+    let s = BridgeState::load(dir.path());
+
+    // Socket A authenticates and stamps the epoch it counted itself under.
+    s.inc_connected();
+    let a_epoch = s.rotation_epoch();
+    assert!(s.is_connected());
+
+    // Rotation: A's pairing is revoked, the count is zeroed, the epoch moves.
+    s.regenerate_token();
+    assert!(!s.is_connected());
+
+    // Browser C re-pairs on the new token, under the NEW epoch.
+    s.inc_connected();
+    let c_epoch = s.rotation_epoch();
+    assert_ne!(a_epoch, c_epoch, "the rotation must move the epoch");
+    assert!(s.is_connected());
+
+    // A finally tears down — long after the rotation. It must NOT give back a
+    // count that now belongs to C.
+    assert!(
+        !s.dec_connected_for_epoch(a_epoch),
+        "a revoked socket's late teardown reports no transition"
+    );
+    assert!(
+        s.is_connected(),
+        "C's live pairing must survive A's late teardown"
+    );
+
+    // C's own teardown still works normally — the guard only rejects stale epochs.
+    assert!(
+        s.dec_connected_for_epoch(c_epoch),
+        "the current epoch's socket still reports the real 1→0 transition"
+    );
+    assert!(!s.is_connected());
+}
+
+#[test]
+fn revoke_frames_tells_an_unauthenticated_socket_nothing() {
+    // The desktop half of the no-oracle rule (ADR-0010). An unauthenticated
+    // peer — mid-handshake, or one that never got past `hello` — is closed in
+    // SILENCE: a `token.revoked` would confirm that the token it was proving
+    // against had been the real one, which is exactly what the reply-less
+    // failed-proof close exists to deny.
+    assert!(
+        revoke_frames(false).is_empty(),
+        "an unauthenticated socket must be told nothing at all"
+    );
+
+    // An authenticated session gets the revoke, then a clean close.
+    let frames = revoke_frames(true);
+    assert_eq!(frames.len(), 2, "the revoke frame, then the close");
+    let Message::Text(text) = &frames[0] else {
+        panic!("the first frame must be the token.revoked text frame");
+    };
+    let parsed: Value = serde_json::from_str(text.as_str()).unwrap();
+    assert_eq!(parsed["type"], msg::TOKEN_REVOKED);
+    assert!(
+        matches!(frames[1], Message::Close(None)),
+        "the socket is closed right behind the revoke"
+    );
 }
 
 #[test]

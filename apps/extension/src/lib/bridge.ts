@@ -1499,6 +1499,12 @@ export class BridgeClient {
     // A fresh transport has proven nothing yet — including the no-token attach
     // below, which reaches `connected` without ever running a handshake.
     this.authenticated = false;
+    // Same discipline as the sibling latches above: a revoke belongs to the
+    // transport that received it. Leaving these set would let a PREVIOUS
+    // socket's revoke divert this connection's close into the re-probe branch
+    // (and leak a settled promise).
+    this.revoked = false;
+    this.revokeCleared = null;
 
     transport.onMessage((env) => this.onMessage(env));
     transport.onClose(() => {
@@ -1607,7 +1613,20 @@ export class BridgeClient {
     }
 
     // Step 3: prove we know the token (HMAC over the client role) → await auth.ok.
-    const clientProof = await computeProof(token, 'client', serverNonce, clientNonce);
+    // BOTH proofs are computed here, before the `auth` frame goes out, even
+    // though the server one is not needed until step 5. That is deliberate: it
+    // leaves ZERO `await` between receiving `auth.ok` and setting
+    // `authenticated` below. With the server proof computed lazily at step 5
+    // instead, that ~sub-ms crypto await sat exactly where a legitimate
+    // `token.revoked` can arrive — the desktop marks the socket authenticated
+    // when it sends `auth.ok`, so it may rotate and revoke immediately after —
+    // and the revoke would be DROPPED for being "unauthenticated", stranding
+    // the extension on a dead token. Frames are delivered as separate tasks, so
+    // a fully synchronous step 5 is guaranteed to run before the next one.
+    const [clientProof, expectedServerProof] = await Promise.all([
+      computeProof(token, 'client', serverNonce, clientNonce),
+      computeProof(token, 'server', serverNonce, clientNonce),
+    ]);
     if (!this.transport) {
       // Socket closed while we were computing the proof. AMBIGUOUS: the Rust
       // `Unauthorized` path closes WITHOUT a reply BY DESIGN (see
@@ -1636,18 +1655,22 @@ export class BridgeClient {
     }
 
     // Step 5: verify the desktop's serverProof CONSTANT-TIME before trusting it.
+    // Fully SYNCHRONOUS from here to the `authenticated` set — see the
+    // both-proofs-up-front note at step 3. Do not reintroduce an `await` in
+    // this stretch: it would reopen the window where a legitimate
+    // `token.revoked` is dropped as unauthenticated.
     const serverProof = readHexField(step2.env.payload, 'serverProof');
-    const expected = await computeProof(token, 'server', serverNonce, clientNonce);
-    if (!serverProof || !constantTimeHexEqual(serverProof, expected)) {
+    if (!serverProof || !constantTimeHexEqual(serverProof, expectedServerProof)) {
       // The peer cannot prove it knows the token (rogue/port-squatter). We have
       // sent NO PII (import/profile only happen after 'connected'); drop the
       // socket and surface bad_token.
       return this.finishHandshake('bad_token');
     }
 
-    // The verdict is only valid for the transport that EARNED it. `await`ing
-    // the proof above yields, so the socket can close (or be replaced by a
-    // newer attach) in the gap — and `onClose` clears `authenticated`. Setting
+    // The verdict is only valid for the transport that EARNED it. The awaits
+    // EARLIER in this handshake yield, so the socket can close (or be replaced
+    // by a newer attach) at any of them — and `onClose` clears
+    // `authenticated`. Setting
     // it here regardless would resurrect the flag on a transport that no longer
     // exists (stale-true until the next attach), and `setPhase('connected')`
     // would claim a live session over a null transport.
