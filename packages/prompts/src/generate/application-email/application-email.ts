@@ -9,11 +9,14 @@
  *
  * Provider-aware via {@link resolveProfile} (adapts across ollama / cloud / cli
  * with zero per-provider code). Locale-driven: respects
- * {@link GenerationMeta.targetLanguage}. No-fabrication: same résumé-grounded
- * honesty contract as cover-letter and referral generation.
+ * {@link GenerationMeta.targetLanguage} and the resolved letter market
+ * ({@link ApplicationEmailParams.market} → {@link letterConventions}) for the
+ * greeting and sign-off. No-fabrication: same résumé-grounded honesty contract
+ * as cover-letter and referral generation.
  */
 
 import { truncateResume } from '../../context-manager/index.js';
+import { marketLanguageFit } from '../../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   buildCompanyResearchBlock,
@@ -22,9 +25,14 @@ import {
   buildResumeVoiceDirective,
   buildStyleReferenceBlock,
 } from '../emphasis/index.js';
-import { parseLinksFromResume, stripLinkBlock } from '../links/index.js';
+import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { antiAiTellProse, HUMANIZE_PROSE } from '../natural-voice/index.js';
+import {
+  antiAiTellProse,
+  HUMANIZE_PROSE,
+  type OutputTone,
+  toneDirective,
+} from '../natural-voice/index.js';
 
 export interface ApplicationEmailParams {
   /** Candidate's résumé text — the sole source of factual claims. */
@@ -34,8 +42,10 @@ export interface ApplicationEmailParams {
   /** Metadata extracted from résumé + job ad (candidate name, job title, company, locale…). */
   meta: GenerationMeta;
   /**
-   * Recipient's name. When provided the greeting is "Dear {recipientName},";
-   * when absent falls back to "Dear Hiring Manager,".
+   * Recipient's name. When provided the greeting uses the market's *named*
+   * salutation with this name substituted; when absent (or blank after
+   * sanitizing) the market's generic salutation is used instead — e.g. a DACH
+   * market yields "Sehr geehrte Damen und Herren,", never an English default.
    */
   recipientName?: string;
   /**
@@ -54,6 +64,19 @@ export interface ApplicationEmailParams {
    *  résumé text) — fenced via {@link buildStyleReferenceBlock}; absent/blank
    *  renders nothing. */
   styleReference?: string;
+  /**
+   * Resolved letter-market id (see `resolveMarket`) — drives the greeting and
+   * sign-off etiquette exactly like the cover letter's `<market_conventions>`.
+   * Absent/unknown falls back to the international baseline ("Dear Hiring
+   * Manager,").
+   */
+  market?: string;
+  /**
+   * User's Output Tone preference (Settings → Output Tone). Shapes register and
+   * word choice only — never the honesty contract or the market conventions.
+   * Defaults to `professional` (see {@link toneDirective}).
+   */
+  tone?: OutputTone;
 }
 
 /**
@@ -79,17 +102,65 @@ Line 3+ is the email body.`;
  * Sanitize a recipient name before it is interpolated into the prompt greeting.
  *
  * Removes control characters (including bare newlines / carriage returns) so a
- * crafted multi-line "name" cannot inject prompt instructions. Collapses
- * internal whitespace to a single space, trims edges, and caps at 80 chars.
- * Returns an empty string when the result is blank, which triggers the
- * "Dear Hiring Manager," fallback in the caller.
+ * crafted multi-line "name" cannot inject prompt instructions, and every
+ * delimiter this builder itself relies on: `"` (which would close the quoted
+ * greeting), `{`/`}` (which would forge a convention placeholder) and `[`/`]`
+ * (which would close the `[Greeting: …]` skeleton slot).
+ * Collapses internal whitespace to a single space, trims edges, and caps at 80
+ * CODE POINTS — not UTF-16 units, so the cut can never split a surrogate pair
+ * into a lone half. Returns an empty string when the result is blank, which
+ * makes the caller fall back to the market's generic salutation.
  */
 function sanitizeRecipientName(raw: string): string {
-  return raw
+  const cleaned = raw
     .replace(/[\p{Cc}]+/gu, ' ') // fold control chars + newlines into a space
+    .replace(/["{}[\]]/g, ' ') // cannot close the quoted greeting / [slot] or forge a placeholder
     .replace(/\s+/g, ' ') // collapse consecutive spaces
-    .trim()
-    .slice(0, 80);
+    .trim();
+  return [...cleaned].slice(0, 80).join('').trim();
+}
+
+/**
+ * Render a market's *named* salutation pattern with the sanitized recipient
+ * name. Convention patterns carry placeholders (`{title}`, `{firstName}`,
+ * `{lastName}`, `{patronymic}`) but a caller only ever knows one free-text
+ * name, so the name slot ({lastName}, else {firstName}) takes it — every
+ * occurrence, since gendered patterns repeat it — and the remaining
+ * placeholders are dropped, then stray whitespace is collapsed.
+ *
+ * Returns `''` when the pattern has NO name slot (e.g. `fr`:
+ * "Madame, / Monsieur,"): that market does not name the recipient, so the
+ * caller uses the generic salutation instead. Rendering such a pattern would
+ * print gendered alternatives while the recipient's name appears nowhere in the
+ * prompt — a coin-flip the model cannot win.
+ */
+/**
+ * True when a market's NAMED salutation pattern offers gendered alternatives no
+ * free-text name can resolve. Two shapes exist in the conventions table:
+ * slash-separated (`de`: "… Frau {lastName}, / … Herr {lastName},", `uk`:
+ * "Dear Mr/Ms {lastName}") and the parenthesized suffix used across Romance and
+ * Slavic markets (`pt`: "Exmo.(a) Senhor(a) {lastName},", `ru`:
+ * "Уважаемый(ая) …"). Either shape reaches the reader as a mail-merge artifact
+ * unless the writer is told to pick one, so both must open the same gate.
+ */
+function hasGenderVariants(pattern: string): boolean {
+  return pattern.includes('/') || /\(\p{L}{1,3}\)/u.test(pattern);
+}
+
+function renderNamedSalutation(pattern: string, name: string): string {
+  const slot = pattern.includes('{lastName}')
+    ? '{lastName}'
+    : pattern.includes('{firstName}')
+      ? '{firstName}'
+      : '';
+  if (!slot) return '';
+  return pattern
+    .split(slot)
+    .join(name)
+    .replace(/\{[A-Za-z]+\}/g, '') // drop placeholders we cannot fill
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.:;!?，、。：！])/g, '$1')
+    .trim();
 }
 
 /**
@@ -105,7 +176,7 @@ export function buildApplicationEmailPrompt(
 ): { system: string; user: string } {
   // recipientEmail is accepted in params for caller convenience but intentionally
   // never interpolated into the prompt — the email is sent by the client.
-  const { resume, jobAd, meta, companyBrief = '', styleReference } = params;
+  const { resume, jobAd, meta, companyBrief = '', styleReference, market, tone } = params;
 
   const recipientName =
     params.recipientName != null ? sanitizeRecipientName(params.recipientName) : undefined;
@@ -117,11 +188,41 @@ export function buildApplicationEmailPrompt(
 
   const { depth, truncation, jobAdChars } = resolveProfile(target);
 
-  const { block: linksBlock } = parseLinksFromResume(resume);
   const resumeBody = truncateResume(stripLinkBlock(resume), truncation);
 
-  // Greeting: named recipient → "Dear {name},"; unknown → "Dear Hiring Manager,".
-  const greeting = recipientName ? `Dear ${recipientName},` : 'Dear Hiring Manager,';
+  // ── Greeting + sign-off: market etiquette, never an English default ─────────
+  // Same rule as the cover letter's <market_conventions> (see
+  // `buildMarketConventionsBlock`): the market's own salutation/sign-off are used
+  // verbatim when the email language matches that market's native language;
+  // otherwise the model writes the formal equivalent in the email language while
+  // keeping the market's register. ONE `greeting` string feeds all three
+  // injection points (FORMAT skeleton, task-depth acceptance check, user
+  // CONTEXT) so they can never disagree.
+  const fit = marketLanguageFit(market, lang);
+  const c = fit.conventions;
+  // A named salutation is only usable when the market's pattern has a name slot
+  // to fill; `renderNamedSalutation` returns '' otherwise and we fall back to the
+  // generic form (see its doc comment).
+  const namedSalutation = recipientName
+    ? renderNamedSalutation(c.salutations.named, recipientName)
+    : '';
+  const salutation = namedSalutation || c.salutations.generic;
+  // Gendered / either-or NAMED patterns ("… Frau X, / … Herr X,", "Dear Mr/Ms X")
+  // list alternatives a free-text name cannot resolve — the writer picks one and
+  // trims the name to the form that market uses (DACH addresses by surname).
+  // Two deliberate gates: the clause is derived from the CONVENTION template, never
+  // from the rendered string (a "/" inside a real name like "Alex/Bob" must not tell
+  // the model to drop half of it), and only when a name was actually substituted
+  // (with no recipient there is nobody to disambiguate — es's generic
+  // "Estimado/a Sr./Sra.:" must not be turned into a gender guess).
+  const pickOne =
+    namedSalutation && hasGenderVariants(c.salutations.named)
+      ? " Write exactly one variant — the one that fits the recipient, in this market's form of address (surname only where that is the convention) — never the alternatives together."
+      : '';
+  const greeting = fit.sameLanguage
+    ? `${fit.inOutputLanguage(salutation)}${pickOne}`
+    : `${fit.inOutputLanguage(salutation)}, at this market's level of formality (never a casual greeting).${pickOne}`;
+  const signoff = fit.signoff;
 
   const langNote = meta.mismatch
     ? `Write entirely in ${lang}. Use native phrasing and professional conventions for that market. Do NOT translate literally.`
@@ -129,21 +230,24 @@ export function buildApplicationEmailPrompt(
 
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
   const styleBlock = buildStyleReferenceBlock(styleReference) || buildResumeVoiceDirective();
+  // Output Tone (Settings) — same composition rule as the cover letter: register
+  // and word choice only, never overriding honesty or the market conventions.
+  const toneLine = toneDirective(tone);
 
   // ── Format skeleton (shared across all depths) ────────────────────────────
   const formatSkeleton = `FORMAT:
 Subject: [concise, specific subject — role name + "Application" or similar; no "RE:" or filler]
 
-${greeting}
+[Greeting: ${greeting}]
 
 [Body: 2 to 3 short paragraphs, ~120 to 200 words total. NOT a cover letter — email-length only.]
 - Opening paragraph: one specific, résumé-backed reason the candidate fits this role. Do not start with "I am excited to apply" or "I am writing to express my interest". Name the role and company naturally.${hasCompany ? '' : ' (company name unknown: name only the role, never invent, name, or write a company placeholder such as "Company" or "Unternehmen")'}
 - Middle: one or two concrete achievements from the résumé that prove the fit — shown as sentences, not bullets.
 - Closing: a brief, confident invitation to discuss further and a natural reference to the attached résumé/CV.
 
-[Sign-off appropriate for ${lang}]
+[Sign-off: ${signoff}]
 ${candidateName}
-[Contact line: email | phone if in résumé | key profile links — one line, concise. Use short label names from CANDIDATE PROFILE LINKS, e.g. "LinkedIn", "GitHub".]
+[Nothing after the name: no contact line, email address, phone number, postal address, or profile links.]
 
 Output the email ONLY. No commentary before or after.`;
 
@@ -158,6 +262,8 @@ ${OUTPUT_CONTRACT}
 
 ${EMAIL_HONESTY}
 
+${toneLine}
+
 ${langNote}
 
 ${formatSkeleton}`;
@@ -171,11 +277,13 @@ ${EMAIL_HONESTY}
 ACCEPTANCE CHECKS (verify and revise until all pass):
 - Line 1 is exactly "Subject: …" — nothing before it.
 - Line 2 is blank.
-- The greeting is: ${greeting}
+- The greeting follows: ${greeting}
 - Every claim about the candidate is backed by the résumé; nothing from the job ad is presented as the candidate's own experience.
 - Body is 120 to 200 words; reads like a person, not a template; references attaching the résumé/CV.
-- Sign-off includes at least ${candidateName}'s name.
+- Sign-off is ${signoff} followed by ${candidateName}'s name, and nothing after it (no contact line, email, phone, or links).
 - Written entirely in ${lang}.
+
+${toneLine}
 
 ${langNote}
 
@@ -194,7 +302,9 @@ ${HUMANIZE_PROSE}
 - Conversational-professional: the candidate talking to a person, not reciting a spec. Email-length (2 to 3 paragraphs, ~120 to 200 words) — NOT a cover letter.
 - Lead with a genuine, résumé-backed fit reason. Never "I am excited to apply" or "I am writing to express my interest".
 - Reference attaching the résumé/CV naturally in the closing paragraph.
-- Sign off from ${candidateName} with their contact line (from CANDIDATE PROFILE LINKS, if provided).
+- Sign off from ${candidateName} — the name alone, with no contact line, email address, phone number, or profile links after it.
+
+${toneLine}
 
 ${langNote}
 
@@ -203,7 +313,7 @@ ${formatSkeleton}`;
 
   // ── User prompt ──────────────────────────────────────────────────────────────
 
-  const user = `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
+  const user = `<candidate_resume>
 ${resumeBody}
 </candidate_resume>
 
