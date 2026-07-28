@@ -162,15 +162,11 @@ export function JobsResults({
             <div className="w-full max-w-2xl space-y-2">
               {/* Transient live scrape progress — a thin fill that advances as
                   each board finishes; shown only while a fresh scrape has no
-                  results yet. */}
-              <div className="space-y-1">
-                <ProgressBar value={(scrapeProgress ?? 0) * 100} showLabel={false} />
-                <div className="text-[10px] text-foreground/45">
-                  {scrapeProgress == null
-                    ? t('jobs.scanning')
-                    : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })}
-                </div>
-              </div>
+                  results yet. The bar carries no label of its own: the command
+                  bar's status strip sits ~60px above with the SAME copy, and
+                  two identical lines reading out of step looked like a stutter.
+                  The strip is the labelled surface (it also owns Cancel). */}
+              <ProgressBar value={(scrapeProgress ?? 0) * 100} showLabel={false} />
               <RowSkeleton />
               <RowSkeleton />
               <RowSkeleton />
@@ -246,7 +242,11 @@ export function JobsResults({
   if (viewMode === 'split') {
     return (
       <div className="min-h-0 flex-1 overflow-hidden px-10 pb-10">
-        <div className="surface-card flex h-full min-h-0 overflow-hidden rounded-2xl">
+        {/* `@container`: the split decides list-vs-two-pane from the CARD's own
+            width, not the viewport (docs/PATTERNS.md §15). A viewport `md:`
+            fired even when the sidebar left the card ~390px wide, which is far
+            too narrow for two panes. */}
+        <div className="surface-card @container flex h-full min-h-0 overflow-hidden rounded-2xl">
           <JobsSplitView
             display={filtered}
             formatRelativeTime={formatRelativeTime}

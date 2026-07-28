@@ -1,4 +1,3 @@
-import { LayoutList, LayoutPanelLeft, ListFilter, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -6,21 +5,12 @@ import {
   type BoardScrapeSummary,
   type DATE_FILTER_OPTIONS,
 } from '@ajh/shared';
-import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import {
-  Button,
-  ConfirmModal,
-  Dropdown,
-  Input,
-  SegmentedControl,
-  Tag,
-  useNotification,
-} from '@ajh/ui';
+import { ConfirmModal, Drawer, useNotification } from '@ajh/ui';
 
-import { PageHeader } from '@/components/layout/PageHeader';
 import { PageTransition } from '@/components/layout/PageTransition';
-import { BoardSummaryChips, sanitizeReason } from '@/components/scrape/BoardSummaryChips';
+import { sanitizeReason } from '@/components/scrape/BoardSummaryChips';
+import { JobsCommandBar } from '@/features/jobs/components/JobsCommandBar';
 import { JobsResults } from '@/features/jobs/components/JobsResults';
 import { ScrapeForm } from '@/features/jobs/components/ScrapeForm';
 import type { ScrapeFormState } from '@/features/jobs/components/ScrapeForm/constants';
@@ -52,11 +42,14 @@ export function JobsPage() {
   const clearPostings = useClearPostings();
   const invalidatePostings = useInvalidatePostings();
 
-  const { jobs, setJobs } = useSessionStore();
-  const { filter, sortBy, viewMode, hideAgency } = jobs;
-  const setFilter = (v: string) => setJobs({ filter: v });
-  const setSortBy = (v: 'newest' | 'oldest' | 'company') => setJobs({ sortBy: v });
+  const { jobs } = useSessionStore();
+  const { filter, sortBy, hideAgency } = jobs;
   const [showScrapeForm, setShowScrapeForm] = useState(false);
+  // Always-mounted opener for the scrape drawer. The drawer normally returns
+  // focus to whatever opened it, but the empty-state "Search jobs" CTA unmounts
+  // the moment a scrape starts, so this is the fallback that keeps focus off
+  // <body> on the first-run path.
+  const scrapeButtonRef = useRef<HTMLButtonElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   // Per-board outcome of the most recent scrape. Kept in page state (not dropped
   // after reading) so the chip strip persists in the results header once the
@@ -215,10 +208,6 @@ export function JobsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (livePostings.length > 0) setShowScrapeForm(false);
-  }, [livePostings.length]);
-
   // `absorbedInto` traces which live-stream ids collapsed into which survivor id
   // (boards stream at different speeds and the persisted refetch can land under a
   // DIFFERENT incumbent than the one currently selected) — JobsResults consumes it
@@ -241,9 +230,18 @@ export function JobsPage() {
   // Start a fresh scrape — drop the previous run's chip strip/failure note so
   // neither reads as the new run's outcome (a fresh one arrives on the next
   // job.completed / job.failed).
+  //
+  // Closing the drawer here, in the USER-INITIATED handler, is deliberate. It
+  // used to close from an effect on `livePostings.length` — i.e. driven by a
+  // background stream event, which yanked focus out from under whatever the
+  // user was doing and, on the first-run path (empty state → "Search jobs" →
+  // drawer), unmounted the very CTA the drawer would restore focus to, dropping
+  // focus to <body>. Closing on the click also means a scrape that returns ZERO
+  // results still closes the drawer instead of stranding it open (WCAG 2.4.3).
   const handleStartScrape = () => {
     setLastSummaries([]);
     setLastFailureNote(null);
+    setShowScrapeForm(false);
     void startScrape();
   };
 
@@ -315,133 +313,38 @@ export function JobsPage() {
 
   const resumeId = useDefaultResumeId();
 
+  // Persistent per-board outcome — survives the drawer auto-closing so the user
+  // can always see what each board did on the last scrape. Gated on results
+  // being present: when there are ZERO results the empty state (JobsResults) is
+  // the SOLE owner of the explanation — without this gate both would render at
+  // once. The same gate covers the outright-failure note (which has no
+  // per-board summaries to chip).
+  const showDiagnostics = !scraping && filtered.length > 0;
+
   return (
     <MatchScoresProvider resumeId={resumeId}>
       <PageTransition className="flex h-full flex-col overflow-hidden">
         {/* Centered column: constrains content to max-w-6xl on large displays,
-            matching the dashboard. Both the pinned header and the scroll area
+            matching the dashboard. Both the command bar and the results area
             sit inside so they stay visually aligned. */}
         <div className="mx-auto flex w-full min-h-0 flex-1 flex-col max-w-6xl 2xl:max-w-7xl">
-          {/* Header + scrape form. Bounded + self-scrolling so that selecting all
-              boards and opening the advanced grid can't push the Start button off
-              the bottom of the viewport (900x600 floor) — it caps at 55vh and
-              scrolls internally, leaving the results list as the primary scroll
-              owner below. Short content is unaffected (no scrollbar shown). */}
-          <div
-            data-testid={TEST_IDS.jobs.scrapeFormScroll}
-            className="max-h-[55vh] shrink-0 overflow-y-auto px-10 pt-10"
-          >
-            <PageHeader
-              title={t('jobs.title')}
-              subtitle={t('jobs.subtitle')}
-              badge={t('jobs.eyebrow')}
-              actions={
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="primary"
-                    onClick={() => setShowScrapeForm(!showScrapeForm)}
-                    className="transition-all duration-150 ease-out"
-                  >
-                    <Plus size={12} />
-                    {t('jobs.scrapeJobs')}
-                  </Button>
-                  {allPostings.length > 0 && !scraping && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => setConfirmClear(true)}
-                      title={t('jobs.clearScrapedJobs')}
-                    >
-                      <Trash2 size={12} />
-                      {t('jobs.clear')}
-                    </Button>
-                  )}
-                  <Input
-                    id="jobs-filter-query"
-                    name="jobs-filter-query"
-                    prefix={<ListFilter size={12} />}
-                    value={filter}
-                    onChange={(e) => setFilter(e.target.value)}
-                    placeholder={t('jobs.searchPlaceholder')}
-                    className="text-foreground/75 placeholder:text-foreground/30"
-                    variant="default"
-                    wrapperClassName="w-48"
-                    allowClear
-                  />
-                  <Dropdown
-                    options={[
-                      { value: 'newest', label: t('jobs.sortNewest') },
-                      { value: 'oldest', label: t('jobs.sortOldest') },
-                      { value: 'company', label: t('jobs.sortCompany') },
-                    ]}
-                    value={sortBy}
-                    onChange={(value) => setSortBy(value as 'newest' | 'oldest' | 'company')}
-                    placeholder={t('jobs.sort')}
-                  />
-                  <span data-testid={TEST_IDS.jobs.hideAgencyToggle} className="inline-flex">
-                    <Tag.CheckableTag
-                      checked={hideAgency}
-                      onChange={(v) => setJobs({ hideAgency: v })}
-                    >
-                      {t('jobs.filters.hideAgency')}
-                    </Tag.CheckableTag>
-                  </span>
-                  <span className="text-[11px] text-foreground/40">
-                    {filtered.length} / {distinctCount}
-                  </span>
-                  {/* View mode toggle — SegmentedControl (WAI-ARIA radiogroup + roving arrow keys) */}
-                  <SegmentedControl
-                    ariaLabel={t('jobs.viewMode')}
-                    value={viewMode}
-                    onChange={(v) => setJobs({ viewMode: v })}
-                    options={[
-                      { value: 'list', label: <LayoutList size={13} />, title: t('jobs.viewList') },
-                      {
-                        value: 'split',
-                        label: <LayoutPanelLeft size={13} />,
-                        title: t('jobs.viewSplit'),
-                      },
-                    ]}
-                    tone="brand"
-                    size="sm"
-                  />
-                </div>
-              }
-            />
-
-            <ScrapeForm
-              show={showScrapeForm}
-              form={scrapeForm}
-              scraping={scraping}
-              scrapeOutcome={scrapeOutcome}
-              onToggle={() => setShowScrapeForm(!showScrapeForm)}
-              // Functional update: two changes dispatched in one tick (e.g. a
-              // location pick firing onChange then onSelectSuggestion) would
-              // otherwise both spread the SAME captured `scrapeForm` and the
-              // first would be lost.
-              onFormChange={(updates) => setScrapeForm((f) => ({ ...f, ...updates }))}
-              onStart={handleStartScrape}
-              onCancel={cancelScrape}
-              onGeocode={geocodeSuggest}
-            />
-
-            {/* Persistent per-board outcome — survives the form auto-closing so
-                the user can always see what each board did on the last scrape.
-                Gated on results being present: when there are ZERO results the
-                empty state (JobsResults) is the SOLE owner of the explanation —
-                without this gate both would render at once. */}
-            {!scraping && filtered.length > 0 && lastSummaries.length > 0 && (
-              <BoardSummaryChips summaries={lastSummaries} className="mb-4" />
-            )}
-            {/* An outright scrape failure has no per-board summaries to chip —
-                keep a minimal sanitized note visible instead of going silent
-                once the dismissible form-footer note is gone. Same
-                results-present gating as above. */}
-            {!scraping && filtered.length > 0 && lastFailureNote && (
-              <p role="status" aria-live="polite" className="mb-4 text-[11px] text-red-400/80">
-                {t('jobs.lastScrapeFailed', { reason: lastFailureNote })}
-              </p>
-            )}
-          </div>
+          {/* Command bar — replaces the old hero + inline form. It is `shrink-0`
+              with NO overflow of its own (the previous bounded `overflow-y-auto`
+              wrapper is what produced the stray horizontal scrollbar), so the
+              results area below owns the full remaining height. */}
+          <JobsCommandBar
+            shownCount={filtered.length}
+            totalCount={distinctCount}
+            scraping={scraping}
+            scrapeProgress={scrapeProgress}
+            canClear={allPostings.length > 0 && !scraping}
+            onClear={() => setConfirmClear(true)}
+            onScrape={() => setShowScrapeForm(true)}
+            onCancelScrape={cancelScrape}
+            boardSummaries={showDiagnostics ? lastSummaries : []}
+            failureNote={showDiagnostics ? lastFailureNote : null}
+            scrapeButtonRef={scrapeButtonRef}
+          />
 
           <JobsResults
             filtered={filtered}
@@ -461,6 +364,34 @@ export function JobsPage() {
           />
         </div>
       </PageTransition>
+
+      {/* New Scrape — a right slide-over instead of an inline block, so the form
+          can't push the results list (or its own Start button) off screen at the
+          900x600 window floor. Batch-apply is unchanged: edits only take effect
+          when the user hits Search. ScrapeForm owns the pinned header/footer and
+          the single scrolling body inside the panel. */}
+      <Drawer
+        open={showScrapeForm}
+        onClose={() => setShowScrapeForm(false)}
+        ariaLabel={t('jobs.newScrape')}
+        returnFocusTo={scrapeButtonRef}
+      >
+        <ScrapeForm
+          show={showScrapeForm}
+          form={scrapeForm}
+          scraping={scraping}
+          scrapeOutcome={scrapeOutcome}
+          onToggle={() => setShowScrapeForm(false)}
+          // Functional update (#884): two changes dispatched in one tick (e.g. a
+          // location pick firing onChange then onSelectSuggestion) would
+          // otherwise both spread the SAME captured `scrapeForm` and the first
+          // would be lost.
+          onFormChange={(updates) => setScrapeForm((f) => ({ ...f, ...updates }))}
+          onStart={handleStartScrape}
+          onCancel={cancelScrape}
+          onGeocode={geocodeSuggest}
+        />
+      </Drawer>
 
       <ConfirmModal
         open={confirmClear}
