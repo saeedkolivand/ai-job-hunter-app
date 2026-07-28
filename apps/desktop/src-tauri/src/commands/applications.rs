@@ -90,6 +90,13 @@ fn parse_next_action_at(raw: Option<Value>) -> AppResult<Option<Option<u64>>> {
 ///   (non-empty local part, exactly one `@`, non-empty domain label + TLD with
 ///   a dot). Returns `Ok(Some(email))` on success, `Err(AppError::Validation)` on
 ///   invalid input so the renderer can surface a clear reason.
+///
+/// Every rejection names the field the way the UI labels it — **"contact
+/// email"** (`applications.detail.contactEmail`), not the storage/alias
+/// identifier `recipient_email`. These strings are rendered verbatim to the user
+/// by the inline `role="alert"` on both contact surfaces, and there is no
+/// backend i18n catalogue to translate them through, so naming a field the user
+/// cannot see made the error unactionable.
 fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     let Some(s) = raw else {
         return Ok(None);
@@ -101,7 +108,7 @@ fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     // Byte-length cap — mirrors the Zod max(254); this is the real trust boundary.
     if trimmed.len() > 254 {
         return Err(AppError::Validation(
-            "recipient_email exceeds the 254-byte limit".into(),
+            "contact email exceeds the 254-byte limit".into(),
         ));
     }
     // No control characters or spaces ANYWHERE — a bare CR/LF in a stored address
@@ -113,30 +120,30 @@ fn validate_recipient_email(raw: Option<String>) -> AppResult<Option<String>> {
     // which this validator has never accepted.)
     if trimmed.chars().any(|c| c.is_control() || c == ' ') {
         return Err(AppError::Validation(
-            "recipient_email must not contain control characters or spaces".into(),
+            "contact email must not contain control characters or spaces".into(),
         ));
     }
     // Exactly one '@', non-empty local part, domain must have a dot with a
     // non-empty label on each side of the last dot.
     if trimmed.matches('@').count() != 1 {
         return Err(AppError::Validation(format!(
-            "recipient_email is not a valid address: {trimmed}"
+            "contact email is not a valid address: {trimmed}"
         )));
     }
     let (local, domain) = trimmed.split_once('@').unwrap();
     if local.is_empty() {
         return Err(AppError::Validation(
-            "recipient_email local part must not be empty".into(),
+            "contact email local part must not be empty".into(),
         ));
     }
     let Some(dot) = domain.rfind('.') else {
         return Err(AppError::Validation(format!(
-            "recipient_email domain must contain a dot: {trimmed}"
+            "contact email domain must contain a dot: {trimmed}"
         )));
     };
     if domain[..dot].is_empty() || domain[dot + 1..].is_empty() {
         return Err(AppError::Validation(format!(
-            "recipient_email has an invalid domain: {trimmed}"
+            "contact email has an invalid domain: {trimmed}"
         )));
     }
     Ok(Some(trimmed))
@@ -183,6 +190,36 @@ fn validate_contact_name(raw: Option<String>) -> AppResult<Option<String>> {
     Ok(Some(trimmed))
 }
 
+/// Server-side cap for a status-change note, in BYTES. Mirrors the renderer's
+/// `NOTE_MAX_LENGTH` (`features/applications/components/StatusNoteModal`); that
+/// `maxLength` is a UX guard on one textarea, so THIS is the real bound — a
+/// direct IPC caller never passes through it, and the note is appended to the
+/// permanent `status_events` history where nothing else bounds it.
+const MAX_STATUS_NOTE_BYTES: usize = 2_000;
+
+/// Trim and bound an inbound status note.
+///
+/// REJECTS rather than truncates, consistent with [`validate_contact_name`]:
+/// this note is the user's own interaction log, and a silently-halved entry is
+/// worse than a visible "too long" they can act on (both surfaces already render
+/// the returned `{ error }` inline). `None`/absent and empty are always fine —
+/// most transitions carry no note at all.
+///
+/// Bytes, not chars, matching every other server cap in this module. That is a
+/// slightly tighter bound than the client's char-based `maxLength` for
+/// multi-byte text; the mismatch surfaces as a clear, recoverable error rather
+/// than a silent loss.
+fn validate_status_note(raw: Option<String>) -> AppResult<String> {
+    let trimmed = raw.unwrap_or_default().trim().to_string();
+    if trimmed.len() > MAX_STATUS_NOTE_BYTES {
+        return Err(AppError::Validation(format!(
+            "note exceeds the {MAX_STATUS_NOTE_BYTES}-byte limit ({} bytes)",
+            trimmed.len()
+        )));
+    }
+    Ok(trimmed)
+}
+
 #[tauri::command]
 pub async fn applications_list(app: AppHandle) -> Value {
     serde_json::to_value(store(&app).list()).unwrap_or(json!([]))
@@ -205,7 +242,15 @@ pub async fn applications_set_status(
 ) -> Value {
     let span = Span::begin("applications", format!("set_status id={id} to={status}"));
     let to = ApplicationStatus::from_id(&status);
-    let note = note.unwrap_or_default();
+    // The note lands in the append-only history, so bound it here — before any
+    // store work — rather than trusting the textarea's `maxLength`.
+    let note = match validate_status_note(note) {
+        Ok(note) => note,
+        Err(e) => {
+            span.end_with(&e.to_string(), false);
+            return json!({ "error": e });
+        }
+    };
     match store(&app).set_status(&id, to, &note) {
         Ok(()) => {
             span.end(true);
@@ -691,6 +736,47 @@ mod tests {
         assert!(s.chars().count() < MAX_CONTACT_NAME_BYTES);
         assert!(s.len() > MAX_CONTACT_NAME_BYTES);
         assert!(validate_contact_name(Some(s)).is_err());
+    }
+
+    // ── status-note cap ───────────────────────────────────────────────────────
+
+    #[test]
+    fn status_note_absent_empty_and_at_cap_are_accepted() {
+        // Most transitions carry no note at all.
+        assert_eq!(validate_status_note(None).unwrap(), "");
+        assert_eq!(validate_status_note(Some(String::new())).unwrap(), "");
+        // Surrounding whitespace is trimmed, not rejected.
+        assert_eq!(
+            validate_status_note(Some("  called the recruiter  ".into())).unwrap(),
+            "called the recruiter"
+        );
+        // Exactly at the cap passes — the guard rejects only what is over it.
+        let at_cap = "a".repeat(MAX_STATUS_NOTE_BYTES);
+        assert_eq!(validate_status_note(Some(at_cap.clone())).unwrap(), at_cap);
+    }
+
+    #[test]
+    fn status_note_over_the_cap_is_rejected_not_truncated() {
+        // One byte over → a typed Validation error naming the limit. Rejecting
+        // (not truncating) matches `validate_contact_name`: a silently halved
+        // interaction-log entry is worse than a visible, recoverable error.
+        let over = "a".repeat(MAX_STATUS_NOTE_BYTES + 1);
+        let err = validate_status_note(Some(over)).expect_err("over-cap note must be rejected");
+        assert!(matches!(err, AppError::Validation(_)), "got {err:?}");
+        assert!(
+            err.to_string().contains(&MAX_STATUS_NOTE_BYTES.to_string()),
+            "the message must name the byte cap, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn status_note_cap_counts_bytes_not_chars() {
+        // 'ü' is 2 UTF-8 bytes: 1_001 chars = 2_002 bytes, over the 2_000-byte
+        // cap even though a char-count guard would wave it through.
+        let s = "ü".repeat(MAX_STATUS_NOTE_BYTES / 2 + 1);
+        assert!(s.chars().count() < MAX_STATUS_NOTE_BYTES);
+        assert!(s.len() > MAX_STATUS_NOTE_BYTES);
+        assert!(validate_status_note(Some(s)).is_err());
     }
 
     #[test]

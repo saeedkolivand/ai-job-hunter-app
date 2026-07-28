@@ -6,10 +6,12 @@ import { Button, ModalShell, TextArea } from '@ajh/ui';
 /**
  * Client-side cap on a status note.
  *
- * A UX guard, NOT a validation boundary: `applications_set_status` currently
- * stores the note uncapped, so this only stops an accidental paste of a whole
- * document from landing in the timeline. A real bound belongs on the command
- * (see the handoff) — a client cap is trivially bypassable by any other caller.
+ * A UX guard, NOT the validation boundary: the real bound is
+ * `MAX_STATUS_NOTE_BYTES` in `commands/applications.rs`, which rejects an
+ * over-cap note (a client cap is bypassable by any other caller). Same number,
+ * but the server counts BYTES while `maxLength` counts characters — so a very
+ * long multi-byte note can still be refused, and that rejection surfaces through
+ * the existing inline error rather than being silently truncated.
  */
 const NOTE_MAX_LENGTH = 2000;
 
