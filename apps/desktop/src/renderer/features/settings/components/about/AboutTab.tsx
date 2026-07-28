@@ -64,8 +64,11 @@ export function AboutTab() {
 
         {/* Third-party data attribution. The bundled GeoNames location index is
             CC BY 4.0 and Photon serves ODbL OpenStreetMap data — both require
-            credit in a distributed build, so this line is not decorative. */}
-        <p className="border-t border-[var(--border-clear)] pt-3 text-[11px] leading-relaxed text-foreground/35">
+            credit in a distributed build, so this line is not decorative. It is
+            muted but deliberately NOT at the /35 the surrounding fine print
+            uses: a legally-mandatory credit has to stay legible (/50 clears
+            WCAG AA at this size, /35 did not). */}
+        <p className="border-t border-[var(--border-clear)] pt-3 text-[11px] leading-relaxed text-foreground/50">
           {t('settings.about.dataAttribution')}
         </p>
       </div>

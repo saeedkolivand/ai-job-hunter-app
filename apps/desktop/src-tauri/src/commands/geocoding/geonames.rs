@@ -5,7 +5,8 @@
 //! SQLite table, no search-engine dependency):
 //!
 //! * `geodata/cities.tsv.gz` — ~34k rows from GeoNames `cities15000`
-//!   (population > 15 000 or a capital), stripped to
+//!   (population > 15 000 or a capital — the dump has grown well past the
+//!   "~25k" GeoNames' own docs still quote), stripped to
 //!   `name · asciiname · cc · lat · lon · population · alternates`.
 //! * `geodata/countries.tsv` — ~250 rows from GeoNames `countryInfo.txt`
 //!   (`cc · ISO3 · English country name · population`), so country-level
@@ -39,8 +40,30 @@ use serde_json::{json, Value};
 
 use crate::scraping::cluster::normalize::fold;
 
+// TODO(arch): this module is real domain logic (a gazetteer + a ranking model)
+// living under `commands/`, which is meant to be a thin IPC layer. If a second
+// geo concern ever appears — reverse lookup, a radius/bounding-box filter, a
+// second data source — promote it to a top-level `geo/` module and leave
+// `commands::geocoding` as the IPC shim it is supposed to be. Not moved now:
+// one consumer, one file, and the move would churn the whole diff for zero
+// behavior change.
+
 const CITIES_GZ: &[u8] = include_bytes!("../../../geodata/cities.tsv.gz");
 const COUNTRIES_TSV: &str = include_str!("../../../geodata/countries.tsv");
+
+/// SHA-256 of the two embedded assets, recorded when they were generated from
+/// the upstream dumps (see `geodata/README.md` for the fetch date and source
+/// URLs). Asserted by a test: regenerating the asset without updating this
+/// provenance record — or a corrupted checkout — fails the build rather than
+/// silently shipping data of unknown origin.
+/// (Test-gated: the digests exist to be *asserted*; a release build has no
+/// reader for them and would warn about dead constants.)
+#[cfg(test)]
+pub(super) const CITIES_SHA256: &str =
+    "fc0b8a097f36afe3816afc53d948360e5d4c4b70bc9c7a902020401ffd4c5df6";
+#[cfg(test)]
+pub(super) const COUNTRIES_SHA256: &str =
+    "a630d7efae6f267ff42c2abc4f02970f5381f0cbeef8b9275b6286d1a0c5488d";
 
 /// Endonyms and colloquial country names GeoNames' English-only `countryInfo`
 /// cannot match. Deliberately **tiny and curated**: every entry here is a name
@@ -187,32 +210,66 @@ fn matches_exactly(keys: &str, query: &str) -> bool {
     keys.split('\n').any(|key| key == query)
 }
 
-fn load() -> Index {
-    let mut decoded = String::new();
-    // A corrupt asset must not panic the app: an empty index just means every
-    // query falls through to the Photon fallback.
-    if let Err(e) = flate2::read::GzDecoder::new(CITIES_GZ).read_to_string(&mut decoded) {
-        tracing::warn!("geonames: bundled city index unreadable: {e}");
-    }
+/// An ISO-2/ISO-3 code must be exactly N **ASCII letters** — `len()` alone is a
+/// byte count, so a 2-byte `"é"` or a `"1a"` would otherwise sail through and
+/// end up in a suggestion's `countryCode`, which callers treat as a real code.
+fn is_country_code(value: &str, len: usize) -> bool {
+    value.len() == len && value.bytes().all(|b| b.is_ascii_alphabetic())
+}
 
+fn load() -> Index {
+    parse(&decode_cities(CITIES_GZ), COUNTRIES_TSV)
+}
+
+/// Gunzip the bundled city asset. A corrupt/truncated blob must not panic the
+/// app — it degrades to an empty city list (countries still work, and every
+/// city query falls through to the Photon fallback), with one warning so the
+/// cause is visible. Split out of [`load`] so that path is unit-testable.
+fn decode_cities(gz: &[u8]) -> String {
+    let mut decoded = String::new();
+    if let Err(e) = flate2::read::GzDecoder::new(gz).read_to_string(&mut decoded) {
+        tracing::warn!("geonames: bundled city index unreadable: {e}");
+        // A partial read leaves whatever decoded before the error in the
+        // buffer; drop it rather than index half a truncated row.
+        decoded.clear();
+    }
+    decoded
+}
+
+/// Build the index from already-decompressed TSV text. Split out of [`load`] so
+/// every degradation path (short row, non-numeric coordinates, bogus country
+/// code, duplicate `cc`, alias for a country the asset lacks) is unit-testable
+/// without hand-rolling a gzip stream. A malformed row is always skipped, never
+/// fatal — a partially-readable asset still beats no autocomplete.
+fn parse(cities_tsv: &str, countries_tsv: &str) -> Index {
     let mut country_names = HashMap::new();
-    let mut countries = Vec::new();
+    let mut countries: Vec<Country> = Vec::new();
     let mut by_code: HashMap<String, usize> = HashMap::new();
-    for line in COUNTRIES_TSV.lines() {
+    for line in countries_tsv.lines() {
         // cc · ISO3 · English name · population
         let cols: Vec<&str> = line.split('\t').collect();
         let [cc, iso3, name, population] = cols[..] else {
             continue;
         };
-        if cc.len() != 2 || name.is_empty() {
+        if !is_country_code(cc, 2) || name.is_empty() {
             continue;
         }
         let cc = cc.to_ascii_uppercase();
+        // A duplicate `cc` keeps the FIRST row: re-pointing `by_code` at a later
+        // one would strand the aliases on an entry nothing can reach.
+        if by_code.contains_key(&cc) {
+            continue;
+        }
         country_names.insert(cc.clone(), name.to_string());
         by_code.insert(cc.clone(), countries.len());
         countries.push(Country {
             key: folded_keys([name]),
-            exact_keys: folded_keys([cc.as_str(), iso3]),
+            // A malformed ISO3 is dropped rather than indexed as a bogus key.
+            exact_keys: folded_keys(
+                [cc.as_str()]
+                    .into_iter()
+                    .chain(is_country_code(iso3, 3).then_some(iso3)),
+            ),
             name: name.to_string(),
             country_code: cc,
             population: population.parse().unwrap_or(0),
@@ -228,7 +285,7 @@ fn load() -> Index {
     }
 
     let mut cities = Vec::new();
-    for line in decoded.lines() {
+    for line in cities_tsv.lines() {
         let cols: Vec<&str> = line.split('\t').collect();
         // name · asciiname · cc · lat · lon · population · alternates
         let [name, asciiname, cc, lat, lon, population, alternates] = cols[..] else {
@@ -237,7 +294,7 @@ fn load() -> Index {
         let (Ok(lat), Ok(lon)) = (lat.parse::<f64>(), lon.parse::<f64>()) else {
             continue;
         };
-        if name.is_empty() || cc.len() != 2 {
+        if name.is_empty() || !is_country_code(cc, 2) {
             continue;
         }
         cities.push(City {
@@ -304,8 +361,8 @@ impl Index {
 
     /// Ranked, deduped, `limit`-capped suggestions for an already-folded query.
     fn search(&self, folded_query: &str, limit: usize) -> Hits {
-        let mut hits: Vec<(Tier, u64, Hit)> = Vec::new();
-        let mut exact = false;
+        // (tier, population, hit, matched-a-key-exactly)
+        let mut hits: Vec<(Tier, u64, Hit, bool)> = Vec::new();
 
         for (i, country) in self.countries.iter().enumerate() {
             let tier = if matches_exactly(&country.exact_keys, folded_query) {
@@ -317,8 +374,8 @@ impl Index {
                     None => continue,
                 }
             };
-            exact |= tier == Tier::CountryExact;
-            hits.push((tier, country.population, Hit::Country(i)));
+            let exact = tier == Tier::CountryExact;
+            hits.push((tier, country.population, Hit::Country(i), exact));
         }
 
         for (i, city) in self.cities.iter().enumerate() {
@@ -332,8 +389,8 @@ impl Index {
             };
             // An exact ALTERNATE ranks in the prefix tier (see `Tier`) but is
             // still an exact user-typed name, so it counts as confidence.
-            exact |= primary == Some(Match::Exact) || alternate == Some(Match::Exact);
-            hits.push((tier, city.population, Hit::City(i)));
+            let exact = primary == Some(Match::Exact) || alternate == Some(Match::Exact);
+            hits.push((tier, city.population, Hit::City(i), exact));
         }
 
         hits.sort_by(|a, b| {
@@ -341,13 +398,22 @@ impl Index {
                 .then(b.1.cmp(&a.1))
                 .then_with(|| self.name(a.2).cmp(self.name(b.2)))
         });
-        // Lazy: `dedupe_by_display` stops at `limit`, so only the handful of
-        // suggestions actually returned are ever materialized as JSON.
-        let suggestions = super::dedupe_by_display(
-            hits.into_iter().map(|(_, _, hit)| self.suggestion(hit)),
+        // Lazy: `dedupe_by_display_with` stops at `limit`, so only the handful
+        // of suggestions actually returned are ever materialized as JSON.
+        let kept = super::dedupe_by_display_with(
+            hits.into_iter()
+                .map(|(_, _, hit, exact)| (self.suggestion(hit), exact)),
             limit,
         );
-        Hits { suggestions, exact }
+        // Confidence is derived ONLY from the records the caller can actually
+        // see. An exact hit that ranked below the cap (or lost the dedupe) is
+        // invisible, so letting it set this flag would veto the Photon fallback
+        // on the strength of a row nobody was shown.
+        let exact = kept.iter().any(|(_, exact)| *exact);
+        Hits {
+            suggestions: kept.into_iter().map(|(value, _)| value).collect(),
+            exact,
+        }
     }
 }
 
@@ -364,6 +430,18 @@ pub(super) fn search(query: &str, limit: usize) -> Hits {
     INDEX.search(&folded, limit)
 }
 
+/// Build the index now instead of on the first user keystroke.
+///
+/// The build is 60–250 ms of pure CPU. Left lazy it lands on whichever Tauri
+/// command worker touches it first — and on the backfill path that worker is
+/// inside `derive_country_code`'s `tokio::time::timeout`, which cannot
+/// interrupt synchronous work, so the 2 s cap would silently not apply. Warmed
+/// from `lib.rs`'s setup on a blocking thread, every later `search` is a pure
+/// read of an already-initialized [`LazyLock`].
+pub(super) fn warm() {
+    LazyLock::force(&INDEX);
+}
+
 /// `(cities, countries)` row counts — lets the tests assert the real bundled
 /// asset actually parsed instead of silently searching an empty index.
 #[cfg(test)]
@@ -375,4 +453,35 @@ pub(super) fn row_counts() -> (usize, usize) {
 #[cfg(test)]
 pub(super) fn aliases() -> &'static [(&'static str, &'static str)] {
     COUNTRY_ALIASES
+}
+
+/// The raw embedded assets, so a test can pin their provenance digests.
+#[cfg(test)]
+pub(super) fn embedded_assets() -> (&'static [u8], &'static str) {
+    (CITIES_GZ, COUNTRIES_TSV)
+}
+
+/// [`parse`] with caller-supplied TSV text — the seam the degradation tests use.
+#[cfg(test)]
+pub(super) fn parse_for_test(cities_tsv: &str, countries_tsv: &str) -> Index {
+    parse(cities_tsv, countries_tsv)
+}
+
+/// [`decode_cities`] for the corrupt-asset test.
+#[cfg(test)]
+pub(super) fn decode_cities_for_test(gz: &[u8]) -> String {
+    decode_cities(gz)
+}
+
+#[cfg(test)]
+impl Index {
+    pub(super) fn counts(&self) -> (usize, usize) {
+        (self.cities.len(), self.countries.len())
+    }
+
+    /// Suggestions for a RAW (unfolded) query against this index only — lets a
+    /// degradation test query a hand-built index instead of the bundled one.
+    pub(super) fn lookup(&self, query: &str, limit: usize) -> Hits {
+        self.search(&fold(query.trim()), limit)
+    }
 }

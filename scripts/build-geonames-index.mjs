@@ -8,7 +8,7 @@
  * location autocomplete actually needs, and writes the two checked-in assets
  * consumed by `apps/desktop/src-tauri/src/commands/geocoding/geonames.rs`:
  *
- *   apps/desktop/src-tauri/geodata/cities.tsv.gz   (gzip TSV, ~25k rows)
+ *   apps/desktop/src-tauri/geodata/cities.tsv.gz   (gzip TSV, ~34k rows)
  *   apps/desktop/src-tauri/geodata/countries.tsv   (plain TSV, ~250 rows)
  *
  * Network is used HERE (regeneration, run by hand) and never at cargo build
@@ -21,7 +21,13 @@
  * License: GeoNames data is CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
  * Attribution ships in the app (Settings → About) and in
  * apps/desktop/src-tauri/geodata/README.md.
+ *
+ * On success this prints the fetch date and each asset's SHA-256. Copy them
+ * into the provenance record (geonames.rs CITIES_SHA256/COUNTRIES_SHA256 and
+ * geodata/README.md) — a test asserts the embedded bytes against it, so the
+ * crate will not build until the record matches what you just generated.
  */
+import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { inflateRawSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -151,7 +157,10 @@ const [citiesZip, countriesTxt] = await Promise.all([
 
 const cities = buildCities(unzipSingleMember(citiesZip).toString('utf8'));
 const countries = buildCountries(countriesTxt.toString('utf8'));
-if (cities.length < 10_000)
+// Floors match what the crate's own tests assert (>20 000 cities, >=200
+// countries) — writing an asset the test suite would reject is a waste of a
+// round trip, so fail here first.
+if (cities.length < 20_000)
   throw new Error(`only ${cities.length} cities parsed — upstream format changed?`);
 if (countries.length < 200)
   throw new Error(`only ${countries.length} countries parsed — upstream format changed?`);
@@ -160,8 +169,14 @@ mkdirSync(outDir, { recursive: true });
 // `level: 9` + a fixed mtime keep the checked-in blob byte-stable across
 // regenerations that produce identical data (no gratuitous git churn).
 const gz = gzipSync(Buffer.from(`${cities.join('\n')}\n`, 'utf8'), { level: 9, mtime: 0 });
+const countriesTsv = `${countries.join('\n')}\n`;
 writeFileSync(join(outDir, 'cities.tsv.gz'), gz);
-writeFileSync(join(outDir, 'countries.tsv'), `${countries.join('\n')}\n`);
+writeFileSync(join(outDir, 'countries.tsv'), countriesTsv);
 
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 console.log(`cities.tsv.gz  ${cities.length} rows, ${(gz.length / 1024).toFixed(0)} KB gzipped`);
 console.log(`countries.tsv  ${countries.length} rows`);
+console.log('\nProvenance — copy into geonames.rs + geodata/README.md:');
+console.log(`  fetched:   ${new Date().toISOString().slice(0, 10)}`);
+console.log(`  cities:    ${sha256(gz)}`);
+console.log(`  countries: ${sha256(Buffer.from(countriesTsv, 'utf8'))}`);

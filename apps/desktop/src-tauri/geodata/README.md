@@ -22,9 +22,23 @@ Codes are matched exact-only. The small curated endonym table (`deutschland`,
 `schweiz`, …) deliberately lives in `src/commands/geocoding/geonames.rs`, not in
 the asset, so regenerating from upstream never wipes it.
 
-**Runtime cost:** the index is built once on first use and then retains
+**Runtime cost:** the index is built once (warmed from `lib.rs`'s setup on a
+blocking thread, so it never lands on a command worker) and then retains
 **~10–12 MB** for the life of the process (folded search keys + display names);
 ~60–78 ms to build and ~7–11 ms per query on a release build.
+
+## Provenance
+
+| Asset           | Fetched    | SHA-256                                                            |
+| --------------- | ---------- | ------------------------------------------------------------------ |
+| `cities.tsv.gz` | 2026-07-27 | `fc0b8a097f36afe3816afc53d948360e5d4c4b70bc9c7a902020401ffd4c5df6` |
+| `countries.tsv` | 2026-07-27 | `a630d7efae6f267ff42c2abc4f02970f5381f0cbeef8b9275b6286d1a0c5488d` |
+
+The same digests are recorded in `src/commands/geocoding/geonames.rs` and
+asserted by `embedded_assets_match_their_recorded_digests`, so a regeneration
+that skips this record — or a corrupted checkout — fails the test suite instead
+of shipping data of unknown origin. `pnpm gen:geonames` prints both digests and
+the fetch date for you to paste.
 
 ## License / attribution — required in distributed builds
 

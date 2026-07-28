@@ -18,15 +18,24 @@
 //! the `LocationInput` picker, and autopilot's save-time `country_code`
 //! backfill all keep working untouched.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 mod geonames;
 
 #[cfg(test)]
 mod test;
+
+/// Build the offline index off the hot path. Called once from `lib.rs`'s setup
+/// on a blocking thread — see [`geonames::warm`] for why lazy-on-first-use is
+/// the wrong place to pay 60–250 ms of CPU.
+pub(crate) fn warm_index() {
+    geonames::warm();
+}
 
 /// Suggestions returned to the picker. Unchanged from the Nominatim era — the
 /// dropdown is sized for it and callers rely on it.
@@ -113,18 +122,34 @@ fn to_city_country(item: &Value) -> Option<Value> {
     }))
 }
 
-/// Keep the first suggestion per visible label, preserve order, cap at `limit`.
+/// Keep the first suggestion per visible label, preserve order, cap at `limit`,
+/// carrying an arbitrary tag alongside each kept suggestion (the offline index
+/// tags each candidate with whether it matched a key exactly, so confidence can
+/// be read off the rows that actually survive).
+///
 /// Lazy — the iterator is only pulled until `limit` distinct labels are seen,
 /// which is what lets the offline index materialize JSON for the winners only.
-fn dedupe_by_display(items: impl Iterator<Item = Value>, limit: usize) -> Vec<Value> {
+fn dedupe_by_display_with<T>(
+    items: impl Iterator<Item = (Value, T)>,
+    limit: usize,
+) -> Vec<(Value, T)> {
     let mut seen: HashSet<String> = HashSet::new();
     items
-        .filter(|s| {
+        .filter(|(s, _)| {
             s.get("display")
                 .and_then(|d| d.as_str())
                 .is_some_and(|d| seen.insert(d.to_string()))
         })
         .take(limit)
+        .collect()
+}
+
+/// [`dedupe_by_display_with`] for callers with nothing to tag. One dedupe rule
+/// for both the offline and the Photon path.
+fn dedupe_by_display(items: impl Iterator<Item = Value>, limit: usize) -> Vec<Value> {
+    dedupe_by_display_with(items.map(|value| (value, ())), limit)
+        .into_iter()
+        .map(|(value, ())| value)
         .collect()
 }
 
@@ -155,12 +180,33 @@ fn should_try_online(query: &str, weak: bool) -> bool {
     if query.len() > MAX_ONLINE_QUERY_BYTES {
         return false;
     }
+    // A query the bundled index structurally cannot hold skips the floors
+    // entirely — they exist to avoid firing on a half-typed Latin word, and
+    // applying them to a script the asset never carried just makes short
+    // non-Latin input (`東京`, `москва`) permanently unanswerable.
+    if !is_indexable_script(query) {
+        return true;
+    }
     let floor = if weak {
         MIN_WEAK_HIT_ONLINE_CHARS
     } else {
         MIN_ONLINE_QUERY_CHARS
     };
     query.chars().count() >= floor
+}
+
+/// Could this query match the bundled index at all?
+///
+/// The regeneration script keeps only Latin-script names (ASCII + Latin-1
+/// Supplement + Latin Extended-A), and [`fold`](crate::scraping::cluster::normalize::fold)
+/// leaves anything outside that untouched, so a query containing a letter from
+/// another block can never equal or prefix a stored key. Note this deliberately
+/// also covers Latin Extended-Additional (`Đà Nẵng`): those characters are
+/// dropped by the same filter, so they too are only answerable online.
+fn is_indexable_script(query: &str) -> bool {
+    !query.chars().any(|c| {
+        c.is_alphabetic() && !c.is_ascii_alphabetic() && !('\u{00C0}'..='\u{017F}').contains(&c)
+    })
 }
 
 /// Photon's public endpoint. Split out so tests can drive the real request path
@@ -180,13 +226,8 @@ fn photon_url(endpoint: &str, query: &str) -> String {
 /// Online fallback: Photon (komoot), purpose-built for typeahead over
 /// OpenStreetMap data. Never errors — a network/parse failure degrades to
 /// `vec![]`, i.e. exactly the "no suggestions" state the offline miss already
-/// produced.
-async fn photon(query: &str) -> Vec<Value> {
-    photon_at(PHOTON_ENDPOINT, query, PHOTON_TIMEOUT).await
-}
-
-/// [`photon`] against an arbitrary endpoint/timeout, so the request shape (URL,
-/// User-Agent, timeout) is exercised by a hermetic mock-server test.
+/// produced. Endpoint and timeout are parameters so the request shape (URL,
+/// User-Agent, timeout) is exercised by hermetic mock-server tests.
 async fn photon_at(endpoint: &str, query: &str, timeout: Duration) -> Vec<Value> {
     let response = match crate::net::http::shared()
         .get(photon_url(endpoint, query))
@@ -196,13 +237,70 @@ async fn photon_at(endpoint: &str, query: &str, timeout: Duration) -> Vec<Value>
         .await
     {
         Ok(r) => r,
-        Err(_) => return vec![],
+        Err(e) => {
+            // Debug, not warn: an offline laptop would otherwise log on every
+            // keystroke. The picker degrades silently by design — this is the
+            // only trace that says WHY it went quiet.
+            tracing::debug!("geocode: photon request failed: {e}");
+            return vec![];
+        }
     };
+
+    // A 4xx/5xx body is an error page, not a FeatureCollection. Checking the
+    // status first turns "rate limited" into one clear line instead of a
+    // confusing JSON-parse failure.
+    let status = response.status();
+    if !status.is_success() {
+        tracing::debug!("geocode: photon returned {status}");
+        return vec![];
+    }
 
     match response.json::<Value>().await {
         Ok(body) => photon_suggestions(&body),
-        Err(_) => vec![],
+        Err(e) => {
+            tracing::debug!("geocode: photon body was not valid json: {e}");
+            vec![]
+        }
     }
+}
+
+/// Recent lookups, newest first. Small on purpose: a location field sees a
+/// handful of distinct queries per session, and the picker re-issues the SAME
+/// query constantly — every re-open of the dropdown, and every debounce tick
+/// where the text stopped changing. Without this, a query whose best answer is
+/// a weak offline hit (`amsterda`) re-asks Photon each time.
+///
+/// Only **non-empty** results are cached: a lookup that came back empty may
+/// have been a transient network failure, and memoizing that would make the
+/// picker permanently blank for that query.
+static RECENT: LazyLock<RecentCache> =
+    LazyLock::new(|| Mutex::new(VecDeque::with_capacity(RECENT_CAPACITY)));
+
+/// `(query, suggestions)` pairs, most recently used first.
+type RecentCache = Mutex<VecDeque<(String, Vec<Value>)>>;
+
+const RECENT_CAPACITY: usize = 32;
+
+fn cache_get(query: &str) -> Option<Vec<Value>> {
+    let mut recent = RECENT.lock();
+    let at = recent.iter().position(|(key, _)| key == query)?;
+    // Move-to-front so the working set survives eviction.
+    let entry = recent.remove(at)?;
+    let hit = entry.1.clone();
+    recent.push_front(entry);
+    Some(hit)
+}
+
+fn cache_put(query: &str, suggestions: &[Value]) {
+    if suggestions.is_empty() {
+        return;
+    }
+    let mut recent = RECENT.lock();
+    if recent.iter().any(|(key, _)| key == query) {
+        return;
+    }
+    recent.push_front((query.to_string(), suggestions.to_vec()));
+    recent.truncate(RECENT_CAPACITY);
 }
 
 /// The picker writes its own label back into the field, so the next time the
@@ -227,9 +325,22 @@ fn before_comma(query: &str) -> Option<&str> {
 /// the fallback, because callers like autopilot persist `suggestion[0]`'s
 /// country code. Offline results are still returned if Photon adds nothing.
 pub(crate) async fn suggest(query: &str) -> Vec<Value> {
+    suggest_at(PHOTON_ENDPOINT, query).await
+}
+
+/// [`suggest`] against an arbitrary Photon endpoint — the seam that makes the
+/// fallback *and the merge rule* testable. Without it every `suggest` test
+/// returns at the offline early-return, so "Photon replaces a weak offline hit"
+/// and "an empty Photon answer leaves the offline rows alone" would be asserted
+/// nowhere, and a future asset drift could silently start making live requests
+/// from CI.
+async fn suggest_at(endpoint: &str, query: &str) -> Vec<Value> {
     let query = query.trim();
     if query.is_empty() {
         return vec![];
+    }
+    if let Some(cached) = cache_get(query) {
+        return cached;
     }
 
     // ~7-11 ms over ~34k pre-folded rows once the index is built (see
@@ -245,18 +356,24 @@ pub(crate) async fn suggest(query: &str) -> Vec<Value> {
         }
     }
     if hits.exact {
+        cache_put(query, &hits.suggestions);
         return hits.suggestions;
     }
 
     if !should_try_online(query, !hits.suggestions.is_empty()) {
         return hits.suggestions;
     }
-    let online = photon(query).await;
-    if online.is_empty() {
+    // Photon REPLACES a weak offline result (a prefix accident is worse than a
+    // real geocoder's answer), but an empty/failed one must never destroy the
+    // rows we already have.
+    let online = photon_at(endpoint, query, PHOTON_TIMEOUT).await;
+    let result = if online.is_empty() {
         hits.suggestions
     } else {
         online
-    }
+    };
+    cache_put(query, &result);
+    result
 }
 
 /// Whether `location` is non-empty after trimming — the only precondition for
