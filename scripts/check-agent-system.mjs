@@ -19,6 +19,9 @@
 //   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
 //   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
 //      explainer roster has a matching .claude/agents/<name>.md (reverse of 4 & 6).
+//   10. Model/effort tiering — every agent's model: is a bare alias (opus/sonnet/haiku);
+//       the opus and haiku sets match CLAUDE.md's "Model & effort tiering" paragraph;
+//       every opus agent pins effort: xhigh, no sonnet/haiku agent does.
 //
 // Deferred (local-only / future, kept out of CI to stay dependency-free): codegraph
 // symbol-resolution for dead doc pointers, and `Last updated:` vs git-mtime staleness.
@@ -289,6 +292,97 @@ function checkReferencedAgents() {
   }
 }
 
+// ── Check 10: model/effort tiering ↔ CLAUDE.md policy ────────────────────────
+// model: must be a bare alias (never a dated model ID) so it auto-tracks the current
+// family; the opus/haiku sets and the effort: xhigh pin must match the "Model & effort
+// tiering" paragraph in CLAUDE.md (single source — read as data, not duplicated here).
+function checkModelTiering() {
+  if (!exists(CLAUDE_MD)) return;
+  const policyLine = read(CLAUDE_MD)
+    .split('\n')
+    .find((l) => l.startsWith('**Model & effort tiering**'));
+  if (!policyLine)
+    return fail('Model tiering', CLAUDE_MD, 'no "Model & effort tiering" paragraph found');
+
+  const backticked = (re) => {
+    const m = policyLine.match(re);
+    return new Set(m ? [...m[1].matchAll(/`([^`]+)`/g)].map((g) => g[1]) : []);
+  };
+  const wantOpus = backticked(/Opus for last-line critics \(([^)]+)\)/);
+  const wantHaiku = backticked(/Haiku for ([^.]+)\./);
+
+  const unquote = (v) => v?.replace(/^['"]|['"]$/g, '');
+  const isDelim = (l) => /^---\s*$/.test(l);
+  const gotOpus = new Set();
+  const gotHaiku = new Set();
+  for (const name of agentNames()) {
+    const file = `${AGENTS_DIR}/${name}.md`;
+    const raw = read(file);
+    const lines = (raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw).split('\n');
+    const end = isDelim(lines[0]) ? lines.findIndex((l, i) => i > 0 && isDelim(l)) : -1;
+    const frontmatter = end === -1 ? '' : lines.slice(1, end).join('\n');
+    const model = unquote(frontmatter.match(/^model:\s*(\S+)/m)?.[1]);
+    const effort = unquote(frontmatter.match(/^effort:\s*(\S+)/m)?.[1]);
+
+    if (!['opus', 'sonnet', 'haiku'].includes(model)) {
+      fail(
+        'Model tiering',
+        file,
+        `model: '${model ?? '(missing)'}' is not a bare alias (opus|sonnet|haiku)`
+      );
+      continue;
+    }
+    if (model === 'opus') gotOpus.add(name);
+    if (model === 'haiku') gotHaiku.add(name);
+    if (model === 'opus' && effort !== 'xhigh')
+      fail('Model tiering', file, 'model: opus requires effort: xhigh');
+    if (model !== 'opus' && effort === 'xhigh')
+      fail('Model tiering', file, `model: ${model} must not set effort: xhigh (opus-only)`);
+  }
+
+  // A broken anchor (wording moved in CLAUDE.md) means an empty want-set, which would
+  // otherwise cascade into one confusing "not listed" failure per real agent below —
+  // fail once, intelligibly, and skip the reverse-check instead.
+  let anchorOk = true;
+  if (wantOpus.size === 0) {
+    fail(
+      'Model tiering',
+      CLAUDE_MD,
+      'could not locate the Opus-critic list in CLAUDE.md § Model & effort tiering — wording changed? update the anchor regex'
+    );
+    anchorOk = false;
+  }
+  if (wantHaiku.size === 0) {
+    fail(
+      'Model tiering',
+      CLAUDE_MD,
+      'could not locate the Haiku list in CLAUDE.md § Model & effort tiering — wording changed? update the anchor regex'
+    );
+    anchorOk = false;
+  }
+  if (!anchorOk) return;
+
+  for (const name of wantOpus)
+    if (!gotOpus.has(name))
+      fail('Model tiering', CLAUDE_MD, `'${name}' listed as an Opus critic but has no model: opus`);
+  for (const name of gotOpus)
+    if (!wantOpus.has(name))
+      fail(
+        'Model tiering',
+        CLAUDE_MD,
+        `'${name}' has model: opus but isn't listed as an Opus critic`
+      );
+  for (const name of wantHaiku)
+    if (!gotHaiku.has(name)) fail('Model tiering', CLAUDE_MD, `'${name}' expected model: haiku`);
+  for (const name of gotHaiku)
+    if (!wantHaiku.has(name))
+      fail(
+        'Model tiering',
+        CLAUDE_MD,
+        `'${name}' has model: haiku but isn't in the expected haiku set`
+      );
+}
+
 // ── Run ──────────────────────────────────────────────────────────────────────
 checkStaleTokens();
 checkAdrIndex();
@@ -299,10 +393,11 @@ checkExplainer();
 checkAiConfigs();
 checkRouteGlobs();
 checkReferencedAgents();
+checkModelTiering();
 
 if (failures.length === 0) {
   console.log(
-    '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs, route globs, referenced agents)'
+    '✓ agent system in sync (tokens, ADR index, routes, CLAUDE.md, pairs, explainer, AI configs, route globs, referenced agents, model tiering)'
   );
   process.exit(0);
 }
