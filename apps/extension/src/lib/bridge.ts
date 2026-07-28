@@ -696,6 +696,47 @@ export class BridgeClient {
    */
   private outdated = false;
   /**
+   * Whether THIS transport completed the v2 mutual handshake — i.e. the peer
+   * proved it knows the pairing token (its `serverProof` verified). The ONLY
+   * safe gate for a peer-initiated, state-destroying frame like
+   * `token.revoked`.
+   *
+   * Deliberately NOT any of the cheaper-looking signals:
+   * - `handshakeFrame` is a step-in-flight LATCH, not an auth check —
+   *   `awaitHandshakeFrame`'s `settle` nulls it the instant a step's frame is
+   *   consumed, so every frame arriving between steps (notably while
+   *   `computeProof` is awaited) sails past it. A port-squatter needs zero
+   *   token knowledge to send a syntactically-valid `challenge` and then walk
+   *   through that window.
+   * - `phase === 'connected'` is reached WITHOUT any handshake when no token is
+   *   stored (see `attach`), and is also live during the whole pre-`hello`
+   *   window (`attach` wires `onMessage` before it reads the stored token).
+   *
+   * Set only at the mutual-auth completion point; cleared on every fresh
+   * `attach` and on close, so it can never outlive the transport that earned it.
+   */
+  private authenticated = false;
+  /**
+   * Set between a `token.revoked` frame and the socket close that follows it.
+   * The desktop rotated its pairing secret (Settings → "Regenerate", or a
+   * factory reset), so the stored token is dead — retrying it would loop on the
+   * handshake's deliberately silent close (which
+   * {@link performHandshake} can only read as the recoverable
+   * `app_not_running`), leaving the popup stuck on "app not running" forever.
+   * Instead the close re-probes ONCE, unpaired: an attach with no token reports
+   * `connected`, which the background's `computeStatus` folds into
+   * `not_paired` — the pairing view.
+   */
+  private revoked = false;
+  /**
+   * Resolves once {@link onTokenRevoked} has settled, reporting whether the
+   * stored token was actually dropped. The close handler awaits it before
+   * re-probing so the reconnect can never race the now-dead token back onto
+   * the wire — and so a FAILED clear (storage error) is handled explicitly
+   * rather than silently degrading into a retry loop on the dead secret.
+   */
+  private revokeCleared: Promise<boolean> | null = null;
+  /**
    * Set while a v2 handshake is in flight. `handshakeFrame` receives every
    * incoming frame (so `performHandshake` can advance step by step);
    * `handshakeClosed` is invoked on socket close so a step resolves as `closed`.
@@ -708,7 +749,14 @@ export class BridgeClient {
   constructor(
     private readonly onPhaseChange: (status: BridgeStatus) => void,
     /** Optional: called on connect to retrieve the stored pairing token for the auth handshake. */
-    private readonly getStoredToken?: () => Promise<string | null>
+    private readonly getStoredToken?: () => Promise<string | null>,
+    /**
+     * Optional: called when the desktop sends `token.revoked` — it rotated the
+     * pairing secret, so the owner must DROP the stored token (the background
+     * un-pairs locally). Awaited before the post-revoke reconnect so the dead
+     * token is never handshaked again.
+     */
+    private readonly onTokenRevoked?: () => Promise<void> | void
   ) {}
 
   status(): BridgeStatus {
@@ -1448,10 +1496,24 @@ export class BridgeClient {
     this.backoffIndex = 0;
     this.authRejected = false;
     this.outdated = false;
+    // A fresh transport has proven nothing yet — including the no-token attach
+    // below, which reaches `connected` without ever running a handshake.
+    this.authenticated = false;
+    // Same discipline as the sibling latches above: a revoke belongs to the
+    // transport that received it. Leaving these set would let a PREVIOUS
+    // socket's revoke divert this connection's close into the re-probe branch
+    // (and leak a settled promise).
+    this.revoked = false;
+    this.revokeCleared = null;
 
     transport.onMessage((env) => this.onMessage(env));
     transport.onClose(() => {
       this.transport = null;
+      // The session dies with the socket. Not merely belt-and-braces with the
+      // `attach` reset: a late/queued frame can still be delivered on the dead
+      // transport's listener BEFORE any re-attach runs, and without this it
+      // would still be treated as authenticated.
+      this.authenticated = false;
       this.failAllPending('Connection to the desktop app closed.');
       // If a handshake is in flight, let it settle (it decides outdated /
       // bad_token / reconnect) — don't set a phase or reconnect from here.
@@ -1470,6 +1532,30 @@ export class BridgeClient {
       } else if (this.outdated) {
         // Desktop too old to speak v2 — recover on the next popup open / Retry.
         this.setPhase('outdated');
+      } else if (this.revoked) {
+        // The desktop revoked this pairing (it rotated the token) and closed
+        // the socket. No backoff loop with the dead secret: wait for it to be
+        // cleared, then re-probe ONCE. That attach finds no token, reports
+        // `connected`, and `computeStatus` folds "connected + no token" into
+        // `not_paired` — the popup's pairing view, which is exactly what the
+        // user has to act on.
+        this.revoked = false;
+        this.backoffIndex = 0;
+        this.setPhase('searching');
+        const cleared = this.revokeCleared ?? Promise.resolve(true);
+        this.revokeCleared = null;
+        void cleared.then((tokenCleared) => {
+          if (this.disposed) return;
+          if (!tokenCleared) {
+            // Storage refused to drop the token. Never reconnect with a secret
+            // we KNOW is revoked — surface `bad_token`, whose popup view is the
+            // re-pair prompt, instead of a silent retry loop.
+            this.authRejected = true;
+            this.setPhase('bad_token');
+            return;
+          }
+          void this.ensureConnected();
+        });
       } else {
         this.setPhase('app_not_running');
         this.scheduleReconnect();
@@ -1527,7 +1613,20 @@ export class BridgeClient {
     }
 
     // Step 3: prove we know the token (HMAC over the client role) → await auth.ok.
-    const clientProof = await computeProof(token, 'client', serverNonce, clientNonce);
+    // BOTH proofs are computed here, before the `auth` frame goes out, even
+    // though the server one is not needed until step 5. That is deliberate: it
+    // leaves ZERO `await` between receiving `auth.ok` and setting
+    // `authenticated` below. With the server proof computed lazily at step 5
+    // instead, that ~sub-ms crypto await sat exactly where a legitimate
+    // `token.revoked` can arrive — the desktop marks the socket authenticated
+    // when it sends `auth.ok`, so it may rotate and revoke immediately after —
+    // and the revoke would be DROPPED for being "unauthenticated", stranding
+    // the extension on a dead token. Frames are delivered as separate tasks, so
+    // a fully synchronous step 5 is guaranteed to run before the next one.
+    const [clientProof, expectedServerProof] = await Promise.all([
+      computeProof(token, 'client', serverNonce, clientNonce),
+      computeProof(token, 'server', serverNonce, clientNonce),
+    ]);
     if (!this.transport) {
       // Socket closed while we were computing the proof. AMBIGUOUS: the Rust
       // `Unauthorized` path closes WITHOUT a reply BY DESIGN (see
@@ -1556,16 +1655,36 @@ export class BridgeClient {
     }
 
     // Step 5: verify the desktop's serverProof CONSTANT-TIME before trusting it.
+    // Fully SYNCHRONOUS from here to the `authenticated` set — see the
+    // both-proofs-up-front note at step 3. Do not reintroduce an `await` in
+    // this stretch: it would reopen the window where a legitimate
+    // `token.revoked` is dropped as unauthenticated.
     const serverProof = readHexField(step2.env.payload, 'serverProof');
-    const expected = await computeProof(token, 'server', serverNonce, clientNonce);
-    if (!serverProof || !constantTimeHexEqual(serverProof, expected)) {
+    if (!serverProof || !constantTimeHexEqual(serverProof, expectedServerProof)) {
       // The peer cannot prove it knows the token (rogue/port-squatter). We have
       // sent NO PII (import/profile only happen after 'connected'); drop the
       // socket and surface bad_token.
       return this.finishHandshake('bad_token');
     }
 
-    // Mutual auth complete — the socket is authenticated.
+    // The verdict is only valid for the transport that EARNED it. The awaits
+    // EARLIER in this handshake yield, so the socket can close (or be replaced
+    // by a newer attach) at any of them — and `onClose` clears
+    // `authenticated`. Setting
+    // it here regardless would resurrect the flag on a transport that no longer
+    // exists (stale-true until the next attach), and `setPhase('connected')`
+    // would claim a live session over a null transport.
+    //
+    // Plain `return`, deliberately NOT `finishHandshake`: whatever ended this
+    // transport already set its own phase and armed its own reconnect, and
+    // `finishHandshake` would null + close `this.transport` — which, in the
+    // replaced case, is a DIFFERENT and perfectly healthy socket.
+    if (this.transport !== transport) return;
+
+    // Mutual auth complete — the socket is authenticated. This is the ONE place
+    // that may set `authenticated`: everything before it (including a peer that
+    // sent a well-formed `challenge`) has proven nothing about the token.
+    this.authenticated = true;
     this.handshakeFrame = null;
     this.handshakeClosed = null;
     this.setPhase('connected');
@@ -1630,6 +1749,24 @@ export class BridgeClient {
     // profile frames are expected before the socket is authenticated.
     if (this.handshakeFrame) {
       this.handshakeFrame(env);
+      return;
+    }
+
+    // token.revoked → the desktop rotated its pairing secret, so ours is dead.
+    // Unlike every other frame below this is not a reply: it correlates to no
+    // request and carries no payload, and acting on it DESTROYS the stored
+    // pairing credential — so it is honored ONLY from a session that completed
+    // the mutual handshake. The desktop already refuses to send it to an
+    // unauthenticated peer; this is the client-side half of the same rule, and
+    // it does not depend on the desktop being the one on the other end.
+    //
+    // Sits BELOW the handshake intercept on purpose: the two protections
+    // compose. The intercept routes frames away while a step is parked, and
+    // this flag covers the windows the intercept cannot see — between steps
+    // (`settle` nulls the latch before `computeProof` is awaited), before the
+    // first `hello`, and the no-token attach that never handshakes at all.
+    if (env.type === EXTENSION_MESSAGE_TYPES.tokenRevoked) {
+      if (this.authenticated) this.handleTokenRevoked();
       return;
     }
 
@@ -1771,6 +1908,29 @@ export class BridgeClient {
     if (src.error !== undefined) normalized.error = src.error;
     if (src.partial !== undefined) normalized.partial = src.partial;
     resolve(normalized);
+  }
+
+  /**
+   * Handle a `token.revoked` frame: drop the stored pairing token and arm the
+   * un-paired re-probe the close that follows will run (see `attach`'s
+   * `onClose`). We do NOT close the transport here — the desktop closes it
+   * immediately after this frame, and even if it somehow didn't, an open socket
+   * with no stored token already reports `not_paired`, which is the correct end
+   * state either way.
+   *
+   * Idempotent: a duplicate frame (or a second rotation racing the close) must
+   * not clear the token twice or arm two re-probes.
+   */
+  private handleTokenRevoked(): void {
+    if (this.revoked) return;
+    this.revoked = true;
+    // `false` = the owner could NOT drop the token (a storage error). The close
+    // handler turns that into `bad_token` rather than reconnecting: retrying a
+    // secret we know is dead is the exact forever-loop this frame exists to end.
+    this.revokeCleared = Promise.resolve(this.onTokenRevoked?.()).then(
+      () => true,
+      () => false
+    );
   }
 
   private failAllPending(reason: string): void {

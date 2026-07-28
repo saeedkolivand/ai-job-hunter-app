@@ -48,6 +48,26 @@ describe('Tag', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.getByText('keep')).toBeInTheDocument();
   });
+
+  it('closable: names the close button per tag so siblings are distinguishable', () => {
+    render(
+      <Tag closable closeLabel="Remove filter: rust">
+        rust
+      </Tag>
+    );
+    // Several closable tags in a row would otherwise all announce as "Close".
+    expect(screen.getByRole('button', { name: 'Remove filter: rust' })).toBeInTheDocument();
+  });
+
+  it('closable: pads the close button up to a ~24px target without shifting layout', () => {
+    render(<Tag closable>x</Tag>);
+    const close = screen.getByRole('button', { name: 'Close' });
+    // 11px glyph + p-1.5 (6px each side) ≈ 23.5px — WCAG 2.5.8. `p-1` measured
+    // only 19.5px. The negative margins cancel the padding so nothing moves.
+    expect(close.className).toContain('p-1.5');
+    expect(close.className).toContain('-m-1.5');
+    expect(close.className).toContain('-mr-2');
+  });
 });
 
 describe('Tag.CheckableTag', () => {

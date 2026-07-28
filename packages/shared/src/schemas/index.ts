@@ -311,6 +311,11 @@ export const AiGenerationSaveSchema = z.object({
       })
     )
     .default([]),
+  // The apply-by-email draft — merged onto the per-job record like the cover
+  // letter, so switching tabs (or restarting) no longer loses it. Two plain
+  // strings: the UI edits and copies subject and body independently.
+  emailSubject: z.string().default(''),
+  emailBody: z.string().default(''),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.

@@ -50,7 +50,7 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { GitHubRepo } from '@ajh/shared';
-import { detectLanguages } from '@ajh/shared/language-detection';
+import { detectLanguages, getLanguageName, toLanguageCode } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -619,6 +619,12 @@ export async function generateInterviewQuestions(params: {
   seedTopics?: string[];
   /** Target interviewers (canonical audience ids) — N questions per audience. */
   audiences?: string[];
+  /** Output language: a locale CODE ('de', 'es', …) when it came from the picker,
+   *  otherwise whatever the ad detection produced (a code outside the picker's
+   *  allowlist, or a language NAME). Overrides `meta.targetLanguage`, and
+   *  deliberately does NOT feed `resolveMarket` — the register stays that of the
+   *  job's country even when only the output language changes. */
+  language?: string;
   signal?: AbortSignal;
   onToken?: (tok: string) => void;
 }): Promise<string> {
@@ -630,6 +636,7 @@ export async function generateInterviewQuestions(params: {
     companyBrief = '',
     seedTopics = [],
     audiences = [],
+    language,
     signal,
     onToken,
   } = params;
@@ -638,8 +645,28 @@ export async function generateInterviewQuestions(params: {
     jobCountry: meta.jobCountry,
     targetLanguage: meta.targetLanguage,
   });
+  // The prompt wants a human language NAME, streamGenerate wants a locale code.
+  // An allowlisted picker code resolves to its English name; anything else (a
+  // detected language the picker doesn't offer, e.g. 'nl') goes through
+  // `getLanguageName` — 28 codes, degrading to the code itself.
+  //
+  // The ISO-639-1 SHAPE CHECK is defence-in-depth, not cosmetics: `language` can
+  // originate from a scraped ad (ad → extractMetadata → meta.targetLanguage →
+  // here), `getLanguageName` returns an unrecognised string verbatim, and the
+  // result lands in the prompt as an instruction OUTSIDE the untrusted-input
+  // fence. Anything that isn't code-shaped is dropped rather than echoed, which
+  // leaves the `meta`-derived note to run instead. Mirrors the same guard
+  // documented on `generateJobAdSummary` above. `nl`/`pl`/`pt-br` still pass.
+  const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
+  const isIsoCode = /^[a-z]{2}(-[a-z]{2})?$/i.test(language ?? '');
+  const languageName =
+    lang?.englishName ?? (language && isIsoCode ? getLanguageName(language) : undefined);
+  // The anti-AI-tell lexicon keys off the CODE, and a language can arrive as a
+  // NAME on extractMetadata's regex-fallback path — 'German'.slice(0, 2) is 'ge',
+  // which silently misses the curated German lexicon. Normalize once, here.
+  const languageCode = toLanguageCode(lang?.code ?? language ?? meta.targetLanguage ?? '');
 
-  const system = buildInterviewQuestionsSystemPrompt();
+  const system = buildInterviewQuestionsSystemPrompt(languageCode);
   const user = buildInterviewQuestionsPrompt({
     resume,
     jobAd,
@@ -649,6 +676,7 @@ export async function generateInterviewQuestions(params: {
     audiences,
     target: profile,
     market,
+    language: languageName,
   });
   // Interview questions are prose: keep the existing 0.5 temperature default,
   // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
@@ -659,7 +687,9 @@ export async function generateInterviewQuestions(params: {
     user,
     onToken ?? (() => {}),
     sampling.temperature,
-    meta.targetLanguage || 'en',
+    // Same code the lexicon uses; `streamGenerate` clamps it via `safeLocale`,
+    // so a language outside the supported set falls back to 'en' here only.
+    languageCode || 'en',
     signal,
     undefined,
     sampling
@@ -1096,11 +1126,19 @@ export async function generateApplicationEmail(params: {
     onToken,
   } = params;
   const profile = buildProviderProfile(model);
+  // Same market resolution as the cover letter (job country first, letter
+  // language as the fallback): the greeting and sign-off follow that market's
+  // etiquette instead of an English default.
+  const market = resolveMarket({
+    jobCountry: meta.jobCountry,
+    targetLanguage: meta.targetLanguage,
+  });
+  const tone = usePreferencesStore.getState().outputTone;
   // No external writing-style sample: the résumé is already in
   // <candidate_resume>, and the prompt builder's own voice directive points
   // there instead of duplicating it (see buildResumeVoiceDirective).
   const { system, user } = buildApplicationEmailPrompt(
-    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief },
+    { resume, jobAd, meta, recipientName, recipientEmail, companyBrief, market, tone },
     profile
   );
   // Application emails are prose: randomness + the shared detector-resistance

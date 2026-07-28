@@ -24,6 +24,7 @@ import {
   useResolveJobUrl,
   useUpdateApplication,
 } from '@/services';
+import { useSaveAiGeneration } from '@/services/use-ai-generations';
 
 import { extractRecipient } from '../../lib/extract-recipient';
 
@@ -69,7 +70,9 @@ function splitEmail(raw: string): { subject: string; body: string } {
  * to an employer contact. Recipient fields are prefilled from the job description
  * (heuristic extractor, user-editable) and persisted to the Application.
  * Generation streams through the shared AI pipeline; the user sends from their
- * own mail client via the mailto button.
+ * own mail client via the mailto button. The settled draft (and every accepted
+ * rewrite) is persisted onto the per-job aiGenerations aggregate, so it survives
+ * a tab switch and is rehydrated on the next mount.
  */
 export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const { t } = useTranslation();
@@ -81,6 +84,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const defaultResumeId = useDefaultResumeId();
   const resumeQuery = useDocumentText(defaultResumeId);
   const updateApplication = useUpdateApplication();
+  const saveGeneration = useSaveAiGeneration();
   const profile = useContactProfile();
 
   const saved = matchingGenerations[0];
@@ -142,10 +146,14 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const [streamText, setStreamText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // The draft is on screen but did NOT reach the store, so it will not survive a
+  // tab switch — say so instead of implying it was saved.
+  const [saveFailed, setSaveFailed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   // Mutable draft populated once generation completes, so a select-to-rewrite
   // result can be spliced back in. `null` while streaming / before the first
-  // generation — the live split from `streamText` is used then.
+  // generation of this mount — the live stream or the saved record is used then
+  // (see the `draft` derivation below).
   const [email, setEmail] = useState<{ subject: string; body: string } | null>(null);
 
   // Abort any in-flight stream on unmount to prevent quota burn on tab change,
@@ -159,14 +167,92 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     []
   );
 
-  // While streaming (or before the first generation) split the live stream; once
-  // generation settles, the editable `email` draft wins so rewrites persist.
+  // Three sources, in precedence order:
+  //  1. `email` — the editable draft, set once a generation settles (and after
+  //     every accepted rewrite), so edits win over everything below.
+  //  2. the live stream — while a generation is running this mount, so the
+  //     tokens (and, before the first token, an empty draft → skeleton) show
+  //     instead of the stale saved email.
+  //  3. the saved aggregate — hydrates the tab on mount, which is what makes the
+  //     draft survive a tab switch / restart.
   const live = splitEmail(streamText);
-  const subject = email?.subject ?? live.subject;
-  const body = email?.body ?? live.body;
-  const hasDraft = streamText.trim().length > 0;
+  const generatingThisMount = isGenerating || streamText.length > 0;
+  const draft =
+    email ??
+    (generatingThisMount
+      ? live
+      : { subject: saved?.emailSubject ?? '', body: saved?.emailBody ?? '' });
+  const { subject, body } = draft;
+  // A draft exists when either field has content — the saved-hydration case has
+  // no `streamText`, so this can no longer key off the stream.
+  const hasDraft = subject.trim().length > 0 || body.trim().length > 0;
   const canGenerate = canUse && !!model && !!resume && !!jobDesc && !isGenerating;
   const canRewrite = canUse && !!model;
+
+  /**
+   * Persist the draft onto the per-job aiGenerations aggregate (a merge-upsert
+   * keyed on the normalized `jobUrl`, so it lands on the SAME row the tailor
+   * flow / interview questions write to). Fire-and-forget: the draft is already
+   * on screen, and the mutation invalidates the generations query on success so
+   * a remount rehydrates from the store.
+   *
+   * Side effect (inherited from `ai_generations_save`, ADR-0001): the save also
+   * upserts the parent Application with a Generate origin, which advances a
+   * still-`saved` Application to `applied`. It never demotes a later stage.
+   *
+   * This surface owns ONLY the two email fields. Every other field is echoed
+   * from the saved record, and a blank makes the backend `pick` merge keep the
+   * stored value. Nothing is sourced from `meta` here: its fallbacks (the
+   * contact profile's name, the Application's title/company, `en`/`en`, no
+   * mismatch, `ats`) are placeholders rather than measurements, so sending them
+   * would clobber real stored values whenever `saved` is undefined while a row
+   * exists — a detach-then-re-track leaves exactly that orphaned FK. The
+   * language pair would additionally make the merge treat this as a
+   * language-bearing save and clear a genuine mismatch verdict.
+   */
+  const persistDraft = (next: { subject: string; body: string }) => {
+    // A URL-less Application cannot be saved onto. `ai_generations_save` keys
+    // BOTH the parent-Application upsert and the generation merge on the job
+    // url, and both treat '' as "no match" — so each save would mint a fresh
+    // `applied` Application (sorted to the top of the list) plus a generation
+    // row whose FK points at that phantom, which `matchingGenerations` (an FK
+    // join) can never surface. The draft would still be lost on a tab switch,
+    // now with duplicate applications as a parting gift. Staying session-only
+    // for these is strictly better until the save can be keyed on the id.
+    if (!application.jobUrl.trim()) return;
+    if (!next.subject.trim() && !next.body.trim()) return;
+    setSaveFailed(false);
+    saveGeneration.mutate(
+      {
+        candidateName: saved?.candidateName ?? '',
+        jobTitle: saved?.jobTitle ?? '',
+        companyName: saved?.companyName ?? '',
+        resumeLanguage: saved?.resumeLanguage ?? '',
+        jobAdLanguage: saved?.jobAdLanguage ?? '',
+        targetLanguage: saved?.targetLanguage ?? '',
+        mismatch: saved?.mismatch ?? false,
+        topRequirements: saved?.topRequirements ?? [],
+        mode: saved?.mode ?? '',
+        // Blank so the merge keeps whatever the tailor flow stored — this
+        // surface owns only the email fields.
+        resumeText: '',
+        coverLetterText: '',
+        jobAd: jobDesc,
+        jobUrl: application.jobUrl,
+        board: application.board ?? '',
+        emailSubject: next.subject,
+        emailBody: next.body,
+      },
+      {
+        // The command reports failure IN-BAND (`{ error }`) rather than
+        // rejecting, so onError never fires for a store failure — mirror
+        // `persistEmail` below and inspect the payload, or the UI would show a
+        // draft it silently failed to persist.
+        onSuccess: (data) => setSaveFailed('error' in data),
+        onError: () => setSaveFailed(true),
+      }
+    );
+  };
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -176,6 +262,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     setStreamText('');
     setEmail(null);
     setGenError(null);
+    setSaveFailed(false);
     try {
       const full = await generateApplicationEmail({
         resume,
@@ -189,9 +276,17 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         onToken: (tok) => setStreamText((prev) => prev + tok),
       });
       // Freeze the final draft into editable state so rewrites can splice into it.
-      setEmail(splitEmail(full));
+      const settled = splitEmail(full);
+      setEmail(settled);
+      persistDraft(settled);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
+      // Drop the truncated stream. Leaving it non-empty pins `generatingThisMount`
+      // true for the rest of the mount, so the draft derivation never falls back
+      // to the saved record: the persisted email would stay masked behind a
+      // half-written fragment — with Copy and mailto acting on that fragment —
+      // until the tab was remounted.
+      setStreamText('');
       setGenError(t('applications.detail.email.genError'));
     } finally {
       setIsGenerating(false);
@@ -202,10 +297,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Body-only copy — the subject has its own copy button (see handleCopySubject),
+  // so re-prepending "Subject: …" here would force the user to strip it back out
+  // before pasting into a mail client's body field.
   const handleCopy = () => {
-    const full = subject ? `Subject: ${subject}\n\n${body}` : body;
     void navigator.clipboard
-      .writeText(full)
+      .writeText(body)
       .then(() => {
         setCopied(true);
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -264,15 +361,18 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     trigger?.focus();
   };
 
-  // Splice the accepted replacement back into the frozen snapshot and commit it to
-  // the editable draft. Local-only (the draft isn't persisted to the Application),
-  // so there's no save/rollback to coordinate — unlike the answers surface.
+  // Splice the accepted replacement back into the frozen snapshot, commit it to
+  // the editable draft, and persist the result so the edit survives a tab switch.
+  // Splicing into `draft` (not `email`) also covers a rewrite of a draft that was
+  // hydrated from the store and never re-generated, where `email` is still null.
   const acceptRewrite = (replacement: string) => {
     if (!frozen) return;
     const { field, start, end, snapshot } = frozen;
-    const next = snapshot.slice(0, start) + replacement + snapshot.slice(end);
+    const spliced = snapshot.slice(0, start) + replacement + snapshot.slice(end);
+    const next = { ...draft, [field]: spliced };
     setFrozen(null);
-    setEmail((prev) => ({ ...(prev ?? live), [field]: next }));
+    setEmail(next);
+    persistDraft(next);
   };
 
   const mailtoHref =
@@ -437,6 +537,15 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         {genError && (
           <p className="text-fine-print text-red-400" role="alert">
             {genError}
+          </p>
+        )}
+
+        {/* role="alert" (not "status"): this is a data-loss warning, and it
+            matches the genError/emailError siblings. The weaker "status" also
+            conflicted with the ancestor aria-live region's aria-atomic. */}
+        {saveFailed && (
+          <p className="text-fine-print text-amber-400/80" role="alert">
+            {t('applications.detail.email.saveFailed')}
           </p>
         )}
 

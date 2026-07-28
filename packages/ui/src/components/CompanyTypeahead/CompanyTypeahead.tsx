@@ -178,6 +178,11 @@ export function CompanyTypeahead({
       if (active) commit(active.slug);
       else if (query.trim()) commit(query);
     } else if (e.key === 'Escape') {
+      // Innermost-layer-wins: only an OPEN suggestion panel consumes Escape, so
+      // it can't also reach an ancestor dialog/drawer (listening on `window`)
+      // and close the whole surface. With the panel already closed, Escape
+      // falls through to that ancestor, as it should.
+      if (open) e.stopPropagation();
       setOpen(false);
       setActiveIndex(-1);
     } else if (e.key === 'Backspace' && query === '' && selected.length > 0) {

@@ -803,6 +803,15 @@ pub fn run() {
             // upgrade. Best-effort; never blocks boot.
             extension_bridge::register::register_native_host(&data_dir);
 
+            // Build the bundled offline geocoding index now, off the hot path.
+            // It is 60-250 ms of pure CPU; left lazy it lands on whichever
+            // command worker touches it first, including the one inside
+            // `derive_country_code`'s `tokio::time::timeout` — which cannot
+            // interrupt synchronous work, so that 2 s cap would silently not
+            // apply. `spawn_blocking` (not `spawn`) because this is CPU-bound,
+            // and via `tauri::async_runtime` so it uses the app's runtime.
+            tauri::async_runtime::spawn_blocking(commands::geocoding::warm_index);
+
             // Watch the OS accent color (Windows): on a personalization accent
             // change, emit `system:accentChanged` so the renderer re-pulls the
             // color and re-applies the theme live. The watcher parks its WinRT

@@ -568,7 +568,8 @@
       "pitch": "Wenn diese App dir einige Nächte erspart hat, kannst du etwas zurückgeben — jeder Beitrag hilft.",
       "githubSponsors": "Auf GitHub sponsern",
       "kofi": "Einen Kaffee auf Ko-fi spendieren",
-      "paypal": "Trinkgeld via PayPal senden"
+      "paypal": "Trinkgeld via PayPal senden",
+      "dataAttribution": "Ortsdaten © GeoNames (geonames.org), CC BY 4.0. Online-Ortsvorschläge über Photon (komoot) — © OpenStreetMap-Mitwirkende, ODbL."
     },
     "profile": {
       "title": "Profil",
@@ -866,7 +867,7 @@
       "resetAppDescription": "Alle Daten und Einstellungen löschen. Kehrt zum Willkommensbildschirm zurück.",
       "reset": "Zurücksetzen",
       "resetAppConfirmTitle": "App auf Werkseinstellungen zurücksetzen",
-      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
+      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Jeder gekoppelte Browser wird getrennt, Sie müssen die Erweiterung also erneut koppeln. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
       "resetAppConfirm": "Alles zurücksetzen",
       "resetAppPartial": "App zurückgesetzt, aber einige Board-Anmeldesitzungen konnten nicht vollständig gelöscht werden.",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",
@@ -1600,6 +1601,7 @@
       "validation": {
         "missingFields": "Bitte fülle alle erforderlichen Felder aus (Name, Board und Suchanfrage).",
         "nameRequired": "Geben Sie dieser Suche einen Namen.",
+        "pagesRange": "Geben Sie eine ganze Seitenzahl zwischen 1 und 10 ein.",
         "queryRequired": "Geben Sie eine Suchanfrage ein."
       },
       "target": {
@@ -1615,7 +1617,8 @@
         "locationPlaceholder": "z.B. Berlin, remote",
         "fromLocationSettings": "aus Standortseinstellungen",
         "countryResolved": "Land: {{country}}",
-        "items": "Zu scrapende Einträge",
+        "pages": "Zu scrapende Seiten",
+        "pagesHint": "pro Board — tatsächliche Ergebnisse variieren",
         "postedWithin": "Veröffentlicht innerhalb",
         "anyTime": "Jederzeit",
         "last24h": "Letzte 24h",
@@ -1744,9 +1747,7 @@
     }
   },
   "jobs": {
-    "eyebrow": "Live-Anzeigen",
     "title": "Jobbörse",
-    "subtitle": "Gescrapte Job-Anzeigen von Ihren konfigurierten Boards. Filtern, öffnen und Bewerbung anpassen.",
     "searchPlaceholder": "Nach Titel, Unternehmen, Ort filtern…",
     "empty": "Noch keine Anzeigen. Starten Sie einen Scrape, um dieses Board zu füllen.",
     "emptyCta": "Jobs suchen",
@@ -1799,7 +1800,9 @@
         "propose": "Nächster Schritt wird vorgeschlagen"
       },
       "proposalTitle": "Vorgeschlagener nächster Schritt",
-      "proposalHint": "Momentan nur zur Anzeige — es wird nichts automatisch übernommen.",
+      "proposalHint": "Es wird nichts automatisch abgeschickt oder übernommen. Alles, was du während des Laufs genehmigt hast, ist in dieser Bewerbung gespeichert.",
+      "viewApplication": "Bewerbung ansehen",
+      "viewApplicationError": "Die Bewerbung konnte nicht geöffnet werden. Bitte erneut versuchen.",
       "stopped": {
         "done": "Abgeschlossen",
         "truncated": "Vorzeitig gestoppt — Ausgabe wurde gekürzt",
@@ -1836,7 +1839,7 @@
     "scrapeFailed": "Scraping fehlgeschlagen",
     "searching": "Suche nach Jobs…",
     "scanning": "Boards werden durchsucht…",
-    "scanningPercent": "Wird durchsucht: {{percent}} %",
+    "scanningPercent": "Wird durchsucht: {{percent}} %",
     "cancel": "Abbrechen",
     "clear": "Löschen",
     "clearScrapedJobs": "Gescrapte Jobs löschen",
@@ -1903,6 +1906,7 @@
       "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
+      "jobicy": "Jobicy",
       "arbeitnow": "Arbeit Now",
       "themuse": "The Muse",
       "wwr": "WWR",
@@ -1962,7 +1966,9 @@
         "slugsInvalid_one": "{{count}} Firmenname ungültig",
         "slugsInvalid_other": "{{count}} Firmennamen ungültig",
         "rowsDropped_one": "{{count}} Zeile unlesbar — Board-Format eventuell geändert",
-        "rowsDropped_other": "{{count}} Zeilen unlesbar — Board-Format eventuell geändert"
+        "rowsDropped_other": "{{count}} Zeilen unlesbar — Board-Format eventuell geändert",
+        "companiesFailed_one": "{{count}} Firma konnte nicht abgerufen werden",
+        "companiesFailed_other": "{{count}} Firmen konnten nicht abgerufen werden"
       }
     },
     "viewList": "Liste",
@@ -1972,7 +1978,16 @@
     "selectAJob": "Job auswählen, um Details anzuzeigen",
     "agencyChip": "Personalvermittler",
     "filters": {
-      "hideAgency": "Vermittleranzeigen ausblenden"
+      "hideAgency": "Vermittleranzeigen ausblenden",
+      "activeLabel": "Aktive Filter",
+      "searchChip": "Suche: {{query}}",
+      "remove": "Filter entfernen: {{name}}"
+    },
+    "commandBar": {
+      "label": "Jobbörsen-Steuerung",
+      "shownCount": "{{shown}} von {{total}} Jobs angezeigt",
+      "statusRow": "Status des letzten Scrapings",
+      "filterLabel": "Jobs filtern"
     },
     "cluster": {
       "alsoOn": "Auch auf",
@@ -2579,13 +2594,14 @@
         "regenerate": "Neu generieren",
         "generating": "Generiere…",
         "genError": "Generierung fehlgeschlagen – bitte erneut versuchen.",
+        "saveFailed": "Dieser Entwurf konnte nicht gespeichert werden und geht beim Verlassen des Tabs verloren. Kopiere ihn oder generiere ihn erneut.",
         "empty": "Noch keine Bewerbungs-E-Mail",
         "emptyDesc": "Generiere eine kurze, professionelle E-Mail, die du direkt an den Ansprechpartner senden kannst.",
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um eine E-Mail zu generieren.",
         "needsJob": "Für die E-Mail-Generierung wird eine Stellenbeschreibung benötigt.",
         "subjectLabel": "Betreff",
         "bodyLabel": "Inhalt",
-        "copy": "Kopieren",
+        "copy": "Inhalt kopieren",
         "copied": "Kopiert!",
         "copySubject": "Betreff kopieren",
         "rewrite": "Mit KI umschreiben",
@@ -2628,6 +2644,8 @@
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
         "audienceLabel": "Fragen generieren für",
+        "languageLabel": "Sprache der Fragen",
+        "languageAuto": "Sprache der Stellenanzeige",
         "audience": {
           "recruiter": "Recruiter / HR (1. Runde)",
           "hiringManager": "Hiring Manager",

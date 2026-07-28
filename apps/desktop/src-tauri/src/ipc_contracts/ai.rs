@@ -83,6 +83,10 @@ pub struct AiGenerationSaveRequest {
     pub company_brief: String,
     #[serde(default = "default_ai_generation_save_request_interview_questions")]
     pub interview_questions: Vec<AiGenerationSaveRequestInterviewQuestion>,
+    #[serde(default = "default_ai_generation_save_request_email_subject")]
+    pub email_subject: String,
+    #[serde(default = "default_ai_generation_save_request_email_body")]
+    pub email_body: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -190,6 +194,14 @@ fn default_ai_generation_save_request_company_brief() -> String {
 fn default_ai_generation_save_request_interview_questions(
 ) -> Vec<AiGenerationSaveRequestInterviewQuestion> {
     Vec::new()
+}
+
+fn default_ai_generation_save_request_email_subject() -> String {
+    "".to_string()
+}
+
+fn default_ai_generation_save_request_email_body() -> String {
+    "".to_string()
 }
 
 fn default_ai_generation_save_request_application_answer_id() -> String {

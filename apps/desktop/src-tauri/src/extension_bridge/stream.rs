@@ -199,6 +199,19 @@ pub(super) enum NextStep<T> {
     /// rather than keep waiting for a next inbound frame that may never
     /// arrive.
     WriterEnded,
+    /// The pairing token was rotated (Settings → "Regenerate", or a factory
+    /// reset) while this connection was live — see
+    /// [`super::BridgeState::regenerate_token`]. Every socket that existed at
+    /// rotation time gets this; the caller tells an AUTHENTICATED one
+    /// `token.revoked` (never an unauthenticated one — that would be a token
+    /// oracle) and tears the connection down either way.
+    Revoked,
+    /// The revocation channel closed — its sender was dropped (app shutdown, or
+    /// a refactor that stops holding `BridgeState`'s `revoke_tx`). Distinct from
+    /// [`NextStep::Revoked`] ON PURPOSE: the caller tears this connection down
+    /// but sends NO `token.revoked`, so a channel-lifecycle change can never
+    /// unpair every paired browser at once.
+    RevokeWatchLost,
 }
 
 /// The exact `tokio::select!` race `handle_connection`'s read loop runs every
@@ -221,14 +234,40 @@ pub(super) enum NextStep<T> {
 /// and `tokio::task::JoinHandle` both are — `tokio::select!` may drop either
 /// branch on any iteration without losing a frame or a writer-task
 /// completion), so re-entering this fresh every loop iteration is safe.
-pub(super) async fn next_step<R, W>(reader_next: R, writer_done: W) -> NextStep<R::Output>
+///
+/// `revoked` (in production, this connection's
+/// [`super::BridgeState::subscribe_revoke`] receiver) is the third arm: a token
+/// rotation must reach a QUIET connection immediately — the whole point of the
+/// revoke is that the paired browser learns to re-pair, and an idle socket
+/// sends nothing that would otherwise wake this loop. `broadcast::Receiver::recv`
+/// is cancel-safe like the other two.
+pub(super) async fn next_step<R, W, V>(
+    reader_next: R,
+    writer_done: W,
+    revoked: V,
+) -> NextStep<R::Output>
 where
     R: std::future::Future,
     W: std::future::Future,
+    V: std::future::Future<Output = Result<(), tokio::sync::broadcast::error::RecvError>>,
 {
+    use tokio::sync::broadcast::error::RecvError;
     tokio::select! {
         frame = reader_next => NextStep::Frame(frame),
         _ = writer_done => NextStep::WriterEnded,
+        signal = revoked => match signal {
+            // A rotation happened. `Lagged` means we missed one or more while
+            // this connection was busy — still "your pairing is gone", so it
+            // gets the SAME treatment (never a silent skip).
+            Ok(()) | Err(RecvError::Lagged(_)) => NextStep::Revoked,
+            // The sender is gone (shutdown, or a refactor that drops
+            // `BridgeState`'s `revoke_tx`). This is emphatically NOT a
+            // revocation: mapping it to `Revoked` would tell EVERY paired
+            // browser its token died and mass-unpair the install on a channel
+            // bookkeeping change. Tear this connection down without ever
+            // sending the frame.
+            Err(RecvError::Closed) => NextStep::RevokeWatchLost,
+        },
     }
 }
 
@@ -807,11 +846,75 @@ mod tests {
         let reader_next = std::future::pending::<Option<i32>>();
         let writer_done = std::future::ready(());
 
-        let outcome = next_step(reader_next, writer_done).await;
+        let outcome = next_step(reader_next, writer_done, never_revoked()).await;
 
         assert!(
             matches!(outcome, NextStep::WriterEnded),
             "the writer ending must win the race even though the reader never resolves"
+        );
+    }
+
+    /// A revoke receiver that never fires — the shape of a healthy connection
+    /// whose pairing token is not being rotated.
+    fn never_revoked() -> std::future::Pending<Result<(), tokio::sync::broadcast::error::RecvError>>
+    {
+        std::future::pending()
+    }
+
+    #[tokio::test]
+    async fn next_step_reports_revoked_on_a_quiet_connection() {
+        // A token rotation must reach an IDLE, healthy connection at once — a
+        // paired browser that sends nothing (the normal state between clicks)
+        // would otherwise never learn its pairing died. Both other arms here
+        // never resolve, so this test completing at all is the proof.
+        let reader_next = std::future::pending::<Option<i32>>();
+        let writer_done = std::future::pending::<()>();
+
+        let outcome = next_step(reader_next, writer_done, std::future::ready(Ok(()))).await;
+
+        assert!(
+            matches!(outcome, NextStep::Revoked),
+            "a revoke must win against a quiet reader and a healthy writer"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_step_treats_a_lagged_receiver_as_a_revoke() {
+        // A connection busy in a long dispatch await can miss the ring slot. A
+        // `Lagged` receiver still means "a rotation happened while you weren't
+        // looking" — silently skipping it would strand exactly the socket that
+        // was too busy to notice its pairing died.
+        use tokio::sync::broadcast::error::RecvError;
+        let outcome = next_step(
+            std::future::pending::<Option<i32>>(),
+            std::future::pending::<()>(),
+            std::future::ready(Err(RecvError::Lagged(3))),
+        )
+        .await;
+
+        assert!(
+            matches!(outcome, NextStep::Revoked),
+            "a missed (lagged) rotation signal must revoke, never be skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn next_step_never_revokes_when_the_channel_merely_closed() {
+        // THE regression guard: a closed channel (app shutdown, or a refactor
+        // that stops holding `revoke_tx`) is NOT a revocation. Mapping it to
+        // `Revoked` would send `token.revoked` to every paired browser at once
+        // and mass-unpair the install on a channel-lifecycle change.
+        use tokio::sync::broadcast::error::RecvError;
+        let outcome = next_step(
+            std::future::pending::<Option<i32>>(),
+            std::future::pending::<()>(),
+            std::future::ready(Err(RecvError::Closed)),
+        )
+        .await;
+
+        assert!(
+            matches!(outcome, NextStep::RevokeWatchLost),
+            "a closed revoke channel must tear down WITHOUT revoking the pairing"
         );
     }
 
@@ -824,7 +927,7 @@ mod tests {
         let reader_next = std::future::ready(Some(7));
         let writer_done = std::future::pending::<()>();
 
-        let outcome = next_step(reader_next, writer_done).await;
+        let outcome = next_step(reader_next, writer_done, never_revoked()).await;
 
         let NextStep::Frame(value) = outcome else {
             panic!("expected NextStep::Frame — the writer must never win while a frame is ready");

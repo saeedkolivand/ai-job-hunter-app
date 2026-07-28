@@ -265,6 +265,48 @@ fn save_then_generate_merges_into_one_application() {
     assert_eq!(app.company, "Acme");
 }
 
+/// Documents WHY `ApplyByEmailTab::persistDraft` refuses to save for a URL-less
+/// Application. `row_by_job_url_conn` returns `None` unconditionally for an
+/// empty url, so `upsert_for_origin` can never merge and mints a BRAND-NEW
+/// `applied` Application on every call. Any renderer surface that saves
+/// per-keystroke/per-action for a URL-less job therefore forks a duplicate
+/// application each time — the guard in the email tab is what prevents that.
+#[test]
+fn upsert_for_origin_forks_a_new_application_for_every_empty_url_save() {
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+
+    let first = store
+        .upsert_for_origin(
+            "",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+    let second = store
+        .upsert_for_origin(
+            "",
+            "linkedin",
+            &meta("Acme", "Engineer"),
+            ApplicationOrigin::Generate,
+            None,
+        )
+        .unwrap();
+
+    assert_ne!(
+        first, second,
+        "an empty url can never match an existing row, so each save mints a new id"
+    );
+    let all = store.list();
+    assert_eq!(all.len(), 2, "two phantom Applications, not one merged row");
+    assert!(
+        all.iter().all(|a| a.status == ApplicationStatus::Applied),
+        "each phantom is created already `applied`, so it sorts to the top of the list"
+    );
+}
+
 #[test]
 fn applied_job_urls_excludes_saved() {
     let dir = TempDir::new().unwrap();
@@ -992,6 +1034,8 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         application_answers: vec![],
         company_brief: String::new(),
         interview_questions: vec![],
+        email_subject: String::new(),
+        email_body: String::new(),
         application_id: None,
     };
     gen_store.save_application(rec1).unwrap();
@@ -1026,6 +1070,8 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         application_answers: vec![],
         company_brief: String::new(),
         interview_questions: vec![],
+        email_subject: String::new(),
+        email_body: String::new(),
         application_id: None,
     };
     // AiGenerationStore::save_application merges same-url into one gen row.

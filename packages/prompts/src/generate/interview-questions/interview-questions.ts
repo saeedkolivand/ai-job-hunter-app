@@ -20,7 +20,7 @@ import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import { buildCompanyResearchBlock, buildJobAdBlock } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { antiAiTellProse, HUMANIZE_PROSE } from '../natural-voice/index.js';
+import { antiAiTellProse, HUMANIZE_PROSE, languageDisplayName } from '../natural-voice/index.js';
 
 /** Default number of suggested questions when no audiences are targeted (legacy path). */
 export const INTERVIEW_QUESTIONS_COUNT = 6;
@@ -59,8 +59,14 @@ const AUDIENCE_FOCUS: Record<InterviewAudience, string> = {
 /** The per-item delimited markers the model must emit and the client parses. */
 export const INTERVIEW_QUESTION_MARKERS = { question: 'Q:', why: 'WHY:', audience: 'AUDIENCE:' };
 
-/** System prompt — the quality bar for questions that land positively. */
-export function buildInterviewQuestionsSystemPrompt(): string {
+/**
+ * System prompt — the quality bar for questions that land positively.
+ * `language` (ISO-639-1, e.g. the picked output language or `meta.targetLanguage`)
+ * selects the anti-AI-tell ruleset (see {@link antiAiTellProse}); defaults to
+ * English. Without it, questions written in German were still policed by the
+ * English tell-list.
+ */
+export function buildInterviewQuestionsSystemPrompt(language?: string): string {
   return `You are helping a job candidate prepare SHARP questions to ASK their interviewer.
 
 GOAL: questions that leave a strong positive impression — each one signals genuine interest, real research, and seniority, and opens a substantive conversation.
@@ -79,7 +85,7 @@ Q: <the question, a single sentence>
 WHY: <one short line: what asking it signals / why it lands>
 AUDIENCE: <recruiter | hiringManager | team | leadership | general>
 
-${antiAiTellProse()}
+${antiAiTellProse(language)}
 ${HUMANIZE_PROSE}`;
 }
 
@@ -106,6 +112,10 @@ export function buildInterviewQuestionsPrompt(params: {
   target?: PromptTarget;
   /** Resolved job-market id (see `resolveMarket`) — drives register. */
   market?: string;
+  /** Explicit output-language NAME ('German', 'Spanish', …) the user picked. When
+   *  set it overrides the `meta`-derived language instruction; `market` is
+   *  unaffected, so the register stays that of the job's country. */
+  language?: string;
 }): string {
   const {
     resume,
@@ -118,6 +128,7 @@ export function buildInterviewQuestionsPrompt(params: {
     count = INTERVIEW_QUESTIONS_COUNT,
     target = 'large',
     market = 'intl',
+    language,
   } = params;
 
   // Keep only canonical audience ids, in their canonical display order.
@@ -132,9 +143,18 @@ export function buildInterviewQuestionsPrompt(params: {
     : '';
 
   const conv = letterConventions(market);
-  const langNote = meta.mismatch
-    ? `Write the questions entirely in ${meta.targetLanguage}, using natural phrasing for that market.`
-    : `Write the questions in ${meta.targetLanguage || 'en'}.`;
+  // Every branch renders a language NAME, never a bare ISO code: "Write the
+  // questions in de." is a weaker directive than "…in German." (and models do
+  // occasionally echo the code back). `languageDisplayName` passes a value that is
+  // already a name through unchanged, so it is safe on either form.
+  const metaLanguage = languageDisplayName(meta.targetLanguage || 'en');
+  // An explicit `language` is a deliberate user choice, so it wins over the
+  // `meta.mismatch` proxy (which only guesses that the ad and résumé disagree).
+  const langNote = language
+    ? `Write the questions entirely in ${language}, using natural phrasing for that market.`
+    : meta.mismatch
+      ? `Write the questions entirely in ${metaLanguage}, using natural phrasing for that market.`
+      : `Write the questions in ${metaLanguage}.`;
   const marketNote = `Market: ${conv.country}. Register: ${conv.formality}. Match this market's professional conventions.`;
 
   // Audience-targeted mode (N per interviewer, each tuned to its lens) vs the

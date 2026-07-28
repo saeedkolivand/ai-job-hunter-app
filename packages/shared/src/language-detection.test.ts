@@ -5,6 +5,7 @@ import {
   detectLanguages,
   getLanguageName,
   isCjkLanguage,
+  toLanguageCode,
 } from './language-detection';
 
 // Reasonably long samples — franc needs ~enough text to be confident.
@@ -116,5 +117,30 @@ describe('detectLanguages', () => {
     const result = detectLanguages(ENGLISH, 'too short');
     expect(result.jobAd).toBe('unknown');
     expect(result.mismatch).toBe(false);
+  });
+});
+
+describe('toLanguageCode', () => {
+  it('resolves an English language NAME to its ISO code', () => {
+    expect(toLanguageCode('German')).toBe('de');
+    expect(toLanguageCode('Dutch')).toBe('nl');
+  });
+
+  it('is case-insensitive and trims surrounding whitespace', () => {
+    expect(toLanguageCode('  gErMaN  ')).toBe('de');
+  });
+
+  it('passes a code through, lower-cased', () => {
+    expect(toLanguageCode('de')).toBe('de');
+    expect(toLanguageCode('DE')).toBe('de');
+  });
+
+  it('returns an unrecognised value unchanged (trimmed) rather than guessing', () => {
+    expect(toLanguageCode(' Klingon ')).toBe('Klingon');
+    expect(toLanguageCode('')).toBe('');
+  });
+
+  it('round-trips with getLanguageName', () => {
+    expect(toLanguageCode(getLanguageName('cs'))).toBe('cs');
   });
 });

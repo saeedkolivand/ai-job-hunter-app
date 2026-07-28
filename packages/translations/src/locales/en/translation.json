@@ -568,7 +568,8 @@
       "pitch": "If this app saved you some 3am despair, you can chip in — any amount helps keep it going.",
       "githubSponsors": "Sponsor on GitHub",
       "kofi": "Buy a coffee on Ko-fi",
-      "paypal": "Send a tip via PayPal"
+      "paypal": "Send a tip via PayPal",
+      "dataAttribution": "Location data © GeoNames (geonames.org), CC BY 4.0. Online location suggestions via Photon (komoot) — © OpenStreetMap contributors, ODbL."
     },
     "profile": {
       "title": "Profile",
@@ -866,7 +867,7 @@
       "resetAppDescription": "Wipe all data and preferences. Returns to the welcome screen.",
       "reset": "Reset",
       "resetAppConfirmTitle": "Reset App to Factory Defaults",
-      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. You will be taken back to the welcome screen. This cannot be undone.",
+      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. Any paired browser is disconnected, so you will need to pair the extension again. You will be taken back to the welcome screen. This cannot be undone.",
       "resetAppConfirm": "Reset Everything",
       "resetAppPartial": "App reset, but some board login sessions couldn't be fully cleared.",
       "somethingWentWrong": "Something went wrong.",
@@ -1596,6 +1597,7 @@
       "validation": {
         "missingFields": "Please fill in all required fields (Name, Board, and Search Query).",
         "nameRequired": "Give this search a name.",
+        "pagesRange": "Enter a whole number of pages between 1 and 10.",
         "queryRequired": "Enter a search query."
       },
       "target": {
@@ -1611,7 +1613,8 @@
         "locationPlaceholder": "e.g. Berlin, remote",
         "fromLocationSettings": "from location settings",
         "countryResolved": "Country: {{country}}",
-        "items": "Items to scrape",
+        "pages": "Pages to scrape",
+        "pagesHint": "per board — actual results vary",
         "postedWithin": "Posted within",
         "anyTime": "Any time",
         "last24h": "Last 24h",
@@ -1740,9 +1743,7 @@
     }
   },
   "jobs": {
-    "eyebrow": "Live postings",
     "title": "Job board",
-    "subtitle": "Scraped job postings from your configured boards. Filter, open a posting, and tailor your application.",
     "searchPlaceholder": "Filter by title, company, location…",
     "empty": "No postings yet. Start a scrape to populate this board.",
     "emptyCta": "Search jobs",
@@ -1795,7 +1796,9 @@
         "propose": "Proposing next step"
       },
       "proposalTitle": "Proposed next step",
-      "proposalHint": "Display-only for now — nothing is applied automatically.",
+      "proposalHint": "Nothing is submitted or applied automatically. Anything you approved during the run is saved on this application.",
+      "viewApplication": "View application",
+      "viewApplicationError": "Couldn't open the application. Please try again.",
       "stopped": {
         "done": "Completed",
         "truncated": "Stopped early — output was truncated",
@@ -1828,7 +1831,7 @@
         }
       }
     },
-    "scrapeJobs": "Scrape Jobs",
+    "scrapeJobs": "Scrape jobs",
     "scrapeFailed": "Scraping failed",
     "searching": "Searching for jobs…",
     "scanning": "Scanning boards…",
@@ -1899,6 +1902,7 @@
       "comeet": "Comeet",
       "remoteok": "RemoteOK",
       "remotive": "Remotive",
+      "jobicy": "Jobicy",
       "arbeitnow": "Arbeit Now",
       "themuse": "The Muse",
       "wwr": "WWR",
@@ -1958,7 +1962,9 @@
         "slugsInvalid_one": "{{count}} company name invalid",
         "slugsInvalid_other": "{{count}} company names invalid",
         "rowsDropped_one": "{{count}} row unreadable — board format may have changed",
-        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed"
+        "rowsDropped_other": "{{count}} rows unreadable — board format may have changed",
+        "companiesFailed_one": "{{count}} company could not be fetched",
+        "companiesFailed_other": "{{count}} companies could not be fetched"
       }
     },
     "viewList": "List",
@@ -1968,7 +1974,16 @@
     "selectAJob": "Select a job to see details",
     "agencyChip": "Agency",
     "filters": {
-      "hideAgency": "Hide agency posts"
+      "hideAgency": "Hide agency posts",
+      "activeLabel": "Active filters",
+      "searchChip": "Search: {{query}}",
+      "remove": "Remove filter: {{name}}"
+    },
+    "commandBar": {
+      "label": "Job board controls",
+      "shownCount": "{{shown}} of {{total}} jobs shown",
+      "statusRow": "Last scrape status",
+      "filterLabel": "Filter jobs"
     },
     "cluster": {
       "alsoOn": "Also on",
@@ -2575,13 +2590,14 @@
         "regenerate": "Regenerate",
         "generating": "Generating…",
         "genError": "Generation failed — please try again.",
+        "saveFailed": "This draft couldn't be saved, so it will be lost when you leave this tab. Copy it or generate again.",
         "empty": "No application email yet",
         "emptyDesc": "Generate a short, professional email to send directly to the employer contact.",
         "needsModel": "Select an AI model in settings to generate an email.",
         "needsJob": "A job description is needed to generate the email.",
         "subjectLabel": "Subject",
         "bodyLabel": "Body",
-        "copy": "Copy",
+        "copy": "Copy body",
         "copied": "Copied!",
         "copySubject": "Copy subject",
         "rewrite": "Rewrite with AI",
@@ -2624,6 +2640,8 @@
         "needsModel": "Select an AI model in settings to generate questions.",
         "needsJob": "A job description is needed to tailor the questions.",
         "audienceLabel": "Generate questions for",
+        "languageLabel": "Question language",
+        "languageAuto": "Match the job ad",
         "audience": {
           "recruiter": "Recruiter / HR (1st round)",
           "hiringManager": "Hiring manager",
