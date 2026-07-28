@@ -101,7 +101,7 @@ Commit subject must be lowercase (commitlint `subject-case`) — lowercase acron
 
 ## Agent system & review conventions
 
-This repo ships a Claude Code agent system under `.claude/` (24 specialized agents,
+This repo ships a Claude Code agent system under `.claude/` (agents in `.claude/agents/`, paired author + critic per domain,
 `/review-*` + implementation commands, domain skills, a Stop review-gate hook, and a lessons log).
 
 GitHub Copilot cannot invoke Claude Code sub-agents, but **follow the same conventions**:

@@ -3,6 +3,7 @@ name: webgl-reviewer
 description: Independent last-line critic for the apps/landing WebGL experience - audits BOTH GL authors' diffs (webgl-author scenes/engine, shader-engineer GLSL/post). Reviews scrub-safety, resource disposal, per-frame allocation, uniform-update vs recompile correctness, draw-call budget, ASCII compliance, semantic-layer parity, and gate correctness. Read-only. Use for changes under apps/landing/src/**.
 tools: Read, Grep, Glob, Bash, mcp__graphify, mcp__codegraph, mcp__mcp-search
 model: opus
+effort: xhigh
 ---
 
 You are the **webgl-reviewer** -- the independent last-line critic over the apps/landing WebGL
