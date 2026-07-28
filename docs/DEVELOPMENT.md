@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-07-16
+Last updated: 2026-07-28
 
 This guide gets you from zero to a running dev environment.
 
@@ -250,6 +250,27 @@ App-data directory per OS (rooted at your home directory, `<HOME>`):
 Embedding vectors live in the `vectors` table of `documents.db` and cosine similarity
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
 delete the `*.db` files in that directory and restart the app.
+
+### Migrations and stale dev DBs
+
+Each store owns its own migration list and tracks progress with `PRAGMA user_version`
+(runner: `apps/desktop/src-tauri/src/db.rs`, `run_migrations`). Migrations are numbered
+`1..N` in list order, each applied inside one transaction together with its version bump,
+so a failure rolls back wholesale rather than leaving a half-applied schema.
+
+Additive `ALTER TABLE … ADD COLUMN … NOT NULL DEFAULT` migrations upgrade an existing dev
+DB in place, so **the normal case needs no action** — just start the app. Two situations
+do need a manual reset:
+
+- your dev DB was written by a **newer** branch than the one you are on (a `user_version`
+  ahead of the migration list means the new columns exist but nothing declares them);
+- a migration was **edited in place** rather than appended, so the version guard skips a
+  body that has since changed.
+
+Fix either by deleting the affected `*.db` (plus its `-wal`/`-shm` sidecars) in the
+app-data directory and restarting. Recent example: apply-by-email draft persistence
+(PR #894) appended `add_email_draft` to `ai_generations.db`, taking that store to
+`user_version = 7`.
 
 ---
 

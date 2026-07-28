@@ -33,12 +33,25 @@ storage/telemetry, not call count), "no network" / "fully offline" (untrue; scra
 "personal data never leaves the device" (untrue — the AI provider receives the résumé + job text)
 
 **Enrichment egress**:
-An outbound call that trades a **public identifier or a user-typed query** for optional
-presentation data (e.g. a company name → Clearbit logo, a typed place → OpenStreetMap
-city suggestions). Must be **opt-in, default OFF, CSP-scoped** to the minimum hosts, and
-send no personal data. Distinct from **core egress** (AI provider, scraping) which is
-required for the feature to function.
-_Avoid_: tracking, telemetry (enrichment is user-triggered and sends no behavioral data)
+An outbound call the app makes **on its own initiative** to decorate data the user did not
+ask about, trading a **public identifier** for optional presentation data (the canonical
+case: a company name → Clearbit logo). Must be **opt-in, default OFF, CSP-scoped** to the
+minimum hosts, and send no personal data. Distinct from **core egress** (AI provider,
+scraping) which is required for the feature to function.
+_Avoid_: tracking, telemetry (enrichment is user-triggered and sends no behavioral data);
+also avoid calling a **user-initiated lookup** enrichment — see below
+
+**User-initiated lookup**:
+A call the user directly invoked by typing into a field and waiting for its result —
+location autocomplete and job search. Explicitly **exempt** from the enrichment
+opt-in/default-OFF rule ([ADR 0005](adr/0005-network-egress-privacy-boundary.md) exemption
+clause): these are the feature, not a garnish, so a toggle would just break them. The
+exemption holds only while all three of user-initiated, no-personal-data (only the literal
+typed text), and Rust-side via `net::http` hold. Location autocomplete additionally answers
+from a **bundled offline GeoNames index**, so the common case makes no call at all; only an
+unmatched query reaches Photon.
+_Avoid_: "OpenStreetMap/Nominatim city suggestions" (Nominatim was retired — its usage
+policy forbids autocomplete), "opt-in location autocomplete" (it is not, by design)
 
 ## Domain — Matching
 

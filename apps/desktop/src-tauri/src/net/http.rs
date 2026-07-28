@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Default desktop user-agent. Individual requests may override the `User-Agent`
-/// header (e.g. geocoding identifies itself to Nominatim).
+/// header (e.g. geocoding identifies itself to Photon).
 pub const DEFAULT_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
