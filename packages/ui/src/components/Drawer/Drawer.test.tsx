@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { variants } from '../../lib/motion';
 import { Dropdown } from '../Dropdown';
+import { LocationInput } from '../LocationInput';
 import { Drawer, drawerTransition, drawerVariants } from './Drawer';
 
 /** The scrim GlassOverlay renders — the only `aria-hidden` fixed sibling. */
@@ -320,6 +321,33 @@ describe('Drawer', () => {
     expect(onClose).not.toHaveBeenCalled();
 
     // Second Escape, popover now closed: falls through to the drawer.
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies the same Escape layering to a LocationInput inside the drawer', async () => {
+    // LocationInput reaches the drawer through ScrapeFilters, so without the
+    // guard, dismissing location suggestions tore the whole drawer down with
+    // them — the drawer INTRODUCED that regression for a pre-existing input.
+    const onClose = vi.fn();
+    render(
+      <Drawer open onClose={onClose} ariaLabel="Filters">
+        <LocationInput id="loc" value="" onChange={() => {}} placeholder="Any location" />
+      </Drawer>
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /Any location/ }));
+
+    // The panel focuses its search input on a timer; wait for it so Escape is
+    // dispatched at the input that owns the handler.
+    const search = await screen.findByPlaceholderText('Search city or postcode…');
+    await waitFor(() => expect(search).toHaveFocus());
+
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByPlaceholderText('Search city or postcode…')).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Panel closed: Escape now belongs to the drawer.
     await userEvent.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(1);
   });

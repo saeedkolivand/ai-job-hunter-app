@@ -31,6 +31,8 @@ export const TEST_IDS = {
     filterChips: 'jobs-filter-chips',
     /** Live scrape strip in the command bar — progress label + cancel. */
     scrapeStatusStrip: 'jobs-scrape-status',
+    /** Always-mounted sr-only live region the command bar writes status into. */
+    scrapeStatusLive: 'jobs-scrape-status-live',
     /** stub-only: no matching attribute on the real component */
     scrapeFilters: 'scrape-filters',
     aggregatorKeyHint: 'aggregator-key-hint',

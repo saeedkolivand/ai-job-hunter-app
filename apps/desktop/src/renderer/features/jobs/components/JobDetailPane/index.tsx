@@ -239,7 +239,12 @@ function DetailContent({
       {/* Header — flush with hairline bottom divider; no outer card margin.
           `@container`: the header decides its own layout from the DETAIL PANE's
           width, not the viewport (docs/PATTERNS.md §15) — the pane is a
-          width-varying panel, so a viewport breakpoint would be wrong here. */}
+          width-varying panel, so a viewport breakpoint would be wrong here.
+          Note the container is THIS element, so `@2xl` (42rem) is measured
+          against its CONTENT box — the pane minus this `px-5`. Measured: the
+          content box reaches 714px (42rem at the app's 17px rem root) when the
+          pane is ~757px, and that is where the action cluster below goes
+          inline. */}
       <div className="@container shrink-0 border-b border-[var(--border-clear)] px-5 pb-4 pt-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           {/* LEFT: title + meta + match score + status tags */}
@@ -295,9 +300,9 @@ function DetailContent({
               `shrink-0` used to pin this at max-content, so `flex-wrap` never
               fired and the trailing actions were clipped by the pane's
               overflow-hidden on a narrow window. `min-w-0` lets it shrink below
-              max-content so the wrap actually happens; under a ~672px pane it
-              takes its own full-width row beneath the title instead of fighting
-              the title for a single line. */}
+              max-content so the wrap actually happens; under a ~757px pane (see
+              the header's container note) it takes its own full-width row
+              beneath the title instead of fighting it for a single line. */}
           <div className="@2xl:w-auto @2xl:justify-end flex w-full min-w-0 flex-wrap items-center gap-2">
             <motion.div layout transition={transition.fast} className="shrink-0">
               <Button

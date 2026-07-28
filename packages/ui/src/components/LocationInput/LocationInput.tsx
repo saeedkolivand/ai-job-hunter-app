@@ -104,6 +104,12 @@ export function LocationInput({
         select({ display: query.trim() });
       }
     } else if (e.key === 'Escape') {
+      // Innermost-layer-wins (see `useDropdownKeyboard`): only an OPEN suggestion
+      // panel consumes Escape, so it can't also reach an ancestor dialog/drawer
+      // listening on `window` and close the whole surface. This input now renders
+      // inside the scrape drawer via ScrapeFilters, where dismissing suggestions
+      // used to tear down the drawer with them.
+      if (open) e.stopPropagation();
       setOpen(false);
     }
   };

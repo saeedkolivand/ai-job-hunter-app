@@ -154,9 +154,30 @@ describe('JobsCommandBar — active filter chips', () => {
 
   it('renders the sanitized failure note in the chips row when one is passed', () => {
     renderBar({ failureNote: 'connection refused' });
+    const chips = screen.getByTestId(TEST_IDS.jobs.filterChips);
     expect(
-      screen.getByText('jobs.lastScrapeFailed[reason=connection refused]')
+      within(chips).getByText('jobs.lastScrapeFailed[reason=connection refused]')
     ).toBeInTheDocument();
+  });
+
+  it('names the row for what it actually holds, not always "active filters"', () => {
+    // Diagnostics-only: calling this "Active filters" describes a row that has
+    // no filters in it.
+    renderBar({ boardSummaries: [{ board: 'linkedin', count: 4 }] });
+    expect(screen.getByTestId(TEST_IDS.jobs.filterChips)).toBe(
+      screen.getByRole('group', { name: 'jobs.commandBar.statusRow' })
+    );
+    expect(
+      screen.queryByRole('group', { name: 'jobs.filters.activeLabel' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('switches the row name to "active filters" once a filter is applied', () => {
+    setJobs({ filter: 'rust' });
+    renderBar({ boardSummaries: [{ board: 'linkedin', count: 4 }] });
+    expect(screen.getByTestId(TEST_IDS.jobs.filterChips)).toBe(
+      screen.getByRole('group', { name: 'jobs.filters.activeLabel' })
+    );
   });
 });
 
@@ -181,6 +202,14 @@ describe('JobsCommandBar — view mode + count', () => {
     expect(screen.getByRole('button', { name: 'jobs.sort' })).toBeInTheDocument();
   });
 
+  it('names the filter input with a short label, not its instructional placeholder', () => {
+    renderBar();
+    // The placeholder ("Filter by title, company, location…") reads as an
+    // instruction in a rotor's control list, not as a name.
+    const input = screen.getByRole('textbox', { name: 'jobs.commandBar.filterLabel' });
+    expect(input).toHaveAttribute('placeholder', 'jobs.searchPlaceholder');
+  });
+
   it('the segmented control switches viewMode to split', async () => {
     const user = userEvent.setup();
     renderBar();
@@ -197,6 +226,56 @@ describe('JobsCommandBar — view mode + count', () => {
       within(screen.getByTestId(TEST_IDS.jobs.hideAgencyToggle)).getByRole('button')
     );
     expect(useSessionStore.getState().jobs.hideAgency).toBe(true);
+  });
+});
+
+describe('JobsCommandBar — status live region', () => {
+  it('mounts the live region up front, empty, even with nothing to announce', () => {
+    renderBar({ scraping: false });
+
+    // A role="status" node created at the same instant as its text is
+    // unreliably announced by NVDA/JAWS — the region has to pre-exist so the
+    // change is what fires. Matters here because the strip it announces is the
+    // only Cancel affordance once the drawer closes.
+    const live = screen.getByTestId(TEST_IDS.jobs.scrapeStatusLive);
+    expect(live).toHaveAttribute('role', 'status');
+    expect(live).toHaveAttribute('aria-live', 'polite');
+    expect(live.className).toContain('sr-only');
+    expect(live).toHaveTextContent('');
+  });
+
+  it('writes the scrape status into the SAME region rather than mounting a new one', () => {
+    const { rerender } = renderBar({ scraping: false });
+    const live = screen.getByTestId(TEST_IDS.jobs.scrapeStatusLive);
+
+    rerender(<JobsCommandBar {...baseProps} scraping scrapeProgress={0.42} />);
+
+    // Same DOM node, new text — that is what makes the announcement reliable.
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeStatusLive)).toBe(live);
+    expect(live).toHaveTextContent('jobs.scanningPercent[percent=42]');
+  });
+
+  it('announces a scrape failure through the same region', () => {
+    renderBar({ failureNote: 'connection refused' });
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeStatusLive)).toHaveTextContent(
+      'jobs.lastScrapeFailed[reason=connection refused]'
+    );
+  });
+
+  it('hides the visual copies from AT so nothing is announced twice', () => {
+    renderBar({ scraping: true, scrapeProgress: 0.42, failureNote: 'boom' });
+
+    const strip = screen.getByTestId(TEST_IDS.jobs.scrapeStatusStrip);
+    expect(within(strip).getByText('jobs.scanningPercent[percent=42]')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
+    // The Cancel button is a CONTROL, not status — it stays exposed.
+    expect(within(strip).getByRole('button', { name: 'jobs.cancel' })).toBeInTheDocument();
+    expect(screen.getByText('jobs.lastScrapeFailed[reason=boom]')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
   });
 });
 
@@ -251,10 +330,14 @@ describe('JobsCommandBar — narrow-window layout contract', () => {
     expect(bar.className).not.toContain('overflow');
     expect(bar.className).toContain('shrink-0');
 
-    const controlRow = bar.firstElementChild;
+    // Anchored on the title rather than `firstElementChild` — the sr-only live
+    // region is the first child, and positional lookups silently retarget.
+    const controlRow = screen.getByRole('heading', { level: 1 }).parentElement;
     expect(controlRow?.className).toContain('flex-wrap');
-    // A `shrink-0` on the row would re-pin it at max-content and reintroduce the clip.
-    expect(controlRow?.className).not.toContain('shrink-0');
+    // A `shrink-0` on the row would re-pin it at max-content and reintroduce the
+    // clip. Token match, not substring: `group-hover:shrink-0` etc. must not
+    // read as a hit.
+    expect(controlRow?.className.split(/\s+/)).not.toContain('shrink-0');
   });
 
   it('keeps the chips row to a single line, scrolling sideways instead of growing taller', () => {

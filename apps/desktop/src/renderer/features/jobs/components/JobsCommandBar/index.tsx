@@ -74,8 +74,28 @@ export function JobsCommandBar({
   const { filter, sortBy, viewMode, hideAgency } = jobs;
 
   const trimmedFilter = filter.trim();
-  const showChipsRow =
-    trimmedFilter.length > 0 || boardSummaries.length > 0 || failureNote !== null;
+  const hasActiveFilter = trimmedFilter.length > 0;
+  const showChipsRow = hasActiveFilter || boardSummaries.length > 0 || failureNote !== null;
+
+  // The row is shared: it holds removable FILTER chips and/or read-only scrape
+  // DIAGNOSTICS. Announcing "Active filters" over a row that only carries
+  // diagnostics misdescribes it, so the label follows the contents.
+  const chipsRowLabel = hasActiveFilter
+    ? t('jobs.filters.activeLabel')
+    : t('jobs.commandBar.statusRow');
+
+  // Single always-mounted live region (below). A `role="status"` node that is
+  // created at the same moment as its text is unreliably announced by NVDA/JAWS
+  // — the region has to exist BEFORE the content lands in it. This matters more
+  // than usual here: the scraping strip is the only Cancel affordance once the
+  // drawer closes, so a user who never hears it never learns it exists.
+  const liveStatus = scraping
+    ? scrapeProgress == null
+      ? t('jobs.scanning')
+      : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })
+    : failureNote !== null
+      ? t('jobs.lastScrapeFailed', { reason: failureNote })
+      : '';
 
   return (
     <div
@@ -84,6 +104,18 @@ export function JobsCommandBar({
       aria-label={t('jobs.commandBar.label')}
       className="shrink-0 px-10 pb-3 pt-6"
     >
+      {/* Always-mounted live region — see `liveStatus`. Kept empty when there is
+          nothing to say; the visual surfaces below are aria-hidden so a change
+          is announced exactly once. */}
+      <div
+        data-testid={TEST_IDS.jobs.scrapeStatusLive}
+        role="status"
+        aria-live="polite"
+        className="sr-only"
+      >
+        {liveStatus}
+      </div>
+
       {/* Control row — wraps; never a fixed no-wrap strip. */}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-body-strong shrink-0 text-foreground/90">{t('jobs.title')}</h1>
@@ -95,7 +127,10 @@ export function JobsCommandBar({
           value={filter}
           onChange={(e) => setJobs({ filter: e.target.value })}
           placeholder={t('jobs.searchPlaceholder')}
-          aria-label={t('jobs.searchPlaceholder')}
+          // A short name, not the placeholder — the placeholder is an
+          // instruction ("Filter by title, company, location…") and reads as
+          // one in a rotor's control list.
+          aria-label={t('jobs.commandBar.filterLabel')}
           className="text-foreground/75 placeholder:text-foreground/30"
           variant="default"
           wrapperClassName="min-w-[8rem] max-w-[18rem] grow basis-44"
@@ -177,12 +212,13 @@ export function JobsCommandBar({
       {scraping && (
         <div
           data-testid={TEST_IDS.jobs.scrapeStatusStrip}
-          role="status"
-          aria-live="polite"
           className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-foreground/70"
         >
           <Loader2 size={11} aria-hidden="true" className="animate-spin text-brand-soft" />
-          <span>
+          {/* The TEXT is mirrored into the always-mounted live region above, so
+              it is hidden here — otherwise the same update is announced twice.
+              The Cancel button stays exposed: it is a control, not status. */}
+          <span aria-hidden="true">
             {scrapeProgress == null
               ? t('jobs.scanning')
               : t('jobs.scanningPercent', { percent: Math.round(scrapeProgress * 100) })}
@@ -207,7 +243,7 @@ export function JobsCommandBar({
           data-testid={TEST_IDS.jobs.filterChips}
           tabIndex={0}
           role="group"
-          aria-label={t('jobs.filters.activeLabel')}
+          aria-label={chipsRowLabel}
           className="scrollbar-thin mt-2 flex flex-nowrap items-center gap-1.5 overflow-x-auto rounded pb-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
         >
           {trimmedFilter.length > 0 && (
@@ -227,9 +263,10 @@ export function JobsCommandBar({
             <BoardSummaryChips summaries={boardSummaries} className="shrink-0 flex-nowrap" />
           )}
           {failureNote !== null && (
+            // Mirrored into the always-mounted live region above, so hidden here
+            // — a live region that mounts WITH its text is unreliably announced.
             <p
-              role="status"
-              aria-live="polite"
+              aria-hidden="true"
               className="shrink-0 whitespace-nowrap text-[11px] text-red-400/80"
             >
               {t('jobs.lastScrapeFailed', { reason: failureNote })}

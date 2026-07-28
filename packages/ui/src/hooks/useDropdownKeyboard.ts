@@ -35,12 +35,19 @@ export function useDropdownKeyboard({
         return;
       }
       if (e.key === 'Escape') {
-        // Innermost-layer-wins: an OPEN popover consumes Escape so it can't also
-        // reach an ancestor dialog/drawer (which listens on `window`) and close
-        // the whole surface. React delegates from the root container, which sits
-        // below `window` in the propagation path, so stopping here is enough —
-        // and the `!open` early-return above leaves a CLOSED dropdown's Escape
-        // free to reach the drawer, as it should.
+        // ── Innermost-layer-wins (shared contract) ──────────────────────────
+        // An OPEN popover consumes Escape so it can't also reach an ancestor
+        // dialog/drawer (which listens on `window`) and close the whole surface.
+        // React delegates from the root container, which sits below `window` in
+        // the propagation path, so stopping here is enough — and the `!open`
+        // early-return above leaves a CLOSED dropdown's Escape free to reach the
+        // drawer, as it should.
+        //
+        // Every dismissible popover that can render inside an overlay owes the
+        // same guard: `CompanyTypeahead` and `LocationInput` mirror it. NOT yet
+        // applied to `ActionMenu` (its Escape handler is a document listener, so
+        // the fix differs) — it is the next candidate if it ever lands in a
+        // dialog.
         e.stopPropagation();
         setOpen(false);
         triggerRef.current?.focus();

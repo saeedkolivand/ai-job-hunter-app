@@ -1984,7 +1984,9 @@
     },
     "commandBar": {
       "label": "Jobbörsen-Steuerung",
-      "shownCount": "{{shown}} von {{total}} Jobs angezeigt"
+      "shownCount": "{{shown}} von {{total}} Jobs angezeigt",
+      "statusRow": "Status des letzten Scrapings",
+      "filterLabel": "Jobs filtern"
     },
     "cluster": {
       "alsoOn": "Auch auf",

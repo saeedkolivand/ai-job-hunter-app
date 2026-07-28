@@ -1980,7 +1980,9 @@
     },
     "commandBar": {
       "label": "Job board controls",
-      "shownCount": "{{shown}} of {{total}} jobs shown"
+      "shownCount": "{{shown}} of {{total}} jobs shown",
+      "statusRow": "Last scrape status",
+      "filterLabel": "Filter jobs"
     },
     "cluster": {
       "alsoOn": "Also on",

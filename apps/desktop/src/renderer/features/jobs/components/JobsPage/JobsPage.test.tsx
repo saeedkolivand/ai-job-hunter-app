@@ -697,9 +697,14 @@ describe('JobsPage — header strip mutual exclusivity with the empty state', ()
     fireJobEvent({ type: 'job.failed', jobId: 'job-123', data: 'connection refused' });
 
     await waitFor(() => expect(resultsProps.failureNote).toBe('sanitized:connection refused'));
+    // Deliberately TWO nodes: the visible (aria-hidden) chip-row copy and the
+    // always-mounted sr-only live region the command bar announces through.
     expect(
-      screen.getByText('jobs.lastScrapeFailed[reason=sanitized:connection refused]')
-    ).toBeInTheDocument();
+      screen.getAllByText('jobs.lastScrapeFailed[reason=sanitized:connection refused]')
+    ).toHaveLength(2);
+    expect(screen.getByTestId(TEST_IDS.jobs.scrapeStatusLive)).toHaveTextContent(
+      'jobs.lastScrapeFailed[reason=sanitized:connection refused]'
+    );
   });
 });
 
