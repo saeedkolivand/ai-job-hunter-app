@@ -424,6 +424,21 @@ const RATES: &[(&str, f64, f64)] = &[
 /// code change to show *some* estimate; the table can be tightened later.
 const DEFAULT_RATE: (f64, f64) = (3.00, 15.00);
 
+/// True if `candidate` starts with `prefix`, treating `.` and `-` as
+/// equivalent on BOTH sides — a model id spelled with a dot
+/// (`claude-opus-4.7`) must still match a dash-form row (`claude-opus-4-7`).
+/// Normalizing only `candidate` would corrupt the OpenAI/Gemini rows that use
+/// a literal dot for their own version number (`gpt-4.1-mini`,
+/// `gemini-2.5-flash`) — e.g. `"gpt-4.1-mini-2024".replace('.', "-")` no
+/// longer starts with the literal `"gpt-4.1-mini"` prefix. Normalizing both
+/// sides identically keeps every existing match intact while adding the
+/// dot/dash equivalence.
+fn prefix_matches(candidate: &str, prefix: &str) -> bool {
+    candidate
+        .replace('.', "-")
+        .starts_with(&prefix.replace('.', "-"))
+}
+
 /// The [`RATES`] row matched for `model` (case-insensitive prefix match), or
 /// `None` if it falls through to [`DEFAULT_RATE`]. Exposes the matched
 /// **prefix**, not just the resulting price — several rows share a price
@@ -444,12 +459,16 @@ fn rate_for(model: &str) -> Option<&'static (&'static str, f64, f64)> {
     let last_segment = m.rsplit('/').next().unwrap_or(m);
     RATES
         .iter()
-        .find(|(prefix, _, _)| last_segment.starts_with(prefix))
+        .find(|(prefix, _, _)| prefix_matches(last_segment, prefix))
         // Fall back to matching the FULL (un-split) string: a hypothetical
         // `model/suffix` shape (suffix after the model id, not a vendor
         // prefix before it) would otherwise under-report to DEFAULT_RATE even
         // though the id itself is recognizable.
-        .or_else(|| RATES.iter().find(|(prefix, _, _)| m.starts_with(prefix)))
+        .or_else(|| {
+            RATES
+                .iter()
+                .find(|(prefix, _, _)| prefix_matches(m, prefix))
+        })
 }
 
 /// Estimated USD cost for one call, from the static [`RATES`] table (or

@@ -148,6 +148,25 @@ fn rate_for_falls_back_to_the_full_string_when_the_last_segment_matches_nothing(
 }
 
 #[test]
+fn rate_for_matches_a_dot_form_id_against_a_dash_form_row() {
+    // "claude-opus-4.7" (dot form) must hit the "claude-opus-4-7" row, not
+    // fall through the shorter "claude-opus-4" row (or DEFAULT_RATE).
+    assert_eq!(
+        rate_for("claude-opus-4.7").map(|(p, _, _)| *p),
+        Some("claude-opus-4-7")
+    );
+    let cost = estimate_cost("claude-opus-4.7", 1_000_000, 1_000_000);
+    assert!((cost - (5.00 + 25.00)).abs() < 1e-9, "got {cost}");
+    // The dot/dash equivalence must NOT corrupt OpenAI's own literal-dot
+    // version rows (`gpt-4.1-mini`) — normalizing both sides identically
+    // keeps this match intact.
+    assert_eq!(
+        rate_for("gpt-4.1-mini-2025-04-14").map(|(p, _, _)| *p),
+        Some("gpt-4.1-mini")
+    );
+}
+
+#[test]
 fn estimate_cost_strips_a_vendor_prefix_before_matching() {
     // An id seen through an OpenRouter-style gateway (`anthropic/claude-fable-5`)
     // must hit the bare model's row, not silently fall through to DEFAULT_RATE.
