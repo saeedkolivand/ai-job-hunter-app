@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785224302850,
+  "lastUpdate": 1785243038566,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5747,6 +5747,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 300358,
             "range": "± 7184",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0ad1647aa43456e1e57264b516995064e0a002d4",
+          "message": "fix(ai): claude 5 family support — adaptive thinking, sampling gates, model lists, spend rates (#901)\n\n* fix(ai): support claude 5 fable alias and spend rates\n\nAnthropic 5-family models (opus-5/sonnet-5/fable-5) never supported the\nclassic thinking budget_tokens block; anthropic_supports_thinking() already\nexcluded them by omission, but the comment read like an oversight rather\nthan deliberate adaptive-thinking routing. Clarify the gate and lock the\n5-family exclusion + the resulting no-thinking-block request shape with\nregression tests, alongside the existing 3.7/4.x/pre-3.7 coverage.\n\nAdd the \"fable\" bare alias to Claude Code's CLI model list (mirrors\nsonnet/opus/haiku) and to the prompts package's large-model detector, so it\nno longer falls through to the small prompt tier. Add spend RATES rows for\nclaude-fable-5 ($10/$50), claude-opus-5 ($5/$25), and claude-sonnet-5\n($3/$15); haiku-4-5 already matches the existing claude-haiku-4 prefix.\nPrefix-shadow safety between the 4.x and 5.x rows is pinned by a test.\n\nContext7 was unavailable in this session's toolset, so the exact Messages\nAPI wire shape for adaptive thinking + the effort parameter was not\nverified live; effort is left unwired for the direct Anthropic path (it\nremains CLI-agent-only end to end per the shared schema), which is the\nverification-gated task's own permitted \"send nothing extra\" outcome.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): send adaptive thinking config and gate sampling for claude 5 models\n\nThree-way model classification in the anthropic adapter: classic models keep\nextended thinking (enabled + budget_tokens), adaptive models (opus 4.7/4.8 and\nthe 5 family) get thinking type adaptive with display summarized so the\nthinking view receives text (display defaults to omitted there), plus the same\nmax_tokens headroom since thinking tokens count toward the cap in both modes.\nAdaptive models reject non-default sampling params on every request, so\ncapabilities() is now model-aware and all four request builders gate\ntemperature/top_p on it. Dot-form version ids are normalized before matching.\n\nSpend: opus 4.5 gets its own rate row (was shadowed by the opus 4 prefix into\na 3x overestimate), vendor-prefixed ids strip to the bare name, and rate tests\nassert the matched prefix, not the price.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: refresh anthropic model lists and onboarding default for the claude 5 family\n\nCurated anthropic seed list moves to claude-fable-5 / claude-opus-5 /\nclaude-sonnet-5 / claude-haiku-4-5, the claude code cli list gains the fable\nalias, the onboarding anthropic default becomes claude-sonnet-5, and the\nprovider description stops enumerating model families so it cannot go stale.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): apply security gate advisories to thinking headroom and spend rates\n\nAdaptive max_tokens inflation now applies regardless of the classic 2048 gate\n(the extension answer assist calls with a 1000 cap and was billed thinking out\nof it), opus 4.6/4.7/4.8 get their own 5/25 rate rows instead of shadowing\ninto the opus 4 15/75 row, max_tokens arithmetic saturates, and rate lookup\nfalls back to the full string when the last path segment matches no row.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): fail safe on unknown claude families and floor adaptive headroom\n\nanthropic_supports_temperature() is now the single sampling gate for all four\nrequest builders: unclassified claude ids omit temperature (omitting never\n400s) with a legacy pre-thinking carve-out, adaptive headroom gets a 1024\nfloor so small caps keep a useful thinking budget, rate prefixes match\ndot-form ids on both sides, and the classification debug log no longer\nmislabels legacy non-thinking models.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: note adaptive thinking in the anthropic provider table row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(ai): split anthropic tests into a sibling file under the r8 loc cap\n\nBehavior-preserving move of the test module (all 35 tests verbatim) into\nanthropic_tests.rs via the answer_assist_tests.rs precedent; anthropic.rs\ndrops from 1540 to 951 lines, back under the 1400 hard cap.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): address pr 901 review findings in spend and model classification\n\nAdd a gpt-4-1106 rate row (dot-dash normalization made it match the gpt-4.1\nrow at a 15x under-report), replace the last vacuous price assertion with a\nprefix assert, delete the untriggerable full-string rate fallback, strip\nvendor prefixes before model classification so the fail-safe holds behind\nanthropic/, make version needles boundary-aware (opus-4-70 no longer matches\nopus-4-7), and match the bare fable alias exactly so fable-1b local models\nkeep the small-model prompt.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: keep stored model selections visible when absent from curated lists\n\nA stored model dropped from the curated seed list rendered as the muted\nplaceholder until the live model fetch resolved, reading as a reset config.\nBoth settings panels now inject a synthetic option for the stored value, with\nregression tests, and a contract test pins the onboarding defaults to the\nprovider catalog.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-28T14:29:41+02:00",
+          "tree_id": "6355b89d7537bfb3dc645c78cd69eb76493dd179",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0ad1647aa43456e1e57264b516995064e0a002d4"
+        },
+        "date": 1785243037918,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2160139,
+            "range": "± 78324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2520375,
+            "range": "± 34388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 295906,
+            "range": "± 7656",
             "unit": "ns/iter"
           }
         ]
