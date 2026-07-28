@@ -44,4 +44,18 @@ describe('PR H partial-ATS note i18n — en/de parity', () => {
     expect(out).not.toBe(key);
     expect(out).toContain(String(count));
   });
+
+  it.each([
+    ['en', 1],
+    ['en', 3],
+    ['de', 1],
+    ['de', 3],
+  ] as const)('%s resolves the pluralized companies-failed chip (count=%i)', (lng, count) => {
+    const key = 'jobs.boardSummary.note.companiesFailed';
+    expect(i18n.exists(key, { lng, count, fallbackLng: false }), `${lng}:${key}`).toBe(true);
+    const t = i18n.getFixedT(lng);
+    const out = t(key, { count });
+    expect(out).not.toBe(key);
+    expect(out).toContain(String(count));
+  });
 });

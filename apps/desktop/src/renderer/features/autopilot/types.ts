@@ -9,8 +9,12 @@ export interface WizardState {
   /** Country code captured when the user picks a geocode suggestion (e.g. "gb", "us"). */
   countryCode?: string;
   workType: 'remote' | 'hybrid' | 'on-site' | 'any';
-  /** Target number of jobs to fetch; converted to scraper pages on save (mirrors the jobs page). */
-  amount: number;
+  /**
+   * Scraper page budget (integer 1–10) — stored and sent verbatim as `target.pages`.
+   * Each board decides what a "page" means (LinkedIn 10 results, The Muse 20) and
+   * some ignore it entirely, so this is a ceiling per board, not a job count.
+   */
+  pages: number;
   dateFilter: string;
   /**
    * Watched-companies-only mode (ADR-030 §e): when true, the run resolves the

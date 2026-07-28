@@ -297,7 +297,7 @@ export function ScrapeForm({
                       'disabled:cursor-not-allowed disabled:opacity-40'
                     )}
                   >
-                    {t(`jobs.boards.${id}`)}
+                    {t(`jobs.boards.${id}`, { defaultValue: id })}
                   </Button>
                 );
               })}
@@ -385,7 +385,9 @@ export function ScrapeForm({
             className="mb-2 text-[11px] text-amber-400/70"
           >
             {t('jobs.needsLogin.blockedHint', {
-              boards: unconnectedRequired.map((id) => t(`jobs.boards.${id}`)).join(', '),
+              boards: unconnectedRequired
+                .map((id) => t(`jobs.boards.${id}`, { defaultValue: id }))
+                .join(', '),
             })}
           </p>
         )}

@@ -956,9 +956,27 @@ impl ScraperEngine {
     }
 
     /// Signal cancellation to a running job by id. No-op if the id is unknown.
+    ///
+    /// Cancels the slot **in place** — it is deliberately NOT removed. Removing
+    /// it lost any cancel that landed before the run reached
+    /// [`Self::scrape_boards_with_resolver_and_overrides`]: that function mints a
+    /// FRESH (un-cancelled) token when it finds no slot, so the run proceeded as
+    /// if nothing had been cancelled. Callers do pre-scrape async work between
+    /// `register_token` and the engine call — `commands::scrape` awaits a geocode
+    /// backfill, and the engine's own `sem.acquire_owned()` can wait seconds
+    /// behind other scrapes — so that window is real, not theoretical. Leaving
+    /// the cancelled token in place makes the mint-fresh path unreachable for a
+    /// cancelled job: the run reuses the slot, sees `is_cancelled()`, and stops.
+    ///
+    /// No leak: the slot is owned by whoever registered it, and every owner
+    /// removes it on EVERY exit path — `commands::scrape::scrape_boards` (both
+    /// the early cancelled return and after the engine call) and
+    /// `commands::autopilot::autopilot_run` (scrape-Err, cancelled, and success
+    /// paths) — while an engine-minted slot is removed by the `we_minted` branch.
+    /// An unknown id still inserts nothing.
     pub async fn cancel(&self, job_id: &str) {
-        let mut jobs = self.jobs.lock().await;
-        if let Some(token) = jobs.remove(job_id) {
+        let jobs = self.jobs.lock().await;
+        if let Some(token) = jobs.get(job_id) {
             token.cancel();
         }
     }

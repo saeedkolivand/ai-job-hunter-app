@@ -402,6 +402,19 @@ describe('BoardSummaryChips — partial ATS note chips (PR H)', () => {
     expect(chip?.textContent).not.toContain('rows-dropped:2');
   });
 
+  it('maps "companies-failed:<n>" to the pluralized informational (processing) label', () => {
+    // Lever/Ashby partial run: some companies fetched, some failed (404/403/429
+    // or an over-cap payload). The board still returns Ok, so this note is the
+    // ONLY user-visible signal that the run was incomplete.
+    render(
+      <BoardSummaryChips summaries={[{ board: 'lever', count: 12, note: 'companies-failed:2' }]} />
+    );
+    const chip = chips()[0];
+    expect(chip?.getAttribute('data-color')).toBe('processing');
+    expect(chip?.textContent).toContain('jobs.boardSummary.note.companiesFailed:2');
+    expect(chip?.textContent).not.toContain('companies-failed:2');
+  });
+
   it('rejects n=0 (these tokens are only emitted for n>0) — falls through to the success chip', () => {
     render(
       <BoardSummaryChips summaries={[{ board: 'greenhouse', count: 6, note: 'slugs-invalid:0' }]} />

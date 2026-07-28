@@ -156,9 +156,9 @@ function skipDetail(skipped: string, t: TFunction): string {
  *   - `location-filtered:<n>` (PR F) — the engine emits this unconditionally for
  *     a board without server-side location support (even n=0, "checked, nothing
  *     hidden"); n=0 gets a plain marker label, n>0 the pluralized hidden-count.
- *   - `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) — partial per-company
- *     visibility from the ATS boards; both emitted ONLY when n>0, so unlike
- *     `location-filtered` a zero/malformed n renders no chip.
+ *   - `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) / `companies-failed:<n>` —
+ *     partial per-company visibility from the ATS boards; all emitted ONLY when
+ *     n>0, so unlike `location-filtered` a zero/malformed n renders no chip.
  */
 function noteDetail(note: string, t: TFunction, locale: string): string | null {
   const sep = note.indexOf(':');
@@ -181,20 +181,22 @@ function noteDetail(note: string, t: TFunction, locale: string): string | null {
       : t('jobs.boardSummary.note.locationFiltered', { count: n });
   }
 
-  // `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) — partial per-company
-  // visibility from the ATS boards: `n` company slugs were rejected by the
-  // pre-fetch SSRF/DNS-label validator, or `n` rows failed to deserialize on an
-  // otherwise-reached company. Both are emitted ONLY when n>0 (an all-fail run
-  // surfaces as an error, never a note), so — unlike location-filtered's n=0
-  // marker — a zero / empty / non-integer / negative n is malformed and renders
-  // no chip (tolerant, like an unknown token).
-  if (kind === 'slugs-invalid' || kind === 'rows-dropped') {
+  // `slugs-invalid:<n>` / `rows-dropped:<n>` (PR H) / `companies-failed:<n>` —
+  // partial per-company visibility from the ATS boards: `n` company slugs were
+  // rejected by the pre-fetch SSRF/DNS-label validator, `n` rows failed to
+  // deserialize on an otherwise-reached company, or `n` per-company fetches
+  // failed (404/403/429/over-cap) while a sibling succeeded. All are emitted
+  // ONLY when n>0 (an all-fail run surfaces as an error, never a note), so —
+  // unlike location-filtered's n=0 marker — a zero / empty / non-integer /
+  // negative n is malformed and renders no chip (tolerant, like an unknown
+  // token).
+  if (kind === 'slugs-invalid' || kind === 'rows-dropped' || kind === 'companies-failed') {
     if (!value) return null;
     const n = Number(value);
     if (!Number.isInteger(n) || n <= 0) return null;
-    return kind === 'slugs-invalid'
-      ? t('jobs.boardSummary.note.slugsInvalid', { count: n })
-      : t('jobs.boardSummary.note.rowsDropped', { count: n });
+    if (kind === 'slugs-invalid') return t('jobs.boardSummary.note.slugsInvalid', { count: n });
+    if (kind === 'rows-dropped') return t('jobs.boardSummary.note.rowsDropped', { count: n });
+    return t('jobs.boardSummary.note.companiesFailed', { count: n });
   }
 
   // `kind:<cc>` — alpha-2 only; a malformed multi-colon token (e.g.
