@@ -1177,3 +1177,54 @@ describe('JobDetailPane — cross-board cluster split', () => {
     expect(screen.queryByTestId(TEST_IDS.jobs.clusterMembers)).not.toBeInTheDocument();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header action cluster — narrow-pane wrap contract (bug 6a regression)
+// ─────────────────────────────────────────────────────────────────────────────
+// The cluster used to be `shrink-0 flex-wrap`, which pins it at max-content so
+// the wrap NEVER fired; at a ~500px detail pane the trailing actions
+// (Tailor / Prep / ⋯) overflowed and were clipped by four overflow-hidden
+// ancestors. jsdom has no layout engine, so the fix is asserted on the classes
+// that produce it.
+
+describe('JobDetailPane — header action cluster wrap contract', () => {
+  /** The action cluster is the parent of the Tailor button. */
+  async function renderCluster(): Promise<HTMLElement> {
+    await act(async () => {
+      render(
+        <JobDetailPane
+          posting={makePosting('wrap', { description: 'x' })}
+          formatRelativeTime={formatRelativeTime}
+        />
+      );
+    });
+    const cluster = screen.getByRole('button', { name: /jobs\.tailor/ }).parentElement;
+    if (!cluster) throw new Error('action cluster not rendered');
+    return cluster;
+  }
+
+  it('can shrink below max-content so flex-wrap actually fires', async () => {
+    const cluster = await renderCluster();
+    expect(cluster.className).toContain('flex-wrap');
+    expect(cluster.className).toContain('min-w-0');
+    // `shrink-0` is exactly what defeated the wrap.
+    expect(cluster.className).not.toContain('shrink-0');
+  });
+
+  it('takes its own full-width row under a narrow pane and returns inline when wide', async () => {
+    const cluster = await renderCluster();
+    // Narrow pane (< 42rem container): full-width row beneath the title.
+    expect(cluster.className).toContain('w-full');
+    // Wide pane: back inline, right-aligned.
+    expect(cluster.className).toContain('@2xl:w-auto');
+    expect(cluster.className).toContain('@2xl:justify-end');
+  });
+
+  it('marks the header as a container so the decision is pane-width based, not viewport based', async () => {
+    const cluster = await renderCluster();
+    const header = cluster.parentElement?.parentElement;
+    // A container-query variant without a @container ancestor silently no-ops
+    // (docs/PATTERNS.md §15) — this is the ancestor that makes @2xl: fire.
+    expect(header?.className).toContain('@container');
+  });
+});
