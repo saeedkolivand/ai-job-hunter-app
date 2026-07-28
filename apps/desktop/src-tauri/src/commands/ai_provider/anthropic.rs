@@ -21,24 +21,161 @@ use super::{
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
 
-/// Whether a model should be sent the `thinking` block (extended thinking).
+/// Whether a model should be sent the classic `thinking: {type:"enabled",
+/// budget_tokens}` block (extended thinking).
 ///
 /// Anthropic's extended-thinking mode forces `temperature=1.0` and consumes extra
 /// output tokens; a model that does **not** support it answers a `thinking`
-/// request with a 400. Only the Claude 3.7+ / 4.x families support it, so gate on
-/// the model id (mirrors [`gemini_supports_thinking`](super::gemini)). Older 3.0–
-/// 3.5 models and any explicitly-tagged non-thinking name are excluded. Unknown
-/// future names default to **off** — a graceful miss (no thinking) is always safe;
-/// a wrongful `thinking` request 400s the whole generation.
+/// request with a 400. Only the Claude 3.7+ / 4.x families (incl. Haiku 4.5) use
+/// this classic budget-token mechanism, so gate on the model id (mirrors
+/// [`gemini_supports_thinking`](super::gemini)). Older 3.0–3.5 models are
+/// excluded (never supported it).
+///
+/// `claude-opus-4-7` and `claude-opus-4-8` are **deliberately excluded** even
+/// though they match the `claude-opus-4` substring below: per Anthropic's
+/// thinking docs they are adaptive-only models ("Extended thinking: No" in the
+/// per-model table) — see [`anthropic_uses_adaptive_thinking`] instead.
+///
+/// The Claude 5 family (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`,
+/// Mythos, and later adaptive families) is excluded too: it replaced classic
+/// budget-token thinking with adaptive thinking, which this predicate does not
+/// gate — see [`anthropic_uses_adaptive_thinking`]. Unknown future names
+/// default to **off** — a graceful miss (no thinking) is always safe; a
+/// wrongful `thinking` request 400s the whole generation.
 fn anthropic_supports_thinking(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
+    let m = normalize_model_id(model);
+    // Opus 4.7/4.8 are adaptive-only (see doc comment) — carve them out before
+    // the "claude-opus-4" substring below would otherwise catch them.
+    if contains_version_needle(&m, "opus-4-7") || contains_version_needle(&m, "opus-4-8") {
+        return false;
+    }
     // Claude 3.7 (the first extended-thinking model) and the 4.x families.
-    m.contains("claude-3-7")
-        || m.contains("claude-3.7")
-        || m.contains("claude-4")
-        || m.contains("claude-opus-4")
-        || m.contains("claude-sonnet-4")
-        || m.contains("claude-haiku-4")
+    // Deliberately does NOT match "claude-opus-5"/"claude-sonnet-5"/
+    // "claude-fable-5"/mythos — the 5 family (and later adaptive families)
+    // use adaptive thinking, not this mechanism. Do not widen this to a bare
+    // "claude-" match.
+    contains_version_needle(&m, "claude-3-7")
+        || contains_version_needle(&m, "claude-4")
+        || contains_version_needle(&m, "claude-opus-4")
+        || contains_version_needle(&m, "claude-sonnet-4")
+        || contains_version_needle(&m, "claude-haiku-4")
+}
+
+/// Whether a model should be sent Anthropic's **adaptive** thinking block
+/// (`thinking: {"type":"adaptive","display":"summarized"}`): `claude-opus-4-7`,
+/// `claude-opus-4-8` (adaptive-only per the extended-thinking per-model table),
+/// and the Claude 5 family (`claude-opus-5`, `claude-sonnet-5`, `claude-fable-5`,
+/// Mythos) and later adaptive families.
+///
+/// `display` defaults to `"omitted"` on every one of these models (per
+/// Anthropic's thinking docs) — an empty `thinking` field, signature only. We
+/// opt into `"summarized"` explicitly so the app's thinking view actually
+/// receives text; without this, "sending nothing extra" silently regresses the
+/// thinking view to blank on every adaptive model, even though the model is
+/// still thinking (and billing for it) under the hood. Every model matched
+/// here 400s on ANY non-default temperature/top_p/top_k, on every request,
+/// not just while thinking (Anthropic's "Sampling parameters" note) — see
+/// [`anthropic_supports_temperature`], which builds on this predicate.
+///
+/// New adaptive families need a new substring added here — this predicate IS
+/// the adapter's model-classification layer (the zero-change rule protects
+/// business logic/callers, not this file). Unknown names default to **off** —
+/// a graceful miss (no adaptive block, `display` stays omitted) is always
+/// safe; guessing wrong never 400s *here* (unlike the classic gate above),
+/// since adaptive thinking is already on by default on every model in this
+/// set — but see [`anthropic_supports_temperature`] for the fail-safe that
+/// keeps a wrong guess from 400ing on the sampling-parameter side either.
+fn anthropic_uses_adaptive_thinking(model: &str) -> bool {
+    let m = normalize_model_id(model);
+    contains_version_needle(&m, "opus-4-7")
+        || contains_version_needle(&m, "opus-4-8")
+        || contains_version_needle(&m, "opus-5")
+        || contains_version_needle(&m, "sonnet-5")
+        || contains_version_needle(&m, "fable-5")
+        || m.contains("mythos")
+}
+
+/// Shared normalization for the two thinking-mode predicates above:
+/// **strip a vendor prefix** (an OpenRouter-style `anthropic/claude-...` id —
+/// keep only the segment after the last `/`, so a vendor-prefixed id is
+/// classified identically to its bare form on every predicate, including
+/// [`anthropic_supports_temperature`]'s new-family fail-safe, which otherwise
+/// silently disarms on a prefixed id since it no longer starts with
+/// `"claude-"`), then lowercase, then collapse dot-form version separators to
+/// dashes, so a model id spelled `claude-opus-4.7` (dot form) still matches
+/// the `opus-4-7` needle instead of falling through to the classic
+/// `claude-opus-4` gate and 400ing (adaptive models reject the classic
+/// `thinking.enabled` shape).
+fn normalize_model_id(model: &str) -> String {
+    let bare = model.rsplit('/').next().unwrap_or(model);
+    bare.to_ascii_lowercase().replace('.', "-")
+}
+
+/// Boundary-aware substring check for the version needles used by the
+/// thinking-mode predicates above: `haystack` must contain `needle`, and the
+/// character immediately following the match must be either end-of-string or
+/// a non-digit. A raw [`str::contains`] has no such boundary — it would let
+/// `opus-4-70`/`opus-4-71`/… wrongly match the `opus-4-7` needle, and
+/// `sonnet-50`/`sonnet-58`/… wrongly match `sonnet-5`, exactly the class of
+/// prefix-collision bug this file already patched once with the explicit
+/// opus-4-7/4-8 carve-out above `claude-opus-4`.
+fn contains_version_needle(haystack: &str, needle: &str) -> bool {
+    haystack.match_indices(needle).any(|(idx, _)| {
+        let after = idx + needle.len();
+        haystack
+            .as_bytes()
+            .get(after)
+            .is_none_or(|b| !b.is_ascii_digit())
+    })
+}
+
+/// True for Anthropic's pre-thinking-era ids — Claude 1.x, 2.x, and 3.x below
+/// 3.7 (`claude-3-7` itself already matches [`anthropic_supports_thinking`],
+/// so anything reaching this check with a "claude-3" marker is guaranteed to
+/// be below 3.7). This is a closed, historical set — Anthropic will never
+/// ship a NEW model under these version numbers — so hardcoding it is safe
+/// and needs no maintenance for future releases. Its only purpose is keeping
+/// [`anthropic_supports_temperature`]'s new-family fail-safe from misfiring
+/// on these long-shipped, well-understood models, which have always accepted
+/// a normal `temperature` (they simply predate thinking, unlike a genuinely
+/// unclassified NEW family).
+fn anthropic_is_legacy_pre_thinking(model: &str) -> bool {
+    let m = normalize_model_id(model);
+    m.contains("claude-3")
+        || m.contains("claude-2")
+        || m.contains("claude-1")
+        || m.contains("claude-instant")
+}
+
+/// Whether Anthropic will accept a non-default `temperature`/`top_p` on
+/// `model` at all — the single source of truth for both
+/// [`AnthropicClient::capabilities`]'s `supports_temperature` field AND every
+/// request builder in this file (computed once here rather than re-derived
+/// independently in two places that could drift out of sync).
+///
+/// `false` for every adaptive-thinking model ([`anthropic_uses_adaptive_thinking`]
+/// — 400s on ANY non-default value, on every request). Also `false`, as a
+/// **fail-safe**, for a `claude-`-prefixed id that matches NEITHER thinking
+/// classification AND isn't a known [`anthropic_is_legacy_pre_thinking`]
+/// model: that combination means a genuinely new Anthropic family this
+/// adapter hasn't learned a needle for yet — since sending a non-default
+/// temperature 400s on an adaptive model but omitting it is ALWAYS accepted,
+/// defaulting an unclassified NEW Claude id to "no temperature" is the
+/// direction that can never 400, which is what restores the zero-code-change
+/// promise for a new model family. A legacy pre-thinking id (definitely safe
+/// — proven by years of unchanged behavior) and a non-`claude-` id (never a
+/// real Anthropic model id) both keep the old always-on behavior.
+fn anthropic_supports_temperature(model: &str) -> bool {
+    if anthropic_uses_adaptive_thinking(model) {
+        return false;
+    }
+    if !anthropic_supports_thinking(model)
+        && normalize_model_id(model).starts_with("claude-")
+        && !anthropic_is_legacy_pre_thinking(model)
+    {
+        return false;
+    }
+    true
 }
 
 /// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
@@ -204,14 +341,21 @@ fn parse_anthropic_frames(
     out
 }
 
-/// Build the `/messages` streaming request body for a given [`AiGenerateRequest`].
-/// Pure + unit-tested. `top_p` is Anthropic's only sampling knob beyond
-/// temperature (no frequency/presence penalty in this API) — set only when the
-/// caller supplied it (prose surfaces). CRITICAL: extended thinking forces
-/// `temperature=1.0` and the Anthropic API rejects `top_p` alongside `thinking`
-/// (400), so `top_p` is skipped whenever thinking is enabled.
+/// Build the `/messages` streaming request body for a given [`AiGenerateRequest`]
+/// (mirrors `openai.rs`'s `build_chat_stream_body`'s `caps.supports_temperature`
+/// gate, via [`anthropic_supports_temperature`]). Pure + unit-tested. `top_p`
+/// is Anthropic's only sampling knob beyond temperature (no frequency/presence
+/// penalty in this API) — set only when the caller supplied it (prose
+/// surfaces), and only when [`anthropic_supports_temperature`] (false for
+/// every adaptive-thinking model, and for an unrecognized `claude-`-prefixed
+/// id — see its doc comment): those models reject *any* non-default
+/// `temperature`/`top_p`/`top_k` on every request per Anthropic's docs
+/// ("Sampling parameters"), and we don't know each model's own default value,
+/// so omitting the field entirely is the only universally-safe choice.
+/// Classic extended thinking also omits `temperature` (Anthropic forces it to
+/// 1.0 internally; omitting IS that default, and is one fewer place to get
+/// the number wrong) and never gets `top_p` (400s alongside `thinking`).
 fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
-    let temperature = req.temperature.unwrap_or(0.7);
     let max_tokens = req.max_tokens.unwrap_or(4096);
 
     let system_content: String = req
@@ -228,33 +372,154 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         .map(|m| json!({ "role": m.role, "content": m.content }))
         .collect();
 
-    // Extended thinking for balanced effort and above — but ONLY on models that
-    // support it. Enabling it forces temperature=1 and spends extra output
-    // tokens; an unsupported model 400s on a `thinking` block, so we gate on the
-    // model id. A caller can opt out by selecting a non-thinking model.
-    let thinking_budget = if max_tokens >= 2048 && anthropic_supports_thinking(&req.model) {
+    // Thinking-token budget headroom: on BOTH classic and adaptive models,
+    // thinking tokens are billed as output tokens and count toward
+    // `max_tokens` alongside the visible response, so `max_tokens` must be
+    // inflated to leave room for both.
+    //
+    // Classic thinking is gated on `max_tokens >= 2048` (a "big enough task to
+    // warrant it" heuristic, not a support check) — below that, no `thinking`
+    // key is sent and no inflation happens (always safe; a wrongful `thinking`
+    // block 400s the whole generation on classic-only models).
+    //
+    // Adaptive thinking has NO such gate: it's on by default (several models
+    // can't even disable it) and always counts toward `max_tokens` regardless
+    // of how small the caller's budget is — a caller like the extension
+    // bridge's answer-assist flow (`max_tokens: 1000`) would otherwise get
+    // summarized-thinking tokens billed out of an un-inflated 1000-token cap
+    // and come back with a short/empty draft. Reuses [`adaptive_max_tokens`]
+    // so the streaming and non-streaming builders share one formula.
+    let is_classic = anthropic_supports_thinking(&req.model);
+    let is_adaptive = anthropic_uses_adaptive_thinking(&req.model);
+    let classic_thinking_budget = if is_classic && max_tokens >= 2048 {
         max_tokens / 2
     } else {
         0
     };
-    let actual_max_tokens = max_tokens + thinking_budget;
+    let actual_max_tokens = if is_adaptive {
+        adaptive_max_tokens(&req.model, max_tokens)
+    } else {
+        max_tokens.saturating_add(classic_thinking_budget)
+    };
 
     let mut body = json!({
         "model": req.model,
         "messages": messages,
         "max_tokens": actual_max_tokens,
         "stream": true,
-        "temperature": if thinking_budget > 0 { 1.0 } else { temperature },
     });
-    if thinking_budget > 0 {
-        body["thinking"] = json!({ "type": "enabled", "budget_tokens": thinking_budget });
-    } else if let Some(top_p) = req.top_p {
-        // Anthropic 400s if `top_p` rides alongside `thinking` — only add it on
-        // the non-thinking path.
-        body["top_p"] = json!(top_p);
+    // Adaptive checked FIRST: a future model id that (incorrectly) matches
+    // both predicates must fail toward the safe adaptive shape, not toward
+    // the classic shape that 400s on an adaptive-only model.
+    if is_adaptive {
+        // Opt into "summarized" display — it defaults to "omitted" (empty
+        // thinking blocks) on every adaptive model, which would silently
+        // blank the app's thinking view. `temperature`/`top_p` stay omitted
+        // (see fn doc comment above; `anthropic_supports_temperature` is
+        // false for every adaptive model).
+        body["thinking"] = json!({ "type": "adaptive", "display": "summarized" });
+    } else if is_classic && classic_thinking_budget > 0 {
+        body["thinking"] = json!({ "type": "enabled", "budget_tokens": classic_thinking_budget });
+    } else if anthropic_supports_temperature(&req.model) {
+        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
+        if let Some(top_p) = req.top_p {
+            body["top_p"] = json!(top_p);
+        }
     }
     if !system_content.is_empty() {
         body["system"] = json!(system_content);
+    }
+    body
+}
+
+/// Thinking-aware `max_tokens` inflation shared by every builder in this file:
+/// [`build_chat_stream_body`] (whose `max_tokens` comes from the caller) and
+/// the three non-streaming builders below (which hardcode a fixed cap).
+/// Adaptive thinking is on by default and can't be turned off on several
+/// models (Fable can't disable it at all) — it still counts toward
+/// `max_tokens` even on paths that never send a `thinking` key (the three
+/// non-streaming builders have no thinking-view display concern; default
+/// `"omitted"` is correct there and gives faster time-to-first-text per
+/// Anthropic's docs). Deliberately **not** gated on a size threshold: a small
+/// caller-supplied cap (e.g. the extension bridge's `max_tokens: 1000`
+/// answer-assist calls) or a fixed small cap (1024 for web search) still gets
+/// thinking billed against it by default, so the inflation must apply
+/// unconditionally.
+///
+/// The headroom is `max(base / 2, 1024)`, not a bare `base / 2`: a small cap
+/// (e.g. 1000) would otherwise add less than the ~1024-token floor a model
+/// typically needs to produce a useful summarized-thinking pass, leaving too
+/// little room for both thinking and the visible response and risking a
+/// short/empty draft even after "inflating". `saturating_add` guards `base`
+/// being an unclamped caller-supplied IPC `u32` near `u32::MAX`.
+fn adaptive_max_tokens(model: &str, base: u32) -> u32 {
+    if anthropic_uses_adaptive_thinking(model) {
+        base.saturating_add((base / 2).max(1024))
+    } else {
+        base
+    }
+}
+
+/// Build the non-streaming `/messages` body shared by `complete`/
+/// `complete_with_usage`. Pure + unit-tested — mirrors
+/// [`build_chat_stream_body`]'s [`anthropic_supports_temperature`] gate but
+/// never sends a `thinking` key at all (no thinking-view display concern on
+/// this single-shot completion path).
+fn build_complete_body(model: &str, system: &str, user: &str, temperature: Option<f64>) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": adaptive_max_tokens(model, 4096),
+        "messages": [ { "role": "user", "content": user } ],
+    });
+    if anthropic_supports_temperature(model) {
+        body["temperature"] = json!(temperature.unwrap_or(0.7));
+    }
+    if !system.is_empty() {
+        body["system"] = json!(system);
+    }
+    body
+}
+
+/// Build the non-streaming `/messages` body shared by every `research*`
+/// facet (native `web_search` tool). Pure + unit-tested — same
+/// [`anthropic_supports_temperature`] gate as [`build_complete_body`]; the
+/// hardcoded `0.2` (favor precision over creativity for a research brief) is
+/// simply skipped instead of overridden on adaptive models.
+fn build_web_search_body(model: &str, system: &str, user: &str) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": adaptive_max_tokens(model, 1024),
+        "system": system,
+        "messages": [{ "role": "user", "content": user }],
+        "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
+    });
+    if anthropic_supports_temperature(model) {
+        body["temperature"] = json!(0.2);
+    }
+    body
+}
+
+/// Build the non-streaming `/messages` body for [`AnthropicClient::chat_with_tools`].
+/// Pure + unit-tested — same [`anthropic_supports_temperature`] gate as
+/// [`build_complete_body`].
+fn build_tools_body(
+    model: &str,
+    system: &str,
+    wire_messages: Vec<Value>,
+    tool_specs: Vec<Value>,
+    temperature: Option<f64>,
+) -> Value {
+    let mut body = json!({
+        "model": model,
+        "max_tokens": adaptive_max_tokens(model, 4096),
+        "messages": wire_messages,
+        "tools": tool_specs,
+    });
+    if anthropic_supports_temperature(model) {
+        body["temperature"] = json!(temperature.unwrap_or(0.7));
+    }
+    if !system.is_empty() {
+        body["system"] = json!(system);
     }
     body
 }
@@ -294,15 +559,7 @@ impl AnthropicClient {
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, model, "/messages", BASE, false);
 
-        let mut body = json!({
-            "model": model,
-            "max_tokens": 4096,
-            "messages": [ { "role": "user", "content": user } ],
-            "temperature": temperature.unwrap_or(0.7),
-        });
-        if !system.is_empty() {
-            body["system"] = json!(system);
-        }
+        let body = build_complete_body(model, system, user, temperature);
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -367,14 +624,7 @@ impl AnthropicClient {
             false,
         );
 
-        let body = json!({
-            "model": model,
-            "max_tokens": 1024,
-            "system": system,
-            "messages": [{ "role": "user", "content": user }],
-            "temperature": 0.2,
-            "tools": [{ "type": "web_search_20250305", "name": "web_search", "max_uses": 3 }],
-        });
+        let body = build_web_search_body(model, system, user);
 
         let resp = crate::net::http::shared()
             .post(&endpoint)
@@ -417,9 +667,27 @@ impl AiProvider for AnthropicClient {
         ProviderId::Anthropic
     }
 
-    fn capabilities(&self, _model: &str) -> ModelCapabilities {
+    fn capabilities(&self, model: &str) -> ModelCapabilities {
+        // Every adaptive-thinking model 400s on ANY non-default temperature/
+        // top_p/top_k on EVERY request, thinking or not (Anthropic's "Sampling
+        // parameters" note), and an unrecognized `claude-`-prefixed id fails
+        // safe to the same "no temperature" default — see
+        // [`anthropic_supports_temperature`], the single source of truth this
+        // field AND every request builder in this file both gate on.
+        if !anthropic_supports_thinking(model) && !anthropic_uses_adaptive_thinking(model) {
+            // Debug-only observability, never user-facing, never blocks the
+            // call: this is either a legacy non-thinking model (nothing wrong
+            // — it simply predates thinking) or an unrecognized new Anthropic
+            // family this adapter hasn't learned a needle for yet, in which
+            // case its thinking view (if any) stays blank until it's added.
+            tracing::debug!(
+                model,
+                "anthropic: no thinking classification (legacy non-thinking model or \
+                 unrecognized new family)"
+            );
+        }
         ModelCapabilities {
-            supports_temperature: true,
+            supports_temperature: anthropic_supports_temperature(model),
             // Anthropic carries the system prompt as a top-level field, not a role.
             supports_system_role: false,
             supports_streaming: true,
@@ -643,9 +911,10 @@ impl AiProvider for AnthropicClient {
         tools: &[ToolSpec],
         temperature: Option<f64>,
     ) -> AppResult<AgentTurn> {
+        let caps = self.capabilities(model);
         // Unknown / non-tool models degrade to a single-shot answer rather than
         // 400-ing on a `tools` field they don't understand.
-        if !self.capabilities(model).supports_tools {
+        if !caps.supports_tools {
             return single_shot_turn(self, app, model, messages, temperature).await;
         }
         let api_key = get_provider_key(app, self.id().credential_key()).unwrap_or_default();
@@ -668,16 +937,7 @@ impl AiProvider for AnthropicClient {
             })
             .collect();
 
-        let mut body = json!({
-            "model": model,
-            "max_tokens": 4096,
-            "messages": wire_messages,
-            "temperature": temperature.unwrap_or(0.7),
-            "tools": tool_specs,
-        });
-        if !system.is_empty() {
-            body["system"] = json!(system);
-        }
+        let body = build_tools_body(model, &system, wire_messages, tool_specs, temperature);
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -712,272 +972,5 @@ impl AiProvider for AnthropicClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        anthropic_supports_thinking, build_chat_stream_body, join_text_blocks,
-        parse_anthropic_frames, parse_anthropic_turn, parse_anthropic_usage, StreamPiece,
-    };
-    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall, Usage};
-    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-    use serde_json::json;
-
-    fn base_request(model: &str) -> AiGenerateRequest {
-        AiGenerateRequest {
-            model: model.to_string(),
-            messages: vec![AiGenerateRequestMessage {
-                role: "user".to_string(),
-                content: "hi".to_string(),
-            }],
-            locale: "en".to_string(),
-            temperature: Some(0.8),
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: None,
-            effort: None,
-        }
-    }
-
-    #[test]
-    fn chat_stream_body_serializes_top_p_when_set_on_a_non_thinking_model() {
-        let mut req = base_request("claude-3-5-sonnet-20241022");
-        req.top_p = Some(0.95);
-        let body = build_chat_stream_body(&req);
-        assert_eq!(body["top_p"], json!(0.95));
-        assert!(body.get("thinking").is_none());
-    }
-
-    #[test]
-    fn chat_stream_body_omits_top_p_when_none() {
-        let body = build_chat_stream_body(&base_request("claude-3-5-sonnet-20241022"));
-        assert!(body.get("top_p").is_none());
-    }
-
-    #[test]
-    fn chat_stream_body_skips_top_p_when_extended_thinking_is_enabled() {
-        // Extended thinking forces temperature=1 and the API rejects `top_p`
-        // alongside `thinking` — must never be sent together, even if the caller
-        // (an application-answer/cover-letter prose call) supplied top_p.
-        let mut req = base_request("claude-opus-4-20250514");
-        req.top_p = Some(0.95);
-        req.max_tokens = Some(4096); // >= 2048 → thinking budget kicks in
-        let body = build_chat_stream_body(&req);
-        assert!(body.get("thinking").is_some(), "thinking should be enabled");
-        assert_eq!(body["temperature"], json!(1.0));
-        assert!(
-            body.get("top_p").is_none(),
-            "top_p must be omitted when thinking is enabled"
-        );
-    }
-
-    #[test]
-    fn thinking_gate_enables_only_extended_thinking_models() {
-        for m in [
-            "claude-3-7-sonnet-20250219",
-            "claude-3.7-sonnet",
-            "claude-opus-4-20250514",
-            "claude-sonnet-4-5",
-            "claude-haiku-4",
-        ] {
-            assert!(anthropic_supports_thinking(m), "{m} should enable thinking");
-        }
-        // Pre-3.7 models 400 on a `thinking` block — must stay off.
-        for m in [
-            "claude-3-haiku-20240307",
-            "claude-3-5-sonnet-20241022",
-            "claude-3-opus-20240229",
-            "claude-2.1",
-        ] {
-            assert!(
-                !anthropic_supports_thinking(m),
-                "{m} must not request thinking (it 400s)"
-            );
-        }
-    }
-
-    #[test]
-    fn parse_frames_splits_thinking_and_text_deltas() {
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from(
-            "event: content_block_delta\n\
-             data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\
-             event: content_block_delta\n\
-             data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n",
-        );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
-        assert_eq!(
-            pieces,
-            vec![StreamPiece::thinking("hmm"), StreamPiece::text("hi")]
-        );
-    }
-
-    #[test]
-    fn parse_frames_done_on_message_stop_event() {
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from("event: message_stop\ndata: {\"type\":\"message_stop\"}\n");
-        assert_eq!(
-            parse_anthropic_frames(&mut buf, &mut last, &mut usage),
-            vec![StreamPiece::done("")]
-        );
-    }
-
-    #[test]
-    fn parse_frames_done_when_event_line_split_across_chunks() {
-        // The `event:` line arrives in one chunk, the `data:` in the next — the
-        // caller carries `last_event`, so message_stop is still detected.
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from("event: message_stop\n");
-        assert!(parse_anthropic_frames(&mut buf, &mut last, &mut usage).is_empty());
-        assert_eq!(last, "message_stop");
-        buf.push_str("data: {}\n");
-        assert_eq!(
-            parse_anthropic_frames(&mut buf, &mut last, &mut usage),
-            vec![StreamPiece::done("")]
-        );
-    }
-
-    #[test]
-    fn parse_frames_leaves_partial_trailing_line_buffered() {
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from("data: {\"type\":\"content_block_de");
-        assert!(parse_anthropic_frames(&mut buf, &mut last, &mut usage).is_empty());
-        assert_eq!(buf, "data: {\"type\":\"content_block_de");
-    }
-
-    #[test]
-    fn parse_frames_drains_consumed_lines_keeping_partial_tail() {
-        // The in-place `drain(..consumed)` must drop exactly the fully-parsed lines
-        // (incl. a multi-byte char before the newline) and keep the partial tail —
-        // the offset arithmetic stays on char boundaries.
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from(
-            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"café\"}}\n\
-             data: {\"type\":\"content_block_de",
-        );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
-        assert_eq!(pieces, vec![StreamPiece::text("café")]);
-        // Only the unterminated trailing line survives the drain.
-        assert_eq!(buf, "data: {\"type\":\"content_block_de");
-    }
-
-    #[test]
-    fn parse_frames_combines_message_start_input_and_message_delta_output_tokens() {
-        let mut last = String::new();
-        let mut usage = Usage::default();
-        let mut buf = String::from(
-            "event: message_start\n\
-             data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":25,\"output_tokens\":1}}}\n",
-        );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
-        assert_eq!(
-            pieces,
-            vec![StreamPiece::usage(Usage {
-                input_tokens: 25,
-                output_tokens: 0
-            })]
-        );
-
-        buf.push_str(
-            "event: message_delta\n\
-             data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":91}}\n",
-        );
-        let pieces = parse_anthropic_frames(&mut buf, &mut last, &mut usage);
-        assert_eq!(
-            pieces,
-            vec![StreamPiece::usage(Usage {
-                input_tokens: 25,
-                output_tokens: 91
-            })]
-        );
-    }
-
-    #[test]
-    fn parse_usage_reads_a_non_streaming_response() {
-        let data = json!({ "usage": { "input_tokens": 12, "output_tokens": 34 } });
-        let usage = parse_anthropic_usage(&data);
-        assert_eq!(usage.input_tokens, 12);
-        assert_eq!(usage.output_tokens, 34);
-    }
-
-    #[test]
-    fn parse_usage_defaults_to_zero_when_absent() {
-        let usage = parse_anthropic_usage(&json!({}));
-        assert_eq!(usage, Usage::default());
-    }
-
-    #[test]
-    fn join_text_blocks_concatenates_only_text_blocks() {
-        // Web-search responses interleave tool blocks among the text blocks.
-        let data = json!({
-            "content": [
-                { "type": "text", "text": "Acme is a " },
-                { "type": "server_tool_use", "name": "web_search", "input": { "query": "Acme" } },
-                { "type": "web_search_tool_result", "content": [{ "url": "x", "title": "y" }] },
-                { "type": "text", "text": "widget maker." }
-            ]
-        });
-        assert_eq!(join_text_blocks(&data), "Acme is a widget maker.");
-    }
-
-    #[test]
-    fn join_text_blocks_empty_on_missing_or_error() {
-        assert_eq!(join_text_blocks(&json!({})), "");
-        assert_eq!(join_text_blocks(&json!({ "content": [] })), "");
-    }
-
-    #[test]
-    fn parse_turn_extracts_text_and_tool_use_blocks() {
-        // Assistant text interleaved with a `tool_use` block; stop_reason=tool_use.
-        let data = json!({
-            "content": [
-                { "type": "text", "text": "Let me look that up." },
-                { "type": "tool_use", "id": "toolu_1", "name": "research_company",
-                  "input": { "company": "Acme", "jobAd": "..." } }
-            ],
-            "stop_reason": "tool_use"
-        });
-        let turn = parse_anthropic_turn(&data);
-        assert_eq!(turn.text, "Let me look that up.");
-        assert_eq!(turn.stop, StopReason::ToolUse);
-        assert_eq!(
-            turn.tool_calls,
-            vec![ToolCall {
-                id: "toolu_1".to_string(),
-                name: "research_company".to_string(),
-                args: json!({ "company": "Acme", "jobAd": "..." }),
-            }]
-        );
-    }
-
-    #[test]
-    fn parse_turn_no_tool_calls_is_a_plain_end_turn() {
-        let data = json!({
-            "content": [{ "type": "text", "text": "All done." }],
-            "stop_reason": "end_turn"
-        });
-        let turn = parse_anthropic_turn(&data);
-        assert_eq!(turn.text, "All done.");
-        assert!(turn.tool_calls.is_empty());
-        assert_eq!(turn.stop, StopReason::End);
-    }
-
-    #[test]
-    fn parse_turn_maps_max_tokens_and_missing_input() {
-        // `max_tokens` → Length; a tool_use with no `input` still parses (args = {}).
-        let data = json!({
-            "content": [{ "type": "tool_use", "id": "t", "name": "match_resume" }],
-            "stop_reason": "max_tokens"
-        });
-        let turn = parse_anthropic_turn(&data);
-        assert_eq!(turn.stop, StopReason::Length);
-        assert_eq!(turn.tool_calls.len(), 1);
-        assert_eq!(turn.tool_calls[0].args, json!({}));
-    }
-}
+#[path = "anthropic_tests.rs"]
+mod tests;

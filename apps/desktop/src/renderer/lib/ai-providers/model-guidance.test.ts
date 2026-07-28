@@ -41,4 +41,19 @@ describe('getModelGuidance (#6)', () => {
   it('maps provider kind to the right note (cli login, no key)', () => {
     expect(getModelGuidance('opus', 'cli-agent')).toMatchObject({ task: 'strong', kind: 'cli' });
   });
+
+  it('flags fable as a strong large model on both cli-agent and cloud', () => {
+    expect(getModelGuidance('fable', 'cli-agent')).toMatchObject({
+      tier: 'large',
+      light: false,
+      task: 'strong',
+      kind: 'cli',
+    });
+    expect(getModelGuidance('claude-fable-5', 'cloud')).toEqual({
+      tier: 'large',
+      light: false,
+      task: 'strong',
+      kind: 'cloud',
+    });
+  });
 });

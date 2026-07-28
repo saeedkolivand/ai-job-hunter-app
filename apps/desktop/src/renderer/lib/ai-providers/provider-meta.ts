@@ -50,10 +50,10 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
   anthropic: {
     kind: 'cloud',
     label: 'Anthropic (Claude)',
-    description: 'Claude Opus, Sonnet, and Haiku via the Anthropic API.',
+    description: 'Claude models via the Anthropic API.',
     docsUrl: 'https://console.anthropic.com/settings/keys',
     color: 'text-orange-400',
-    models: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+    models: ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
   },
   gemini: {
     kind: 'cloud',
@@ -77,7 +77,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Use your installed Claude Code CLI — your existing Claude login, no API key.',
     docsUrl: 'https://docs.anthropic.com/en/docs/claude-code',
     color: 'text-orange-400',
-    models: ['sonnet', 'opus', 'haiku'],
+    models: ['sonnet', 'opus', 'haiku', 'fable'],
   },
   codex: {
     kind: 'cli-agent',

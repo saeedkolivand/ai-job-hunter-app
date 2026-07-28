@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-07-16
+Last updated: 2026-07-28
 
 ## High-Level Overview
 
@@ -406,15 +406,15 @@ The Rust core composes a small set of **single-owner** infrastructure modules in
 
 All HTTP goes through the shared `net::http` client (rustls).
 
-| Integration      | Protocol                                                            | Auth                         | Purpose                      |
-| ---------------- | ------------------------------------------------------------------- | ---------------------------- | ---------------------------- |
-| [Ollama][ollama] | HTTP (`net::http`, local)                                           | None (local)                 | Chat generation + embeddings |
-| OpenAI           | HTTPS (REST)                                                        | API key (keychain)           | Cloud generation fallback    |
-| Anthropic        | HTTPS (REST)                                                        | API key (keychain)           | Extended thinking generation |
-| Google Gemini    | HTTPS (REST)                                                        | API key (keychain)           | Multilingual generation      |
-| LM Studio        | HTTP (OpenAI-compatible)                                            | Optional                     | Local cloud-replacement      |
-| Job boards (20)  | [chromiumoxide][chromiumoxide] (browser) / `net::http` (API boards) | Board credentials (keychain) | Scraping                     |
-| OS Keychain      | Tauri plugin                                                        | OS auth                      | Credential encryption        |
+| Integration      | Protocol                                                            | Auth                         | Purpose                                 |
+| ---------------- | ------------------------------------------------------------------- | ---------------------------- | --------------------------------------- |
+| [Ollama][ollama] | HTTP (`net::http`, local)                                           | None (local)                 | Chat generation + embeddings            |
+| OpenAI           | HTTPS (REST)                                                        | API key (keychain)           | Cloud generation fallback               |
+| Anthropic        | HTTPS (REST)                                                        | API key (keychain)           | Extended + adaptive thinking generation |
+| Google Gemini    | HTTPS (REST)                                                        | API key (keychain)           | Multilingual generation                 |
+| LM Studio        | HTTP (OpenAI-compatible)                                            | Optional                     | Local cloud-replacement                 |
+| Job boards (20)  | [chromiumoxide][chromiumoxide] (browser) / `net::http` (API boards) | Board credentials (keychain) | Scraping                                |
+| OS Keychain      | Tauri plugin                                                        | OS auth                      | Credential encryption                   |
 
 ---
 
