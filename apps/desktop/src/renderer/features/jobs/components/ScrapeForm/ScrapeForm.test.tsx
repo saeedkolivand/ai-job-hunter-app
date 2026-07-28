@@ -280,8 +280,71 @@ describe('ScrapeForm — hidden when show=false', () => {
         onGeocode={async () => []}
       />
     );
-    // AnimatePresence renders nothing when show=false
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drawer-panel layout: the form is hosted in a full-height right slide-over, so
+// it owns pinned chrome around ONE scrolling region. Before this, the whole form
+// sat in a single scrolling body and at the 900×600 floor its content overflowed
+// (scrollHeight 625 > 598) with Start below the fold. jsdom has no layout
+// engine, so the contract is asserted on the classes that produce it.
+// ---------------------------------------------------------------------------
+
+describe('ScrapeForm — pinned drawer-panel chrome', () => {
+  function renderPanel() {
+    stubCatalog = LISTED_CATALOG;
+    stubLoading = false;
+    return render(
+      <ScrapeForm
+        show
+        form={DEFAULT_FORM}
+        scraping={false}
+        scrapeOutcome={null}
+        onToggle={NOOP}
+        onFormChange={NOOP}
+        onStart={NOOP}
+        onCancel={NOOP}
+        onGeocode={async () => []}
+      />
+    );
+  }
+
+  it('is a full-height column: pinned header, one scrolling body, pinned footer', () => {
+    renderPanel();
+
+    const root = screen.getByTestId(TEST_IDS.jobs.scrapeForm);
+    expect(root.className).toContain('h-full');
+    expect(root.className).toContain('flex-col');
+    expect(root.className).toContain('min-h-0');
+
+    const body = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
+    expect(body.className).toContain('overflow-y-auto');
+    expect(body.className).toContain('min-h-0');
+    expect(body.className).toContain('flex-1');
+
+    // Exactly three regions; header and footer must NOT be inside the scroller.
+    const regions = Array.from(root.children);
+    expect(regions).toHaveLength(3);
+    expect(regions[0]?.className).toContain('shrink-0');
+    expect(regions[2]?.className).toContain('shrink-0');
+  });
+
+  it('keeps Start in the pinned footer, outside the scrolling body', () => {
+    renderPanel();
+
+    const start = screen.getByTestId(TEST_IDS.jobs.scrapeStartButton);
+    const body = screen.getByTestId(TEST_IDS.jobs.scrapeFormScroll);
+    expect(body.contains(start)).toBe(false);
+  });
+
+  it('renders no nested card surface — the drawer is the surface', () => {
+    const { container } = renderPanel();
+    // A GlassCard inside the panel doubled the inset (36px) and the entrance
+    // fade (drawer slide + card fade on the same frame). `surface-card` is the
+    // default GlassCard tone class, `glass-card` the opt-in frosted one.
+    expect(container.querySelector('.surface-card, .glass-card')).toBeNull();
   });
 });
 

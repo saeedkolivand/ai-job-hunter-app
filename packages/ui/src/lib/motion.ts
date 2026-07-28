@@ -140,6 +140,14 @@ export const variants = {
     animate: { opacity: 1, x: 0 },
     exit: { opacity: 0, x: 12 },
   },
+  /** Right-edge slide-over (drawer / sheet) — travels the full panel width so the
+   *  panel enters from and exits past the viewport's right edge. Pair with
+   *  `variants.overlay` under `prefers-reduced-motion` (drop the translate). */
+  slideOverRight: {
+    initial: { opacity: 0, x: '100%' },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: '100%' },
+  },
 } as const;
 
 // ── Stagger system ────────────────────────────────────────────────────────
