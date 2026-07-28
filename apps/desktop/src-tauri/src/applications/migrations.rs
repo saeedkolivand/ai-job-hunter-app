@@ -174,11 +174,34 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             // already raised for the CURRENT `next_action_at`. NULL = not yet
             // notified, so a fresh/rescheduled reminder fires exactly once.
             // Nullable (never 0) for the same reason as `next_action_at`.
-            // Deliberately NOT part of the `Application` wire type — it is
-            // backend bookkeeping, invisible to the renderer.
-            conn.execute_batch(
-                "ALTER TABLE applications ADD COLUMN next_action_notified_at INTEGER;",
-            )
+            //
+            // BACKFILL — "already announced" for everything ALREADY due. Without
+            // it every pre-existing overdue reminder is NULL on first boot after
+            // the upgrade, so the very first sweep treats the user's whole
+            // backlog as brand-new and announces it: a banner storm the moment
+            // they open the app. `MAX_PER_SWEEP` only paces that (5 per 30 min),
+            // it does not suppress it. Stamping the migration's own timestamp
+            // means "we consider these delivered"; a reminder in the FUTURE is
+            // left NULL so it still notifies when it comes due, and moving any
+            // due date clears the marker (`update_fields`) so a deliberate
+            // reschedule always re-announces.
+            //
+            // The `<=` boundary matches `reminder_scheduler::should_notify`'s
+            // inclusive due test, so a reminder due at exactly this instant is
+            // suppressed by the same rule that would have fired it.
+            //
+            // (The backfill was folded into this body rather than appended as
+            // migration 9: entry 8 has never been RELEASED — it was added on
+            // this same unmerged branch — so no installed database has run it,
+            // and amending in place keeps one schema step per feature. Editing a
+            // shipped body would be forbidden.)
+            let at = crate::db::ts_to_db(crate::db::now_ms());
+            conn.execute_batch(&format!(
+                "ALTER TABLE applications ADD COLUMN next_action_notified_at INTEGER;
+
+                 UPDATE applications SET next_action_notified_at = {at}
+                  WHERE next_action_at IS NOT NULL AND next_action_at <= {at};"
+            ))
         },
     },
 ];

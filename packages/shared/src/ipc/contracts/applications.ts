@@ -68,7 +68,10 @@ export interface ApplicationChangedEvent {
  * `nextActionAt` (epoch ms, nullable) is the reminder. A backend sweep raises a
  * notification (`kind: 'application.follow_up'`, route `/applications` with
  * `search.highlight = <id>`) once per due date for non-terminal applications;
- * moving or clearing `nextActionAt` re-arms it. There is **no** counts command:
+ * moving or clearing `nextActionAt` re-arms it. `nextActionNotifiedAt` is the
+ * read-only dedupe marker behind that "once" — it exists on the wire only so a
+ * backup round trip does not re-announce delivered reminders, and `update()`
+ * deliberately has no field for it. There is **no** counts command:
  * overdue/upcoming badges are derived client-side from the `nextActionAt` values
  * already carried by `list()` (see `features/applications/lib/pipeline.ts`).
  */

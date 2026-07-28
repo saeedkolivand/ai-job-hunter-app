@@ -28,10 +28,13 @@ use crate::error::{AppError, AppResult};
 mod contact;
 mod job_url;
 mod migrations;
+mod reminders;
 
 // Re-exported so `crate::applications::normalize_job_url` keeps resolving after
 // the split (see `job_url` — a verbatim move, no behaviour change).
 pub use job_url::normalize_job_url;
+// Same for the reminder projection the scheduler imports (see `reminders`).
+pub use reminders::FollowUpCandidate;
 
 /// The user-mutable lifecycle of an [`Application`].
 ///
@@ -228,6 +231,17 @@ pub struct Application {
     pub notes: String,
     /// A user-set reminder timestamp (ms) for the next thing to do. `None` = unset.
     pub next_action_at: Option<u64>,
+    /// Epoch-ms of the follow-up notification already raised for the CURRENT
+    /// [`Application::next_action_at`]; `None` = not yet announced. Cleared by
+    /// [`ApplicationStore::update_fields`] whenever the due date moves, so one
+    /// reminder notifies exactly once per due date.
+    ///
+    /// Backend bookkeeping the renderer never renders — but it IS on the wire so
+    /// it survives a backup: [`DataStore::export`] serializes the aggregate, and
+    /// dropping this field meant restoring a backup re-announced every reminder
+    /// the user had already seen.
+    #[serde(default)]
+    pub next_action_notified_at: Option<u64>,
     #[serde(default)]
     pub comp: String,
     /// **The** primary contact for this pursuit (recruiter / hiring manager /
@@ -263,24 +277,6 @@ pub struct Application {
     /// ISO-4217 currency for `salary_min`/`salary_max`.
     #[serde(default)]
     pub salary_currency: Option<String>,
-}
-
-/// One Application's follow-up reminder state — the minimal projection
-/// [`crate::reminder_scheduler`] sweeps. Not a wire type: `notified_at` is
-/// backend-only bookkeeping and never reaches the renderer.
-#[derive(Debug, Clone)]
-pub struct FollowUpCandidate {
-    pub id: String,
-    pub status: ApplicationStatus,
-    pub title: String,
-    pub company: String,
-    /// The user-set reminder timestamp (ms). Always `Some` as returned by
-    /// [`ApplicationStore::follow_up_candidates`] (the query filters NULLs), but
-    /// kept optional so the decision function owns the "unset" case explicitly.
-    pub next_action_at: Option<u64>,
-    /// When a notification was already raised for the CURRENT `next_action_at`
-    /// (ms). `None` = not yet announced; cleared whenever the due date changes.
-    pub notified_at: Option<u64>,
 }
 
 /// One append-only status-history row.
@@ -600,6 +596,9 @@ impl ApplicationStore {
                 job_description: pick(clamped_jd, &existing.job_description),
                 notes: existing.notes.clone(),
                 next_action_at: existing.next_action_at,
+                // Carried through untouched: a re-scrape/re-track must never
+                // re-arm a reminder the user has already been notified about.
+                next_action_notified_at: existing.next_action_notified_at,
                 comp: existing.comp.clone(),
                 contact_name: existing.contact_name.clone(),
                 contact_email: existing.contact_email.clone(),
@@ -661,6 +660,7 @@ impl ApplicationStore {
             job_description: clamped_jd.to_string(),
             notes: String::new(),
             next_action_at: None,
+            next_action_notified_at: None,
             comp: String::new(),
             contact_name: String::new(),
             contact_email: String::new(),
@@ -969,9 +969,17 @@ impl ApplicationStore {
         let contact_email = contact_email
             .or(recipient_email)
             .unwrap_or(existing.contact_email);
+        // A new (or cleared) due date is a NEW reminder — forget that the old one
+        // was already announced so the scheduler can fire once for it.
+        let next_action_notified_at = if reminder_rescheduled {
+            None
+        } else {
+            existing.next_action_notified_at
+        };
         let app = Application {
             notes: notes.unwrap_or(existing.notes),
             next_action_at,
+            next_action_notified_at,
             comp: comp.unwrap_or(existing.comp),
             // Clamp Some(s) at the store boundary; None still preserves the stored JD
             // (the IPC arg is attacker-reachable and bypasses the renderer Zod cap).
@@ -987,85 +995,8 @@ impl ApplicationStore {
             ..existing
         };
         Self::write_row_conn(&tx, &app)?;
-        if reminder_rescheduled {
-            // A new (or cleared) due date is a NEW reminder — forget that the old
-            // one was already announced so the scheduler can fire once for it.
-            tx.execute(
-                "UPDATE applications SET next_action_notified_at = NULL WHERE id = ?1",
-                params![id],
-            )?;
-        }
         tx.commit()?;
         Ok(())
-    }
-
-    /// Every Application carrying a follow-up reminder, with the dedupe marker
-    /// the scheduler needs — the read side of [`crate::reminder_scheduler`].
-    ///
-    /// Rows without a `next_action_at` are filtered out in SQL (nothing to
-    /// remind about), so the sweep stays cheap on a large tracker.
-    ///
-    /// A SQL failure yields an empty sweep — but it is LOGGED, never silent: a
-    /// swallowed error here would kill every reminder for the rest of the
-    /// process with no diagnostic anywhere.
-    pub fn follow_up_candidates(&self) -> Vec<FollowUpCandidate> {
-        let conn = self.conn.lock();
-        let mut stmt = match conn.prepare(
-            "SELECT id, status, title, company, next_action_at, next_action_notified_at
-             FROM applications WHERE next_action_at IS NOT NULL",
-        ) {
-            Ok(stmt) => stmt,
-            Err(e) => {
-                log::warn!("[applications] follow-up query failed to prepare: {e}");
-                return Vec::new();
-            }
-        };
-        let rows = stmt.query_map([], |row| {
-            let status_raw: String = row.get(1)?;
-            Ok(FollowUpCandidate {
-                id: row.get(0)?,
-                status: ApplicationStatus::from_id(&status_raw),
-                title: row.get(2)?,
-                company: row.get(3)?,
-                next_action_at: row.get::<_, Option<i64>>(4)?.map(ts_from_db),
-                notified_at: row.get::<_, Option<i64>>(5)?.map(ts_from_db),
-            })
-        });
-        match rows {
-            Ok(rows) => rows
-                .filter_map(|r| {
-                    r.inspect_err(|e| log::warn!("[applications] skipped a follow-up row: {e}"))
-                        .ok()
-                })
-                .collect(),
-            Err(e) => {
-                log::warn!("[applications] follow-up query failed: {e}");
-                Vec::new()
-            }
-        }
-    }
-
-    /// Stamp "a follow-up notification was raised for the due date `due_at`" so
-    /// the next sweep skips this row. Cleared by [`Self::update_fields`]
-    /// whenever the due date moves.
-    ///
-    /// Returns `Ok(false)` when no row matched — the id is gone, or the user
-    /// rescheduled between the sweep's read and this write. `due_at` is in the
-    /// `WHERE` precisely for that race: an unconditional stamp would mark the
-    /// row notified for a due date the caller never evaluated, silencing the NEW
-    /// reminder forever. The caller must not notify on a `false`.
-    ///
-    /// Deliberately a targeted single-column `UPDATE` rather than a row rewrite:
-    /// the scheduler must never clobber a field the user edited between the read
-    /// and this write.
-    pub fn mark_next_action_notified(&self, id: &str, due_at: u64, at: u64) -> AppResult<bool> {
-        let conn = self.conn.lock();
-        let changed = conn.execute(
-            "UPDATE applications SET next_action_notified_at = ?3
-             WHERE id = ?1 AND next_action_at = ?2",
-            params![id, ts_to_db(due_at), ts_to_db(at)],
-        )?;
-        Ok(changed > 0)
     }
 
     /// Delete an Application and its status history. `keep_documents` is consumed
@@ -1094,16 +1025,18 @@ impl ApplicationStore {
         // (migration `unify_application_contact`). Omitting them means a new row
         // gets their `DEFAULT ''` and an existing row keeps its pre-unification
         // value untouched — additive, never destructive.
-        // `next_action_notified_at` is likewise omitted: it is reminder
-        // bookkeeping owned by `mark_next_action_notified` / cleared by
-        // `update_fields`, and must survive an unrelated row rewrite.
+        //
+        // `next_action_notified_at` IS written, from the struct — so every
+        // caller must carry the existing value forward. Rust enforces that
+        // mechanically: `Application` is built by exhaustive struct literals, so
+        // a new write path cannot compile without deciding what the marker is.
         conn.execute(
             "INSERT INTO applications
                 (id, status, applied_at, created_at, updated_at, job_url, board,
                  company, title, candidate, answers, brief, notes, next_action_at,
                  comp, contact_name, contact_email, job_description, job_summary,
-                 salary_min, salary_max, salary_currency)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)
+                 salary_min, salary_max, salary_currency, next_action_notified_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)
              ON CONFLICT(id) DO UPDATE SET
                 status = excluded.status,
                 applied_at = excluded.applied_at,
@@ -1124,7 +1057,8 @@ impl ApplicationStore {
                 job_summary = excluded.job_summary,
                 salary_min = excluded.salary_min,
                 salary_max = excluded.salary_max,
-                salary_currency = excluded.salary_currency",
+                salary_currency = excluded.salary_currency,
+                next_action_notified_at = excluded.next_action_notified_at",
             params![
                 app.id,
                 app.status.as_id(),
@@ -1148,6 +1082,7 @@ impl ApplicationStore {
                 app.salary_min,
                 app.salary_max,
                 app.salary_currency,
+                app.next_action_notified_at.map(ts_to_db),
             ],
         )?;
         Ok(())
@@ -1215,7 +1150,7 @@ const MAX_JOB_SUMMARY_BYTES: usize = 50_000;
 const SELECT_COLS: &str = "SELECT id, status, applied_at, created_at, updated_at, job_url, board,
             company, title, candidate, answers, brief, notes, next_action_at,
             comp, contact_name, contact_email, job_description, job_summary,
-            salary_min, salary_max, salary_currency
+            salary_min, salary_max, salary_currency, next_action_notified_at
      FROM applications";
 
 fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
@@ -1240,6 +1175,7 @@ fn row_to_application(row: &rusqlite::Row) -> rusqlite::Result<Application> {
         brief: row.get(11)?,
         notes: row.get(12)?,
         next_action_at: row.get::<_, Option<i64>>(13)?.map(ts_from_db),
+        next_action_notified_at: row.get::<_, Option<i64>>(22)?.map(ts_from_db),
         comp: row.get(14)?,
         job_description: row.get(17)?,
         job_summary: row.get(18)?,

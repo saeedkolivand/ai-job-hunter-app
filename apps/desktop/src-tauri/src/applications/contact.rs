@@ -70,12 +70,24 @@ impl Application {
     /// ([`super::ApplicationStore::import`]). The in-store build sites set both
     /// names from the same resolved value explicitly instead — folding there
     /// would resurrect a just-cleared contact from its own stale mirror.
+    ///
+    /// **Lockstep ruling — the SQL semantics win.** Promotion additionally
+    /// requires `alias_present`, exactly like the migration's second statement
+    /// (`… AND (TRIM(recipient_name) <> '' OR TRIM(recipient_email) <> '')`).
+    /// This side used to promote on `canonical_empty` ALONE, which diverged on
+    /// one input: a blank-but-not-quite-empty canonical pair (`"  "`) facing an
+    /// equally blank alias pair. Rust moved the empty alias over, WIPING the
+    /// stored whitespace; SQL matched nothing and left the row untouched. SQL
+    /// wins because it is the in-place path every existing user's rows already
+    /// took — an imported backup must reproduce what is on disk, not a second
+    /// opinion — and because promoting an empty alias is a pure no-op write that
+    /// can only destroy, never add, information.
     pub(super) fn canonicalize_contact(mut self) -> Self {
         let alias_present =
             !self.recipient_name.trim().is_empty() || !self.recipient_email.trim().is_empty();
         let canonical_empty =
             self.contact_name.trim().is_empty() && self.contact_email.trim().is_empty();
-        if canonical_empty {
+        if canonical_empty && alias_present {
             self.contact_name = std::mem::take(&mut self.recipient_name);
             self.contact_email = std::mem::take(&mut self.recipient_email);
         } else if alias_present

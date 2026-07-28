@@ -370,6 +370,10 @@ const R3_ALLOW: &[&str] = &[
     "ai_generations/mod.rs",
     "spend/mod.rs",
     "applications/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the follow-up reminder
+    // read + its atomic claim. Persistence still lives entirely inside the
+    // `applications` domain store — see applications::reminders.
+    "applications/reminders.rs",
     "documents/mod.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",

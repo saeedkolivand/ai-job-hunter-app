@@ -93,7 +93,7 @@ fn follow_up_body(title: &str, company: &str) -> String {
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(STARTUP_GRACE).await;
-        tick(&app);
+        tick(&app).await;
 
         let mut interval = tokio::time::interval(TICK_INTERVAL);
         // `Delay`, not the default `Burst`: after the machine sleeps for hours,
@@ -105,42 +105,83 @@ pub fn start(app: AppHandle) {
         interval.tick().await; // consume the immediate tick (first sweep already ran)
         loop {
             interval.tick().await;
-            tick(&app);
+            tick(&app).await;
         }
     });
 }
 
-/// One sweep. Synchronous and cheap (a single indexed SQLite read plus at most
-/// [`MAX_PER_SWEEP`] one-row updates), so it runs inline on the scheduler task
-/// rather than through `spawn_blocking`.
-fn tick(app: &AppHandle) {
-    let Some(store) = app.try_state::<ApplicationStore>() else {
-        return;
-    };
-    for c in due_follow_ups(store.follow_up_candidates(), now_ms()) {
-        // `should_notify` only accepts a candidate with a due date, so this is
-        // always `Some`; skip rather than unwrap if that ever stops holding.
-        let Some(due_at) = c.next_action_at else {
-            continue;
-        };
-        // Stamp the marker FIRST, then notify — so a crash between the two
-        // never re-announces the same due date (the email-watch `mark_seen`
-        // ordering). The stamp is conditional on the due date this decision was
-        // made against: `Ok(false)` means the user rescheduled (or deleted the
-        // row) since the read, so this notification is stale — drop it and let
-        // the next sweep evaluate the NEW date. A failed stamp likewise skips,
-        // rather than risking an un-deduped repeat every 30 minutes.
-        match store.mark_next_action_notified(&c.id, due_at, now_ms()) {
-            Ok(true) => notify_due(app, &c),
-            Ok(false) => log::debug!(
-                "[reminders] {} changed since the sweep read it — not notifying",
-                c.id
-            ),
-            Err(e) => log::warn!(
-                "[reminders] could not mark {} notified (skipping): {e}",
-                c.id
-            ),
+/// The BLOCKING half of one sweep: read every candidate, then atomically claim
+/// the ones that may be announced. Returns exactly the claimed candidates, in
+/// sweep order — the caller notifies for those and nothing else.
+///
+/// Claim BEFORE notify (the email-watch `mark_seen` ordering) so a crash between
+/// the two never re-announces the same due date. A `false` claim means the row
+/// changed since the read — rescheduled, deleted, or moved to a terminal stage —
+/// so the card is stale; drop it and let the next sweep evaluate the new state.
+/// A failed claim likewise skips, rather than risking an un-deduped repeat every
+/// 30 minutes.
+///
+/// Free function taking `&ApplicationStore` so the whole read→claim→select
+/// pipeline is directly testable against a real store, without an `AppHandle`.
+fn claim_due(store: &ApplicationStore, now: u64) -> Vec<FollowUpCandidate> {
+    due_follow_ups(store.follow_up_candidates(), now)
+        .into_iter()
+        .filter(|c| {
+            // `should_notify` only accepts a candidate with a due date, so this
+            // is always `Some`; skip rather than unwrap if that stops holding.
+            let Some(due_at) = c.next_action_at else {
+                return false;
+            };
+            match store.mark_next_action_notified(&c.id, due_at, now_ms()) {
+                Ok(true) => true,
+                Ok(false) => {
+                    log::debug!(
+                        "[reminders] {} changed since the sweep read it — not notifying",
+                        c.id
+                    );
+                    false
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[reminders] could not mark {} notified (skipping): {e}",
+                        c.id
+                    );
+                    false
+                }
+            }
+        })
+        .collect()
+}
+
+/// One sweep.
+///
+/// The storage half is cheap but genuinely BLOCKING — a `parking_lot` mutex, a
+/// full scan of the reminder rows and up to [`MAX_PER_SWEEP`] one-row writes —
+/// so it runs on `spawn_blocking`, never inline on a tokio worker (same split as
+/// [`crate::email_watch_scheduler`]'s IMAP poll). Notification delivery stays on
+/// the async side: `push_and_notify` does a `webview.is_focused()` main-thread
+/// round trip per card, which must not happen inside a blocking pool task.
+async fn tick(app: &AppHandle) {
+    let handle = app.clone();
+    let claimed = match tokio::task::spawn_blocking(move || {
+        handle
+            .try_state::<ApplicationStore>()
+            .map(|store| claim_due(&store, now_ms()))
+            .unwrap_or_default()
+    })
+    .await
+    {
+        Ok(claimed) => claimed,
+        // Only a panic (or runtime shutdown) inside the closure gets here; the
+        // sweep is idempotent, so dropping this one and retrying next tick is
+        // the whole recovery.
+        Err(e) => {
+            log::warn!("[reminders] sweep task failed: {e}");
+            return;
         }
+    };
+    for c in &claimed {
+        notify_due(app, c);
     }
 }
 
@@ -295,5 +336,108 @@ mod tests {
         assert_eq!(follow_up_body("", "Acme"), "Acme");
         assert_eq!(follow_up_body("Engineer", "  "), "Engineer");
         assert_eq!(follow_up_body("  ", ""), "Untitled application");
+    }
+
+    // ── claim_due (against a real store — no AppHandle needed) ───────────────
+
+    use crate::applications::ApplicationMeta;
+    use tempfile::TempDir;
+
+    /// Track one application and give it a follow-up due at `due`.
+    fn tracked_with_reminder(store: &ApplicationStore, company: &str, due: u64) -> String {
+        let id = store
+            .track_manual(
+                "",
+                "",
+                &ApplicationMeta {
+                    company: company.to_string(),
+                    title: "Engineer".to_string(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        store
+            .update_fields(
+                &id,
+                None,
+                Some(Some(due)),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        id
+    }
+
+    #[test]
+    fn a_claimed_reminder_is_not_claimed_again_by_the_next_sweep() {
+        let dir = TempDir::new().unwrap();
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        let id = tracked_with_reminder(&store, "Acme", NOW - 1);
+
+        let first: Vec<String> = claim_due(&store, NOW).into_iter().map(|c| c.id).collect();
+        assert_eq!(
+            first,
+            vec![id.clone()],
+            "an overdue reminder is claimed once"
+        );
+
+        // The claim stamped the marker, so the very next sweep — same due date,
+        // still overdue — must return nothing. This is the whole dedupe contract
+        // end-to-end (read → claim → marker), not just `should_notify` in memory.
+        assert!(
+            claim_due(&store, NOW).is_empty(),
+            "a claimed reminder must not be announced twice"
+        );
+
+        // Rescheduling re-arms it exactly once.
+        store
+            .update_fields(
+                &id,
+                None,
+                Some(Some(NOW - 2)),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(claim_due(&store, NOW).len(), 1, "a new due date re-arms");
+    }
+
+    #[test]
+    fn a_terminal_pursuit_is_never_claimed_and_keeps_its_marker_clear() {
+        let dir = TempDir::new().unwrap();
+        let store = ApplicationStore::open(dir.path()).unwrap();
+        let id = tracked_with_reminder(&store, "Acme", NOW - 1);
+        store
+            .set_status(&id, ApplicationStatus::Rejected, "")
+            .unwrap();
+
+        assert!(
+            claim_due(&store, NOW).is_empty(),
+            "a rejected pursuit must not nag"
+        );
+        // …and it is skipped WITHOUT being stamped, so reviving the pursuit
+        // leaves the reminder announceable rather than permanently silenced.
+        assert_eq!(
+            store
+                .follow_up_candidates()
+                .first()
+                .and_then(|c| c.notified_at),
+            None,
+            "a skipped terminal row must not be marked notified"
+        );
+        store
+            .set_status(&id, ApplicationStatus::Interviewing, "")
+            .unwrap();
+        assert_eq!(claim_due(&store, NOW).len(), 1, "a revived pursuit reminds");
     }
 }

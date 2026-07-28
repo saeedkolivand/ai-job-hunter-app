@@ -410,6 +410,15 @@ export interface Application {
   notes: string;
   /** User-set reminder timestamp (ms) for the next action. Absent = unset. */
   nextActionAt?: number;
+  /** Backend bookkeeping: when the follow-up notification for the CURRENT
+   *  {@link Application.nextActionAt} was already raised (ms). Absent = not yet
+   *  announced; the backend clears it whenever the due date moves.
+   *
+   *  Not for display — it exists on the wire so a backup round trip preserves it
+   *  (`export`/`import` serialize this aggregate; dropping it made restoring a
+   *  backup re-announce every reminder the user had already seen). The renderer
+   *  must not write it: `update()` has no such field. */
+  nextActionNotifiedAt?: number;
   comp: string;
   /** **The** primary contact for this pursuit (recruiter / hiring manager /
    *  apply-by-email recipient — one person, one field). Canonical: the only

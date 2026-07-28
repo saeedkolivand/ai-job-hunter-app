@@ -64,6 +64,59 @@ fn open_gen_db_with_app_id_col(dir: &std::path::Path) -> Connection {
     Connection::open(dir.join("ai_generations.db")).unwrap()
 }
 
+/// Named-field view of [`ApplicationStore::update_fields`]' ten positional
+/// arguments, for tests.
+///
+/// `update_fields(&id, None, None, None, None, None, None, None, Some(x), None)`
+/// is unreadable and silently wrong if an argument shifts; `Patch { recipient_name:
+/// Some(x), ..Default::default() }` names what the test actually means and is
+/// checked by the compiler. Adding a field to `update_fields` breaks
+/// [`patch`] once, here, instead of every call site.
+#[derive(Default)]
+struct Patch {
+    notes: Option<String>,
+    /// Outer `None` = leave the reminder alone; `Some(None)` = clear it.
+    next_action_at: Option<Option<u64>>,
+    comp: Option<String>,
+    contact_name: Option<String>,
+    contact_email: Option<String>,
+    job_description: Option<String>,
+    job_summary: Option<String>,
+    recipient_name: Option<String>,
+    recipient_email: Option<String>,
+}
+
+/// Forward a [`Patch`] to [`ApplicationStore::update_fields`] in the one place
+/// the positional order has to be spelled out.
+fn patch(store: &ApplicationStore, id: &str, p: Patch) -> AppResult<()> {
+    store.update_fields(
+        id,
+        p.notes,
+        p.next_action_at,
+        p.comp,
+        p.contact_name,
+        p.contact_email,
+        p.job_description,
+        p.job_summary,
+        p.recipient_name,
+        p.recipient_email,
+    )
+}
+
+/// Shorthand for the overwhelmingly common single-field case: set/clear the
+/// follow-up reminder.
+fn set_reminder(store: &ApplicationStore, id: &str, at: Option<u64>) {
+    patch(
+        store,
+        id,
+        Patch {
+            next_action_at: Some(at),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
 fn meta(company: &str, title: &str) -> ApplicationMeta {
     ApplicationMeta {
         company: company.into(),
@@ -111,6 +164,33 @@ fn rejects_dangerous_url_schemes_to_empty() {
     assert_eq!(normalize_job_url("blob:https://evil.example/uuid"), "");
     // Case-insensitive scheme detection: mixed-case dangerous scheme still rejected.
     assert_eq!(normalize_job_url("JavaScript:alert(1)"), "");
+}
+
+#[test]
+fn embedded_control_characters_cannot_smuggle_a_scheme_past_the_guard() {
+    // HTML and the WHATWG URL parser REMOVE embedded tab/CR/LF before parsing, so
+    // this string is `javascript:` to any consumer — while a raw-byte scheme scan
+    // sees the scheme-less `"java"` and would store the payload verbatim.
+    // Stripping C0 controls first makes the guard see what a consumer sees.
+    assert_eq!(normalize_job_url("java\nscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("java\tscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("java\rscript:alert(1)"), "");
+    assert_eq!(normalize_job_url("ja\u{0}vascript:alert(1)"), "");
+    assert_eq!(normalize_job_url("da\u{7F}ta:text/html,x"), "");
+
+    // A control character anywhere else is removed too, so nothing unprintable is
+    // ever stored as part of the dedup key.
+    assert_eq!(
+        normalize_job_url("https://example.com/job/\u{0}1"),
+        "https://example.com/job/1"
+    );
+    // Leading whitespace exposed by the removal is still trimmed away.
+    assert_eq!(
+        normalize_job_url("\u{0} https://example.com/job/1"),
+        "https://example.com/job/1"
+    );
+    // A control-only input degrades to "no url" rather than a bare host.
+    assert_eq!(normalize_job_url("\u{0}\u{1}"), "");
 }
 
 #[test]
@@ -3268,78 +3348,62 @@ fn both_inbound_contact_names_write_the_same_storage() {
         .unwrap();
 
     // Alias write (what ApplyByEmailTab sends today) lands on the canonical pair.
-    store
-        .update_fields(
-            &id,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("Rita Recruiter".into()),
-            Some("rita@acme.com".into()),
-        )
-        .unwrap();
+    patch(
+        &store,
+        &id,
+        Patch {
+            recipient_name: Some("Rita Recruiter".into()),
+            recipient_email: Some("rita@acme.com".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let app = store.get(&id).unwrap();
     assert_eq!(app.contact_name, "Rita Recruiter");
     assert_eq!(app.contact_email, "rita@acme.com");
     assert_eq!(app.recipient_name, "Rita Recruiter");
 
     // A canonical write is visible under BOTH names too.
-    store
-        .update_fields(
-            &id,
-            None,
-            None,
-            None,
-            Some("Cora Contact".into()),
-            Some("cora@acme.com".into()),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    patch(
+        &store,
+        &id,
+        Patch {
+            contact_name: Some("Cora Contact".into()),
+            contact_email: Some("cora@acme.com".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let app = store.get(&id).unwrap();
     assert_eq!(app.contact_name, "Cora Contact");
     assert_eq!(app.recipient_name, "Cora Contact");
     assert_eq!(app.recipient_email, "cora@acme.com");
 
     // Both names in ONE patch: the canonical one wins.
-    store
-        .update_fields(
-            &id,
-            None,
-            None,
-            None,
-            Some("Canonical".into()),
-            None,
-            None,
-            None,
-            Some("Alias".into()),
-            None,
-        )
-        .unwrap();
+    patch(
+        &store,
+        &id,
+        Patch {
+            contact_name: Some("Canonical".into()),
+            recipient_name: Some("Alias".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(store.get(&id).unwrap().contact_name, "Canonical");
 
     // Clearing through the alias clears the canonical pair — the stale mirror
     // must never resurrect the old value.
-    store
-        .update_fields(
-            &id,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(String::new()),
-            Some(String::new()),
-        )
-        .unwrap();
+    patch(
+        &store,
+        &id,
+        Patch {
+            recipient_name: Some(String::new()),
+            recipient_email: Some(String::new()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let cleared = store.get(&id).unwrap();
     assert_eq!(cleared.contact_name, "");
     assert_eq!(cleared.contact_email, "");
@@ -3394,8 +3458,14 @@ fn importing_a_pre_unification_bundle_folds_exactly_like_the_migration() {
         ),
         imported_row("imp-alias-name-only", "", "", "Rita Recruiter", ""),
         imported_row("imp-whitespace-contact", "  ", " ", "Rita Recruiter", ""),
+        // The lockstep case: a blank canonical pair facing an equally blank
+        // ALIAS pair. The migration's WHERE requires a non-blank alias, so SQL
+        // leaves this row alone — and after the ruling in `contact.rs` so does
+        // the import path. Before it, Rust promoted on `canonical_empty` alone
+        // and OVERWROTE the stored whitespace with the empty alias.
+        imported_row("imp-blank-both", " ", "", "\t", "  "),
     ]);
-    assert_eq!(store.import(&bundle).unwrap(), 4);
+    assert_eq!(store.import(&bundle).unwrap(), 5);
     let contact_of = |id: &str| {
         let a = store.get(id).unwrap();
         (a.contact_name, a.contact_email)
@@ -3435,6 +3505,15 @@ fn importing_a_pre_unification_bundle_folds_exactly_like_the_migration() {
         contact_of("imp-whitespace-contact"),
         ("Rita Recruiter".into(), String::new())
     );
+    // LOCKSTEP: nothing to promote → no write at all, byte-for-byte what the
+    // migration's `WHERE … AND (TRIM(recipient_name) <> '' OR …)` leaves on disk.
+    assert_eq!(
+        contact_of("imp-blank-both"),
+        (" ".to_string(), String::new()),
+        "an empty alias pair must never overwrite the canonical pair"
+    );
+    // …and no preservation note is invented for a contact that does not exist.
+    assert_eq!(store.get("imp-blank-both").unwrap().notes, "");
 }
 
 #[test]
@@ -3473,20 +3552,7 @@ fn follow_up_candidates_only_carry_rows_with_a_reminder() {
     let without = store
         .track_manual("", "", &meta("Globex", "Designer"))
         .unwrap();
-    store
-        .update_fields(
-            &with_reminder,
-            None,
-            Some(Some(5_000)),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    set_reminder(&store, &with_reminder, Some(5_000));
 
     let candidates = store.follow_up_candidates();
     let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
@@ -3507,22 +3573,6 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
     let id = store
         .track_manual("", "", &meta("Acme", "Engineer"))
         .unwrap();
-    let set_reminder = |at: Option<u64>| {
-        store
-            .update_fields(
-                &id,
-                None,
-                Some(at),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-    };
     let marker = || {
         store
             .follow_up_candidates()
@@ -3530,7 +3580,7 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
             .and_then(|c| c.notified_at)
     };
 
-    set_reminder(Some(5_000));
+    set_reminder(&store, &id, Some(5_000));
     assert!(
         store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
         "stamping the due date the sweep read must match a row"
@@ -3539,24 +3589,19 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
 
     // An unrelated patch rewrites every column — the marker must NOT be lost,
     // or a still-overdue reminder would re-notify on the very next sweep.
-    store
-        .update_fields(
-            &id,
-            Some("called them".into()),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+    patch(
+        &store,
+        &id,
+        Patch {
+            notes: Some("called them".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(marker(), Some(9_000), "an unrelated edit must not clear it");
 
     // Patching next_action_at to the SAME value is not a reschedule.
-    set_reminder(Some(5_000));
+    set_reminder(&store, &id, Some(5_000));
     assert_eq!(
         marker(),
         Some(9_000),
@@ -3564,18 +3609,18 @@ fn the_notified_marker_survives_unrelated_edits_and_clears_on_reschedule() {
     );
 
     // Moving the due date IS — the new date must be announceable once.
-    set_reminder(Some(7_000));
+    set_reminder(&store, &id, Some(7_000));
     assert_eq!(marker(), None, "rescheduling clears the marker");
 
     // Clearing the reminder entirely also clears the marker, so re-setting the
     // same date later still notifies.
     store.mark_next_action_notified(&id, 7_000, 9_500).unwrap();
-    set_reminder(None);
+    set_reminder(&store, &id, None);
     assert!(
         store.follow_up_candidates().is_empty(),
         "a cleared reminder leaves no candidate"
     );
-    set_reminder(Some(7_000));
+    set_reminder(&store, &id, Some(7_000));
     assert_eq!(marker(), None, "clearing then re-setting starts fresh");
 }
 
@@ -3589,25 +3634,9 @@ fn stamping_a_stale_due_date_matches_nothing_and_leaves_the_new_one_notifiable()
     let id = store
         .track_manual("", "", &meta("Acme", "Engineer"))
         .unwrap();
-    let set_reminder = |at: Option<u64>| {
-        store
-            .update_fields(
-                &id,
-                None,
-                Some(at),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-    };
 
-    set_reminder(Some(5_000)); // the sweep reads due = 5_000 …
-    set_reminder(Some(7_000)); // … the user reschedules before the stamp lands
+    set_reminder(&store, &id, Some(5_000)); // the sweep reads due = 5_000 …
+    set_reminder(&store, &id, Some(7_000)); // … the user reschedules before the stamp lands
 
     assert!(
         !store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
@@ -3624,4 +3653,347 @@ fn stamping_a_stale_due_date_matches_nothing_and_leaves_the_new_one_notifiable()
     assert!(!store
         .mark_next_action_notified("does-not-exist", 7_000, 9_000)
         .unwrap());
+}
+
+#[test]
+fn a_status_change_to_terminal_between_the_read_and_the_stamp_blocks_the_claim() {
+    // The sweep reads candidates under one lock and stamps under another. In the
+    // window between, the user can close the pursuit — and a Rust-side
+    // `is_terminal` re-check would have that exact same window. Only the
+    // predicate INSIDE the stamping UPDATE closes it.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+
+    // 1. The sweep reads: due, un-notified, not terminal → it would notify.
+    let read = store
+        .follow_up_candidates()
+        .into_iter()
+        .next()
+        .expect("one candidate");
+    assert!(
+        !read.status.is_terminal(),
+        "baseline: notifiable at read time"
+    );
+    assert_eq!(read.notified_at, None);
+
+    // 2. The user rejects the application, inside the window.
+    store
+        .set_status(&id, ApplicationStatus::Rejected, "")
+        .unwrap();
+
+    // 3. The claim must lose.
+    assert!(
+        !store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a pursuit that went terminal after the read must not be claimed"
+    );
+    assert_eq!(
+        store
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        None,
+        "a refused claim leaves the row unstamped, so reviving it still reminds"
+    );
+
+    // Reviving it makes the very same claim succeed — the ONLY thing that
+    // changed is the status, which is what pins the predicate.
+    store
+        .set_status(&id, ApplicationStatus::Interviewing, "")
+        .unwrap();
+    assert!(
+        store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+        "a revived pursuit is claimable again"
+    );
+}
+
+#[test]
+fn every_terminal_status_blocks_the_claim_and_ghosted_does_not() {
+    // The predicate must track `is_terminal` exactly — `ghosted` is deliberately
+    // soft-terminal (a ghosted pursuit can revive), so it still reminds.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    for status in ApplicationStatus::ALL {
+        let id = store
+            .track_manual("", "", &meta("Acme", "Engineer"))
+            .unwrap();
+        set_reminder(&store, &id, Some(5_000));
+        store.set_status(&id, *status, "").unwrap();
+        assert_eq!(
+            store.mark_next_action_notified(&id, 5_000, 9_000).unwrap(),
+            !status.is_terminal(),
+            "{status:?}: claimability must follow is_terminal()"
+        );
+    }
+}
+
+#[test]
+fn a_broken_follow_up_query_degrades_to_an_empty_sweep_instead_of_panicking() {
+    // The reminder sweep is this query's only consumer. If a schema change ever
+    // renames or drops a column it reads, an `unwrap` would take the scheduler
+    // task down and a bare `.ok()` would silently kill EVERY reminder for the
+    // rest of the process. It must return empty and log. Forced with the same
+    // second-raw-connection trick as
+    // `transition_status_if_rolls_back_status_when_event_insert_fails`.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert_eq!(
+        store.follow_up_candidates().len(),
+        1,
+        "baseline: the row IS a candidate before the table goes away"
+    );
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute("DROP TABLE applications", []).unwrap();
+    }
+
+    // SQLite compiles a statement against the CONNECTION's cached schema, and
+    // only reloads it when a statement actually steps. So the same broken schema
+    // surfaces through two different arms, in this order — both are exercised
+    // here, and both must degrade to an empty sweep rather than a panic.
+    //
+    // Arm 1 — the store has not noticed yet: `prepare` succeeds against the
+    // stale schema and the failure arrives while iterating (`SQLITE_SCHEMA` →
+    // re-prepare → "no such table"), i.e. the per-row arm.
+    assert!(
+        store.follow_up_candidates().is_empty(),
+        "a mid-iteration schema failure must yield an empty sweep, never a panic"
+    );
+
+    // Arm 2 — that step reloaded the schema, so `prepare` itself now fails. This
+    // is the arm a renamed/dropped COLUMN hits on every subsequent sweep, i.e.
+    // the one that would silence reminders forever if it were swallowed.
+    assert!(
+        store.follow_up_candidates().is_empty(),
+        "a prepare failure must yield an empty sweep, never a panic"
+    );
+    // Verified empirically, not assumed: replacing the `match conn.prepare(…)`
+    // guard with `.expect(…)` panics on THIS second call with
+    // `no such table: applications` (and passes on the first).
+
+    // (The remaining arm — `query_map` itself returning `Err` — is unreachable
+    // for this statement: `query_map` only fails while binding, and the
+    // statement takes zero parameters. It stays a defensive `match` arm rather
+    // than an `unwrap` so a future parameterised rewrite cannot become a panic.)
+}
+
+#[test]
+fn a_follow_up_row_that_fails_to_decode_is_skipped_and_the_healthy_ones_still_sweep() {
+    // The per-row arm: one corrupted row must not cost the user every OTHER
+    // reminder. A `next_action_at` holding text SQLite cannot coerce to an
+    // integer is what a hand-edited or partially-restored db looks like — it
+    // passes the `IS NOT NULL` filter, then fails `row.get::<_, i64>`.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let good = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &good, Some(5_000));
+
+    {
+        let conn = Connection::open(dir.path().join("applications.db")).unwrap();
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at, next_action_at)
+             VALUES ('bad-row', 'applied', 1000, 1000, 'not-a-timestamp')",
+            [],
+        )
+        .unwrap();
+        // Fixture sanity: INTEGER affinity keeps a non-numeric string as TEXT,
+        // which is what makes the row undecodable in the first place.
+        let kind: String = conn
+            .query_row(
+                "SELECT typeof(next_action_at) FROM applications WHERE id = 'bad-row'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "text", "fixture must store a non-integer value");
+    }
+
+    let ids: Vec<String> = store
+        .follow_up_candidates()
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec![good],
+        "the undecodable row is skipped; the healthy reminder still sweeps"
+    );
+}
+
+// ── Migration 8 backfill (no banner storm on the first post-upgrade sweep) ────
+
+#[test]
+fn migration_8_pre_marks_already_due_reminders_so_the_first_sweep_is_quiet() {
+    // Without the backfill every pre-existing overdue reminder is NULL after the
+    // upgrade, so the first sweep treats the user's whole backlog as brand new
+    // and announces it. MAX_PER_SWEEP paces that; it does not suppress it.
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("applications.db");
+    let conn = crate::db::open(&path).unwrap();
+
+    // Build the schema up to — but NOT including — the marker migration.
+    let all = super::migrations::MIGRATIONS;
+    for m in &all[..7] {
+        (m.up)(&conn).unwrap();
+    }
+    let seed = |id: &str, next: Option<i64>| {
+        conn.execute(
+            "INSERT INTO applications (id, status, created_at, updated_at, next_action_at)
+             VALUES (?1, 'applied', 1000, 1000, ?2)",
+            rusqlite::params![id, next],
+        )
+        .unwrap();
+    };
+    let before = now_ms();
+    seed("long-overdue", Some(1_000));
+    seed("due-a-minute-ago", Some(ts_to_db(before - 60_000)));
+    seed("due-later-today", Some(ts_to_db(before + 3_600_000)));
+    seed("no-reminder", None);
+
+    let m8 = &all[7];
+    assert_eq!(
+        m8.name, "add_applications_next_action_notified_at",
+        "migration order is pinned — entries are append-only"
+    );
+    (m8.up)(&conn).unwrap();
+    let after = now_ms();
+
+    let marker = |id: &str| -> Option<i64> {
+        conn.query_row(
+            "SELECT next_action_notified_at FROM applications WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    for id in ["long-overdue", "due-a-minute-ago"] {
+        let stamped = marker(id).unwrap_or_else(|| panic!("{id} must be pre-marked as announced"));
+        assert!(
+            stamped >= ts_to_db(before) && stamped <= ts_to_db(after),
+            "{id} must carry the migration's own timestamp, got {stamped}"
+        );
+    }
+    assert_eq!(
+        marker("due-later-today"),
+        None,
+        "a reminder that has NOT come due yet must still be announceable"
+    );
+    assert_eq!(
+        marker("no-reminder"),
+        None,
+        "a row with no reminder is untouched"
+    );
+
+    // End to end: the sweep's own read now reports the backlog as delivered and
+    // the future one as pending — exactly what `should_notify` filters on.
+    // (`user_version` is set by hand because the bodies were replayed directly;
+    // `ApplicationStore::open` would otherwise try to re-run all eight.)
+    conn.execute_batch("PRAGMA user_version = 8").unwrap();
+    drop(conn);
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let pending: Vec<String> = store
+        .follow_up_candidates()
+        .into_iter()
+        .filter(|c| c.notified_at.is_none())
+        .map(|c| c.id)
+        .collect();
+    assert_eq!(
+        pending,
+        vec!["due-later-today"],
+        "only the not-yet-due reminder may still notify after the upgrade"
+    );
+}
+
+#[test]
+fn a_re_upsert_of_the_same_job_url_carries_the_notified_marker_forward() {
+    // `write_row_conn` now WRITES this column, so every `Application` literal has
+    // to carry the stored value forward. `update_fields` gets it free via
+    // `..existing`; `upsert_internal`'s merge branch enumerates all fields, and
+    // that is the one a re-scrape/re-track goes through. Getting it wrong there
+    // re-arms an already-announced reminder on the next scrape.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let url = "https://acme.example/job/1";
+    let id = store
+        .track_manual(url, "b", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert!(store.mark_next_action_notified(&id, 5_000, 9_000).unwrap());
+
+    // Same URL again — merges into the SAME row through `upsert_internal`.
+    let same = store
+        .track_manual(url, "b", &meta("Acme Corp", "Senior Engineer"))
+        .unwrap();
+    assert_eq!(
+        same, id,
+        "fixture sanity: the re-track must merge, not create"
+    );
+    assert_eq!(
+        store
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        Some(9_000),
+        "a re-upsert must not resurrect an already-announced reminder"
+    );
+}
+
+#[test]
+fn the_notified_marker_survives_an_export_import_round_trip() {
+    // `export`/`import` is the backup path. Dropping the marker there meant
+    // restoring a backup re-fired every reminder the user had already seen.
+    let dir = TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .track_manual("", "", &meta("Acme", "Engineer"))
+        .unwrap();
+    set_reminder(&store, &id, Some(5_000));
+    assert!(store.mark_next_action_notified(&id, 5_000, 9_000).unwrap());
+
+    let bundle = store.export();
+    assert_eq!(
+        bundle[0]["nextActionNotifiedAt"],
+        serde_json::json!(9_000),
+        "the marker must be on the wire, under the camelCase name the TS type declares"
+    );
+
+    let restore_dir = TempDir::new().unwrap();
+    let restored = ApplicationStore::open(restore_dir.path()).unwrap();
+    restored.import(&bundle).unwrap();
+    assert_eq!(
+        restored
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        Some(9_000),
+        "a restored backup must not re-announce an already-delivered reminder"
+    );
+
+    // A bundle exported by a build that predates the marker simply has no such
+    // key — it must still import (serde default) and start un-notified.
+    let mut legacy = bundle.clone();
+    legacy[0]
+        .as_object_mut()
+        .unwrap()
+        .remove("nextActionNotifiedAt")
+        .expect("the field was present before removal");
+    restored.import(&legacy).unwrap();
+    assert_eq!(
+        restored
+            .follow_up_candidates()
+            .first()
+            .and_then(|c| c.notified_at),
+        None,
+        "a pre-marker bundle deserializes and starts un-notified"
+    );
 }

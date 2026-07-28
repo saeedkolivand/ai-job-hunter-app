@@ -6,6 +6,26 @@
 //! [`normalize_job_url`] is re-exported from `super`, so every existing caller
 //! (`crate::applications::normalize_job_url`) is unaffected.
 
+/// Strip every C0 control character (U+0000–U+001F) and DEL (U+007F) from a URL.
+///
+/// Defense-in-depth for the [`normalize_job_url`] chokepoint. RFC 3986 allows no
+/// control character in a URI at all, and both HTML and the WHATWG URL parser
+/// *remove* embedded tabs/newlines before parsing — so `"java\nscript:alert(1)"`
+/// is `javascript:` to a browser while [`explicit_scheme`] (which scans the raw
+/// bytes) sees the scheme-less `"java"` and lets the payload through verbatim.
+/// Removing them FIRST makes the scheme guard see exactly what a consumer would.
+///
+/// Not exploitable today — every sink this value reaches requires a literal
+/// `http(s)` prefix — but this function is the single place Application URL
+/// identity is decided, so the normalization must not depend on that staying true.
+/// Removal (not rejection) mirrors the WHATWG rule and keeps a merely sloppy
+/// paste working.
+fn strip_controls(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '\u{0}'..='\u{1F}' | '\u{7F}'))
+        .collect()
+}
+
 /// Extract an explicit URL scheme (the `scheme:` prefix per RFC 3986§3.1) if
 /// one is present, lowercased. A scheme is `ALPHA *( ALPHA / DIGIT / "+" / "-" /
 /// "." )` immediately followed by `:`, and it MUST appear before any `/`, `?`, or
@@ -37,7 +57,8 @@ fn explicit_scheme(input: &str) -> Option<String> {
 /// tracking), and trim a trailing `/`. The scheme is preserved (lowercased). Empty
 /// input returns empty.
 ///
-/// Security chokepoint: an input carrying an explicit scheme other than
+/// Security chokepoint: embedded control characters are removed first (see
+/// [`strip_controls`]), then an input carrying an explicit scheme other than
 /// `http`/`https` (e.g. `javascript:`, `data:`, `file:`, `vbscript:`, `blob:`) is
 /// neutralized to an empty string — i.e. "no url" — so an import-borne or
 /// manually-entered payload can never be stored as an openable link. Scheme-less
@@ -47,7 +68,11 @@ fn explicit_scheme(input: &str) -> Option<String> {
 /// host-only helpers like `contact_profile::host_of`), so this is the single
 /// owner for Application url identity.
 pub fn normalize_job_url(url: &str) -> String {
-    let trimmed = url.trim();
+    // Embedded control characters are removed BEFORE the scheme is read, so the
+    // guard below sees the same scheme a browser/URL parser would — see
+    // [`strip_controls`].
+    let trimmed = strip_controls(url.trim());
+    let trimmed = trimmed.trim();
     if trimmed.is_empty() {
         return String::new();
     }
