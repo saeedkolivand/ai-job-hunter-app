@@ -3700,6 +3700,55 @@ async fn adzuna_cancellation_between_pages_keeps_page_one_and_stops() {
 
 // ── Scheduled (autopilot) runs stay quota-neutral ────────────────────────────
 
+/// Pins the request → budget TRANSLATION itself, which is the one line the
+/// wiremock guards below structurally cannot see: they hand-build a
+/// `SearchBudget`, so rewriting `from_input` to spend `amount` would leave them
+/// all green. This is the guard that sits exactly on the original bug's line.
+///
+/// Both real call sites are covered, because the bug was a caller asymmetry
+/// (`commands::scrape` sets a real budget; `autopilot_helpers` must not).
+#[test]
+fn budget_from_autopilot_shaped_input_has_no_provider_spend() {
+    // Exactly what `autopilot_helpers::autopilot_scrape` builds: amount = 100 as
+    // a "don't cap me" SENTINEL, no upstream spend intent.
+    let autopilot = BoardSearchInput {
+        amount: 100,
+        pages: 3,
+        provider_amount: None,
+        ..make_input()
+    };
+    let budget = SearchBudget::from_input(&autopilot);
+
+    assert!(
+        budget.provider_amount.is_none(),
+        "a scheduled run must carry NO upstream spend target — deriving one from \
+         the amount sentinel doubles every autopilot's daily Adzuna quota use"
+    );
+    assert_eq!(
+        budget.amount, 100,
+        "the sentinel still applies as the OUTPUT cap"
+    );
+
+    // And the manual path's real, user-typed count maps through untouched.
+    let manual = BoardSearchInput {
+        amount: 25,
+        // The manual path pins `pages` to its own sentinel (`MAX_PAGE_BUDGET`,
+        // private to commands::scrape) — mirrored literally here to show the
+        // budget ignores it.
+        pages: 10,
+        provider_amount: Some(25),
+        ..make_input()
+    };
+    let budget = SearchBudget::from_input(&manual);
+
+    assert_eq!(
+        budget.provider_amount,
+        Some(25),
+        "a user-typed count is a real spend target and must reach the providers"
+    );
+    assert_eq!(budget.amount, 25);
+}
+
 /// REGRESSION GUARD (the cost bug this workstream nearly shipped).
 ///
 /// `autopilot_helpers` sets `amount: 100` as a "don't cap me" SENTINEL — it has

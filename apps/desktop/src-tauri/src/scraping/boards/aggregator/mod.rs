@@ -66,9 +66,10 @@ const ADZUNA_BROADEN_FLOOR: usize = 3;
 /// fns stay within the crate's 8-argument clippy ceiling (`clippy.toml`).
 #[derive(Clone, Copy)]
 pub(crate) struct SearchBudget {
-    /// OUTPUT cap — how many postings the caller will keep. Gates only the free
-    /// side of the merge (whether the additive LinkedIn tier is worth calling and
-    /// how many items to ask it for). May be a "don't cap me" sentinel.
+    /// OUTPUT cap — how many postings the caller will keep. Gates only the
+    /// additive LinkedIn tier's own cap (whether it is worth calling and how many
+    /// items to ask it for); that tier carries platform-level spend limits of its
+    /// own (ADR-028). May be a "don't cap me" sentinel.
     amount: usize,
     /// UPSTREAM SPEND target — see `BoardSearchInput::provider_amount`. `None`
     /// (the default, and every scheduled run) keeps each metered provider at its
@@ -77,6 +78,27 @@ pub(crate) struct SearchBudget {
 }
 
 impl SearchBudget {
+    /// The ONLY production translation from a request to a spend budget, and the
+    /// single line where the cost bug this type exists to prevent could reappear.
+    /// Deliberately not inlined at the call site: hand-built `SearchBudget`s in
+    /// tests cannot observe this hop, so a guard that constructs one directly
+    /// would keep passing even if this mapping were rewritten to spend `amount`.
+    /// `budget_from_autopilot_shaped_input_has_no_provider_spend` pins it.
+    ///
+    /// `amount` becomes the output cap verbatim; the upstream budget is passed
+    /// through UNCHANGED (`None` stays `None`) — it is never derived from
+    /// `amount` or `pages`, both of which are sentinels on one caller or the
+    /// other (see `BoardSearchInput`).
+    fn from_input(input: &BoardSearchInput) -> Self {
+        Self {
+            amount: input.amount as usize,
+            provider_amount: input.provider_amount,
+        }
+    }
+
+    /// Test-only constructor. Production goes through [`Self::from_input`], so
+    /// this cannot be the thing a mutation of the real mapping slips past.
+    #[cfg(test)]
     pub(crate) fn new(amount: usize, provider_amount: Option<u32>) -> Self {
         Self {
             amount,
@@ -713,7 +735,12 @@ impl Scraper for AggregatorScraper {
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),
         ];
-        let amount = input.amount as usize;
+        // `amount` caps the OUTPUT; `provider_amount` is the only thing that buys
+        // upstream calls. A scheduled run leaves the latter `None`, so it costs
+        // exactly one Adzuna request regardless of the 100 it passes as `amount`.
+        // The mapping lives in `from_input` so it is directly testable.
+        let budget = SearchBudget::from_input(&input);
+        let amount = budget.amount;
         let items = search_with_providers(
             &providers,
             query,
@@ -721,11 +748,7 @@ impl Scraper for AggregatorScraper {
             &country,
             country_guessed,
             input.date_filter.as_deref(),
-            // `amount` caps the OUTPUT; `provider_amount` is the only thing that
-            // buys upstream calls. A scheduled run leaves the latter `None`, so it
-            // costs exactly one Adzuna request regardless of the 100 it passes as
-            // `amount`. See `SearchBudget` / `BoardSearchInput::provider_amount`.
-            SearchBudget::new(amount, input.provider_amount),
+            budget,
             ctx.signal.clone(),
         )
         .await?;
