@@ -6,8 +6,9 @@
    plain HTML, Next.js (call from a ref/useEffect), Vue (onMounted), a server-
    rendered page, anything.
 
-   USAGE
-     mountScrollWorld(document.getElementById('world'), {
+   USAGE  (returns a disposer — call it to remove every listener, stop the rAF loop,
+            release the clips and empty the container)
+     const unmount = mountScrollWorld(document.getElementById('world'), {
        brand: { name: 'Pearl & Co.', href: '#top' },
        diveScroll: 1.3,   // viewport-heights of scroll per dive clip
        connScroll: 0.9,   // ...per connector clip
@@ -95,7 +96,7 @@ function mountScrollWorld(container, config) {
   const CONN_W = config.connScroll || 0.9;
   const CROSSFADE = config.crossfade != null ? config.crossfade : 0.12; // seam dissolve width (vh)
   const N = SECTIONS.length;
-  if (!N) return;
+  if (!N) return function unmount() {}; // nothing mounted — still hand back a disposer
 
   injectCSS();
   container.classList.add('sw-root');
@@ -259,6 +260,8 @@ function mountScrollWorld(container, config) {
     activeIndex = -1,
     ticking = false;
   let laidOutW = window.innerWidth; // width the current layout was computed at (see onResize)
+  let rafId = 0;
+  let stopped = false; // flipped by the disposer returned at the end of this function
 
   function layout() {
     vh = window.innerHeight;
@@ -296,6 +299,7 @@ function mountScrollWorld(container, config) {
     fetch(url)
       .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('404'))))
       .then((blob) => {
+        if (stopped) return; // unmounted while this clip was still in flight
         const v = document.createElement('video');
         v.className = 'sw-scene__video';
         v.muted = true;
@@ -340,14 +344,7 @@ function mountScrollWorld(container, config) {
           // reset the live clip (that would freeze it and stack a second <video>).
           if (!live()) return;
           if (v.parentNode) v.parentNode.removeChild(v);
-          // Clear the source and re-run the load algorithm BEFORE revoking: a detached
-          // element can hold decoder resources until its source is dropped, and the retry
-          // path can make up to three of these per segment. Live clips keep their blob URL
-          // for the page's lifetime by design — a torn-down one is just dead weight.
-          const dead = v.src;
-          v.removeAttribute('src');
-          v.load();
-          URL.revokeObjectURL(dead);
+          releaseClip(v);
           s.video = null;
           s.el.classList.remove('has-clip');
           s.hasClip = false;
@@ -371,6 +368,7 @@ function mountScrollWorld(container, config) {
   }
 
   function read() {
+    if (stopped) return;
     const y = window.scrollY || window.pageYOffset;
     const fade = CROSSFADE * vh;
     let ci = 0;
@@ -436,6 +434,7 @@ function mountScrollWorld(container, config) {
   }
 
   function raf() {
+    if (stopped) return;
     const eps = isMobile ? 0.02 : 0.008; // coarser seek step on phones = fewer decodes
     for (let i = 0; i < NSEG; i++) {
       const s = SEGMENTS[i];
@@ -454,7 +453,7 @@ function mountScrollWorld(container, config) {
         } catch (e) {}
       }
     }
-    requestAnimationFrame(raf);
+    rafId = requestAnimationFrame(raf);
   }
 
   // iOS needs a user gesture before a muted video will decode/paint reliably, and it
@@ -504,16 +503,13 @@ function mountScrollWorld(container, config) {
   // device — gated on `coarse` (not `isMobile`) so tablets stay light too. Same for the
   // URL-bar resize guard below: both are touch-browser traits, not asset-tier choices.
   seedParticles(particles, reduce || coarse);
-  window.addEventListener(
-    'scroll',
-    () => {
-      if (!ticking) {
-        ticking = true;
-        requestAnimationFrame(read);
-      }
-    },
-    { passive: true }
-  );
+  function onScroll() {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(read);
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
   // Mobile browsers fire `resize` every time the URL bar slides in/out. Re-running
   // layout() there rebuilds the track height and yanks the scroll position, so on
   // touch we ignore height-only changes and only relayout when the width actually
@@ -527,9 +523,47 @@ function mountScrollWorld(container, config) {
   window.addEventListener('orientationchange', layout);
   window.addEventListener('load', layout);
   layout();
-  requestAnimationFrame(raf);
+  rafId = requestAnimationFrame(raf);
+  return unmount;
 
   // ---- helpers ----
+  // Deviation from the vendored original: upstream registers window listeners and an
+  // unbounded rAF loop and never unregisters them, so a second mount (React StrictMode's
+  // double-invoke, a client-side route change, a test file) stacks another listener set
+  // and another loop over the first. Returning a disposer makes the engine remountable.
+  // The injected <style id="sw-css"> is deliberately left alone — it is id-guarded and
+  // shared with any other mount that may still be live.
+  function unmount() {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(rafId);
+    window.removeEventListener('pointerdown', onGesture);
+    window.removeEventListener('touchstart', onGesture);
+    window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('orientationchange', layout);
+    window.removeEventListener('load', layout);
+    SEGMENTS.forEach((s) => {
+      if (!s.video) return;
+      releaseClip(s.video);
+      s.video = null;
+    });
+    container.replaceChildren();
+    container.classList.remove('sw-root');
+  }
+  // Release a clip's decoder and then its blob URL. Order matters: a detached element can
+  // hold decode resources until its source is dropped and the load algorithm re-run.
+  // Live clips keep their blob for the page's lifetime by design (they must stay
+  // seekable); this is only ever for a clip that is being thrown away.
+  function releaseClip(v) {
+    const dead = v.src;
+    try {
+      v.pause();
+    } catch (e) {}
+    v.removeAttribute('src');
+    v.load();
+    URL.revokeObjectURL(dead);
+  }
   function el(tag, cls) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;

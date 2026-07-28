@@ -56,10 +56,13 @@ function configFor(prefix: string) {
   };
 }
 
+/** Every mount's disposer, unwound in afterEach so mounts can't leak across tests. */
+const disposers: Array<() => void> = [];
+
 function mount(prefix: string) {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  mountScrollWorld(container, configFor(prefix));
+  disposers.push(mountScrollWorld(container, configFor(prefix)));
   return container;
 }
 
@@ -138,6 +141,7 @@ const inside = (els: HTMLMediaElement[], container: HTMLElement) =>
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
+const originalScreen = { width: window.screen.width, height: window.screen.height };
 
 /** A touch device whose clips actually materialise as <video> elements. */
 function touchDeviceWithVideos(playResult: 'resolve' | 'reject' | 'no-promise') {
@@ -151,10 +155,14 @@ function touchDeviceWithVideos(playResult: 'resolve' | 'reject' | 'no-promise') 
 }
 
 afterEach(() => {
+  // Unwind mounts BEFORE restoring globals: the disposer calls cancelAnimationFrame
+  // and URL.revokeObjectURL, which several tests stub.
+  disposers.splice(0).forEach((dispose) => dispose());
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   URL.createObjectURL = originalCreateObjectURL;
   URL.revokeObjectURL = originalRevokeObjectURL;
+  stubScreen(originalScreen.width, originalScreen.height);
   stubTouchPoints(0);
   stubScrollY(0);
   document.body.replaceChildren();
@@ -170,6 +178,23 @@ describe('device classification picks the asset set', () => {
   const CASES = [
     { name: 'iPhone 15 Pro Max', coarse: true, narrow: true, w: 430, h: 932, set: 'mobile' },
     { name: 'Android phone', coarse: true, narrow: true, w: 412, h: 915, set: 'mobile' },
+    // The threshold itself, from both sides — the rule is inclusive on the phone side.
+    {
+      name: 'touch device on the threshold',
+      coarse: true,
+      narrow: true,
+      w: 500,
+      h: 900,
+      set: 'mobile',
+    },
+    {
+      name: 'touch device one px over',
+      coarse: true,
+      narrow: true,
+      w: 501,
+      h: 900,
+      set: 'desktop',
+    },
     { name: 'iPad mini portrait', coarse: true, narrow: true, w: 744, h: 1133, set: 'desktop' },
     { name: 'iPad mini landscape', coarse: true, narrow: false, w: 1133, h: 744, set: 'desktop' },
     { name: 'Android tablet', coarse: true, narrow: true, w: 800, h: 1280, set: 'desktop' },
@@ -364,6 +389,52 @@ describe('iOS video priming', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Teardown — upstream returns nothing and never unregisters, so a remount stacked
+// a second listener set and a second unbounded rAF loop over the first.
+// ---------------------------------------------------------------------------
+describe('the disposer mountScrollWorld returns', () => {
+  it('stops listening, stops the frame loop, releases the clips and empties the host', async () => {
+    touchDeviceWithVideos('resolve');
+    const revoked: string[] = [];
+    URL.revokeObjectURL = (url: string) => void revoked.push(url);
+    const urls = stubFetch('ok');
+    const container = mount('teardown');
+    await flush();
+
+    const clips = container.querySelectorAll('video.sw-scene__video').length;
+    expect(clips).toBeGreaterThan(0);
+    const fetchesBefore = urls.length;
+
+    const dispose = disposers.pop();
+    if (!dispose) throw new Error('mountScrollWorld returned no disposer');
+    dispose();
+
+    expect(container.children).toHaveLength(0);
+    expect(container.classList.contains('sw-root')).toBe(false);
+    expect(revoked).toHaveLength(clips); // one blob released per live clip
+
+    // Nothing the engine used to listen to can wake it up again.
+    window.dispatchEvent(new Event('orientationchange'));
+    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new Event('pointerdown'));
+    await flush();
+    expect(urls).toHaveLength(fetchesBefore);
+
+    // And it is idempotent — React can call an effect cleanup more than once.
+    expect(() => dispose()).not.toThrow();
+  });
+
+  it('hands back a working disposer even when the config has no sections', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    stubMatchMedia({ coarse: false, narrow: false, reduce: false });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = mountScrollWorld(container, { sections: [] });
+    expect(() => dispose()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Bug A hardening — a successful fetch latched `loading` forever, so a clip that
 // then failed to decode wedged its scene; a failing fetch did the opposite and
 // re-requested on every scroll tick.
@@ -399,12 +470,13 @@ describe('clip failure recovery', () => {
     expect(attempts()).toBe(1);
 
     // orientationchange re-runs layout()→read() synchronously, i.e. a scroll tick.
-    // NOTE: the engine has no teardown API, so every mount from an earlier test in
-    // this file is still listening and will re-run its own read() on this event.
-    // That is why `configFor` gives each mount unique asset paths and every
-    // assertion here filters by prefix or by `container.contains`. A new assertion
-    // over an unscoped global (total fetch count, prototype spy call counts, a
-    // document-wide querySelectorAll) will pick up those foreign mounts — scope it.
+    // NOTE: window events reach EVERY live mount, not just this test's. afterEach now
+    // disposes each mount, so tests no longer leak into one another — but a single
+    // test that mounts twice still has two listeners on this event. The belt-and-
+    // braces stays: `configFor` gives each mount unique asset paths and assertions
+    // scope by prefix or `container.contains`. An assertion over an unscoped global
+    // (total fetch count, prototype spy counts, a document-wide querySelectorAll)
+    // would pick up the sibling mount — scope it the same way.
     for (let i = 0; i < 5; i++) {
       window.dispatchEvent(new Event('orientationchange'));
       await flush();

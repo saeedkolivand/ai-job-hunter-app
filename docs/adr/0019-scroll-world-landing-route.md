@@ -80,13 +80,13 @@ Turbopack statically analyzes this file as ESM and doesn't see the conditional C
 
 ### D2 — device classification: coarse **and** phone-sized, frozen at mount
 
-Upstream: `const isMobile = () => coarse || smallMQ.matches`, consulted live per clip. `(hover:none) and (pointer:coarse)` matches iPadOS, Android tablets and touch laptops at **any** width, so every tablet permanently took the 720×1280 crf28 portrait phone encodes, the AV1 desktop branch was dead for them, and desktop CSS (>860px) cropped/upscaled a portrait video.
+Upstream classified on the coarse-pointer query **or** a narrow viewport, re-read live on every clip load. A coarse pointer matches iPadOS, Android tablets and touch laptops at **any** width, so every tablet permanently took the portrait phone encodes, the AV1 desktop branch was dead for them, and the desktop stylesheet cropped/upscaled a portrait video.
 
-Now a phone is a coarse pointer **and** a phone-sized screen, tested on the screen's **short side** (`Math.min(screen.width, screen.height) <= 500`) so rotating the device can't flip the decision — iPhone Pro Max ≈440 → phone, iPad mini 744 → desktop. Non-touch windows keep the legacy `≤860px` rule.
+The rule is now: a phone is a coarse pointer **and** a phone-sized screen. "Phone-sized" is measured on the screen's **short side**, so rotating the device cannot flip the decision and a large phone still classifies as a phone. Non-touch windows keep the legacy narrow-viewport rule. The predicate and its threshold live in the `isMobile` const at the top of `mountScrollWorld` (`scrub-engine.js`) — read it there rather than duplicating the number here.
 
-The result is a `const` evaluated **once at mount**, not a function: a live check let a resize serve one scene's poster from one set and the next scene's clip from the other. **Behaviour change:** a desktop browser resized (or a DevTools device toggle flipped) across 860px no longer switches asset sets without a reload.
+It is a `const` evaluated **once at mount**, not a function: a live check let a resize serve one scene's poster from one set and the next scene's clip from the other. **Behaviour change:** resizing a desktop browser (or flipping a DevTools device toggle) across the narrow-viewport breakpoint no longer switches asset sets without a reload.
 
-Three call sites consume it: the scene poster (`stillMobile` vs `still`), the clip URL in `loadClip`, and — easy to miss — the `raf()` seek step `eps`. Tablets therefore also move from the phone's coarse `0.02` to the desktop `0.008`, i.e. finer scrubbing and more decodes. That is the intended pairing with the heavier desktop encode they now receive, and it stays bounded by the existing `s.video.seeking` coalescer, which already refuses to queue a seek while the decoder is busy.
+Three call sites consume it: the scene poster (`stillMobile` vs `still`), the clip URL in `loadClip`, and — easy to miss — the seek step `eps` in `raf()`. Tablets therefore also move from the coarse phone step to the finer desktop one: more decodes, finer scrubbing. That is the intended pairing with the heavier desktop encode they now receive, and it stays bounded by the existing `s.video.seeking` coalescer, which already refuses to queue a seek while the decoder is busy. Both step values are in `raf()`.
 
 `coarse` on its own remains the gate for the particle drop and the URL-bar resize guard — genuine touch-browser traits. It is **not** the gate for priming; see D3.
 
@@ -103,11 +103,11 @@ The priming gate is `canTouch = navigator.maxTouchPoints > 0`, evaluated once at
 
 `maxTouchPoints` catches every touch-capable browser. The cost is a harmless muted `play()`→`pause()` on Windows touch laptops; a real desktop reports `0` and never primes at all (locked by a test, since that guard is the only thing standing between desktop and a burst of spurious `play()` calls).
 
-`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber. A per-segment `s.primeTries` caps priming at 3 attempts, mirroring `s.tries` in D4 — a browser that refuses muted playback outright would otherwise take a fresh `play()` on every `pointerdown` for the life of the page, since a refusal deliberately clears `s.primed`.
+`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber. A per-segment `s.primeTries` bounds priming the way `s.tries` bounds fetches in D4 (cap in the `primeVideo` guard) — a browser that refuses muted playback outright would otherwise take a fresh `play()` on every `pointerdown` for the life of the page, since a refusal deliberately clears `s.primed`.
 
 ### D4 — bounded clip-failure recovery
 
-Upstream latched `s.loading = true` forever on success (a clip that then failed to decode wedged its scene on the poster with no path back) while a failing `fetch` cleared the latch and re-requested on **every scroll tick**. An `error` listener on the video now removes the dead element, drops `has-clip`, and resets the segment so a later scroll can retry; a per-segment `s.tries` counter caps that at 3 attempts, so neither failure mode storms or wedges.
+Upstream latched `s.loading = true` forever on success (a clip that then failed to decode wedged its scene on the poster with no path back) while a failing `fetch` cleared the latch and re-requested on **every scroll tick**. An `error` listener on the video now removes the dead element, drops `has-clip`, and resets the segment so a later scroll can retry; a per-segment `s.tries` counter bounds the retries (cap in `loadClip`'s guard), so neither failure mode storms or wedges.
 
 **Every** listener on the clip now opens with a shared liveness check, `const live = () => s.video === v;`. Media elements keep firing after a segment has torn them down and replaced them, and a discarded element outlives its replacement, so an unguarded late event mutates the state of the **live** clip:
 
@@ -116,13 +116,21 @@ Upstream latched `s.loading = true` forever on success (a clip that then failed 
 - `seeked` (`{once:true}`) — adds `has-clip`, hiding the poster to reveal a video that was never painted.
 - `loadeddata` — `v.pause()` stays unguarded (it must pause the element that fired), but the priming decision is gated.
 
-Teardown order matters: `v.removeAttribute('src')` + `v.load()` run **before** `URL.revokeObjectURL(...)`, because a detached element can hold decoder resources until its source is dropped and the load algorithm re-run — and the retry path can produce up to three such elements per segment. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a torn-down element is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry.
+Discarding a clip goes through one shared `releaseClip(v)` helper, and its order matters: `pause()` → `removeAttribute('src')` → `load()` → **then** `URL.revokeObjectURL(...)`. A detached element can hold decoder resources until its source is dropped and the load algorithm re-run, and the retry path produces one such element per attempt. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a clip being thrown away is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry. D6's disposer reuses the same helper.
 
 ### D5 — header doc comment
 
-The file's usage/`MOBILE` comment block was updated to describe D2–D4 accurately (frozen phone/desktop split, continuous priming). No behaviour.
+The file's usage/`MOBILE` comment block was updated to describe D2–D4 and D6 accurately (frozen phone/desktop split, continuous priming, the returned disposer). No behaviour.
 
 It also no longer lists the particle drop and the URL-bar resize guard as phone-tier behaviours: both key off the coarse pointer **alone**, so tablets get them too. As written before, the header contradicted the inline comments and D2. The block now states all three gates explicitly.
+
+### D6 — the mount returns a disposer
+
+Upstream `mountScrollWorld` returns nothing and never unregisters: it leaves `pointerdown`/`touchstart`/`scroll`/`resize`/`orientationchange`/`load` listeners on `window` plus a self-rescheduling rAF loop, and holds every clip's blob URL. A second mount — React StrictMode's dev double-invoke, a client-side route change, consecutive tests — therefore stacked a whole second engine over the first, driving detached DOM forever.
+
+It now returns an idempotent disposer that cancels the pending frame, removes all six listeners, releases each clip via `releaseClip`, and empties the container. `read()` and `raf()` early-return once torn down, and `loadClip`'s `fetch` continuation bails if the mount died while a clip was in flight, so a late resolution can't append a `<video>` to a dead scene. An empty config returns a no-op disposer rather than `undefined`. The injected `<style id="sw-css">` is deliberately **not** removed: it is id-guarded and may be shared with another live mount.
+
+Consequences: `scrub-engine.d.ts` returns `() => void`; `WorldClient.tsx` returns it straight from its `useEffect` and no longer needs the `mountedRef` StrictMode latch, so `/world` no longer has to be entered via a full navigation; the test file disposes every mount in `afterEach` instead of relying purely on per-mount asset-path scoping.
 
 ### Runtime consequence of D2 for AV1
 
