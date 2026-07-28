@@ -275,6 +275,18 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
         cleared.len()
     );
 
+    // The bridge's own `Resettable` (registered by `extension_bridge::manage`,
+    // deliberately outside `MANAGE_RESETTABLE_LABELS`) just rotated the pairing
+    // token, which REVOKES every paired browser and zeroes the live-connection
+    // count. That happens inside a sync `&self` hook with no `AppHandle`, so the
+    // renderer is notified from here — otherwise the Settings pill would keep
+    // claiming "connected" until its 30s poll.
+    crate::events::emit_event(
+        &app,
+        crate::events::EXTENSION_BRIDGE_CHANGED,
+        json!({ "connected": false }),
+    );
+
     // Delete the persisted Chromium board-login profiles wholesale: the
     // `browser-state/<board_id>/{profile,cookies.json,auth-status.json}` tree
     // (see `scraping::board_login`). The `disconnect` loop above only flips the

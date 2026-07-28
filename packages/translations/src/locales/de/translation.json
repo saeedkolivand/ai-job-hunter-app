@@ -867,7 +867,7 @@
       "resetAppDescription": "Alle Daten und Einstellungen löschen. Kehrt zum Willkommensbildschirm zurück.",
       "reset": "Zurücksetzen",
       "resetAppConfirmTitle": "App auf Werkseinstellungen zurücksetzen",
-      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
+      "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Jeder gekoppelte Browser wird getrennt, Sie müssen die Erweiterung also erneut koppeln. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
       "resetAppConfirm": "Alles zurücksetzen",
       "resetAppPartial": "App zurückgesetzt, aber einige Board-Anmeldesitzungen konnten nicht vollständig gelöscht werden.",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",

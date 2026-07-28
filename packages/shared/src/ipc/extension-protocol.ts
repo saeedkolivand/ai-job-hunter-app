@@ -95,6 +95,7 @@ export const ExtensionMessageTypeSchema = z.enum([
   EXTENSION_MESSAGE_TYPES.auth,
   EXTENSION_MESSAGE_TYPES.authOk,
   EXTENSION_MESSAGE_TYPES.updateRequired,
+  EXTENSION_MESSAGE_TYPES.tokenRevoked,
   EXTENSION_MESSAGE_TYPES.importRequest,
   EXTENSION_MESSAGE_TYPES.importResult,
   EXTENSION_MESSAGE_TYPES.profileGet,
