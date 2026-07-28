@@ -46,6 +46,13 @@ interface FrozenRewrite {
   anchorEl: HTMLElement;
 }
 
+/**
+ * Id of the single shared hint under the recipient pair. A literal (not `useId`)
+ * because BOTH fields must point at the same node, and only one instance of this
+ * tab is ever mounted.
+ */
+const CONTACT_HINT_ID = 'applyemail-contact-hint';
+
 /** Split raw model output per the OUTPUT CONTRACT: line 1 is "Subject: …". */
 function splitEmail(raw: string): { subject: string; body: string } {
   const firstLine = raw.split('\n')[0] ?? '';
@@ -319,9 +326,9 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             >
               {t('applications.detail.email.recipientNameLabel')}
             </label>
-            {/* The hint rides on the field itself (Input wires `aria-describedby`)
-                so a screen-reader user hears the consequence while focused here,
-                instead of it floating as loose text under the whole toolbar. */}
+            {/* ONE hint for the pair, rendered once below and referenced by BOTH
+                fields — a screen-reader user hears the consequence while focused
+                on either, and a sighted user reads it once, not twice. */}
             <Input
               id="applyemail-recipient-name"
               variant="default"
@@ -329,7 +336,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
               onBlur={persistName}
-              hint={t('applications.detail.email.recipientHint')}
+              aria-describedby={CONTACT_HINT_ID}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -350,7 +357,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
                 setEmailError(null);
               }}
               onBlur={(e) => persistEmail(e.target.value)}
-              hint={t('applications.detail.email.recipientHint')}
+              aria-describedby={CONTACT_HINT_ID}
             />
             {emailError && (
               <p className="text-fine-print text-red-400" role="alert">
@@ -359,6 +366,10 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
             )}
           </div>
         </div>
+
+        <p id={CONTACT_HINT_ID} className="text-fine-print text-foreground/70">
+          {t('applications.detail.email.recipientHint')}
+        </p>
 
         <Button
           variant="primary"

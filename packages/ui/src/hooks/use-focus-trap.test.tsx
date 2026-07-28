@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -10,6 +11,39 @@ function Trapped({ active }: { active: boolean }) {
     <div ref={ref as React.RefObject<HTMLDivElement>}>
       <button>first</button>
       <button>last</button>
+    </div>
+  );
+}
+
+/**
+ * A trapped panel whose FIELD claims `autoFocus`. React applies that during
+ * commit — ahead of every effect — so a capture taken in a passive effect would
+ * remember the field itself as "the opener" and, finding it disconnected on
+ * close, skip the restore and strand focus on `<body>`.
+ */
+function AutoFocusTrapped({ active }: { active: boolean }) {
+  const ref = useFocusTrap(active);
+  if (!active) return null;
+  return (
+    <div ref={ref as React.RefObject<HTMLDivElement>}>
+      <input autoFocus aria-label="note" />
+      <button>save</button>
+    </div>
+  );
+}
+
+/** Same shape, but the field is focused from a PASSIVE effect instead. */
+function EffectFocusTrapped({ active }: { active: boolean }) {
+  const ref = useFocusTrap(active);
+  const fieldRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (active) fieldRef.current?.focus();
+  }, [active]);
+  if (!active) return null;
+  return (
+    <div ref={ref as React.RefObject<HTMLDivElement>}>
+      <input ref={fieldRef} aria-label="note" />
+      <button>save</button>
     </div>
   );
 }
@@ -163,6 +197,69 @@ describe('useFocusTrap', () => {
         </>
       );
       expect(elsewhere).toHaveFocus();
+    });
+
+    // What the layout-effect capture actually buys: a descendant that grabs
+    // focus from a PASSIVE effect runs after the capture, so the opener is still
+    // the remembered element and the restore lands.
+    it('is not fooled by a descendant that focuses itself from an effect', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+          <EffectFocusTrapped active={false} />
+        </>
+      );
+      const opener = screen.getByRole('button', { name: 'opener' });
+      opener.focus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <EffectFocusTrapped active />
+        </>
+      );
+      expect(screen.getByLabelText('note')).toHaveFocus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <EffectFocusTrapped active={false} />
+        </>
+      );
+      expect(opener).toHaveFocus();
+    });
+
+    // The limitation this pins: React applies `autoFocus` during COMMIT, ahead of
+    // every effect — including a layout effect — so a trapped child claiming it
+    // IS remembered as the opener and the restore is correctly skipped when that
+    // child unmounts. Dialog content must therefore never use `autoFocus`; the
+    // trap already focuses the first focusable. StatusNoteModal's field carries a
+    // comment to that effect, and this test is why.
+    it('cannot rescue a trapped child that claims autoFocus (hence: never use it)', () => {
+      const { rerender } = render(
+        <>
+          <button>opener</button>
+          <AutoFocusTrapped active={false} />
+        </>
+      );
+      const opener = screen.getByRole('button', { name: 'opener' });
+      opener.focus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <AutoFocusTrapped active />
+        </>
+      );
+      expect(screen.getByLabelText('note')).toHaveFocus();
+
+      rerender(
+        <>
+          <button>opener</button>
+          <AutoFocusTrapped active={false} />
+        </>
+      );
+      expect(opener).not.toHaveFocus();
     });
 
     it('does nothing when the remembered element has left the DOM', () => {

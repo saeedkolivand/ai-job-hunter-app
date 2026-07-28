@@ -470,7 +470,32 @@ describe('ApplicationsPage — pipeline strip filter', () => {
     expect(sectionHeaders((n) => n.includes('applications.stages.rejected'))).toHaveLength(0);
   });
 
-  it('a single-stage group does NOT turn on the per-row stage Tag (the section header names it)', () => {
+  // Ruling: with a filter on, a section header is either a word-for-word copy of
+  // the selected strip card right above it (and its collapse toggle is
+  // meaningless with one section) or a second printing of each row's stage.
+  it('renders NO section headers while any stage filter is active', () => {
+    useSessionStore.setState((s) => ({
+      applications: { ...s.applications, stageGroup: 'interviewing' },
+    }));
+    mockUseApplications.mockReturnValue({ data: APPS_CLOSED, isLoading: false, isError: false });
+    render(<ApplicationsPage />);
+
+    expect(rowIds()).toEqual(['c3']);
+    expect(sectionHeaders((n) => n.includes('applications.stages.'))).toHaveLength(0);
+  });
+
+  it('restores the section headers once the filter is cleared', () => {
+    mockUseApplications.mockReturnValue({
+      data: APPS_MULTI_STAGE,
+      isLoading: false,
+      isError: false,
+    });
+    render(<ApplicationsPage />);
+
+    expect(sectionHeaders((n) => n.includes('applications.stages.')).length).toBeGreaterThan(0);
+  });
+
+  it('a single-stage group does NOT turn on the per-row stage Tag (one stage, nothing to disambiguate)', () => {
     useSessionStore.setState((s) => ({
       applications: { ...s.applications, stageGroup: 'interviewing' },
     }));

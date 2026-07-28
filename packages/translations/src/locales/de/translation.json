@@ -2689,9 +2689,10 @@
     "pipeline": {
       "aria": "Nach Pipeline-Phase filtern",
       "closed": "Abgeschlossen",
-      "overdue": "{{n}} überfällige Nachfassaktionen",
       "filtered": "Es werden nur Bewerbungen in {{stage}} angezeigt.",
-      "filterCleared": "Es werden Bewerbungen aus allen Phasen angezeigt."
+      "filterCleared": "Es werden Bewerbungen aus allen Phasen angezeigt.",
+      "overdue_one": "1 überfällige Nachfassaktion",
+      "overdue_other": "{{count}} überfällige Nachfassaktionen"
     },
     "sort": {
       "label": "Bewerbungen sortieren",

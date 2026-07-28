@@ -2685,9 +2685,10 @@
     "pipeline": {
       "aria": "Filter by pipeline stage",
       "closed": "Finished",
-      "overdue": "{{n}} follow-ups overdue",
       "filtered": "Showing {{stage}} applications only.",
-      "filterCleared": "Showing applications in every stage."
+      "filterCleared": "Showing applications in every stage.",
+      "overdue_one": "1 follow-up overdue",
+      "overdue_other": "{{count}} follow-ups overdue"
     },
     "sort": {
       "label": "Sort applications",

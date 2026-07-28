@@ -971,7 +971,9 @@ function BriefTab({ application }: { application: Application }) {
               )}
             </div>
             {fetchFailed && (
-              <p className="text-[11px] text-destructive">{t('jobUrlImport.failed')}</p>
+              <p className="text-xs text-red-400" role="alert">
+                {t('jobUrlImport.failed')}
+              </p>
             )}
           </div>
         )}

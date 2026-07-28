@@ -187,14 +187,19 @@ export function ApplicationRow({
               // the affordance is transient and ignoring it costs nothing.
               <Button
                 variant="unstyled"
+                data-note-chip={application.id}
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddNote?.();
                 }}
                 className={cn(
-                  'shrink-0 rounded-full border border-brand/40 px-2 py-0.5',
+                  // `ring`, not `border`: the global `* { border-color }` rule is
+                  // unlayered and beats a layered `border-brand/40`, so the
+                  // hairline computed as --color-border (the strip-card trap).
+                  'inline-flex min-h-6 shrink-0 items-center rounded-full px-2 py-0.5',
+                  'ring-1 ring-inset ring-brand/40',
                   'text-xs font-semibold text-brand-soft transition-shadow',
-                  'hover:ring-1 hover:ring-inset hover:ring-brand/40'
+                  'hover:ring-brand/70'
                 )}
               >
                 {t('applications.row.addNoteHint')}

@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import type { Application } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
@@ -146,6 +146,18 @@ async function moveA1To(stage: string) {
   expect(trigger).toBeDefined();
   fireEvent.click(trigger as HTMLElement);
   const listbox = await screen.findByRole('listbox');
+  fireEvent.click(
+    within(listbox).getByRole('option', {
+      name: new RegExp(`applications\\.status\\.${stage}`, 'i'),
+    })
+  );
+}
+
+/** Same, but fully synchronous — usable while fake timers are installed. */
+function moveA1ToSync(stage: string) {
+  const trigger = screen.getAllByRole('button', { name: /applications\.status\.applied/i })[0];
+  fireEvent.click(trigger as HTMLElement);
+  const listbox = screen.getByRole('listbox');
   fireEvent.click(
     within(listbox).getByRole('option', {
       name: new RegExp(`applications\\.status\\.${stage}`, 'i'),
@@ -318,6 +330,42 @@ describe('ApplicationsPage — status note across the refetch', () => {
     expect(
       screen.getByPlaceholderText<HTMLTextAreaElement>('applications.note.placeholder').value
     ).toBe('');
+  });
+
+  // WCAG 2.2.1: retiring a control the user is standing on strands their focus.
+  it('does not retire the chip while it holds focus, and retires it once focus leaves', () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<ApplicationsPage />);
+      // Sync stage change: `findBy*` polling never resolves under fake timers.
+      moveA1ToSync('interviewing');
+      rerender(<ApplicationsPage />);
+
+      const chip = screen.getByRole('button', { name: 'applications.row.addNoteHint' });
+      chip.focus();
+      expect(chip).toHaveFocus();
+
+      // Well past the retire interval — the chip must survive because it is focused.
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      rerender(<ApplicationsPage />);
+      expect(
+        screen.getByRole('button', { name: 'applications.row.addNoteHint' })
+      ).toBeInTheDocument();
+
+      // Focus moves away → the next tick retires it.
+      (document.activeElement as HTMLElement | null)?.blur();
+      act(() => {
+        vi.advanceTimersByTime(13_000);
+      });
+      rerender(<ApplicationsPage />);
+      expect(
+        screen.queryByRole('button', { name: 'applications.row.addNoteHint' })
+      ).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Unsaved work: a stray click outside must not destroy the typed note.

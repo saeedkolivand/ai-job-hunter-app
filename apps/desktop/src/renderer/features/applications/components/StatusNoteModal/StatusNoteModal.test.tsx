@@ -115,6 +115,42 @@ describe('StatusNoteModal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  // End-to-end guard for the focus regression: an `autoFocus` on the note field
+  // made the trap remember the field (not the trigger) as the opener, so closing
+  // stranded focus on <body>. This fails again the moment autoFocus comes back.
+  it('returns focus to the control that opened it', () => {
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            trigger
+          </button>
+          <StatusNoteModal
+            open={open}
+            onClose={() => setOpen(false)}
+            status="offer"
+            onSave={vi.fn()}
+          />
+        </>
+      );
+    }
+    render(<Harness />);
+
+    const trigger = screen.getByRole('button', { name: 'trigger' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('applications.note.placeholder')).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
   it('Escape closes without saving (the prompt is never a blocker)', () => {
     const onSave = vi.fn();
     const onClose = vi.fn();

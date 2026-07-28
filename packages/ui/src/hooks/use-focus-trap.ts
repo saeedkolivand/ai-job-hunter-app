@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 const FOCUSABLE = [
   'a[href]',
@@ -21,17 +21,24 @@ const FOCUSABLE = [
  */
 export function useFocusTrap(active: boolean) {
   const containerRef = useRef<HTMLElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // Captured in a LAYOUT effect, which runs before any passive effect can move
+  // focus — a descendant `useEffect` calling `.focus()` would otherwise be
+  // remembered as "the opener", and closing would then try to restore a node
+  // that unmounts with the dialog (leaving focus on <body>). Nothing inside the
+  // dialog may claim `autoFocus` for the same reason: React applies that during
+  // commit, ahead of every effect.
+  useLayoutEffect(() => {
+    if (!active) return;
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [active]);
 
   useEffect(() => {
     if (!active || !containerRef.current) return;
 
     const container = containerRef.current;
-
-    // Captured before the auto-focus below moves it into the trap. Without this,
-    // Escape/Cancel dropped focus on <body> and a keyboard user restarted from
-    // the top of the document instead of the control they opened the dialog with.
-    const previouslyFocused =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
     // Queried fresh on every Tab/Shift-Tab below (not captured once here) —
     // the trapped content can change shape while open (a loading state
@@ -71,6 +78,7 @@ export function useFocusTrap(active: boolean) {
       container.removeEventListener('keydown', onKeyDown);
       const current = document.activeElement;
       const orphaned = current === null || current === document.body || container.contains(current);
+      const previouslyFocused = previouslyFocusedRef.current;
       if (orphaned && previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [active]);

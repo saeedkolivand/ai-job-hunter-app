@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { forwardRef, type InputHTMLAttributes, type ReactNode, useId, useRef } from 'react';
+import { forwardRef, type InputHTMLAttributes, type ReactNode, useRef } from 'react';
 
 import { cn } from '../../lib/cn';
 
@@ -22,12 +22,6 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   allowClear?: boolean;
   /** Extra className merged into the wrapper div (only active when prefix or suffix is set). */
   wrapperClassName?: string;
-  /**
-   * Helper text rendered under the field and wired to it via `aria-describedby`,
-   * so a screen reader announces the consequence of typing here instead of the
-   * text floating unassociated elsewhere in the form.
-   */
-  hint?: ReactNode;
 }
 
 function ClearButton({ onClick }: { onClick: () => void }) {
@@ -56,27 +50,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       suffix,
       allowClear,
       wrapperClassName,
-      hint,
       ...props
     },
     ref
   ) => {
     const unstyled = variant === 'unstyled';
-    const generatedHintId = useId();
-    const hintId = hint !== undefined ? generatedHintId : undefined;
-    // A caller-supplied describedby still wins; ours is appended, not replacing.
-    const describedBy = [props['aria-describedby'], hintId].filter(Boolean).join(' ') || undefined;
-    const withHint = (field: ReactNode) =>
-      hint === undefined ? (
-        field
-      ) : (
-        <div className="flex flex-col gap-1">
-          {field}
-          <p id={hintId} className="text-fine-print text-foreground/70">
-            {hint}
-          </p>
-        </div>
-      );
     const innerRef = useRef<HTMLInputElement | null>(null);
     const setRefs = (node: HTMLInputElement | null) => {
       innerRef.current = node;
@@ -101,7 +79,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     // Wrapped mode: prefix/suffix sit inside a styled container; the inner
     // <input> strips its own border/outline so the ring belongs to the wrapper.
     if (prefix !== undefined || suffix !== undefined) {
-      return withHint(
+      return (
         <div
           className={cn(
             'flex items-center gap-2 rounded-lg px-2.5 transition-shadow duration-150',
@@ -128,7 +106,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             // inline style is the only reliable override for the default UA ring.
             style={{ outline: 'none' }}
             {...props}
-            aria-describedby={describedBy}
           />
           {showClear && <ClearButton onClick={clear} />}
           {suffix !== undefined && <span className="shrink-0 text-foreground/40">{suffix}</span>}
@@ -152,15 +129,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         {...props}
-        aria-describedby={describedBy}
       />
     );
 
-    if (!allowClear) return withHint(input);
+    if (!allowClear) return input;
 
     // Overlay the clear button on the right so the input keeps its own chrome
     // and padding (assumes a full-width input — the common case).
-    return withHint(
+    return (
       <div className="relative w-full">
         {input}
         {showClear && (

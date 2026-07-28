@@ -523,17 +523,19 @@ describe('ApplyByEmailTab — canonical contact binding', () => {
     expect(updateApplicationMutate).not.toHaveBeenCalled();
   });
 
-  it('tells the user these fields are the shared primary contact', () => {
+  it('states the shared-contact consequence ONCE, referenced by both fields', () => {
     render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
-    // One hint per field, each wired to its own input via aria-describedby.
-    expect(screen.getAllByText('applications.detail.email.recipientHint')).toHaveLength(2);
+
+    // Rendered once — not duplicated under each field.
+    const hints = screen.getAllByText('applications.detail.email.recipientHint');
+    expect(hints).toHaveLength(1);
+
+    // …and both fields point at that same node.
+    const hintId = hints[0]?.getAttribute('id');
+    expect(hintId).toBeTruthy();
     for (const label of ['recipientNameLabel', 'recipientEmailLabel']) {
       const field = screen.getByLabelText(`applications.detail.email.${label}`);
-      const describedBy = field.getAttribute('aria-describedby');
-      expect(describedBy).toBeTruthy();
-      expect(document.getElementById(describedBy as string)?.textContent).toBe(
-        'applications.detail.email.recipientHint'
-      );
+      expect(field.getAttribute('aria-describedby')).toBe(hintId);
     }
   });
 });

@@ -23,6 +23,16 @@ interface PipelineStripProps {
   onShowOverdue: () => void;
 }
 
+// Shared between the live strip and its loading placeholder so the reserved
+// footprint can never drift from the real one.
+const STRIP_GRID = 'grid grid-cols-3 gap-2 @2xl:grid-cols-6';
+const CARD_SHELL =
+  'surface-card flex min-h-11 flex-col items-start justify-center gap-1 px-3 py-2 text-left transition-shadow';
+const CARD_LABEL = 'truncate text-xs font-semibold uppercase tracking-wider text-foreground/70';
+const CARD_COUNT = 'text-lg font-semibold leading-none';
+/** Always laid out, so an overdue follow-up appearing never shifts the list. */
+const OVERDUE_ROW = 'mt-2 flex min-h-6 justify-end';
+
 /**
  * The six-card pipeline summary above the Applications list. Each card is a
  * toggle filter for its stage group (click again to clear) and every card is
@@ -52,11 +62,7 @@ export function PipelineStrip({
 
   return (
     <div className="@container">
-      <div
-        role="group"
-        aria-label={t('applications.pipeline.aria')}
-        className="grid grid-cols-3 gap-2 @2xl:grid-cols-6"
-      >
+      <div role="group" aria-label={t('applications.pipeline.aria')} className={STRIP_GRID}>
         {PIPELINE_GROUPS.map((group) => {
           const selected = active === group.id;
           return (
@@ -68,7 +74,7 @@ export function PipelineStrip({
               data-group={group.id}
               onClick={() => onSelect(selected ? null : group.id)}
               className={cn(
-                'surface-card flex min-h-11 flex-col items-start justify-center gap-1 px-3 py-2 text-left transition-shadow',
+                CARD_SHELL,
                 selected
                   ? 'ring-2 ring-inset ring-brand/70'
                   : 'hover:ring-1 hover:ring-inset hover:ring-foreground/15'
@@ -80,13 +86,12 @@ export function PipelineStrip({
                 <span className="flex w-3 shrink-0 justify-center">
                   {selected && <Check size={11} className="text-brand-soft" aria-hidden="true" />}
                 </span>
-                <span className="truncate text-xs font-semibold uppercase tracking-wider text-foreground/70">
-                  {groupLabel(group.id)}
-                </span>
+                <span className={CARD_LABEL}>{groupLabel(group.id)}</span>
               </span>
               <span
                 className={cn(
-                  'pl-4 text-lg font-semibold leading-none',
+                  CARD_COUNT,
+                  'pl-4',
                   selected ? 'text-brand-soft' : 'text-foreground/85'
                 )}
               >
@@ -105,24 +110,51 @@ export function PipelineStrip({
           : t('applications.pipeline.filterCleared')}
       </span>
 
-      {overdue > 0 && (
-        <div className="mt-2 flex justify-end">
-          {/* Actionable, not decorative: the whole point of surfacing a count is
-              being able to reach those rows. Sorts by next action. */}
+      {/* The row is ALWAYS laid out, so gaining/losing an overdue follow-up never
+          shifts the list below it. */}
+      <div className={OVERDUE_ROW}>
+        {overdue > 0 && (
+          // Actionable, not decorative: the whole point of surfacing a count is
+          // being able to reach those rows. Sorts by next action.
           <Button
             variant="unstyled"
             onClick={onShowOverdue}
             className={cn(
-              'inline-flex items-center gap-1 rounded-full border border-red-400/40 px-2 py-0.5',
+              // `ring`, not `border`: the global `* { border-color }` rule is
+              // unlayered and beats a layered `border-red-400/40`, so the hairline
+              // computed as --color-border. Same trap as the strip cards.
+              'inline-flex min-h-6 items-center gap-1 rounded-full px-2 py-0.5',
+              'ring-1 ring-inset ring-red-400/40',
               'text-xs font-semibold text-red-400 transition-shadow',
-              'hover:ring-1 hover:ring-inset hover:ring-red-400/40'
+              'hover:ring-red-400/70'
             )}
           >
             <AlarmClock size={11} aria-hidden="true" />
-            {t('applications.pipeline.overdue', { n: overdue })}
+            {t('applications.pipeline.overdue', { count: overdue })}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading placeholder with the strip's EXACT footprint — same grid, same card
+ * chrome, and non-breaking spaces at the real type sizes so the height tracks
+ * the text scale instead of being guessed. Lives here so the two cannot drift.
+ */
+export function PipelineStripSkeleton() {
+  return (
+    <div className="@container" aria-hidden="true">
+      <div className={STRIP_GRID}>
+        {PIPELINE_GROUPS.map((group) => (
+          <div key={group.id} className={CARD_SHELL}>
+            <span className={CARD_LABEL}>&nbsp;</span>
+            <span className={CARD_COUNT}>&nbsp;</span>
+          </div>
+        ))}
+      </div>
+      <div className={OVERDUE_ROW} />
     </div>
   );
 }

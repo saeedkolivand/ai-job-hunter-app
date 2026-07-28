@@ -116,10 +116,13 @@ export function StatusNoteModal({
         </label>
         {/* `glass` gives the field a visible boundary — the default transparent
             variant measured 1.00:1 against the modal panel. */}
+        {/* No `autoFocus`: React applies it during COMMIT, before the focus trap
+            captures the pre-open element — the trap then remembered THIS field,
+            found it disconnected on close, and skipped the restore, dumping focus
+            on <body>. The trap focuses the first focusable (this field) anyway. */}
         <TextArea
           id={fieldId}
           variant="glass"
-          autoFocus
           rows={4}
           value={note}
           onChange={(e) => setNote(e.target.value)}

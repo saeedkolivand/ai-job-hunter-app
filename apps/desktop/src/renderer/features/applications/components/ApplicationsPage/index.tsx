@@ -16,7 +16,10 @@ import { Button, Dropdown, EmptyState, ErrorState, Input, RowSkeleton, transitio
 
 import { PageShell } from '@/components/layout/PageShell';
 import { ApplicationRow } from '@/features/applications/components/ApplicationRow';
-import { PipelineStrip } from '@/features/applications/components/PipelineStrip';
+import {
+  PipelineStrip,
+  PipelineStripSkeleton,
+} from '@/features/applications/components/PipelineStrip';
 import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
 import { TrackJobModal } from '@/features/applications/components/TrackJobModal';
 import {
@@ -56,11 +59,16 @@ export function ApplicationsPage() {
   const [noteHintId, setNoteHintId] = useState<string | null>(null);
   const noteStatus = useSetApplicationStatus();
 
-  // Retire the chip after a while so an old row doesn't keep offering it.
+  // Retire the chip after a while so an old row doesn't keep offering it — but
+  // NEVER while it holds focus (WCAG 2.2.1): yanking the focused control out of
+  // the DOM strands a keyboard user on <body>. Re-arm instead and re-check.
   useEffect(() => {
     if (!noteHintId) return;
-    const timer = setTimeout(() => setNoteHintId(null), NOTE_HINT_MS);
-    return () => clearTimeout(timer);
+    const timer = setInterval(() => {
+      if (document.activeElement?.closest(`[data-note-chip="${noteHintId}"]`)) return;
+      setNoteHintId(null);
+    }, NOTE_HINT_MS);
+    return () => clearInterval(timer);
   }, [noteHintId]);
   // Re-read from the CURRENT list, not from a value captured when the prompt
   // opened, so a stage change landing in between is never reverted by the note.
@@ -137,30 +145,32 @@ export function ApplicationsPage() {
   // Pipeline-strip stage-group filter (null = every stage).
   const activeStages = stagesForGroup(stageGroup);
 
-  // A group covering several stages (only `closed` today) is shown FLAT: one
-  // list, each row carrying its own stage Tag. Keeping per-stage headers there
-  // printed the stage twice per row ("Rejected" as a header and as a tag) and
-  // fragmented an already-small bucket into four one-row sections.
-  const aggregated = (activeStages?.length ?? 0) > 1;
+  // The per-row stage Tag is only informative when the group spans stages —
+  // with a single-stage filter every row shares the one stage.
+  const showStageTag = (activeStages?.length ?? 0) > 1;
 
-  // Group by stage in APPLICATION_STAGES order; hide stages with no applications
-  // and stages outside the active group. Rows are sorted within each section.
+  // Sections. ANY active stage filter (`activeStages !== null`) renders ONE FLAT
+  // list: with a filter on, a section header is either a word-for-word copy of
+  // the strip card already selected right above it (single-stage — same word,
+  // different behaviour, and its collapse toggle is meaningless with one
+  // section) or a second printing of each row's stage (aggregated — header plus
+  // row Tag). Unfiltered, the stage sections are the whole navigation.
   const sections = useMemo(() => {
-    const inScope = filtered.filter((a) => !activeStages || activeStages.includes(a.status));
-    if (aggregated) {
-      const apps = sortApplications(inScope, sort);
+    if (activeStages) {
+      const apps = sortApplications(
+        filtered.filter((a) => activeStages.includes(a.status)),
+        sort
+      );
       return apps.length > 0 ? [{ stage: null, apps }] : [];
     }
-    return APPLICATION_STAGES.filter((stage) => !activeStages || activeStages.includes(stage.id))
-      .map((stage) => ({
-        stage,
-        apps: sortApplications(
-          inScope.filter((a) => a.status === stage.id),
-          sort
-        ),
-      }))
-      .filter((s) => s.apps.length > 0);
-  }, [filtered, activeStages, aggregated, sort]);
+    return APPLICATION_STAGES.map((stage) => ({
+      stage,
+      apps: sortApplications(
+        filtered.filter((a) => a.status === stage.id),
+        sort
+      ),
+    })).filter((s) => s.apps.length > 0);
+  }, [filtered, activeStages, sort]);
 
   /** Clears BOTH filters — the escape hatch from an empty filtered result. */
   const showAll = () => setApplications({ stageGroup: null, filter: '' });
@@ -216,15 +226,9 @@ export function ApplicationsPage() {
       >
         {isLoading && (
           <div className="pt-4">
-            {/* Reserve the strip's exact footprint (same grid, same card height)
-                so the rows below do not jump ~150px when the data lands. */}
-            <div className="@container">
-              <div aria-hidden="true" className="grid grid-cols-3 gap-2 @2xl:grid-cols-6">
-                {PIPELINE_GROUPS.map((group) => (
-                  <div key={group.id} className="surface-card min-h-11 px-3 py-2" />
-                ))}
-              </div>
-            </div>
+            {/* Reserves the strip's exact footprint (shared classes + real type
+                sizes) so the rows below do not jump when the data lands. */}
+            <PipelineStripSkeleton />
             <div className="space-y-2 pt-4">
               <RowSkeleton />
               <RowSkeleton />
@@ -297,7 +301,7 @@ export function ApplicationsPage() {
                     key={app.id}
                     application={app}
                     highlighted={app.id === highlightId}
-                    showStageTag={aggregated}
+                    showStageTag={showStageTag}
                     onStatusChanged={() => setNoteHintId(app.id)}
                     showNoteHint={app.id === noteHintId}
                     onAddNote={() => {
@@ -310,9 +314,9 @@ export function ApplicationsPage() {
               </div>
             );
 
-            // Aggregated group → ONE flat list; the per-row stage Tag already
-            // says which end-state each pursuit reached.
-            if (!stage) return <div key="aggregated">{rows}</div>;
+            // Filtered view → ONE flat list; the selected strip card above already
+            // names the scope, and a per-row Tag names the stage when it varies.
+            if (!stage) return <div key="flat">{rows}</div>;
 
             const collapsed = collapsedSections.includes(stage.id);
             return (
