@@ -60,7 +60,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
   },
 ];
 
-const CLOUD_DEFAULT_MODELS: Record<string, string> = {
+export const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   'ollama-cloud': 'gpt-oss:120b',
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-5',
