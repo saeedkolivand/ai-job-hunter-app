@@ -248,40 +248,122 @@ export const countBySeverity = (findings) => {
 
 // ─── claude -p driver (parse + one corrective retry) ─────────────────────────
 
+// Cooldown: after an unavailable/timed-out call, skip re-calling for the SAME
+// prompt (hash) for 30 min — a timed-out review re-fired on an unchanged diff
+// just times out again (this was 74.7% of all gate runs pre-2026-07-28).
+const COOLDOWN_MS = 30 * 60 * 1000;
+const cooldownPath = (cwd) => path.join(cwd, '.claude', '.review-cooldown.json');
+const inCooldown = (cwd, hash) => {
+  try {
+    const c = JSON.parse(fs.readFileSync(cooldownPath(cwd), 'utf8'));
+    return c.promptHash === hash && Date.now() - Date.parse(c.ts) < COOLDOWN_MS;
+  } catch {
+    return false;
+  }
+};
+const writeCooldown = (cwd, hash) => {
+  try {
+    fs.writeFileSync(
+      cooldownPath(cwd),
+      JSON.stringify({ ts: new Date().toISOString(), promptHash: hash })
+    );
+  } catch {}
+};
+
 /**
  * Run one non-interactive review. Returns
- * { findings, raw, parseRetries, parseFailed, error } — findings === null means
- * both parse attempts failed (caller decides the conservative fallback);
- * error is set when the binary itself was unavailable / timed out.
+ * { findings, raw, parseRetries, parseFailed, error, usage, costUsd, cooldown }
+ * — findings === null means both parse attempts failed (caller decides the
+ * conservative fallback); error is set when the binary itself was unavailable /
+ * timed out (cooldown: true when skipped without calling).
+ *
+ * Boots LEAN: --strict-mcp-config with no --mcp-config = zero MCP servers in the
+ * nested session (booting graphify's 19MB graph inside a 120s budget was the
+ * root cause of the llm-unavailable timeout loop). --output-format json gives
+ * usage/cost telemetry the metrics were missing.
  */
 export const runClaudeReview = ({ cwd, prompt, model, timeoutMs = 120000 }) => {
-  const call = (p) => {
-    try {
-      const r = spawnSync('claude', ['-p', '--model', model, '--output-format', 'text'], {
-        cwd,
-        input: p,
-        encoding: 'utf8',
-        shell: true,
-        env: { ...process.env, REVIEW_HOOK_ACTIVE: '1' },
-        timeout: timeoutMs,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-      return (r.stdout || '').trim();
-    } catch {
-      return '';
-    }
-  };
-  const first = call(prompt);
-  if (!first)
+  const usage = {};
+  let costUsd = 0;
+  const promptHash = crypto.createHash('sha1').update(prompt).digest('hex');
+  if (inCooldown(cwd, promptHash))
     return {
       findings: null,
       raw: '',
       parseRetries: 0,
       parseFailed: false,
       error: 'llm_unavailable',
+      usage,
+      costUsd,
+      cooldown: true,
     };
+  const call = (p) => {
+    try {
+      const r = spawnSync(
+        'claude',
+        ['-p', '--model', model, '--output-format', 'json', '--strict-mcp-config'],
+        {
+          cwd,
+          input: p,
+          encoding: 'utf8',
+          shell: true,
+          env: { ...process.env, REVIEW_HOOK_ACTIVE: '1' },
+          timeout: timeoutMs,
+          maxBuffer: 10 * 1024 * 1024,
+        }
+      );
+      // a killed (timeout) or failed spawn can leave partial stdout — never treat
+      // it as a reply, or the corrective-retry path re-pays a doomed full call
+      if (r.error) return '';
+      const out = (r.stdout || '').trim();
+      if (!out) return '';
+      try {
+        const env2 = JSON.parse(out);
+        for (const [k, v] of Object.entries(env2.usage || {}))
+          if (Number.isFinite(v)) usage[k] = (usage[k] || 0) + v;
+        if (Number.isFinite(env2.total_cost_usd)) costUsd += env2.total_cost_usd;
+        return typeof env2.result === 'string' ? env2.result.trim() : '';
+      } catch {
+        // not a JSON envelope: a clean exit may still be a raw reply (older CLI);
+        // a nonzero exit with unparseable output is an unavailable binary, not a reply
+        return r.status === 0 ? out : '';
+      }
+    } catch {
+      return '';
+    }
+  };
+  const first = call(prompt);
+  if (first) {
+    // the LLM is reachable again — drop any stale cooldown so nothing lingers
+    try {
+      fs.rmSync(cooldownPath(cwd), { force: true });
+    } catch {}
+  }
+  if (!first) {
+    writeCooldown(cwd, promptHash);
+    return {
+      findings: null,
+      raw: '',
+      parseRetries: 0,
+      parseFailed: false,
+      error: 'llm_unavailable',
+      usage,
+      costUsd,
+      cooldown: false,
+    };
+  }
   let findings = parseFindings(first);
-  if (findings) return { findings, raw: first, parseRetries: 0, parseFailed: false, error: null };
+  if (findings)
+    return {
+      findings,
+      raw: first,
+      parseRetries: 0,
+      parseFailed: false,
+      error: null,
+      usage,
+      costUsd,
+      cooldown: false,
+    };
   const second = call(
     prompt +
       '\n\n## CONTRACT VIOLATION\nYour previous reply was not a single valid schema-1 json block. Re-emit ONLY the findings JSON — one fenced ```json block, no prose.'
@@ -293,6 +375,9 @@ export const runClaudeReview = ({ cwd, prompt, model, timeoutMs = 120000 }) => {
     parseRetries: 1,
     parseFailed: !findings,
     error: null,
+    usage,
+    costUsd,
+    cooldown: false,
   };
 };
 

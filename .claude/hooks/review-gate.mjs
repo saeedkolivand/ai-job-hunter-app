@@ -1,39 +1,37 @@
 #!/usr/bin/env node
 /**
- * review-gate.mjs — global Stop hook. Tiered, batched, token-efficient code review.
- * Generic by default; specialized per-project via <cwd>/.claude/review-routes.json + .claude/agents/*.md.
+ * review-gate.mjs — global Stop hook. Deterministic, near-free code review.
+ * Generic by default; specialized per-project via <cwd>/.claude/review-routes.json.
  * NEVER hard-fails the session: any error → exit 0 (don't block the user on a hook bug),
  * but every meaningful run — including failures — logs one line to .claude/.review-metrics.jsonl.
  *
- * Tiers: guards → skip-list → Tier 0 deterministic arch-guards → reviewed-hash cache →
- *        route to ≤3 owner checklists → ONE batched `claude -p` (schema-1 JSON findings) →
- *        deterministic verdict: block iff parsed HIGH/CRITICAL with confidence ≥ 0.6.
+ * 2026-07-28: the LLM review moved OFF the Stop hook to pre-push
+ * (scripts/pre-push-review.mjs) and CI — 74.7% of 830 stop-gate LLM calls died in
+ * their own 120s timeout for 68 findings / 8 blocks ever; the per-finish nested
+ * `claude -p` was the setup's single largest recurring token cost. The Stop gate
+ * keeps every deterministic tier: guards → skip-list → ledger re-emits → Tier 0
+ * ast-grep arch-guards → reviewed-hash cache → verdict. Unresolved ledger findings
+ * (seeded by the pre-push/CI LLM reviews) still re-block a finish until the file
+ * actually changes.
  * Scope: the full branch range (merge-base with origin/main → HEAD) PLUS the working
- *        tree and untracked files — committing no longer blinds the gate.
+ *        tree and untracked files — committing does not blind the gate.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   SKIP_GLOBS,
+  SEVERITIES,
   matchesAny,
-  globToRe,
   splitByFile,
   assembleDiff,
-  hunkHashes,
-  keptHashes,
   fileHunkHashes,
-  ledgerKey,
   loadLedger,
   appendLedger,
-  hasPriorRun,
-  FINDING_CONTRACT,
   blockingFindings,
   formatFinding,
   countBySeverity,
-  runClaudeReview,
   appendMetrics,
-  readLearnings,
 } from './review-lib.mjs';
 
 const exit0 = (msg) => {
@@ -107,7 +105,7 @@ try {
   const changed = [...new Set([...committedNames, ...workingNames, ...untracked])];
   if (!changed.length) exit0();
 
-  // 3. skip-list (no LLM)
+  // 3. skip-list (deterministic)
   const nonSkipped = changed.filter((f) => !matchesAny(f, SKIP_GLOBS));
   if (!nonSkipped.length) exit0();
   metric.files = nonSkipped.length;
@@ -139,14 +137,13 @@ try {
   // file is in nonSkipped but nets to zero) — metrics must reflect what was reviewed
   metric.files = new Set(segments.map((s) => s.file)).size;
 
-  // 4b. findings ledger — cross-run finding state for this branch.
-  // OPEN findings whose file diff is byte-identical re-emit VERBATIM and their files
-  // skip the LLM entirely; a changed file auto-resolves its old findings. Categories
+  // 4b. findings ledger — cross-run finding state for this branch, seeded by the
+  // pre-push/CI LLM reviews. OPEN findings whose file diff is byte-identical
+  // re-emit VERBATIM; a changed file auto-resolves its old findings. Categories
   // the user has ignored 3+ consecutive times auto-suppress — but ONLY style/perf/i18n,
   // never security/correctness/data-loss/arch/test-coverage.
   const fileHunks = fileHunkHashes(segments);
   const ledger = loadLedger(cwd, branch);
-  const round2 = hasPriorRun(cwd, branch);
   const sameHunks = (a, b) => a.length === b.length && a.every((h, i) => h === b[i]);
   const SUPPRESSIBLE = new Set(['style', 'perf', 'i18n']);
   const openEntries = [...ledger.values()].filter((e) => e.status === 'open' && e.finding);
@@ -159,6 +156,14 @@ try {
   const reEmitFiles = new Set();
   const ledgerAppends = [];
   for (const e of openEntries) {
+    // ledger rows are written verbatim by prior runs — never trust their shape (a
+    // malformed finding would throw in countBySeverity/formatFinding downstream)
+    if (
+      typeof e.finding.file !== 'string' ||
+      typeof e.finding.summary !== 'string' ||
+      !SEVERITIES.includes(String(e.finding.severity))
+    )
+      continue;
     // entries without a hunk baseline (e.g. /review-sourced) can't be re-emitted or
     // auto-resolved reliably — they exist for /review-stats only
     if (!Array.isArray(e.fileHunks) || !e.fileHunks.length) continue;
@@ -192,9 +197,9 @@ try {
   }
   metric.reemits = reEmitted.length;
 
-  // files with verbatim re-emits don't go back to the model
+  // files with verbatim re-emits carry a known verdict already
   const modelSegments = segments.filter((s) => !reEmitFiles.has(s.file));
-  const { diff, omitted, deletedCount, kept } = assembleDiff(modelSegments, MAX);
+  const { diff, omitted, deletedCount } = assembleDiff(modelSegments, MAX);
   if (!diff.trim() && !reEmitted.length) {
     appendLedger(cwd, ledgerAppends); // record resolved-changed transitions
     exit0();
@@ -216,7 +221,6 @@ try {
     if (deletedCount || omitted.length) logM({ outcome: 'degraded', blocked: false });
     exit0();
   }
-  const skipLLM = !meaningful.length; // everything left is re-emits — verdict is known
 
   // 5. Tier 0 — deterministic guards (confidence 1.0). Primary: the ast-grep pack
   // (.claude/review-rules/*.yml, discovered via repo-root sgconfig.yml — never pass
@@ -252,7 +256,9 @@ try {
     const r = spawnSync(
       'pnpm',
       ['exec', 'ast-grep', 'scan', '--json=compact', '--', ...nonSkipped.map((f) => `"${f}"`)],
-      { cwd, encoding: 'utf8', shell: true, timeout: 60000, maxBuffer: 20 * 1024 * 1024 }
+      // 20s fits inside the 30s Stop-hook budget (settings.json) with headroom —
+      // the harness would otherwise SIGKILL the hook mid-scan on a slow ast-grep run
+      { cwd, encoding: 'utf8', shell: true, timeout: 20000, maxBuffer: 20 * 1024 * 1024 }
     );
     const out = (r.stdout || '').trim();
     // distinguish "ran clean, empty output" from "binary missing/errored" — only the
@@ -335,7 +341,9 @@ try {
     }
   }
 
-  // 6. reviewed-hash cache (body-only hunk hashes; line-number agnostic)
+  // 6. reviewed-hash cache (body-only hunk hashes; line-number agnostic).
+  // Seeded ONLY by the pre-push/CI LLM reviews now — the Stop gate reads it to
+  // fast-exit on already-reviewed-clean code but never writes reviewed-clean state.
   const cachePath = path.join(cwd, '.claude', '.review-cache');
   let cache = new Set();
   try {
@@ -350,9 +358,7 @@ try {
     exit0();
   }
 
-  // an INTRODUCED tier-0 hit is deterministic (confidence 1) — the verdict is
-  // already known, so don't spend an LLM review on it; the fixed code gets its
-  // full review on the next finish.
+  // an INTRODUCED tier-0 hit is deterministic (confidence 1) — block immediately.
   if (tier0Blocking) {
     metric.model = 'none';
     metric.findings = countBySeverity(tier0);
@@ -366,240 +372,28 @@ try {
     );
   }
 
-  // everything left in scope is verbatim re-emits — the verdict is already known,
-  // skip the LLM entirely
-  if (skipLLM) {
-    const reBlocking = blockingFindings(reEmitted, 0.6);
-    metric.model = 'none';
-    metric.findings = countBySeverity([...tier0, ...reEmitted]);
-    appendLedger(cwd, ledgerAppends);
-    if (reBlocking.length) {
-      logM({ outcome: 'reemit-block', blocked: true });
-      block(
-        `Review gate — unresolved findings from the previous review (file unchanged):\n\n${reBlocking
-          .map(formatFinding)
-          .join('\n')}`
-      );
-    }
-    logM({ outcome: 'reemit-advisory', blocked: false });
-    exit0(
-      `✓ Review gate: no new code to review.\nStill open from previous reviews:\n${reEmitted
-        .map(formatFinding)
+  // 7. Verdict — deterministic only (no LLM on the Stop path; see header).
+  metric.model = 'none';
+  metric.findings = countBySeverity([...tier0, ...reEmitted]);
+  appendLedger(cwd, ledgerAppends);
+
+  const fmt = (f) =>
+    formatFinding(f) + (reEmitted.includes(f) ? ' · (unresolved from previous review)' : '');
+  const reBlocking = blockingFindings(reEmitted, 0.6); // introduced tier-0 HIGH blocked above
+  if (reBlocking.length) {
+    logM({ outcome: 'reemit-block', blocked: true });
+    block(
+      `Review gate — unresolved findings from the previous review (file unchanged):\n\n${reBlocking
+        .map(fmt)
         .join('\n')}`
     );
   }
 
-  // 7. route → ≤cap owners (+ secondaries on risk)
+  // advisories (non-blocking)
   let routes = null;
   try {
     routes = JSON.parse(fs.readFileSync(path.join(cwd, '.claude', 'review-routes.json'), 'utf8'));
   } catch {}
-  const cap = (routes && routes.cap) || 3;
-  const owners = [];
-  if (routes && routes.primary)
-    for (const f of nonSkipped) {
-      const r = routes.primary.find((rt) => globToRe(rt.glob).test(f));
-      if (r && !owners.includes(r.owner)) owners.push(r.owner);
-    }
-  const secondaries = [];
-  let securityMatched = false; // security globs MATCHED — independent of cap survival
-  if (routes && routes.secondary)
-    for (const s of routes.secondary) {
-      if (!nonSkipped.some((f) => matchesAny(f, s.globs))) continue;
-      if (s.owner === 'tauri-security-reviewer') securityMatched = true;
-      if (!owners.includes(s.owner)) secondaries.push(s.owner);
-    }
-  // Reserve the security reviewer a slot BEFORE trimming primaries to the cap.
-  let selected = owners.slice(0, securityMatched ? Math.max(0, cap - 1) : cap);
-  if (securityMatched && !selected.includes('tauri-security-reviewer'))
-    selected.push('tauri-security-reviewer');
-  for (const s of secondaries) {
-    if (selected.length >= cap) break;
-    if (!selected.includes(s)) selected.push(s);
-  }
-  if (!selected.length) selected = ['rust-backend-architect'];
-
-  // model by risk. sonnet across the board — haiku recall was the weakest link of
-  // the only auto-firing reviewer. Escalation switch for security diffs:
-  // const model = securityMatched ? 'opus' : 'sonnet';
-  const model = 'sonnet';
-  metric.model = model;
-
-  // owner checklists — 12K TOTAL budget; drop whole trailing owners, never truncate text.
-  // Owners with a shared checklist file load it INSTEAD of their agent persona —
-  // .claude/review-checklists/*.md is the single source of truth shared with
-  // pr-reviewer and the CI review job; agent files remain the fallback.
-  // ponytail: hand-kept 3-entry map, not derived from review-routes.json — owners
-  // and lessons_domains keys don't correspond 1:1 (e.g. job-match-expert→ats).
-  // Adding a checklist file? Extend this map or the gate silently keeps the
-  // agent-file fallback.
-  const OWNER_CHECKLIST = {
-    'frontend-reviewer': 'frontend',
-    'rust-backend-architect': 'rust',
-    'testing-reviewer': 'testing',
-  };
-  const agentDir = path.join(cwd, '.claude', 'agents');
-  const checklistDir = path.join(cwd, '.claude', 'review-checklists');
-  // sized so three full domain checklists (~4-5K each) + one agent fallback all fit —
-  // dropping a whole domain's deep invariants on a multi-domain diff costs more than
-  // the extra prompt tokens
-  const CHECKLIST_BUDGET = 18000;
-  const consulted = [];
-  const notConsulted = [];
-  let checklists = '';
-  for (const name of selected) {
-    let body = '';
-    const domain = OWNER_CHECKLIST[name];
-    if (domain) {
-      try {
-        body = fs.readFileSync(path.join(checklistDir, domain + '.md'), 'utf8').trim();
-      } catch {}
-    }
-    if (!body) {
-      try {
-        body = fs
-          .readFileSync(path.join(agentDir, name + '.md'), 'utf8')
-          .replace(/^---[\s\S]*?---/, '')
-          .trim();
-      } catch {}
-    }
-    const entry = `### ${name}\n${body}\n\n`;
-    if (checklists.length + entry.length > CHECKLIST_BUDGET && consulted.length) {
-      notConsulted.push(name);
-      continue;
-    }
-    checklists += entry;
-    consulted.push(name);
-  }
-  if (notConsulted.length)
-    checklists += `(not consulted, over budget: ${notConsulted.join(', ')})\n`;
-
-  // lessons retrieval by touched domain (proactive, folded into the same prompt)
-  let lessons = '';
-  try {
-    const lp = path.join(cwd, '.claude', 'hooks', 'lessons.mjs');
-    if (fs.existsSync(lp) && routes && routes.lessons_domains) {
-      const domains = Object.keys(routes.lessons_domains).filter((d) =>
-        nonSkipped.some((f) => matchesAny(f, routes.lessons_domains[d]))
-      );
-      const out = [];
-      for (const d of domains.slice(0, 3)) {
-        const r = spawnSync(process.execPath, [lp, 'query', '--domain', d, '--limit', '4'], {
-          cwd,
-          encoding: 'utf8',
-        });
-        if (r.stdout && r.stdout.trim()) out.push(r.stdout.trim());
-      }
-      if (out.length)
-        lessons = '\n\n## Relevant prior lessons (consult, do not just repeat)\n' + out.join('\n');
-    }
-  } catch {}
-
-  // learnings — known repo false positives (memory unification: the gate now reads
-  // the same store /review and pr-reviewer use)
-  const learnings = readLearnings(cwd, 4000);
-  const learningsBlock = learnings
-    ? `\n\n## Known repo false positives — do NOT re-raise any of these\n${learnings}`
-    : '';
-
-  // 8. Tier 1 — ONE batched claude -p, schema-1 JSON findings
-  const prompt = `You are a STRICT but calibrated code reviewer. Review ONLY the diff below, applying the relevant reviewer checklists.
-
-## Severity rubric (STRICT — verify against the diff; do not assume coverage or key existence)
-- CRITICAL: exploitable security on a secret/credential/IPC/updater/network-egress path; data loss/corruption; breaks a release or CI gate.
-- HIGH: architecture-rule violation (std::env::var outside platform/, reqwest::Client outside net/, untyped Result<_,String> outside error/); changed non-trivial logic shipped WITHOUT a test, or a test whose assertion is weak/tautological/asserts the mock/doesn't exercise the change; untested error/edge/security path on changed code; provider-specific coupling in business logic; PII/temp-file-cleanup/retention regression; user-facing text whose i18n key is missing from en or de (or a t() referencing a non-existent key).
-- MEDIUM: unguarded hot-path perf regression, non-blocking correctness smell, a missing NON-critical edge-case test.
-- LOW: style/naming/comments/formatting/docs.
-STRICT tie-break: round UP for test-coverage, error/edge-path, i18n, security, and data findings; round down only for pure style/naming/docs.
-
-${FINDING_CONTRACT}
-
-## Reviewer checklists (apply only those whose area the diff touches)
-${checklists}${lessons}${learningsBlock}
-
-## Diff
-\`\`\`diff
-${diff}
-\`\`\`
-`;
-  const r = runClaudeReview({ cwd, prompt, model });
-  metric.parse_retries = r.parseRetries;
-
-  // 9. deterministic verdict — from parsed findings, never from prose
-  // convergence: from round 2 on, NEW MEDIUM/LOW are suppressed (anti-flapping —
-  // each round inventing fresh nits never converges); new HIGH/CRITICAL always surface.
-  // category suppression: parsed findings in a 3×-ignored suppressible category drop.
-  let parsed = r.findings ? [...r.findings] : null;
-  let suppressedNotes = [];
-  if (parsed) {
-    const suppress = (f, why) => {
-      ledgerAppends.push({
-        branch,
-        status: 'suppressed',
-        finding: f,
-        fileHunks: fileHunks.get(f.file) || [],
-      });
-      return why;
-    };
-    if (round2) {
-      // symmetric with category-suppression: convergence also only silences the
-      // suppressible categories — a NEW medium correctness/security finding on a
-      // later commit still surfaces (as advisory; MEDIUM/LOW never block anyway)
-      const dropped = parsed.filter(
-        (f) => (f.severity === 'MEDIUM' || f.severity === 'LOW') && SUPPRESSIBLE.has(f.category)
-      );
-      if (dropped.length) {
-        parsed = parsed.filter((f) => !dropped.includes(f));
-        dropped.forEach((f) => suppress(f));
-        suppressedNotes.push(
-          `${dropped.length} new advisory finding(s) suppressed (convergence, round ≥2)`
-        );
-      }
-    }
-    if (suppressedCategories.size) {
-      const dropped = parsed.filter((f) => suppressedCategories.has(f.category));
-      if (dropped.length) {
-        parsed = parsed.filter((f) => !dropped.includes(f));
-        dropped.forEach((f) => suppress(f));
-        suppressedNotes.push(
-          `${dropped.length} finding(s) suppressed (category ignored 3×: ${[...suppressedCategories].join(', ')})`
-        );
-      }
-    }
-    metric.suppressed = ledgerAppends.filter((e) => e.status === 'suppressed').length;
-  }
-
-  let findings = [...tier0, ...reEmitted];
-  let fallbackNote = '';
-  if (parsed) {
-    findings.push(...parsed);
-  } else if (r.raw && r.parseFailed) {
-    // conservative fallback: unparseable output that talks about HIGH/CRITICAL blocks
-    if (/\b(HIGH|CRITICAL)\b/.test(r.raw) && !/^APPROVED/i.test(r.raw)) {
-      findings.push({
-        severity: 'HIGH',
-        category: 'correctness',
-        file: '(unparsed reviewer output)',
-        line: 0,
-        summary: 'reviewer flagged HIGH/CRITICAL but violated the output contract',
-        evidence: r.raw.slice(0, 1500),
-        fix: 'read the raw finding below and address it',
-        confidence: 1,
-        introduced_by_diff: true,
-      });
-      fallbackNote = `\n\nRaw reviewer output (contract violation):\n${r.raw.slice(0, 2000)}`;
-    }
-  }
-
-  const blocking = blockingFindings(findings, 0.6);
-  const unverified = findings.filter(
-    (f) => (f.severity === 'HIGH' || f.severity === 'CRITICAL') && !blocking.includes(f)
-  );
-  const lowmed = findings.filter((f) => f.severity === 'MEDIUM' || f.severity === 'LOW');
-  metric.findings = countBySeverity(findings);
-  if (r.parseFailed) metric.parse_failed = true;
-
-  // advisories (non-blocking)
   const advisory = [];
   if (routes && routes.advisory) {
     if (nonSkipped.some((f) => matchesAny(f, routes.advisory.docs_stale)))
@@ -616,87 +410,17 @@ ${diff}
   if (testable && !testChanged)
     advisory.push('changed logic without accompanying tests → run /add-tests');
 
-  // new surviving parsed findings become open ledger entries (re-emits already have
-  // theirs; tier-0 re-derives free every run and is never ledgered)
-  if (parsed)
-    for (const f of parsed)
-      if (fileHunks.has(f.file))
-        ledgerAppends.push({
-          branch,
-          status: 'open',
-          finding: f,
-          fileHunks: fileHunks.get(f.file),
-          reemits: 0,
-        });
-
-  const writeCache = (list) => {
-    if (!list.length) return;
-    try {
-      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-      fs.appendFileSync(cachePath, list.join('\n') + '\n');
-      // bound growth: keep only the most recent ~2000 hashes
-      const lines = fs.readFileSync(cachePath, 'utf8').split('\n').filter(Boolean);
-      if (lines.length > 2000) fs.writeFileSync(cachePath, lines.slice(-2000).join('\n') + '\n');
-    } catch {}
-  };
-  const fmt = (f) =>
-    formatFinding(f) + (reEmitted.includes(f) ? ' · (unresolved from previous review)' : '');
-
-  if (blocking.length) {
-    // Never cache BLOCKING files' hunks — unfixed HIGH/CRITICAL re-blocks every finish
-    // (now via a free ledger re-emit). Files the model reviewed clean ARE cached so a
-    // fix-and-refinish cycle only re-reviews what actually changed.
-    appendLedger(cwd, ledgerAppends);
-    if (parsed) {
-      // only hunks the model ACTUALLY saw (assembleDiff's `kept`), minus blocked files
-      writeCache(keptHashes(kept, new Set(blocking.map((f) => f.file))));
-    }
-    logM({ outcome: 'blocked', blocked: true });
-    block(
-      `Review gate [${consulted.join(', ')}] — blocking issues, address then finish:\n\n${blocking
-        .map(fmt)
-        .join('\n')}` +
-        (unverified.length
-          ? `\n\nNon-blocking HIGH/CRITICAL (low confidence or pre-existing):\n${unverified.map(fmt).join('\n')}`
-          : '') +
-        (lowmed.length
-          ? `\n\nAdvisory findings (non-blocking):\n${lowmed.map(fmt).join('\n')}`
-          : '') +
-        (advisory.length ? `\n\nAdvisory:\n- ${advisory.join('\n- ')}` : '') +
-        (suppressedNotes.length ? `\n\n${suppressedNotes.join('\n')}` : '') +
-        fallbackNote
-    );
-  }
-
-  // Fail-open, but visibly — and never cache hunks the model did not actually review.
-  // Ledger transitions (resolved/suppressed/re-emit counts) are still recorded.
-  if (r.error === 'llm_unavailable') {
-    appendLedger(cwd, ledgerAppends);
-    logM({ outcome: 'llm-unavailable', blocked: false, error: r.error });
-    exit0('review-gate: LLM review skipped (reviewer unavailable) — diff NOT cached');
-  }
-  if (r.parseFailed) {
-    appendLedger(cwd, ledgerAppends);
-    logM({ outcome: 'parse-failed', blocked: false });
-    exit0('review-gate: reviewer output unparseable (no HIGH/CRITICAL text) — diff NOT cached');
-  }
-
-  // No blocking findings → record ledger state + reviewed hunks so a future finish
-  // skips this clean code. Cache ONLY what the model actually saw (`kept`) — an
-  // omitted over-budget file or a cut hunk tail must never be marked reviewed-clean.
-  appendLedger(cwd, ledgerAppends);
-  writeCache(keptHashes(kept));
-
+  const open = [
+    ...tier0.filter((t) => !(t.introduced_by_diff && t.severity === 'HIGH')),
+    ...reEmitted.filter((f) => !reBlocking.includes(f)),
+  ];
   const advisoryOut = [];
-  if (unverified.length)
-    advisoryOut.push(
-      `Non-blocking HIGH/CRITICAL (low confidence or pre-existing):\n${unverified.map(fmt).join('\n')}`
-    );
-  if (lowmed.length) advisoryOut.push(`Advisory findings:\n${lowmed.map(fmt).join('\n')}`);
+  if (open.length)
+    advisoryOut.push(`Advisory findings (non-blocking):\n${open.map(fmt).join('\n')}`);
   if (advisory.length) advisoryOut.push(`Reminders:\n- ${advisory.join('\n- ')}`);
-  if (suppressedNotes.length) advisoryOut.push(suppressedNotes.join('\n'));
-  logM({ outcome: advisoryOut.length ? 'advisory' : 'clean', blocked: false });
-  if (advisoryOut.length) exit0(`✓ Review gate: no blocking issues.\n${advisoryOut.join('\n')}`);
+  logM({ outcome: 'tier0-only', blocked: false });
+  if (advisoryOut.length)
+    exit0(`✓ Review gate (tier-0, deterministic): no blocking issues.\n${advisoryOut.join('\n')}`);
   exit0();
 } catch (e) {
   try {
