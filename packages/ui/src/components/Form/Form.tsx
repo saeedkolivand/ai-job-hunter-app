@@ -73,7 +73,7 @@ export interface FormFieldProps {
   /** react-hook-form validation rules. */
   rules?: Omit<RegisterOptions, 'valueAsNumber' | 'valueAsDate' | 'setValueAs' | 'disabled'>;
   /**
-   * The single value-based control (`Input`, `TextArea`, `SelectDropdown`, …). It
+   * The single value-based control (`Input`, `TextArea`, `Dropdown`, …). It
    * receives `value` / `onChange` / `onBlur` / `name` / `id` / `aria-invalid` from
    * the bound field. (For non-value controls like Switch, bind via `Controller`.)
    */

@@ -4,11 +4,10 @@
 # Load project rules as system prompt on every session
 system-prompt: .aider/system-prompt.md
 
-# Always read these files for context (CLAUDE.md is the canonical source of truth)
+# Always read these files for context (AGENTS.md is the canonical source of truth)
 read:
-  - CLAUDE.md
+  - AGENTS.md
   - docs/ARCHITECTURE.md
-  - packages/shared/src/ipc/contracts.ts
 
 # Tauri + React project settings
 auto-commits: false # manual commits only

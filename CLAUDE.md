@@ -1,95 +1,22 @@
-# AI Job Hunter — Project Rules for AI Assistants
+@AGENTS.md
 
-Single source of truth for AI assistants. Rules are enforced by ESLint, TypeScript, commitlint, and CI — violations block commits and fail the build. This file is an **index**: terse rules inline, detail behind pointers.
+<!--
+  Portable rules live in AGENTS.md (canonical — every tool reads it). This file adds ONLY
+  Claude-Code-specific orchestration: the subagent fleet, review gates, model tiering.
+  Nothing here is portable — Cursor cannot spawn `rust-backend-architect`.
+  Keep the loaded content under ~60 lines; HTML comments like this one are stripped before injection.
+-->
 
----
+## Claude Code
 
-## Auto-invoked skills (always on — no slash command)
+### Auto-invoked skills (always on — no slash command)
 
 Re-injected every session by the `SessionStart` hook (`.claude/hooks/style-policy.mjs`).
 
 - **`ponytail`** — lazy-senior-dev default: laziest solution that works (YAGNI, stdlib/native over deps). Intensity `full`; off: `stop ponytail` / `normal mode`. Source: `ponytail@ponytail` plugin.
 - **`grill-with-docs`** — before finalizing any non-trivial plan/design (incl. before `ExitPlanMode`), stress-test it against the domain model + ADRs. Skip for trivial/one-line/docs changes. Source: the user-level `grill-with-docs` skill.
 
-## Path privacy
-
-Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, PRs, commits, docs). Always repo-relative (`apps/desktop/src-tauri/src/main.rs`); the same rule applies to Git Bash-style paths.
-
-## Shell & tooling
-
-Use the **Bash tool** (never PowerShell). `rg` not `grep` · `fd` not `find` · `bat` not `cat` · `pnpm` not `npm`/`yarn`. Never `find -exec`.
-
----
-
-## Architecture
-
-Local-first desktop app, pnpm monorepo. **Tauri is the shell.** Detail → `docs/ARCHITECTURE.md`, status → `docs/ARCHITECTURE_STATUS.md`, principles → `docs/PATTERNS.md` §13.
-
-```text
-packages/shared       ← IPC contracts, Zod schemas, shared types (no UI, no Node)
-packages/ui           ← React component library + design system → @ajh/ui (no app logic)
-packages/prompts      ← AI prompt templates, provider-aware + locale-driven (pure TS, zero deps)
-packages/translations ← i18next + en/de resources → @ajh/translations (no app/IPC deps)
-packages/test-ids     ← central TEST_IDS map → @ajh/test-ids
-apps/desktop           ← Tauri app: Rust core (scraping, login, documents, AI) + React renderer
-apps/extension         ← MV3 browser extension (Chrome + Firefox): job import + opt-in autofill over the loopback bridge
-```
-
-Renderer → shell only via `AppClient` (`createTauriInvokeClient()` in `apps/desktop/src/tauri-client/index.ts`). IPC contract: `packages/shared/src/ipc/contracts/`. **Dev:** `pnpm dev`.
-
----
-
-## Rules (enforced — full config in `eslint.config.mjs`)
-
-0. **PRs only, never push to `main`.** Branch → commit → push → `gh pr create` → wait for approval.
-1. **No `window.api` in UI.** Use service hooks from `apps/desktop/src/renderer/services/` (React Query).
-2. **i18n from `@ajh/translations`,** never `react-i18next`/`i18next` directly. Init shim: `@/i18n`.
-3. **No hardcoded brand colors.** `text-brand`/`bg-brand`/… or `var(--color-brand)`. `[#RRGGBB]` errors.
-4. **No inline transition objects.** `import { transition } from '@ajh/ui'`.
-5. **Always `@ajh/ui` primitives** — Button, Input, TextArea, NumberField, SelectDropdown, Switch, ModalShell, ConfirmModal, EmptyState, ErrorState, RowSkeleton/CardSkeleton, GlassCard, SettingsSection, OptionTile, StreamingText. Raw `<button>`/`<select>`/`<textarea>` error (except `<input type=range|file|checkbox|radio|hidden>`). `PageShell` from `@/components/layout/PageShell`; `UpdateBanner` from `@/components/ui/UpdateBanner`.
-6. **Package entrypoints, not deep paths.** `@ajh/ui` directly; prefer `React.ComponentProps<typeof X>`.
-7. **Import order** (blank line between): `node:*` → external → `@ajh/*` → `@/*` → relative. `pnpm lint:fix`.
-8. **`import type` for pure types** (auto-fixed; never suppress).
-9. **File placement** under `renderer/`: `features/` (one route), `components/ui/`, `components/layout/`, `services/` (IPC hooks), `lib/` (pure utils + `machines/`), `hooks/`, `providers/`, `store/`. Never import across feature dirs.
-10. **State machines** for 3+ states → `lib/machines/` + `useMachine` from `@/hooks/use-machine`.
-11. **Remote data via React Query service hooks** — no `useState + useEffect` fetching.
-12. **Package boundaries:** `shared` no React/Node · `ui` no Zustand/IPC/routing · `prompts` no UI/`window` · `translations` no app/IPC imports.
-13. **Stale-branch check before work:** `git fetch origin && git branch -r | grep $(git branch --show-current)`.
-14. **New IPC capability** (5 steps): `contracts.ts` → `commands.rs` → `tauri-client.ts` → a `services/` hook → query key in `services/query-client.ts`.
-15. **Never bypass ESLint** — no `// eslint-disable`, no `@ts-ignore`. Scoped override in `eslint.config.mjs` with a reason. CI runs `lint:strict --max-warnings 0`.
-
----
-
-## Quick reference
-
-| What                                       | Where                                                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| IPC contract / Tauri commands / TS client  | `packages/shared/src/ipc/contracts/` · `apps/desktop/src-tauri/src/commands/` · `apps/desktop/src/tauri-client/index.ts` |
-| Service hooks                              | `apps/desktop/src/renderer/services/`                                                                                    |
-| UI package / design tokens / motion tokens | `packages/ui/src/index.ts` · `packages/ui/src/css/tokens.css` · `packages/ui/src/lib/motion.ts`                          |
-| State machines                             | `apps/desktop/src/renderer/lib/machines/`                                                                                |
-| i18n                                       | `@ajh/translations`; init shim `apps/desktop/src/renderer/i18n/index.ts`                                                 |
-| Rust: config/paths · HTTP · errors · spans | `platform/config.rs` · `net/http.rs` · `error.rs` · `observability.rs`                                                   |
-| Board registry                             | `scraping/boards/mod.rs` (`SCRAPERS`)                                                                                    |
-| Docs                                       | `docs/PATTERNS.md` · `docs/DESIGN_SYSTEM.md` · `docs/DEVELOPMENT.md` · `docs/EXPORT_TEMPLATES.md`                        |
-
----
-
-## Release & commits
-
-**Manual release** — Actions → "🚀 Release" → `action: release`. Never tag/bump manually; semantic-release derives the bump (`release.config.mjs`). `feat:` minor · `fix:`/`perf:` patch · `BREAKING CHANGE` minor while 0.x · `refactor/ui/style/test/docs/build/ci/chore/revert` none.
-
-**Commit format** (commitlint, `commit-msg` hook): lowercase subject (acronyms too: `URL`→`url`), ≤100 chars, imperative, no trailing period; body lines ≤200 chars, blank line after subject; type ∈ `feat fix perf refactor ui style test docs build ci chore revert`.
-
----
-
-## Code intelligence: graphify + codegraph
-
-Prefer the graphs over raw `rg`/`fd`/file-browsing for "where/what calls/impact" and architecture questions. **codegraph** (structural, zero-token, auto-synced via file watcher) — MCP `codegraph_explore` first; CLI `codegraph callers/callees/impact/query`. **graphify** (semantic) — MCP `query_graph`/`shortest_path`/`get_*`; CLI `graphify query/path/explain`; broad nav `graphify-out/wiki/index.md`. Routing: structural → codegraph · semantic → graphify · `rg` only when neither answers. **After code changes:** `graphify update .` (codegraph syncs itself).
-
----
-
-## Agent system
+### Agent system
 
 Domain pairs — a write-capable **author** implements, an independent **critic** audits (authors never approve their own work). Full pipeline detail → `.claude/` (agents/skills/commands), routing → `.claude/review-routes.json`, knowledge base → `docs/knowledge/`. Drift guard: `pnpm check:agent-system` (pre-push + CI).
 
@@ -121,7 +48,7 @@ Cross-cutting critics (no author — fixes route to the owning domain author): `
 
 **Hard rules:**
 
-- Non-trivial source changes go through a domain author via `Agent`; the main session edits directly only for trivial diffs (above), `CLAUDE.md`, `.claude/**` meta-config, and plan files.
+- Non-trivial source changes go through a domain author via `Agent`; the main session edits directly only for trivial diffs (above), the rule files (`AGENTS.md`/`CLAUDE.md`), `.claude/**` meta-config, and plan files.
 - **Lessons** (`.claude/memory/lessons.jsonl`) — only `project-steward` writes; others propose via `LESSON · category · Context/Decision/Outcome`.
 - **Cross-session recall** — agents may call `mcp__mcp-search` (claude-mem plugin; absent if not installed). Honor `docs/` path-privacy + `<private>` for PII.
 

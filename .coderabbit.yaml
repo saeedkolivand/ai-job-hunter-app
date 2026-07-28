@@ -10,7 +10,7 @@
 # scorecard/security) are what actually gate merge. Advisory only: CodeRabbit
 # must NOT approve or block merge — only "✅ CI OK" gates.
 #
-# Conventions mirror CLAUDE.md + .github/copilot-instructions.md; ownership mirrors
+# Conventions mirror AGENTS.md (canonical) + CLAUDE.md; ownership mirrors
 # .claude/review-routes.json; labels mirror the former .github/labeler.yml.
 
 language: en-US
