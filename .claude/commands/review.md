@@ -26,7 +26,7 @@ Compute the tier:
 | **standard** | ≤100 lines AND no security match | 2× pr-reviewer (opus + sonnet)     | no            | single-source findings |
 | **full**     | security match OR >100 lines     | 3× pr-reviewer (1 opus + 2 sonnet) | yes, FIRST    | single-source findings |
 
-The sonnet passes are produced with the Agent tool's per-invocation `model: "sonnet"` parameter, which overrides `pr-reviewer`'s `model: opus` frontmatter (per-invocation > frontmatter in the resolution order). The `effort: xhigh` frontmatter pin is NOT overridden and persists on those spawns — intentional: the ensemble varies the model for diversity, not the effort (the Agent tool has no per-invocation effort parameter).
+Per-invocation `model: "sonnet"` overrides `pr-reviewer`'s `model: opus` frontmatter; the `effort: xhigh` pin does not get overridden — intentional, the ensemble varies model, not effort.
 
 ## 3. Security gate (full tier only — always FIRST)
 

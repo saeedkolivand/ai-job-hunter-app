@@ -135,6 +135,6 @@ You cannot invoke those Claude Code sub-agents directly, but **follow the same c
 - Per-change flow: implement → review pass (HIGH/CRITICAL findings block; ≤ 3 reviewers) →
   tests if logic changed → docs sync last.
 - Only HIGH/CRITICAL findings block; style/naming issues are advisory.
-- Model & effort tiering (agent `model:`/`effort:` frontmatter): **Opus** for last-line critics, **Sonnet** for authors + balanced critics, **Haiku** for `project-steward` + `finding-verifier` — see the canonical per-agent map in `CLAUDE.md` (§ Model & effort tiering); this file defers to it. Effort (adaptive thinking replaced "extended thinking" in the 5 family): default `high` everywhere; the Opus critics pin `effort: xhigh` in frontmatter; authors escalate to Opus per spawn for hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration) or to Fable for hard, ambiguous, cross-domain work — never as a frontmatter default or for security review.
+- **Model & effort tiering** (agent `model:`/`effort:` frontmatter): Opus for last-line critics, Sonnet for authors + balanced critics, Haiku for `project-steward` + `finding-verifier` — canonical policy (incl. effort levels, xhigh pins, and Fable escalation limits) lives in `CLAUDE.md` § Model & effort tiering; this file defers to it.
 
 Full operating contract: `CLAUDE.md`.

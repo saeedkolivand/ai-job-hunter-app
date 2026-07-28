@@ -19,9 +19,10 @@
 //   8. Route globs → tree — every glob's static prefix exists on disk (dead prefix = dead route).
 //   9. Referenced agents → files — every agent named in the CLAUDE.md agent table or the
 //      explainer roster has a matching .claude/agents/<name>.md (reverse of 4 & 6).
-//   10. Model/effort tiering — every agent's model: is a bare alias (opus/sonnet/haiku);
-//       the opus and haiku sets match CLAUDE.md's "Model & effort tiering" paragraph;
-//       every opus agent pins effort: xhigh, no sonnet/haiku agent does.
+//   10. Model tiering — every agent's model: pins an explicit tier (opus/sonnet/haiku) —
+//       never 'inherit' or a full model ID; the opus and haiku sets match CLAUDE.md's
+//       "Model & effort tiering" paragraph; every opus agent pins effort: xhigh, no
+//       sonnet/haiku agent does.
 //
 // Deferred (local-only / future, kept out of CI to stay dependency-free): codegraph
 // symbol-resolution for dead doc pointers, and `Last updated:` vs git-mtime staleness.
@@ -292,10 +293,11 @@ function checkReferencedAgents() {
   }
 }
 
-// ── Check 10: model/effort tiering ↔ CLAUDE.md policy ────────────────────────
-// model: must be a bare alias (never a dated model ID) so it auto-tracks the current
-// family; the opus/haiku sets and the effort: xhigh pin must match the "Model & effort
-// tiering" paragraph in CLAUDE.md (single source — read as data, not duplicated here).
+// ── Check 10: model tiering ↔ CLAUDE.md policy ───────────────────────────────
+// model: must pin an explicit tier (opus/sonnet/haiku) — never 'inherit' or a full model
+// ID — so it auto-tracks the current family under that tier; the opus/haiku sets and the
+// effort: xhigh pin must match the "Model & effort tiering" paragraph in CLAUDE.md (single
+// source — read as data, not duplicated here).
 function checkModelTiering() {
   if (!exists(CLAUDE_MD)) return;
   const policyLine = read(CLAUDE_MD)
@@ -329,13 +331,15 @@ function checkModelTiering() {
       fail(
         'Model tiering',
         file,
-        `model: '${model ?? '(missing)'}' is not a bare alias (opus|sonnet|haiku)`
+        `model: '${model ?? '(missing)'}' — this repo pins explicit tiers (opus|sonnet|haiku); 'inherit'/full model IDs are not allowed`
       );
       malformed.add(name);
       continue;
     }
     if (model === 'opus') gotOpus.add(name);
     if (model === 'haiku') gotHaiku.add(name);
+    // Only the opus ⇔ xhigh pin is enforced — CLAUDE.md's "default high everywhere" /
+    // "low fine for steward runs" describe harness defaults, not frontmatter to check.
     if (model === 'opus' && effort !== 'xhigh')
       fail('Model tiering', file, 'model: opus requires effort: xhigh');
     if (model !== 'opus' && effort === 'xhigh')
