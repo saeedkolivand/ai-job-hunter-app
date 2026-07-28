@@ -24,8 +24,8 @@ Six dive scenes tell the story (slump → doomscroll → workshop → robot engi
 
 - **Source**: `apps/landing/src/app/world/scrub-engine.js` — portable vanilla-JS (zero dependencies) scroll-scrubbing engine, framework-agnostic (works in plain HTML, Next, Vue, server-rendered, anything).
 - **Mount point**: `WorldClient.tsx` — a React client component (`'use client'`) that calls `mountScrollWorld(container, config)` from a `useEffect` hook and mounts the engine's DOM + CSS into a `<div id="world">` ref.
-- **Byte fidelity**: The engine file is vendored verbatim from the scroll-world skill. **One documented deviation is present and must be re-applied on future re-vendors**: the file ends with `export { mountScrollWorld }` (lines 450–456) as an ESM export. Reason: Turbopack statically analyzes this file and doesn't see the conditional CJS tail (`typeof module !== 'undefined' && …`), so without an explicit `export` the dev import resolves to no exports and `/world` returns a 500. The real export converts the file to an ES module, but the CJS/global paths above still run unchanged — **the file remains portable**. When re-vendoring the engine from upstream, preserve this export line.
-- **Mobile awareness**: The engine is phone-aware out of the box. It detects coarse-pointer (touch) + ≤860px viewport, loads lighter `clipMobile` / `connectorsMobile` variants when provided, primes video decoders on first touch (iOS workaround), coalesces seek requests (prevents frame-pile freezes), and drops particle effects on mobile.
+- **Byte fidelity**: The engine file is vendored from the scroll-world skill and stays as close to verbatim as possible. **Every deviation must be listed in the deviation log below and re-applied on future re-vendors**; edits stay minimal and well-scoped so a future re-vendor diff remains readable.
+- **Mobile awareness**: The engine is phone-aware out of the box. It classifies the device once at mount (coarse pointer **and** a phone-sized screen — see D2), loads lighter `clipMobile` / `connectorsMobile` variants when provided, primes video decoders on touch (iOS workaround — see D3), coalesces seek requests (prevents frame-pile freezes), and drops particle effects on touch devices.
 - **A11y**: On `prefers-reduced-motion: reduce`, the engine loads stills + copy, skips video playback, and presents a static fallback view. This is built into the engine.
 
 ### Media pipeline (local, zero cost)
@@ -66,22 +66,75 @@ All media is same-origin (`apps/landing/public/world/`). The scrub-engine inject
 - **Mobile exclusion optional**: A page can use the engine with `clip` + `connectors` only (no mobile variants); it still works on phones (just heavier). `clipMobile` + `connectorsMobile` are opt-in optimizations.
 - **Edit safety**: When editing the `scrub-engine.js` file, **use Bash heredoc (`cat >> file <<'EOF'`)** or direct file operations (not the Edit tool). The Edit tool's post-processing rewrites the file wholesale, which strips the vendored-integrity guarantee. Commit the file with `git diff` to verify byte-for-byte fidelity against the source before pushing.
 
-## Addendum: The ESM-export deviation
+## Addendum: engine deviation log
 
-The vendored engine file includes one modification from the upstream skill's original:
+`scrub-engine.js` is vendored third-party code. Every change from the upstream skill's original is recorded here and **must be re-applied on a re-vendor**. `apps/landing/src/app/world/scrub-engine.test.ts` is the mechanical guard: it mounts the engine in jsdom and asserts D2–D4 behaviourally, so a re-vendor that drops a deviation fails `pnpm -F @ajh/landing test` instead of silently regressing on hardware nobody has to hand.
+
+### D1 — ESM export (Turbopack)
 
 ```javascript
-// Line 450–456 (re-apply on re-vendoring)
-// Deviation from the vendored original (re-apply this line on re-vendoring):
-// Turbopack statically analyzes this file as ESM and doesn't see the
-// conditional CJS tail above, so without a real `export` the dev import
-// resolves to no exports and /world 500s. A real export just makes this an
-// ES module too (`typeof module` stays safely undefined); the CJS/global
-// lines above still run unchanged.
 export { mountScrollWorld };
 ```
 
-This is the **only** documented change from the upstream source. On future re-vendors, reapply this export line to maintain Turbopack compatibility.
+Turbopack statically analyzes this file as ESM and doesn't see the conditional CJS tail above it, so without a real `export` the dev import resolves to no exports and `/world` 500s. A real export just makes this an ES module too (`typeof module` stays safely undefined); the CJS/global lines still run unchanged — **the file remains portable**.
+
+### D2 — device classification: coarse **and** phone-sized, frozen at mount
+
+Upstream classified on the coarse-pointer query **or** a narrow viewport, re-read live on every clip load. A coarse pointer matches iPadOS, Android tablets and touch laptops at **any** width, so every tablet permanently took the portrait phone encodes, the AV1 desktop branch was dead for them, and the desktop stylesheet cropped/upscaled a portrait video.
+
+The rule is now: a phone is a coarse pointer **and** a phone-sized screen. "Phone-sized" is measured on the screen's **short side**, so rotating the device cannot flip the decision and a large phone still classifies as a phone. Non-touch windows keep the legacy narrow-viewport rule. The predicate and its threshold live in the `isMobile` const at the top of `mountScrollWorld` (`scrub-engine.js`) — read it there rather than duplicating the number here.
+
+It is a `const` evaluated **once at mount**, not a function: a live check let a resize serve one scene's poster from one set and the next scene's clip from the other. **Behaviour change:** resizing a desktop browser (or flipping a DevTools device toggle) across the narrow-viewport breakpoint no longer switches asset sets without a reload.
+
+Three call sites consume it: the scene poster (`stillMobile` vs `still`), the clip URL in `loadClip`, and — easy to miss — the seek step `eps` in `raf()`. Tablets therefore also move from the coarse phone step to the finer desktop one: more decodes, finer scrubbing. That is the intended pairing with the heavier desktop encode they now receive, and it stays bounded by the existing `s.video.seeking` coalescer, which already refuses to queue a seek while the decoder is busy. Both step values are in `raf()`.
+
+`coarse` on its own remains the gate for the particle drop and the URL-bar resize guard — genuine touch-browser traits. It is **not** the gate for priming; see D3.
+
+### D3 — iOS priming: persistent listeners + prime on creation
+
+Upstream registered the primer `{once:true}` on `pointerdown`/`touchstart`, so it only reached videos that existed at the first touch — in practice segment 0 alone, because `loadClip` is gated on scroll proximity. iOS WebKit refuses to load media data for a video created outside a gesture, so every later clip never fired `loadeddata`/`loadedmetadata`, `s.ready` stayed false, `raf()` skipped it, `seeked` never fired, `has-clip` was never added, and every scene past the first showed its poster forever.
+
+Two changes: `loadClip` primes a clip **immediately on creation** when `userReady` is already set (a muted + `playsinline` `play()` _is_ permitted outside a gesture and forces the data load), and the gesture listeners **stay registered** (still passive) so any later touch primes anything still unprimed — which also covers a first touch landing while segment 0's blob fetch is in flight. `primeVideo` now takes the segment and dedupes on a per-segment `s.primed` flag (reset if `play()` is refused, so the next gesture retries).
+
+The priming gate is `canTouch = navigator.maxTouchPoints > 0`, evaluated once at mount — **not** `coarse` and **not** `isMobile`:
+
+- Not `isMobile`, because WebKit's gesture-gated media loading is a browser policy, not an asset tier — iPads need priming even though D2 now gives them the desktop set.
+- Not `coarse`, because since iPadOS 13.4 an iPad with a Magic Keyboard/trackpad reports `hover:hover` + `pointer:fine`. A `coarse` gate leaves exactly that configuration on posters forever — the original bug, on a device the original fix's rationale claimed to cover.
+
+`maxTouchPoints` catches every touch-capable browser. The cost is a harmless muted `play()`→`pause()` on Windows touch laptops; a real desktop reports `0` and never primes at all (locked by a test, since that guard is the only thing standing between desktop and a burst of spurious `play()` calls).
+
+`play()` returning a non-promise (pre-promise WebKit) now pauses on the spot rather than leaving the clip running under the scrubber. A per-segment `s.primeTries` bounds priming the way `s.tries` bounds fetches in D4 (cap in the `primeVideo` guard) — a browser that refuses muted playback outright would otherwise take a fresh `play()` on every `pointerdown` for the life of the page, since a refusal deliberately clears `s.primed`.
+
+### D4 — bounded clip-failure recovery
+
+Upstream latched `s.loading = true` forever on success (a clip that then failed to decode wedged its scene on the poster with no path back) while a failing `fetch` cleared the latch and re-requested on **every scroll tick**. An `error` listener on the video now removes the dead element, drops `has-clip`, and resets the segment so a later scroll can retry; a per-segment `s.tries` counter bounds the retries (cap in `loadClip`'s guard), so neither failure mode storms or wedges.
+
+**Every** listener on the clip now opens with a shared liveness check, `const live = () => s.video === v;`. Media elements keep firing after a segment has torn them down and replaced them, and a discarded element outlives its replacement, so an unguarded late event mutates the state of the **live** clip:
+
+- `error` — resets the segment while the live clip is mounted, freezing it and stacking a second `<video>` into the scene on the next tick.
+- `loadedmetadata` — sets `s.ready = true` when the live video has no metadata at all, after which `raf()` scrubs it against the `duration || 1` fallback.
+- `seeked` (`{once:true}`) — adds `has-clip`, hiding the poster to reveal a video that was never painted.
+- `loadeddata` — `v.pause()` stays unguarded (it must pause the element that fired), but the priming decision is gated.
+
+Discarding a clip goes through one shared `releaseClip(v)` helper, and its order matters: `pause()` → `removeAttribute('src')` → `load()` → **then** `URL.revokeObjectURL(...)`. A detached element can hold decoder resources until its source is dropped and the load algorithm re-run, and the retry path produces one such element per attempt. Live clips keeping their blob URL for the page's lifetime stays deliberate (they must remain seekable); a clip being thrown away is a different case, and without the revoke a failing segment leaks a multi-MB blob per retry. D6's disposer reuses the same helper.
+
+### D5 — header doc comment
+
+The file's usage/`MOBILE` comment block was updated to describe D2–D4 and D6 accurately (frozen phone/desktop split, continuous priming, the returned disposer). No behaviour.
+
+It also no longer lists the particle drop and the URL-bar resize guard as phone-tier behaviours: both key off the coarse pointer **alone**, so tablets get them too. As written before, the header contradicted the inline comments and D2. The block now states all three gates explicitly.
+
+### D6 — the mount returns a disposer
+
+Upstream `mountScrollWorld` returns nothing and never unregisters: it leaves `pointerdown`/`touchstart`/`scroll`/`resize`/`orientationchange`/`load` listeners on `window` plus a self-rescheduling rAF loop, and holds every clip's blob URL. A second mount — React StrictMode's dev double-invoke, a client-side route change, consecutive tests — therefore stacked a whole second engine over the first, driving detached DOM forever.
+
+It now returns an idempotent disposer that cancels the pending frame, removes all six listeners, releases each clip via `releaseClip`, and empties the container. `read()` and `raf()` early-return once torn down, and `loadClip`'s `fetch` continuation bails if the mount died while a clip was in flight, so a late resolution can't append a `<video>` to a dead scene. An empty config returns a no-op disposer rather than `undefined`. The injected `<style id="sw-css">` is deliberately **not** removed: it is id-guarded and may be shared with another live mount.
+
+Consequences: `scrub-engine.d.ts` returns `() => void`; `WorldClient.tsx` returns it straight from its `useEffect` and no longer needs the `mountedRef` StrictMode latch, so `/world` no longer has to be entered via a full navigation; the test file disposes every mount in `afterEach` instead of relying purely on per-mount asset-path scoping.
+
+### Runtime consequence of D2 for AV1
+
+`WorldClient.tsx` is unchanged: it still picks AV1 vs H.264 via `canPlayType` before mounting. That branch was previously unreachable for tablets and is now live for them. WebKit only reports AV1 support where there is hardware decode, which most iPads lack, so they resolve to `''` and take the **H.264 desktop** set — correct and intended. `withAv1Sources` never touches `clipMobile`/`connectorsMobile`, so the phone path is unaffected either way.
 
 ## References
 

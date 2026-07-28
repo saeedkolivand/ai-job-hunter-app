@@ -24,30 +24,21 @@ const THEME_CSS = `
 
 export function WorldClient() {
   const containerRef = useRef<HTMLDivElement>(null);
-  // React 19 StrictMode double-invokes effects in dev. The engine wires up
-  // window-level scroll/resize listeners it never tears down, so re-running it
-  // would double-register them (not just duplicate DOM) — a ref flag, not a
-  // cleanup return, is what actually prevents that.
-  const mountedRef = useRef(false);
 
-  // The vendored engine has NO teardown API: it registers window scroll/
-  // resize/orientationchange/pointer listeners plus an unbounded rAF loop, and
-  // never revokes the blob object URLs it creates per clip (intentional —
-  // clips must stay seekable for the page's whole lifetime; don't "fix" that
-  // upstream). mountedRef only guards StrictMode's double-invoke, not a route
-  // remount, so /world must only be entered via a full navigation (raw <a>,
-  // as the home body.html link is) — never an in-app Next <Link>, which would
-  // stack a second listener set + rAF loop over the first render's detached DOM.
+  // mountScrollWorld returns a disposer (an ADR-0019 deviation — upstream returns
+  // nothing and never unregisters its window listeners or its rAF loop). Handing
+  // that straight back from the effect is all the cleanup React needs: StrictMode's
+  // dev double-invoke and a client-side route remount both unwind properly, so
+  // /world no longer has to be entered via a full navigation.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || mountedRef.current) return;
-    mountedRef.current = true;
+    if (!container) return;
     // Desktop ships AV1 (~40% smaller at equal quality) with the H.264 files as
     // the fallback for browsers without AV1 decode (older Safari); mobile stays
     // H.264-only because phone software AV1 decode can't keep up with scrubbing.
     const av1 =
       document.createElement('video').canPlayType('video/mp4; codecs="av01.0.08M.08"') !== '';
-    mountScrollWorld(container, av1 ? withAv1Sources(WORLD_CONFIG) : WORLD_CONFIG);
+    return mountScrollWorld(container, av1 ? withAv1Sources(WORLD_CONFIG) : WORLD_CONFIG);
   }, []);
 
   return (
