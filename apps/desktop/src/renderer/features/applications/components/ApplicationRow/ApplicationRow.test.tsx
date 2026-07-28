@@ -490,7 +490,7 @@ describe('ApplicationRow — nextActionAt badge', () => {
   });
 
   it('renders the "overdue" badge when nextActionAt is in the past', () => {
-    const app = makeApp({ nextActionAt: FIXED_NOW - 1, updatedAt: FIXED_NOW });
+    const app = makeApp({ nextActionAt: FIXED_NOW - 86_400_000, updatedAt: FIXED_NOW });
     render(<ApplicationRow application={app} />);
     expect(screen.getByText('applications.row.overdue')).toBeInTheDocument();
     expect(screen.queryByText('applications.row.followUp')).not.toBeInTheDocument();
@@ -525,6 +525,29 @@ describe('ApplicationRow — note chip', () => {
     expect(
       screen.getByRole('button', { name: 'applications.row.addNoteHint' })
     ).toBeInTheDocument();
+  });
+
+  // Enter/Space on a focused <button> fires a native click AND bubbles the
+  // keydown — without stopPropagation the row's own handler opens the detail
+  // page underneath the note dialog.
+  it('Enter on the chip does NOT navigate to the detail page', () => {
+    const onAddNote = vi.fn();
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={onAddNote} />);
+
+    const chip = screen.getByRole('button', { name: 'applications.row.addNoteHint' });
+    fireEvent.keyDown(chip, { key: 'Enter' });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('Space on the chip does NOT navigate to the detail page', () => {
+    render(<ApplicationRow application={makeApp({})} showNoteHint onAddNote={vi.fn()} />);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'applications.row.addNoteHint' }), {
+      key: ' ',
+    });
+
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('clicking the chip asks for the note dialog WITHOUT navigating to the detail page', () => {

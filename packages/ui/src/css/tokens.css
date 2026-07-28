@@ -360,6 +360,19 @@
   --color-red-300: var(--color-red-600);
   --color-red-400: var(--color-red-600);
   --color-red-500: var(--color-red-600);
+
+  /* Status TEXT on the light canvas — one step deeper than the palette remaps
+     above. Those clear AA for body copy on pure white, but these tones are used
+     almost exclusively as small semibold captions (status Tags, the overdue
+     counter, inline alerts) sitting on a TINTED fill, where the -600/-700 steps
+     measured 4.02–4.36:1, under the 4.5:1 floor. Named rather than inlined so
+     `utilities.css` references the intent and this stays the single source.
+     Consumed by the `[data-color-scheme='light'] .text-*` rules there. */
+  --color-status-error-text: var(--color-red-700);
+  --color-status-warning-text: var(--color-amber-800);
+  /* The dark-canvas accent lift washes out on white; collapse it to the
+     already-deepened light brand. */
+  --color-status-accent-text: var(--color-brand);
   --color-rose-300: var(--color-rose-600);
   --color-rose-400: var(--color-rose-600);
   --color-rose-500: var(--color-rose-600);

@@ -76,11 +76,15 @@ export function ApplicationsPage() {
 
   const handleSaveNote = (note: string) => {
     if (!notePromptApp) return;
+    const savingFor = notePromptApp.id;
     setNoteError(false);
     noteStatus.mutate(
-      { id: notePromptApp.id, status: notePromptApp.status, note },
+      { id: savingFor, status: notePromptApp.status, note },
       {
-        onSuccess: () => setNotePromptId(null),
+        // Close only if the prompt is STILL the one this save was started for —
+        // a slow write must not dismiss a prompt the user has since opened for a
+        // different row (and take their newly-typed note with it).
+        onSuccess: () => setNotePromptId((current) => (current === savingFor ? null : current)),
         // Keep the dialog open on failure so the typed note is not discarded.
         onError: () => setNoteError(true),
       }
@@ -361,6 +365,9 @@ export function ApplicationsPage() {
         status={notePromptApp?.status ?? ''}
         company={notePromptApp?.company ?? ''}
         title={notePromptApp?.title ?? ''}
+        // The list only ever raises this prompt from the chip a just-persisted
+        // stage change put on the row, so the "moved to X" copy is the accurate one.
+        changed
         isSaving={noteStatus.isPending}
         error={noteError ? t('applications.note.saveError') : null}
         onSave={handleSaveNote}

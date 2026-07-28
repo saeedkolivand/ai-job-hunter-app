@@ -175,7 +175,8 @@ beforeEach(() => {
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
   RewritePopoverStub.mockClear();
-  updateApplicationMutate.mockClear();
+  // `mockReset`, not `mockClear`: the rejection tests install implementations.
+  updateApplicationMutate.mockReset();
   generateEmailMock.mockReset();
   generateEmailMock.mockImplementation(async (p) => {
     p.onToken?.(EMAIL_RAW);
@@ -847,5 +848,183 @@ describe('ApplyByEmailTab — canonical contact binding', () => {
       const field = screen.getByLabelText(`applications.detail.email.${label}`);
       expect(field.getAttribute('aria-describedby')).toBe(hintId);
     }
+  });
+});
+
+// ── Server-rejected contact writes ───────────────────────────────────────────
+//
+// `validate_contact_name` / `validate_recipient_email` reject control chars,
+// over-length values and malformed addresses by returning `{ error }` — they do
+// NOT throw. Without surfacing, the field keeps showing text that was never
+// stored and the mailto button silently targets the stale address.
+
+describe('ApplyByEmailTab — rejected contact writes', () => {
+  /** Makes the next update resolve as a rejection (or an acceptance). */
+  const respondWith = (error?: string) =>
+    updateApplicationMutate.mockImplementation(
+      (_vars: unknown, options?: { onSuccess?: (data: { error?: string }) => void }) => {
+        options?.onSuccess?.(error ? { error } : {});
+      }
+    );
+
+  const blurName = (value: string) => {
+    const field = screen.getByLabelText('applications.detail.email.recipientNameLabel');
+    fireEvent.change(field, { target: { value } });
+    fireEvent.blur(field);
+    return field;
+  };
+
+  const blurEmail = (value: string) => {
+    const field = screen.getByLabelText('applications.detail.email.recipientEmailLabel');
+    fireEvent.change(field, { target: { value } });
+    fireEvent.blur(field);
+    return field;
+  };
+
+  it('surfaces a rejected NAME write as an alert', () => {
+    respondWith('invalid contact name');
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    blurName('DanaDoe');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.contactSaveError');
+  });
+
+  it('surfaces a rejected EMAIL write as an alert', () => {
+    respondWith('invalid email');
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    blurEmail('not-an-email');
+
+    expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.email.emailInvalid');
+  });
+
+  it('shows no alert when either write is accepted', () => {
+    respondWith(undefined);
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    blurName('Dana Doe');
+    blurEmail('dana@acme.com');
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('clears a stale rejection once the user edits the field again', () => {
+    respondWith('invalid email');
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    const field = blurEmail('not-an-email');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    fireEvent.change(field, { target: { value: 'dana@acme.com' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('a later ACCEPTED email write clears the earlier rejection', () => {
+    respondWith('invalid email');
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+    blurEmail('not-an-email');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    respondWith(undefined);
+    blurEmail('dana@acme.com');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  // The rejected value must not be presented as the stored contact: the mailto
+  // link is built from the field, so a silent failure mails the wrong person.
+  it('keeps the alert visible while the rejected text is still on screen', () => {
+    respondWith('invalid email');
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={NO_GENERATIONS} />);
+
+    blurEmail('not-an-email');
+
+    expect(
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientEmailLabel').value
+    ).toBe('not-an-email');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+});
+
+// ── Canonical pair re-seeds from the sibling surface ─────────────────────────
+
+describe('ApplyByEmailTab — synced contact buffers', () => {
+  it('adopts a contact written by the Overview tab (no remount)', () => {
+    const { rerender } = render(
+      <ApplyByEmailTab
+        application={makeApp({ contactName: '', contactEmail: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientNameLabel').value
+    ).toBe('');
+
+    // The Overview card saved the contact; the record refetches into this tab.
+    rerender(
+      <ApplyByEmailTab
+        application={makeApp({ contactName: 'Rita Recruiter', contactEmail: 'rita@acme.com' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    expect(
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientNameLabel').value
+    ).toBe('Rita Recruiter');
+    expect(
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientEmailLabel').value
+    ).toBe('rita@acme.com');
+  });
+
+  // Mirrors the Overview wipe-regression test: after adopting a value written
+  // elsewhere, blurring must NOT persist anything — the buffer already agrees
+  // with the record, so a write here would be a no-op at best and a stale
+  // overwrite at worst.
+  it('adopts an out-of-band contactEmail and does not re-persist it on blur', () => {
+    const { rerender } = render(
+      <ApplyByEmailTab
+        application={makeApp({ contactEmail: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    rerender(
+      <ApplyByEmailTab
+        application={makeApp({ contactEmail: 'rita@acme.com', updatedAt: 2000 })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    const field = screen.getByLabelText<HTMLInputElement>(
+      'applications.detail.email.recipientEmailLabel'
+    );
+    expect(field.value).toBe('rita@acme.com');
+
+    fireEvent.blur(field);
+    expect(updateApplicationMutate).not.toHaveBeenCalled();
+  });
+
+  it('does NOT clobber an uncommitted edit when an unrelated field changes', () => {
+    const { rerender } = render(
+      <ApplyByEmailTab
+        application={makeApp({ contactName: '', contactEmail: '' })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    const nameField = screen.getByLabelText('applications.detail.email.recipientNameLabel');
+    fireEvent.change(nameField, { target: { value: 'typing…' } });
+
+    // A status/note write bumps the record; the contact columns are untouched.
+    rerender(
+      <ApplyByEmailTab
+        application={makeApp({ contactName: '', contactEmail: '', updatedAt: 9999 })}
+        matchingGenerations={NO_GENERATIONS}
+      />
+    );
+
+    expect(
+      screen.getByLabelText<HTMLInputElement>('applications.detail.email.recipientNameLabel').value
+    ).toBe('typing…');
   });
 });

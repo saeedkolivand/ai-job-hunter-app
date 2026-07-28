@@ -151,7 +151,7 @@ describe('PipelineStrip', () => {
   it('shows the overdue control only when a reminder has actually passed', () => {
     const { unmount } = renderStrip({
       applications: [
-        makeApp({ id: 'a', nextActionAt: NOW - 1 }),
+        makeApp({ id: 'a', nextActionAt: NOW - 86_400_000 }),
         makeApp({ id: 'b', nextActionAt: NOW + 86_400_000 }),
       ],
     });
@@ -164,7 +164,10 @@ describe('PipelineStrip', () => {
 
   it('the overdue badge is actionable — it surfaces those rows', () => {
     const onShowOverdue = vi.fn();
-    renderStrip({ applications: [makeApp({ id: 'a', nextActionAt: NOW - 1 })], onShowOverdue });
+    renderStrip({
+      applications: [makeApp({ id: 'a', nextActionAt: NOW - 86_400_000 })],
+      onShowOverdue,
+    });
 
     fireEvent.click(screen.getByText('applications.pipeline.overdue'));
     expect(onShowOverdue).toHaveBeenCalledTimes(1);

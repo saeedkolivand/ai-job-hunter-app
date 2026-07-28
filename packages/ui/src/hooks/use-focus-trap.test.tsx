@@ -16,6 +16,27 @@ function Trapped({ active }: { active: boolean }) {
 }
 
 /**
+ * Two live traps at once — the real stacking case (a dialog raising a confirm on
+ * top of itself). Both panels stay mounted; only the inner one comes and goes.
+ */
+function StackedTraps({ innerOpen }: { innerOpen: boolean }) {
+  const outerRef = useFocusTrap(true);
+  const innerRef = useFocusTrap(innerOpen);
+  return (
+    <div ref={outerRef as React.RefObject<HTMLDivElement>}>
+      <button>outer-first</button>
+      <button>outer-last</button>
+      {innerOpen && (
+        <div ref={innerRef as React.RefObject<HTMLDivElement>}>
+          <button>inner-first</button>
+          <button>inner-last</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * A trapped panel whose FIELD claims `autoFocus`. React applies that during
  * commit — ahead of every effect — so a capture taken in a passive effect would
  * remember the field itself as "the opener" and, finding it disconnected on
@@ -259,7 +280,39 @@ describe('useFocusTrap', () => {
           <AutoFocusTrapped active={false} />
         </>
       );
+      // Not merely "the opener lost it" — focus is STRANDED on <body>, which is
+      // the user-visible symptom this constraint exists to prevent.
       expect(opener).not.toHaveFocus();
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    // Stacking: closing the inner trap must hand focus back INTO the outer one,
+    // not to <body> — the outer dialog is still open and still the context.
+    it('hands focus back into the outer trap when a stacked inner trap closes', () => {
+      const { rerender } = render(<StackedTraps innerOpen={false} />);
+      expect(screen.getByRole('button', { name: 'outer-first' })).toHaveFocus();
+
+      // Move within the outer panel, then raise the inner trap from there.
+      const outerLast = screen.getByRole('button', { name: 'outer-last' });
+      outerLast.focus();
+      rerender(<StackedTraps innerOpen />);
+      expect(screen.getByRole('button', { name: 'inner-first' })).toHaveFocus();
+
+      rerender(<StackedTraps innerOpen={false} />);
+      // Back to the exact control that raised it, still inside the outer trap.
+      expect(outerLast).toHaveFocus();
+      expect(document.activeElement).not.toBe(document.body);
+    });
+
+    it('leaves the outer trap still trapping after the inner one closes', async () => {
+      const { rerender } = render(<StackedTraps innerOpen={false} />);
+      rerender(<StackedTraps innerOpen />);
+      rerender(<StackedTraps innerOpen={false} />);
+
+      // Tab from the outer panel's last element must still wrap to its first.
+      screen.getByRole('button', { name: 'outer-last' }).focus();
+      await userEvent.tab();
+      expect(screen.getByRole('button', { name: 'outer-first' })).toHaveFocus();
     });
 
     it('does nothing when the remembered element has left the DOM', () => {
@@ -278,15 +331,15 @@ describe('useFocusTrap', () => {
         </>
       );
 
-      // The opener unmounts while the trap is open — restoring to it would throw
-      // or focus a detached node.
-      expect(() =>
-        rerender(
-          <>
-            <Trapped active={false} />
-          </>
-        )
-      ).not.toThrow();
+      // The opener unmounts while the trap is open. Restoring to a detached node
+      // is meaningless, so the trap must decline — leaving focus on <body>
+      // rather than throwing or focusing something arbitrary.
+      rerender(
+        <>
+          <Trapped active={false} />
+        </>
+      );
+      expect(document.activeElement).toBe(document.body);
     });
   });
 });

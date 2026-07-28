@@ -47,6 +47,7 @@ import {
 
 import { StatusNoteModal } from '@/features/applications/components/StatusNoteModal';
 import { nextActionLabel } from '@/features/applications/lib/stale';
+import { useSyncedBuffer } from '@/features/applications/lib/use-synced-buffer';
 import {
   TailorFlow,
   type TailorFlowController,
@@ -269,27 +270,6 @@ function PanelShell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-/**
- * Save-on-blur edit buffer that adopts an out-of-band server change WITHOUT a
- * remount (React's "adjust state during render" pattern).
- *
- * Per FIELD, deliberately: the buffer re-seeds only when the server value for
- * THIS field changed since the previous render, so a write landing for a sibling
- * field (or a status/note write, which also bumps the record) never clobbers
- * text the user is still typing here. Replaces the `key={id}:{updatedAt}`
- * remount, which fixed the same stale-seed wipe but destroyed focus, uncommitted
- * input and the whole TailorFlow sub-tree on every persisted write.
- */
-function useSyncedBuffer(serverValue: string): [string, (value: string) => void] {
-  const [value, setValue] = useState(serverValue);
-  const [seen, setSeen] = useState(serverValue);
-  if (seen !== serverValue) {
-    setSeen(serverValue);
-    setValue(serverValue);
-  }
-  return [value, setValue];
 }
 
 interface LoadedProps {
@@ -637,7 +617,10 @@ function ApplicationDetailLoaded({
                                 // ApplyByEmailTab does for the same canonical pair.
                                 updateApplication.mutate(
                                   { id: application.id, contactName },
-                                  { onSuccess: (data) => setContactNameError(!!data.error) }
+                                  {
+                                    onSuccess: (data) => setContactNameError(!!data.error),
+                                    onError: () => setContactNameError(true),
+                                  }
                                 );
                               }
                             }}
@@ -670,7 +653,10 @@ function ApplicationDetailLoaded({
                               if (contactEmail !== application.contactEmail) {
                                 updateApplication.mutate(
                                   { id: application.id, contactEmail },
-                                  { onSuccess: (data) => setContactEmailError(!!data.error) }
+                                  {
+                                    onSuccess: (data) => setContactEmailError(!!data.error),
+                                    onError: () => setContactEmailError(true),
+                                  }
                                 );
                               }
                             }}

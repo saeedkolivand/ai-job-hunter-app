@@ -1,4 +1,5 @@
 import { AlarmClock, Check } from 'lucide-react';
+import { useMemo } from 'react';
 
 import type { Application } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
@@ -51,8 +52,10 @@ export function PipelineStrip({
   onShowOverdue,
 }: PipelineStripProps) {
   const { t } = useTranslation();
-  const counts = pipelineCounts(applications);
-  const overdue = overdueCount(applications);
+  // Both walk the whole list; the strip re-renders on every filter/sort toggle
+  // and on every row's status write, none of which change the counts.
+  const counts = useMemo(() => pipelineCounts(applications), [applications]);
+  const overdue = useMemo(() => overdueCount(applications), [applications]);
   const activeGroup = PIPELINE_GROUPS.find((g) => g.id === active);
 
   // `closed` is the only group that aggregates, so it is the only one needing a

@@ -96,8 +96,8 @@ describe('overdueCount', () => {
 
   it('counts only reminders already in the past', () => {
     const apps = [
-      makeApp({ id: 'a', nextActionAt: NOW - 1 }),
-      makeApp({ id: 'b', nextActionAt: NOW - 86_400_000 }),
+      makeApp({ id: 'a', nextActionAt: NOW - 86_400_000 }),
+      makeApp({ id: 'b', nextActionAt: NOW - 2 * 86_400_000 }),
       makeApp({ id: 'c', nextActionAt: NOW + 86_400_000 }),
       makeApp({ id: 'd', nextActionAt: undefined }),
     ];

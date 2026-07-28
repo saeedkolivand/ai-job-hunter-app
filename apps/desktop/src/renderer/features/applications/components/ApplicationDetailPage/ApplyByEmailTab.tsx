@@ -27,6 +27,7 @@ import {
 import { useSaveAiGeneration } from '@/services/use-ai-generations';
 
 import { extractRecipient } from '../../lib/extract-recipient';
+import { useSyncedBuffer } from '../../lib/use-synced-buffer';
 
 interface Props {
   application: Application;
@@ -127,8 +128,17 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
   // pair (`contactName`/`contactEmail`), edited here and on the Overview tab.
   // The deprecated `recipientName`/`recipientEmail` aliases are no longer read
   // or written by this surface.
-  const [recipientName, setRecipientName] = useState(application.contactName);
-  const [recipientEmail, setRecipientEmail] = useState(application.contactEmail);
+  // `useSyncedBuffer`, not seeded-once `useState`: the Overview contact card
+  // edits the SAME canonical columns, so a write landing there must re-seed here
+  // too — otherwise whichever surface mounted first persists its stale value
+  // back over the other's save (the wipe this pair was unified to prevent).
+  const [recipientName, setRecipientName] = useSyncedBuffer(application.contactName);
+  const [recipientEmail, setRecipientEmail] = useSyncedBuffer(application.contactEmail);
+  // Both fields are server-validated (control chars / length / email shape) and a
+  // rejection comes back as `{ error }` rather than a throw, so BOTH need the
+  // same surfacing — silently keeping rejected text on screen would leave the
+  // mailto button pointed at the stale stored address.
+  const [nameError, setNameError] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
 
   // Prefill from job description when both fields are empty. The guard
@@ -140,7 +150,10 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     const extracted = extractRecipient(jobDesc);
     if (extracted.name) setRecipientName(extracted.name);
     if (extracted.email) setRecipientEmail(extracted.email);
-  }, [jobDesc, recipientEmail, recipientName]);
+    // The setters are `useState` setters returned through `useSyncedBuffer`, so
+    // they are referentially stable; listed only because the lint rule cannot
+    // see through the custom hook.
+  }, [jobDesc, recipientEmail, recipientName, setRecipientEmail, setRecipientName]);
 
   // Generation state
   const [streamText, setStreamText] = useState('');
@@ -382,9 +395,17 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
 
   const persistName = () => {
     const val = recipientName.trim();
-    if (val !== application.contactName) {
-      updateApplication.mutate({ id: application.id, contactName: val });
-    }
+    if (val === application.contactName) return;
+    updateApplication.mutate(
+      { id: application.id, contactName: val },
+      // TWO failure shapes: a validation rejection comes back in-band as
+      // `{ error }`, while a transport/IPC failure rejects. Both leave the field
+      // showing text that was never stored, so both must surface.
+      {
+        onSuccess: (data) => setNameError(!!data.error),
+        onError: () => setNameError(true),
+      }
+    );
   };
 
   const persistEmail = (value: string) => {
@@ -394,10 +415,9 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
       { id: application.id, contactEmail: val },
       {
         onSuccess: (data) => {
-          if (data.error) {
-            setEmailError(t('applications.detail.email.emailInvalid'));
-          }
+          setEmailError(data.error ? t('applications.detail.email.emailInvalid') : null);
         },
+        onError: () => setEmailError(t('applications.detail.email.emailInvalid')),
       }
     );
   };
@@ -434,10 +454,18 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
               variant="default"
               placeholder={t('applications.detail.email.recipientNamePlaceholder')}
               value={recipientName}
-              onChange={(e) => setRecipientName(e.target.value)}
+              onChange={(e) => {
+                setRecipientName(e.target.value);
+                setNameError(false);
+              }}
               onBlur={persistName}
               aria-describedby={CONTACT_HINT_ID}
             />
+            {nameError && (
+              <p className="text-fine-print text-red-400" role="alert">
+                {t('applications.detail.contactSaveError')}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1">
             <label

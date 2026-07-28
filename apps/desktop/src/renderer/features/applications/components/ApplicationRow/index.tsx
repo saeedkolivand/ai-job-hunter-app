@@ -192,6 +192,13 @@ export function ApplicationRow({
                   e.stopPropagation();
                   onAddNote?.();
                 }}
+                // Enter/Space on a focused <button> ALSO fires a native click, so
+                // without this the keydown bubbles to the row's own Enter/Space
+                // handler and opens the detail page on top of the note dialog —
+                // same guard the stage Dropdown and ActionMenu wrappers use.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+                }}
                 className={cn(
                   // `ring`, not `border`: the global `* { border-color }` rule is
                   // unlayered and beats a layered `border-brand/40`, so the

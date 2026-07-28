@@ -1307,7 +1307,7 @@ describe('ApplicationDetailPage — follow-up promotion', () => {
 
   it('shows an overdue chip in the header (persists across tabs) when the date has passed', () => {
     mockTab = 'documents';
-    renderWith(makeApp({ nextActionAt: NOW - 1 }));
+    renderWith(makeApp({ nextActionAt: NOW - 86_400_000 }));
 
     expect(screen.getByText('applications.detail.followUpOverdue')).toBeInTheDocument();
     expect(screen.queryByText('applications.detail.followUpDue')).not.toBeInTheDocument();
@@ -1331,7 +1331,7 @@ describe('ApplicationDetailPage — follow-up promotion', () => {
 
   it('leads the Overview sheet with its own Follow-up section carrying the date field', () => {
     mockTab = 'overview';
-    renderWith(makeApp({ nextActionAt: NOW - 1 }));
+    renderWith(makeApp({ nextActionAt: NOW - 86_400_000 }));
 
     expect(screen.getByText('applications.detail.followUpSection')).toBeInTheDocument();
     // The field itself still lives under its established label (deep links + the

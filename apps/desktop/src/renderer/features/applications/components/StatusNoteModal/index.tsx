@@ -3,6 +3,16 @@ import { useId, useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell, TextArea } from '@ajh/ui';
 
+/**
+ * Client-side cap on a status note.
+ *
+ * A UX guard, NOT a validation boundary: `applications_set_status` currently
+ * stores the note uncapped, so this only stops an accidental paste of a whole
+ * document from landing in the timeline. A real bound belongs on the command
+ * (see the handoff) — a client cap is trivially bypassable by any other caller.
+ */
+const NOTE_MAX_LENGTH = 2000;
+
 interface StatusNoteModalProps {
   open: boolean;
   /** Called for Skip / Escape / backdrop — the note is discarded. */
@@ -123,6 +133,7 @@ export function StatusNoteModal({
         <TextArea
           id={fieldId}
           variant="glass"
+          maxLength={NOTE_MAX_LENGTH}
           rows={4}
           value={note}
           onChange={(e) => setNote(e.target.value)}

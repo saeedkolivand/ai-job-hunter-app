@@ -2610,7 +2610,7 @@
         "openMailto": "Per E-Mail-Client senden",
         "needsResume": "Füge deinen Lebenslauf hinzu, um eine Bewerbungs-E-Mail zu generieren.",
         "addResume": "Lebenslauf hinzufügen",
-        "recipientHint": "Wird als Hauptkontakt dieser Bewerbung gespeichert — Änderungen hier wirken auch im Tab Überblick."
+        "recipientHint": "Wird als Hauptkontakt dieser Bewerbung gespeichert — Änderungen hier wirken auch im Tab Übersicht."
       },
       "tabsLabel": "Bewerbungsdetail-Tabs",
       "timelineTitle": "Verlauf",

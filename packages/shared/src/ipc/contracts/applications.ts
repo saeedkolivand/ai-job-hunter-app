@@ -70,7 +70,7 @@ export interface ApplicationChangedEvent {
  * `search.highlight = <id>`) once per due date for non-terminal applications;
  * moving or clearing `nextActionAt` re-arms it. There is **no** counts command:
  * overdue/upcoming badges are derived client-side from the `nextActionAt` values
- * already carried by `list()` (see `features/applications/lib/stale.ts`).
+ * already carried by `list()` (see `features/applications/lib/pipeline.ts`).
  */
 export interface ApplicationsContract {
   list(): Promise<Application[]>;
