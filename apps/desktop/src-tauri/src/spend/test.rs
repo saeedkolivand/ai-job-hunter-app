@@ -114,10 +114,36 @@ fn rate_for_gives_opus_4_5_its_own_row_instead_of_the_shorter_opus_4_prefix() {
     );
     let cost = estimate_cost("claude-opus-4-5-20260101", 1_000_000, 1_000_000);
     assert!((cost - (5.00 + 25.00)).abs() < 1e-9, "got {cost}");
-    // Plain Opus 4 (no "-5") must still hit the original, more expensive row.
+    // Same shadowing bug, same fix, for Opus 4.7 (VERIFIED $5/$25 pricing,
+    // platform.claude.com legacy models table) — before its own row existed
+    // it also fell through to the $15/$75 "claude-opus-4" row.
+    assert_eq!(
+        rate_for("claude-opus-4-7-20260101").map(|(p, _, _)| *p),
+        Some("claude-opus-4-7")
+    );
+    let opus47_cost = estimate_cost("claude-opus-4-7-20260101", 1_000_000, 1_000_000);
+    assert!(
+        (opus47_cost - (5.00 + 25.00)).abs() < 1e-9,
+        "got {opus47_cost}"
+    );
+    // Plain Opus 4 (no point-release suffix) must still hit the original,
+    // more expensive row.
     assert_eq!(
         rate_for("claude-opus-4-20250514").map(|(p, _, _)| *p),
         Some("claude-opus-4")
+    );
+}
+
+#[test]
+fn rate_for_falls_back_to_the_full_string_when_the_last_segment_matches_nothing() {
+    // A hypothetical `model/suffix` shape (suffix AFTER the model id, unlike
+    // the vendor-prefix `vendor/model` shape) must still recognize the model:
+    // the last `/`-segment ("beta") matches no row, so the lookup must fall
+    // back to matching the full string instead of silently under-reporting
+    // to DEFAULT_RATE.
+    assert_eq!(
+        rate_for("claude-fable-5/beta").map(|(p, _, _)| *p),
+        Some("claude-fable-5")
     );
 }
 

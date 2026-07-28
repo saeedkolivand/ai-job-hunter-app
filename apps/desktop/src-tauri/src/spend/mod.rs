@@ -392,6 +392,9 @@ const RATES: &[(&str, f64, f64)] = &[
     ("claude-fable-5", 10.00, 50.00),
     ("claude-opus-5", 5.00, 25.00),
     ("claude-opus-4-5", 5.00, 25.00),
+    ("claude-opus-4-6", 5.00, 25.00),
+    ("claude-opus-4-7", 5.00, 25.00),
+    ("claude-opus-4-8", 5.00, 25.00),
     ("claude-opus-4", 15.00, 75.00),
     ("claude-3-opus", 15.00, 75.00),
     ("claude-sonnet-5", 3.00, 15.00),
@@ -438,8 +441,15 @@ fn rate_for(model: &str) -> Option<&'static (&'static str, f64, f64)> {
     // OpenRouter-style gateway) must match on the bare model name — keep only
     // the segment after the last `/`, so the row lookup below isn't silently
     // mismatched to DEFAULT_RATE.
-    let m = m.rsplit('/').next().unwrap_or(m);
-    RATES.iter().find(|(prefix, _, _)| m.starts_with(prefix))
+    let last_segment = m.rsplit('/').next().unwrap_or(m);
+    RATES
+        .iter()
+        .find(|(prefix, _, _)| last_segment.starts_with(prefix))
+        // Fall back to matching the FULL (un-split) string: a hypothetical
+        // `model/suffix` shape (suffix after the model id, not a vendor
+        // prefix before it) would otherwise under-report to DEFAULT_RATE even
+        // though the id itself is recognizable.
+        .or_else(|| RATES.iter().find(|(prefix, _, _)| m.starts_with(prefix)))
 }
 
 /// Estimated USD cost for one call, from the static [`RATES`] table (or

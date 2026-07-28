@@ -299,19 +299,32 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
     // Thinking-token budget headroom: on BOTH classic and adaptive models,
     // thinking tokens are billed as output tokens and count toward
     // `max_tokens` alongside the visible response, so `max_tokens` must be
-    // inflated to leave room for both. Gate on `max_tokens >= 2048` (a "big
-    // enough task to warrant it" heuristic, not a support check) and on the
-    // model id (an unsupported/non-thinking model just gets no inflation and
-    // no `thinking` key — always safe; a wrongful `thinking` block 400s the
-    // whole generation on classic-only models).
+    // inflated to leave room for both.
+    //
+    // Classic thinking is gated on `max_tokens >= 2048` (a "big enough task to
+    // warrant it" heuristic, not a support check) — below that, no `thinking`
+    // key is sent and no inflation happens (always safe; a wrongful `thinking`
+    // block 400s the whole generation on classic-only models).
+    //
+    // Adaptive thinking has NO such gate: it's on by default (several models
+    // can't even disable it) and always counts toward `max_tokens` regardless
+    // of how small the caller's budget is — a caller like the extension
+    // bridge's answer-assist flow (`max_tokens: 1000`) would otherwise get
+    // summarized-thinking tokens billed out of an un-inflated 1000-token cap
+    // and come back with a short/empty draft. Reuses [`adaptive_max_tokens`]
+    // so the streaming and non-streaming builders share one formula.
     let is_classic = anthropic_supports_thinking(&req.model);
     let is_adaptive = anthropic_uses_adaptive_thinking(&req.model);
-    let thinking_budget = if max_tokens >= 2048 && (is_classic || is_adaptive) {
+    let classic_thinking_budget = if is_classic && max_tokens >= 2048 {
         max_tokens / 2
     } else {
         0
     };
-    let actual_max_tokens = max_tokens + thinking_budget;
+    let actual_max_tokens = if is_adaptive {
+        adaptive_max_tokens(&req.model, max_tokens)
+    } else {
+        max_tokens.saturating_add(classic_thinking_budget)
+    };
 
     let mut body = json!({
         "model": req.model,
@@ -328,8 +341,8 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
         // blank the app's thinking view. `temperature`/`top_p` stay omitted
         // (see fn doc comment above; `caps.supports_temperature` is false here).
         body["thinking"] = json!({ "type": "adaptive", "display": "summarized" });
-    } else if is_classic && thinking_budget > 0 {
-        body["thinking"] = json!({ "type": "enabled", "budget_tokens": thinking_budget });
+    } else if is_classic && classic_thinking_budget > 0 {
+        body["thinking"] = json!({ "type": "enabled", "budget_tokens": classic_thinking_budget });
     } else if caps.supports_temperature {
         body["temperature"] = json!(req.temperature.unwrap_or(0.7));
         if let Some(top_p) = req.top_p {
@@ -342,19 +355,23 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
     body
 }
 
-/// Thinking-aware `max_tokens` for the three NON-streaming builders below,
-/// which (unlike [`build_chat_stream_body`]) hardcode a fixed cap rather than
-/// taking one from the caller. Adaptive thinking is on by default and can't be
-/// turned off on several models (Fable can't disable it at all) — it still
-/// counts toward `max_tokens` even though these builders never send a
-/// `thinking` key (no thinking-view display concern on these paths; default
-/// `"omitted"` is correct and gives faster time-to-first-text per Anthropic's
-/// docs). Unlike the streaming builder's inflation, this is **not** gated on
-/// a size threshold: these caps are fixed/small (e.g. 1024 for web search),
-/// and thinking still fires by default regardless of how small the cap is.
+/// Thinking-aware `max_tokens` inflation shared by every builder in this file:
+/// [`build_chat_stream_body`] (whose `max_tokens` comes from the caller) and
+/// the three non-streaming builders below (which hardcode a fixed cap).
+/// Adaptive thinking is on by default and can't be turned off on several
+/// models (Fable can't disable it at all) — it still counts toward
+/// `max_tokens` even on paths that never send a `thinking` key (the three
+/// non-streaming builders have no thinking-view display concern; default
+/// `"omitted"` is correct there and gives faster time-to-first-text per
+/// Anthropic's docs). Deliberately **not** gated on a size threshold: a small
+/// caller-supplied cap (e.g. the extension bridge's `max_tokens: 1000`
+/// answer-assist calls) or a fixed small cap (1024 for web search) still gets
+/// thinking billed against it by default, so the inflation must apply
+/// unconditionally. `saturating_add` guards `base` being an unclamped
+/// caller-supplied IPC `u32` near `u32::MAX`.
 fn adaptive_max_tokens(model: &str, base: u32) -> u32 {
     if anthropic_uses_adaptive_thinking(model) {
-        base + base / 2
+        base.saturating_add(base / 2)
     } else {
         base
     }
@@ -1092,6 +1109,46 @@ mod tests {
             );
             assert!(body.get("top_p").is_none(), "{m} must not send top_p");
         }
+    }
+
+    #[test]
+    fn chat_stream_body_inflates_max_tokens_for_adaptive_models_below_the_classic_2048_gate() {
+        // Regression for the extension bridge's answer-assist flow, which
+        // calls with `max_tokens: 1000` (below the classic path's 2048
+        // heuristic gate). Adaptive thinking is on by default regardless of
+        // the caller's cap, so the inflation must NOT be gated the same way —
+        // otherwise the user is billed summarized-thinking tokens out of an
+        // un-inflated 1000-token budget and drafts come back short/empty.
+        let mut req = base_request("claude-sonnet-5");
+        req.max_tokens = Some(1000);
+        let body = build_chat_stream_body(&req, caps_for(&req.model));
+        assert_eq!(
+            body["thinking"],
+            json!({ "type": "adaptive", "display": "summarized" })
+        );
+        assert_eq!(
+            body["max_tokens"],
+            json!(1000 + 1000 / 2),
+            "adaptive inflation must apply even below the classic path's 2048 gate"
+        );
+    }
+
+    #[test]
+    fn chat_stream_body_keeps_the_classic_2048_gate_for_classic_models() {
+        // The classic path's inflation/`thinking` key must stay gated on
+        // `max_tokens >= 2048` — only the ADAPTIVE path lost that gate.
+        let mut req = base_request("claude-opus-4-20250514");
+        req.max_tokens = Some(1000);
+        let body = build_chat_stream_body(&req, caps_for(&req.model));
+        assert!(
+            body.get("thinking").is_none(),
+            "classic thinking must stay off below the 2048 gate"
+        );
+        assert_eq!(
+            body["max_tokens"],
+            json!(1000),
+            "no inflation for a classic model below the 2048 gate"
+        );
     }
 
     #[test]
