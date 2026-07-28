@@ -243,6 +243,9 @@ const SIZE_EXEMPT = new Set(['.aider.conf.yml']);
 // by hand; if a rule genuinely needs the room, move a section to .claude/rules/ with a
 // `paths:` frontmatter so it loads only for matching files.
 const CANONICAL_MAX_LINES = 200;
+// A backticked path is only verifiable without guesswork when it starts at a workspace root.
+// Brace-expansion forms (`packages/{shared,ui}`) are skipped — the regex stops at the brace.
+const QUALIFIED_ROOTS = ['apps/', 'packages/', 'docs/', 'scripts/', '.claude/', '.github/'];
 
 function checkAiConfigs() {
   // The whole rule set hangs on these two facts; nothing else asserts them. Without the
@@ -281,6 +284,15 @@ function checkAiConfigs() {
       CANONICAL_RULES.join(' + '),
       `${loadedLines} lines > ${CANONICAL_MAX_LINES} — loaded in full every session; trim or move a section to .claude/rules/ with paths: frontmatter`
     );
+  }
+
+  // Rounds 3-4 each caught a dead path in the canonical rules. Only FULLY-QUALIFIED ones are
+  // checked: they resolve from the repo root with no lookup table, so there is nothing to drift.
+  // Shorthand (`commands.rs`, `error.rs`) is deliberately NOT covered — resolving it needs a
+  // workspace-root table that rots like the rules it guards. Partial guard, honestly scoped.
+  for (const [, p] of read(AGENTS_MD).matchAll(/`([\w.-]+\/[\w./-]*)`/g)) {
+    if (!QUALIFIED_ROOTS.some((dir) => p.startsWith(dir))) continue;
+    if (!exists(p)) fail('Dead path in rules', AGENTS_MD, `names '${p}' — not on disk`);
   }
 
   const configs = [...AI_CONFIGS, '.aider.conf.yml', ...walk('.cursor', (n) => n.endsWith('.mdc'))];
