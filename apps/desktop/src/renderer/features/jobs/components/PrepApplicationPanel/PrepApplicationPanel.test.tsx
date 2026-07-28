@@ -421,6 +421,9 @@ describe('PrepApplicationPanel — view the created application', () => {
       params: { id: 'app-9' },
       search: { tab: 'documents', from: 'jobs' },
     });
+    // On success the modal DOES close (the counterpart to the failure case below,
+    // which must keep it open) — otherwise it would sit over the destination page.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('never sends jobDescription (the merge is non-blank-wins — it would clobber user edits)', async () => {
@@ -435,7 +438,12 @@ describe('PrepApplicationPanel — view the created application', () => {
     expect(POSTING.description).toBeTruthy(); // the posting HAS one to leak
   });
 
-  it('notifies AND keeps the modal open when navigation itself rejects', async () => {
+  // Precision note: this pins the ORDERING of our own handler (close happens
+  // after the await, inside the try) by forcing the navigate promise to reject.
+  // TanStack's own `navigate` resolves even for a blocked navigation, so a real
+  // router rejecting here is rare — the guarantee under test is that nothing
+  // between `mutateAsync` and the close can tear the modal down on the way.
+  it('keeps the modal open and notifies when the navigate promise rejects', async () => {
     navigateMock.mockRejectedValueOnce(new Error('route blew up'));
     await completeRun();
     await clickView();

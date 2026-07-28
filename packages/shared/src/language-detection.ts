@@ -107,6 +107,27 @@ export function getLanguageName(code: string): string {
 }
 
 /**
+ * Inverse of {@link getLanguageName}: normalize a language NAME to its ISO 639-1
+ * code ('German' → 'de'). A value that is already a code is lower-cased and
+ * returned; anything unrecognised is returned trimmed and unchanged.
+ *
+ * Needed because a language value can reach us as either form — `extractMetadata`'s
+ * regex fallback yields a NAME while detection yields a CODE — and consumers that
+ * key off the code (per-language prompt lexicons) silently miss on the NAME form
+ * (`'German'.slice(0, 2)` → `'ge'`).
+ */
+export function toLanguageCode(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const lower = trimmed.toLowerCase();
+  if (LANGUAGE_NAMES[lower]) return lower;
+  const byName = Object.keys(LANGUAGE_NAMES).find(
+    (code) => LANGUAGE_NAMES[code]?.toLowerCase() === lower
+  );
+  return byName ?? trimmed;
+}
+
+/**
  * Languages whose scripts the bundled PDF fonts do not yet cover (Chinese,
  * Japanese, Korean). These render as tofu in PDF export until Noto CJK ships, so
  * the UI warns the user when an output language is one of these.

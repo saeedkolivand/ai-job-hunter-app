@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { detectLanguage, type InterviewQuestion } from '@ajh/shared';
+import { detectLanguage, type InterviewQuestion, toLanguageCode } from '@ajh/shared';
 
 import { useSelectedProvider } from '@/components/ui/ModelSelector';
 import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
@@ -9,7 +9,6 @@ import {
   extractMetadata,
   generateInterviewQuestions,
   type GenerationMeta,
-  OUTPUT_LANGUAGES,
   parseInterviewQuestions,
   researchCompany as fetchCompanyBrief,
 } from '@/lib/generate';
@@ -32,13 +31,12 @@ const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];
  * offer (Dutch, Polish, Czech…) must survive to both the prompt and the picker
  * label, or the UI would read "English" while generating Dutch.
  */
-function toLanguageCode(value: string): string {
+function normalizeLanguage(value: string): string {
   const trimmed = value.trim();
   if (!trimmed || trimmed === 'unknown') return '';
-  const byName = OUTPUT_LANGUAGES.find(
-    (l) => l.englishName.toLowerCase() === trimmed.toLowerCase()
-  );
-  return byName?.code ?? trimmed;
+  // Shared lookup so a NAME resolves for all 28 known languages, not just the
+  // 11 the picker stocks ('Dutch' → 'nl', which the picker then labels itself).
+  return toLanguageCode(trimmed);
 }
 
 interface Params {
@@ -99,7 +97,8 @@ export function useInterviewQuestions({
   const [languageOverride, setLanguageOverride] = useState<string | null>(null);
   // franc is not free, and this hook re-renders on every seed-topics keystroke.
   const detectedLanguage = useMemo(
-    () => toLanguageCode(meta?.targetLanguage ?? '') || toLanguageCode(detectLanguage(jobDesc)),
+    () =>
+      normalizeLanguage(meta?.targetLanguage ?? '') || normalizeLanguage(detectLanguage(jobDesc)),
     [meta?.targetLanguage, jobDesc]
   );
   const language = languageOverride ?? detectedLanguage;
