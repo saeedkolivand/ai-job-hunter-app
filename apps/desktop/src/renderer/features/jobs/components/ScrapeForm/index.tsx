@@ -1,20 +1,11 @@
 import { Info, Loader2, Search, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
 import { AGGREGATOR_BOARD_ID, type BoardCatalogEntry, PROVIDER_SLOTS } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
 import { useTranslation } from '@ajh/translations';
-import {
-  Button,
-  CardSkeleton,
-  cn,
-  type CompanyTypeaheadHandle,
-  GlassCard,
-  Input,
-  transition,
-} from '@ajh/ui';
+import { Button, CardSkeleton, cn, type CompanyTypeaheadHandle, Input } from '@ajh/ui';
 
 import { LocationFilterNote } from '@/components/scrape/LocationFilterNote';
 import { SeededCompaniesNote } from '@/components/scrape/SeededCompaniesNote';
@@ -29,6 +20,8 @@ import type { ScrapeFormState } from './constants';
 import { ScrapeFilters } from './ScrapeFilters';
 
 interface ScrapeFormProps {
+  /** Mount gate. The drawer that hosts the form already unmounts it on close;
+   *  this stays so the form can be rendered conditionally anywhere else. */
   show: boolean;
   form: ScrapeFormState;
   scraping: boolean;
@@ -164,282 +157,277 @@ export function ScrapeForm({
       ? (catalogRaw?.find((e) => e.id === form.boards[0])?.displayName ?? form.boards[0])
       : countLabel;
 
+  if (!show) return null;
+
   return (
-    <AnimatePresence>
-      {show && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={transition.normal}
-          className="mb-4"
+    // Pinned-chrome panel: header and footer are `shrink-0`, only the middle
+    // scrolls. The drawer that hosts this is a full-height flex column, so the
+    // Start button can never be pushed below the fold — which it was when the
+    // whole form lived inside one scrolling body at the 900×600 floor.
+    // No GlassCard and no entrance animation here: the drawer IS the surface and
+    // owns the transition (a card-in-a-panel doubled both the inset and the fade).
+    <div data-testid={TEST_IDS.jobs.scrapeForm} className="flex h-full min-h-0 flex-col">
+      {/* Header — pinned */}
+      <div className="flex shrink-0 items-center justify-between border-b border-[var(--border-clear)] px-5 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-5 w-5 items-center justify-center rounded-md bg-brand/15">
+            <Search size={11} className="text-brand-soft" />
+          </div>
+          <h2 className="text-body-strong text-foreground/90">{t('jobs.newScrape')}</h2>
+        </div>
+        <Button
+          variant="ghost"
+          aria-label={t('common.close')}
+          onClick={onToggle}
+          className="rounded-md p-1 text-foreground/50 hover:bg-muted hover:text-foreground/80 h-auto"
         >
-          <GlassCard className="p-5">
-            {/* Header */}
-            <div className="mb-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-5 w-5 items-center justify-center rounded-md bg-brand/15">
-                  <Search size={11} className="text-brand-soft" />
-                </div>
-                <span className="text-xs font-medium text-foreground/70">
-                  {t('jobs.newScrape')}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                aria-label={t('common.close')}
-                onClick={onToggle}
-                className="rounded-md p-1 text-foreground/40 hover:bg-muted hover:text-foreground/70 h-auto"
-              >
-                <X size={13} />
-              </Button>
-            </div>
+          <X size={13} />
+        </Button>
+      </div>
 
-            {/* Query — hero input */}
-            <div className="mb-4">
-              <Input
-                id="jobs-scrape-query"
-                name="jobs-scrape-query"
-                type="text"
-                value={form.query}
-                onChange={(e) => onFormChange({ query: e.target.value })}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === 'Enter' &&
-                    !scraping &&
-                    !blockedByRequiredLogin &&
-                    form.query.trim()
-                  ) {
-                    e.preventDefault();
-                    handleStart();
-                  }
-                }}
-                placeholder={t('jobs.queryPlaceholder')}
-                disabled={scraping}
-                allowClear
-                className="w-full bg-field shadow-none text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
-              />
-            </div>
+      {/* Body — the only scrolling region */}
+      <div
+        data-testid={TEST_IDS.jobs.scrapeFormScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+      >
+        {/* Query — hero input */}
+        <div className="mb-4">
+          <Input
+            id="jobs-scrape-query"
+            name="jobs-scrape-query"
+            type="text"
+            value={form.query}
+            onChange={(e) => onFormChange({ query: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !scraping && !blockedByRequiredLogin && form.query.trim()) {
+                e.preventDefault();
+                handleStart();
+              }
+            }}
+            placeholder={t('jobs.queryPlaceholder')}
+            disabled={scraping}
+            allowClear
+            className="w-full bg-field shadow-none text-sm text-foreground placeholder:text-foreground/25 disabled:opacity-50"
+          />
+        </div>
 
-            {/* Board picker — multi-select toggle group */}
-            <div className="mb-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
-                  {t('jobs.board')}
-                </span>
-                {!catalogLoading && listedBoards.length > 0 && (
-                  <>
-                    <span
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft"
-                    >
-                      {countLabel}
-                    </span>
-                    <div className="ml-auto flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        disabled={scraping || allSelected}
-                        onClick={handleSelectAll}
-                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
-                      >
-                        {t('jobs.selectAll')}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={scraping || form.boards.length <= 1}
-                        onClick={handleClear}
-                        className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
-                      >
-                        {t('jobs.clearBoards')}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-              {catalogLoading ? (
-                <CardSkeleton className="h-8 w-full" />
-              ) : (
-                <div
-                  role="group"
-                  aria-label={t('jobs.board')}
-                  className="flex flex-wrap gap-1.5"
-                  onKeyDown={
-                    scraping
-                      ? undefined
-                      : makeMultiSelectKeyHandler(
-                          listedBoards.length,
-                          focusedBoardIdx,
-                          boardRefs,
-                          (idx) => {
-                            const id = listedBoards[idx]?.id;
-                            if (!id) return;
-                            // Prevent deselecting the last board.
-                            if (selectedSet.has(id) && form.boards.length === 1) return;
-                            onFormChange({ boards: toggleBoard(form.boards, id) });
-                          }
-                        )
-                  }
+        {/* Board picker — multi-select toggle group */}
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55">
+              {t('jobs.board')}
+            </span>
+            {!catalogLoading && listedBoards.length > 0 && (
+              <>
+                <span
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="rounded-full bg-brand/20 px-1.5 py-px text-[10px] font-medium text-brand-soft"
                 >
-                  {listedBoards.map(({ id }, i) => {
-                    const active = selectedSet.has(id);
-                    return (
-                      <Button
-                        key={id}
-                        ref={(el) => {
-                          boardRefs.current[i] = el;
-                        }}
-                        aria-pressed={active}
-                        tabIndex={i === focusedBoardIdx.current ? 0 : -1}
-                        variant="ghost"
-                        disabled={scraping}
-                        onClick={() => {
-                          // Prevent deselecting the last board.
-                          if (active && form.boards.length === 1) return;
-                          focusedBoardIdx.current = i;
-                          onFormChange({ boards: toggleBoard(form.boards, id) });
-                        }}
-                        className={cn(
-                          'rounded-lg px-2.5 py-1 text-[11px] transition-all',
-                          active
-                            ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
-                            : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
-                          'disabled:cursor-not-allowed disabled:opacity-40'
-                        )}
-                      >
-                        {t(`jobs.boards.${id}`, { defaultValue: id })}
-                      </Button>
-                    );
-                  })}
+                  {countLabel}
+                </span>
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    disabled={scraping || allSelected}
+                    onClick={handleSelectAll}
+                    className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                  >
+                    {t('jobs.selectAll')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={scraping || form.boards.length <= 1}
+                    onClick={handleClear}
+                    className="h-auto rounded px-1.5 py-1 text-[10px] text-foreground/50 hover:text-foreground/80 disabled:opacity-40"
+                  >
+                    {t('jobs.clearBoards')}
+                  </Button>
                 </div>
-              )}
+              </>
+            )}
+          </div>
+          {catalogLoading ? (
+            <CardSkeleton className="h-8 w-full" />
+          ) : (
+            <div
+              role="group"
+              aria-label={t('jobs.board')}
+              className="flex flex-wrap gap-1.5"
+              onKeyDown={
+                scraping
+                  ? undefined
+                  : makeMultiSelectKeyHandler(
+                      listedBoards.length,
+                      focusedBoardIdx,
+                      boardRefs,
+                      (idx) => {
+                        const id = listedBoards[idx]?.id;
+                        if (!id) return;
+                        // Prevent deselecting the last board.
+                        if (selectedSet.has(id) && form.boards.length === 1) return;
+                        onFormChange({ boards: toggleBoard(form.boards, id) });
+                      }
+                    )
+              }
+            >
+              {listedBoards.map(({ id }, i) => {
+                const active = selectedSet.has(id);
+                return (
+                  <Button
+                    key={id}
+                    ref={(el) => {
+                      boardRefs.current[i] = el;
+                    }}
+                    aria-pressed={active}
+                    tabIndex={i === focusedBoardIdx.current ? 0 : -1}
+                    variant="ghost"
+                    disabled={scraping}
+                    onClick={() => {
+                      // Prevent deselecting the last board.
+                      if (active && form.boards.length === 1) return;
+                      focusedBoardIdx.current = i;
+                      onFormChange({ boards: toggleBoard(form.boards, id) });
+                    }}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-[11px] transition-all',
+                      active
+                        ? 'bg-brand/20 text-brand-soft ring-1 ring-brand/40'
+                        : 'bg-card border border-[var(--border-clear)] text-foreground/50 hover:bg-muted hover:text-foreground/80',
+                      'disabled:cursor-not-allowed disabled:opacity-40'
+                    )}
+                  >
+                    {t(`jobs.boards.${id}`, { defaultValue: id })}
+                  </Button>
+                );
+              })}
             </div>
+          )}
+        </div>
 
-            {/* Auth affordance — compact "needs login" row per selected board */}
-            {needsLoginBoards.length > 0 && (
-              <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] text-foreground/55">{t('jobs.needsLogin.label')}</span>
-                {needsLoginBoards.map((e) => (
-                  <BoardConnectChip key={e.id} board={e.id} required={e.auth === 'required'} />
-                ))}
-              </div>
-            )}
+        {/* Auth affordance — compact "needs login" row per selected board */}
+        {needsLoginBoards.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-foreground/55">{t('jobs.needsLogin.label')}</span>
+            {needsLoginBoards.map((e) => (
+              <BoardConnectChip key={e.id} board={e.id} required={e.auth === 'required'} />
+            ))}
+          </div>
+        )}
 
-            {/* Honest location hint — names selected boards that don't filter by
+        {/* Honest location hint — names selected boards that don't filter by
                 location server-side (results are matched on-device instead). */}
-            <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
+        <LocationFilterNote boards={selectedListedBoards} hasLocation={hasLocation} />
 
-            {/* Seeded-companies disclosure — names the curated companies a
+        {/* Seeded-companies disclosure — names the curated companies a
                 company-scoped ATS board (Greenhouse/Lever/Ashby/…) will query (#621) */}
-            <SeededCompaniesNote boards={selectedListedBoards} />
+        <SeededCompaniesNote boards={selectedListedBoards} />
 
-            {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
-            {showAggregatorKeyHint && (
-              <p
-                role="status"
-                data-testid={TEST_IDS.jobs.aggregatorKeyHint}
-                className="mb-3 flex items-center gap-1.5 text-[11px] text-amber-400/70"
-              >
-                <Info size={11} aria-hidden="true" />
-                {t('jobs.aggregatorKeyHint')}
-              </p>
-            )}
+        {/* Aggregator key hint — shown when aggregator selected but Adzuna keys absent */}
+        {showAggregatorKeyHint && (
+          <p
+            role="status"
+            data-testid={TEST_IDS.jobs.aggregatorKeyHint}
+            className="mb-3 flex items-center gap-1.5 text-[11px] text-amber-400/70"
+          >
+            <Info size={11} aria-hidden="true" />
+            {t('jobs.aggregatorKeyHint')}
+          </p>
+        )}
 
-            {/* Companies typeahead — only shown when an ATS board (requiresCompany)
+        {/* Companies typeahead — only shown when an ATS board (requiresCompany)
                 is selected. Slugs are added as chips feeding form.companies; the
                 suggestions merge passively-harvested slugs (ADR-030) with the
                 selected boards' curated seeds. */}
-            {showCompanyInput && (
-              <div className="mb-4">
-                <label
-                  htmlFor="scrape-companies"
-                  className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55"
-                >
-                  {t('jobs.companies.label')}
-                </label>
-                <CompanySlugField
-                  ref={companyFieldRef}
-                  companies={form.companies}
-                  onChange={(companies) => onFormChange({ companies })}
-                  seededBoards={selectedListedBoards}
-                  disabled={scraping}
-                />
-              </div>
-            )}
-
-            <ScrapeFilters
-              form={form}
-              scraping={scraping}
-              boardConnected={anyAuthBenefitConnected}
-              onFormChange={onFormChange}
-              onGeocode={onGeocode}
+        {showCompanyInput && (
+          <div className="mb-4">
+            <label
+              htmlFor="scrape-companies"
+              className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground/55"
+            >
+              {t('jobs.companies.label')}
+            </label>
+            <CompanySlugField
+              ref={companyFieldRef}
+              companies={form.companies}
+              onChange={(companies) => onFormChange({ companies })}
+              seededBoards={selectedListedBoards}
+              disabled={scraping}
             />
+          </div>
+        )}
 
-            {/* Scraping status — an honest indeterminate signal only (the earlier
-                fake 85% progress bar fabricated progress and was removed). The real
-                per-board progress is the streamed-results count shown in JobsResults. */}
-            {scraping && (
-              <div className="mb-4 flex items-center gap-1.5 text-[11px] text-foreground/40">
-                <Loader2 size={10} className="animate-spin" />
-                {t('jobs.scraping')} {scrapingLabel}…
-              </div>
-            )}
+        <ScrapeFilters
+          form={form}
+          scraping={scraping}
+          boardConnected={anyAuthBenefitConnected}
+          onFormChange={onFormChange}
+          onGeocode={onGeocode}
+        />
 
-            {/* Footer */}
-            {!scraping && blockedByRequiredLogin && (
-              <p
-                id="scrape-blocked-hint"
-                aria-live="polite"
-                className="mb-2 text-[11px] text-amber-400/70"
+        {/* Scraping status — an honest indeterminate signal only (the earlier
+            fake 85% progress bar fabricated progress and was removed). The real
+            per-board progress is the streamed-results count shown in JobsResults. */}
+        {scraping && (
+          <div className="flex items-center gap-1.5 text-[11px] text-foreground/60">
+            <Loader2 size={10} className="animate-spin" />
+            {t('jobs.scraping')} {scrapingLabel}…
+          </div>
+        )}
+      </div>
+
+      {/* Footer — pinned; Start is always reachable without scrolling */}
+      <div className="shrink-0 border-t border-[var(--border-clear)] px-5 py-3">
+        {!scraping && blockedByRequiredLogin && (
+          <p
+            id="scrape-blocked-hint"
+            aria-live="polite"
+            className="mb-2 text-[11px] text-amber-400/70"
+          >
+            {t('jobs.needsLogin.blockedHint', {
+              boards: unconnectedRequired
+                .map((id) => t(`jobs.boards.${id}`, { defaultValue: id }))
+                .join(', '),
+            })}
+          </p>
+        )}
+        <div className="flex items-center justify-end gap-2">
+          {scraping ? (
+            <Button variant="ghost" onClick={onCancel}>
+              {t('jobs.cancel')}
+            </Button>
+          ) : (
+            scrapeOutcome && (
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-[11px]',
+                  scrapeOutcome.ok && !scrapeOutcome.note
+                    ? 'text-emerald-400/70'
+                    : 'text-amber-400/70'
+                )}
               >
-                {t('jobs.needsLogin.blockedHint', {
-                  boards: unconnectedRequired
-                    .map((id) => t(`jobs.boards.${id}`, { defaultValue: id }))
-                    .join(', '),
-                })}
-              </p>
-            )}
-            <div className="flex items-center justify-end gap-2">
-              {scraping ? (
-                <Button variant="ghost" onClick={onCancel}>
-                  {t('jobs.cancel')}
-                </Button>
-              ) : (
-                scrapeOutcome && (
-                  <span
-                    className={cn(
-                      'text-[11px]',
-                      scrapeOutcome.ok && !scrapeOutcome.note
-                        ? 'text-emerald-400/70'
-                        : scrapeOutcome.ok && scrapeOutcome.note
-                          ? 'text-amber-400/70'
-                          : 'text-amber-400/70'
-                    )}
-                  >
-                    {scrapeOutcome.ok
-                      ? (scrapeOutcome.note ?? t('jobs.done'))
-                      : (scrapeOutcome.note ?? t('jobs.failed'))}
-                  </span>
-                )
-              )}
-              <Button
-                variant="primary"
-                onClick={handleStart}
-                disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
-                loading={scraping}
-                aria-describedby={
-                  !scraping && blockedByRequiredLogin ? 'scrape-blocked-hint' : undefined
-                }
-                data-testid={TEST_IDS.jobs.scrapeStartButton}
-                className="transition-all duration-150 ease-out"
-              >
-                {!scraping && <Search size={12} />}
-                {scraping ? t('jobs.scraping') : t('jobs.startScrape')}
-              </Button>
-            </div>
-          </GlassCard>
-        </motion.div>
-      )}
-    </AnimatePresence>
+                {scrapeOutcome.ok
+                  ? (scrapeOutcome.note ?? t('jobs.done'))
+                  : (scrapeOutcome.note ?? t('jobs.failed'))}
+              </span>
+            )
+          )}
+          <Button
+            variant="primary"
+            onClick={handleStart}
+            disabled={scraping || !form.query.trim() || blockedByRequiredLogin}
+            loading={scraping}
+            aria-describedby={
+              !scraping && blockedByRequiredLogin ? 'scrape-blocked-hint' : undefined
+            }
+            data-testid={TEST_IDS.jobs.scrapeStartButton}
+            className="shrink-0 transition-all duration-150 ease-out"
+          >
+            {!scraping && <Search size={12} />}
+            {scraping ? t('jobs.scraping') : t('jobs.startScrape')}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

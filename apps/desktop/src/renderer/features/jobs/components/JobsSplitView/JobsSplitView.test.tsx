@@ -529,3 +529,74 @@ describe('JobsSplitView — scroll persist (RAF-throttled)', () => {
     expect(useSessionStore.getState().jobs.listScrollTop).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Responsive width contract (narrow-window regression)
+// ─────────────────────────────────────────────────────────────────────────────
+// Two defects, one contract. (1) `md:` is a VIEWPORT breakpoint and is always
+// active at the 900px window floor, so it forced two panes even when the
+// expanded sidebar left the results card ~390px wide — the gate has to read the
+// card's own width (`@2xl` = 42rem — the card reaches it at a ~1100px window
+// and still yields 280px of list + ~434px of detail; `@3xl` needed 1200px,
+// 1340px at large text scale, which starved the narrow windows this redesign
+// exists to serve — docs/PATTERNS.md §15). (2) The fixed
+// `md:w-[420px] xl: 2xl:` ladder left the detail pane ~248px, which is what
+// clipped its action cluster. jsdom has no layout engine, so the contract is
+// asserted on the classes that produce it — the same seam ModalShell's
+// responsive test uses.
+
+describe('JobsSplitView — responsive width contract', () => {
+  function panes(): { root: HTMLElement; aside: HTMLElement; detail: HTMLElement } {
+    const aside = screen.getByRole('complementary');
+    const root = aside.parentElement;
+    const detail = screen.getByTestId('job-detail').closest('section');
+    if (!root || !detail) throw new Error('split panes not rendered');
+    return { root, aside, detail };
+  }
+
+  it('sizes the list pane proportionally with a floor and a ceiling, not a fixed px ladder', () => {
+    renderSplit();
+    const { aside } = panes();
+
+    expect(aside.className).toContain('@2xl:w-[34%]');
+    expect(aside.className).toContain('@2xl:min-w-[280px]');
+    expect(aside.className).toContain('@2xl:max-w-[480px]');
+    // The fixed ladder is what starved the detail pane at the 900px floor.
+    expect(aside.className).not.toContain('w-[420px]');
+    expect(aside.className).not.toContain('xl:w-[480px]');
+    expect(aside.className).not.toContain('2xl:w-[520px]');
+  });
+
+  it('keeps the list pane from being squeezed by detail-pane content', () => {
+    renderSplit();
+    expect(panes().aside.className).toContain('@2xl:shrink-0');
+  });
+
+  it('gates two-pane on the CARD width, never on the viewport', () => {
+    renderSplit();
+    const { root, aside, detail } = panes();
+
+    // Every layout decision is a container query. A viewport `md:` fired at the
+    // 900px floor even when the sidebar left the card far too narrow to split.
+    expect(root.className).toContain('@2xl:flex-row');
+    expect(root.className).not.toMatch(/(^|\s)md:/);
+    expect(aside.className).not.toMatch(/(^|\s)md:/);
+    expect(detail.className).not.toMatch(/(^|\s)md:/);
+  });
+
+  it('lets the root fill the results card instead of resolving to max-content', () => {
+    renderSplit();
+    const { root } = panes();
+    // Without w-full + min-w-0 this lone flex child sizes to max-content and the
+    // two panes overflow the card (which clips with overflow-hidden).
+    expect(root.className).toContain('w-full');
+    expect(root.className).toContain('min-w-0');
+  });
+
+  it('keeps the detail pane shrinkable (min-w-0) so it can compress rather than overflow', () => {
+    renderSplit();
+    const { detail } = panes();
+    expect(detail.className).toContain('min-w-0');
+    expect(detail.className).toContain('flex-1');
+  });
+});

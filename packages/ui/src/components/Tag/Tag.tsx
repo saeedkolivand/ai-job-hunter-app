@@ -39,6 +39,12 @@ export interface TagProps {
   closable?: boolean;
   /** Custom close icon (when `closable`). */
   closeIcon?: ReactNode;
+  /**
+   * Accessible name for the close button. Pass a per-tag, localized string when
+   * several closable tags sit side by side — rotor/voice-control users would
+   * otherwise meet N identical "Close" controls. Defaults to `'Close'`.
+   */
+  closeLabel?: string;
   /** Fired on close click; call `preventDefault()` to keep the tag mounted. */
   onClose?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
   /** Draw the 1px border. Default `true`. */
@@ -94,6 +100,7 @@ function TagBase({
   icon,
   closable,
   closeIcon,
+  closeLabel = 'Close',
   onClose,
   bordered = true,
   onClick,
@@ -138,9 +145,13 @@ function TagBase({
       {closable && (
         <button
           type="button"
-          aria-label="Close"
+          aria-label={closeLabel}
           onClick={handleClose}
-          className="-mr-0.5 inline-flex items-center opacity-60 transition-opacity hover:opacity-100"
+          // `p-1.5` + matching negative margin takes the 11px glyph to a
+          // ~23.5px hit box (WCAG 2.5.8 Target Size) without moving anything:
+          // `p-1` measured only 19.5px. The extra -0.5 on the right preserves
+          // the original `-mr-0.5` optical inset.
+          className="-m-1.5 -mr-2 inline-flex items-center rounded p-1.5 opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
         >
           {closeIcon ?? <X size={11} strokeWidth={2.5} />}
         </button>

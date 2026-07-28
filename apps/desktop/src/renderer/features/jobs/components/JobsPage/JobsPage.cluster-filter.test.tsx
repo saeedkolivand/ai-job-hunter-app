@@ -73,15 +73,6 @@ vi.mock('@/hooks/use-format-relative-time', () => ({
   useFormatRelativeTime: () => (ts: number) => String(ts),
 }));
 
-vi.mock('@/components/layout/PageHeader', () => ({
-  PageHeader: ({ title, actions }: { title: string; actions?: ReactNode }) => (
-    <div>
-      {title}
-      {actions}
-    </div>
-  ),
-}));
-
 vi.mock('@/components/layout/PageTransition', () => ({
   PageTransition: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -133,6 +124,8 @@ vi.mock('@ajh/ui', () => {
       </div>
     ),
     ConfirmModal: () => null,
+    Drawer: ({ open, children }: { open: boolean; children: ReactNode }) =>
+      open ? <div role="dialog">{children}</div> : null,
     Dropdown: () => null,
     Input: () => null,
     SegmentedControl: () => null,
