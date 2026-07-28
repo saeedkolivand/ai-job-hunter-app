@@ -78,6 +78,16 @@ pub(super) const JSEARCH_PAGE_SIZE: u32 = 10;
 // `BoardSearchInput::pages`.
 pub(super) const JSEARCH_MAX_PAGES: u32 = 3;
 
+/// INVARIANT: retries=0 for every JSearch request (mirrors [`APIFY_RETRIES`] and
+/// [`super::ADZUNA_RETRIES`]).
+///
+/// JSearch is billed PER REQUEST against a monthly RapidAPI plan, and one call
+/// already costs `num_pages` of it. `fetch_text` re-sends on 429/503, so the
+/// default `retries: 2` would make a 3-page fallback cost up to 9 billed calls —
+/// and a 429 from a metered API IS the over-quota signal, so retrying it spends
+/// the very budget that just ran out.
+pub(super) const JSEARCH_RETRIES: u32 = 0;
+
 /// JSearch `num_pages` for a target result count: `ceil(amount / 10)` clamped to
 /// [`JSEARCH_MAX_PAGES`]. `None` → 1 (the pre-paging, cheapest behavior);
 /// `amount = 0` still asks for one page, never zero.
@@ -85,6 +95,26 @@ pub(super) fn jsearch_num_pages(amount: Option<u32>) -> u32 {
     amount.map_or(1, |a| {
         a.div_ceil(JSEARCH_PAGE_SIZE).clamp(1, JSEARCH_MAX_PAGES)
     })
+}
+
+/// Build the `FetchOptions` for the JSearch search call.
+///
+/// The RapidAPI key goes in a header only — never the URL. `retries` is hardwired
+/// to [`JSEARCH_RETRIES`] (0). Mirrors [`apify_fetch_options`]: the single source
+/// of truth consumed by both the production call in `JSearchProvider::search` and
+/// the invariant test in `test.rs`, so dropping the override here breaks that test.
+pub(super) fn jsearch_fetch_options(api_key: &str) -> FetchOptions {
+    FetchOptions {
+        headers: Some(vec![
+            ("X-RapidAPI-Key".to_string(), api_key.to_string()),
+            (
+                "X-RapidAPI-Host".to_string(),
+                "jsearch.p.rapidapi.com".to_string(),
+            ),
+        ]),
+        retries: JSEARCH_RETRIES, // METERED: every send is a billed call
+        ..FetchOptions::default()
+    }
 }
 
 /// Build the JSearch search endpoint. Factored out of `JSearchProvider::search`
@@ -186,22 +216,9 @@ impl JobProvider for JSearchProvider {
         // "jsearch:" prefix is required — the aggregator board fronts three
         // providers, so an unattributed "HTTP 403" in BoardScrapeSummary.error
         // wouldn't say which one failed.
-        let resp = fetch_json::<JSearchResp>(
-            &url,
-            FetchOptions {
-                headers: Some(vec![
-                    ("X-RapidAPI-Key".to_string(), api_key.to_string()),
-                    (
-                        "X-RapidAPI-Host".to_string(),
-                        "jsearch.p.rapidapi.com".to_string(),
-                    ),
-                ]),
-                ..FetchOptions::default()
-            },
-            signal,
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("jsearch: {e}"))?;
+        let resp = fetch_json::<JSearchResp>(&url, jsearch_fetch_options(api_key), signal)
+            .await
+            .map_err(|e| anyhow::anyhow!("jsearch: {e}"))?;
 
         let now = chrono::Utc::now().timestamp_millis();
         let postings = resp

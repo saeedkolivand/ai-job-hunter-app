@@ -121,6 +121,17 @@ pub(super) const ADZUNA_PAGE_SIZE: usize = 50;
 // stays exactly as cheap as it is today (one request).
 pub(super) const ADZUNA_MAX_PAGES: u32 = 2;
 
+/// INVARIANT: retries=0 for every Adzuna request (mirrors [`super::APIFY_RETRIES`]).
+///
+/// Adzuna's free tier is a HARD DAILY CALL quota, and `fetch_text` re-sends on
+/// 429/503 — so the default `retries: 2` turns each page into up to 3 quota
+/// calls and makes the worst-case cost of one search 9 instead of 3. Worse, a
+/// 429 from a metered API IS the over-quota signal: retrying it spends more of
+/// the very budget that just ran out. Bounded page count is the only knob that
+/// should govern spend here; transient-failure resilience is provided by the
+/// `primary_chain` fallback to JSearch/Jooble, not by re-billing Adzuna.
+pub(super) const ADZUNA_RETRIES: u32 = 0;
+
 /// How many Adzuna pages to request for a target result count.
 ///
 /// `None` (no caller-supplied amount) → 1 page, the pre-paging behavior and the
@@ -366,7 +377,10 @@ impl JobProvider for AdzunaProvider {
         // than `ADZUNA_BROADEN_FLOOR` (3) results, which is USUALLY because page 1
         // came back short and the loop stopped after one fetch — but not always: a
         // FULL page 1 whose postings all dedupe away keeps the loop going, so the
-        // worst-case cost of a search is `ADZUNA_MAX_PAGES + 1` fetches, not 2.
+        // worst-case cost of a search is `ADZUNA_MAX_PAGES + 1` DAILY-QUOTA CALLS,
+        // not 2. Quota calls and fetches are the same number only because
+        // `ADZUNA_RETRIES` is 0; with the default `retries: 2` each fetch would
+        // bill up to 3 (see the constant).
         //
         // GUARD: never broaden a GUESSED market (`country_guessed`). Turning a
         // guessed-market empty/near-empty into a non-empty country-wide result
@@ -374,7 +388,12 @@ impl JobProvider for AdzunaProvider {
         // an empty Adzuna result to fall through to JSearch (global, free-text
         // location) when the guess is probably wrong (e.g. "London" defaulting
         // to "de"). Only broaden for an explicitly-supplied country.
-        if should_broaden(country_guessed, where_hygienic, postings.len()) {
+        // GUARD: never spend the broaden retry's quota call after a Stop. The loop
+        // above returns `Ok(what it had)` on cancel, and a cancelled run is short
+        // by construction — without this check the deliberate stop would look like
+        // a sparse market and buy one more request on the way out.
+        if !signal.is_cancelled() && should_broaden(country_guessed, where_hygienic, postings.len())
+        {
             match fetch_adzuna_page(
                 AdzunaPageRequest {
                     where_val: "",
@@ -480,8 +499,10 @@ pub(super) struct AdzunaPageRequest<'a> {
 ///   pre-paging contract `primary_chain` relies on to fall through to JSearch.
 /// * **Mid-loop failure fails open** — a later page's error keeps the pages
 ///   already collected (same policy as the broaden retry in `search`).
-/// * **Cancellation between pages** — a stop landing mid-loop never spends
-///   another request; what was already collected is returned.
+/// * **Cancellation is a clean stop, never an error** — a stop landing between
+///   pages OR mid-flight inside a fetch never spends another request and returns
+///   what was already collected as `Ok`, page 1 included (a cancel is not an
+///   Adzuna failure, so it must not trigger the JSearch fallback diagnostic).
 ///
 /// Results are de-duplicated across pages by `JobPosting::id` (an Adzuna posting
 /// id is stable and unique, but the `sort_by=date` window shifts as new postings
@@ -519,6 +540,12 @@ pub(super) async fn fetch_adzuna_pages(
                     break;
                 }
             }
+            // A user's Stop is a clean stop, never a provider failure — the same
+            // contract the between-pages check above keeps. `fetch_json` surfaces
+            // a cancel observed MID-FLIGHT as `AppError::Cancelled`, which without
+            // this arm would leave page 1 as `Err` and make `primary_chain` log a
+            // "adzuna error, attempting jsearch fallback" that never happens.
+            Err(_) if signal.is_cancelled() => break,
             // Page 1 IS the provider's result — its failure must stay a provider
             // failure so `primary_chain` can fall through to JSearch.
             Err(e) if page == 1 => return Err(e),
@@ -534,6 +561,19 @@ pub(super) async fn fetch_adzuna_pages(
     }
 
     Ok(out)
+}
+
+/// Build the `FetchOptions` for an Adzuna page request.
+///
+/// `retries` is hardwired to [`ADZUNA_RETRIES`] (0). Mirrors
+/// [`super::apify_fetch_options`]: the single source of truth consumed by both
+/// the production call in [`fetch_adzuna_page`] and the invariant test in
+/// `test.rs`, so dropping the override here breaks that test.
+pub(super) fn adzuna_fetch_options() -> FetchOptions {
+    FetchOptions {
+        retries: ADZUNA_RETRIES, // METERED: each send bills the daily quota
+        ..FetchOptions::default()
+    }
 }
 
 /// Build + fetch + parse ONE Adzuna page.
@@ -578,7 +618,7 @@ async fn fetch_adzuna_page(
     // "adzuna:" prefix is required — the aggregator board fronts three
     // providers, so an unattributed "HTTP 403" in BoardScrapeSummary.error
     // wouldn't say which one failed.
-    let resp = fetch_json::<AdzunaResp>(&url, FetchOptions::default(), signal)
+    let resp = fetch_json::<AdzunaResp>(&url, adzuna_fetch_options(), signal)
         .await
         .map_err(|e| anyhow::anyhow!("adzuna: {e}"))?;
 

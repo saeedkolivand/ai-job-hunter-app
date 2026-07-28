@@ -85,6 +85,62 @@ impl JobProvider for FakeProvider {
     }
 }
 
+/// Records the per-call upstream SPEND CAP (`amount`) each call was handed, and
+/// whether it was called at all.
+///
+/// [`FakeProvider`] discards that argument, which is exactly why no existing test
+/// could see the paid tier's cap — every Apify test asserted on merged OUTPUT and
+/// would have stayed green while the gate bought a full 50-item actor run on every
+/// scheduled search. Cost assertions need the argument, not the result.
+struct RecordingProvider {
+    id: &'static str,
+    items: Vec<JobPosting>,
+    calls: CallLog,
+}
+
+/// Spend caps observed by a [`RecordingProvider`], newest last. `None` entries are
+/// calls made with no cap at all.
+type CallLog = std::sync::Arc<std::sync::Mutex<Vec<Option<u32>>>>;
+
+impl RecordingProvider {
+    fn new(id: &'static str, items: Vec<JobPosting>) -> (Self, CallLog) {
+        let calls: CallLog = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        (
+            Self {
+                id,
+                items,
+                calls: calls.clone(),
+            },
+            calls,
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl JobProvider for RecordingProvider {
+    fn provider_id(&self) -> &'static str {
+        self.id
+    }
+
+    fn is_configured(&self) -> bool {
+        true
+    }
+
+    async fn search(
+        &self,
+        _query: &str,
+        _location: &str,
+        _country: &str,
+        _country_guessed: bool,
+        _date_filter: Option<&str>,
+        amount: Option<u32>,
+        _signal: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<Vec<JobPosting>> {
+        self.calls.lock().expect("recorder mutex").push(amount);
+        Ok(self.items.clone())
+    }
+}
+
 // ── Fallback logic tests ──────────────────────────────────────────────────────
 
 /// Adzuna Ok(items) → those items returned, JSearch not called (fake JSearch
@@ -2777,7 +2833,7 @@ async fn apify_merges_additively_and_dedupes_by_url() {
         "de",
         false,
         None,
-        SearchBudget::items_only(100),
+        SearchBudget::manual(100),
         make_token(),
     )
     .await
@@ -2807,7 +2863,7 @@ async fn only_apify_configured_returns_apify_items() {
         "de",
         false,
         None,
-        SearchBudget::items_only(100),
+        SearchBudget::manual(100),
         make_token(),
     )
     .await
@@ -2835,7 +2891,7 @@ async fn apify_unconfigured_preserves_primary_diagnostic_err() {
         "de",
         false,
         None,
-        SearchBudget::items_only(100),
+        SearchBudget::manual(100),
         make_token(),
     )
     .await;
@@ -2862,7 +2918,7 @@ async fn apify_results_override_primary_error_when_present() {
         "de",
         false,
         None,
-        SearchBudget::items_only(100),
+        SearchBudget::manual(100),
         make_token(),
     )
     .await
@@ -2870,6 +2926,124 @@ async fn apify_results_override_primary_error_when_present() {
 
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].external_id, li.external_id);
+}
+
+// ── The paid tier spends `provider_amount`, never `amount` ──────────────────
+
+/// The cost contract of the paid LinkedIn tier, asserted on the DECISION
+/// (`apify_cap`) rather than on merged output — output-only assertions are what
+/// let the amount-driven gate survive this long.
+#[test]
+fn apify_cap_is_zero_without_an_upstream_budget() {
+    // The autopilot shape: a big OUTPUT cap that is a "don't cap me" SENTINEL,
+    // with no spend intent. It must buy nothing, at any primary size.
+    assert_eq!(
+        apify_cap(SearchBudget::items_only(100), 0),
+        0,
+        "a scheduled run has no upstream budget — a paid actor run must never be bought"
+    );
+    assert_eq!(apify_cap(SearchBudget::items_only(100), 7), 0);
+    assert_eq!(apify_cap(SearchBudget::items_only(0), 0), 0);
+
+    // A real, user-typed spend target buys only the still-UNMET part of it.
+    assert_eq!(apify_cap(SearchBudget::manual(25), 0), 25);
+    assert_eq!(apify_cap(SearchBudget::manual(25), 10), 15);
+    assert_eq!(
+        apify_cap(SearchBudget::manual(25), 25),
+        0,
+        "budget already satisfied by the free primary → LinkedIn is a fill for UNMET capacity"
+    );
+    assert_eq!(
+        apify_cap(SearchBudget::manual(25), 40),
+        0,
+        "over-satisfied must saturate at 0, never wrap into a huge cap"
+    );
+    assert_eq!(
+        apify_cap(SearchBudget::manual(100), 0),
+        APIFY_MAX_ITEMS,
+        "never above the platform-enforced maxItems ceiling"
+    );
+}
+
+/// REGRESSION GUARD (the cost bug PR #896's review caught).
+///
+/// The gate used to read `budget.amount`, which `autopilot_helpers` passes as the
+/// sentinel `100`. Primary results are essentially never ≥ 100, so the gate always
+/// opened and EVERY scheduled run bought a 50-item Apify actor run — while three
+/// doc comments claimed `provider_amount` was the only thing buying upstream calls.
+///
+/// Asserted at the provider ARGUMENT (via [`RecordingProvider`]): a
+/// `FakeProvider`-based output assertion cannot tell "never called" from "called
+/// and returned nothing".
+#[tokio::test]
+async fn autopilot_shaped_budget_never_calls_the_paid_apify_tier() {
+    let (apify, apify_calls) =
+        RecordingProvider::new("apify_linkedin", vec![sample_posting("li", "linkedin")]);
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("1", "adzuna")],
+        )),
+        Box::new(apify),
+    ];
+
+    let result = search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        // Exactly what `autopilot_helpers::autopilot_scrape` builds.
+        SearchBudget::items_only(100),
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        apify_calls.lock().expect("recorder mutex").is_empty(),
+        "a scheduled run must issue NO paid Apify request — it carries no upstream spend budget"
+    );
+    assert_eq!(
+        result.len(),
+        1,
+        "the free primary result still flows through untouched"
+    );
+}
+
+/// The other half of the guard above: a MANUAL search does carry a spend target,
+/// so the paid tier runs — asked for exactly the unmet remainder, proving the
+/// gate is about the missing budget and not a tier that never fires.
+#[tokio::test]
+async fn manual_shaped_budget_asks_apify_for_the_unmet_remainder_only() {
+    let (apify, apify_calls) = RecordingProvider::new("apify_linkedin", vec![]);
+    let providers: Vec<Box<dyn JobProvider>> = vec![
+        Box::new(FakeProvider::ok(
+            "adzuna",
+            vec![sample_posting("1", "adzuna"), sample_posting("2", "adzuna")],
+        )),
+        Box::new(apify),
+    ];
+
+    search_with_providers(
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        SearchBudget::manual(10),
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        apify_calls.lock().expect("recorder mutex").as_slice(),
+        [Some(8)],
+        "one call, capped at the 8 results the free primary did not cover"
+    );
 }
 
 // ── FIX 1 (finding #4): retries=0 invariant via the real helper ──────────────
@@ -3124,7 +3298,7 @@ async fn apify_not_run_after_cancellation() {
         "de",
         false,
         None,
-        SearchBudget::items_only(100),
+        SearchBudget::manual(100),
         signal,
     )
     .await
@@ -3698,6 +3872,117 @@ async fn adzuna_cancellation_between_pages_keeps_page_one_and_stops() {
     assert_eq!(items.len(), 50, "page 1's results are kept on cancel");
 }
 
+/// Cancellation landing MID-FLIGHT inside the PAGE-1 fetch is still a clean stop.
+///
+/// The between-pages check above cannot see this one: the token flips while page 1
+/// is in the air, so `fetch_json` returns `AppError::Cancelled` and the page-1 arm
+/// used to convert a deliberate Stop into a provider `Err` — which `primary_chain`
+/// then logged as `"adzuna error, attempting jsearch fallback"`, naming a fallback
+/// its own cancel guard would never let run.
+#[tokio::test]
+async fn adzuna_cancellation_during_the_first_page_is_ok_not_err() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    /// Cancels the shared token and then fails the request — the shape a real
+    /// mid-flight Stop produces (the in-flight send is torn down, surfacing as a
+    /// transport error on an already-cancelled token).
+    struct CancelThenFail {
+        token: tokio_util::sync::CancellationToken,
+    }
+    impl Respond for CancelThenFail {
+        fn respond(&self, _req: &Request) -> ResponseTemplate {
+            self.token.cancel();
+            ResponseTemplate::new(500).set_body_string("torn down")
+        }
+    }
+
+    let signal = make_token();
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(CancelThenFail {
+            token: signal.clone(),
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let items = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), signal)
+        .await
+        .expect("a cancel during page 1 is a clean stop, not an adzuna failure");
+
+    assert!(
+        items.is_empty(),
+        "nothing was collected before the stop, so an empty Ok is the honest answer"
+    );
+}
+
+/// A 429 (the metered API's over-quota signal) must cost exactly ONE daily-quota
+/// call, not three.
+///
+/// `fetch_text` re-sends on 429/503 up to `FetchOptions::retries`, which defaults
+/// to 2 — so the pre-fix code answered "you are over quota" by spending two more
+/// of the quota that just ran out, and made the worst case of one search 9 calls
+/// instead of 3. The `.expect(1)` (verified on `MockServer` drop) is the assertion.
+#[tokio::test]
+async fn adzuna_does_not_retry_a_429_into_extra_quota_calls() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(429).set_body_string("rate limited"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let err = fetch_adzuna_pages(adzuna_req(&server.uri()), Some(100), make_token())
+        .await
+        .expect_err("an over-quota page 1 is still a provider failure");
+    assert!(
+        err.to_string().contains("429"),
+        "the status must be carried so the user learns it was a rate limit; got: {err}"
+    );
+}
+
+/// INVARIANT: the `FetchOptions` the METERED providers actually construct must
+/// carry `retries == 0` — asserted through the same functions production calls
+/// (mirrors `apify_fetch_options_must_have_retries_zero`), so deleting either
+/// override breaks this test rather than silently tripling a billed call.
+#[test]
+fn metered_provider_fetch_options_must_have_retries_zero() {
+    assert_eq!(
+        adzuna_fetch_options().retries,
+        0,
+        "INVARIANT VIOLATED: Adzuna bills a DAILY CALL quota — a 429/503 retry \
+         spends the quota that just ran out"
+    );
+    assert_eq!(
+        jsearch_fetch_options("test-key").retries,
+        0,
+        "INVARIANT VIOLATED: JSearch bills PER REQUEST (× num_pages) — a retry \
+         multiplies an already-multiplied call"
+    );
+    // The Apify tier's own copy of this invariant lives in
+    // `apify_fetch_options_must_have_retries_zero`; all three are the same rule.
+}
+
+/// An `AdzunaProvider` with fake credentials pointed at a local `wiremock` host.
+/// The single place the provider is hand-built, so a new field on the struct
+/// breaks one line instead of every wiremock test.
+fn wiremock_adzuna(
+    base_url: String,
+    note_sink: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+) -> AdzunaProvider {
+    AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+        note_sink,
+        base_url: ADZUNA_BASE_URL.to_string(),
+    }
+    .with_base_url(base_url)
+}
+
 // ── Scheduled (autopilot) runs stay quota-neutral ────────────────────────────
 
 /// Pins the request → budget TRANSLATION itself, which is the one line the
@@ -3783,13 +4068,7 @@ async fn autopilot_shaped_input_spends_exactly_one_adzuna_request() {
 
     // Exactly the shape `autopilot_helpers::autopilot_scrape` builds.
     let autopilot_budget = SearchBudget::new(100, None);
-    let provider = AdzunaProvider {
-        app_id: Some("fake-id".to_string()),
-        app_key: Some("fake-key".to_string()),
-        note_sink: None,
-        base_url: ADZUNA_BASE_URL.to_string(),
-    }
-    .with_base_url(server.uri());
+    let provider = wiremock_adzuna(server.uri(), None);
 
     let items = search_with_providers(
         &[Box::new(provider) as Box<dyn JobProvider>],
@@ -3832,13 +4111,7 @@ async fn manual_shaped_input_pages_when_a_provider_budget_is_set() {
         .mount(&server)
         .await;
 
-    let provider = AdzunaProvider {
-        app_id: Some("fake-id".to_string()),
-        app_key: Some("fake-key".to_string()),
-        note_sink: None,
-        base_url: ADZUNA_BASE_URL.to_string(),
-    }
-    .with_base_url(server.uri());
+    let provider = wiremock_adzuna(server.uri(), None);
 
     let items = search_with_providers(
         &[Box::new(provider) as Box<dyn JobProvider>],
@@ -3861,19 +4134,6 @@ async fn manual_shaped_input_pages_when_a_provider_budget_is_set() {
 // `should_broaden` and `guessed_market_note` both read the loop's POST-DEDUP
 // count, so the loop and the policy on top of it are one seam. These drive the
 // real `search` (not the fetchers underneath it) through a mock host.
-
-fn wiremock_adzuna(
-    base_url: String,
-    note_sink: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
-) -> AdzunaProvider {
-    AdzunaProvider {
-        app_id: Some("fake-id".to_string()),
-        app_key: Some("fake-key".to_string()),
-        note_sink,
-        base_url: ADZUNA_BASE_URL.to_string(),
-    }
-    .with_base_url(base_url)
-}
 
 /// Sparse city result → the country-wide broaden retry still fires ON TOP of the
 /// page loop, and its larger result set wins. Page 1 is short (2 < the floor of
@@ -3929,6 +4189,63 @@ async fn search_broadens_country_wide_after_a_sparse_paged_result() {
         ["broadened:de"],
         "the broadening must surface as a user-facing note"
     );
+}
+
+/// A Stop must not buy the broaden retry's extra quota call.
+///
+/// A cancelled run is short BY CONSTRUCTION (the page loop returns what it had),
+/// so without an explicit cancellation guard the deliberate stop looks exactly
+/// like a sparse market and spends one more metered request on the way out — the
+/// opposite of what pressing Stop means.
+#[tokio::test]
+async fn search_does_not_broaden_after_a_cancelled_page_loop() {
+    use wiremock::matchers::{path, query_param};
+    use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    struct CancelWhileServing {
+        token: tokio_util::sync::CancellationToken,
+        body: serde_json::Value,
+    }
+    impl Respond for CancelWhileServing {
+        fn respond(&self, _req: &Request) -> ResponseTemplate {
+            self.token.cancel();
+            ResponseTemplate::new(200).set_body_json(self.body.clone())
+        }
+    }
+
+    let signal = make_token();
+    let server = MockServer::start().await;
+    // Narrow page 1 lands with 2 results (under ADZUNA_BROADEN_FLOOR) and cancels.
+    Mock::given(path(adzuna_path(1)))
+        .and(query_param("where", "Berlin"))
+        .respond_with(CancelWhileServing {
+            token: signal.clone(),
+            body: adzuna_body(1, 2),
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+    // The country-wide retry must NEVER be issued after a Stop.
+    Mock::given(path(adzuna_path(1)))
+        .and(query_param("where", ""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(100, 7)))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let provider = wiremock_adzuna(server.uri(), None);
+    let items = provider
+        // country_guessed = false → broadening would otherwise be allowed here.
+        .search("engineer", "Berlin", "de", false, None, Some(100), signal)
+        .await
+        .expect("a cancelled search is a clean stop");
+
+    assert_eq!(
+        items.len(),
+        2,
+        "the narrow result collected before the Stop is kept as-is"
+    );
+    // The `.expect(0)` above is the real assertion, verified on MockServer drop.
 }
 
 /// A GUESSED market that returns an authoritative (>= floor) PAGED result emits

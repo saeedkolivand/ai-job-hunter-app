@@ -141,17 +141,21 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
 
     let engine = app.state::<std::sync::Arc<ScraperEngine>>().inner().clone();
+    // The count the USER actually typed, bounded once. Both budgets below are
+    // THIS number on the manual path, so it is bound once rather than clamped
+    // twice — two independent `.clamp` calls could silently drift apart.
+    let requested_amount = req.amount.clamp(1, 100);
     let mut input = BoardSearchInput {
         query: req.query.clone(),
         location: req.location.clone(),
         // `amount` is the per-board cap: each board returns up to this many results.
-        amount: req.amount.clamp(1, 100),
+        amount: requested_amount,
         pages: MAX_PAGE_BUDGET,
         // The ONLY path that sets a real provider spend target: here `amount` is
         // the count the USER actually typed, so a metered board (the aggregator)
         // may buy upstream calls up to it. Scheduled runs leave this `None` — see
         // `BoardSearchInput::provider_amount`.
-        provider_amount: Some(req.amount.clamp(1, 100)),
+        provider_amount: Some(requested_amount),
         date_filter: req.date_filter.clone(),
         // Structured search filters from the IPC request (ScrapeBoardsRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
