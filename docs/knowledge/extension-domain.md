@@ -146,6 +146,6 @@ To guard against cancellation-race bugs and billable-job leaks, every in-flight 
 
 Chrome Web Store + Firefox AMO: MV3, no remote code, least-privilege permissions, single-purpose, honest metadata, privacy/data disclosure. Full pre-submission checklist in `.claude/skills/extension-standards/SKILL.md`.
 
-## Agent count
+## Agent system
 
-The full fleet has 25 agents (23 domain agents + `cleanup` + `project-steward`). See `CLAUDE.md` routing table for the complete list.
+See `CLAUDE.md` § "Knowledge base & agent system" for the complete agent roster (`.claude/agents/`), routing table, and paired author/critic structure per domain.

@@ -315,6 +315,7 @@ function checkModelTiering() {
   const isDelim = (l) => /^---\s*$/.test(l);
   const gotOpus = new Set();
   const gotHaiku = new Set();
+  const malformed = new Set(); // already reported below — exempt from the reverse-check
   for (const name of agentNames()) {
     const file = `${AGENTS_DIR}/${name}.md`;
     const raw = read(file);
@@ -330,6 +331,7 @@ function checkModelTiering() {
         file,
         `model: '${model ?? '(missing)'}' is not a bare alias (opus|sonnet|haiku)`
       );
+      malformed.add(name);
       continue;
     }
     if (model === 'opus') gotOpus.add(name);
@@ -363,7 +365,7 @@ function checkModelTiering() {
   if (!anchorOk) return;
 
   for (const name of wantOpus)
-    if (!gotOpus.has(name))
+    if (!gotOpus.has(name) && !malformed.has(name))
       fail('Model tiering', CLAUDE_MD, `'${name}' listed as an Opus critic but has no model: opus`);
   for (const name of gotOpus)
     if (!wantOpus.has(name))
@@ -373,7 +375,8 @@ function checkModelTiering() {
         `'${name}' has model: opus but isn't listed as an Opus critic`
       );
   for (const name of wantHaiku)
-    if (!gotHaiku.has(name)) fail('Model tiering', CLAUDE_MD, `'${name}' expected model: haiku`);
+    if (!gotHaiku.has(name) && !malformed.has(name))
+      fail('Model tiering', CLAUDE_MD, `'${name}' expected model: haiku`);
   for (const name of gotHaiku)
     if (!wantHaiku.has(name))
       fail(

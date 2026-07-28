@@ -125,7 +125,7 @@ Two complementary indexes for codebase questions — prefer them over raw `rg`/`
 
 ## Agent system & review conventions
 
-This repo ships a Claude Code agent system under `.claude/` with 24 specialized agents (paired author + critic per domain, plus cross-cutting cleanup / project-steward / pr-reviewer),
+This repo ships a Claude Code agent system under `.claude/` (agents in `.claude/agents/`, paired author + critic per domain, plus cross-cutting critics and utilities),
 `/review-*` + `/implement-feature`/`/fix-bug`/`/refactor-module`/`/add-tests`/`/update-docs`/`/prepare-release`
 commands, domain skills/checklists, a Stop review-gate hook, and a lessons log.
 
@@ -135,6 +135,6 @@ You cannot invoke those Claude Code sub-agents directly, but **follow the same c
 - Per-change flow: implement → review pass (HIGH/CRITICAL findings block; ≤ 3 reviewers) →
   tests if logic changed → docs sync last.
 - Only HIGH/CRITICAL findings block; style/naming issues are advisory.
-- Model & effort tiering (agent `model:`/`effort:` frontmatter): **Opus** for last-line critics, **Sonnet** for authors + balanced critics, **Haiku** for `project-steward` + `finding-verifier` — see the canonical per-agent map in `CLAUDE.md` (§ Model & effort tiering); this file defers to it. Effort (adaptive thinking replaced "extended thinking" in the 5 family): default `high` everywhere; six Opus critics pin `effort: xhigh` in frontmatter; authors escalate to Opus per spawn for hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration) or to Fable for hard, ambiguous, cross-domain work — never as a frontmatter default or for security review.
+- Model & effort tiering (agent `model:`/`effort:` frontmatter): **Opus** for last-line critics, **Sonnet** for authors + balanced critics, **Haiku** for `project-steward` + `finding-verifier` — see the canonical per-agent map in `CLAUDE.md` (§ Model & effort tiering); this file defers to it. Effort (adaptive thinking replaced "extended thinking" in the 5 family): default `high` everywhere; the Opus critics pin `effort: xhigh` in frontmatter; authors escalate to Opus per spawn for hard work (Rust concurrency/`unsafe`, new provider streaming, schema migration) or to Fable for hard, ambiguous, cross-domain work — never as a frontmatter default or for security review.
 
 Full operating contract: `CLAUDE.md`.
