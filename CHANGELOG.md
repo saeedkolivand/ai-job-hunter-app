@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.130.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.129.1...v0.130.0) (2026-07-28)
+
+### ✨ Features
+
+* applications page pipeline redesign with unified contacts, reminders, and status notes ([#897](https://github.com/saeedkolivand/ai-job-hunter-app/issues/897)) ([273ef22](https://github.com/saeedkolivand/ai-job-hunter-app/commit/273ef22ba297bd4687c8defca35d2fa290fa6eda))
+* jobs page command bar, scrape drawer, responsive split view ([#892](https://github.com/saeedkolivand/ai-job-hunter-app/issues/892)) ([4c1bb88](https://github.com/saeedkolivand/ai-job-hunter-app/commit/4c1bb8843032472ec606f12e45569c962d859857))
+* offline geonames geocoding with photon fallback ([#893](https://github.com/saeedkolivand/ai-job-hunter-app/issues/893)) ([70b528c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/70b528c92e4b6b90bc3f394857d731faaee3f927))
+* page-bounded aggregator fetch loop with amount-derived search budget ([#896](https://github.com/saeedkolivand/ai-job-hunter-app/issues/896)) ([167cc5a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/167cc5a6a5e043a0a5044b4cde9246a3cdf1d7d2)), closes [#884](https://github.com/saeedkolivand/ai-job-hunter-app/issues/884)
+* persist apply-by-email drafts on the generation aggregate ([#894](https://github.com/saeedkolivand/ai-job-hunter-app/issues/894)) ([19b7bcb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/19b7bcba832bc88f4a2dfced6e184c366b1ec990))
+* revoke extension pairing over the bridge on token rotation ([#895](https://github.com/saeedkolivand/ai-job-hunter-app/issues/895)) ([650bcdd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/650bcdda79e22036559745e2dbda7b99930acc58))
+
+### 🐛 Bug Fixes
+
+* email copy scope, questions language picker, prep result link ([#888](https://github.com/saeedkolivand/ai-job-hunter-app/issues/888)) ([30da69e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/30da69e960fb42b6b50c9bb41d3beb69177cd693))
+* interview questions review follow-ups ([#891](https://github.com/saeedkolivand/ai-job-hunter-app/issues/891)) ([330d3bb](https://github.com/saeedkolivand/ai-job-hunter-app/commit/330d3bb4e91d86a587ca1d60ca912edfeda18e39))
+* localize apply-by-email greeting and drop contact line ([#887](https://github.com/saeedkolivand/ai-job-hunter-app/issues/887)) ([9b9431e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9b9431eaaedf6c609f2320d0404b4270684e4679))
+* make autopilot scrape target a true pages field ([#885](https://github.com/saeedkolivand/ai-job-hunter-app/issues/885)) ([a8d6db8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/a8d6db8e52c699bd76a9d5f835eb72b161fca765))
+* match attribute-only and hyphenated name fields in autofill ([#889](https://github.com/saeedkolivand/ai-job-hunter-app/issues/889)) ([fa96198](https://github.com/saeedkolivand/ai-job-hunter-app/commit/fa961982f2d5f4f67a7ded66ec1bd2352dcc2834))
+* pin document viewer header while output scrolls ([#886](https://github.com/saeedkolivand/ai-job-hunter-app/issues/886)) ([01e1ccf](https://github.com/saeedkolivand/ai-job-hunter-app/commit/01e1ccfa27dcd81b23d8539f225b5e1377ea4eec))
+* prime world videos on ios and classify tablets as desktop ([#890](https://github.com/saeedkolivand/ai-job-hunter-app/issues/890)) ([1ab26e0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1ab26e0a94197d9ab8a48349beeabeec746f7b5d))
+* restore agent-fleet assembly-line scroll pin broken by doc-shell overflow ([#882](https://github.com/saeedkolivand/ai-job-hunter-app/issues/882)) ([6d1e75a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/6d1e75a99752ebe0cb7fdbb0e8c69af6c8eeeeb9))
+* scraping response caps, country backfill, jobicy label ([#884](https://github.com/saeedkolivand/ai-job-hunter-app/issues/884)) ([95a0656](https://github.com/saeedkolivand/ai-job-hunter-app/commit/95a0656baecf8b0f05f4c5333dcc3962303af085))
+
+### 📚 Documentation
+
+* close out the 2026-07-27/28 bug batch ([#883](https://github.com/saeedkolivand/ai-job-hunter-app/issues/883)-[#895](https://github.com/saeedkolivand/ai-job-hunter-app/issues/895)) ([#898](https://github.com/saeedkolivand/ai-job-hunter-app/issues/898)) ([2862d45](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2862d45fef6a6212fad0d27e1fc676326fb73fb0))
+* record the applications redesign and aggregator spend budget ([#896](https://github.com/saeedkolivand/ai-job-hunter-app/issues/896)-[#897](https://github.com/saeedkolivand/ai-job-hunter-app/issues/897)) ([#899](https://github.com/saeedkolivand/ai-job-hunter-app/issues/899)) ([5a899f0](https://github.com/saeedkolivand/ai-job-hunter-app/commit/5a899f0ae9ab1aed21076f3d1451cd3d993d1404))
+
 ## [0.129.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.129.0...v0.129.1) (2026-07-23)
 
 ### 🐛 Bug Fixes
