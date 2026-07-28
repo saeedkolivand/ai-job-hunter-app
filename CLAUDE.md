@@ -9,11 +9,11 @@ Single source of truth for AI assistants. Rules are enforced by ESLint, TypeScri
 Re-injected every session by the `SessionStart` hook (`.claude/hooks/style-policy.mjs`).
 
 - **`ponytail`** — lazy-senior-dev default: laziest solution that works (YAGNI, stdlib/native over deps). Intensity `full`; off: `stop ponytail` / `normal mode`. Source: `ponytail@ponytail` plugin.
-- **`grill-with-docs`** — before finalizing any non-trivial plan/design (incl. before `ExitPlanMode`), stress-test it against the domain model + ADRs. Skip for trivial/one-line/docs changes. Source: `~/.claude/skills/grill-with-docs/SKILL.md`.
+- **`grill-with-docs`** — before finalizing any non-trivial plan/design (incl. before `ExitPlanMode`), stress-test it against the domain model + ADRs. Skip for trivial/one-line/docs changes. Source: the user-level `grill-with-docs` skill.
 
 ## Path privacy
 
-Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere. Always repo-relative (`apps/desktop/src-tauri/src/main.rs`). Git Bash form: `/c/Users/…`.
+Never output absolute paths, usernames, home dirs, drive letters, or temp/IDE paths — anywhere (logs, PRs, commits, docs). Always repo-relative (`apps/desktop/src-tauri/src/main.rs`); the same rule applies to Git Bash-style paths.
 
 ## Shell & tooling
 

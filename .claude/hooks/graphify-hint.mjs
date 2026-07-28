@@ -21,7 +21,9 @@ try {
   const hasGraph = fs.existsSync(path.join(cwd, 'graphify-out', 'graph.json'));
   if (hasGraph && /\b(grep|rg|ripgrep|find|fd|ack|ag)\b/.test(cmd)) {
     try {
-      fs.writeFileSync(marker, '1');
+      // 'wx' = exclusive create: never follows a pre-planted symlink in the shared
+      // tmp dir, and closes the TOCTOU between the existsSync check and this write
+      fs.writeFileSync(marker, '1', { flag: 'wx', mode: 0o600 });
     } catch {}
     process.stdout.write(
       JSON.stringify({

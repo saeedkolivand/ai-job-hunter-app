@@ -26,8 +26,8 @@ The initial design routed **every change** through the agent fleet (author + sib
 
 **New model:** per-change cost tiering scales review depth to actual risk.
 
-- **Trivial diffs** (docs, config, one-liners, rename/renames): main session direct edit (no agent), Stop gate review-only (deterministic AST + ledger re-emits).
-- **Single-domain non-risk** (e.g., UI component, single Rust module): ONE sibling critic (author + critic pair).
+- **Trivial diffs** (docs, config, one-liners, renames): main session direct edit (no agent), Stop gate review-only (deterministic AST + ledger re-emits).
+- **Single-domain non-risk** (e.g., UI component, single Rust module): ONE sibling critic (author + critic pair); testable logic still gets the mandatory test pair (`test-author` → `testing-reviewer`).
 - **Full trio** (risk-bearing, multi-domain, security, breaking changes): author + both critics.
 - **Pre-PR security gate** (`/review-security`): always tauri-security-reviewer (Opus xhigh).
 - **Pre-PR logic gate** (`/review`): always pr-reviewer (Opus xhigh) as the final fence before merge.

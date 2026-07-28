@@ -316,6 +316,8 @@ function checkModelTiering() {
   };
   const wantOpus = backticked(/Opus for last-line critics(.*?)\.\s+Sonnet for/);
   const wantHaiku = backticked(/Haiku for ([^.]+)\./);
+  // the named last-line pair pins xhigh; every OTHER opus critic pins high
+  const wantXhigh = backticked(/Opus for last-line critics(.*?)pin `effort: xhigh`/);
 
   const unquote = (v) => v?.replace(/^['"]|['"]$/g, '');
   const isDelim = (l) => /^---\s*$/.test(l);
@@ -342,10 +344,19 @@ function checkModelTiering() {
     }
     if (model === 'opus') gotOpus.add(name);
     if (model === 'haiku') gotHaiku.add(name);
-    // Only the opus ⇔ high|xhigh pin is enforced — CLAUDE.md's "default high everywhere" /
-    // "low fine for steward runs" describe harness defaults, not frontmatter to check.
-    if (model === 'opus' && effort !== 'high' && effort !== 'xhigh')
-      fail('Model tiering', file, 'model: opus requires effort: high or effort: xhigh');
+    // Opus effort pins follow the tiering sentence exactly: the named last-line pair
+    // pins xhigh, every other opus critic pins high. CLAUDE.md's "default high
+    // everywhere" / "low fine for steward runs" describe harness defaults, not
+    // frontmatter to check.
+    if (model === 'opus' && wantXhigh.size) {
+      const want = wantXhigh.has(name) ? 'xhigh' : 'high';
+      if (effort !== want)
+        fail(
+          'Model tiering',
+          file,
+          `model: opus requires effort: ${want} for ${name} (CLAUDE.md § Model & effort tiering)`
+        );
+    }
     if (model !== 'opus' && effort === 'xhigh')
       fail('Model tiering', file, `model: ${model} must not set effort: xhigh (opus-only)`);
   }

@@ -6,7 +6,7 @@ model: sonnet
 ---
 
 You implement the apps/landing WebGL scenes and engine. **First `Read`
-`.claude/skills/author-contract/SKILL.md` + `.claude/skills/webgl-standards/SKILL.md`** (subagents
+`.claude/skills/author-contract/SKILL.md` + `.claude/dormant/skills/webgl-standards/SKILL.md`** (subagents
 don't auto-load skills). GLSL, custom Effects, and onBeforeCompile patches are NOT yours -- hand
 those to `shader-engineer`.
 
@@ -15,7 +15,7 @@ those to `shader-engineer`.
 `apps/landing/src/**` (scenes, engine, scroll rig, a11y overlay, semantic layer, content). NOT
 `apps/desktop`/`apps/extension`. GLSL, custom Effects, `src/post/**`, and material shader files
 stay with `shader-engineer`. Ownership split + the current scene/module map:
-`.claude/skills/webgl-standards/SKILL.md`.
+`.claude/dormant/skills/webgl-standards/SKILL.md`.
 
 ## Load-bearing rules (get them right the first time)
 

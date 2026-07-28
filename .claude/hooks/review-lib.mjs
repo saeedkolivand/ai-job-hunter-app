@@ -312,6 +312,9 @@ export const runClaudeReview = ({ cwd, prompt, model, timeoutMs = 120000 }) => {
           maxBuffer: 10 * 1024 * 1024,
         }
       );
+      // a killed (timeout) or failed spawn can leave partial stdout — never treat
+      // it as a reply, or the corrective-retry path re-pays a doomed full call
+      if (r.error) return '';
       const out = (r.stdout || '').trim();
       if (!out) return '';
       try {
@@ -321,13 +324,21 @@ export const runClaudeReview = ({ cwd, prompt, model, timeoutMs = 120000 }) => {
         if (Number.isFinite(env2.total_cost_usd)) costUsd += env2.total_cost_usd;
         return typeof env2.result === 'string' ? env2.result.trim() : '';
       } catch {
-        return out; // not a JSON envelope — treat stdout as the raw reply
+        // not a JSON envelope: a clean exit may still be a raw reply (older CLI);
+        // a nonzero exit with unparseable output is an unavailable binary, not a reply
+        return r.status === 0 ? out : '';
       }
     } catch {
       return '';
     }
   };
   const first = call(prompt);
+  if (first) {
+    // the LLM is reachable again — drop any stale cooldown so nothing lingers
+    try {
+      fs.rmSync(cooldownPath(cwd), { force: true });
+    } catch {}
+  }
   if (!first) {
     writeCooldown(cwd, promptHash);
     return {

@@ -21,6 +21,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   SKIP_GLOBS,
+  SEVERITIES,
   matchesAny,
   splitByFile,
   assembleDiff,
@@ -155,6 +156,14 @@ try {
   const reEmitFiles = new Set();
   const ledgerAppends = [];
   for (const e of openEntries) {
+    // ledger rows are written verbatim by prior runs — never trust their shape (a
+    // malformed finding would throw in countBySeverity/formatFinding downstream)
+    if (
+      typeof e.finding.file !== 'string' ||
+      typeof e.finding.summary !== 'string' ||
+      !SEVERITIES.includes(String(e.finding.severity))
+    )
+      continue;
     // entries without a hunk baseline (e.g. /review-sourced) can't be re-emitted or
     // auto-resolved reliably — they exist for /review-stats only
     if (!Array.isArray(e.fileHunks) || !e.fileHunks.length) continue;
@@ -247,7 +256,9 @@ try {
     const r = spawnSync(
       'pnpm',
       ['exec', 'ast-grep', 'scan', '--json=compact', '--', ...nonSkipped.map((f) => `"${f}"`)],
-      { cwd, encoding: 'utf8', shell: true, timeout: 60000, maxBuffer: 20 * 1024 * 1024 }
+      // 20s fits inside the 30s Stop-hook budget (settings.json) with headroom —
+      // the harness would otherwise SIGKILL the hook mid-scan on a slow ast-grep run
+      { cwd, encoding: 'utf8', shell: true, timeout: 20000, maxBuffer: 20 * 1024 * 1024 }
     );
     const out = (r.stdout || '').trim();
     // distinguish "ran clean, empty output" from "binary missing/errored" — only the

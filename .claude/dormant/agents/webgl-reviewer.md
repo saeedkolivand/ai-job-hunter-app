@@ -42,7 +42,7 @@ self-red-team section is invalid.**
   NEVER a runtime `blendFunction` swap or a `define` change without `setChanged()` -- both recompile
   the pass and hitch.
 - **Budget regressions (HIGH/MEDIUM).** Draw calls and per-tier asset counts stay within the tier
-  budgets (see `.claude/skills/webgl-standards/SKILL.md`, Budgets + quality governor); instanced
+  budgets (see `.claude/dormant/skills/webgl-standards/SKILL.md`, Budgets + quality governor); instanced
   paths (e.g. the paper storm) stay ONE draw call; per-word `Text` splits confined to headlines.
 - **Semantic-layer parity (HIGH).** The prerendered semantic layer keeps its role as scroll-height
   authority (`visibility:hidden` + `inert`, never `display:none`); GL changes don't alter its

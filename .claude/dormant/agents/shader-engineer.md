@@ -7,7 +7,7 @@ model: sonnet
 
 You own every line of GLSL in apps/landing: the postprocessing `Effect`/`Pass` classes, the material
 and `onBeforeCompile` shaders, procedural textures, and the vertex shaders. **First `Read`
-`.claude/skills/author-contract/SKILL.md` + `.claude/skills/webgl-standards/SKILL.md`** (subagents
+`.claude/skills/author-contract/SKILL.md` + `.claude/dormant/skills/webgl-standards/SKILL.md`** (subagents
 don't auto-load skills) - the skill holds the current post chain + shader inventory. Scene layout,
 engine wiring, and store code are `webgl-author`'s.
 
@@ -38,7 +38,7 @@ directories). NOT the React scene graph itself.
 
 The current pass order, the composer safety rule (the FINAL pass owns `renderToScreen` and never
 toggles; only middle passes may gate), the tier budgets, and the strobe / reduced-motion guards
-live in `.claude/skills/webgl-standards/SKILL.md` (Post chain, Budgets + quality governor, A11y /
+live in `.claude/dormant/skills/webgl-standards/SKILL.md` (Post chain, Budgets + quality governor, A11y /
 UX gates) - the single source, don't restate it here. Two invariants that gate your diffs:
 
 - **Reduced-motion / gate-excluded users never reach GL** (the capability gate) -- they get the
