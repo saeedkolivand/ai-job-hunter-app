@@ -60,6 +60,7 @@ async fn live_search_returns_results() {
         location: None,
         amount: 10,
         pages: 1,
+        provider_amount: None,
         date_filter: None,
         job_type: None,
         work_type: None,

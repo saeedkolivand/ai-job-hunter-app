@@ -30,17 +30,21 @@
 /// through `scraping::http::fetch_json` (which checks `ctx.signal` and calls
 /// the per-host `rate_limiter`).
 ///
-/// The `JobProvider` impls (Adzuna/JSearch/Jooble/Apify) live in `providers.rs`
-/// (split out to stay under the R8 module-size cap); this file holds the shared
-/// `JobProvider` trait, the fallback orchestration (`primary_chain` /
-/// `search_with_providers`), the credential-state helpers, and the `Scraper` impl.
+/// The `JobProvider` impls live next door, split out to stay under the R8
+/// module-size cap: the PRIMARY tier (Adzuna — market allowlist, page loop,
+/// broaden retry) in `adzuna.rs`, the remaining tiers (JSearch/Jooble/Apify) in
+/// `providers.rs`. This file holds the shared `JobProvider` trait, the fallback
+/// orchestration (`primary_chain` / `search_with_providers`), the
+/// credential-state helpers, and the `Scraper` impl.
 use async_trait::async_trait;
 
 use crate::scraping::types::{
     AuthRequirement, BoardSearchInput, JobPosting, ScrapeContext, Scraper, ScraperMode,
 };
 
+mod adzuna;
 mod providers;
+use adzuna::*;
 use providers::*;
 
 /// Below this many results from a supported market, a non-empty `where` retries
@@ -50,6 +54,76 @@ use providers::*;
 /// below — shared between both, hence it stays at this level rather than moving
 /// into `providers.rs` with the provider implementations.
 const ADZUNA_BROADEN_FLOOR: usize = 3;
+
+// ── Search budgets ────────────────────────────────────────────────────────────
+
+/// The two INDEPENDENT budgets one aggregator search carries. They are separate
+/// fields (not one number) because conflating them is a live cost bug: `amount`
+/// is a sentinel ceiling for callers with no item-count intent, so spending
+/// upstream calls against it silently multiplies every scheduled run's bill.
+///
+/// Passed as one struct rather than two parameters so the provider-orchestration
+/// fns stay within the crate's 8-argument clippy ceiling (`clippy.toml`).
+#[derive(Clone, Copy)]
+pub(crate) struct SearchBudget {
+    /// OUTPUT cap — how many postings the caller will keep, and NOTHING else.
+    /// It buys no upstream call on any tier (paid ones included): it is a
+    /// "don't cap me" sentinel on the scheduled path, so spending against it is
+    /// precisely the cost bug this type exists to prevent.
+    amount: usize,
+    /// UPSTREAM SPEND target — see `BoardSearchInput::provider_amount`. The ONLY
+    /// field that buys upstream calls. `None` (the default, and every scheduled
+    /// run) keeps each metered provider at its cheapest single-request form and
+    /// skips the paid LinkedIn tier entirely (see [`apify_cap`]).
+    provider_amount: Option<u32>,
+}
+
+impl SearchBudget {
+    /// The ONLY production translation from a request to a spend budget, and the
+    /// single line where the cost bug this type exists to prevent could reappear.
+    /// Deliberately not inlined at the call site: hand-built `SearchBudget`s in
+    /// tests cannot observe this hop, so a guard that constructs one directly
+    /// would keep passing even if this mapping were rewritten to spend `amount`.
+    /// `budget_from_autopilot_shaped_input_has_no_provider_spend` pins it.
+    ///
+    /// `amount` becomes the output cap verbatim; the upstream budget is passed
+    /// through UNCHANGED (`None` stays `None`) — it is never derived from
+    /// `amount` or `pages`, both of which are sentinels on one caller or the
+    /// other (see `BoardSearchInput`).
+    fn from_input(input: &BoardSearchInput) -> Self {
+        Self {
+            amount: input.amount as usize,
+            provider_amount: input.provider_amount,
+        }
+    }
+
+    /// Test-only constructor. Production goes through [`Self::from_input`], so
+    /// this cannot be the thing a mutation of the real mapping slips past.
+    #[cfg(test)]
+    pub(crate) fn new(amount: usize, provider_amount: Option<u32>) -> Self {
+        Self {
+            amount,
+            provider_amount,
+        }
+    }
+
+    /// Output cap only, no upstream spend target — the quota-neutral shape a
+    /// scheduled run uses, and the default for tests that only exercise the
+    /// fallback chain with fake providers.
+    #[cfg(test)]
+    pub(crate) fn items_only(amount: usize) -> Self {
+        Self::new(amount, None)
+    }
+
+    /// MANUAL-search shape: one user-typed count that is both the output cap and
+    /// the upstream spend target (exactly what `commands::scrape` builds). The
+    /// shape any PAID-tier test needs — with `items_only` the aggregator buys
+    /// nothing upstream, so an Apify assertion would pass vacuously.
+    #[cfg(test)]
+    pub(crate) fn manual(amount: usize) -> Self {
+        Self::new(amount, Some(amount as u32))
+    }
+}
 
 // ── Provider trait ────────────────────────────────────────────────────────────
 
@@ -62,9 +136,14 @@ pub(crate) trait JobProvider: Send + Sync {
     fn is_configured(&self) -> bool;
     /// Run a search.  Non-2xx or network errors are returned as `Err`.
     ///
-    /// `amount` is a provider-specific result cap that callers may pass to
-    /// cost-bounded providers (currently Apify only).  Providers that have no
-    /// concept of a cap ignore it (`_amount`).
+    /// `amount` is the caller's UPSTREAM SPEND target (`SearchBudget::provider_amount`
+    /// — NOT `BoardSearchInput::amount`, which is a sentinel-prone output cap).
+    /// Providers that can bound their own spend by it use it: Adzuna pages by it
+    /// (`adzuna_page_budget`), JSearch maps it to `num_pages`
+    /// (`jsearch_num_pages`), and Apify uses it as a hard `maxItems` cap.
+    /// Providers with no such knob ignore it (`_amount`). `None` means "no
+    /// target" and every provider degrades to its cheapest single-request form —
+    /// the default, and what every scheduled (autopilot) run passes.
     ///
     /// `country_guessed` is true when the caller supplied no explicit
     /// `country_code` (see `AggregatorScraper::search`). Providers that don't
@@ -131,6 +210,7 @@ async fn primary_chain(
     country: &str,
     country_guessed: bool,
     date_filter: Option<&str>,
+    amount: Option<u32>,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     if signal.is_cancelled() {
@@ -174,7 +254,7 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
-                    None,
+                    amount,
                     signal.clone(),
                 )
                 .await
@@ -182,7 +262,15 @@ async fn primary_chain(
                 Ok(items)
                     if items.len() < ADZUNA_BROADEN_FLOOR
                         && country_guessed
-                        && !location.is_empty() =>
+                        && !location.is_empty()
+                        // A user's Stop mid-search also comes back short (the
+                        // page loop returns what it had collected — see
+                        // `fetch_adzuna_pages`). That is a deliberate stop, not
+                        // a market the guess got wrong, so it must not log a
+                        // "too few results, attempting jsearch fallback"
+                        // diagnostic about a fallback the cancel guard below
+                        // will never let run.
+                        && !signal.is_cancelled() =>
                 {
                     // Guessed-market guard (see doc comment above): a SPARSE result —
                     // fewer than the broaden floor — from a GUESSED country with a real
@@ -244,7 +332,7 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
-                    None,
+                    amount,
                     signal.clone(),
                 )
                 .await
@@ -277,6 +365,10 @@ async fn primary_chain(
                     country,
                     country_guessed,
                     date_filter,
+                    // Deliberately NOT `amount`: Jooble's knob is `ResultOnPage`
+                    // (page SIZE, not a page count) and its rate limit is
+                    // undocumented, so raising it is a separate decision from the
+                    // amount-bounded page loop. Unchanged from before that loop.
                     None,
                     signal,
                 )
@@ -419,14 +511,44 @@ fn dedupe_by_url(items: Vec<JobPosting>) -> Vec<JobPosting> {
         .collect()
 }
 
+/// How many items the paid LinkedIn (Apify) tier may be asked for — `0` meaning
+/// "do not call it at all". The single place the paid tier's spend is decided,
+/// pulled out of [`search_with_providers`] so the cost contract is assertable
+/// without a network call.
+///
+/// It rides `provider_amount`, NEVER `amount`:
+/// * `provider_amount: None` → `0`. Apify bills per dataset result, so it is an
+///   UPSTREAM SPEND, and `amount` is a "don't cap me" sentinel on the scheduled
+///   path (`amount: 100`, no item-count intent). Gating a paid run on that
+///   sentinel meant every scheduled run bought a full 50-item actor run forever —
+///   the exact class of bug `SearchBudget` exists to prevent.
+/// * `Some(spend)` → the still-UNMET part of that budget (`spend - primary_len`),
+///   clamped to [`APIFY_MAX_ITEMS`]. A primary result that already meets the
+///   budget yields `0`, so LinkedIn stays a fill for unmet capacity.
+///
+/// BEHAVIOR CHANGE (deliberate, PR #896 review): an Apify-enabled user's
+/// SCHEDULED runs no longer buy LinkedIn results — only manual searches, which
+/// are the ones carrying a real, user-typed spend target. The opt-in toggle
+/// still gates whether Apify may run at all (`is_configured`); this decides
+/// whether the current search has money to spend on it.
+fn apify_cap(budget: SearchBudget, primary_len: usize) -> u32 {
+    let Some(spend) = budget.provider_amount else {
+        return 0;
+    };
+    (spend as usize)
+        .saturating_sub(primary_len)
+        .min(APIFY_MAX_ITEMS as usize) as u32
+}
+
 /// Top-level provider orchestration.
 ///
 /// 1. **Primary result** — the Adzuna → JSearch → Jooble fallback chain
 ///    ([`primary_chain`]), with its existing semantics fully preserved.
 /// 2. **Additive LinkedIn (Apify)** — runs IN ADDITION to (never as a fallback of)
 ///    the primary result, and ONLY when `apify_linkedin` is configured (the toggle
-///    is ON and a token is present). Its results are merged onto the primary,
-///    deterministically (primary first) and deduped by URL.
+///    is ON and a token is present) AND the search carries upstream spend to give
+///    it ([`apify_cap`] > 0 — i.e. never on a scheduled run). Its results are
+///    merged onto the primary, deterministically (primary first) and deduped by URL.
 ///
 /// When the LinkedIn provider is absent or not configured — the default, and what
 /// the Adzuna/JSearch tests exercise — this returns the primary result byte-for-byte,
@@ -438,7 +560,7 @@ async fn search_with_providers(
     country: &str,
     country_guessed: bool,
     date_filter: Option<&str>,
-    amount: usize,
+    budget: SearchBudget,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
     let primary = primary_chain(
@@ -448,6 +570,8 @@ async fn search_with_providers(
         country,
         country_guessed,
         date_filter,
+        // The UPSTREAM budget, never `amount` — see `SearchBudget`.
+        budget.provider_amount,
         signal.clone(),
     )
     .await;
@@ -462,21 +586,15 @@ async fn search_with_providers(
         return primary;
     }
 
-    // Cost gate: skip the paid Apify call when the primary result already
-    // satisfies the requested amount — LinkedIn is a fill for UNMET capacity,
-    // not unconditional.
-    if let Ok(ref items) = primary {
-        if items.len() >= amount {
-            return primary;
-        }
+    // Cost gate — see [`apify_cap`]. `0` means "don't buy a run at all", which
+    // covers BOTH the no-upstream-budget case (every scheduled run) and a primary
+    // result that already satisfies the budget.
+    let cap = apify_cap(budget, primary.as_ref().map(|v| v.len()).unwrap_or(0));
+    if cap == 0 {
+        return primary;
     }
 
     // Don't fire a paid Apify run after cancellation.
-    // Cap: only fetch as many results as still needed; never exceed APIFY_MAX_ITEMS.
-    let primary_len = primary.as_ref().map(|v| v.len()).unwrap_or(0);
-    let remaining = amount.saturating_sub(primary_len);
-    let apify_cap = remaining.min(APIFY_MAX_ITEMS as usize) as u32;
-
     let li_items = if signal.is_cancelled() {
         Vec::new()
     } else {
@@ -488,7 +606,7 @@ async fn search_with_providers(
                 country,
                 country_guessed,
                 date_filter,
-                Some(apify_cap),
+                Some(cap),
                 signal,
             )
             .await
@@ -657,7 +775,14 @@ impl Scraper for AggregatorScraper {
             // is present (gated in `ApifyLinkedInProvider::is_configured`).
             Box::new(ApifyLinkedInProvider::new()),
         ];
-        let amount = input.amount as usize;
+        // `amount` caps the OUTPUT; `provider_amount` is the only thing that buys
+        // upstream calls — the free tiers' page budgets AND the paid Apify tier
+        // (`apify_cap`) both read it, and only it. A scheduled run leaves it
+        // `None`, so the run costs exactly one Adzuna request and zero paid
+        // Apify runs, regardless of the 100 it passes as `amount`.
+        // The mapping lives in `from_input` so it is directly testable.
+        let budget = SearchBudget::from_input(&input);
+        let amount = budget.amount;
         let items = search_with_providers(
             &providers,
             query,
@@ -665,7 +790,7 @@ impl Scraper for AggregatorScraper {
             &country,
             country_guessed,
             input.date_filter.as_deref(),
-            amount,
+            budget,
             ctx.signal.clone(),
         )
         .await?;

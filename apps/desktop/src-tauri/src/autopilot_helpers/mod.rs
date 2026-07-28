@@ -30,8 +30,16 @@ pub async fn autopilot_scrape(
         location: target.location.clone(),
         // Autopilot expresses its target in pages, so let the page budget bind and
         // set the central item cap to the maximum (never caps autopilot to 0).
+        //
+        // This 100 is a "don't cap me" SENTINEL, not a request for 100 postings —
+        // which is exactly why `provider_amount` below stays `None`. A scheduled
+        // run repeats on a timer against a DAILY upstream quota, so reading spend
+        // intent out of this sentinel would multiply an hourly autopilot's Adzuna
+        // calls (24 → 48/day) and triple every JSearch fallback's bill, for a
+        // target the user never expressed.
         amount: 100,
         pages: target.pages,
+        provider_amount: None,
         date_filter: target.date_filter.clone(),
         job_type: None,
         work_type: None,
