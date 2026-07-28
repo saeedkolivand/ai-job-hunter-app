@@ -85,11 +85,11 @@ regression — nothing below blocks a release.
 ## 9. [BLOCKING NEXT EDIT] Split `extension_bridge/mod.rs` — at the R8 LOC cap
 
 `apps/desktop/src-tauri/src/extension_bridge/mod.rs` is 1398 lines against the 1400-line
-hard cap in `apps/desktop/src-tauri/tests/architecture.rs` (rule R8). PR #895 already had
-to lift `msg.rs` and `revoke.rs` out to fit. **Any** next edit to that module fails
-`cargo test --test architecture`, so do the split first: extract a cohesive block verbatim
-into a sibling file under the same module and re-export the public names — never trim the
-feature to fit the counter.
+hard cap in `apps/desktop/src-tauri/tests/architecture.rs` (rule R8) — two lines of
+headroom. PR #895 already had to lift `msg.rs` and `revoke.rs` out to fit. Any edit that
+adds more than a line or two fails `cargo test --test architecture`, so do the split
+first: extract a cohesive block verbatim into a sibling file under the same module and
+re-export the public names — never trim the feature to fit the counter.
 
 ## 10. Design-system primitives — light-scheme contrast sweep
 

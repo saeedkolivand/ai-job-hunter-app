@@ -38,8 +38,8 @@ ask about, trading a **public identifier** for optional presentation data (the c
 case: a company name → Clearbit logo). Must be **opt-in, default OFF, CSP-scoped** to the
 minimum hosts, and send no personal data. Distinct from **core egress** (AI provider,
 scraping) which is required for the feature to function.
-_Avoid_: tracking, telemetry (enrichment is user-triggered and sends no behavioral data);
-also avoid calling a **user-initiated lookup** enrichment — see below
+_Avoid_: tracking, telemetry (enrichment sends no behavioral data); also avoid calling a
+**user-initiated lookup** enrichment — see below
 
 **User-initiated lookup**:
 A call the user directly invoked by typing into a field and waiting for its result —
