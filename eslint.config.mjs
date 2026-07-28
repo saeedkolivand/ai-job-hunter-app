@@ -67,7 +67,6 @@ const DEEP_UI_IMPORTS = [
   '@/components/ui/RowSkeleton',
   '@/components/ui/SectionHeader',
   '@/components/ui/SectionLabel',
-  '@/components/ui/SelectDropdown',
   '@/components/ui/SettingsSection',
   '@/components/ui/Skeleton',
   '@/components/ui/SourceBadge',
@@ -295,7 +294,7 @@ export default tseslint.config(
         },
         {
           selector: RAW_SELECT,
-          message: "Use <SelectDropdown> from '@ajh/ui' instead of raw <select>.",
+          message: "Use <Dropdown> from '@ajh/ui' instead of raw <select>.",
         },
         {
           selector: RAW_TEXTAREA,
