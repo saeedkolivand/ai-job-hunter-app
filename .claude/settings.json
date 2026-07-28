@@ -44,7 +44,7 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/review-gate.mjs\"",
-            "timeout": 130000
+            "timeout": 30000
           }
         ]
       }
