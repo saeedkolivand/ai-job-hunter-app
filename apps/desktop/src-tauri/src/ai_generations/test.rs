@@ -269,12 +269,24 @@ fn merge_email_draft_overwrites_on_regeneration_and_survives_other_saves() {
     let mut preamble_output = record("g4", "https://acme.com/job/1");
     preamble_output.email_subject = String::new();
     preamble_output.email_body = "Sure! Here is your email: Hello,".into();
-    let merged = merge_application(existing, preamble_output);
+    let merged = merge_application(existing.clone(), preamble_output);
     assert_eq!(
         merged.email_subject, "",
         "a stale subject must not be glued onto a newly generated body"
     );
     assert_eq!(merged.email_body, "Sure! Here is your email: Hello,");
+
+    // Mirror case: a subject with an empty body also owns the whole draft, so
+    // the stale body must not survive under a newly generated subject.
+    let mut subject_only = record("g5", "https://acme.com/job/1");
+    subject_only.email_subject = "NEW SUBJECT".into();
+    subject_only.email_body = String::new();
+    let merged = merge_application(existing, subject_only);
+    assert_eq!(merged.email_subject, "NEW SUBJECT");
+    assert_eq!(
+        merged.email_body, "",
+        "a stale body must not survive under a newly generated subject"
+    );
 }
 
 /// End-to-end through the store: an email save must land on the SAME aggregate

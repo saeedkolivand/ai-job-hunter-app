@@ -87,17 +87,14 @@ export interface AiGenerationUpdateRequest {
 }
 
 /**
- * Result of `save` — matches the Rust `{ id, success } | { error }` shape the
- * command actually returns. Every field is optional because the two arms are
- * disjoint: a failed save carries only `error`, so a caller that wants to know
- * whether the write landed must check it (the command reports failure in-band
- * rather than rejecting the promise).
+ * Result of `save` — the Rust command reports failure IN-BAND (it resolves with
+ * `{ error }` instead of rejecting), so a caller's `onError` never fires for a
+ * store failure. Modelled as a union of the two disjoint arms the command
+ * actually returns, which makes the compiler refuse a bare `result.id` until
+ * the failure arm has been narrowed out (`'error' in result`) — the check is
+ * otherwise trivially forgotten, which is exactly how it was missed here.
  */
-export interface AiGenerationSaveResult {
-  id?: string;
-  success?: boolean;
-  error?: string;
-}
+export type AiGenerationSaveResult = { id: string; success: true } | { error: string };
 
 export interface AiGenerationsContract {
   list(): Promise<AiGenerationRecord[]>;

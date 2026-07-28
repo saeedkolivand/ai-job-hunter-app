@@ -190,14 +190,15 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
    * upserts the parent Application with a Generate origin, which advances a
    * still-`saved` Application to `applied`. It never demotes a later stage.
    *
-   * Every field this surface does not itself compute is echoed from the saved
-   * record instead of from `meta`, and a blank makes the backend merge keep the
-   * stored value. `meta`'s own fallbacks (`en`/`en`, no mismatch, `ats`) are
-   * placeholders, not measurements — sending them would clobber real stored
-   * values whenever `saved` is undefined while a row exists (an orphaned FK, or
-   * the generations query simply not having loaded yet), and the language pair
-   * would additionally make the merge treat this as a language-bearing save and
-   * clear a genuine mismatch verdict.
+   * This surface owns ONLY the two email fields. Every other field is echoed
+   * from the saved record, and a blank makes the backend `pick` merge keep the
+   * stored value. Nothing is sourced from `meta` here: its fallbacks (the
+   * contact profile's name, the Application's title/company, `en`/`en`, no
+   * mismatch, `ats`) are placeholders rather than measurements, so sending them
+   * would clobber real stored values whenever `saved` is undefined while a row
+   * exists — a detach-then-re-track leaves exactly that orphaned FK. The
+   * language pair would additionally make the merge treat this as a
+   * language-bearing save and clear a genuine mismatch verdict.
    */
   const persistDraft = (next: { subject: string; body: string }) => {
     // A URL-less Application cannot be saved onto. `ai_generations_save` keys
@@ -213,14 +214,14 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     setSaveFailed(false);
     saveGeneration.mutate(
       {
-        candidateName: meta.candidateName,
-        jobTitle: meta.jobTitle,
-        companyName: meta.companyName,
+        candidateName: saved?.candidateName ?? '',
+        jobTitle: saved?.jobTitle ?? '',
+        companyName: saved?.companyName ?? '',
         resumeLanguage: saved?.resumeLanguage ?? '',
         jobAdLanguage: saved?.jobAdLanguage ?? '',
         targetLanguage: saved?.targetLanguage ?? '',
         mismatch: saved?.mismatch ?? false,
-        topRequirements: meta.topRequirements,
+        topRequirements: saved?.topRequirements ?? [],
         mode: saved?.mode ?? '',
         // Blank so the merge keeps whatever the tailor flow stored — this
         // surface owns only the email fields.
@@ -237,7 +238,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
         // rejecting, so onError never fires for a store failure — mirror
         // `persistEmail` below and inspect the payload, or the UI would show a
         // draft it silently failed to persist.
-        onSuccess: (data) => setSaveFailed(!!data.error),
+        onSuccess: (data) => setSaveFailed('error' in data),
         onError: () => setSaveFailed(true),
       }
     );
@@ -251,6 +252,7 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
     setStreamText('');
     setEmail(null);
     setGenError(null);
+    setSaveFailed(false);
     try {
       const full = await generateApplicationEmail({
         resume,
@@ -269,6 +271,12 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
       persistDraft(settled);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
+      // Drop the truncated stream. Leaving it non-empty pins `generatingThisMount`
+      // true for the rest of the mount, so the draft derivation never falls back
+      // to the saved record: the persisted email would stay masked behind a
+      // half-written fragment — with Copy and mailto acting on that fragment —
+      // until the tab was remounted.
+      setStreamText('');
       setGenError(t('applications.detail.email.genError'));
     } finally {
       setIsGenerating(false);
@@ -513,8 +521,11 @@ export function ApplyByEmailTab({ application, matchingGenerations }: Props) {
           </p>
         )}
 
+        {/* role="alert" (not "status"): this is a data-loss warning, and it
+            matches the genError/emailError siblings. The weaker "status" also
+            conflicted with the ancestor aria-live region's aria-atomic. */}
         {saveFailed && (
-          <p className="text-fine-print text-amber-400/80" role="status">
+          <p className="text-fine-print text-amber-400/80" role="alert">
             {t('applications.detail.email.saveFailed')}
           </p>
         )}

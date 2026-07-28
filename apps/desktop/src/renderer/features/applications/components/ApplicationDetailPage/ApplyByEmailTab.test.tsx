@@ -15,7 +15,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import type { AiGenerationRecord, Application } from '@ajh/shared';
+import type { AiGenerationRecord, AiGenerationSaveResult, Application } from '@ajh/shared';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ vi.mock('@/services', () => ({
 // Persistence — the save mutation onto the per-job aiGenerations aggregate.
 // Mirrors React Query's `mutate(vars, { onSuccess })` so a test can drive the
 // in-band `{ error }` payload the Rust command actually returns.
-type SaveResult = { id?: string; success?: boolean; error?: string };
+type SaveResult = AiGenerationSaveResult;
 type SaveCallbacks = { onSuccess?: (d: SaveResult) => void; onError?: () => void };
 const saveResultMock = vi.fn<() => SaveResult>();
 const saveGenerationMock = vi.fn((_req: unknown, cbs?: SaveCallbacks) => {
@@ -465,10 +465,38 @@ describe('ApplyByEmailTab — draft persistence', () => {
     expect(await screen.findByText('applications.detail.email.saveFailed')).toBeTruthy();
   });
 
+  it('warns that the draft is unsaved when the mutation itself rejects', async () => {
+    // The other failure mode: the IPC call throws rather than resolving with
+    // `{ error }`, so React Query takes the onError path instead of onSuccess.
+    saveGenerationMock.mockImplementationOnce((_req: unknown, cbs?: SaveCallbacks) => {
+      cbs?.onError?.();
+    });
+
+    await renderWithDraft();
+
+    expect(await screen.findByText('applications.detail.email.saveFailed')).toBeTruthy();
+  });
+
   it('shows no warning when the save succeeds', async () => {
     await renderWithDraft();
 
     expect(screen.queryByText('applications.detail.email.saveFailed')).toBeNull();
+  });
+
+  it('clears a previous save warning when a new generation starts', async () => {
+    saveResultMock.mockReturnValue({ error: 'disk full' });
+    await renderWithDraft();
+    expect(screen.getByText('applications.detail.email.saveFailed')).toBeTruthy();
+
+    // Second run succeeds — the stale warning must not linger.
+    saveResultMock.mockReturnValue({ id: 'gen-1', success: true });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.regenerate' }));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('applications.detail.email.saveFailed')).toBeNull();
+    });
   });
 
   it('echoes the saved language pair + mismatch verdict back, never clobbering it', async () => {
@@ -573,6 +601,40 @@ describe('ApplyByEmailTab — draft persistence', () => {
 
     expect(screen.getByText('applications.detail.email.empty')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'applications.detail.email.generate' })).toBeTruthy();
+  });
+
+  it('falls back to the saved draft when a generation fails mid-stream', async () => {
+    const savedBody = 'Saved body from a previous session.';
+    const saved = makeSavedGeneration({ emailSubject: 'Saved subject', emailBody: savedBody });
+    // Emit a partial draft, then blow up — the pre-fix bug left `streamText`
+    // non-empty forever, which pinned the derivation on the truncated fragment
+    // and masked the persisted draft until the tab was remounted.
+    generateEmailMock.mockImplementation(async (p) => {
+      p.onToken?.('Subject: Half-written\n\nThis got cut o');
+      throw new Error('stream died');
+    });
+
+    render(<ApplyByEmailTab application={makeApp()} matchingGenerations={[saved]} />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.regenerate' }));
+    });
+
+    expect(screen.getByText('applications.detail.email.genError')).toBeTruthy();
+    // The saved draft is back on screen; the truncated fragment is gone.
+    expect(screen.getByText(savedBody)).toBeTruthy();
+    expect(screen.getByText('Saved subject')).toBeTruthy();
+    expect(screen.queryByText('This got cut o')).toBeNull();
+    expect(screen.queryByText('Half-written')).toBeNull();
+
+    // ...and both copy buttons act on the saved draft, not the abandoned fragment.
+    fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.copySubject' }));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Saved subject');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'applications.detail.email.copy' }));
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(savedBody);
+    });
   });
 
   it('replaces the hydrated draft with the live stream while re-generating', async () => {
