@@ -224,13 +224,12 @@ temp/
 .impeccable/
 
 # NOTE: Project-level AI instruction files ARE committed (not ignored):
-#   CLAUDE.md                              → Claude Code
-#   .cursor/rules/                         → Cursor
-#   .windsurfrules                         → Windsurf
-#   .github/copilot-instructions.md        → GitHub Copilot
-#   .aider.conf.yml + .aider/system-prompt.md → Aider
-#   .continue/config.json                  → Continue.dev
-#   .jba/guidelines.md                     → JetBrains AI
+#   AGENTS.md  → CANONICAL rules; read natively by Copilot, Cursor, Windsurf, Codex et al.
+#   CLAUDE.md  → Claude Code: imports @AGENTS.md, adds Claude-only orchestration
+#   Thin pointers to AGENTS.md (kept only for tools that don't read it natively / in full):
+#     .clinerules → Cline · .github/copilot-instructions.md → GitHub Copilot
+#     .aider.conf.yml + .aider/system-prompt.md → Aider · .jba/guidelines.md → JetBrains AI
+#   Never fork rules into these — `pnpm check:agent-system` caps them at 1KB.
 
 # ── Misc ───────────────────────────────────────────────────────────────────────
 *.pid

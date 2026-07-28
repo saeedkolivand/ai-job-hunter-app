@@ -60,7 +60,12 @@ const PAIRS = [
   // ADR-0017) — not part of the active roster this check enforces.
 ];
 
-// Parallel AI-assistant rule files that must defer to CLAUDE.md as the single source.
+// The canonical rule files: AGENTS.md holds the portable rules every tool reads, CLAUDE.md
+// imports it (`@AGENTS.md`) and adds Claude-only orchestration. Scanned for stale tokens, but
+// exempt from the pointer checks below — they are the source, not deferrers to it.
+const CANONICAL_RULES = ['AGENTS.md', 'CLAUDE.md'];
+
+// Tool-specific rule files that must stay thin pointers to AGENTS.md, never forked copies.
 const AI_CONFIGS = [
   '.aider/system-prompt.md',
   '.github/copilot-instructions.md',
@@ -69,7 +74,6 @@ const AI_CONFIGS = [
   '.codexrules',
   '.roorules',
   '.jba/guidelines.md',
-  'AGENTS.md',
 ];
 // AI-adjacent files scanned for stale tokens only (no CLAUDE.md-pointer requirement).
 const TOKEN_SCAN_EXTRA = ['.aider.conf.yml', '.coderabbit.yaml', 'CONTRIBUTING.md'];
@@ -127,6 +131,7 @@ function checkStaleTokens() {
     ...walk('docs', md, ['graphify-out']),
     ...walk('.aider', md),
     ...walk('.cursor', (n) => n.endsWith('.mdc')),
+    ...CANONICAL_RULES.filter(exists),
     ...AI_CONFIGS.filter(exists),
     ...TOKEN_SCAN_EXTRA.filter(exists),
   ];
@@ -222,16 +227,30 @@ function checkExplainer() {
   }
 }
 
-// ── Check 7: AI configs → CLAUDE.md ──────────────────────────────────────────
+// ── Check 7: AI configs → AGENTS.md ──────────────────────────────────────────
+// AGENTS.md is canonical (every tool reads it, natively or via a pointer); CLAUDE.md
+// imports it with `@AGENTS.md` and adds Claude-only orchestration. A tool file that
+// restates rules instead of deferring is how the nine-copy drift started — so each one
+// must name the canonical file, and stay short enough that it can't hide a forked ruleset.
+const POINTER_MAX_BYTES = 1024;
+
 function checkAiConfigs() {
   const configs = [...AI_CONFIGS, '.aider.conf.yml', ...walk('.cursor', (n) => n.endsWith('.mdc'))];
   for (const file of configs) {
     if (!exists(file)) continue;
-    if (!/CLAUDE\.md/.test(read(file))) {
+    const text = read(file);
+    if (!/AGENTS\.md/.test(text)) {
       fail(
-        'AI config ∌ CLAUDE.md',
+        'AI config ∌ AGENTS.md',
         file,
-        'should defer to CLAUDE.md as the single source of truth'
+        'should defer to AGENTS.md as the single source of truth'
+      );
+    }
+    if (Buffer.byteLength(text, 'utf8') > POINTER_MAX_BYTES) {
+      fail(
+        'AI config too long',
+        file,
+        `${Buffer.byteLength(text, 'utf8')}B > ${POINTER_MAX_BYTES}B — a pointer, not a copy of the rules; edit AGENTS.md instead`
       );
     }
   }
