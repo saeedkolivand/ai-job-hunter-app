@@ -87,10 +87,52 @@ fn estimate_cost_claude_5_and_4_prefixes_do_not_shadow_each_other() {
     assert!((opus5 - 5.00).abs() < 1e-9, "got {opus5}");
     assert!((opus4 - 15.00).abs() < 1e-9, "got {opus4}");
 
-    let sonnet5 = estimate_cost("claude-sonnet-5", 1_000_000, 0);
-    let sonnet4 = estimate_cost("claude-sonnet-4-5", 1_000_000, 0);
-    assert!((sonnet5 - 3.00).abs() < 1e-9, "got {sonnet5}");
-    assert!((sonnet4 - 3.00).abs() < 1e-9, "got {sonnet4}");
+    // "claude-sonnet-5" and "claude-sonnet-4-5" (Sonnet 4.5) happen to share
+    // the same $3/$15 price — and DEFAULT_RATE is *also* $3/$15 — so a
+    // price-only assertion here would pass even if sonnet-5 fell straight
+    // through to DEFAULT_RATE without matching any row at all. Assert the
+    // matched PREFIX instead.
+    assert_eq!(
+        rate_for("claude-sonnet-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-5"),
+        "claude-sonnet-5 must hit its own row, not fall through to DEFAULT_RATE"
+    );
+    assert_eq!(
+        rate_for("claude-sonnet-4-5").map(|(p, _, _)| *p),
+        Some("claude-sonnet-4")
+    );
+}
+
+#[test]
+fn rate_for_gives_opus_4_5_its_own_row_instead_of_the_shorter_opus_4_prefix() {
+    // Before the "claude-opus-4-5" row existed, an Opus 4.5 model id matched
+    // the shorter "claude-opus-4" prefix and was billed at its $15/$75 rate —
+    // a 3x overestimate of Opus 4.5's actual $5/$25 pricing.
+    assert_eq!(
+        rate_for("claude-opus-4-5-20260101").map(|(p, _, _)| *p),
+        Some("claude-opus-4-5")
+    );
+    let cost = estimate_cost("claude-opus-4-5-20260101", 1_000_000, 1_000_000);
+    assert!((cost - (5.00 + 25.00)).abs() < 1e-9, "got {cost}");
+    // Plain Opus 4 (no "-5") must still hit the original, more expensive row.
+    assert_eq!(
+        rate_for("claude-opus-4-20250514").map(|(p, _, _)| *p),
+        Some("claude-opus-4")
+    );
+}
+
+#[test]
+fn estimate_cost_strips_a_vendor_prefix_before_matching() {
+    // An id seen through an OpenRouter-style gateway (`anthropic/claude-fable-5`)
+    // must hit the bare model's row, not silently fall through to DEFAULT_RATE.
+    assert_eq!(
+        rate_for("anthropic/claude-fable-5").map(|(p, _, _)| *p),
+        Some("claude-fable-5")
+    );
+    let prefixed = estimate_cost("anthropic/claude-fable-5", 1_000_000, 1_000_000);
+    let bare = estimate_cost("claude-fable-5", 1_000_000, 1_000_000);
+    assert!((prefixed - bare).abs() < 1e-9);
+    assert!((prefixed - (10.00 + 50.00)).abs() < 1e-9, "got {prefixed}");
 }
 
 #[test]

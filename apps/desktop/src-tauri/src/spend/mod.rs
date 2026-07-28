@@ -391,6 +391,7 @@ const RATES: &[(&str, f64, f64)] = &[
     ("claude-haiku-4", 1.00, 5.00),
     ("claude-fable-5", 10.00, 50.00),
     ("claude-opus-5", 5.00, 25.00),
+    ("claude-opus-4-5", 5.00, 25.00),
     ("claude-opus-4", 15.00, 75.00),
     ("claude-3-opus", 15.00, 75.00),
     ("claude-sonnet-5", 3.00, 15.00),
@@ -420,18 +421,33 @@ const RATES: &[(&str, f64, f64)] = &[
 /// code change to show *some* estimate; the table can be tightened later.
 const DEFAULT_RATE: (f64, f64) = (3.00, 15.00);
 
+/// The [`RATES`] row matched for `model` (case-insensitive prefix match), or
+/// `None` if it falls through to [`DEFAULT_RATE`]. Exposes the matched
+/// **prefix**, not just the resulting price — several rows share a price
+/// (e.g. `claude-sonnet-5`'s rate equals `DEFAULT_RATE`), so a price-only
+/// assertion can pass even when the wrong row (or no row) matched; tests use
+/// this to pin the actual match. Shared by [`estimate_cost`] so the
+/// normalization (strip a leading `models/`, then a vendor prefix) lives in
+/// one place.
+fn rate_for(model: &str) -> Option<&'static (&'static str, f64, f64)> {
+    // Gemini ids can arrive prefixed (`models/gemini-2.5-flash`); strip it
+    // before matching so it isn't silently mismatched to DEFAULT_RATE.
+    let lower = model.to_ascii_lowercase();
+    let m = lower.strip_prefix("models/").unwrap_or(&lower);
+    // Vendor-prefixed ids (`anthropic/claude-fable-5`, as seen through an
+    // OpenRouter-style gateway) must match on the bare model name — keep only
+    // the segment after the last `/`, so the row lookup below isn't silently
+    // mismatched to DEFAULT_RATE.
+    let m = m.rsplit('/').next().unwrap_or(m);
+    RATES.iter().find(|(prefix, _, _)| m.starts_with(prefix))
+}
+
 /// Estimated USD cost for one call, from the static [`RATES`] table (or
 /// [`DEFAULT_RATE`] for an unrecognized model). Pure — callers gate local/
 /// CLI-agent providers to $0 via [`is_free_provider`] before calling this, so
 /// this function never needs to know about providers at all.
 pub fn estimate_cost(model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
-    // Gemini ids can arrive prefixed (`models/gemini-2.5-flash`); strip it
-    // before matching so it isn't silently mismatched to DEFAULT_RATE.
-    let lower = model.to_ascii_lowercase();
-    let m = lower.strip_prefix("models/").unwrap_or(&lower);
-    let (in_rate, out_rate) = RATES
-        .iter()
-        .find(|(prefix, _, _)| m.starts_with(prefix))
+    let (in_rate, out_rate) = rate_for(model)
         .map(|(_, i, o)| (*i, *o))
         .unwrap_or(DEFAULT_RATE);
     (f64::from(input_tokens) / 1_000_000.0) * in_rate
