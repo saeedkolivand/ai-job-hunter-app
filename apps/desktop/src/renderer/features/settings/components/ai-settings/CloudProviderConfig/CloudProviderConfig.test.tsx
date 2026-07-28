@@ -157,6 +157,18 @@ describe('CloudProviderConfig — eye-toggle a11y in change-mode', () => {
   });
 });
 
+describe('CloudProviderConfig — model dropdown keeps an unlisted stored selection', () => {
+  it('shows a stored model that fell out of the curated list, not the placeholder', () => {
+    // Regression guard (PR #901 review): a user with a stored model no longer
+    // in the curated/live list must not see "Select a model…" as if their
+    // config was reset — Dropdown's trigger renders selectedOption?.label,
+    // found via options.find(o => o.value === value).
+    render(<CloudProviderConfig {...baseProps} providerModel="claude-sonnet-4-6" />);
+    expect(screen.getByRole('button', { name: /claude-sonnet-4-6/ })).toBeInTheDocument();
+    expect(screen.queryByText('Select a model…')).not.toBeInTheDocument();
+  });
+});
+
 describe('CloudProviderConfig — base URL save surfaces a rejected write', () => {
   it('shows an error notification (i18n key, not raw error) when the save rejects', async () => {
     const user = userEvent.setup();

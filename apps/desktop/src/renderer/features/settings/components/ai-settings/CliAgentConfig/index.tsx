@@ -52,6 +52,15 @@ export function CliAgentConfig({
       ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
       : meta.models.map((m) => ({ value: m, label: m }));
 
+  // Keep a stored selection that fell out of the curated/live list selectable
+  // — otherwise the trigger falls back to the placeholder and reads as a
+  // reset config, when it's really just an unlisted model id (self-heals
+  // once the live list includes it again).
+  const options =
+    providerModel && !modelOptions.some((o) => o.value === providerModel)
+      ? [...modelOptions, { value: providerModel, label: providerModel }]
+      : modelOptions;
+
   return (
     <>
       {!connected && (
@@ -70,7 +79,7 @@ export function CliAgentConfig({
               {t('settings.aiModel.title')}
             </div>
             <Dropdown
-              options={modelOptions}
+              options={options}
               value={providerModel}
               onChange={onSelect}
               placeholder="Select a model…"
