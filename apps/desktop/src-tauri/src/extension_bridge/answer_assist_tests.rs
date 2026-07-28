@@ -258,6 +258,7 @@ fn app_with_salary(min: Option<f64>, max: Option<f64>, currency: Option<&str>) -
         job_description: String::new(),
         notes: String::new(),
         next_action_at: None,
+        next_action_notified_at: None,
         comp: String::new(),
         contact_name: String::new(),
         contact_email: String::new(),

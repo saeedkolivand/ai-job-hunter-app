@@ -311,7 +311,7 @@ beforeEach(() => {
       creating: false,
       focusedId: null,
     },
-    applications: { collapsedSections: [], filter: '' },
+    applications: { collapsedSections: [], filter: '', stageGroup: null, sort: 'updated' },
   }));
 });
 

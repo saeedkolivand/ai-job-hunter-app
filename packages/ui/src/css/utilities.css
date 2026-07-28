@@ -876,11 +876,22 @@ html[data-text-scale='large'] {
 [data-color-scheme='light'] .text-blue-400 {
   color: rgb(37 99 235); /* blue-600 */
 }
+/* Amber/red are stepped one FURTHER than the -600/-700 the comment above
+   describes. Those clear AA for body copy on pure white, but these two tones are
+   used almost exclusively as small semibold captions (status Tags, the overdue
+   counter, inline alerts), which sit on the tinted Tag fill rather than the raw
+   card — measured 4.02–4.36:1 there, i.e. under the floor. */
 [data-color-scheme='light'] .text-amber-400 {
-  color: rgb(180 83 9); /* amber-700 — AA 4.52:1 on white */
+  color: var(--color-status-warning-text);
 }
 [data-color-scheme='light'] .text-red-400 {
-  color: rgb(220 38 38); /* red-600 */
+  color: var(--color-status-error-text);
+}
+/* `brand-soft` is the DARK-canvas lift of the accent; on white it is the washed
+   step (3.73:1 on the note chip). Collapse it to the already-deepened light
+   brand so accent captions clear AA. */
+[data-color-scheme='light'] .text-brand-soft {
+  color: var(--color-status-accent-text);
 }
 
 /* Dark ambient FX: keep the aurora as the signature flourish but DIM it on the
