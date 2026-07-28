@@ -121,6 +121,51 @@ Location input policy is now visible via per-board summary notes. When a search 
 - **Wizard visibility:** Autopilot wizard shows inline "Country: <Name>" when `countryCode` is set, cleared on manual location edit (user may re-pick via the location-input autocompleter).
 - **Source:** `scraping/types/mod.rs` (`on_note` side-channel + `report_note()`), `scraping/engine/mod.rs` (`BoardScrapeSummary.note` wiring), `boards/aggregator/mod.rs` (inject), `boards/aggregator/providers.rs` (Adzuna emit sites + `guessed_market_note` helper).
 
+## Aggregator page loop & spend budget (PR #896, 2026-07-28)
+
+Adzuna and JSearch used to issue exactly one request per search however many jobs were asked
+for, so any amount above one page silently under-filled. Both now page — but the paging is
+driven by a **budget**, not by `BoardSearchInput::pages` (a sentinel on the manual path) and
+not by `amount` (a sentinel on the scheduled path). Owner: `SearchBudget` in
+`apps/desktop/src-tauri/src/scraping/boards/aggregator/mod.rs`.
+
+- **Two independent fields, one struct.** `amount` is the OUTPUT cap (how many postings the
+  caller keeps — it buys nothing upstream); `provider_amount: Option<u32>` is the UPSTREAM
+  SPEND target and the only field that buys calls. Conflating them is the cost bug the type
+  exists to prevent. Page/limit arithmetic lives in the provider helpers
+  (`adzuna_page_budget`, `jsearch_num_pages`, `APIFY_MAX_ITEMS`) — read the constants there.
+- **One production constructor.** `SearchBudget::from_input(&BoardSearchInput)` is the only
+  non-test way to build one; `new`/`items_only`/`manual` are `#[cfg(test)]`. The mapping is
+  deliberately a separate hop so a hand-built budget in a test cannot observe (and therefore
+  cannot silently keep passing over) a rewrite of the real translation.
+- **Fails closed.** `provider_amount` passes through unchanged — `None` stays `None`, and
+  `None` means no provider spend: every metered provider degrades to its cheapest
+  single-request form. It is `None` by default and on every scheduled/autopilot run
+  (`autopilot_helpers`); only the manual search path sets it (`commands/scrape.rs`, from the
+  user-typed count).
+- **Paid Apify tier gates AND sizes off `provider_amount`.** `apify_cap()` returns `0` for
+  `None` — and `0` means the run is never requested at all. With `Some(spend)` it asks only
+  for the still-unmet part of the budget, clamped to the Apify item ceiling, so LinkedIn
+  stays a fill for unmet capacity rather than a flat purchase.
+- **`retries: 0` on every metered fetch.** Adzuna (daily call quota) and JSearch (billed per
+  request × pages) build their `FetchOptions` with retries disabled, following the
+  `apify_fetch_options` precedent: `net::http` re-sends on 429/503, and a 429 from a metered
+  API _is_ the over-quota signal, so retrying answers "you are out of quota" by spending more
+  of it. All three invariants are pinned by tests in `boards/aggregator/test.rs` that assert
+  through the same helper functions production calls.
+
+- **`pages` is inert for the aggregator**, so the autopilot wizard disables the "Pages to
+  scrape" field (with an explanatory hint, en + de) when the aggregator is the ONLY selected
+  board; a mixed selection keeps it live. Owner: `pagesInert` in
+  `apps/desktop/src/renderer/features/autopilot/components/wizard-steps/StepTarget/index.tsx`.
+
+**Deliberate behavior change (recorded, not a regression).** An Apify-enabled user's
+**scheduled/autopilot runs no longer buy LinkedIn results** — only manual searches, which are
+the ones carrying a real user-typed spend target. The opt-in toggle still decides whether
+Apify may run at all (`is_configured`); the budget decides whether this search has money to
+spend on it. **There is no UI signal for this** — a user who enabled Apify has no way to see
+that their scheduled runs skip it. Tracked as a follow-up in `docs/NEXT_ISSUES.md`.
+
 ## Geocoding — offline first (PR #893, 2026-07-27)
 
 Where a `LocationSpec` pick comes from. Owner: `apps/desktop/src-tauri/src/commands/geocoding.rs` + `commands/geocoding/geonames.rs`.
