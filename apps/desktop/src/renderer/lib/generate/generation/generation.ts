@@ -50,7 +50,7 @@ import {
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { GitHubRepo } from '@ajh/shared';
-import { detectLanguages, getLanguageName } from '@ajh/shared/language-detection';
+import { detectLanguages, getLanguageName, toLanguageCode } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
 
@@ -648,13 +648,23 @@ export async function generateInterviewQuestions(params: {
   // The prompt wants a human language NAME, streamGenerate wants a locale code.
   // An allowlisted picker code resolves to its English name; anything else (a
   // detected language the picker doesn't offer, e.g. 'nl') goes through
-  // `getLanguageName` — 28 codes, degrading to the code itself — rather than
-  // being collapsed to English or interpolated as a bare ISO code.
+  // `getLanguageName` — 28 codes, degrading to the code itself.
+  //
+  // The ISO-639-1 SHAPE CHECK is defence-in-depth, not cosmetics: `language` can
+  // originate from a scraped ad (ad → extractMetadata → meta.targetLanguage →
+  // here), `getLanguageName` returns an unrecognised string verbatim, and the
+  // result lands in the prompt as an instruction OUTSIDE the untrusted-input
+  // fence. Anything that isn't code-shaped is dropped rather than echoed, which
+  // leaves the `meta`-derived note to run instead. Mirrors the same guard
+  // documented on `generateJobAdSummary` above. `nl`/`pl`/`pt-br` still pass.
   const lang = language ? OUTPUT_LANGUAGES.find((l) => l.code === language) : undefined;
-  const languageName = lang?.englishName ?? (language ? getLanguageName(language) : undefined);
-  // The anti-AI-tell lexicon is per-language: without this, questions written in
-  // German were still policed by the English tell-list.
-  const languageCode = lang?.code ?? language ?? meta.targetLanguage;
+  const isIsoCode = /^[a-z]{2}(-[a-z]{2})?$/i.test(language ?? '');
+  const languageName =
+    lang?.englishName ?? (language && isIsoCode ? getLanguageName(language) : undefined);
+  // The anti-AI-tell lexicon keys off the CODE, and a language can arrive as a
+  // NAME on extractMetadata's regex-fallback path — 'German'.slice(0, 2) is 'ge',
+  // which silently misses the curated German lexicon. Normalize once, here.
+  const languageCode = toLanguageCode(lang?.code ?? language ?? meta.targetLanguage ?? '');
 
   const system = buildInterviewQuestionsSystemPrompt(languageCode);
   const user = buildInterviewQuestionsPrompt({
