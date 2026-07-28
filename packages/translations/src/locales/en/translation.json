@@ -867,7 +867,7 @@
       "resetAppDescription": "Wipe all data and preferences. Returns to the welcome screen.",
       "reset": "Reset",
       "resetAppConfirmTitle": "Reset App to Factory Defaults",
-      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. You will be taken back to the welcome screen. This cannot be undone.",
+      "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. Any paired browser is disconnected, so you will need to pair the extension again. You will be taken back to the welcome screen. This cannot be undone.",
       "resetAppConfirm": "Reset Everything",
       "resetAppPartial": "App reset, but some board login sessions couldn't be fully cleared.",
       "somethingWentWrong": "Something went wrong.",
