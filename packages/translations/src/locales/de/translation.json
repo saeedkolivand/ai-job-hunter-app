@@ -1799,7 +1799,9 @@
         "propose": "Nächster Schritt wird vorgeschlagen"
       },
       "proposalTitle": "Vorgeschlagener nächster Schritt",
-      "proposalHint": "Momentan nur zur Anzeige — es wird nichts automatisch übernommen.",
+      "proposalHint": "Es wird nichts automatisch abgeschickt oder übernommen. Alles, was du während des Laufs genehmigt hast, ist in dieser Bewerbung gespeichert.",
+      "viewApplication": "Bewerbung ansehen",
+      "viewApplicationError": "Die Bewerbung konnte nicht geöffnet werden. Bitte erneut versuchen.",
       "stopped": {
         "done": "Abgeschlossen",
         "truncated": "Vorzeitig gestoppt — Ausgabe wurde gekürzt",
@@ -2591,7 +2593,7 @@
         "needsJob": "Für die E-Mail-Generierung wird eine Stellenbeschreibung benötigt.",
         "subjectLabel": "Betreff",
         "bodyLabel": "Inhalt",
-        "copy": "Kopieren",
+        "copy": "Inhalt kopieren",
         "copied": "Kopiert!",
         "copySubject": "Betreff kopieren",
         "rewrite": "Mit KI umschreiben",
@@ -2634,6 +2636,8 @@
         "needsModel": "Wähle in den Einstellungen ein KI-Modell, um Fragen zu generieren.",
         "needsJob": "Für passende Fragen wird eine Stellenbeschreibung benötigt.",
         "audienceLabel": "Fragen generieren für",
+        "languageLabel": "Sprache der Fragen",
+        "languageAuto": "Sprache der Stellenanzeige",
         "audience": {
           "recruiter": "Recruiter / HR (1. Runde)",
           "hiringManager": "Hiring Manager",
