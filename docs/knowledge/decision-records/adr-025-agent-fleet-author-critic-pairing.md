@@ -1,6 +1,6 @@
 # ADR-025: Agent fleet — paired author/critic per domain
 
-Last updated: 2026-07-20
+Last updated: 2026-07-28
 
 **Status:** Accepted
 
@@ -14,17 +14,17 @@ Every domain is a **pair**: a write-capable **author** implements, an independen
 
 ## Consequences
 
-- **25 agents:** the routing table + explainer must list every one (the guard enforces it).
+- **Agent roster:** the routing table + explainer must list every one in `.claude/agents/` (the guard enforces it).
 - **Token premium of pairing/teams:** offset by the pre-harvest handoff (no cold re-exploration).
 - **Agent Teams experimental:** Windows/VS Code runs in-process only (no tmux split panes).
-- **Visual explainer:** `apps/landing/public/agent-system.html` documents the system.
+- **Visual explainer:** `apps/landing/src/app/agent-system/` documents the system (data roster: `apps/landing/src/data/agent-fleet.ts`).
 - **Guard enforcement:** `scripts/check-agent-system.mjs` runs in pre-push hook and CI to keep agent definitions, routes, and configs in sync.
 
 ## Related
 
-- `.claude/agents/` — 25 agent definitions (author + critic per domain)
-- `.claude/commands/` — 15 commands (implement-feature, fix-bug, refactor-module, add-tests, review-\* specialties, prepare-release, etc.)
+- `.claude/agents/` — agent definitions (author + critic per domain; roster enforced by `scripts/check-agent-system.mjs`)
+- `.claude/commands/` — slash commands (implement-feature, fix-bug, refactor-module, add-tests, review-\* specialties, prepare-release, etc.)
 - `.claude/review-routes.json` — deterministic routing from touched files to primary + risk-justified secondary reviewers
 - `CLAUDE.md` — single source of truth for agent descriptions and routing
 - `scripts/check-agent-system.mjs` — deterministic guard (pre-push + CI) enforcing agents ⇄ routes ⇄ CLAUDE.md ⇄ AI-configs
-- `apps/landing/public/agent-system.html` — interactive visual explainer of the 25-agent system
+- `apps/landing/src/app/agent-system/` — interactive visual explainer (data roster: `apps/landing/src/data/agent-fleet.ts`)

@@ -1,6 +1,6 @@
 # AI Job Hunter — Design Decisions
 
-Last updated: 2026-07-17
+Last updated: 2026-07-28
 
 This document records the major architectural decisions in the project — the reasoning behind the technology choices, the patterns used, and the trade-offs considered. It is a reference for contributors and reviewers who want to understand the _why_ behind the codebase.
 
@@ -449,7 +449,7 @@ Board scrapers run in parallel via [Tokio][tokio]'s `spawn`. Each scraper holds 
 
 ## 11. AI-Assistant Agent System
 
-The repository ships a Claude Code agent system under `.claude/` (tracked alongside source). The system consists of 12 specialized agents covering distinct ownership domains — `resume-export-expert`, `job-match-expert`, `scraping-applier-expert`, `ai-provider-expert`, `rust-backend-architect`, `tauri-security-reviewer`, `frontend-reviewer`, `performance-profiler`, `testing-reviewer`, `test-author`, `pdf-docx-generator`, and `project-steward` — plus a set of slash commands: `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/update-docs`, and `/prepare-release`.
+The repository ships a Claude Code agent system under `.claude/` (tracked alongside source). The system consists of specialized agents covering distinct ownership domains (roster in `.claude/agents/`) — each domain pairs a write-capable author with an independent critic — plus a set of slash commands: `/review-{rust,security,performance,ats,resume,template,export,frontend,scraping,ai}`, `/implement-feature`, `/fix-bug`, `/refactor-module`, `/add-tests`, `/update-docs`, and `/prepare-release`.
 
 The system also includes domain skills and checklists (`.claude/skills/`), a Stop review-gate hook that runs on every diff and blocks only HIGH/CRITICAL findings, and a distilled lessons log (`.claude/memory/lessons.jsonl`).
 

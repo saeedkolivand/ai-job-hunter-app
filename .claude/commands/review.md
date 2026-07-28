@@ -26,6 +26,8 @@ Compute the tier:
 | **standard** | ≤100 lines AND no security match | 2× pr-reviewer (opus + sonnet)     | no            | single-source findings |
 | **full**     | security match OR >100 lines     | 3× pr-reviewer (1 opus + 2 sonnet) | yes, FIRST    | single-source findings |
 
+Per-invocation `model: "sonnet"` overrides `pr-reviewer`'s `model: opus` frontmatter; the `effort: xhigh` pin does not get overridden — intentional, the ensemble varies model, not effort.
+
 ## 3. Security gate (full tier only — always FIRST)
 
 Spawn `tauri-security-reviewer` over the same scope (or invoke `/review-security`) — desktop/app/backend/AI/data/abuse/supply-chain lens. **HIGH/CRITICAL block** and must be resolved (route fixes to the owning domain author) before the ensemble runs; LOW/MEDIUM are carried into the final report as advisories.
