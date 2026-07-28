@@ -164,13 +164,22 @@ function makeForm(overrides: Partial<WizardState> = {}): WizardState {
   };
 }
 
-/** Exposes the live countryCode + pages fields as JSON for assertions. */
+/**
+ * Exposes the live countryCode + pages fields, plus resolver validity, as JSON.
+ *
+ * `isValid` is what actually gates the wizard's "Next"/"Create", so it is the only
+ * honest way to assert "the user is not blocked". Subscribing to it also makes RHF
+ * run a validation pass on mount, which is precisely the moment a persisted bad
+ * value would strand the user on a disabled control.
+ */
 function Probe() {
-  const { watch } = useFormContext<WizardState>();
+  const { watch, formState } = useFormContext<WizardState>();
   const countryCode = watch('countryCode');
   const pages = watch('pages');
   return (
-    <output data-testid={TEST_IDS.autopilot.probe}>{JSON.stringify({ countryCode, pages })}</output>
+    <output data-testid={TEST_IDS.autopilot.probe}>
+      {JSON.stringify({ countryCode, pages, isValid: formState.isValid })}
+    </output>
   );
 }
 
@@ -195,9 +204,13 @@ function renderStep(overrides: Partial<WizardState> = {}) {
   return render(<Host />);
 }
 
-function readProbe(): { countryCode: string | undefined; pages: number } {
+function readProbe(): { countryCode: string | undefined; pages: number; isValid: boolean } {
   const text = screen.getByTestId(TEST_IDS.autopilot.probe).textContent ?? '{}';
-  return JSON.parse(text) as { countryCode: string | undefined; pages: number };
+  return JSON.parse(text) as {
+    countryCode: string | undefined;
+    pages: number;
+    isValid: boolean;
+  };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -412,6 +425,31 @@ describe('StepTarget — page budget is inert for an aggregator-only target', ()
     expect(screen.getByText('autopilot.wizard.target.pagesHint')).toBeInTheDocument();
   });
 
+  it('treats a duplicated aggregator id as an aggregator-ONLY target', () => {
+    // `boards.length` would call ['aggregator','aggregator'] a MIXED selection and
+    // leave a knob live that still changes nothing. The dedup'd set is the honest
+    // count — same source `aggregatorSelected` reads.
+    renderStep({ boards: ['aggregator', 'aggregator'], pages: 2 });
+
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    expect(screen.getByText('autopilot.wizard.target.pagesAggregatorOnly')).toBeInTheDocument();
+  });
+
+  it('announces the disabled-reason hint to screen readers via aria-describedby', () => {
+    // The hint is the ONLY explanation of why the control is dead. As an orphan
+    // <span> next to the label it reached no SR user, so it is wired as the
+    // control's description (not concatenated into its name).
+    renderStep({ boards: ['aggregator'], pages: 2 });
+
+    const input = screen.getByRole('spinbutton');
+    const describedBy = input.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+
+    const hint = document.getElementById(describedBy ?? '');
+    expect(hint).not.toBeNull();
+    expect(hint).toHaveTextContent('autopilot.wizard.target.pagesAggregatorOnly');
+  });
+
   it('preserves the stored page value while the control is disabled', async () => {
     // Disabling must not silently rewrite the saved budget: re-adding a
     // pages-honouring board has to bring the user's own number back.
@@ -424,6 +462,52 @@ describe('StepTarget — page budget is inert for an aggregator-only target', ()
     await user.click(screen.getByRole('button', { name: 'jobs.boards.greenhouse' }));
 
     expect(screen.getByRole('spinbutton')).toBeEnabled();
+    expect(readProbe().pages).toBe(7);
+  });
+
+  // ── Previously an UNFIXABLE block ────────────────────────────────────────
+  // `pages` stays schema-validated while inert, so a persisted out-of-range or
+  // non-integer value failed the resolver with the only control that could fix it
+  // disabled: the wizard refused to advance and offered no way to comply.
+
+  it.each([
+    ['out of range (persisted 15)', 15, 10],
+    ['below range (persisted 0)', 0, 1],
+    ['non-integer (persisted 2.5)', 2.5, 3],
+    ['not a number at all', Number.NaN, 2],
+  ])('normalizes a %s pages value instead of blocking the wizard', async (_label, stored, want) => {
+    renderStep({ boards: ['aggregator'], pages: stored });
+
+    await waitFor(() => expect(readProbe().pages).toBe(want));
+    // The actual regression: the resolver must accept the form again, so "Next"
+    // is reachable. Asserting only the value would miss a normalization that
+    // landed outside the schema range.
+    await waitFor(() => expect(readProbe().isValid).toBe(true));
+    expect(screen.queryByText('autopilot.wizard.validation.pagesRange')).toBeNull();
+    // Still inert — normalizing is not the same as making the knob real.
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+  });
+
+  it('hands the normalized value back as an editable number once a pages-aware board joins', async () => {
+    const user = userEvent.setup();
+    renderStep({ boards: ['aggregator'], pages: 15 });
+
+    await waitFor(() => expect(readProbe().pages).toBe(10));
+
+    await user.click(screen.getByRole('button', { name: 'jobs.boards.greenhouse' }));
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton');
+    expect(input).toBeEnabled();
+    expect(input.value).toBe('10');
+    expect(readProbe().isValid).toBe(true);
+  });
+
+  it('leaves an in-range persisted value untouched', async () => {
+    // Normalization must only ever fire on a value the schema would REJECT —
+    // silently rewriting a legitimate budget would be its own bug.
+    renderStep({ boards: ['aggregator'], pages: 7 });
+
+    await waitFor(() => expect(readProbe().isValid).toBe(true));
     expect(readProbe().pages).toBe(7);
   });
 });

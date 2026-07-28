@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { LocationInput } from './LocationInput';
 
 const noSuggestions = vi.fn().mockResolvedValue([]);
 
-// Two geocoded suggestions used by keyboard-nav tests
-const TWO_SUGGESTIONS = [
-  { display: 'Berlin, Germany', lat: 52.52, lon: 13.4 },
-  { display: 'Hamburg, Germany', lat: 53.55, lon: 9.99 },
-];
+// Two geocoded suggestions used by keyboard-nav tests. Named individually so the
+// tests can wait on / assert a concrete one without indexing (which is
+// `| undefined` under noUncheckedIndexedAccess).
+const BERLIN = { display: 'Berlin, Germany', lat: 52.52, lon: 13.4 };
+const HAMBURG = { display: 'Hamburg, Germany', lat: 53.55, lon: 9.99 };
+const TWO_SUGGESTIONS = [BERLIN, HAMBURG];
 const twoSuggestions = vi.fn().mockResolvedValue(TWO_SUGGESTIONS);
 
 describe('LocationInput', () => {
@@ -68,9 +69,12 @@ describe('LocationInput', () => {
     fireEvent.change(search, { target: { value: 'Be' } });
 
     // Wait for the debounced suggestions to arrive
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 350));
-    });
+    // Render-aware wait, not a fixed sleep: block until a CONCRETE suggestion from
+    // TWO_SUGGESTIONS is on screen. A timer that expired before the debounced fetch
+    // resolved would leave `suggestions` empty, and the ArrowDown/Enter below would
+    // silently take the free-text fallback path instead of the keyboard-nav path
+    // under test.
+    await screen.findByText(BERLIN.display);
 
     // ArrowDown once → activeIndex 0 (first suggestion: Berlin)
     // ArrowDown again → activeIndex 1 (second suggestion: Hamburg)
@@ -78,7 +82,7 @@ describe('LocationInput', () => {
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });
 
-    expect(onChange).toHaveBeenCalledWith('Hamburg, Germany');
+    expect(onChange).toHaveBeenCalledWith(HAMBURG.display);
   });
 
   it('onSelectSuggestion is called with the full structured object on suggestion pick', async () => {
@@ -96,15 +100,18 @@ describe('LocationInput', () => {
     const search = await screen.findByPlaceholderText('Search city or postcode…');
 
     fireEvent.change(search, { target: { value: 'Be' } });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 350));
-    });
+    // Render-aware wait, not a fixed sleep: block until a CONCRETE suggestion from
+    // TWO_SUGGESTIONS is on screen. A timer that expired before the debounced fetch
+    // resolved would leave `suggestions` empty, and the ArrowDown/Enter below would
+    // silently take the free-text fallback path instead of the keyboard-nav path
+    // under test.
+    await screen.findByText(BERLIN.display);
 
     // Navigate to first suggestion and confirm
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });
 
-    expect(onSelectSuggestion).toHaveBeenCalledWith(TWO_SUGGESTIONS[0]);
+    expect(onSelectSuggestion).toHaveBeenCalledWith(BERLIN);
   });
 
   it('fires onChange BEFORE onSelectSuggestion when a suggestion is picked', async () => {
@@ -129,9 +136,12 @@ describe('LocationInput', () => {
     const search = await screen.findByPlaceholderText('Search city or postcode…');
 
     fireEvent.change(search, { target: { value: 'Be' } });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 350));
-    });
+    // Render-aware wait, not a fixed sleep: block until a CONCRETE suggestion from
+    // TWO_SUGGESTIONS is on screen. A timer that expired before the debounced fetch
+    // resolved would leave `suggestions` empty, and the ArrowDown/Enter below would
+    // silently take the free-text fallback path instead of the keyboard-nav path
+    // under test.
+    await screen.findByText(BERLIN.display);
 
     fireEvent.keyDown(search, { key: 'ArrowDown' });
     fireEvent.keyDown(search, { key: 'Enter' });

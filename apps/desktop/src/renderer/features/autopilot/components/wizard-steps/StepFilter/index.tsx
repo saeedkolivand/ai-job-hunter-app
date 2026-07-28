@@ -87,17 +87,18 @@ export function StepFilter() {
               hint={t('autopilot.wizard.filter.commaSeparated')}
               htmlFor="autopilot-keywords"
             >
-              <div className="space-y-1.5">
-                <Input
-                  id="autopilot-keywords"
-                  variant="default"
-                  className={fieldCls}
-                  placeholder={t('autopilot.wizard.filter.keywordsPlaceholder')}
-                  value={field.value}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                />
-              </div>
+              {/* Single unwrapped child: WizardField can only attach the hint's
+                  `aria-describedby` to one element, and a wrapper div would
+                  absorb it (the layout div added nothing — one child). */}
+              <Input
+                id="autopilot-keywords"
+                variant="default"
+                className={fieldCls}
+                placeholder={t('autopilot.wizard.filter.keywordsPlaceholder')}
+                value={field.value}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+              />
             </WizardField>
           )}
         />

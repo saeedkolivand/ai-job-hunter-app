@@ -21,6 +21,14 @@ import { WizardField } from '../WizardField';
 
 const fieldCls = 'h-9 w-full text-xs shadow-none';
 
+// The backend `AutopilotTargetSchema.pages` range, mirrored by `autopilotWizardSchema`.
+// Bound once here so the NumberField's own clamp and the inert-value normalization
+// below cannot drift apart — a normalization that landed outside the schema range
+// would re-create the very block it exists to clear.
+const PAGES_MIN = 1;
+const PAGES_MAX = 10;
+const PAGES_FALLBACK = 2;
+
 interface StepTargetProps {
   prefilled: Prefilled;
 }
@@ -77,7 +85,28 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   // therefore costs exactly one upstream call no matter what is typed here.
   // Showing an editable field that changes nothing is dishonest, so disable it
   // and say why. A MIXED selection keeps it live — every other board honours it.
-  const pagesInert = aggregatorSelected && boards.length === 1;
+  // Counted on the deduplicated SET (like `aggregatorSelected` above): a
+  // persisted `['aggregator','aggregator']` is still an aggregator-only target,
+  // and `boards.length` would call it mixed and leave a dead knob live.
+  const pagesInert = aggregatorSelected && selectedSet.size === 1;
+
+  // `pages` stays schema-validated while inert, so a persisted out-of-range or
+  // non-integer value would block "Next" on a field the user cannot reach — the
+  // control is disabled, so there is no way to fix what the wizard is complaining
+  // about. Normalize it into the schema's range instead (the same round+clamp the
+  // NumberField applies on blur). Safe because the value is INERT here: the
+  // aggregator ignores it, and re-adding a pages-aware board re-enables the field
+  // with a sane, editable number rather than a permanently invalid one.
+  useEffect(() => {
+    if (!pagesInert) return;
+    const current = getValues('pages');
+    const normalized = Number.isFinite(current)
+      ? Math.min(PAGES_MAX, Math.max(PAGES_MIN, Math.round(current)))
+      : PAGES_FALLBACK;
+    if (normalized !== current) {
+      setValue('pages', normalized, { shouldDirty: true, shouldValidate: true });
+    }
+  }, [pagesInert, getValues, setValue]);
 
   return (
     <div className="space-y-4">
@@ -267,9 +296,9 @@ export function StepTarget({ prefilled }: StepTargetProps) {
             >
               <NumberField
                 id="autopilot-pages"
-                min={1}
-                max={10}
-                fallback={2}
+                min={PAGES_MIN}
+                max={PAGES_MAX}
+                fallback={PAGES_FALLBACK}
                 variant="default"
                 className={cn(fieldCls, 'disabled:opacity-40 disabled:cursor-not-allowed')}
                 disabled={pagesInert}
