@@ -98,7 +98,8 @@ async fn backfill_country_code(
 
 /// [`backfill_country_code`] with the geocode lookup injected, so the
 /// cancellation behavior is testable against a hung / instant / never-polled
-/// future instead of the real Nominatim round trip (no network in tests).
+/// future instead of the real geocode lookup (no network, and no bundled-index
+/// build, in tests).
 ///
 /// `lookup` is only ever POLLED when `country_code` is absent — an existing
 /// (picked) country is never clobbered and costs no request.
@@ -676,7 +677,7 @@ mod test {
     // ── backfill_country_code (pre-scrape cancellation) ──────────────────────
     //
     // Driven through the injected-lookup seam so every case is hermetic: no
-    // Nominatim round trip, no `AppHandle`, no timing sleeps.
+    // geocode round trip, no `AppHandle`, no timing sleeps.
 
     fn input_with(location: Option<&str>, country_code: Option<&str>) -> BoardSearchInput {
         BoardSearchInput {
@@ -728,7 +729,7 @@ mod test {
 
     /// A cancel landing WHILE the lookup is in flight wins immediately — the run
     /// is abandoned instead of waiting out the 2s geocode cap. `pending()` stands
-    /// in for a hung Nominatim call: without the select the test would hang.
+    /// in for a hung Photon-fallback call: without the select the test would hang.
     #[tokio::test]
     async fn cancel_during_the_lookup_abandons_the_run() {
         let token = tokio_util::sync::CancellationToken::new();

@@ -1,6 +1,6 @@
 # Knowledge base (`docs/knowledge/`)
 
-Last updated: 2026-07-21
+Last updated: 2026-07-28
 
 A **thin, pointer-style** index for AI agents (and humans). It describes _shape and contracts_ and points at the **owning source symbol**; it deliberately does **not** copy drift-prone literals (scoring weights, template/board counts) — those live in code.
 
@@ -87,3 +87,5 @@ Every ADR carries a `Status` field documenting its lifecycle: `Accepted | Supers
 **Agent system:** interactive explainer at `apps/landing/public/agent-system.html` documents the agent fleet, pairing structure, and command routing.
 
 > Maintained **only** by `project-steward`. Per-domain knowledge docs may exceed ~150 lines (e.g., scraping-domain.md, extension-domain.md). After code/doc changes: `graphify update .`.
+>
+> **Open decision:** the ~150-line target is aspirational, not enforced. `extension-domain.md` sits right at it; `scraping-domain.md` is roughly 500 lines and needs a split-or-retire call (split by sub-domain, or retire the historical PR-program narrative that source now documents better than prose). Deferred deliberately — restructuring it mid-batch would churn every inbound pointer at once. Note the target is about lines, not bytes: both files carry very wide table rows.

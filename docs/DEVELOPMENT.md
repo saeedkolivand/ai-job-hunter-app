@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-07-16
+Last updated: 2026-07-28
 
 This guide gets you from zero to a running dev environment.
 
@@ -250,6 +250,37 @@ App-data directory per OS (rooted at your home directory, `<HOME>`):
 Embedding vectors live in the `vectors` table of `documents.db` and cosine similarity
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
 delete the `*.db` files in that directory and restart the app.
+
+### Migrations and stale dev DBs
+
+Each store owns its own migration list and tracks progress with `PRAGMA user_version`
+(runner: `apps/desktop/src-tauri/src/db.rs`, `run_migrations`). Migrations are numbered
+`1..N` in list order, each applied inside one transaction together with its version bump,
+so a failure rolls back wholesale rather than leaving a half-applied schema. (One
+exception to "each store owns its list": `ApplicationStore::backfill_from_generations`
+in `apps/desktop/src-tauri/src/applications/mod.rs` opens `ai_generations.db` and writes
+its schema — an unversioned second writer, guarded by its own idempotent
+`column_exists` checks rather than by `user_version`.)
+
+Most migrations are additive `ALTER TABLE … ADD COLUMN … NOT NULL DEFAULT` and upgrade an
+existing dev DB in place, so **the normal case needs no action** — just start the app.
+Not all of them are additive, though: `job_preferences` rebuilds its table to drop four
+columns, `ai_generations` DELETEs duplicate rows before creating its unique job-url index,
+and `documents` backfills. Two situations need a manual reset:
+
+- your dev DB was written by a **newer** branch than the one you are on — `user_version`
+  is ahead of the migration list, so nothing pending runs;
+- **migration index collision.** The runner skips any migration whose 1-based index is
+  `<= user_version` (`db.rs`, `if current >= version { continue; }`). So if you switch to a
+  branch that edited a migration in place, or inserted one in the middle of the list, the
+  index it now occupies has already been marked applied — its body never runs, on this DB,
+  ever. Nothing fails at startup; you get a `no such column` (or a missing index) at
+  runtime, whenever the first query touching that schema fires.
+
+Fix either by deleting the affected `*.db` (plus its `-wal`/`-shm` sidecars) in the
+app-data directory and restarting. Recent example: apply-by-email draft persistence
+(PR #894) appended `add_email_draft` to `ai_generations.db`, taking that store to
+`user_version = 7`. Appending is always safe; editing or inserting is what bites.
 
 ---
 
