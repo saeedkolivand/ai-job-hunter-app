@@ -55,6 +55,44 @@ use providers::*;
 /// into `providers.rs` with the provider implementations.
 const ADZUNA_BROADEN_FLOOR: usize = 3;
 
+// ── Search budgets ────────────────────────────────────────────────────────────
+
+/// The two INDEPENDENT budgets one aggregator search carries. They are separate
+/// fields (not one number) because conflating them is a live cost bug: `amount`
+/// is a sentinel ceiling for callers with no item-count intent, so spending
+/// upstream calls against it silently multiplies every scheduled run's bill.
+///
+/// Passed as one struct rather than two parameters so the provider-orchestration
+/// fns stay within the crate's 8-argument clippy ceiling (`clippy.toml`).
+#[derive(Clone, Copy)]
+pub(crate) struct SearchBudget {
+    /// OUTPUT cap — how many postings the caller will keep. Gates only the free
+    /// side of the merge (whether the additive LinkedIn tier is worth calling and
+    /// how many items to ask it for). May be a "don't cap me" sentinel.
+    amount: usize,
+    /// UPSTREAM SPEND target — see `BoardSearchInput::provider_amount`. `None`
+    /// (the default, and every scheduled run) keeps each metered provider at its
+    /// cheapest single-request form.
+    provider_amount: Option<u32>,
+}
+
+impl SearchBudget {
+    pub(crate) fn new(amount: usize, provider_amount: Option<u32>) -> Self {
+        Self {
+            amount,
+            provider_amount,
+        }
+    }
+
+    /// Output cap only, no upstream spend target — the quota-neutral shape a
+    /// scheduled run uses, and the default for tests that only exercise the
+    /// fallback chain with fake providers.
+    #[cfg(test)]
+    pub(crate) fn items_only(amount: usize) -> Self {
+        Self::new(amount, None)
+    }
+}
+
 // ── Provider trait ────────────────────────────────────────────────────────────
 
 /// A single search-API backend.  Object-safe so the scraper can hold a
@@ -66,12 +104,14 @@ pub(crate) trait JobProvider: Send + Sync {
     fn is_configured(&self) -> bool;
     /// Run a search.  Non-2xx or network errors are returned as `Err`.
     ///
-    /// `amount` is the caller's target result count, passed to every provider
-    /// that can bound its own spend by it: Adzuna pages by it
+    /// `amount` is the caller's UPSTREAM SPEND target (`SearchBudget::provider_amount`
+    /// — NOT `BoardSearchInput::amount`, which is a sentinel-prone output cap).
+    /// Providers that can bound their own spend by it use it: Adzuna pages by it
     /// (`adzuna_page_budget`), JSearch maps it to `num_pages`
     /// (`jsearch_num_pages`), and Apify uses it as a hard `maxItems` cap.
     /// Providers with no such knob ignore it (`_amount`). `None` means "no
-    /// target" and every provider degrades to its cheapest single-request form.
+    /// target" and every provider degrades to its cheapest single-request form —
+    /// the default, and what every scheduled (autopilot) run passes.
     ///
     /// `country_guessed` is true when the caller supplied no explicit
     /// `country_code` (see `AggregatorScraper::search`). Providers that don't
@@ -450,13 +490,10 @@ async fn search_with_providers(
     country: &str,
     country_guessed: bool,
     date_filter: Option<&str>,
-    amount: usize,
+    budget: SearchBudget,
     signal: tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<Vec<JobPosting>> {
-    // Target result count as the providers' own spend bound: Adzuna pages by it,
-    // JSearch maps it to `num_pages`. Saturating cast — `amount` is clamped to the
-    // request cap (100) upstream, so this never truncates in practice.
-    let amount_target = u32::try_from(amount).unwrap_or(u32::MAX);
+    let amount = budget.amount;
 
     let primary = primary_chain(
         providers,
@@ -465,7 +502,8 @@ async fn search_with_providers(
         country,
         country_guessed,
         date_filter,
-        Some(amount_target),
+        // The UPSTREAM budget, never `amount` — see `SearchBudget`.
+        budget.provider_amount,
         signal.clone(),
     )
     .await;
@@ -683,7 +721,11 @@ impl Scraper for AggregatorScraper {
             &country,
             country_guessed,
             input.date_filter.as_deref(),
-            amount,
+            // `amount` caps the OUTPUT; `provider_amount` is the only thing that
+            // buys upstream calls. A scheduled run leaves the latter `None`, so it
+            // costs exactly one Adzuna request regardless of the 100 it passes as
+            // `amount`. See `SearchBudget` / `BoardSearchInput::provider_amount`.
+            SearchBudget::new(amount, input.provider_amount),
             ctx.signal.clone(),
         )
         .await?;

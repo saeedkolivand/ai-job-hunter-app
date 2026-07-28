@@ -104,7 +104,7 @@ async fn adzuna_ok_returns_items_no_jsearch() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -133,7 +133,7 @@ async fn adzuna_ok_empty_does_not_call_jsearch() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -173,7 +173,7 @@ async fn jsearch_ok_empty_does_not_call_jooble() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -202,7 +202,7 @@ async fn adzuna_err_falls_back_to_jsearch() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -227,7 +227,7 @@ async fn neither_configured_returns_empty() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -252,7 +252,7 @@ async fn only_jsearch_configured_uses_jsearch() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -279,7 +279,7 @@ async fn adzuna_configured_err_and_no_jsearch_returns_diagnostic_err() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -317,6 +317,7 @@ fn adzuna_is_configured_requires_both_keys() {
         app_id: None,
         app_key: None,
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     assert!(!unconfigured.is_configured());
 
@@ -325,6 +326,7 @@ fn adzuna_is_configured_requires_both_keys() {
         app_id: Some("id123".to_string()),
         app_key: None,
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     assert!(!partial.is_configured());
 
@@ -333,6 +335,7 @@ fn adzuna_is_configured_requires_both_keys() {
         app_id: Some("id123".to_string()),
         app_key: Some("key456".to_string()),
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     assert!(full.is_configured());
 }
@@ -931,6 +934,7 @@ async fn adzuna_unconfigured_returns_err_without_network() {
         app_id: None,
         app_key: None,
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     let result = p
         .search("engineer", "berlin", "de", false, None, None, make_token())
@@ -974,7 +978,14 @@ async fn cancelled_before_search_returns_empty_no_provider_call() {
     ];
 
     let result = search_with_providers(
-        &providers, "engineer", "berlin", "de", false, None, 100, signal,
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        SearchBudget::items_only(100),
+        signal,
     )
     .await
     .unwrap();
@@ -1035,7 +1046,14 @@ async fn cancelled_after_adzuna_err_skips_jsearch() {
     ];
 
     let result = search_with_providers(
-        &providers, "engineer", "berlin", "de", false, None, 100, signal,
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        SearchBudget::items_only(100),
+        signal,
     )
     .await
     .unwrap();
@@ -1182,6 +1200,7 @@ fn make_input() -> BoardSearchInput {
         location: Some("berlin".into()),
         amount: 10,
         pages: 1,
+        provider_amount: None,
         date_filter: None,
         job_type: None,
         work_type: None,
@@ -1754,6 +1773,7 @@ async fn adzuna_empty_country_resolves_to_supported_de() {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     // Empty country → production code resolves to "de" → passes allowlist → fails
     // downstream at the network/auth layer (no real keys), NOT at country validation.
@@ -1791,7 +1811,7 @@ async fn unsupported_country_with_jsearch_falls_back_to_jsearch() {
         "xx",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -1820,7 +1840,7 @@ async fn unsupported_country_no_jsearch_returns_diagnostic_err() {
         "xx",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -1855,7 +1875,7 @@ async fn supported_country_uses_adzuna_normally() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -1881,7 +1901,7 @@ async fn unsupported_country_no_keys_returns_keyless_empty() {
         "xx",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -1917,7 +1937,7 @@ async fn jooble_fires_when_adzuna_and_jsearch_unconfigured() {
         "xx",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -1949,7 +1969,7 @@ async fn jooble_fires_after_adzuna_and_jsearch_both_err() {
         "xx",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -1977,7 +1997,7 @@ async fn jooble_not_called_when_adzuna_succeeds() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2004,7 +2024,7 @@ async fn jooble_not_called_when_jsearch_succeeds() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2033,7 +2053,7 @@ async fn all_three_configured_and_erroring_combines_every_failure() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -2078,7 +2098,7 @@ async fn adzuna_and_jooble_both_failing_combines_both_names() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -2125,7 +2145,7 @@ async fn jooble_only_configured_failure_surfaces_error() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -2169,7 +2189,7 @@ async fn guessed_market_empty_with_location_falls_back_to_jsearch() {
         "de",
         true, // country_guessed: no country_code was supplied
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2201,7 +2221,7 @@ async fn guessed_market_empty_with_location_and_no_jsearch_returns_diagnostic_er
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -2251,7 +2271,7 @@ async fn guessed_market_empty_with_no_location_is_not_treated_as_untrustworthy()
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2289,7 +2309,7 @@ async fn guessed_market_sparse_with_location_falls_back_to_jsearch() {
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2331,7 +2351,7 @@ async fn guessed_market_at_floor_does_not_fall_back() {
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2378,7 +2398,7 @@ async fn explicit_country_sparse_does_not_fall_back() {
         "gb",
         false, // explicit country — not guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2416,7 +2436,7 @@ async fn guessed_market_sparse_no_fallback_returns_sparse_items() {
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2461,7 +2481,7 @@ async fn guessed_market_sparse_fallback_errors_returns_sparse_items() {
         "de",
         true, // country_guessed
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2491,6 +2511,7 @@ async fn adzuna_provider_rejects_unsupported_country_before_network() {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     // "xx" is not in the allowlist.
     let result = p
@@ -2519,6 +2540,7 @@ async fn adzuna_provider_accepts_supported_country_passes_allowlist() {
         app_id: Some("fake-id".to_string()),
         app_key: Some("fake-key".to_string()),
         note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
     };
     // "de" is in the allowlist; the error that comes back must NOT mention the
     // allowlist — it should be a network/auth error (or similar), not a country error.
@@ -2755,7 +2777,7 @@ async fn apify_merges_additively_and_dedupes_by_url() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2785,7 +2807,7 @@ async fn only_apify_configured_returns_apify_items() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -2813,7 +2835,7 @@ async fn apify_unconfigured_preserves_primary_diagnostic_err() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await;
@@ -2840,7 +2862,7 @@ async fn apify_results_override_primary_error_when_present() {
         "de",
         false,
         None,
-        100,
+        SearchBudget::items_only(100),
         make_token(),
     )
     .await
@@ -3096,7 +3118,14 @@ async fn apify_not_run_after_cancellation() {
     ];
 
     let result = search_with_providers(
-        &providers, "engineer", "berlin", "de", false, None, 100, signal,
+        &providers,
+        "engineer",
+        "berlin",
+        "de",
+        false,
+        None,
+        SearchBudget::items_only(100),
+        signal,
     )
     .await
     .unwrap();
@@ -3236,7 +3265,7 @@ async fn apify_skipped_when_primary_fills_amount() {
         "de",
         false,
         None,
-        5,
+        SearchBudget::items_only(5),
         make_token(),
     )
     .await
@@ -3620,6 +3649,11 @@ async fn adzuna_first_page_failure_still_propagates_as_an_error() {
 /// page lands. The run must resolve to `Ok(page 1)` — a user pressing Stop keeps
 /// what was already found and spends no further quota, rather than getting an
 /// error or an empty result.
+///
+/// The in-loop cancellation check is load-bearing, not belt-and-braces: without
+/// it the next iteration would reach `fetch_json`, get `AppError::Cancelled`
+/// back, and fall into the mid-loop fail-open arm — which logs a misleading
+/// `"adzuna page 2 failed"` warning for what is a clean, deliberate stop.
 #[tokio::test]
 async fn adzuna_cancellation_between_pages_keeps_page_one_and_stops() {
     use wiremock::matchers::path;
@@ -3662,6 +3696,245 @@ async fn adzuna_cancellation_between_pages_keeps_page_one_and_stops() {
         .expect("a cancel between pages is a clean stop, not a failure");
 
     assert_eq!(items.len(), 50, "page 1's results are kept on cancel");
+}
+
+// ── Scheduled (autopilot) runs stay quota-neutral ────────────────────────────
+
+/// REGRESSION GUARD (the cost bug this workstream nearly shipped).
+///
+/// `autopilot_helpers` sets `amount: 100` as a "don't cap me" SENTINEL — it has
+/// no item-count intent, it expresses its target in pages. If the aggregator read
+/// spend intent out of that sentinel, every scheduled run would buy
+/// `adzuna_page_budget(Some(100)) == 2` Adzuna calls instead of 1: an hourly
+/// autopilot goes 24 → 48 calls/day against a HARD DAILY quota, and exhaustion
+/// then compounds (Adzuna `Err` → the JSearch fallback, itself billed 3× under
+/// the same sentinel).
+///
+/// So the budget rides `provider_amount`, which a scheduled run leaves `None`.
+/// This pins the observable consequence — the request COUNT through an
+/// autopilot-shaped input — rather than the mapping function in isolation.
+#[tokio::test]
+async fn autopilot_shaped_input_spends_exactly_one_adzuna_request() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // Page 1 comes back FULL — the case where a budget read off `amount` would
+    // keep paging. Only `provider_amount: None` stops it here.
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(51, 50)))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    // Exactly the shape `autopilot_helpers::autopilot_scrape` builds.
+    let autopilot_budget = SearchBudget::new(100, None);
+    let provider = AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+        note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
+    }
+    .with_base_url(server.uri());
+
+    let items = search_with_providers(
+        &[Box::new(provider) as Box<dyn JobProvider>],
+        "engineer",
+        "Berlin",
+        "de",
+        false,
+        None,
+        autopilot_budget,
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        items.len(),
+        50,
+        "the single page's results still flow through unchanged"
+    );
+    // The `.expect(0)` above is the actual quota assertion, verified on drop.
+}
+
+/// The manual search path (`commands::scrape`) DOES set `provider_amount`, so the
+/// same provider pages — proving the guard above is about the missing budget, not
+/// a loop that never runs through `search_with_providers`.
+#[tokio::test]
+async fn manual_shaped_input_pages_when_a_provider_budget_is_set() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(51, 10)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+        note_sink: None,
+        base_url: ADZUNA_BASE_URL.to_string(),
+    }
+    .with_base_url(server.uri());
+
+    let items = search_with_providers(
+        &[Box::new(provider) as Box<dyn JobProvider>],
+        "engineer",
+        "Berlin",
+        "de",
+        false,
+        None,
+        SearchBudget::new(100, Some(100)),
+        make_token(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(items.len(), 60, "both pages are collected");
+}
+
+// ── Post-loop policy wiring (AdzunaProvider::search over the page loop) ──────
+//
+// `should_broaden` and `guessed_market_note` both read the loop's POST-DEDUP
+// count, so the loop and the policy on top of it are one seam. These drive the
+// real `search` (not the fetchers underneath it) through a mock host.
+
+fn wiremock_adzuna(
+    base_url: String,
+    note_sink: Option<std::sync::Arc<dyn Fn(String) + Send + Sync>>,
+) -> AdzunaProvider {
+    AdzunaProvider {
+        app_id: Some("fake-id".to_string()),
+        app_key: Some("fake-key".to_string()),
+        note_sink,
+        base_url: ADZUNA_BASE_URL.to_string(),
+    }
+    .with_base_url(base_url)
+}
+
+/// Sparse city result → the country-wide broaden retry still fires ON TOP of the
+/// page loop, and its larger result set wins. Page 1 is short (2 < the floor of
+/// 3), so the loop stops after one fetch and the retry is the second.
+#[tokio::test]
+async fn search_broadens_country_wide_after_a_sparse_paged_result() {
+    use wiremock::matchers::{path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    // Narrow (`where=Berlin`) → 2 results, under ADZUNA_BROADEN_FLOOR.
+    Mock::given(path(adzuna_path(1)))
+        .and(query_param("where", "Berlin"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 2)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Broadened (`where=`) → more results, so it replaces the narrow set.
+    Mock::given(path(adzuna_path(1)))
+        .and(query_param("where", ""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(100, 7)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let notes: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink_notes = notes.clone();
+    let provider = wiremock_adzuna(
+        server.uri(),
+        Some(std::sync::Arc::new(move |n: String| {
+            sink_notes.lock().expect("note sink mutex").push(n)
+        })),
+    );
+
+    let items = provider
+        // country_guessed = false → an explicit market, so broadening is allowed.
+        .search(
+            "engineer",
+            "Berlin",
+            "de",
+            false,
+            None,
+            Some(100),
+            make_token(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 7, "the broadened set replaces the sparse one");
+    assert_eq!(
+        notes.lock().expect("note sink mutex").as_slice(),
+        ["broadened:de"],
+        "the broadening must surface as a user-facing note"
+    );
+}
+
+/// A GUESSED market that returns an authoritative (>= floor) PAGED result emits
+/// the guessed-market note — the count it is judged on is the loop's accumulated,
+/// post-dedup total, so this is the loop→policy wiring, not just the helper.
+#[tokio::test]
+async fn search_reports_guessed_market_note_for_a_paged_authoritative_result() {
+    use wiremock::matchers::path;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(path(adzuna_path(1)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(1, 50)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(path(adzuna_path(2)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(adzuna_body(51, 4)))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let notes: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink_notes = notes.clone();
+    let provider = wiremock_adzuna(
+        server.uri(),
+        Some(std::sync::Arc::new(move |n: String| {
+            sink_notes.lock().expect("note sink mutex").push(n)
+        })),
+    );
+
+    let items = provider
+        // country_guessed = true → "de" was a GUESS, not a supplied target.
+        .search(
+            "engineer",
+            "Berlin",
+            "de",
+            true,
+            None,
+            Some(100),
+            make_token(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(items.len(), 54, "both pages are accumulated");
+    assert_eq!(
+        notes.lock().expect("note sink mutex").as_slice(),
+        ["guessed-market:de"],
+        "a guessed market that produced the authoritative result must say so"
+    );
+    // A guessed market must NEVER broaden (that would defeat primary_chain's
+    // guessed-market → JSearch fallback) — the `.expect(1)`s above pin that no
+    // third, `where=`-broadened request was issued.
 }
 
 // ── JSearch num_pages mapping ────────────────────────────────────────────────

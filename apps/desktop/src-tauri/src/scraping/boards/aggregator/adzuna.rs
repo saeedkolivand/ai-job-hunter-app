@@ -236,6 +236,12 @@ pub(crate) struct AdzunaProvider {
     /// and credential-state probes. `Arc` (Send + Sync) so the provider stays
     /// `Sync` while it holds the sink across `.await`.
     pub(super) note_sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
+    /// API host. [`ADZUNA_BASE_URL`] in production ([`Self::new`]); tests point it
+    /// at a local `wiremock` server via [`Self::with_base_url`] so the POLICY that
+    /// runs on top of the page loop — the guessed-market note and the near-empty
+    /// broaden retry, both of which read the loop's post-dedup count — is testable
+    /// through `search` itself rather than only through the fetchers underneath it.
+    pub(super) base_url: String,
 }
 
 impl AdzunaProvider {
@@ -253,6 +259,7 @@ impl AdzunaProvider {
                     None
                 }),
             note_sink: None,
+            base_url: ADZUNA_BASE_URL.to_string(),
         }
     }
 
@@ -262,6 +269,14 @@ impl AdzunaProvider {
         sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
     ) -> Self {
         self.note_sink = sink;
+        self
+    }
+
+    /// Point the provider at a different API host. Test-only seam (see
+    /// [`Self::base_url`]); production always uses [`ADZUNA_BASE_URL`].
+    #[cfg(test)]
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
         self
     }
 
@@ -320,7 +335,7 @@ impl JobProvider for AdzunaProvider {
         let where_hygienic = adzuna_where(location);
 
         let req = AdzunaPageRequest {
-            base_url: ADZUNA_BASE_URL,
+            base_url: &self.base_url,
             country,
             app_id,
             app_key,
@@ -346,10 +361,12 @@ impl JobProvider for AdzunaProvider {
         // keep whichever set is larger. A transient error on the retry keeps the
         // narrow result rather than discarding it.
         //
-        // SINGLE PAGE, deliberately: the retry only ever fires when the paged loop
-        // above collected fewer than `ADZUNA_BROADEN_FLOOR` (3) results — i.e. page
-        // 1 was already short and the loop stopped — so there is no second page to
-        // fetch, and paging the retry too would multiply the two budgets.
+        // SINGLE PAGE, deliberately: paging the retry as well would multiply the
+        // two budgets. The retry only fires when the paged loop collected fewer
+        // than `ADZUNA_BROADEN_FLOOR` (3) results, which is USUALLY because page 1
+        // came back short and the loop stopped after one fetch — but not always: a
+        // FULL page 1 whose postings all dedupe away keeps the loop going, so the
+        // worst-case cost of a search is `ADZUNA_MAX_PAGES + 1` fetches, not 2.
         //
         // GUARD: never broaden a GUESSED market (`country_guessed`). Turning a
         // guessed-market empty/near-empty into a non-empty country-wide result
@@ -488,10 +505,16 @@ pub(super) async fn fetch_adzuna_pages(
                 if !full_page {
                     break;
                 }
-                // Pacing between pages is the per-host rate limiter inside
-                // `fetch_json` (it waits for a slot before every request), so no
-                // extra sleep here. Cancellation, though, has to be re-checked:
-                // a stop that lands between pages must not spend another call.
+                // No sleep here: `fetch_json` already waits for a per-host
+                // rate-limiter slot before every request. At the current budget
+                // that limiter is nominal — 30 requests / 60 s vs. our 2 — so it
+                // only starts pacing if `ADZUNA_MAX_PAGES` is ever raised or
+                // several searches overlap on the same host.
+                //
+                // Cancellation, though, IS load-bearing here: without this check a
+                // user's Stop would reach `fetch_json`, come back as `Cancelled`,
+                // and land in the fail-open arm below — logging a misleading
+                // "page N failed" warning for what is a clean, deliberate stop.
                 if signal.is_cancelled() {
                     break;
                 }

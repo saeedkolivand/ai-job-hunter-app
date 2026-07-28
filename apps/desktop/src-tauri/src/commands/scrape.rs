@@ -147,6 +147,11 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         // `amount` is the per-board cap: each board returns up to this many results.
         amount: req.amount.clamp(1, 100),
         pages: MAX_PAGE_BUDGET,
+        // The ONLY path that sets a real provider spend target: here `amount` is
+        // the count the USER actually typed, so a metered board (the aggregator)
+        // may buy upstream calls up to it. Scheduled runs leave this `None` — see
+        // `BoardSearchInput::provider_amount`.
+        provider_amount: Some(req.amount.clamp(1, 100)),
         date_filter: req.date_filter.clone(),
         // Structured search filters from the IPC request (ScrapeBoardsRequestSchema
         // in packages/shared). Optional, so absent fields stay None; LinkedIn's
@@ -684,6 +689,7 @@ mod test {
             location: location.map(str::to_string),
             amount: 25,
             pages: 1,
+            provider_amount: None,
             date_filter: None,
             job_type: None,
             work_type: None,

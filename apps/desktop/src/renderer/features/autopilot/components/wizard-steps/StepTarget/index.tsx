@@ -71,11 +71,12 @@ export function StepTarget({ prefilled }: StepTargetProps) {
   const showAggregatorKeyHint = aggregatorSelected && !(adzunaIdData?.has && adzunaKeyData?.has);
 
   // The page budget is an INERT knob when the aggregator is the only target: the
-  // aggregator board never reads `pages` — its providers page by the requested
-  // result amount instead (Adzuna's free tier is a daily call quota, so a
-  // pages-driven loop would multiply every search's spend). Showing an editable
-  // field that changes nothing is dishonest, so disable it and say why. A MIXED
-  // selection keeps it live — every other board still honours the budget.
+  // aggregator board never reads `pages`. Its upstream APIs are metered (Adzuna
+  // bills a daily call quota), so what it may spend rides a separate, explicit
+  // budget that a SCHEDULED run deliberately leaves unset — an autopilot run
+  // therefore costs exactly one upstream call no matter what is typed here.
+  // Showing an editable field that changes nothing is dishonest, so disable it
+  // and say why. A MIXED selection keeps it live — every other board honours it.
   const pagesInert = aggregatorSelected && boards.length === 1;
 
   return (
