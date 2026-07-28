@@ -1,7 +1,7 @@
 /** Cover-letter generation — system prompt (brief / task / full) + user prompt. */
 
 import { truncateResume } from '../../context-manager/index.js';
-import { letterConventions } from '../../locale/index.js';
+import { marketLanguageFit } from '../../locale/index.js';
 import { type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   type ApplicantPreferences,
@@ -32,15 +32,15 @@ import {
  * salary + start date) are stated ONLY if the applicant actually supplied them.
  */
 function buildMarketConventionsBlock(market: string, targetLanguage: string): string {
-  const c = letterConventions(market);
-  const sameLanguage = c.nativeLanguage === (targetLanguage || 'en').slice(0, 2).toLowerCase();
+  // Shared with the application-email builder so the "market's own words vs. the
+  // formal equivalent" rule cannot drift between the two salutation surfaces.
+  const fit = marketLanguageFit(market, targetLanguage);
+  const c = fit.conventions;
 
-  const salutation = sameLanguage
+  const salutation = fit.sameLanguage
     ? `use "${c.salutations.named}" (named recipient) or "${c.salutations.generic}" (unknown recipient)`
-    : `use the formal ${targetLanguage} equivalent of "${c.salutations.generic}". Match this market's level of formality, not a casual greeting`;
-  const signoff = sameLanguage
-    ? `"${c.signoffs[0]}"`
-    : `the formal ${targetLanguage} equivalent of "${c.signoffs[0]}"`;
+    : `use ${fit.inOutputLanguage(c.salutations.generic)}. Match this market's level of formality, not a casual greeting`;
+  const signoff = fit.signoff;
 
   const subject = c.subjectLine.use
     ? `Include a subject line labelled "${c.subjectLine.label}" on its own line before the salutation, stating the role (and reference if any).`
