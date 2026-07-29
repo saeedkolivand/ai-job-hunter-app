@@ -531,7 +531,7 @@ jobs:
       # nothing. Both must be installed before the test step below.
       - name: 🦀 Install cargo-llvm-cov + nextest
         if: always()
-        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
+        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
         with:
           tool: cargo-llvm-cov,nextest
 
@@ -887,7 +887,7 @@ jobs:
           echo "::endgroup::"
 
       - name: 🧰 Install cargo-deny + cargo-machete
-        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
+        uses: taiki-e/install-action@18b1216eba7f8039b0f8d131d5473787f0edce68 # v2
         with:
           tool: cargo-deny,cargo-machete
 
