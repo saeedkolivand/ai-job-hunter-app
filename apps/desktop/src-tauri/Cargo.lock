@@ -1999,15 +1999,17 @@ dependencies = [
 
 [[package]]
 name = "docx-rs"
-version = "0.4.21"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "917eb338de7885a7bf6de3bb294ccbc6d64f0250430e40605d2f2e7e0ee4259a"
+checksum = "7fdf00e8af6d0b3e92d4bbf9b76f773d8b84ea80f310324ad16cbdc2e653e02c"
 dependencies = [
  "base64 0.22.1",
+ "crc32fast",
  "image",
  "quick-xml 0.41.0",
  "serde",
  "serde_json",
+ "smallvec",
  "thiserror 2.0.19",
  "zip 8.6.0",
 ]
