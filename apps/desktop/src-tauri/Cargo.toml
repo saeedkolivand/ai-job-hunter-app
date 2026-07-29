@@ -272,7 +272,7 @@ sha1 = "0.11"
 mockall = "0.15"
 tempfile = "3.27"
 proptest = "1.5"
-serial_test = "3"
+serial_test = "4"
 wiremock = "0.6.5"
 # Additive feature merge onto the [dependencies] tokio entry (test-only — never
 # ships in the binary): unlocks `#[tokio::test(start_paused = true)]` for the
