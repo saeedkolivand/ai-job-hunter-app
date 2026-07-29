@@ -19,15 +19,15 @@
   "dependencies": {
     "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^8.2.1",
-    "react-i18next": "^17.0.10"
+    "react-i18next": "^17.0.11"
   },
   "peerDependencies": {
-    "react": "^19.2.7"
+    "react": "^19.2.8"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
-    "i18next-cli": "^1.66.2",
-    "react": "^19.2.7",
+    "i18next-cli": "^1.67.3",
+    "react": "^19.2.8",
     "typescript": "^7.0.2"
   }
 }
