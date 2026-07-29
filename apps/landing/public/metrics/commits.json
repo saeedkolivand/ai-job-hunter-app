@@ -1,5 +1,185 @@
 [
   {
+    "sha": "414d6d751b0595a898ece318f7ff1726b9d9b367",
+    "commit": {
+      "message": "docs: consolidate 13 agent rule files into a canonical agents.md (#903)\n\n* docs: consolidate 13 agent rule files into a canonical agents.md\n\nThe repo maintained 13 hand-written copies of the same coding rules: CLAUDE.md,\nAGENTS.md, .clinerules, .windsurfrules, .codexrules, .roorules, .jba/guidelines.md,\n.aider/system-prompt.md, .github/copilot-instructions.md and 4x .cursor/rules/*.mdc.\n\nThey had already drifted. `NumberField` — a primitive named in enforced rule 5 — and\nthe whole apps/landing workspace existed in CLAUDE.md alone, so twelve files taught a\nstale rule set. Every rule change meant 13 edits with nothing enforcing the 13th.\n\nAGENTS.md is now canonical: a Linux Foundation standard, read natively by Copilot,\nCursor, Windsurf and Codex. CLAUDE.md imports it with the documented `@AGENTS.md`\nsyntax and keeps only Claude-Code-specific orchestration — the subagent fleet, review\ngates and model tiering, none of which other tools can act on. Files for tools that\ndon't read AGENTS.md natively or in full become one-line pointers; redundant ones go.\n\nApplied the /doctor trim heuristic while merging: cut what an agent can derive from the\ncodebase (package layout block, name-to-path lookup rows), kept every enforced rule\nverbatim plus the non-obvious locations. All 16 rules survive; the combined load is 136\nlines, inside the documented 200-line target.\n\ncheck-agent-system now enforces the invariant instead of relying on discipline: tool\nfiles must name AGENTS.md and stay under 1KB, so a forked ruleset fails pre-push and\nCI. Also fixes .aider.conf.yml, which pointed at a contracts.ts removed long ago.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct a nonexistent ui primitive in the canonical rules\n\nReview found rule 5 lists `SelectDropdown` among the required @ajh/ui\nprimitives. It is not exported — packages/ui/src/index.ts:37 exports\n`Dropdown`, and the renderer imports `Dropdown` everywhere. An agent\nfollowing the rule writes an import that fails the build.\n\nThis was pre-existing drift carried over verbatim, but \"all 16 rules\nsurvive verbatim\" is the right invariant for the merge and the wrong one\nfor correctness: verbatim preserved the bug, and the merge just blessed\nit as canonical for every tool. Same failure mode as the `NumberField`\nstaleness this PR exists to fix. Also fixes the ESLint message that fires\non raw <select> and the Form JSDoc, both naming the same missing export.\n\nEnforce the two facts the whole rule set hangs on, which nothing asserted:\nAGENTS.md exists, and CLAUDE.md contains an unfenced `@AGENTS.md` import.\nWithout either, Claude Code loads orchestration with zero coding rules\nwhile every pointer still truthfully says \"read AGENTS.md\" and the check\nstays green. Verified both assertions fail when violated, plus the size\ncap on a re-forked pointer.\n\nExempt .aider.conf.yml from the pointer size cap — it is a real settings\nfile, so growing past 1KB is legitimate and the message would mislead.\n\nOther review fixes: qualify Copilot's native AGENTS.md support (not all\nfeatures, per GitHub docs), rule 13 used grep against the repo's own rg\npolicy, rule 14 named a contracts.ts removed long ago, and the header\ndocblock plus a comment still said nine copies and CLAUDE.md.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: close a fenced-import hole in the canonical rules guard\n\nThe import guard added last round claimed to catch a \"missing or fenced\"\nimport but only caught inline backticks. Under /m, `^` matches at the start\nof a line inside a fenced block too, so a triple-backticked @AGENTS.md\npassed green while Claude Code skipped the import — the docs are explicit\nthat import parsing skips code spans and fenced blocks. That is precisely\nthe failure the guard exists to prevent: orchestration loads, zero coding\nrules load, every pointer still truthfully says \"read AGENTS.md\".\n\nMy \"verified by fault injection\" claim last round covered only the inline\nvariant. Fences are now stripped before testing, and all three variants are\nverified failing: block-fenced, tilde-fenced, and inline backticks.\n\nCap the canonical files at 200 combined lines. They load in full every\nsession and adherence drops as they grow; the PR asserted that budget and\nthen hand-checked it, the same gap as the unenforced import. Now enforced,\nwith .claude/rules/ + paths: frontmatter named as the escape hatch.\n\nAlso: rule 5's `SelectDropdown` rename left one entry behind in\nDEEP_UI_IMPORTS, banning a path that no longer exists. The .gitignore\ninventory omitted .codexrules and .roorules and claimed the 1KB cap covers\n.aider.conf.yml, now exempt. AGENTS.md told non-Claude tools to use an\nownership table that every pointer file tells them to ignore — it now\ndescribes the routing inline.\n\nVerified against vendor docs rather than the secondary sources the deletions\noriginally rested on: Windsurf processes AGENTS.md through the same rules\nengine, and Cursor documents it as a first-class alternative to\n.cursor/rules. Both deletions stand.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct two dead paths in rule 14 and harden the fence stripper\n\nRule 14 named `commands.rs` and `services/query-client.ts`; both are\ndirectories on disk (commands/, services/query-client/). Last round fixed\n`contracts.ts` on the same line and left its two siblings — the canonical\nfile for every tool was naming files that are not there.\n\nHarden the fence stripper: matching the full opening run means a 3-backtick\ninner fence can no longer close a 4-backtick outer one, and 1-3 leading\nspaces are still a fence per CommonMark. Both variants verified failing,\nalongside the plain and inline cases.\n\nRestore the Copilot caveat in the .gitignore inventory — that comment is\nwhere someone decides whether a pointer is still needed, and it claimed\nunqualified native support that AGENTS.md and the pointer both qualify.\n\nConsidered and rejected: a mechanical dead-path check over backticked paths\nin the canonical files. First run produced two false positives — `machines/`\n(real, under a lookup root I had not listed) and the commit-type list\n`refactor/ui/style/...`, which is not a path at all. Catching the shorthand\nform that actually broke three times (`commands.rs`, not\n`src-tauri/src/commands/`) needs a resolution table that is itself\ndrift-prone, so the checker would need more maintenance than the rules it\nguards.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: guard fully-qualified paths in the canonical rules\n\nRound 3 rejected a dead-path check because the unscoped version produced\nfalse positives. That reasoning conflated two halves. Fully-qualified paths\nresolve from the repo root with no lookup table, so nothing drifts;\nshorthand needs a workspace-root table that rots like the rules it guards.\nOnly the first half is checked now, scoped to AGENTS.md.\n\nVerified rather than assumed: 35 backticked slash-tokens in AGENTS.md, 14\nqualified, 14/14 resolve, zero false positives. The commitlint type list\nthat broke the unscoped version is correctly skipped, as is every shorthand\nform. Injecting a dead qualified path fails the check; injecting a dead\nshorthand path passes, confirming the documented gap is real and not a\nguess.\n\nThe .gitignore inventory said pointers are kept \"only for tools that don't\nread it natively / in full\", then listed Codex as a native reader and kept\n.codexrules — whose own stated reason (an unmissable pointer) the criterion\ndid not admit. Widened the criterion instead of dropping the file.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T21:54:33Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c16bea0decf24a3e71255cf2691972cfedc4dac3",
+    "commit": {
+      "message": "chore: demote stop-gate llm review to pre-push and slim the agent fleet (#902)\n\n* chore: demote stop-gate llm review to pre-push and slim the agent fleet\n\n- stop hook is now deterministic tier-0 only (ast-grep + ledger re-emits, ~1s); the llm review runs at pre-push/ci\n- pre-push review boots lean (--strict-mcp-config), logs json usage/cost telemetry, and honors a prompt-hash cooldown\n- rationale: 74.7% of 830 stop-gate runs over 17 days died in their own 120s timeout after booting project mcp servers, for 68 findings / 8 hard blocks ever; uncached failures made the loop repeat\n- archive the dormant gl fleet (5 agents + 2 skills) to .claude/dormant/ per adr-0017; active roster is 25\n- effort split: only pr-reviewer + tauri-security-reviewer keep xhigh; other opus critics run high\n- cost-tiered per-change defaults (adr-025 amendment): trivial diffs edited directly, one sibling critic for single-domain non-risk, full trio only for risk-bearing/multi-domain, steward closes per pr\n- slim the shared contract skills (22.3kb -> 10.9kb) and claude.md (16.5kb -> 12.9kb); cap /review finding-verifier fan-out at 5; graphify-hint nudges once per session\n- landing agent-fleet explainer + check-agent-system drift guard updated to the new roster and effort rule\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: address ai review findings on the gate demotion\n\n- harden runClaudeReview: never treat a killed/failed spawn's partial stdout as a reply; clear the cooldown once the llm is reachable again\n- validate re-emitted ledger findings' shape before counting/formatting them in the stop gate\n- fit ast-grep (20s) inside the 30s stop-hook budget so the harness can't kill the hook mid-scan\n- graphify-hint marker uses exclusive create (wx, 0600) so a pre-planted symlink is never followed\n- check-agent-system enforces exact opus effort pins from the tiering sentence (xhigh pair vs high trio), negative-tested\n- dormant gl files reference their .claude/dormant/ skill paths; adr-025 single-domain tier names the mandatory test pair\n- claude.md path-privacy section no longer embeds path examples; grill-with-docs referenced by name\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T14:47:53Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f899bc8e8f4b2bcc3839c9ac4d477c18f537906d",
+    "commit": {
+      "message": "chore: sync landing download version to v0.130.1",
+      "author": {
+        "date": "2026-07-28T12:57:39Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "7593d4eb3325b8a79ef7c14485a74ab1c58ceeec",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.130.1 [skip ci]",
+      "author": {
+        "date": "2026-07-28T12:56:50Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "4c4aa78d1514c65bb1c2f7944fbe5fb91e66ad6c",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-28T12:50:38Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "ffc4ae4f523ee9bfdd67a7f578878e1b2d67a696",
+    "commit": {
+      "message": "chore(release): 0.130.1 [skip ci]",
+      "author": {
+        "date": "2026-07-28T12:32:58Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "0ad1647aa43456e1e57264b516995064e0a002d4",
+    "commit": {
+      "message": "fix(ai): claude 5 family support — adaptive thinking, sampling gates, model lists, spend rates (#901)\n\n* fix(ai): support claude 5 fable alias and spend rates\n\nAnthropic 5-family models (opus-5/sonnet-5/fable-5) never supported the\nclassic thinking budget_tokens block; anthropic_supports_thinking() already\nexcluded them by omission, but the comment read like an oversight rather\nthan deliberate adaptive-thinking routing. Clarify the gate and lock the\n5-family exclusion + the resulting no-thinking-block request shape with\nregression tests, alongside the existing 3.7/4.x/pre-3.7 coverage.\n\nAdd the \"fable\" bare alias to Claude Code's CLI model list (mirrors\nsonnet/opus/haiku) and to the prompts package's large-model detector, so it\nno longer falls through to the small prompt tier. Add spend RATES rows for\nclaude-fable-5 ($10/$50), claude-opus-5 ($5/$25), and claude-sonnet-5\n($3/$15); haiku-4-5 already matches the existing claude-haiku-4 prefix.\nPrefix-shadow safety between the 4.x and 5.x rows is pinned by a test.\n\nContext7 was unavailable in this session's toolset, so the exact Messages\nAPI wire shape for adaptive thinking + the effort parameter was not\nverified live; effort is left unwired for the direct Anthropic path (it\nremains CLI-agent-only end to end per the shared schema), which is the\nverification-gated task's own permitted \"send nothing extra\" outcome.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): send adaptive thinking config and gate sampling for claude 5 models\n\nThree-way model classification in the anthropic adapter: classic models keep\nextended thinking (enabled + budget_tokens), adaptive models (opus 4.7/4.8 and\nthe 5 family) get thinking type adaptive with display summarized so the\nthinking view receives text (display defaults to omitted there), plus the same\nmax_tokens headroom since thinking tokens count toward the cap in both modes.\nAdaptive models reject non-default sampling params on every request, so\ncapabilities() is now model-aware and all four request builders gate\ntemperature/top_p on it. Dot-form version ids are normalized before matching.\n\nSpend: opus 4.5 gets its own rate row (was shadowed by the opus 4 prefix into\na 3x overestimate), vendor-prefixed ids strip to the bare name, and rate tests\nassert the matched prefix, not the price.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: refresh anthropic model lists and onboarding default for the claude 5 family\n\nCurated anthropic seed list moves to claude-fable-5 / claude-opus-5 /\nclaude-sonnet-5 / claude-haiku-4-5, the claude code cli list gains the fable\nalias, the onboarding anthropic default becomes claude-sonnet-5, and the\nprovider description stops enumerating model families so it cannot go stale.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): apply security gate advisories to thinking headroom and spend rates\n\nAdaptive max_tokens inflation now applies regardless of the classic 2048 gate\n(the extension answer assist calls with a 1000 cap and was billed thinking out\nof it), opus 4.6/4.7/4.8 get their own 5/25 rate rows instead of shadowing\ninto the opus 4 15/75 row, max_tokens arithmetic saturates, and rate lookup\nfalls back to the full string when the last path segment matches no row.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): fail safe on unknown claude families and floor adaptive headroom\n\nanthropic_supports_temperature() is now the single sampling gate for all four\nrequest builders: unclassified claude ids omit temperature (omitting never\n400s) with a legacy pre-thinking carve-out, adaptive headroom gets a 1024\nfloor so small caps keep a useful thinking budget, rate prefixes match\ndot-form ids on both sides, and the classification debug log no longer\nmislabels legacy non-thinking models.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: note adaptive thinking in the anthropic provider table row\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(ai): split anthropic tests into a sibling file under the r8 loc cap\n\nBehavior-preserving move of the test module (all 35 tests verbatim) into\nanthropic_tests.rs via the answer_assist_tests.rs precedent; anthropic.rs\ndrops from 1540 to 951 lines, back under the 1400 hard cap.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai): address pr 901 review findings in spend and model classification\n\nAdd a gpt-4-1106 rate row (dot-dash normalization made it match the gpt-4.1\nrow at a 15x under-report), replace the last vacuous price assertion with a\nprefix assert, delete the untriggerable full-string rate fallback, strip\nvendor prefixes before model classification so the fail-safe holds behind\nanthropic/, make version needles boundary-aware (opus-4-70 no longer matches\nopus-4-7), and match the bare fable alias exactly so fable-1b local models\nkeep the small-model prompt.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: keep stored model selections visible when absent from curated lists\n\nA stored model dropped from the curated seed list rendered as the muted\nplaceholder until the live model fetch resolved, reading as a reset config.\nBoth settings panels now inject a synthetic option for the stored value, with\nregression tests, and a contract test pins the onboarding defaults to the\nprovider catalog.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T12:29:41Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "3e2f64863f9143fb5385764a883f042492ad0f7e",
+    "commit": {
+      "message": "docs: modernize agent-system model and effort tiering for the claude 5 family (#900)\n\n* docs: modernize model and effort tiering for the claude 5 family\n\nCLAUDE.md section model tiering becomes model & effort tiering: aliases auto-track\nopus 5 / sonnet 5 / haiku 4.5, effort levels replace the retired extended-thinking\nlever, six opus critics pin effort: xhigh in frontmatter, and fable is per-spawn\nescalation only (never a default, never security review). AGENTS.md, ADR-0008\n(opus 5 deep dive), DESIGN_DECISIONS and adr-025 de-hardcode rosters and fix the\ndead explainer pointer.\n\nThe agent-system drift guard gains check 10 (model tiering): every agent needs a\nbare alias model, the opus set must match the CLAUDE.md critic list, haiku is\nsteward+verifier only, and opus implies effort: xhigh. Hardened for BOM/CRLF and\nquoted values with an intelligible anchor-failure mode.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: resolve pre-pr review findings on the tiering modernization\n\nDocument that pr-reviewer's effort: xhigh pin persists across the ensemble's\nper-invocation sonnet override (intended — the ensemble varies model, not\neffort). De-hardcode four more stale roster counts (AGENTS.md, .clinerules,\n.windsurfrules, docs/knowledge/extension-domain.md) and drop the unenforced\n\"six\" from the effort-tiering lines. Dedup check 10's malformed-alias failure\nso one root cause emits one message.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs: address pr 900 review advisories\n\nTrim AGENTS.md tiering to a thin pointer (canonical policy lives in CLAUDE.md\nonly, which check 10 validates), de-hardcode the copilot-instructions agent\ncount, drop the rot-prone classifier parenthetical from CLAUDE.md, compress\nthe review.md effort note to one line, and align check 10 naming while making\nits explicit-tiers-only rejection message name the policy. Record the \"opus 5\ndoes not exist\" gate finding as a false-positive precedent in review-config.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T09:19:41Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "fd39a193a699e3fa3638e9161e4caa2568675c16",
+    "commit": {
+      "message": "chore: sync landing download version to v0.130.0",
+      "author": {
+        "date": "2026-07-28T08:15:55Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "18e78b19a65e9245b094bc668d2e328a5e56fd74",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.130.0 [skip ci]",
+      "author": {
+        "date": "2026-07-28T08:15:24Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "0d3974d78d5d3cee0cd1c1d2fa6996c6ed8a4119",
+    "commit": {
+      "message": "chore(release): 0.130.0 [skip ci]",
+      "author": {
+        "date": "2026-07-28T07:43:19Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "5a899f0ae9ab1aed21076f3d1451cd3d993d1404",
+    "commit": {
+      "message": "docs: record the applications redesign and aggregator spend budget (#896-#897) (#899)\n\nADR-0001 keeps its aggregate-split decision; a dated addendum supersedes only\nits list-shape consequence - the route now leads with a pipeline strip, stage\nsections when unfiltered, one flat list under any active filter.\n\nscraping-domain gains the SearchBudget contract: from_input is the only\nproduction constructor, provider_amount fails closed to no spend, apify_cap\ngates and sizes the paid tier off it, and metered fetches run retries=0. The\ndeliberate behavior change - scheduled runs no longer buy LinkedIn results,\nwith no UI signal - is recorded rather than left in a commit message.\n\nARCHITECTURE_STATUS gains four applications rows and an aggregator paging row.\nNEXT_ISSUES gains three follow-ups: a daily backstop for metered scraping, a\nbyte-aware client guard for the status-note cap, and a UI signal for the Apify\nscheduled-run change.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T07:39:12Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "55e92081de2a0b7235dde36db94dac0e956a2733",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-07-28T07:38:22Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "273ef22ba297bd4687c8defca35d2fa290fa6eda",
+    "commit": {
+      "message": "feat: applications page pipeline redesign with unified contacts, reminders, and status notes (#897)\n\n* feat: unify application contact fields and notify due follow-ups\n\nBackend half of the Applications-page upgrade.\n\nContact unification: `contact_name`/`contact_email` become THE single primary\ncontact per application. `recipient_name`/`recipient_email` are demoted to\ndeprecated aliases — accepted as inputs (both names write the same storage,\ncanonical wins on a tie) and always mirrored back on responses, so the renderer\nand extension keep working unchanged. Migration `unify_application_contact`\nbackfills the canonical pair from an alias-only value and leaves the deprecated\nCOLUMNS untouched (additive-only, never destructive); the store simply stops\nreading/writing them. `import` folds a pre-unification bundle the same way. The\naddress validation that guarded `recipientEmail` now guards both names, so the\napply-by-email sink can't be bypassed under the other name.\n\nReminders: a new L2 `reminder_scheduler` sweeps due/overdue `next_action_at`\nvalues on startup (after a grace period) and every 30 minutes, raising one\n`application.follow_up` notification routed to `/applications?highlight=<id>`.\nDedupe uses a new nullable `next_action_notified_at` marker column, stamped\nbefore the push and cleared by `update_fields` whenever the due date moves, so\none application notifies exactly once per due date and a reschedule re-arms it.\nTerminal pursuits never nag, and one sweep is capped so a first run after\nupgrade can't burst. No new IPC command: the overdue/upcoming counts the UI\nneeds are derivable from the `nextActionAt` values `applications.list` already\nreturns.\n\n`applications/mod.rs` sat one line under the R8 hard LOC cap, so the migration\nlist and the job-URL normalizer move to sibling files verbatim (no behaviour\nchange; `normalize_job_url` is re-exported).\n\n* feat: application status notes and unified contact\n\nOptional-note prompt on every status change plus a single canonical contact\npair across the detail surfaces.\n\n- StatusNoteModal: shared prompt opened AFTER a persisted stage change (row +\n  detail header) and from the Timeline's explicit \"Add note\". Saving writes a\n  same-status setStatus({ note }); Skip/Escape is a no-op, so the common\n  \"just move it to Applied\" path costs one keystroke.\n- Timeline collapses a from === to event to a single stage entry so a note\n  event never renders as \"Interviewing -> Interviewing\".\n- Status changes moved from a bare void mutateAsync to mutate + onSuccess /\n  onError, so the prompt only opens on a persisted change and a failure now\n  surfaces a localized inline alert instead of being silently swallowed.\n- ApplyByEmailTab recipient fields now read AND write contactName /\n  contactEmail (the canonical pair) instead of the deprecated recipient\n  aliases, with a hint making the shared binding discoverable. The heuristic\n  job-description prefill is unchanged and now lands on the canonical field.\n- Follow-up reminder promoted: its own leading Overview section with an\n  overdue-tinted hint, plus a header chip visible from every tab.\n- Row meta gains the board chip, salary range and an applied/updated stamp\n  (relative label, full timestamp in title).\n- i18n: every new string in en + de.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: add applications pipeline strip and richer list rows\n\nSix always-present glass stat cards above the list — Saved, Applied,\nScreening, Interviewing, Offer and Closed (the four end-states aggregated) —\neach a toggle filter for its stage group, plus a client-derived overdue\nfollow-up badge.\n\n- lib/pipeline.ts owns the grouping, counts, overdue count and sort orders as\n  pure functions; a test pins PIPELINE_GROUPS against APPLICATION_STAGES so a\n  new backend stage can never silently fall out of the strip.\n- Counts always describe the WHOLE list (never the filtered view) and include\n  zeros, so an empty column still reads as information.\n- The Closed group tags each row with its own stage, so an aggregated card\n  never hides how a pursuit ended.\n- Sort control in the page header: updated (the server order, default),\n  company A-Z, next action. Persisted on the applications session slice next\n  to the existing filter, and narrowed on read so stale state degrades to the\n  default instead of throwing.\n- A ?highlight deep-link now CLEARS an excluding stage filter as well as\n  un-collapsing the stage section, so a follow-up notification always lands on\n  a visible row. An unknown highlight id leaves the filter untouched.\n- Overdue counts derive client-side from the nextActionAt already in\n  applications.list() — no new IPC.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: keep applications element casts typecheck-safe\n\n`eslint --fix` strips `as HTMLInputElement` on `getBy*` results as an\nunnecessary assertion, but `tsc` still needs the element type for `.value`.\nUse testing-library's generic form so both gates agree.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: promote the application contact pair atomically and harden its guards\n\nCritic round on the contact-unification + reminder backend.\n\nCONVERGED HIGH — migration 7 promoted name and email INDEPENDENTLY, so a row\nwhose canonical pair was half-populated absorbed the other half from the\ndeprecated alias pair, fusing person A's name with person B's address. That\nfused identity feeds the apply-by-email mailto: sink, i.e. a message addressed\nto B under A's name. The promotion is now pair-atomic (both columns move, and\nonly when the WHOLE canonical pair is empty) and uses the same TRIM-based\nemptiness rule as its import-time twin, since whitespace-only values are\nreachable from pre-trim builds. Application::canonicalize_contact carried the\nidentical flaw on the import path and gets the identical fix, so a bundle\nimports exactly as the same row migrates in place. A test seeded with the\ncritics' probe rows reproduces the fusion against the old SQL.\n\nAn alias pair that is genuinely a second person is no longer dropped: the\nmigration and the import fold both append it to notes as\n\"Apply-by-email: <name> <<email>>\". Without that it was lost for good — the\nstore stops reading the deprecated columns and an export mirrors the canonical\npair, so no round trip could recover it. Both appends are replay-guarded.\n\nHIGH — the detail page seeded its save-on-blur buffers once per id, so after the\napply-by-email tab wrote the now-shared canonical contact, an Overview blur\npersisted its stale empty buffer back and wiped it. The mount key carries\nupdatedAt, re-seeding on every persisted change.\n\nAlso: byte-capped contact names on both inbound aliases (Zod + a Rust guard\nbeside the email one); rejected control characters and spaces in an address\nbefore the shape check (a stored CRLF is a header-injection primitive, and\nlegacy unvalidated rows now mirror into the recipient sinks); made the reminder\nstamp conditional on the due date the sweep decided against, so a reschedule in\nthe read-stamp window can no longer silence the new date; logged rather than\nswallowed a follow-up query failure; and set MissedTickBehavior::Delay so a\nlaptop wake does not drain a burst of catch-up sweeps.\n\nThe contact fold moves to applications/contact.rs — the added guards pushed the\nstore back over the R8 LOC cap.\n\n* fix: keep the applications note prompt and edit buffers alive across a refetch\n\nCritic round on the applications UI. Three HIGH findings, all reproduced.\n\nHIGH — the status-note prompt was destroyed by its own invalidation refetch on\nboth surfaces. On the list the refetch moves the row into a different keyed\nstage section, so React unmounted the row and the prompt state with it; on the\ndetail page the updatedAt mount key remounted the view and reset it. Only the\nTimeline entry point worked. The prompt now lives above the churn: page-level\nand keyed by application id on the list, and above the mount key on the detail\npage. The row just reports the persisted stage through onStatusChanged. The new\nlist test delivers the real refetch (the mocked query data changes) and asserts\nthe old row node is disconnected while the dialog survives.\n\nHIGH — replaced the key={id}:{updatedAt} remount with per-field reconciliation.\nThe remount fixed the contact-wipe but destroyed keyboard focus, discarded text\ntyped into another field while the first write was in flight, tore down the\nwhole TailorFlow sub-tree on every job-ad typing pause, and closed the note\nmodal on any landing write. Each save-on-blur buffer now adopts its own server\nvalue during render (useSyncedBuffer), so a sibling write can no longer clobber\nan uncommitted edit. The wipe regression test still passes; restoring the old\nkey turns the two new survival tests red.\n\nHIGH — prettier was red on two files. The npx wrapper prints \"All files\nformatted correctly\" while exiting 1, so the earlier claim was wrong; verified\nnow against pnpm format:check (exit 0).\n\nAlso: re-picking the CURRENT stage is a no-op on both Dropdowns (Dropdown.select\nfires onChange unconditionally, which appended a phantom event); a failed note\nwrite keeps the dialog open with the text and shows a localized error instead of\ndiscarding it; the note re-reads the live status at save time so a transition\nlanding while the prompt is open is not reverted; both Overview contact inputs\nsurface a rejected write the way ApplyByEmailTab already did for the same\ncanonical pair; and the pipeline strip announces its filter through a live\nregion.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: align the contact-unification whitespace and cap rules across layers\n\nFinal queued LOWs on the applications backend.\n\nTRIM charset divergence: SQLite's bare TRIM(x) strips only U+0020 while Rust's\nstr::trim strips all Unicode White_Space, so a contact field holding a TAB or an\nNBSP — endemic in text copied out of scraped HTML — read as non-empty in SQL and\nas empty in Rust. The same row therefore folded one way through the in-place\nmigration and the other way through a restored bundle. Migration 7 now passes an\nexplicit charset (space, TAB, LF, CR, NBSP) to both WHERE clauses. Rust stays a\ndeliberate superset for exotic separators (U+2028, U+3000); chasing full parity\nwould mean pinning an unbounded char() list to the current Unicode table, and\nthe residual failure mode is a contact left unpromoted rather than a wrong one —\ndocumented in the contact.rs lockstep note. Seeded tab and NBSP rows; reverting\nto bare TRIM leaves the tab row at (\"\\t\", \"\\t\\t\") instead of promoting it.\n\nName caps counted characters client-side and bytes server-side, so a 200-char\nCJK name passed Zod and was then rejected by the store with an error the user\ncould do nothing about. Both name aliases now use the TextEncoder byte refine\nthe jobDescription field already established; the email aliases get it too,\nsince they share the same column and the same divergence.\n\nvalidate_contact_name gains the control-character rejection its email sibling\nalready had — the name is interpolated verbatim into the migration's\n\"Apply-by-email: <name> <<email>>\" note and into the display-name half of any\nfuture message header. Interior spaces stay legal, unlike in an address.\n\nAlso seeds the identical-alias-pair row the test's own doc comment claimed but\nnever had, pinning the <> distinctness guard that suppresses the preserved note.\n\n* fix: make applications state paint, fit and return focus\n\nUX audit round. Five HIGH findings, all measured against the built bundle.\n\nHIGH — the selected pipeline card painted pixel-identical to an unselected one.\nIts bg-brand/border-brand utilities live in @layer utilities while\n.surface-card's own background and border are unlayered, so the card never\nchanged. Selection is now a ring (box-shadow, which .surface-card never sets, so\nnothing can contest it) plus a check glyph as a non-colour cue. A probe against\nthe built CSS asserts the emitted declarations, not the class names.\n\nHIGH — text-destructive is a dark surface tone (oklch 30%), so six new\nrole=alert sites announced correctly and painted invisibly. All now use\ntext-red-400 (oklch 70.4%); --color-error is genuinely undefined, so text-error\nwould have degraded to plain foreground.\n\nHIGH — at 900px three tags beside the row title squeezed it to nothing and\noverlapped the stage Dropdown. The title row wraps now, tags never shrink, and\nan aggregated pipeline group renders ONE flat list instead of per-stage headers\nthat printed each stage twice (header + row tag) and fragmented a small bucket.\n\nHIGH — closing a dialog dumped focus on <body>. useFocusTrap now remembers the\npre-open element and restores it. Deliberately a fallback: it skips when focus\nwas already moved somewhere meaningful or the element left the DOM, so a wrapper\nwith its own return target still wins. The note dialog also stops closing on a\nbackdrop click, which was destroying typed text with no confirmation.\n\nHIGH — the note field had no visible boundary against the modal panel; it uses\nthe glass variant now, matching the Overview notes precedent.\n\nAlso: contrast lifted to /70 across the strip label, row meta, hints and the\nSkip action; the meta line is differentiated by weight and caps rather than\nsub-12px sizes that all render at the same size anyway; a stage change on the\nLIST now offers a transient chip instead of seizing the screen with a modal\n(the detail page keeps the immediate prompt, where the change is the whole\ntask), and the dialog names the application; the filtered-empty state says which\nfilters are hiding everything and offers a way out; the loading state reserves\nthe strip's footprint; the overdue badge is a control that surfaces those rows;\nthe Closed bucket is renamed Finished so it stops reading as failure for an\naccepted offer; the shared-contact hint moved onto both inputs via\naria-describedby and states its consequence; the comp-only section is renamed\nCompensation; and the app root wraps everything in MotionConfig reducedMotion\nuser, so motion honours the OS setting that CSS media queries never reached.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: return focus from the note dialog and finish the applications ux round\n\nClosing UX re-verify. One HIGH plus the small-item batch.\n\nHIGH — closing the note dialog still stranded focus on <body>. The TextArea's\nautoFocus is applied during COMMIT, ahead of every effect, so the focus trap\nremembered the field itself as the opener, found it disconnected on close and\ncorrectly skipped the restore. Removed it — the trap already focuses the first\nfocusable — and moved the trap's capture into a layout effect so a descendant\nthat grabs focus from a passive effect cannot fool it either. Three tests pin\nthis: the passive-effect case, the autoFocus case (which documents WHY dialog\ncontent must never use it), and an end-to-end open-from-trigger then Escape.\n\nRULING — any active stage filter now renders one flat list. A section header\nunder a filter was either a word-for-word copy of the strip card selected right\nabove it, with a collapse toggle that means nothing when there is one section,\nor a second printing of each row's stage. The stage Tag stays gated on a group\nspanning several stages, so the two concerns are now separate flags.\n\nAlso: both new chips expressed their hairline with border-*, which the same\nunlayered `* { border-color }` rule overrode — swapped to the ring mechanism and\ngiven a 24px target floor; the overdue label takes real one/other plurals in\nboth locales; the light-scheme red/amber steps go one deeper (the pre-existing\nremap already shipped -600/-700 and still measured 4.0-4.4:1 on the tinted Tag\nfills) and brand-soft collapses to the light brand; the last surface-tone alert\nis gone; the loading placeholder now shares the strip's own class constants and\nnon-breaking spaces at the real type sizes, and the overdue row is always laid\nout so gaining one never shifts the list; the chip's retire timer skips while it\nholds focus (WCAG 2.2.1); the shared-contact hint is one node referenced by both\nfields; and the dead trackingSection key is gone.\n\nReverts the Input `hint` prop added last round — the single shared hint made it\nunused, and an untouched public API is worse than none.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ui: keep a truncated pipeline card label readable via title\n\nThe German \"Abgeschlossen\" clips at the large text scale. Mirrors what the\napplication row title already does.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: surface rejected contact writes and sync the canonical pair\n\nReview round on PR #897 — the renderer and shared half.\n\nRejected contact writes were invisible on the apply-by-email tab: persistName\nfired and ignored the result, so a value the server refused stayed on screen\nwhile storage kept the old one and the mailto button pointed at the stale\naddress. Both fields now surface BOTH failure shapes — the in-band {error} and a\ntransport rejection — and the Overview pair, which edits the same canonical\ncolumns, gains the same onError. Six tests cover the paths, which had none.\n\nThe recipient pair also moved to useSyncedBuffer, extracted out of the detail\npage into the feature lib so the two surfaces editing those columns share one\nimplementation instead of one re-seeding and the other not.\n\nAlso: the note chip swallowed Enter/Space so activating it by keyboard no longer\nopens the detail page underneath the dialog; a slow note save can no longer\nforce-close a prompt the user has since opened for another row; the list prompt\nuses the post-transition copy, since only a persisted change raises it; the\npipeline counts are memoised; and the note field takes a client-side length\nguard (the command stores it uncapped — a real bound belongs there).\n\n\"Overdue\" now means the due DAY has passed. The field stores local midnight, so\na follow-up set for today was announced as late from 00:01 — in the badge, the\nstrip counter and the notification. Six fixtures asserted that old behaviour and\nwere updated.\n\nThe light-scheme contrast fix gains a real test: it parses the stylesheet and\npins exactly ONE light rule per remapped class, which is how the first attempt\nshipped inert behind a duplicate later in the same file. Its values moved into\nnamed tokens, so utilities.css states intent and tokens.css owns the step. The\nfocus trap gains stacked-trap coverage and its negative tests now assert focus\nactually lands on body rather than merely leaving the opener.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: close the reminder sweep race, banner storm and backup replay\n\nSeven PR #897 review findings on the follow-up reminder path.\n\n- Migration 8 now backfills `next_action_notified_at` for every reminder already\n  due at migration time. Without it the first post-upgrade sweep treated the whole\n  existing backlog as new and announced it; MAX_PER_SWEEP paced that but did not\n  suppress it. Entry 8 has never been released, so the body is amended in place\n  rather than appended as a ninth step.\n- `mark_next_action_notified` re-asserts the non-terminal status inside the\n  UPDATE's WHERE (list derived from `is_terminal`, drift-guarded by a test) and\n  reports rows-affected == 1. A status change landing between the sweep's read and\n  its stamp no longer notifies on a closed pursuit; a Rust-side re-check could not\n  have closed that window.\n- `next_action_notified_at` joins the `Application` wire type and\n  `write_row_conn`, so export/import round-trips it. Restoring a backup used to\n  re-fire every already-announced reminder. The compiler now forces every write\n  path to decide the marker's value; a test covers the re-upsert merge branch.\n- `tick` moved the storage half onto `spawn_blocking` (the email-watch poll\n  pattern) and stayed async for delivery, so the parking_lot lock, the table scan\n  and the row writes no longer block a tokio worker while `is_focused` keeps its\n  main-thread round trip on the async side.\n- `follow_up_candidates`' error arms are tested: a dropped table degrades to an\n  empty sweep through both the per-row arm and, after the connection reloads its\n  schema, the prepare arm. Both were verified red by replacing the guard with\n  `expect`. A row that cannot decode is skipped without costing the healthy ones.\n- `normalize_job_url` strips C0/DEL before the scheme guard, so `java\\nscript:` —\n  which HTML and the WHATWG URL parser both read as `javascript:` — can no longer\n  pass a raw-byte scheme scan verbatim. Defense in depth; not reachable today.\n- `canonicalize_contact` now requires a non-blank alias pair to promote, matching\n  the migration's WHERE exactly. SQL wins the lockstep because it is the in-place\n  path every existing row already took.\n\n`follow_up_candidates` + `mark_next_action_notified` moved to a new\n`applications/reminders.rs` (R8 LOC cap; same precedent as contact/job_url), and\na test-local `Patch` struct replaces the positional `update_fields` calls.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: cap the status note server-side and name contact errors as the ui does\n\nTwo PR #897 review LOWs on the applications command layer.\n\n- `applications_set_status` stored the note uncapped: the textarea's\n  `maxLength={2000}` was the only bound and no other caller passes through it,\n  while the note lands in the permanent `status_events` history. Added\n  `MAX_STATUS_NOTE_BYTES` and a trim + byte-cap guard that REJECTS rather than\n  truncates, matching `validate_contact_name` — a silently halved interaction-log\n  entry is worse than a visible error, and both surfaces already render the\n  returned error inline. The client cap is chars and the server cap is bytes, so a\n  very long multi-byte note surfaces a clear rejection instead of a silent loss;\n  the now-stale comment on `NOTE_MAX_LENGTH` was corrected to say so.\n- The contact-email rejections named `recipient_email`, the storage/alias\n  identifier, but the UI labels the field \"Contact email\" and there is no backend\n  i18n catalogue, so these strings reach the user verbatim. Renamed to the\n  user-facing name; no test pinned the old wording.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-28T07:17:40Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "e027635367070bc955873bbc0887f67bdbd65ef0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-28T06:02:57Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "e44f84e9b1625d7cfb80b6deb95a27793be05061",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1017,186 +1197,6 @@
     },
     "author": {
       "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1012bc8ccbe8bc18d863eeef7ee76d32fd3f3c2e",
-    "commit": {
-      "message": "fix(agent): clamp confirm-request args to the called tool's own cap (#823)\n\nARGS_DISPLAY_CAP is the max of COVER_LETTER_CAP (20k) and SAVED_RESUME_CAP\n(40k), so both gated Write tools displayed up to 40k. save_cover_letter then\ntruncates at its own 20k cap, so a 20k-40k letter was shown and edited in full\nand silently clipped on save — the user approved text that was not the text\npersisted.\n\nTaking the max guarantees the \"never show LESS than is saved\" half of the\nmodule's display/edit-fidelity invariant; it does not hold the \"never show more\"\nhalf for whichever tool has the smaller cap.\n\nAdd display_cap_for(tool) and clamp with it. ARGS_DISPLAY_CAP stays as the\nfallback for an unknown/future tool, preserving the never-show-less guarantee by\ndefault. The module's security-invariant doc is updated to match.\n\nNeeds a >20k-char generated letter to bite, so this is about keeping the gate's\nguarantee exact rather than a failure seen in practice.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:54:31Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "57210906fca98884153103b4b8ca06c777f87929",
-    "commit": {
-      "message": "fix(scraping): cap the body read on the user-supplied-url path (#821)\n\nresolve_uncached called Response::text() on the generic-HTML fallback, buffering\nthe whole body with no size limit. That URL is attacker-influenced — which is\nwhy the fetch goes through get_guarded_following_redirects — so a hostile or\nbroken host could stream an arbitrarily large body. The 20s timeout bounds how\nlong we read, not how much.\n\nThe board path already caps at 8 MB inside fetch_text, with a Content-Length\npre-check and a streamed accumulation that aborts mid-body. fetch_text is not a\ndrop-in here: it uses the shared client and would drop the SSRF guard.\n\nExtract that logic into scraping::http::read_text_capped(response, cap) — same\ncharset handling, so umlauts still decode — have fetch_text call it so there is\none implementation, and read the scrape_url fallback through it at 8 MB.\n\nAdds wiremock tests for both directions of the helper; the 40 existing\nscraping::http tests cover the fetch_text refactor.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:54:22Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "4242312f99996545ae8eff2552ce1b14bbdbeba3",
-    "commit": {
-      "message": "fix(credentials): never treat an unreadable metadata index as empty (#819)\n\nload_meta mapped BOTH a read error and a parse error to unwrap_or_default() and\ncached the result. Since the writer persists the whole map, the next set/remove\nthen wrote a one-entry file and orphaned every previously saved credential from\nthe index — the keychain secrets survive, but nothing can find them again.\n\nSeparately, set/remove took the cache lock inside load_meta, released it, and\nretook it inside save_meta, so two concurrent writers could start from the same\nsnapshot and the second would drop the first's entry.\n\nread_meta_file now separates \"file absent\" (empty index, first run) from\n\"unreadable/corrupt\" (an error). load_meta still degrades to empty for read-only\ncallers but no longer caches that, and mutate_meta holds the lock across the\nwhole read-modify-write and refuses to write over an index it could not read,\nleaving the user's file recoverable. save_meta is subsumed by mutate_meta.\n\nAdds a corrupt-index test (asserting the file is left byte-for-byte intact) and\nan 80-write two-thread concurrency test.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:54:00Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "cc2a9d06138ad55b6426643cd6875949ae77e2e6",
-    "commit": {
-      "message": "ci: label fork prs via pull_request_target (#814)\n\n* ci: label fork prs via pull_request_target\n\n* ci: accept pull_request_target for the labeler in zizmor\n\nThe labeler workflow never checks out or executes pr code and reads its\nconfig from the base branch, so the dangerous-triggers finding is an\naccepted, documented exception (same pattern as the release.yml\ncache-poisoning entry).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T00:40:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "25c1432353800286fe971465c2fdf341235755de",
-    "commit": {
-      "message": "fix: pr-batch advisory follow-ups (rust/shared) (#818)\n\n* refactor(autopilot): extract shared cancel-completion helper\n\nBoth cancel sites in autopilot_run (the scrape Err arm and the pre-record\nguard) duplicated the same clear-summaries + job_cancel + span-end + payload\nsequence. Extract one private finish_cancelled helper (span message passed\nper call site); behaviour is byte-identical, drift-prevention only. #778\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(spend): recognise expanded and mapped ipv6 loopback spellings\n\nThe cost/display free-call gate matched loopback hosts by literal string only,\nso the fully-expanded [0:0:0:0:0:0:0:1] and IPv4-mapped [::ffff:127.0.0.1]\nforms billed a local openai-compatible server at the unknown-model rate, and a\nuserinfo prefix (user@[::1]) defeated the bracket match. Add the extra literal\narms and strip an optional userinfo@ segment before host parsing. Still literal\nonly, never used for routing or security, so no IP-parsing crate. #780\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(shared): tighten next_action_at contract to non-negative\n\nAdd .min(0) to ApplicationUpdateSchema.nextActionAt so the wire contract\nmatches the server-side parse_next_action_at guard, which already rejects a\nnegative epoch-ms instead of silently clearing the reminder. Also make that\nguard's rejection message echo the offending JSON type for easier renderer-side\ndebugging. #782\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(shared): cover the nynorsk franc code in language detection\n\nlanguage-detection maps both nob (Bokmål) and nno (Nynorsk) to 'no', but the\nsuite only exercised the nob sample, leaving the nno branch silently\nregressable. Add a Nynorsk sample (franc detects it as nno) asserting it maps\nto 'no'. #790\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T00:24:35Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "38b4502e5a6b08e55e7672eb326841f79ccd5d91",
-    "commit": {
-      "message": "fix(ai-generations): key the per-job aggregate on the normalized url (#816)\n\nsave_application looked its row up with the raw job_url, while the sibling\nApplicationStore dedupes on normalize_job_url. So the same job reached under\ndifferent tracking params — the norm on query-id boards like Indeed — missed its\nown aggregate and forked a second \"one-per-job\" row, scattering the resume,\ncover letter and answers for one job across two records.\n\nThe mismatch is already documented in commands/ai_generations.rs:84-86 (\"which\nnever matches for query-id boards like Indeed\").\n\nNormalize on the write path so the stored key matches ApplicationStore's, and\nfall back to a raw-url lookup so a row written before this change still merges\nand is migrated onto the normalized key instead of being orphaned. The fallback\nis guarded so an unusable url (normalize -> \"\") cannot merge into an unrelated\nlegacy row.\n\nAiGenerationStore::applied_job_urls has no production consumer (the applied flag\ncomes from ApplicationStore's, already normalized), so nothing downstream\nchanges shape.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:21:35Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "530b7d6ac6f52875bc2f0f43fa100dc0fad0e3a9",
-    "commit": {
-      "message": "fix(autopilot): key the ai-notes skip on the merge's canonical key (#813)\n\nThe skip set was built from raw job URLs, but merge_found_jobs collapses jobs by\nmerge_key -> canonical_job_key -> normalize_job_url, which strips tracking params\nand fragments. So a job re-surfacing as ...?utm_source=indeed was \"new\" to the\nskip and \"already known\" to the merge: a Completer::complete call was made and\ncharged, then its note was discarded.\n\nAggregators append varying utm_* params, so this fired on essentially every run\nrather than never — the opposite of the intent stated right above the check\n(\"in steady state (nothing new) this makes ZERO provider calls\").\n\nCarry HashSet<String> of canonical keys through generate_assistant_notes into\nrun_notes_loop and compare on that.\n\nThe existing zero-calls test is renamed and strengthened: the already-seen jobs\nnow re-surface WITH tracking params, which is the case that was broken. With the\ncomparison reverted to the raw URL it fails 2 calls vs 0 expected.\n\nautopilot_helpers/mod.rs is 1392 LOC on main against R8's 1400 cap; the first\ndraft hit 1403 and R8 caught it locally, so this lands at 1399.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:15:26Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "84b42d45056b91c265e3a678d872646008b59235",
-    "commit": {
-      "message": "fix(applications): read the row inside set_status's transaction (#811)\n\nset_status called self.get(id), which takes and RELEASES the mutex, and only\nthen opened the write transaction. A transition committing in that gap was\ninvisible to the call, so the status_events row it appended recorded a\nfrom_status the row no longer had — an append-only history containing a link\nthat never happened.\n\nThe transaction already existed so the UPDATE and its event row land together;\nthe read was just left outside it. Move it in via row_by_id_conn.\n\nThis keeps set_status an unconditional setter — transition_status_if remains\nthe compare-and-set path, and its doc comment already warns about exactly this\nget-then-set pattern.\n\nThe new race test walks status_events by rowid (commit order; the `at` column\nis millisecond-resolution and ties freely) and asserts each from_status equals\nthe previous to_status. It fails 3/3 against the old code and passed 5/5 with\nthe fix. Net +2 LOC, keeping the file under the R8 cap.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:06:57Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "308800880102f79d892ffaecf2ec635f6a1f8940",
-    "commit": {
-      "message": "fix(prompts): only flag a language mismatch when both languages are known (#809)\n\nvalidateMetadata computed mismatch as\n  (parsed.resumeLanguage ?? 'en') !== (parsed.jobAdLanguage ?? 'en')\n\nwhich is wrong twice: there is no 'unknown' guard, so an undetected side reads\nas a mismatch, and ?? is nullish-only, so the empty string the model often\nreturns survives as '' and compares unequal to 'en'.\n\nBoth siblings already require BOTH sides to be known — analyze/validate.ts:126\nand @ajh/shared detectLanguages:147 — and validateMetadata never got the guard.\nA false mismatch injects a \"different languages, rewrite entirely, do not\ntranslate\" instruction into the generation prompt.\n\nCoerce the two languages first (blank falls back to 'en', as a missing key\nalready did), then apply the both-known rule. targetLanguage uses the coerced\njobAdLanguage for the same reason.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:06:48Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "c77db3bd9d098e9a6b8fa299d541e401275d674c",
-    "commit": {
-      "message": "fix(monitoring): gate the running pulse on a stable id, not a translated label (#807)\n\nanimate was `label === 'Running'`, but label is t('monitoring.metrics.running').\nThat literal only matches when the active translation happens to be \"Running\",\nso on any other locale — de renders \"Läuft\" — the card never pulsed while jobs\nwere running.\n\nGive each metric a stable id and gate on id === 'running'. The list key moves\nfrom the translated label to the id for the same reason.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:03:35Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "0b957d8d680945a76f47f422f007d2f46e50af6a",
-    "commit": {
-      "message": "fix(extension): anchor the collision-prone denylist terms (#805)\n\nreferr, reference and search were plain-substring entries in AMBIGUOUS, so\nsignal.includes() fired inside ordinary words: referr in \"preferred\", search in\n\"research\", reference in \"preferences\". That skipped \"Preferred first name\",\n\"Preferred pronouns\", \"Research experience\" and \"Work preferences\".\n\nisAmbiguousSignal gates BOTH consumers — autofill's isCandidateField and\nanswers-capture's isCapturable — so those fields were neither filled nor\ncaptured, and the user's typed answer was never learned.\n\nMove the three into a leading-anchored AMBIGUOUS_PREFIXED regex. Only the\nleading side is anchored: _ is a word character, so \\b would stop matching\njob_search / reference_name, and the trailing side must stay open for referral,\nreferrer, references and searchTerm. Same shape as the identity-keyword fix in\n#784. referral drops out as redundant with referr.\n\nOther substring hits in the list (company in \"accompany\", parent in \"apparent\",\ntax in \"syntax\") are left alone — none is a plausible application-form label.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T00:03:14Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "d4239cdf18ccb9e4aaf17dab1ef794a5960cbb58",
-    "commit": {
-      "message": "fix(generate): prefer the persisted result over a truncated stream buffer (#802)\n\nThe job-status poll resolved buffer || job.result?.text, consulting the\npersisted text only when the buffer was EMPTY. That covers a lost final done\nchunk, but not a lost interior delta — which leaves a truncated but truthy\nprefix that short-circuits the ||, gets resolved as the finished document and is\nthen persisted by the caller.\n\nThe poll exists because deltas can be dropped, so the buffer is exactly the\nvalue that cannot be assumed complete. Resolve whichever of the two is longer:\na partial stream can never beat the persisted result, and a missing result.text\nstill falls back to what did stream.\n\nSame principle the timeout path already states — never persist truncated output\nas success.\n\nAdds stream-promise.test.ts; the truncated-prefix case fails on the old code.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T23:20:24Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "47a1aadab9ff495eb4a55c6c026d261cdd484071",
-    "commit": {
-      "message": "fix(monitoring): give the last-24-hours sparkline an actual 24-hour window (#800)\n\nThe chart is labelled \"Last 24 hours\" but had no time filter, and\nnew Date(ts).getHours() bucketed every completion the queue has ever held into a\n0-23 hour-OF-DAY slot. A job finished at 3pm three days ago therefore shared a\nbar with one finished at 3pm today, and nothing bounded allJobs.\n\nMove the binning into a tested pure helper that filters to the window and\nbuckets by hours-ago, oldest bucket first, so the bars read left to right\nchronologically and match the label. now is a parameter, so the caller owns the\nclock. The finishedAt ?? updatedAt choice and the completed-only filter are\nunchanged.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T23:18:42Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "56d87c1af3105a7eb05accfc3677b5bd9bb1ea6c",
-    "commit": {
-      "message": "feat(landing): re-render world clips at native 1024x576 with av1 delivery (#803)\n\n* feat(landing): re-render world clips at native 1024x576 with av1 delivery\n\n- all 22 clips re-rendered at 1024x576/576x1024 native wan, seedvr2-upscaled to 1080p-class; two weak slump landings curated out via seed re-rolls; all 20 seams re-verified frame-locked\n- desktop ships av1 primary (1440w, 23 mb set) with h264 fallback (1104w, 20 mb) picked at runtime via canPlayType in WorldClient; mobile stays h264 (720w, 17 mb); vendored engine untouched\n- adr-0019 weight/pipeline numbers refreshed (~64 mb total stored, one set streamed per visitor)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(lint): turn off core no-unused-vars for vendored scrub engine\n\nthe active rule for a plain .js file is core no-unused-vars, not the ts-scoped variant; per the ai-review-gate finding on pr 762\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-21T23:10:31Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "fc5fe0a7f580bb21074cece941e86c6c8a99bcbd",
-    "commit": {
-      "message": "fix(monitoring): dedup the activity feed on the real job id (#798)\n\nThe live/historical merge built its dedup set from a.id.split('-')[0]. A job id\nis itself hyphenated (format!(\"job-{}\", Uuid::new_v4())) and a live item's id is\n`${event.jobId}-${event.ts}`, so that expression was ALWAYS the literal \"job\":\nthe set held one useless entry, no historical id matched it, the filter removed\nnothing, and every completed/failed/cancelled job rendered twice. The two rows\ncarry different React keys, so nothing else surfaced it.\n\nStrip only the trailing -<ts> to recover the job id.\n\nAdds useActivityFeed.test.ts covering both the dedup and the non-duplicate case;\nboth fail on the old code.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-21T23:07:25Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
     }
   }
 ]
