@@ -1,5 +1,161 @@
 [
   {
+    "sha": "2a3fdb8d6fc1ce42afc8bee6759010a90d3cf267",
+    "commit": {
+      "message": "refactor: split architecture-map interactions into focused modules (#915)\n\nArchitectureMap.tsx was 972 lines, dominated by a single 454-line useEffect\nthat wired pan, zoom, drag, keyboard, focus-trap and a11y announcements by\nreaching into prerendered DOM through selectors.\n\nThe effect decomposes into lib/architecture-map: geometry.ts holds the bezier\nand viewport math as pure functions taking rects instead of reading the DOM,\nfilter.ts takes the filter as a parameter instead of closing over a mutable,\nviewport.ts owns the transform state with wheel and drag, keyboard.ts owns the\nshortcut switch and the help-dialog focus trap, and interactions.ts composes\nthem behind attachMap(root, { onPanel }). Zoom factors, scale clamps and arrow\nsteps are now named constants.\n\nMarkup splits into Sidebar.tsx, Layers.tsx and MapChrome.tsx. Legend rows and\nkeyboard-shortcut rows move to data/architecture-map.ts, already the declared\nsingle source of truth for this page.\n\nArchitectureMap.tsx is now 116 lines. Behavior-preserving: every id, class and\ndata attribute the interaction layer queries survives byte-identical, as does\nthe viewBox save and restore handoff from the no-JS baseline.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T05:51:16Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "b227e9d50cf75179c32982f339e42aab53b10f0c",
+    "commit": {
+      "message": "refactor: split mission-control into sections and a pure model module (#914)\n\nMissionControl.tsx was 701 lines mixing GitHub data loading, view-model\nassembly, formatters and five page sections in one file.\n\nPure logic moves to lib/mission-control/model.ts, joining the eight tested\nmodules already there: RepoData/BenchmarkGlobal, fmtInt/round1/pctOrDash,\nsafe, loadAll, buildModel and Model. actionById moves beside WRITE_ACTIONS\nin write-actions.ts.\n\nMarkup splits into Stat (15 call sites), Section (5), ExternalLink,\nMissionControlSkeleton and five section components. MissionControl.tsx keeps\nstate, effects, confirm/runAction and composition at 235 lines.\n\nBehavior-preserving: rendered DOM, text, class names and interaction flow\nare unchanged. The six existing end-to-end tests pass untouched.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T05:25:43Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "935b5978bca3b2cf2d139bbefcc3fa4071d996ed",
+    "commit": {
+      "message": "chore: bump jsdom from 29.1.1 to 30.0.0 (#913)\n\nBumps [jsdom](https://github.com/jsdom/jsdom) from 29.1.1 to 30.0.0.\n- [Release notes](https://github.com/jsdom/jsdom/releases)\n- [Commits](https://github.com/jsdom/jsdom/compare/v29.1.1...v30.0.0)\n\n---\nupdated-dependencies:\n- dependency-name: jsdom\n  dependency-version: 30.0.0\n  dependency-type: direct:development\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:23:16Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "8b0a24a13b640d1ebf932066dfadd2d2d3bfa9aa",
+    "commit": {
+      "message": "chore: bump htmd from 0.5.4 to 0.5.5 in /apps/desktop/src-tauri (#908)\n\nBumps [htmd](https://github.com/letmutex/htmd) from 0.5.4 to 0.5.5.\n- [Release notes](https://github.com/letmutex/htmd/releases)\n- [Commits](https://github.com/letmutex/htmd/compare/v0.5.4...v0.5.5)\n\n---\nupdated-dependencies:\n- dependency-name: htmd\n  dependency-version: 0.5.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:10:01Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "947894660d82b1f7742004cda6f9573670417ec1",
+    "commit": {
+      "message": "chore: bump serial_test from 3.5.0 to 4.0.1 in /apps/desktop/src-tauri (#911)\n\nBumps [serial_test](https://github.com/palfrey/serial_test) from 3.5.0 to 4.0.1.\n- [Release notes](https://github.com/palfrey/serial_test/releases)\n- [Commits](https://github.com/palfrey/serial_test/compare/v3.5.0...v4.0.1)\n\n---\nupdated-dependencies:\n- dependency-name: serial_test\n  dependency-version: 4.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:09:40Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "6c65d967bd9807ad108f393304df1f3f58fcc87e",
+    "commit": {
+      "message": "chore: bump base64 from 0.22.1 to 0.23.0 in /apps/desktop/src-tauri (#906)\n\nBumps [base64](https://github.com/marshallpierce/rust-base64) from 0.22.1 to 0.23.0.\n- [Changelog](https://github.com/marshallpierce/rust-base64/blob/master/RELEASE-NOTES.md)\n- [Commits](https://github.com/marshallpierce/rust-base64/compare/v0.22.1...v0.23.0)\n\n---\nupdated-dependencies:\n- dependency-name: base64\n  dependency-version: 0.23.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:09:10Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b5ab4986472ed14247bbe7c361457a347735f151",
+    "commit": {
+      "message": "chore: bump the minor-and-patch group with 28 updates (#912)\n\nBumps the minor-and-patch group with 28 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [@ast-grep/cli](https://github.com/ast-grep/ast-grep) | `0.44.1` | `0.45.0` |\n| [eslint](https://github.com/eslint/eslint) | `10.7.0` | `10.8.0` |\n| [eslint-plugin-storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/lib/eslint-plugin) | `10.5.3` | `10.5.5` |\n| [globals](https://github.com/sindresorhus/globals) | `17.7.0` | `17.8.0` |\n| [knip](https://github.com/webpro-nl/knip/tree/HEAD/packages/knip) | `6.27.0` | `6.29.0` |\n| [lint-staged](https://github.com/lint-staged/lint-staged) | `17.1.0` | `17.2.0` |\n| [prettier](https://github.com/prettier/prettier) | `3.9.5` | `3.9.6` |\n| [turbo](https://github.com/vercel/turborepo) | `2.10.5` | `2.10.7` |\n| [@hookform/resolvers](https://github.com/react-hook-form/resolvers) | `5.4.0` | `5.5.7` |\n| [@tanstack/react-query](https://github.com/TanStack/query/tree/HEAD/packages/react-query) | `5.101.3` | `5.101.4` |\n| [@tanstack/react-virtual](https://github.com/TanStack/virtual/tree/HEAD/packages/react-virtual) | `3.14.7` | `3.14.8` |\n| [lucide-react](https://github.com/lucide-icons/lucide/tree/HEAD/packages/lucide-react) | `1.25.0` | `1.27.0` |\n| [react](https://github.com/react/react/tree/HEAD/packages/react) | `19.2.7` | `19.2.8` |\n| [react-dom](https://github.com/react/react/tree/HEAD/packages/react-dom) | `19.2.7` | `19.2.8` |\n| [react-hook-form](https://github.com/react-hook-form/react-hook-form) | `7.82.0` | `7.83.0` |\n| [@playwright/test](https://github.com/microsoft/playwright) | `1.61.1` | `1.62.0` |\n| [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/tree/HEAD/packages/plugin-react) | `6.0.3` | `6.0.4` |\n| [next](https://github.com/vercel/next.js) | `16.2.10` | `16.2.12` |\n| [react-i18next](https://github.com/i18next/react-i18next) | `17.0.10` | `17.0.11` |\n| [i18next-cli](https://github.com/i18next/i18next-cli) | `1.66.2` | `1.67.3` |\n| [@tiptap/pm](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/pm) | `3.28.0` | `3.29.1` |\n| [@tiptap/react](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/react) | `3.28.0` | `3.29.1` |\n| [@tiptap/starter-kit](https://github.com/ueberdosis/tiptap/tree/HEAD/packages/starter-kit) | `3.28.0` | `3.29.1` |\n| [@storybook/addon-vitest](https://github.com/storybookjs/storybook/tree/HEAD/code/addons/vitest) | `10.5.3` | `10.5.5` |\n| [@storybook/react](https://github.com/storybookjs/storybook/tree/HEAD/code/renderers/react) | `10.5.3` | `10.5.5` |\n| [@storybook/react-vite](https://github.com/storybookjs/storybook/tree/HEAD/code/frameworks/react-vite) | `10.5.3` | `10.5.5` |\n| [playwright](https://github.com/microsoft/playwright) | `1.61.1` | `1.62.0` |\n| [storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/core) | `10.5.3` | `10.5.5` |\n\n\nUpdates `@ast-grep/cli` from 0.44.1 to 0.45.0\n- [Release notes](https://github.com/ast-grep/ast-grep/releases)\n- [Changelog](https://github.com/ast-grep/ast-grep/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/ast-grep/ast-grep/compare/0.44.1...0.45.0)\n\nUpdates `eslint` from 10.7.0 to 10.8.0\n- [Release notes](https://github.com/eslint/eslint/releases)\n- [Commits](https://github.com/eslint/eslint/compare/v10.7.0...v10.8.0)\n\nUpdates `eslint-plugin-storybook` from 10.5.3 to 10.5.5\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.5/code/lib/eslint-plugin)\n\nUpdates `globals` from 17.7.0 to 17.8.0\n- [Release notes](https://github.com/sindresorhus/globals/releases)\n- [Commits](https://github.com/sindresorhus/globals/compare/v17.7.0...v17.8.0)\n\nUpdates `knip` from 6.27.0 to 6.29.0\n- [Release notes](https://github.com/webpro-nl/knip/releases)\n- [Commits](https://github.com/webpro-nl/knip/commits/knip@6.29.0/packages/knip)\n\nUpdates `lint-staged` from 17.1.0 to 17.2.0\n- [Release notes](https://github.com/lint-staged/lint-staged/releases)\n- [Changelog](https://github.com/lint-staged/lint-staged/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/lint-staged/lint-staged/compare/v17.1.0...v17.2.0)\n\nUpdates `prettier` from 3.9.5 to 3.9.6\n- [Release notes](https://github.com/prettier/prettier/releases)\n- [Changelog](https://github.com/prettier/prettier/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/prettier/prettier/compare/3.9.5...3.9.6)\n\nUpdates `turbo` from 2.10.5 to 2.10.7\n- [Release notes](https://github.com/vercel/turborepo/releases)\n- [Changelog](https://github.com/vercel/turborepo/blob/main/RELEASE.md)\n- [Commits](https://github.com/vercel/turborepo/commits)\n\nUpdates `@hookform/resolvers` from 5.4.0 to 5.5.7\n- [Release notes](https://github.com/react-hook-form/resolvers/releases)\n- [Commits](https://github.com/react-hook-form/resolvers/compare/v5.4.0...v5.5.7)\n\nUpdates `@tanstack/react-query` from 5.101.3 to 5.101.4\n- [Release notes](https://github.com/TanStack/query/releases)\n- [Changelog](https://github.com/TanStack/query/blob/main/packages/react-query/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/query/commits/@tanstack/react-query@5.101.4/packages/react-query)\n\nUpdates `@tanstack/react-virtual` from 3.14.7 to 3.14.8\n- [Release notes](https://github.com/TanStack/virtual/releases)\n- [Changelog](https://github.com/TanStack/virtual/blob/main/packages/react-virtual/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/virtual/commits/@tanstack/react-virtual@3.14.8/packages/react-virtual)\n\nUpdates `lucide-react` from 1.25.0 to 1.27.0\n- [Release notes](https://github.com/lucide-icons/lucide/releases)\n- [Commits](https://github.com/lucide-icons/lucide/commits/1.27.0/packages/lucide-react)\n\nUpdates `react` from 19.2.7 to 19.2.8\n- [Release notes](https://github.com/react/react/releases)\n- [Changelog](https://github.com/react/react/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/react/react/commits/v19.2.8/packages/react)\n\nUpdates `react-dom` from 19.2.7 to 19.2.8\n- [Release notes](https://github.com/react/react/releases)\n- [Changelog](https://github.com/react/react/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/react/react/commits/v19.2.8/packages/react-dom)\n\nUpdates `react-hook-form` from 7.82.0 to 7.83.0\n- [Release notes](https://github.com/react-hook-form/react-hook-form/releases)\n- [Changelog](https://github.com/react-hook-form/react-hook-form/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/react-hook-form/react-hook-form/compare/v7.82.0...v7.83.0)\n\nUpdates `@playwright/test` from 1.61.1 to 1.62.0\n- [Release notes](https://github.com/microsoft/playwright/releases)\n- [Commits](https://github.com/microsoft/playwright/compare/v1.61.1...v1.62.0)\n\nUpdates `@vitejs/plugin-react` from 6.0.3 to 6.0.4\n- [Release notes](https://github.com/vitejs/vite-plugin-react/releases)\n- [Changelog](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/CHANGELOG.md)\n- [Commits](https://github.com/vitejs/vite-plugin-react/commits/plugin-react@6.0.4/packages/plugin-react)\n\nUpdates `next` from 16.2.10 to 16.2.12\n- [Release notes](https://github.com/vercel/next.js/releases)\n- [Commits](https://github.com/vercel/next.js/compare/v16.2.10...v16.2.12)\n\nUpdates `react-i18next` from 17.0.10 to 17.0.11\n- [Changelog](https://github.com/i18next/react-i18next/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/i18next/react-i18next/compare/v17.0.10...v17.0.11)\n\nUpdates `i18next-cli` from 1.66.2 to 1.67.3\n- [Changelog](https://github.com/i18next/i18next-cli/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/i18next/i18next-cli/compare/v1.66.2...v1.67.3)\n\nUpdates `@tiptap/pm` from 3.28.0 to 3.29.1\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/pm/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.29.1/packages/pm)\n\nUpdates `@tiptap/react` from 3.28.0 to 3.29.1\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/react/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.29.1/packages/react)\n\nUpdates `@tiptap/starter-kit` from 3.28.0 to 3.29.1\n- [Release notes](https://github.com/ueberdosis/tiptap/releases)\n- [Changelog](https://github.com/ueberdosis/tiptap/blob/main/packages/starter-kit/CHANGELOG.md)\n- [Commits](https://github.com/ueberdosis/tiptap/commits/v3.29.1/packages/starter-kit)\n\nUpdates `@storybook/addon-vitest` from 10.5.3 to 10.5.5\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.5/code/addons/vitest)\n\nUpdates `@storybook/react` from 10.5.3 to 10.5.5\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.5/code/renderers/react)\n\nUpdates `@storybook/react-vite` from 10.5.3 to 10.5.5\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.5/code/frameworks/react-vite)\n\nUpdates `playwright` from 1.61.1 to 1.62.0\n- [Release notes](https://github.com/microsoft/playwright/releases)\n- [Commits](https://github.com/microsoft/playwright/compare/v1.61.1...v1.62.0)\n\nUpdates `storybook` from 10.5.3 to 10.5.5\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.5/code/core)\n\n---\nupdated-dependencies:\n- dependency-name: \"@ast-grep/cli\"\n  dependency-version: 0.45.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: eslint\n  dependency-version: 10.8.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: eslint-plugin-storybook\n  dependency-version: 10.5.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: globals\n  dependency-version: 17.8.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: knip\n  dependency-version: 6.29.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: lint-staged\n  dependency-version: 17.2.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: prettier\n  dependency-version: 3.9.6\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: turbo\n  dependency-version: 2.10.7\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@hookform/resolvers\"\n  dependency-version: 5.5.7\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-query\"\n  dependency-version: 5.101.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-virtual\"\n  dependency-version: 3.14.8\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: lucide-react\n  dependency-version: 1.27.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: react\n  dependency-version: 19.2.8\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: react-dom\n  dependency-version: 19.2.8\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: react-hook-form\n  dependency-version: 7.83.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@playwright/test\"\n  dependency-version: 1.62.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@vitejs/plugin-react\"\n  dependency-version: 6.0.4\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: next\n  dependency-version: 16.2.12\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: react-i18next\n  dependency-version: 17.0.11\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: i18next-cli\n  dependency-version: 1.67.3\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/pm\"\n  dependency-version: 3.29.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/react\"\n  dependency-version: 3.29.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@tiptap/starter-kit\"\n  dependency-version: 3.29.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/addon-vitest\"\n  dependency-version: 10.5.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react\"\n  dependency-version: 10.5.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react-vite\"\n  dependency-version: 10.5.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: playwright\n  dependency-version: 1.62.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n- dependency-name: storybook\n  dependency-version: 10.5.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:05:00Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "28a7cced86bf110ab2287750bdca043a5d8b7d45",
+    "commit": {
+      "message": "chore: bump docx-rs from 0.4.21 to 0.4.22 in /apps/desktop/src-tauri (#910)\n\nBumps [docx-rs](https://github.com/bokuweb/docx-rs) from 0.4.21 to 0.4.22.\n- [Release notes](https://github.com/bokuweb/docx-rs/releases)\n- [Changelog](https://github.com/bokuweb/docx-rs/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bokuweb/docx-rs/commits)\n\n---\nupdated-dependencies:\n- dependency-name: docx-rs\n  dependency-version: 0.4.22\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:04:16Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "78fd833b8ed4a4b70b65120b3fa00d56854c4237",
+    "commit": {
+      "message": "chore: bump tokio-util from 0.7.18 to 0.7.19 in /apps/desktop/src-tauri (#909)\n\nBumps [tokio-util](https://github.com/tokio-rs/tokio) from 0.7.18 to 0.7.19.\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-util-0.7.18...tokio-util-0.7.19)\n\n---\nupdated-dependencies:\n- dependency-name: tokio-util\n  dependency-version: 0.7.19\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:03:59Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "943f7c841e100646847ed129f3dd54a7e147bccb",
+    "commit": {
+      "message": "chore: bump ossf/scorecard-action from 2.4.3 to 2.4.4 (#907)\n\nBumps [ossf/scorecard-action](https://github.com/ossf/scorecard-action) from 2.4.3 to 2.4.4.\n- [Release notes](https://github.com/ossf/scorecard-action/releases)\n- [Changelog](https://github.com/ossf/scorecard-action/blob/main/RELEASE.md)\n- [Commits](https://github.com/ossf/scorecard-action/compare/4eaacf0543bb3f2c246792bd56e8cdeffafb205a...2d1146689b8cda280b9bc96326124645441f03bc)\n\n---\nupdated-dependencies:\n- dependency-name: ossf/scorecard-action\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:03:22Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "17e347b64b269fa1c437f12ac2fb0d6f882800e1",
+    "commit": {
+      "message": "chore: bump taiki-e/install-action from 2.84.1 to 2.85.3 (#905)\n\nBumps [taiki-e/install-action](https://github.com/taiki-e/install-action) from 2.84.1 to 2.85.3.\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd...18b1216eba7f8039b0f8d131d5473787f0edce68)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.85.3\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:02:57Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "d56c6cc68eba970e4d5792d59e7cfc366c3e53af",
+    "commit": {
+      "message": "chore: bump anthropics/claude-code-action from 1.0.180 to 1.0.183 (#904)\n\nBumps [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) from 1.0.180 to 1.0.183.\n- [Release notes](https://github.com/anthropics/claude-code-action/releases)\n- [Commits](https://github.com/anthropics/claude-code-action/compare/fa7e2f0a29a126f0b81cdcf360561b36e44cf608...be7b93b1907a4abad570368f3c74b6fe3807510b)\n\n---\nupdated-dependencies:\n- dependency-name: anthropics/claude-code-action\n  dependency-version: 1.0.183\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+      "author": {
+        "date": "2026-07-29T18:02:30Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "40b1700cdd2ee48b00b99fb83603ce911e74cde9",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-29T06:07:04Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "414d6d751b0595a898ece318f7ff1726b9d9b367",
     "commit": {
       "message": "docs: consolidate 13 agent rule files into a canonical agents.md (#903)\n\n* docs: consolidate 13 agent rule files into a canonical agents.md\n\nThe repo maintained 13 hand-written copies of the same coding rules: CLAUDE.md,\nAGENTS.md, .clinerules, .windsurfrules, .codexrules, .roorules, .jba/guidelines.md,\n.aider/system-prompt.md, .github/copilot-instructions.md and 4x .cursor/rules/*.mdc.\n\nThey had already drifted. `NumberField` — a primitive named in enforced rule 5 — and\nthe whole apps/landing workspace existed in CLAUDE.md alone, so twelve files taught a\nstale rule set. Every rule change meant 13 edits with nothing enforcing the 13th.\n\nAGENTS.md is now canonical: a Linux Foundation standard, read natively by Copilot,\nCursor, Windsurf and Codex. CLAUDE.md imports it with the documented `@AGENTS.md`\nsyntax and keeps only Claude-Code-specific orchestration — the subagent fleet, review\ngates and model tiering, none of which other tools can act on. Files for tools that\ndon't read AGENTS.md natively or in full become one-line pointers; redundant ones go.\n\nApplied the /doctor trim heuristic while merging: cut what an agent can derive from the\ncodebase (package layout block, name-to-path lookup rows), kept every enforced rule\nverbatim plus the non-obvious locations. All 16 rules survive; the combined load is 136\nlines, inside the documented 200-line target.\n\ncheck-agent-system now enforces the invariant instead of relying on discipline: tool\nfiles must name AGENTS.md and stay under 1KB, so a forked ruleset fails pre-push and\nCI. Also fixes .aider.conf.yml, which pointed at a contracts.ts removed long ago.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct a nonexistent ui primitive in the canonical rules\n\nReview found rule 5 lists `SelectDropdown` among the required @ajh/ui\nprimitives. It is not exported — packages/ui/src/index.ts:37 exports\n`Dropdown`, and the renderer imports `Dropdown` everywhere. An agent\nfollowing the rule writes an import that fails the build.\n\nThis was pre-existing drift carried over verbatim, but \"all 16 rules\nsurvive verbatim\" is the right invariant for the merge and the wrong one\nfor correctness: verbatim preserved the bug, and the merge just blessed\nit as canonical for every tool. Same failure mode as the `NumberField`\nstaleness this PR exists to fix. Also fixes the ESLint message that fires\non raw <select> and the Form JSDoc, both naming the same missing export.\n\nEnforce the two facts the whole rule set hangs on, which nothing asserted:\nAGENTS.md exists, and CLAUDE.md contains an unfenced `@AGENTS.md` import.\nWithout either, Claude Code loads orchestration with zero coding rules\nwhile every pointer still truthfully says \"read AGENTS.md\" and the check\nstays green. Verified both assertions fail when violated, plus the size\ncap on a re-forked pointer.\n\nExempt .aider.conf.yml from the pointer size cap — it is a real settings\nfile, so growing past 1KB is legitimate and the message would mislead.\n\nOther review fixes: qualify Copilot's native AGENTS.md support (not all\nfeatures, per GitHub docs), rule 13 used grep against the repo's own rg\npolicy, rule 14 named a contracts.ts removed long ago, and the header\ndocblock plus a comment still said nine copies and CLAUDE.md.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: close a fenced-import hole in the canonical rules guard\n\nThe import guard added last round claimed to catch a \"missing or fenced\"\nimport but only caught inline backticks. Under /m, `^` matches at the start\nof a line inside a fenced block too, so a triple-backticked @AGENTS.md\npassed green while Claude Code skipped the import — the docs are explicit\nthat import parsing skips code spans and fenced blocks. That is precisely\nthe failure the guard exists to prevent: orchestration loads, zero coding\nrules load, every pointer still truthfully says \"read AGENTS.md\".\n\nMy \"verified by fault injection\" claim last round covered only the inline\nvariant. Fences are now stripped before testing, and all three variants are\nverified failing: block-fenced, tilde-fenced, and inline backticks.\n\nCap the canonical files at 200 combined lines. They load in full every\nsession and adherence drops as they grow; the PR asserted that budget and\nthen hand-checked it, the same gap as the unenforced import. Now enforced,\nwith .claude/rules/ + paths: frontmatter named as the escape hatch.\n\nAlso: rule 5's `SelectDropdown` rename left one entry behind in\nDEEP_UI_IMPORTS, banning a path that no longer exists. The .gitignore\ninventory omitted .codexrules and .roorules and claimed the 1KB cap covers\n.aider.conf.yml, now exempt. AGENTS.md told non-Claude tools to use an\nownership table that every pointer file tells them to ignore — it now\ndescribes the routing inline.\n\nVerified against vendor docs rather than the secondary sources the deletions\noriginally rested on: Windsurf processes AGENTS.md through the same rules\nengine, and Cursor documents it as a first-class alternative to\n.cursor/rules. Both deletions stand.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct two dead paths in rule 14 and harden the fence stripper\n\nRule 14 named `commands.rs` and `services/query-client.ts`; both are\ndirectories on disk (commands/, services/query-client/). Last round fixed\n`contracts.ts` on the same line and left its two siblings — the canonical\nfile for every tool was naming files that are not there.\n\nHarden the fence stripper: matching the full opening run means a 3-backtick\ninner fence can no longer close a 4-backtick outer one, and 1-3 leading\nspaces are still a fence per CommonMark. Both variants verified failing,\nalongside the plain and inline cases.\n\nRestore the Copilot caveat in the .gitignore inventory — that comment is\nwhere someone decides whether a pointer is still needed, and it claimed\nunqualified native support that AGENTS.md and the pointer both qualify.\n\nConsidered and rejected: a mechanical dead-path check over backticked paths\nin the canonical files. First run produced two false positives — `machines/`\n(real, under a lookup root I had not listed) and the commit-type list\n`refactor/ui/style/...`, which is not a path at all. Catching the shorthand\nform that actually broke three times (`commands.rs`, not\n`src-tauri/src/commands/`) needs a resolution table that is itself\ndrift-prone, so the checker would need more maintenance than the rules it\nguards.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: guard fully-qualified paths in the canonical rules\n\nRound 3 rejected a dead-path check because the unscoped version produced\nfalse positives. That reasoning conflated two halves. Fully-qualified paths\nresolve from the repo root with no lookup table, so nothing drifts;\nshorthand needs a workspace-root table that rots like the rules it guards.\nOnly the first half is checked now, scoped to AGENTS.md.\n\nVerified rather than assumed: 35 backticked slash-tokens in AGENTS.md, 14\nqualified, 14/14 resolve, zero false positives. The commitlint type list\nthat broke the unscoped version is correctly skipped, as is every shorthand\nform. Injecting a dead qualified path fails the check; injecting a dead\nshorthand path passes, confirming the documented gap is real and not a\nguess.\n\nThe .gitignore inventory said pointers are kept \"only for tools that don't\nread it natively / in full\", then listed Codex as a native reader and kept\n.codexrules — whose own stated reason (an unmissable pointer) the criterion\ndid not admit. Widened the criterion instead of dropping the file.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
@@ -1041,162 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "aa00c75e7516edb1c9be1152b19c465bcbdc9661",
-    "commit": {
-      "message": "chore: sync landing download version to v0.129.0",
-      "author": {
-        "date": "2026-07-22T05:38:54Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "11a06d0d17ffae5b15523b0db952e5e12f20cf4f",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.129.0 [skip ci]",
-      "author": {
-        "date": "2026-07-22T05:38:19Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "14aea14714feaf549201de7ae669525202d9c0ae",
-    "commit": {
-      "message": "chore(release): 0.129.0 [skip ci]",
-      "author": {
-        "date": "2026-07-22T05:03:42Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "b83418d05bff2cc43f60fcd058ef32ca314401ff",
-    "commit": {
-      "message": "fix(prompts): never flag a mismatch against a blank language side (#831)\n\ntoLanguage() defaults a blank/missing language to 'en' for prompting, which\nmasqueraded as a genuine detection and let a known non-en side (e.g. \"de\")\nfalsely read as a mismatch against a blank side. Gate mismatch on the raw\npre-normalization blank check instead, and update the stale test that\nencoded the old buggy expectation.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T04:42:39Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "224bb4b37aec53a5bd3078f937fa45c9a38d82a9",
-    "commit": {
-      "message": "fix(scraping): cap the personio feed body read (#830)\n\ntry_personio fetches the Personio XML feed through the SSRF-guarded\nget_guarded client, but read the body with an unbounded res.text().await.\nPR #821 capped the sibling generic-HTML fallback in the same resolver at\n8 MB via read_text_capped; apply the identical fix here, returning\nOk(None) on an over-cap/error body the same way the redirect-follow path\nalready does.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T04:42:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "122b47e19134e11fd2548b669ccae980b00771af",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-22T04:39:09Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "4d75800ebacd2667d7ea52c339c54d73940f7823",
-    "commit": {
-      "message": "fix: small advisory batch (rust) (#829)\n\n* perf(autopilot): skip duplicate note candidates within one run\n\nrun_notes_loop keyed only against prior runs, so the same NEW job surfaced\nunder two URL variants in one run bought an AI note for each; the later\nmerge_found_jobs collapsed them and discarded one - waste against the\nASSISTANT_NOTES_MAX ceiling. Track canonical keys seen this run and skip the\nsecond variant (before charge_daily, so it also spares the shared ceiling).\n\nThe oversized autopilot_helpers inline test module is moved to a sibling\ntests.rs so mod.rs stays under the R8 LOC cap; no test behavior changes.\n\nSource: #813 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(ai-generations): enforce one aggregate row per job url with upsert\n\nsave_application released the store lock between find_by_job_url and the\ninsert, so two concurrent saves for one job could both miss and both insert,\nforking the per-job aggregate. Add a UNIQUE(job_url) partial index (WHERE\njob_url != '', so deliberately unlinked '' rows still coexist) and recover\nfrom the resulting insert conflict by merging into the row the other writer\ncreated. The migration collapses any pre-existing fork before creating the\nindex, keeping the linked-or-newest row.\n\nTwo applications delete/detach tests inserted duplicate-url child rows to\nexercise multi-row cleanup; they now use distinct urls per the new index.\n\nSource: #816 follow-up.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore(applications): tighten the set-status test bound and trim a stale comment\n\nThe set-status contention test asserted events.len() >= ITERS; tighten it to\nthe exact count (ITERS * 2 transitions across the two threads + 1 creation\nseed event). Also drop the stale tail of set_status's comment claiming\n.transaction() needs a &mut *guard - the code uses guard.transaction() via\nauto-ref.\n\nSource: #811 nits.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T04:29:11Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "1466832c4fad18a7db12bcf6e51d92f3ff493bc1",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-07-22T02:30:39Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "5c4453e00f8dd58687e970b1d934a10c234dfa40",
-    "commit": {
-      "message": "fix: persist completed stream text so the poll fallback works (#828)\n\n* fix(ai): persist the completed stream text for the poll fallback\n\nThe renderer's poll fallback (awaitAiStream) recovers a dropped stream frame or a\nmissed `done` event by reading `result.text` from the completed job, but the backend\npersisted only `{ done: true }` — so PR #802's longer-wins fix was a runtime no-op.\n\nAccumulate the completed answer (non-thinking deltas only) in the provider-agnostic\nstreaming completion path (`stream::finish`, shared by openai/anthropic/gemini/ollama)\nand in the CLI-agent path (`cli_agent::emit_done`), and persist it as `result.text`.\nBoth strip inline `<think>…</think>` via a shared `strip_think_blocks` mirroring the\nrenderer's think-splitter, so the persisted text is the SAME shape the renderer buffers:\nthe poll's `persisted.length > buffer.length` compares like-for-like and can never\nresolve reasoning markup into the final document.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(generate): align the stream poll test with the real job contract\n\nThe prior mock returned `{ status: 'completed', result: { text } }`, a shape the\nbackend never produced, so the regression test proved nothing. Mirror the real\ncontract (`result: { done: true, text }`, text think-stripped) and add a case pinning\nthat a recovered persisted result can never surface `<think>` markup.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T02:10:06Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5c7f9b3743948273048f479c4cfd789b79ead3f5",
-    "commit": {
-      "message": "fix(prompts): stop the italic strip from eating bullet lists across newlines (#827)",
-      "author": {
-        "date": "2026-07-22T01:37:07Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "550ab7b4a1d0f6a90e09c47f8bf63164106788d1",
-    "commit": {
-      "message": "fix(settings): clear a pending blur timer before re-arming it (#826)\n\nA blur → refocus-within-150ms → blur burst overwrote `blurTimerRef.current`\nand orphaned the first timer, so an unmount in that window cleared only the\nsecond and the first could still fire post-teardown. Clear the pending id\nbefore re-arming, mirroring the position-timer pattern.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T01:17:30Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5266408012e187618cdcd705a702171e70ea64ff",
-    "commit": {
-      "message": "fix: pr-batch advisory follow-ups (extension) (#825)\n\n* fix(extension): let a hidden resume file input count as a decisive field\n\nA custom upload widget hides the native <input type=file> (display:none)\nbehind a styled button, which defeated the visible-field short-circuit in\nlooksLikeApplicationForm: a real application form with a hidden resume input\nand fewer than three other visible fields went unrecognized (#786 follow-up).\n\nA resume/CV-flavored file input (name/id/label or a document `accept`) is now\ndecisive even when hidden, checked across all inputs; the narrowing to\nresume-flavored inputs keeps the module under-reporting rather than over-\nreporting. Also close the two #786 lows: a \"Save draft\"/\"Add another\"\ntype=submit button is skipped via the SubmitEvent's submitter, and\ncheckbox/radio-only forms no longer count as application forms.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(extension): cover camelcase compounds in the identity key patterns\n\ntextSignal lowercases without splitting camelCase, so name=\"workCity\"\nflattens to \"workcity\" and no longer matched the location pattern because\n\"work\" was not an enumerated city/town prefix (#784 follow-up). Add \"work\"\nto the enumerated prefix so workCity resolves to location, while keeping the\nleading-anchor enumeration so \"ethnicity\" stays a non-match (no new mis-fill\nsurface). Phone needs no change: \"work\" is already enumerated, so workPhone\nmatches, and headphone/smartphone correctly do not.\n\nPin the behavior: headphone in the phone non-match set, workphone in the\nphone match set, and workcity/homecity in the location match set.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* docs(extension): point the ambiguous-terms comment at both lists\n\nThe localized-fields comment referenced only AMBIGUOUS_WORDS, but the\ncollision-prone referr/reference/search terms now live in AMBIGUOUS_PREFIXED\n(#805 nit). Point the reader at both lists.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T00:57:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "8bfc4afe8205a390475afa09a7c8a1d8f4006cb7",
-    "commit": {
-      "message": "fix: pr-batch advisory follow-ups (renderer) (#824)\n\n* fix(settings): clear the location suggestion timers on unmount\n\nThe onBlur 150ms hide timer and the 0ms position-measure timer both call\nsetState; unref'd, a timer firing after jsdom teardown threw\n`window is not defined` and failed the whole test run. Keep both ids in refs\nand clear them in a useEffect cleanup; the 150ms blur delay is preserved.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix(monitoring): relabel the sparkline for the hours-ago axis\n\nThe last-24h data is now hours-ago indexed (bin 23 = the most recent hour),\nbut the sparkline still drew hour-of-day labels and highlighted\n`new Date().getHours()`, so every bar was mislabeled. Highlight the last bucket\nand use relative axis notation (-24h … now). Adds the two boundary tests: a\ncompletion at exactly `now` is included, one at `windowStart` is excluded.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(monitoring): drop the unreachable activity-feed id fallback\n\nEvery live id is `${jobId}-${ts}`, so `lastIndexOf('-')` is always positive and\nthe `cut > 0 ? … : a.id` fallback never ran. Slice directly.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test(jobs): pin the applied-after-save ordering\n\nCompress the handleTailor rationale comment to two lines and add a deferred-save\nordering test proving `persistJob('applied')` fires only after `saveFromPosting`\nresolves.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* refactor(autopilot): keep the step-log reducer pure\n\nRead `Date.now()` at dispatch time and close it into the functional patch, so\nStrictMode dev double-invocation can't produce two timestamps in the reducer\nbody (#794 advisory).\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T00:54:45Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
     }
   }
 ]
