@@ -11,6 +11,7 @@ import { readStyle } from '@/lib/styles';
 // 55 KB pipeline player queries, and the console egg are all unchanged.
 export const metadata: Metadata = {
   title: 'AI Job Hunter — How It Works (End to End)',
+  alternates: { canonical: 'https://aijobhunter.app/how-it-works' },
 };
 
 export default function HowItWorksPage() {
