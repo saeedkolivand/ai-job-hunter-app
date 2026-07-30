@@ -3188,3 +3188,53 @@ export const CHIPS: readonly (readonly [string, string])[] = [
   ['all', 'Show all wires'],
   ['bugs', 'Roadmap & bugs'],
 ];
+
+// Map legend rows — each is one or more colour-swatch + label pairs rendered
+// in order (the "fix count / bug count" row has two).
+export interface LegendSwatch {
+  className: string;
+  label: string;
+}
+
+export interface LegendRow {
+  swatches: readonly LegendSwatch[];
+}
+
+export const LEGEND_ROWS: readonly LegendRow[] = [
+  { swatches: [{ className: 'sw sw-critical', label: 'critical path' }] },
+  { swatches: [{ className: 'sw sw-api', label: 'external / API call' }] },
+  { swatches: [{ className: 'sw sw-db', label: 'DB read/write' }] },
+  { swatches: [{ className: 'sw sw-mount', label: 'mount / register' }] },
+  {
+    swatches: [
+      { className: 'dot dot-fix', label: 'fix count' },
+      { className: 'dot dot-bug', label: 'bug count' },
+    ],
+  },
+];
+
+// #kbd-help dialog rows: an ordered sequence of <kbd> keys and plain text.
+export type KbdHelpPart = { kbd: string } | { text: string };
+
+export const KBD_HELP_ROWS: readonly (readonly KbdHelpPart[])[] = [
+  [
+    { kbd: 'drag' },
+    { text: ' · ' },
+    { kbd: '↑' },
+    { kbd: '↓' },
+    { kbd: '←' },
+    { kbd: '→' },
+    { text: ' pan' },
+  ],
+  [{ kbd: 'wheel' }, { text: ' · ' }, { kbd: '+' }, { kbd: '−' }, { text: ' zoom' }],
+  [{ kbd: 'Tab' }, { text: ' focus next node' }],
+  [{ kbd: 'Enter' }, { text: ' pin · ' }, { kbd: 'Esc' }, { text: ' clear' }],
+  [
+    { kbd: '0' },
+    { text: ' / ' },
+    { kbd: 'F' },
+    { text: ' fit · ' },
+    { kbd: '?' },
+    { text: ' toggle help' },
+  ],
+];
