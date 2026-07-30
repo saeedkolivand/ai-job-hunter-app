@@ -25,6 +25,12 @@ export interface WriteAction {
   body?: (ctx: WriteActionContext) => unknown;
 }
 
+export function actionById(id: string): WriteAction {
+  const action = WRITE_ACTIONS.find((a) => a.id === id);
+  if (!action) throw new Error(`unknown write action ${id}`);
+  return action;
+}
+
 export const WRITE_ACTIONS: readonly WriteAction[] = [
   {
     id: 'rerun-failed',
