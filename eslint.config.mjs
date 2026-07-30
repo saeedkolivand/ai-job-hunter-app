@@ -560,9 +560,11 @@ export default tseslint.config(
   // preserved verbatim for parity — they are not themeable UI chrome, so the
   // brand-token rule doesn't apply here. Scoped to the ported markup only: the
   // HomeBody/HomeBeats shells plus the sections/ and beats/ files they were
-  // split into. Deliberately NOT a home/** glob — CookieGag.tsx lives there too
-  // but is hand-written (it exists to convert an inline onclick to onClick), so
-  // it stays subject to the brand-token rule. Creature is a single file.
+  // split into, and the CreatureBody shell plus the sections/ files it was
+  // split into (the sitefoot inline hex now lives in sections/Overlays.tsx).
+  // Deliberately NOT a home/** or creature/** glob — CookieGag.tsx lives in
+  // home/ too but is hand-written (it exists to convert an inline onclick to
+  // onClick), so it stays subject to the brand-token rule.
   {
     files: [
       'apps/landing/src/components/home/HomeBody.tsx',
@@ -570,6 +572,7 @@ export default tseslint.config(
       'apps/landing/src/components/home/sections/**',
       'apps/landing/src/components/home/beats/**',
       'apps/landing/src/components/creature/CreatureBody.tsx',
+      'apps/landing/src/components/creature/sections/**',
     ],
     rules: {
       'no-restricted-syntax': 'off',
