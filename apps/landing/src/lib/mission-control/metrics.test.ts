@@ -7,7 +7,6 @@ import {
   criticalIssueCount,
   DAY_MS,
   HOUR_MS,
-  issuesByLabel,
   latestGatingConclusion,
   median,
   medianLeadTimeHours,
@@ -180,7 +179,7 @@ describe('Work (PRs + issues)', () => {
     expect(staleCount(views, 14)).toBe(1); // #1 only (#2 is a draft)
   });
 
-  it('realIssues drops PRs; criticalIssueCount + issuesByLabel + needsAttention read the rest', () => {
+  it('realIssues drops PRs; criticalIssueCount + needsAttention read the rest', () => {
     const issues = [
       issue({ number: 1, labels: [{ name: 'critical' }, 'bug'] }),
       issue({ number: 2, labels: ['bug'], comments: 0, created_at: iso(40 * DAY_MS) }),
@@ -188,10 +187,6 @@ describe('Work (PRs + issues)', () => {
     ];
     expect(realIssues(issues)).toHaveLength(2);
     expect(criticalIssueCount(issues, ['critical'])).toBe(1);
-    expect(issuesByLabel(issues)).toEqual([
-      { label: 'bug', count: 2 },
-      { label: 'critical', count: 1 },
-    ]);
     const attention = needsAttention(issues, NOW, 14);
     expect(attention.map((a) => a.number)).toEqual([2]);
   });
