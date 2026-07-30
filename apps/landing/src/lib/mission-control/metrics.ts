@@ -157,19 +157,6 @@ export function criticalIssueCount(
     .length;
 }
 
-export function issuesByLabel(issues: readonly GhIssue[]): { label: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const issue of realIssues(issues)) {
-    for (const label of issue.labels) {
-      const name = labelName(label);
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
-}
-
 export interface IssueView {
   number: number;
   title: string;
