@@ -4,8 +4,8 @@
 // the page's only inline handler (onclick="document.getElementById('cookie').remove()")
 // — JSX can't express a string onclick, so it's an onClick handler here instead.
 // The listener now attaches after hydration rather than being present in the
-// served HTML; scripts/diff-dom.mjs skips on*-prefixed attributes for exactly
-// this reason (ADR 0018 — everything else about the DOM must stay identical).
+// served HTML — the one intentional deviation from the port (ADR 0018:
+// everything else about the DOM must stay identical).
 export function CookieGag() {
   return (
     <div id="cookie">
