@@ -19,8 +19,7 @@ import { Testimonials } from './sections/Testimonials';
 // `document.querySelectorAll('main > section')`). The root
 // <div style={{display:'contents'}}> replaces the old RawHtml wrapper so the
 // serialized DOM is unchanged. #cookie's only inline handler moved to
-// CookieGag ('use client') — see scripts/diff-dom.mjs for why that's safe to
-// diff around.
+// CookieGag ('use client'), the one intentional deviation from the port.
 export function HomeBody() {
   return (
     <div style={{ display: 'contents' }}>
