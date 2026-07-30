@@ -557,12 +557,18 @@ export default tseslint.config(
   // HTML whose vanilla JS (public/scripts/{home,creature}-0.js) binds to the
   // rendered DOM. Their inline style={{...}} hex values (SVG doodle fills,
   // decorative gradients) are baked into the pre-refactor baseline and must be
-  // preserved verbatim for diff-dom parity — they are not themeable UI chrome,
-  // so the brand-token rule doesn't apply here.
+  // preserved verbatim for parity — they are not themeable UI chrome, so the
+  // brand-token rule doesn't apply here. Scoped to the ported markup only: the
+  // HomeBody/HomeBeats shells plus the sections/ and beats/ files they were
+  // split into. Deliberately NOT a home/** glob — CookieGag.tsx lives there too
+  // but is hand-written (it exists to convert an inline onclick to onClick), so
+  // it stays subject to the brand-token rule. Creature is a single file.
   {
     files: [
-      'apps/landing/src/components/home/HomeBeats.tsx',
       'apps/landing/src/components/home/HomeBody.tsx',
+      'apps/landing/src/components/home/HomeBeats.tsx',
+      'apps/landing/src/components/home/sections/**',
+      'apps/landing/src/components/home/beats/**',
       'apps/landing/src/components/creature/CreatureBody.tsx',
     ],
     rules: {
