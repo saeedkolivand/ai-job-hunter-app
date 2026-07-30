@@ -148,7 +148,13 @@ The static-HTML fragment pipeline (`src/content/`, `src/components/RawHtml.tsx`,
 - **Shared tokens**: `marketing-tokens.css` and `marketing-base.css` consolidated and applied via `PageStyle` at page level.
 - **Link list**: The parity gate's `EXPECTED_HREFS` literal in `scripts/check-parity.mjs` is now the canonical source for marketing links (was derived from parsed `body.html` fragments). Editing a marketing link now requires conscious update of this frozen list.
 
-**Parity gate**: `pnpm check:parity` remains the permanent non-optional guard — it ensures Next export output byte-matches the legacy static-site layout per page via `scripts/diff-dom.mjs` element-by-element comparison (inclusive of entity-normalized inline styles). Blind spot: `diff-dom.mjs` drops whitespace-only text nodes, so lost inline word-gaps between adjacent inline elements are invisible to the diff. Compensating checks: explicit `{' '}` discipline in JSX, whole-page whitespace-collapsed textContent comparison against the baseline during review, and per-page structural render tests. A regression test (`scripts/diff-dom.test.mjs`) documents the colon-spacing fix for multi-declaration inline styles.
+**Parity gate**: `pnpm check:parity` remains the permanent non-optional guard — it verifies the built Next.js export (`out/`) against three content checks:
+
+1. **Signature phrases** — curated list of each page's distinctive copy/jokes must appear in the output (ensures marketing tier copy is present).
+2. **Legacy links** — frozen snapshot of every href from the pre-refactor static site must appear in the output (ensures no silent URL deletions).
+3. **Installer URLs** — per-OS download URLs from `src/data/version.json` must appear in `out/download.html` (ensures versioning seam renders).
+
+**No structural DOM gate currently exists.** `scripts/diff-dom.mjs` (element-by-element DOM comparison against pre-refactor baselines) was built during the fragment-pipeline conversion and is now orphaned — it has no active callers, the input baselines (`src/content/*/body.html`) were deleted, and `check-parity.mjs` does not invoke it. This means **markup changes to the landing pages are not caught by an automated regression gate** — only text and link presence. The only structural defence is code review + whole-page manual visual pass. A future project could reinvoke element-equivalence checking by reconstructing baselines from the tagged commit before the TSX conversion, but that is deferred.
 
 **Deleted files**: `src/content/` (directory), `src/components/RawHtml.tsx`, `src/lib/content.ts`. Repo-wide grep confirms no remaining references to `RawHtml` or `readContent` outside historical commit messages and the already-converted pages' provenance comments.
 
