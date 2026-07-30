@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: 'THE CREATURE — a hand-drawn doodle short film',
   description:
     'a doodle engineer accidentally summons a tiny recruiter creature. each application makes it bigger. a hand-drawn short film from the AI Job Hunter notebook. runtime ~2:40.',
+  alternates: { canonical: 'https://aijobhunter.app/creature' },
 };
 
 export default function CreaturePage() {
