@@ -7,7 +7,8 @@ name: 🤖 Claude Review (required gate + advisory deep dive)
 # review with deterministic verdict: HIGH/CRITICAL at confidence ≥ 0.8
 # blocks merge; fails open on infra (no action outage freeze). Findings
 # are posted as a STICKY PR comment (edited in place per push; only when
-# findings exist; flipped to "resolved" when a later run is clean). The
+# findings exist; flipped to "resolved" when a later run is clean), and
+# the blocking ones ALSO as inline comments on their changed lines. The
 # check status stays the blocking signal. See ADR-0008 for the 6-PR
 # review-hardening program; the gate is the final surface (join: Stop
 # gate, /review, pre-push, ci-ok, this check).
@@ -89,17 +90,32 @@ jobs:
         uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b # v1.0.183
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # NO `prompt` on purpose: a prompt forces "automation mode", where the
-          # inline-comment tools are DENIED (cause of the earlier "No buffered
-          # inline comments" + permission_denials). The `@claude review` mention
-          # runs the action in TAG mode, which grants the comment tools — this is
-          # the documented comment-triggered review path.
+          # NO `prompt` on purpose: a prompt flips the action to AGENT mode, which
+          # drops the tracking comment and our agent-routing context. The bare
+          # `@claude review` mention keeps TAG mode — the documented
+          # comment-triggered review path.
+          #
+          # Tag mode does NOT grant the inline-comment tools on its own, though,
+          # which is why every review here has posted into the tracking comment
+          # instead of onto the diff. At this pin the inline-comment MCP server is
+          # started only when `allowedTools` names something with the
+          # `mcp__github_inline_comment__` prefix
+          # (src/mcp/install-mcp-server.ts:80,138-142), and tag mode's own list is
+          # Glob/Grep/LS/Read plus the comment-update and CI tools
+          # (src/modes/tag/index.ts:123-133). Naming the tool below is what starts
+          # the server. Re-verify both files if the action pin is ever bumped.
+          #
+          # The flag does not clobber tag mode's list: `--allowedTools` accumulates
+          # (every occurrence is unioned), and the action additionally merges our
+          # `mcp__github_*` entries into its own list before emitting it, so
+          # Read/Grep/Glob/LS survive.
           #
           # `--append-system-prompt` injects our review standards WITHOUT flipping
-          # to automation mode, so the review still uses our agent routing + the
+          # modes, so the review still uses our agent routing + the
           # token-efficiency contract while being able to post.
           claude_args: |
             --model claude-opus-5
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
             --append-system-prompt "Review this pull request. Map the changed files to their owner in .claude/review-routes.json (first matching primary glob wins), apply that .claude/agents checklist plus the .claude/skills/token-efficiency contract, and review only the changed files. Severity: only HIGH or CRITICAL are blocking (architecture violations; untested error or security paths; credential, IPC, or updater exploits; data loss); treat the rest as advisory. Post findings as inline comments on the changed lines. Be advisory only and do not approve or block the PR."
 
   ai-review-gate:
@@ -141,13 +157,26 @@ jobs:
             Report only defects introduced by the diff; pre-existing issues get
             introduced_by_diff: false. Give every finding a calibrated confidence (0-1);
             anything you cannot substantiate gets <= 0.5.
+            Additionally post each BLOCKING finding — HIGH or CRITICAL at confidence
+            >= 0.8 with introduced_by_diff true — as an inline comment on its changed
+            line. Do not post the others inline; they belong in the JSON only.
             Write the findings as schema-1 JSON to review-findings.json in the workspace
             root — the JSON object only, no fences: { "schema": 1, "findings": [ {
             "severity": "CRITICAL|HIGH|MEDIUM|LOW", "category": "security|correctness|data-loss|arch|test-coverage|i18n|perf|style",
             "file": "...", "line": 0, "summary": "...", "evidence": "...", "fix": "...",
             "confidence": 0.0, "introduced_by_diff": true } ] }
             No findings -> { "schema": 1, "findings": [] }. Write the file even when empty.
-          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write"'
+          # Agent mode gates the inline-comment MCP server on the same
+          # `mcp__github_inline_comment__` prefix check as tag mode — it passes
+          # parseAllowedTools(claude_args) straight to prepareMcpConfig
+          # (src/modes/agent/index.ts), and `pull_request` is an entity event with
+          # isPR true (src/github/context.ts:191-201), so the server starts and
+          # targets this PR. Inline is capped to the blocking tier by the prompt
+          # above: this lane re-runs on every synchronize and inline comments are
+          # not deduplicated across runs, so an unbounded instruction would stack a
+          # fresh copy of every nit on each push. The sticky comment stays the
+          # full-finding-list surface; the check stays the blocking signal.
+          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write,mcp__github_inline_comment__create_inline_comment"'
 
       - name: Deterministic verdict
         run: node scripts/ci-review-verdict.mjs review-findings.json
