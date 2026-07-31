@@ -1,5 +1,101 @@
 [
   {
+    "sha": "a992a3941acf31c09a78f32f5a5a6daa031fd108",
+    "commit": {
+      "message": "chore: add robots.txt, sitemap.xml and llms.txt to the landing site (#922)\n\n* chore: add robots.txt, sitemap.xml and llms.txt to the landing site\n\nThe static site shipped with no crawl metadata at all: no robots.txt, no\nsitemap, and nothing aimed at LLM crawlers.\n\n- robots.ts allows everything except /mission-control (a live GitHub-API\n  dashboard that already sets robots index false on the page) and points at\n  the sitemap.\n- sitemap.ts lists the 8 indexable routes, matching each page's own canonical.\n  No lastModified/priority: Google ignores priority and a build-time timestamp\n  would churn the file on every deploy.\n- public/llms.txt follows the llms.txt convention (H1, summary blockquote, key\n  facts, Pages, Optional). Adoption by AI crawlers is currently unproven, but\n  the file is static and costs one bullet per new page.\n\nBoth metadata routes need a force-static dynamic export: Next 16 defaults them\nto dynamic and output export rejects that outright.\n\nVerified: typecheck, build (out/robots.txt + out/sitemap.xml + out/llms.txt all\nemitted), check:parity, and lint:strict --max-warnings 0 all pass.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: keep /mission-control crawlable so its noindex is readable\n\nReview findings on #922 (frontend-reviewer, all advisory).\n\nMEDIUM: the robots.txt Disallow on /mission-control cancelled the page-level\nnoindex instead of reinforcing it. A crawler that obeys Disallow never fetches\nthe page, so it never reads the noindex, and the bare URL stays indexable from\nexternal links — the exact outcome noindex prevents. Dropped the rule; the\ncomment now explains why the page must stay fetchable.\n\nLOW: /how-it-works and /creature shipped without a canonical, so the invariant\nasserted in sitemap.ts held for only 6 of 8 routes. Added both, matching the\nother six pages.\n\nLOW: added robots.txt, sitemap.xml and llms.txt to the existing REQUIRED_FILES\nlist in check-parity.mjs. Three entries in machinery that already runs in CI,\nand it catches the failure the PR itself documents: if the force-static export\nis dropped or Next changes metadata-route defaults, the build stops emitting\nthese files silently. Verified the guard bites by removing out/robots.txt —\ncheck:parity fails with the expected message, passes once restored.\n\nVerified: typecheck, build, check:parity, lint:strict --max-warnings 0.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T10:34:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "c0a4d72ffa86e838300fd712794af27789adaa98",
+    "commit": {
+      "message": "test: cover the agent-fleet components and scroll hooks (#921)\n\nAgentFleet.tsx had no test at all. PR #916 split its 830 lines into six\nsections, three hooks and five small components with code review as the only\ngate; this closes that.\n\n49 cases across AgentFleet, NodeButton, Station, IntakeSection,\nFleetMapSection and TogetherSection. The headline pair are the remount\nregression tests: #916 hoisted NodeButton out of the render body because a\nfresh component identity every render made React remount every node and drop\nfocus. Re-inlining NodeButton into FleetMapSection makes both tests fail with\nactiveElement falling back to body, so they genuinely pin the fix rather than\nmerely describing it.\n\nThe rest target wiring that review cannot keep honest: section render order\nvia an ordered heading array, useReveal reaching .reveal elements across all\nsix children from its root-level hook, prefers-reduced-motion skipping the\nrAF path, both copy chips writing the copy string rather than the displayed\none, and every rendered list derived from data/agent-fleet.ts so dropping an\nagent or a route fails.\n\nmatchMedia, IntersectionObserver, requestAnimationFrame and\nnavigator.clipboard are stubbed deterministically; the suite passes shuffled\nand in isolation.\n\nLanding suite goes from 257 to 306 tests.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T08:47:31Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7007256dbc55559915a9db7c52ef7acabaaa371b",
+    "commit": {
+      "message": "refactor: split the remaining ported landing bodies into sections (#920)\n\nHowItWorksBody.tsx (340 lines), PrivacyBody.tsx (327) and CreatureBody.tsx\n(262) were the last oversized files in apps/landing - all three pure static\nJSX ported from hand-authored HTML with no hooks, handlers or logic.\n\nThey split verbatim into sections/ directories beside each body, cutting at\nthe markup's own structural units: how-it-works at its <aside> and #view-*\nsections, privacy at its <h2>-delimited blocks, creature at doodles, stage\nand overlays. The shells are 38, 25 and 24 lines.\n\nNo JSX was rewritten, matching the approach used for the home files in #917.\nVerified against pre-split builds: tag sequence with ids and classes and\nwhitespace-collapsed visible text are both byte-identical on all three pages\n(189/23474, 191/15134, 94/10560).\n\nThe inline-hex eslint exemption gains creature/sections/**, scoped rather\nthan a creature/** glob so the directory stays covered by the brand-token\nrule if a hand-written file lands there. All 14 new files are added to\nSECRET_SCAN_FILES, which fails open for anything unlisted.\n\nProvenance headers on the privacy sections no longer claim privacy-0.js\nbinds to the page; it is a console easter egg with no DOM binding, and\ncheck-parity is what actually pins that page. Corrected on PrivacyBody.tsx\ntoo, where the claim originated.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T08:16:50Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "1537daf6f2917d827eea119d02b5d11a1b0e1752",
+    "commit": {
+      "message": "test: cover the pure modules extracted from the landing component split (#919)\n\nPRs #915 and #916 pulled geometry, scroll and easing math out of\nArchitectureMap and AgentFleet into pure modules specifically so it could be\ntested, then deferred the tests. This pays that back: 90 cases across\nlib/agent-system/{belt,links,reveal,clipboard} and\nlib/architecture-map/{geometry,filter}.\n\nThe cases target boundaries rather than happy paths - zoom clamped at, below\nand above ZOOM_MIN/ZOOM_MAX, easeOutCubic checked for deceleration by\ncomparing deltas rather than endpoints, screenToVB round-tripped against its\nforward transform, nearestStationIndex swept for a valid index on every input\nincluding infinities, and copyChip driven through the copied-class timer with\nfake timers.\n\nTwo unreachable source quirks are asserted with comments rather than fixed:\nsceneProgress(0,0,0) returns NaN because 0/0 escapes both clamp comparisons,\nand nearestStationIndex on an empty array returns 0. Neither is reachable\nthrough the real callers, and this is a test-only change.\n\nLanding suite goes from 167 to 257 tests.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T08:11:56Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "7668b6ff89410cf1a2f1df7b6b9f483c98b26a85",
+    "commit": {
+      "message": "chore: remove orphaned diff-dom parity tooling and dead label metric (#918)\n\nThree follow-ups from the landing component split (#914-#917).\n\ndiff-dom.mjs and its test are deleted. The script compared built output\nelement-by-element against src/content/*/body.html baselines, which were\nremoved in the TSX conversion, so it has had no input and no caller since.\nADR-0018 now records the manual tag-sequence and visible-text diff that\nreplaced it, including the strip-scripts-first caveat.\n\nbuildModel computed work.labels via issuesByLabel and nothing ever rendered\nit. Both the field and the now-orphaned issuesByLabel helper are removed,\nalong with its assertions in metrics.test.ts.\n\nTwo provenance comments in HomeBody.tsx and CookieGag.tsx that pointed at\ndiff-dom.mjs now describe the deviation directly.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T07:23:47Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9c76d79ba72620bb674d03eae170d8e3e7f4d0bd",
+    "commit": {
+      "message": "refactor: split home body and beats into per-section components (#917)\n\nHomeBody.tsx (753 lines) and HomeBeats.tsx (769) were pure static JSX with no\nhooks, handlers or logic. They split verbatim into sections/{PageChrome,Hero,\nFeatures,Testimonials,Finale}.tsx and beats/Beat{1,2,3,4}.tsx, leaving shells\nof 40 and 23 lines.\n\nNo JSX was rewritten. The repeated markup that looked like DRY bait - the ~40\ndecorative svg blocks, 11 feature cards, 9 testimonials, 4 npc figures - stays\nliteral, because the only automated gate on these pages is text and link\npresence, not structure.\n\nVerified against a pre-split build: the tag sequence with ids and classes is\nbyte-identical (531 tags), the whitespace-collapsed visible text is\nbyte-identical (38260 chars), and main still has exactly 8 direct section\nchildren, which home-0.js indexes to route the journey path.\n\nThe no-restricted-syntax inline-hex exemption now covers the shells plus\nsections/ and beats/, deliberately not a home/** glob so hand-written\nCookieGag.tsx stays subject to the brand-token rule. All new files are added\nto SECRET_SCAN_FILES, which fails open for anything unlisted.\n\nADR-0018's parity-gate paragraph is corrected: check-parity runs three content\nchecks against out/, and diff-dom.mjs is orphaned with no callers and no\nbaselines. ADR-0019's HomeBody line-number citation becomes a stable anchor\nreference into Finale.tsx.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T07:04:25Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "aa63f2d7d5766c8dbb1a322205ee67551b3f9e7a",
+    "commit": {
+      "message": "refactor: split agent-fleet into sections and pure scroll modules (#916)\n\nAgentFleet.tsx was 830 lines: six page sections, three scroll-driven effects,\nand a component defined inside the render body.\n\nPure math moves to lib/agent-system: links.ts holds the bezier geometry,\nbelt.ts the scrub progress and nearest-station argmin, reveal.ts the count-up\neasing and scene clamp, clipboard.ts the copy helper. The hardcoded /9 at\nthree sites becomes STATION_COUNT derived from STATIONS.length, and the\nbreakpoint, debounce, duration and threshold literals are named constants.\n\nThe three effects become useMapLinks, useBeltScrub and useReveal in hooks.ts,\neach keeping its own rAF flag and listener teardown. Markup splits into six\nsection components plus Glyph, Machine, Divider, Station and NodeButton.\nHero coords, divider paths, legend rows, team lists and the save-job prompt\nmove to data/agent-fleet.ts as additive exports.\n\nNodeButton is hoisted from the render body to module scope. This is the one\nnon-behavior-preserving change: it previously got a fresh component identity\nevery render, so React unmounted and remounted it, restarting focus and\ntransitions. It now takes name, roleClass, selected, onSelect and onHover.\n\nState follows its markup - route into IntakeSection, selected and litName into\nFleetMapSection - leaving AgentFleet.tsx at 29 lines with no prop drilling.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-30T06:22:05Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f4bd32ba07ace2d60e6840350a465bf130575cb0",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-30T05:58:45Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "2a3fdb8d6fc1ce42afc8bee6759010a90d3cf267",
     "commit": {
       "message": "refactor: split architecture-map interactions into focused modules (#915)\n\nArchitectureMap.tsx was 972 lines, dominated by a single 454-line useEffect\nthat wired pan, zoom, drag, keyboard, focus-trap and a11y announcements by\nreaching into prerendered DOM through selectors.\n\nThe effect decomposes into lib/architecture-map: geometry.ts holds the bezier\nand viewport math as pure functions taking rects instead of reading the DOM,\nfilter.ts takes the filter as a parameter instead of closing over a mutable,\nviewport.ts owns the transform state with wheel and drag, keyboard.ts owns the\nshortcut switch and the help-dialog focus trap, and interactions.ts composes\nthem behind attachMap(root, { onPanel }). Zoom factors, scale clamps and arrow\nsteps are now named constants.\n\nMarkup splits into Sidebar.tsx, Layers.tsx and MapChrome.tsx. Legend rows and\nkeyboard-shortcut rows move to data/architecture-map.ts, already the declared\nsingle source of truth for this page.\n\nArchitectureMap.tsx is now 116 lines. Behavior-preserving: every id, class and\ndata attribute the interaction layer queries survives byte-identical, as does\nthe viewBox save and restore handoff from the no-JS baseline.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
@@ -1101,102 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "8b9c5ccf715cc492133f59aaed08a59065495077",
-    "commit": {
-      "message": "chore: bump astral-sh/setup-uv from 8.3.2 to 9.0.0 (#847)\n\nBumps [astral-sh/setup-uv](https://github.com/astral-sh/setup-uv) from 8.3.2 to 9.0.0.\n- [Release notes](https://github.com/astral-sh/setup-uv/releases)\n- [Commits](https://github.com/astral-sh/setup-uv/compare/11f9893b081a58869d3b5fccaea48c9e9e46f990...c771a70e6277c0a99b617c7a806ffedaca235ff9)\n\n---\nupdated-dependencies:\n- dependency-name: astral-sh/setup-uv\n  dependency-version: 9.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:55:42Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "4ce651caff04889ef8c080872d65d5999f606a2d",
-    "commit": {
-      "message": "chore: bump anthropics/claude-code-action from 1.0.179 to 1.0.180 (#846)\n\nBumps [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) from 1.0.179 to 1.0.180.\n- [Release notes](https://github.com/anthropics/claude-code-action/releases)\n- [Commits](https://github.com/anthropics/claude-code-action/compare/b76a0776ae74036e77cd11018083743453d7ad35...fa7e2f0a29a126f0b81cdcf360561b36e44cf608)\n\n---\nupdated-dependencies:\n- dependency-name: anthropics/claude-code-action\n  dependency-version: 1.0.180\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:55:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "9e7b698d51138999d268260e7725b6d5820164bb",
-    "commit": {
-      "message": "fix(scraper): keep distinct Hacker News job ids apart in cross-source dedup (#845)\n\n`identifying_query_params` allowlisted only Indeed, so `normalize_job_url`\ndrops the entire query string for every other host. But `boards::ycombinator`\nfalls back to `news.ycombinator.com/item?id=<id>` whenever an HN job story\ncarries no external url — the id lives in the QUERY:\n\n    https://news.ycombinator.com/item?id=44100001 -> .../item\n    https://news.ycombinator.com/item?id=44100002 -> .../item\n\nso `dedup_cross_source` collapsed every text-only HN posting into one row. The\nallowlist's own doc comment already stated the rule it was violating (\"Keep in\nsync with the canonical URL builders … that place a job id in the query\nstring\"); ycombinator is a second such builder. The aggregator's `canonical_url`\ndocuments the same hazard from the other direction.\n\nAdd the `news.ycombinator.com` -> `id` entry on both sides of the lockstep pair\n(Rust + the TS mirror), so tracking params on the same id still collapse while\ndistinct ids stay apart.\n\nAlso tightens the doc comment so `applications/mod.rs` stays under the R8\n1400-LOC hard cap (1399).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:41:39Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "5c0a3050c020543fb7fa458a23fdcf57986ab9dc",
-    "commit": {
-      "message": "fix(ui): ignore a superseded geocode response (#843)\n\nThe debounce in `useGeocoding` only bounds when a request STARTS. Once one is\nin flight nothing cancels it, and the cleanup clears only the pending timer, so\n`setSuggestions(s)` ran unconditionally on whatever resolved last.\n\nTwo requests are in flight whenever the user resumes typing after a pause\nlonger than the 300ms debounce — the normal rhythm for typing a city name. If\nthe older, slower one wins the race (Nominatim is rate-limited to ~1 req/s and\nthe Rust side caches, so latencies vary by seconds) it overwrites the list with\nsuggestions for a query the user has already typed past, and `setActiveIndex(-1)`\nwipes their keyboard selection mid-interaction.\n\nFlag the run as superseded in the cleanup and drop a late resolution. React\nalways runs the previous cleanup before the next effect run, so this also\ncovers the `< 2 chars` early-return path — which otherwise let an in-flight\nrequest repopulate a list the hook had just cleared — and stops a setState\nafter unmount.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:41:36Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "ec671a56d7c045a1e344214c3727cd540baa7f37",
-    "commit": {
-      "message": "fix(export): keep body paragraphs separate in a letter with no letterhead (#839)\n\nThe header-skip arm in `parse_cover_letter` was not anchored to the header:\n\n    if skip_lines < 3\n        && (clean.is_empty() || …name… || …contact echo…)\n\n`skip_lines` only advances when the arm fires, so the arm stays armed for the\nwhole document until three skippable lines have accumulated. Since\n`clean.is_empty()` alone satisfies it, any of the first three blank lines is\nconsumed with `continue` — including blank lines in the BODY, which never\nreach the paragraph-flush branch below. The next body line is then space-joined\nonto the un-flushed paragraph.\n\nA letter that opens straight at the salutation therefore renders as ONE run-on\nblock instead of separate paragraphs. That shape is exactly what the agent\nproduces: `COVER_LETTER_SYSTEM` asks for the finished letter only — \"no\npreamble or commentary\" — so there is no name/contact echo to burn the three\nskips before the body starts. It is also the natural hand-edited shape, since\nthe template renders the letterhead from `ContactProfile` and the parser\ndeliberately drops any contact echo from the body.\n\nThe repo fixture `EN_LETTER` happens to spend all three skips on its\nletterhead before the body, which is why the existing tests pass.\n\nBound the arm with `!body_started`. Safe by construction: `current_para_text`\nis only appended to in the `body_started` branch, so no paragraph can be\npending while the arm is reachable. Affects both the PDF download and the live\npreview (`render_letter_pdf` / `render_letter_svg_pages`).\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:41:32Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "aa4cf0142863948dd2b9309f7cc0e72928d7e952",
-    "commit": {
-      "message": "fix(ai): stop corrupting streamed text at a chunk boundary (#837)\n\n`stream_response` decoded each transport read on its own:\n\n    buf.push_str(&String::from_utf8_lossy(&bytes));\n\n`reqwest::Response::chunk` splits the body at arbitrary byte offsets — a\nchunked-transfer body surfaces as the socket reads land, and h2 DATA frames\nare cut wherever the server flushed — so one multi-byte character routinely\nstraddles two reads. `from_utf8_lossy` then replaced BOTH halves with U+FFFD\nand consumed the partial bytes; nothing carried the incomplete tail forward.\n\nThe corruption was silent. U+FFFD is legal inside a JSON string, so the frame\nstill parsed and the mojibake flowed through `emit_delta` to the live view\nAND through `answer` into `finish`, which persists it as `result.text` — so\nthe renderer's poll fallback recovered the same corrupted document. Cover\nletters routinely contain em dashes, curly quotes and accented characters,\nevery one of which is a 2-3 byte sequence.\n\nThis is the single streaming loop behind every cloud adapter (openai,\nanthropic, gemini, ollama, and every OpenAI-compatible gateway), so it\naffected all of them.\n\nAdd `push_utf8`, which holds an incomplete trailing sequence in a `carry`\nbuffer until the next read completes it. Genuinely invalid bytes (a corrupt\ntransfer, never a provider) still collapse to one U+FFFD and are skipped, so\na malformed stream can never stall the loop.\n\nApplied at all three sites that decoded a read in isolation: the production\nloop, the test-only `drive_stream` core, and `ollama::pull`'s progress\nstream.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:41:29Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "919224d7489384d2dcca5b62a4f8d441f03f96ae",
-    "commit": {
-      "message": "fix(ui): stop rendering \"0mo ago\" for a 28-29 day old timestamp (#833)\n\nuseFormatRelativeTime ended the week tier at `weeks < 4` (day 28) but\nfloors the month tier on `days / 30`, so days 28 and 29 fell through to\n`monthsAgo` with `months === 0` — a month-old job posting or generation\ncard rendered \"0mo ago\" (\"vor 0 Mo.\" in de).\n\nHand over to the month tier at the same 30-day boundary `months` is\ncomputed on, so the tiers stay contiguous: days 28-29 now render \"4w ago\".\n\nAdds the hook's first unit test, including a sweep asserting no tier ever\ninterpolates a zero count.\n\nCo-authored-by: thejesh23 <thejesh23@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:41:26Z"
-      }
-    },
-    "author": {
-      "login": "thejesh23"
-    }
-  },
-  {
-    "sha": "e1a2295e48cf866d660859991c19b1bdb40826f7",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-07-22T06:04:29Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
