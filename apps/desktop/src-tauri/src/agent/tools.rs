@@ -311,6 +311,13 @@ fn match_resume_handler(
 /// agent-context version of the `@ajh/prompts` cover-letter builder — the
 /// honesty/no-fabrication spine, grounded in the fenced résumé, untrusted brief
 /// used for company facts only.
+///
+/// The 200-300 word band here is deliberately market-agnostic and deliberately
+/// NOT the per-market band the TS builder uses: this path has no
+/// `<market_conventions>` block to defer to (no resolved market reaches the
+/// agent tool), so a fixed, safe middle is the only option. Expect the same
+/// posting to yield a slightly different length through the desktop flow —
+/// that is the intended trade, not drift to "fix".
 const COVER_LETTER_SYSTEM: &str = "\
 You are a cover-letter writer. Write ONE focused, specific cover letter (about 200-300 \
 words of body) that reads like a real person wrote it: flowing prose, not a list of \

@@ -709,6 +709,38 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).toContain('WRITING NOTES (internal: do NOT output any of this)');
   });
 
+  it('grounds the diagnosis in employer-side evidence only, reserving the résumé for the through-line', () => {
+    // A résumé says what the candidate did — never why an employer opened a role
+    // or what they will measure. Letting it back into steps 1-2 turns the
+    // diagnosis into a projection of the candidate's own history.
+    const noBrief = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(noBrief).toMatch(/Steps 1 and 2 stand ONLY on employer-side evidence in <job_ad>:/);
+    expect(noBrief).toMatch(/Step 3 is where <candidate_resume> comes in/);
+    expect(noBrief).toMatch(/THE THROUGH-LINE[^\n]*<candidate_resume>/);
+  });
+
+  it('names the research block in the diagnosis only when a brief is actually fenced', () => {
+    const brief = 'Acme builds payment rails for SMBs and recently raised a Series B.';
+    const withBrief = buildCoverLetterPrompt(
+      RESUME_WITH_LINKS,
+      'Job ad',
+      META,
+      'recruiter',
+      'large',
+      brief
+    );
+    const noBrief = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+
+    // Brief present: the diagnosis may read it, and it joins the evidence set.
+    expect(withBrief).toContain('and off the company research above');
+    expect(withBrief).toMatch(
+      /Steps 1 and 2 stand ONLY on employer-side evidence in <job_ad> and <company_research>:/
+    );
+    // Brief absent: never point the model at a fence that isn't in the prompt.
+    expect(noBrief).not.toContain('and off the company research above');
+    expect(noBrief).not.toMatch(/employer-side evidence in <job_ad> and <company_research>/);
+  });
+
   it('defers the letter length to the market conventions instead of a second hardcoded range', () => {
     const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
     expect(prompt).toMatch(/Length: 200 to 350 words/); // the intl baseline, from <market_conventions>

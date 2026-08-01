@@ -330,18 +330,19 @@ export function buildCoverLetterPrompt(
   // is unknown, instruct the model to name the role alone rather than fall back
   // to a placeholder like "this company" (which surfaces as literal placeholder
   // text such as "[Company Name]" / "Unternehmen" in the generated letter).
-  // The role diagnosis names <company_research> only when a brief is actually
-  // fenced above — pointing the model at a block that isn't in the prompt is
-  // both noise and a false evidence source.
-  const hasBrief = Boolean(companyBrief.trim());
-  const evidenceSources = hasBrief
-    ? '<job_ad>, <company_research>, or <candidate_resume>'
-    : '<job_ad> or <candidate_resume>';
-
   const companyName = meta.companyName?.trim();
   const roleLine = companyName
     ? `Role: ${meta.jobTitle?.trim() || 'this role'} at ${companyName}`
     : `Role: ${meta.jobTitle?.trim() || 'this role'} (company name unknown - never name, invent, or write a placeholder for a company)`;
+
+  // Evidence sources for the role diagnosis. Employer-side only: a résumé is
+  // evidence about the candidate, never about why an employer opened a role or
+  // what they will judge in the first 6-12 months — letting it back steps 1-2
+  // is how a diagnosis turns into a projection of the candidate's own history.
+  // <company_research> is named only when a brief is actually fenced above;
+  // pointing the model at an absent block is noise and a false evidence source.
+  const hasBrief = Boolean(companyBrief.trim());
+  const diagnosisEvidence = hasBrief ? '<job_ad> and <company_research>' : '<job_ad>';
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}<candidate_resume>
 ${resumeBody}
@@ -375,11 +376,11 @@ ${groundingBlock ? `\n${groundingBlock}\n` : ''}
 Diagnose the role before you write a word of it:
 1. WHY THIS ROLE IS OPEN — the business problem the hire is meant to solve. Read it off the job ad's own signals (what it repeats, what it lists first, the scope and seniority, the team it sits in, what "you will own")${hasBrief ? ' and off the company research above' : ''}.
 2. THE FIRST 6 TO 12 MONTHS — the 3 outcomes this hire would most likely be judged on.
-3. THE THROUGH-LINE — which of the candidate's real achievements make them part of that solution.
-Every step of this stands on evidence in ${evidenceSources}. Where the evidence is thin, keep the diagnosis broad instead of guessing: an invented problem, priority, or piece of company news is worse than a general one. In the letter itself the diagnosis is the candidate's own reading of the role ("it looks like", "where I'd expect to be useful first"), never insider knowledge and never a claim about what is going on inside the company.
+3. THE THROUGH-LINE — which of the candidate's real achievements, as shown in <candidate_resume>, make them part of that solution.
+Steps 1 and 2 stand ONLY on employer-side evidence in ${diagnosisEvidence}: the résumé says what the candidate has done, never why an employer opened a role or what they will measure, so it cannot support either step. Step 3 is where <candidate_resume> comes in. Where the evidence is thin, keep the diagnosis broad instead of guessing: an invented problem, priority, or piece of company news is worse than a general one. In the letter itself the diagnosis is voiced as the candidate's own reading of the role — hedged, in ${meta.targetLanguage || 'en'}, the way a careful applicant would phrase an inference in that language — never insider knowledge and never a claim about what is going on inside the company.
 
 Then fix the through-line: the single value to lead with, the 1 to 2 résumé achievements that best fit this role, and the genuine reason this company and role appeal. Build the match ONLY from the résumé. Lead with what SKILL GROUNDING marks PRESENT, and never claim, imply, or bold anything it marks ABSENT (or any job requirement the résumé doesn't support). Then write it as one connected, natural letter, not point-by-point answers.${
-    companyBrief.trim()
+    hasBrief
       ? `\nIn the "why this company" part, draw on <company_research> for specific, current facts about ${meta.companyName || 'the company'} as company context only, never as the candidate's own experience.`
       : ''
   }
