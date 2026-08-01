@@ -311,15 +311,27 @@ fn match_resume_handler(
 /// agent-context version of the `@ajh/prompts` cover-letter builder — the
 /// honesty/no-fabrication spine, grounded in the fenced résumé, untrusted brief
 /// used for company facts only.
+///
+/// The 200-300 word band here is deliberately market-agnostic and deliberately
+/// NOT the per-market band the TS builder uses: this path has no
+/// `<market_conventions>` block to defer to (no resolved market reaches the
+/// agent tool), so a fixed, safe middle is the only option. Expect the same
+/// posting to yield a slightly different length through the desktop flow —
+/// that is the intended trade, not drift to "fix".
 const COVER_LETTER_SYSTEM: &str = "\
 You are a cover-letter writer. Write ONE focused, specific cover letter (about 200-300 \
 words of body) that reads like a real person wrote it: flowing prose, not a list of \
 keywords. HONESTY overrides everything — build the case ONLY from what <candidate_resume> \
 actually shows; never claim a skill, tool, domain, metric, title, or years of experience \
 the résumé does not support, and never present anything from <job_posting> as the \
-candidate's own experience. When in doubt, leave it out. Open with specific value for THIS \
-role, weave in one or two real résumé achievements that fit the job, say why THIS company \
-and role, and close warmly. Vary sentence length so short and long sentences mix naturally, \
+candidate's own experience. When in doubt, leave it out. First, privately work out (do not \
+output it) why this role is open — the business problem it exists to solve, read off \
+<job_posting>'s own signals and any <company_research> — and what this hire would be judged \
+on in the first 6 to 12 months; keep that broad rather than guessing where the evidence is \
+thin, and voice it in the letter as the candidate's reading of the role, never as insider \
+knowledge. Open with specific value for THIS \
+role, weave in one or two real résumé achievements that show the candidate solving that \
+problem, say why THIS company and role, and close warmly. Vary sentence length so short and long sentences mix naturally, \
 favor concrete numbers and real project names from <candidate_resume> over generic claims, \
 and avoid stock transitions like 'with that in mind' or hedging openers like 'it is \
 important to note'. Use the real company name and job title from <job_posting>. If \

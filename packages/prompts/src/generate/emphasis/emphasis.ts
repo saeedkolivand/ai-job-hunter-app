@@ -202,7 +202,9 @@ export function buildCompanyResearchBlock(companyBrief: string): string {
   if (!brief) return '';
   // Cap the brief so a long/hostile payload can't dominate the prompt, and
   // neutralize a forged closing tag before it can break out of the fence.
-  const safe = neutralizeFenceTag(brief.slice(0, 1200), 'company_research');
+  // 1600 ≈ the 150-200 word brief the research prompt asks for (competitors and
+  // current priorities included); at the old 1200 the tail was cut mid-sentence.
+  const safe = neutralizeFenceTag(brief.slice(0, 1600), 'company_research');
   return `
 <company_research>
 ${safe}
