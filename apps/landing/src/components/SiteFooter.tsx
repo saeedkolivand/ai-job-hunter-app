@@ -1,13 +1,13 @@
 import { CHROME_EXT, FIREFOX_EXT, GITHUB_REPO, SPONSOR } from '@/lib/site-links';
 
 // The marketing-tier footer (`<footer><p class="byline">…<p class="foot-links">…`)
-// shared byte-for-byte by how-it-works/privacy/download body.html. `current`
-// renders that one nav item as plain text instead of a link, matching how each
-// page today omits the link to itself. Separators are explicit `{' · '}`
-// strings — JSX drops whitespace-only text between elements, so relying on
-// newlines here would silently lose the ` · ` that scripts/check-parity.mjs
-// checks for.
-export function SiteFooter({ current }: { current?: 'download' | 'privacy' }) {
+// shared byte-for-byte by how-it-works/privacy/download body.html, plus the
+// new accessibility page. `current` renders that one nav item as plain text
+// instead of a link, matching how each page today omits the link to itself.
+// Separators are explicit `{' · '}` strings — JSX drops whitespace-only text
+// between elements, so relying on newlines here would silently lose the ` · `
+// that scripts/check-parity.mjs checks for.
+export function SiteFooter({ current }: { current?: 'download' | 'privacy' | 'accessibility' }) {
   return (
     <footer>
       <p className="byline">made by Saeed, between rejections.</p>
@@ -17,6 +17,8 @@ export function SiteFooter({ current }: { current?: 'download' | 'privacy' }) {
         {current === 'download' ? 'download' : <a href="/download">download</a>}
         {' · '}
         {current === 'privacy' ? 'privacy' : <a href="/privacy">privacy</a>}
+        {' · '}
+        {current === 'accessibility' ? 'accessibility' : <a href="/accessibility">accessibility</a>}
         {' · '}
         <a href="/creature">▶ the short film</a>
         {' · '}
