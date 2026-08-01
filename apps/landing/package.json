@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:parity": "node scripts/check-parity.mjs",
+    "check:a11y": "node scripts/check-a11y.mjs",
     "gen:fonts": "node scripts/selfhost-fonts.mjs"
   },
   "dependencies": {
@@ -18,12 +19,14 @@
   },
   "//typescript": "Pinned to 6.x (newest working): Next 16's build-time verifyTypeScriptSetup does not recognize TS 7's native-compiler package layout — it tries to auto-install typescript and crashes the build worker. Revisit when Next supports the TS 7 compiler.",
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "jsdom": "^30.0.0",
+    "playwright": "^1.62.0",
     "typescript": "6.0.3",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"

@@ -524,6 +524,28 @@ jobs:
         continue-on-error: true
         uses: davelosert/vitest-coverage-report-action@8b157684c6a6b259b97d45e72b44242865c0f6a5 # v2.12.2
 
+      # Build the landing static export once, then reuse it for the a11y gate
+      # below — no separate job, reuses the Chromium already installed above
+      # for the Storybook vitest project. Unlike the desktop's advisory a11y
+      # checks, this one BLOCKS the build (see check-a11y.mjs's header for
+      # why: the landing site's WCAG A/AA baseline is 0, so any violation
+      # found here is a regression on the published /accessibility claim).
+      - name: 🏗️ Build landing (static export)
+        id: landing-build
+        continue-on-error: true
+        run: |
+          echo "::group::Building @ajh/landing (static export)"
+          pnpm --filter @ajh/landing build
+          echo "::endgroup::"
+
+      - name: ♿ Landing Accessibility Gate
+        id: landing-a11y
+        continue-on-error: true
+        run: |
+          echo "::group::Scanning out/ with axe-core (WCAG A/AA)"
+          pnpm --filter @ajh/landing check:a11y
+          echo "::endgroup::"
+
       # cargo-llvm-cov collects coverage; cargo-nextest is the test runner
       # (parallel, flaky-retry, faster, clearer output). `cargo llvm-cov nextest`
       # runs the suite ONCE instrumented; `report` formats it afterward. This
@@ -650,10 +672,11 @@ jobs:
           use-actions-summary: true
 
       - name: ❌ Check for Test Failures
-        if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure'
+        if: steps.js-tests.outcome == 'failure' || steps.rust-tests.outcome == 'failure' || steps.landing-build.outcome == 'failure' || steps.landing-a11y.outcome == 'failure'
         run: |
-          echo "::error::Tests or coverage thresholds failed. Run 'pnpm test:coverage' locally to reproduce."
-          echo "::error::Check the test output above for specific failures."
+          echo "::error::Tests, coverage thresholds, or the landing a11y gate failed."
+          echo "::error::Repro: 'pnpm test:coverage', or 'pnpm --filter @ajh/landing build && pnpm --filter @ajh/landing check:a11y'."
+          echo "::error::Check the output above for specific failures."
           exit 1
 
       - name: 📊 Upload Test Results on Failure
