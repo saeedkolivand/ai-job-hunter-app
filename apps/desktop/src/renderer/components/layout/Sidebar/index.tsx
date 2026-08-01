@@ -144,7 +144,7 @@ export function Sidebar() {
       <nav className="flex flex-col gap-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.labelKey}>
-            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-foreground/40">
+            <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               {t(section.labelKey)}
             </div>
             <div className="flex flex-col gap-1">{section.items.map(renderNavItem)}</div>
@@ -191,7 +191,7 @@ export function Sidebar() {
           <Button
             variant="unstyled"
             onClick={showVersion}
-            className="font-mono text-[11px] tabular-nums text-foreground/25 transition-colors hover:text-foreground/45"
+            className="font-mono text-[11px] tabular-nums text-muted-foreground transition-colors hover:text-foreground/45"
           >
             {appVersion}
           </Button>

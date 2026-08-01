@@ -193,3 +193,57 @@ search path sets one. The Apify opt-in toggle in Settings still reads as simply 
 user who enabled and paid for it has no way to learn their scheduled runs never use it.
 Surface it where the toggle lives (and/or in the autopilot run step log). See
 `docs/knowledge/scraping-domain.md` § Aggregator page loop & spend budget.
+
+---
+
+# Accessibility — open items after PR #924 (`/accessibility` conformance statement)
+
+Measured 2026-08-01 via axe-core 4.12 (WCAG 2.0/2.1/2.2 A+AA tags) plus a scripted keyboard
+tab-through. **The violations the audit originally found were fixed in the same PR** — landing
+site is 0 violations across all 9 pages, desktop home view is 0 in both colour schemes. What
+remains below is the unaudited surface area, not known failures. None blocks a release.
+
+## Desktop renderer — the `text-foreground/NN` opacity ramp (largest open item)
+
+The renderer has ~1,100 `text-foreground/NN` usages; roughly 460 sit at steps (`/30`, `/35`,
+`/40`, `/45`, `/55`) that measure **below 4.5:1** for small text. PR #924 fixed only the 11
+nodes that the home-view scan actually measured, swapping them to the existing
+`text-muted-foreground` token (5.1:1 on white, 4.8:1 on `#f8f8f8`, and clear in dark too).
+
+Every other view is unscanned and very likely carries the same defect. The fix is mechanical —
+swap sub-AA steps to `text-muted-foreground` — but it is a wide visual diff that needs its own
+PR and a Lost Pixel review. Publicly disclosed on `/accessibility`, so this is a commitment.
+
+## Desktop renderer — remaining `best-practice` rules (home view)
+
+Outside the WCAG A/AA level the statement targets, but known: `landmark-unique` (1 node — the
+two `<nav>` elements in `Sidebar` need distinct `aria-label`s) and `region` (5 nodes — some
+Titlebar/StatusBar content sits outside a landmark). Fixing means restructuring landmarks.
+
+## No permanent a11y gate for `apps/landing`
+
+Every scan in PR #924 ran from throwaway scripts under `apps/desktop/` (where
+`@axe-core/playwright` and `@playwright/test` already resolve). `apps/landing` has no Playwright
+dependency, so nothing re-checks these pages on future changes — the fixes can silently
+regress. Adding a gate is a self-contained follow-up.
+
+## Browser extension
+
+- **Never scanned.** The extension injects into third-party pages; no accessibility audit has
+  been run and `/accessibility` states it as _not assessed_. Deferred pending a CI mechanism —
+  the extension is not currently in an automated browser test suite.
+
+## Exported PDFs
+
+- **Not fully PDF/UA-1 tagged.** The Typst engine bakes document metadata (title, author,
+  language) but does not emit tagged/accessible PDF structure. Stated future goal in
+  `.claude/skills/resume-export-standards`; currently export carries document metadata only.
+
+## Coverage limits worth remembering
+
+- Automated tooling catches roughly a third of WCAG issues. There has been **no third-party
+  audit** and **no testing with assistive-technology users** — both disclosed on the page.
+- Single-state scans miss state-dependent failures. `/world`'s accent cycles per section; axe
+  only ever measured the red state (3.93:1) while the **blue** state was 1.88:1 — a worse
+  failure found by reading the code, not by scanning. Assume other cyclic/stateful UI hides
+  similar cases.

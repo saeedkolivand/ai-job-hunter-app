@@ -13,6 +13,7 @@ const ROUTES = [
   '/download',
   '/how-it-works',
   '/privacy',
+  '/accessibility',
   '/world',
   '/creature',
   '/architecture-map',
