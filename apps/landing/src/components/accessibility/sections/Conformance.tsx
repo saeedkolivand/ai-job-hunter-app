@@ -50,14 +50,25 @@ export function Conformance() {
         claim of zero barriers — the rest of this section says what's still scoped out, unaudited,
         or otherwise open.
       </p>
+      <p>
+        Both of those were one-off, manually run passes. Since then, a permanent gate (
+        <code>apps/landing/scripts/check-a11y.mjs</code>) re-runs the same axe-core scan on every
+        landing pull request and <b>blocks the merge</b> on any violation — this one doesn't stop
+        repeating. Its auto-discovery found three routes neither manual pass had ever scanned (
+        <code>/404</code>, <code>/_not-found</code>, <code>/mission-control</code>) and, on its
+        first run, caught one real barrier: see <code>/mission-control</code> below.
+      </p>
       <div className="card">
         <span className="label">Landing site</span>
         <p style={{ marginTop: '0' }}>
-          0 violations across all 9 pages (<code>/</code>, <code>/download</code>,{' '}
-          <code>/how-it-works</code>, <code>/privacy</code>, <code>/accessibility</code>,{' '}
-          <code>/creature</code>, <code>/world</code>, <code>/architecture-map</code>,{' '}
-          <code>/agent-system</code>). Three barriers an earlier version of this page listed here
-          have since been fixed:
+          0 violations across the <b>12 routes</b> the permanent gate covers (<code>/</code>,{' '}
+          <code>/download</code>, <code>/how-it-works</code>, <code>/privacy</code>,{' '}
+          <code>/accessibility</code>, <code>/creature</code>, <code>/world</code>,{' '}
+          <code>/architecture-map</code>, <code>/agent-system</code>, <code>/404</code>,{' '}
+          <code>/_not-found</code>, <code>/mission-control</code>). One more public page,{' '}
+          <code>/benchmarks/</code>, is deliberately excluded from the gate — see the card below,
+          not folded into this "0 violations" figure. Four barriers found across the manual passes
+          and the gate's own first run have since been fixed:
         </p>
         <ul>
           <li>
@@ -80,7 +91,29 @@ export function Conformance() {
             the map underneath it. Confirmed by hand in a browser: focus lands on the sidebar, and
             ArrowDown moves its scroll position.
           </li>
+          <li>
+            <code>/mission-control</code> — the row-title links inherited the page's plain accent
+            red at 4.03:1 on the row background; scoped to the same AA-safe token{' '}
+            <code>.mc-badge.is-stale</code> already used on this exact background, landing at 5.7:1.
+            Found and fixed by the permanent gate's first run — this page was never in scope for the
+            two manual passes above.
+          </li>
         </ul>
+      </div>
+      <div className="card">
+        <span className="label">Landing site — excluded page</span>
+        <p style={{ marginTop: '0' }}>
+          <code>/benchmarks/</code> is <b>excluded from the gate, not passing it</b>. It's generated
+          wholesale by a third-party CI action (
+          <code>benchmark-action/github-action-benchmark</code> v1.22.1, run by the{' '}
+          <code>benchmark</code> job in <code>.github/workflows/quality.yml</code>) and overwritten
+          on every push-to-main perf run, so a fix committed here would be silently clobbered by the
+          next run — there is no way to fix it in this repository. As of the gate's first scan it
+          carries two violations: <b>color-contrast</b> (the download button, white text on{' '}
+          <code>#3298dc</code>, 3.15:1, needs 4.5:1) and <b>html-has-lang</b> (the page's{' '}
+          <code>html</code> element has no <code>lang</code> attribute). It's a public page on this
+          domain with real, disclosed barriers, not a clean bill.
+        </p>
       </div>
       <div className="card">
         <span className="label">Desktop app — home view</span>

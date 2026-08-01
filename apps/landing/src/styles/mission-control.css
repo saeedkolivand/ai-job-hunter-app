@@ -222,6 +222,19 @@
   flex: 1 1 200px;
   min-width: 0;
 }
+.doc-shell .mc-row__title a {
+  /* .doc-shell a's plain --doc-accent (#e24b4a) is only 4.03:1 on this row's
+     --doc-surface-2 background — same failure mode as .mc-badge.is-stale
+     above; reuse its fix, --doc-accent-text (5.7:1 on --doc-surface-2). The
+     extra .doc-shell prefix isn't decorative: mission-control.css's <style>
+     renders before doc-shell.css's in the document (page.tsx puts this
+     page's <PageStyle> ahead of <DocShell>'s own), so a same-specificity
+     `.mc-row__title a` loses the cascade tie to `.doc-shell a` — this needs
+     to out-specify it, not just out-order it. Found by check-a11y.mjs's
+     first run (2026-08-01) — /mission-control was never in scope for the
+     earlier manual PR #924 audit. */
+  color: var(--doc-accent-text);
+}
 .mc-row__meta {
   color: var(--doc-muted);
   font-size: 12px;

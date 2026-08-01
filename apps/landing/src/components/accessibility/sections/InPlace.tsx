@@ -40,6 +40,14 @@ export function InPlace() {
           help overlay with a focus trap, and (fixed 1 August 2026) a keyboard-focusable sidebar
           that scrolls on its own arrow keys instead of panning the map underneath it.
         </li>
+        <li>
+          <b>A permanent, blocking accessibility gate for the landing site.</b>{' '}
+          <code>apps/landing/scripts/check-a11y.mjs</code> re-runs the same axe-core WCAG A/AA scan
+          on every landing pull request in CI and <b>fails the build</b> on any violation — unlike
+          the three desktop checks below, which stay advisory. It auto-discovers every built route
+          instead of scanning a hand-maintained list, currently covering 12 routes (all clean) plus
+          one page it deliberately excludes with a stated reason (see Known barriers above).
+        </li>
       </ul>
       <p>
         Three checks exist in CI for the desktop app, and all three are{' '}
