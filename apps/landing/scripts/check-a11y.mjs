@@ -29,9 +29,9 @@
 // WCAG 2a/2aa/21a/21aa/22aa violation on ANY discovered route. Wired as
 // `check:a11y`; run after a build (`next build` emits out/).
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, extname, join, relative, resolve, sep } from 'node:path';
+import { dirname, extname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import AxeBuilder from '@axe-core/playwright';
@@ -140,38 +140,35 @@ function discoverRoutes() {
 }
 
 // ── static file server over out/ (root-relative asset paths only) ──────────
-function isFile(p) {
-  try {
-    return statSync(p).isFile();
-  } catch {
-    return false;
+// The request path NEVER reaches a path expression. Walking out/ once up front
+// and serving only from the resulting allowlist means traversal is impossible
+// by construction, rather than by a check someone can later reorder or drop —
+// `/../../etc/passwd` is simply not a key. (An earlier version built the path
+// with join() and validated it afterwards; CodeQL flagged that as
+// path-injection and was right to, since the tainted value still reached the
+// sink. Removing the sink beats sanitising it.)
+//
+// Only real files are indexed, so a route whose .html sits beside a same-named
+// directory of Next RSC prefetch payloads (out/privacy.html next to
+// out/privacy/) can't resolve to the directory and blow up readFileSync.
+function buildServableFiles() {
+  const files = new Map();
+  for (const d of readdirSync(outDir, { recursive: true, withFileTypes: true })) {
+    if (!d.isFile()) continue;
+    const abs = join(d.parentPath ?? d.path, d.name);
+    const rel = relative(outDir, abs).replaceAll('\\', '/');
+    files.set(`/${rel}`, abs); // /privacy.html, /fonts/fonts.css, /scripts/x.js
+    if (!rel.endsWith('.html')) continue;
+    files.set(`/${rel.slice(0, -'.html'.length)}`, abs); // /privacy (trailingSlash: false)
+    if (d.name === 'index.html') files.set(`/${rel.slice(0, -'index.html'.length)}`, abs); // '/', '/benchmarks/'
   }
+  return files;
 }
 
-// Every served path must resolve to something INSIDE out/. Stripping leading
-// slashes is not enough — `/../../etc/passwd` still escapes via join(). The
-// server is loopback-only on an ephemeral port for the seconds a scan takes,
-// so the real-world risk is negligible, but CodeQL flags the unchecked join
-// as a path-traversal sink and it is right to: this is the containment check,
-// not a suppression.
-const outRoot = resolve(outDir);
-function insideOut(candidate) {
-  const abs = resolve(candidate);
-  return abs === outRoot || abs.startsWith(outRoot + sep);
-}
+const SERVABLE = buildServableFiles();
 
 function resolveFile(urlPath) {
-  const clean = decodeURIComponent(urlPath.split('?')[0].split('#')[0]).replace(/^\/+/, '');
-  const candidates = (
-    clean === '' || clean.endsWith('/')
-      ? [join(outDir, clean, 'index.html')]
-      : [join(outDir, clean), join(outDir, `${clean}.html`)]
-  ).filter(insideOut);
-  // isFile (not existsSync): several routes have a same-named directory of
-  // Next RSC prefetch payloads alongside their .html (e.g. out/privacy/ next
-  // to out/privacy.html) — existsSync would match the directory and blow up
-  // readFileSync with EISDIR.
-  return candidates.find(isFile);
+  return SERVABLE.get(decodeURIComponent(urlPath.split('?')[0].split('#')[0]));
 }
 
 const server = createServer((req, res) => {
