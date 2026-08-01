@@ -5,6 +5,9 @@
   --red-dark: #b5160e;
   /* brand-violet cameo — bridges notebook palette to the app's identity */
   --violet: #7c3aed;
+  /* muted: warm grey, ~4.98:1 on --paper — replaces opacity-faded ink (was
+     ~2.5-3.8:1) on the doodle/hint text below AA */
+  --muted: #6b6459;
 }
 * {
   margin: 0;
@@ -381,7 +384,8 @@ button:focus-visible,
   opacity: 0.85;
 }
 .thint {
-  opacity: 0.55;
+  color: var(--muted);
+  opacity: 1;
 }
 #play {
   background: none;
@@ -478,6 +482,8 @@ button:focus-visible,
   font-size: 14px;
   line-height: 1.8;
   transform: rotate(-4deg);
+  color: var(--muted);
+  opacity: 1;
 }
 #d-todo .strike {
   text-decoration: line-through;
@@ -487,7 +493,8 @@ button:focus-visible,
   bottom: 2vh;
   font-family: var(--mono);
   font-size: 11px;
-  opacity: 0.4;
+  color: var(--muted);
+  opacity: 1;
 }
 #d-ring {
   right: 2.5vw;

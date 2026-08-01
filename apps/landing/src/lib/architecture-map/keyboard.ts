@@ -16,6 +16,9 @@ export function attachKeyboardShortcuts(root: HTMLElement, on: OnFn, opts: Keybo
   const helpEl = root.querySelector<HTMLDivElement>('#kbd-help');
   const helpBtn = root.querySelector<HTMLButtonElement>('#help-btn');
   const helpClose = root.querySelector<HTMLButtonElement>('#kbd-help-close');
+  // Focusable, natively-scrollable sidebar (#side) — arrows must scroll it,
+  // not pan the map, whenever focus is inside it.
+  const sideEl = root.querySelector<HTMLElement>('#side');
 
   const helpFocusables = (): HTMLElement[] =>
     helpEl
@@ -76,6 +79,9 @@ export function attachKeyboardShortcuts(root: HTMLElement, on: OnFn, opts: Keybo
     const ke = ev as KeyboardEvent;
     const t = ke.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    // Focus inside the sidebar: let arrow keys scroll it natively instead of
+    // panning the map (other shortcuts — Escape, ?, +/-, fit — still work).
+    const insideSide = !!(sideEl && t instanceof Node && sideEl.contains(t));
     if (ke.metaKey || ke.ctrlKey || ke.altKey) return;
     if (helpEl && !helpEl.hasAttribute('hidden')) {
       if (ke.key === 'Escape') {
@@ -88,18 +94,22 @@ export function attachKeyboardShortcuts(root: HTMLElement, on: OnFn, opts: Keybo
     const step = ke.shiftKey ? ARROW_STEP_FAST : ARROW_STEP;
     switch (ke.key) {
       case 'ArrowLeft':
+        if (insideSide) break;
         opts.viewport.panBy(step, 0);
         ke.preventDefault();
         break;
       case 'ArrowRight':
+        if (insideSide) break;
         opts.viewport.panBy(-step, 0);
         ke.preventDefault();
         break;
       case 'ArrowUp':
+        if (insideSide) break;
         opts.viewport.panBy(0, step);
         ke.preventDefault();
         break;
       case 'ArrowDown':
+        if (insideSide) break;
         opts.viewport.panBy(0, -step);
         ke.preventDefault();
         break;

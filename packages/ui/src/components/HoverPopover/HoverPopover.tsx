@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  cloneElement,
+  isValidElement,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
   useCallback,
   useEffect,
@@ -12,6 +15,23 @@ import { createPortal } from 'react-dom';
 
 import { cn } from '../../lib/cn';
 import { transition, variants } from '../../lib/motion';
+import { Button } from '../Button';
+
+// Roles ARIA permits `aria-expanded` on — used to decide whether it's safe to
+// clone the attribute onto `trigger` (see `triggerWithAria` below).
+const EXPANDABLE_ROLES = new Set(['button', 'link', 'combobox', 'select', 'menuitem', 'switch']);
+const EXPANDABLE_TAGS = new Set(['button', 'a', 'select', 'summary']);
+
+/** True when `trigger` will render as (or already declares) a host element/role
+ *  that `aria-expanded` is valid on — a plain `<div>`/`<span>` is NOT, so cloning
+ *  it there would just relocate the `aria-allowed-attr` violation instead of
+ *  fixing it. */
+function supportsAriaExpanded(trigger: ReactElement): boolean {
+  if (trigger.type === Button) return true;
+  if (typeof trigger.type === 'string' && EXPANDABLE_TAGS.has(trigger.type)) return true;
+  const role = (trigger.props as { role?: string }).role;
+  return role != null && EXPANDABLE_ROLES.has(role);
+}
 
 export interface HoverPopoverProps {
   /** The always-rendered trigger (the hoverable/focusable element). */
@@ -47,8 +67,12 @@ export interface HoverPopoverProps {
  *    `getBoundingClientRect` (re-measured on scroll/resize), opening upward for
  *    `placement='top'` and downward for `placement='bottom'`.
  *  - Panel gets `role="tooltip"` + a generated id wired to the trigger wrapper's
- *    `aria-describedby`; the wrapper also exposes `aria-expanded`. No focus trap —
- *    the trigger keeps focus, matching tooltip semantics.
+ *    `aria-describedby`; `aria-expanded` is cloned onto the `trigger` element itself
+ *    when it (or its declared `role`) supports the attribute — never on the
+ *    wrapper `<div>`, which has no role and fails `aria-allowed-attr`. Triggers
+ *    that are plain non-interactive wrappers (a `<div>`/`<span>` around the real
+ *    control) simply don't get `aria-expanded` — it isn't valid there either way.
+ *    No focus trap — the trigger keeps focus, matching tooltip semantics.
  *
  * Content (job list, links, etc.) stays at the call site.
  */
@@ -158,18 +182,24 @@ export function HoverPopover({
       }
     : { display: 'none' };
 
+  // aria-expanded belongs on the interactive control, not this plain (roleless)
+  // wrapper div — clone it onto `trigger` when that's valid there.
+  const triggerWithAria =
+    isValidElement<{ 'aria-expanded'?: boolean }>(trigger) && supportsAriaExpanded(trigger)
+      ? cloneElement(trigger, { 'aria-expanded': open })
+      : trigger;
+
   return (
     <div
       ref={wrapperRef}
       className={cn('relative', className)}
-      aria-expanded={open}
       aria-describedby={open ? popoverId : undefined}
       onMouseEnter={handleOpen}
       onFocus={handleOpen}
       onBlur={scheduleClose}
       onKeyDown={handleKeyDown}
     >
-      {trigger}
+      {triggerWithAria}
 
       {createPortal(
         <AnimatePresence>

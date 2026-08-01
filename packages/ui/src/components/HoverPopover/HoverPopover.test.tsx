@@ -41,7 +41,8 @@
  *  - placement="bottom": panel has inline paddingTop (not paddingBottom).
  *  - contentClassName on inner div, not on the panel element itself.
  *  - Content text accessible inside the element bearing contentClassName.
- *  - aria-expanded false→true transition.
+ *  - aria-expanded false→true transition (cloned onto the trigger element, not
+ *    the roleless wrapper div — aria-allowed-attr).
  *  - ariaLabel prop wired to panel.
  *  - Geometry close: pointermove far outside both rects → schedules close.
  *  - Geometry keep-open: pointermove inside the trigger rect → no close.
@@ -334,17 +335,27 @@ describe('HoverPopover — placement="bottom" structure', () => {
 // ── aria wiring ───────────────────────────────────────────────────────────────
 
 describe('HoverPopover — aria wiring', () => {
-  it('wrapper has aria-expanded=false before open', () => {
+  it('wrapper div carries no aria-expanded (roleless div fails aria-allowed-attr)', () => {
     const { container } = renderPopover();
     const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper).toHaveAttribute('aria-expanded', 'false');
+    expect(wrapper).not.toHaveAttribute('aria-expanded');
   });
 
-  it('wrapper has aria-expanded=true while panel is open', () => {
+  it('trigger has aria-expanded=false before open', () => {
+    renderPopover();
+    expect(screen.getByRole('button', { name: 'Trigger' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('trigger has aria-expanded=true while panel is open', () => {
     const { container } = renderPopover();
     openPopover(container);
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'Trigger' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
   });
 
   it('panel carries the ariaLabel supplied via prop', () => {

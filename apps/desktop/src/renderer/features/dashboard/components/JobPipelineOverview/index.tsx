@@ -46,7 +46,7 @@ export function JobPipelineOverview() {
 
   return (
     <GlassCard>
-      <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
+      <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <Briefcase size={14} />
         {t('dashboard.jobPipeline')}
       </div>
@@ -63,14 +63,14 @@ export function JobPipelineOverview() {
                 <Icon size={15} className={stat.color} />
               </div>
               <div className="text-3xl font-bold tabular-nums text-foreground">{stat.value}</div>
-              <div className="text-center text-[11px] text-foreground/40">{stat.label}</div>
+              <div className="text-center text-[11px] text-muted-foreground">{stat.label}</div>
             </div>
           );
         })}
       </div>
 
       {(allInteractions as unknown[]).length === 0 && (
-        <p className="mt-3 text-center text-xs text-foreground/30">
+        <p className="mt-3 text-center text-xs text-muted-foreground">
           {t('dashboard.noJobsTracked')}
         </p>
       )}
