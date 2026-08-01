@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-08-01 (PRs #896–#897: aggregator page loop + spend budget, applications pipeline redesign)
+Last updated: 2026-08-01 (PR #924: accessibility statement at `/accessibility`, WCAG 2.2 AA conformance status)
 
 ---
 
