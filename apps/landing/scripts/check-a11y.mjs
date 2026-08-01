@@ -31,7 +31,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, extname, join, relative } from 'node:path';
+import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import AxeBuilder from '@axe-core/playwright';
@@ -148,12 +148,25 @@ function isFile(p) {
   }
 }
 
+// Every served path must resolve to something INSIDE out/. Stripping leading
+// slashes is not enough — `/../../etc/passwd` still escapes via join(). The
+// server is loopback-only on an ephemeral port for the seconds a scan takes,
+// so the real-world risk is negligible, but CodeQL flags the unchecked join
+// as a path-traversal sink and it is right to: this is the containment check,
+// not a suppression.
+const outRoot = resolve(outDir);
+function insideOut(candidate) {
+  const abs = resolve(candidate);
+  return abs === outRoot || abs.startsWith(outRoot + sep);
+}
+
 function resolveFile(urlPath) {
   const clean = decodeURIComponent(urlPath.split('?')[0].split('#')[0]).replace(/^\/+/, '');
-  const candidates =
+  const candidates = (
     clean === '' || clean.endsWith('/')
       ? [join(outDir, clean, 'index.html')]
-      : [join(outDir, clean), join(outDir, `${clean}.html`)];
+      : [join(outDir, clean), join(outDir, `${clean}.html`)]
+  ).filter(insideOut);
   // isFile (not existsSync): several routes have a same-named directory of
   // Next RSC prefetch payloads alongside their .html (e.g. out/privacy/ next
   // to out/privacy.html) — existsSync would match the directory and blow up
