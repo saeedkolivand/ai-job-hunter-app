@@ -193,3 +193,34 @@ search path sets one. The Apify opt-in toggle in Settings still reads as simply 
 user who enabled and paid for it has no way to learn their scheduled runs never use it.
 Surface it where the toggle lives (and/or in the autopilot run step log). See
 `docs/knowledge/scraping-domain.md` § Aggregator page loop & spend budget.
+
+---
+
+# Accessibility defects logged in PR #924 (`/accessibility` conformance statement)
+
+Measured 2026-08-01 via axe-core 4.12 automated scan + manual keyboard pass. These are known,
+unfixed violations published in the accessibility statement at `/accessibility`. Each should
+be investigated + fixed; none blocks a release.
+
+## Landing site
+
+- **`/creature` — `color-contrast` (serious, 4 nodes):** elements `#d-todo`, `.strike`, `#d-page`, `.thint`.
+  Likely root cause: decorative overlay uses low-contrast text. Consider whether the page is truly a viewport+scroll design (hints suggest tab-based) where contrast matters, or if the text is semantically decorative (label this if so).
+
+- **`/world` — `color-contrast` (serious, 1 node):** element `.sw-nav__item.is-active`. The scroll-navigation active state indicator. Consider whether adding a visual border/background (not relying on color alone) would fix this and improve keyboard users' ability to see the current stop.
+
+- **`/architecture-map` — `scrollable-region-focusable` (serious, 1 node):** element `#side` (the sidebar scroll container). The container itself is focusable but the region is not explicitly labeled nor does it announce when scrolled. Either make the container not-focusable (manage focus internally), or add `aria-label` + announce scrolls.
+
+## Desktop renderer
+
+- **Home view — `aria-allowed-attr` (critical, 1 node):** An attribute on a node is invalid for its role. Find the node and remove or correct the attribute. This is the highest-severity finding from the audit.
+
+- **Home view — `color-contrast` (serious, 11 nodes):** 11 elements fail AA contrast ratio. This is a significant issue; consider a contrast audit pass across the renderer's light and dark color schemes.
+
+## Browser extension
+
+- **Not scanned.** The extension injects into third-party pages; no dedicated accessibility audit has been run. This is deferred pending a CI mechanism (extension is not currently in an automated test suite).
+
+## Exported PDFs
+
+- **Not fully PDF/UA-1 tagged.** The Typst engine bakes document metadata (title, author, language) but does not output fully tagged/accessible PDF output. This is a stated future goal in `.claude/skills/resume-export-standards`; currently export carries document metadata only.
