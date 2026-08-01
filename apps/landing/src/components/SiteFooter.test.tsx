@@ -15,7 +15,7 @@ afterEach(() => {
 // is identical across variants since only the tag (a vs. plain text) differs
 // for the "current" item, never the word itself.
 const FOOT_LINKS_TEXT =
-  'home · download · privacy · ▶ the short film · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
+  'home · download · privacy · accessibility · ▶ the short film · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
 
 describe('SiteFooter', () => {
   it('renders the byline', () => {
@@ -37,6 +37,7 @@ describe('SiteFooter', () => {
       ['/', 'home'],
       ['/download', 'download'],
       ['/privacy', 'privacy'],
+      ['/accessibility', 'accessibility'],
       ['/creature', '▶ the short film'],
       ['/storybook/', 'design system'],
       [GITHUB_REPO, 'GitHub'],
@@ -56,6 +57,7 @@ describe('SiteFooter', () => {
     expect(hrefs).toEqual([
       '/',
       '/download',
+      '/accessibility',
       '/creature',
       '/storybook/',
       GITHUB_REPO,
@@ -74,6 +76,27 @@ describe('SiteFooter', () => {
     expect(hrefs).not.toContain('/download');
     expect(hrefs).toEqual([
       '/',
+      '/privacy',
+      '/accessibility',
+      '/creature',
+      '/storybook/',
+      GITHUB_REPO,
+      CHROME_EXT,
+      FIREFOX_EXT,
+      SPONSOR,
+    ]);
+  });
+
+  it('renders "accessibility" as plain text (not a link) when current="accessibility"', () => {
+    const { container } = render(<SiteFooter current="accessibility" />);
+    expect(container.querySelector('.foot-links')?.textContent).toBe(FOOT_LINKS_TEXT);
+    const hrefs = Array.from(container.querySelectorAll('.foot-links a')).map((a) =>
+      a.getAttribute('href')
+    );
+    expect(hrefs).not.toContain('/accessibility');
+    expect(hrefs).toEqual([
+      '/',
+      '/download',
       '/privacy',
       '/creature',
       '/storybook/',
@@ -96,7 +119,14 @@ describe('SiteFooter', () => {
 
   it('never puts target/rel on the internal links', () => {
     const { container } = render(<SiteFooter />);
-    for (const href of ['/', '/download', '/privacy', '/creature', '/storybook/']) {
+    for (const href of [
+      '/',
+      '/download',
+      '/privacy',
+      '/accessibility',
+      '/creature',
+      '/storybook/',
+    ]) {
       const a = container.querySelector(`.foot-links a[href="${href}"]`);
       expect(a?.getAttribute('target')).toBeNull();
       expect(a?.getAttribute('rel')).toBeNull();

@@ -98,7 +98,10 @@ export function ArchitectureMap() {
           <MapLegend />
           <KbdHelpDialog />
         </div>
-        <aside id="side">
+        {/* tabIndex makes this scroll container keyboard-reachable (axe
+            scrollable-region-focusable); keyboard.ts excludes it from the
+            map's arrow-key pan handler so arrows scroll it natively. */}
+        <aside id="side" tabIndex={0} aria-label="Architecture details">
           <Sidebar panel={panel} />
         </aside>
       </main>

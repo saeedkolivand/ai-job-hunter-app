@@ -40,6 +40,16 @@ describe('DocShell', () => {
     expect(screen.getByTestId('child')).toBeTruthy();
   });
 
+  it('links the accessibility statement from the footer nav', () => {
+    render(
+      <DocShell>
+        <p>body</p>
+      </DocShell>
+    );
+    const link = screen.getByRole('link', { name: 'accessibility' });
+    expect(link.getAttribute('href')).toBe('/accessibility');
+  });
+
   it('inlines the docs token palette (never a bare #000 ground)', () => {
     const { container } = render(
       <DocShell>

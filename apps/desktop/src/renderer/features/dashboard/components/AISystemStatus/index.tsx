@@ -114,14 +114,14 @@ export function AISystemStatus() {
   return (
     <GlassCard>
       <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           <Cpu size={14} />
           {t('dashboard.aiSystemStatus')}
         </div>
         <Button
           onClick={() => void refresh()}
           disabled={isFetching || refreshing}
-          className="flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[10px] text-foreground/40 hover:text-foreground/70 h-auto border-transparent"
+          className="flex items-center gap-1 rounded-lg bg-muted px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground/70 h-auto border-transparent"
         >
           <RefreshCw size={10} className={isFetching || refreshing ? 'animate-spin' : ''} />
           {t('dashboard.status.refresh')}

@@ -13,6 +13,7 @@
 - [How It Works](https://aijobhunter.app/how-it-works): The end-to-end flow — find a job, analyse it, tailor the resume, generate the cover letter, apply.
 - [Download](https://aijobhunter.app/download): Installers per OS, current version, and the unsigned-binary caveats.
 - [Privacy](https://aijobhunter.app/privacy): How the desktop app and the browser extension handle data. No accounts, no analytics, no telemetry.
+- [Accessibility Statement](https://aijobhunter.app/accessibility): WCAG 2.2 AA conformance status for the site, desktop app and extension — partially conformant, with known barriers listed.
 - [Architecture Map](https://aijobhunter.app/architecture-map): Interactive map of the codebase — renderer, service hooks, prompts, IPC contracts, Rust commands, scraper and provider registries. Every node points at real source; a drift checker fails CI if it lies.
 - [The Agent Fleet](https://aijobhunter.app/agent-system): How the repo's `.claude/` agent system works — paired author and critic per domain, routed by area, reviewed independently.
 
