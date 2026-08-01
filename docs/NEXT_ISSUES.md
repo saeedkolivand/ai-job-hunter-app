@@ -196,31 +196,54 @@ Surface it where the toggle lives (and/or in the autopilot run step log). See
 
 ---
 
-# Accessibility defects logged in PR #924 (`/accessibility` conformance statement)
+# Accessibility — open items after PR #924 (`/accessibility` conformance statement)
 
-Measured 2026-08-01 via axe-core 4.12 automated scan + manual keyboard pass. These are known,
-unfixed violations published in the accessibility statement at `/accessibility`. Each should
-be investigated + fixed; none blocks a release.
+Measured 2026-08-01 via axe-core 4.12 (WCAG 2.0/2.1/2.2 A+AA tags) plus a scripted keyboard
+tab-through. **The violations the audit originally found were fixed in the same PR** — landing
+site is 0 violations across all 9 pages, desktop home view is 0 in both colour schemes. What
+remains below is the unaudited surface area, not known failures. None blocks a release.
 
-## Landing site
+## Desktop renderer — the `text-foreground/NN` opacity ramp (largest open item)
 
-- **`/creature` — `color-contrast` (serious, 4 nodes):** elements `#d-todo`, `.strike`, `#d-page`, `.thint`.
-  Likely root cause: decorative overlay uses low-contrast text. Consider whether the page is truly a viewport+scroll design (hints suggest tab-based) where contrast matters, or if the text is semantically decorative (label this if so).
+The renderer has ~1,100 `text-foreground/NN` usages; roughly 460 sit at steps (`/30`, `/35`,
+`/40`, `/45`, `/55`) that measure **below 4.5:1** for small text. PR #924 fixed only the 11
+nodes that the home-view scan actually measured, swapping them to the existing
+`text-muted-foreground` token (5.1:1 on white, 4.8:1 on `#f8f8f8`, and clear in dark too).
 
-- **`/world` — `color-contrast` (serious, 1 node):** element `.sw-nav__item.is-active`. The scroll-navigation active state indicator. Consider whether adding a visual border/background (not relying on color alone) would fix this and improve keyboard users' ability to see the current stop.
+Every other view is unscanned and very likely carries the same defect. The fix is mechanical —
+swap sub-AA steps to `text-muted-foreground` — but it is a wide visual diff that needs its own
+PR and a Lost Pixel review. Publicly disclosed on `/accessibility`, so this is a commitment.
 
-- **`/architecture-map` — `scrollable-region-focusable` (serious, 1 node):** element `#side` (the sidebar scroll container). The container itself is focusable but the region is not explicitly labeled nor does it announce when scrolled. Either make the container not-focusable (manage focus internally), or add `aria-label` + announce scrolls.
+## Desktop renderer — remaining `best-practice` rules (home view)
 
-## Desktop renderer
+Outside the WCAG A/AA level the statement targets, but known: `landmark-unique` (1 node — the
+two `<nav>` elements in `Sidebar` need distinct `aria-label`s) and `region` (5 nodes — some
+Titlebar/StatusBar content sits outside a landmark). Fixing means restructuring landmarks.
 
-- **Home view — `aria-allowed-attr` (critical, 1 node):** An attribute on a node is invalid for its role. Find the node and remove or correct the attribute. This is the highest-severity finding from the audit.
+## No permanent a11y gate for `apps/landing`
 
-- **Home view — `color-contrast` (serious, 11 nodes):** 11 elements fail AA contrast ratio. This is a significant issue; consider a contrast audit pass across the renderer's light and dark color schemes.
+Every scan in PR #924 ran from throwaway scripts under `apps/desktop/` (where
+`@axe-core/playwright` and `@playwright/test` already resolve). `apps/landing` has no Playwright
+dependency, so nothing re-checks these pages on future changes — the fixes can silently
+regress. Adding a gate is a self-contained follow-up.
 
 ## Browser extension
 
-- **Not scanned.** The extension injects into third-party pages; no dedicated accessibility audit has been run. This is deferred pending a CI mechanism (extension is not currently in an automated test suite).
+- **Never scanned.** The extension injects into third-party pages; no accessibility audit has
+  been run and `/accessibility` states it as _not assessed_. Deferred pending a CI mechanism —
+  the extension is not currently in an automated browser test suite.
 
 ## Exported PDFs
 
-- **Not fully PDF/UA-1 tagged.** The Typst engine bakes document metadata (title, author, language) but does not output fully tagged/accessible PDF output. This is a stated future goal in `.claude/skills/resume-export-standards`; currently export carries document metadata only.
+- **Not fully PDF/UA-1 tagged.** The Typst engine bakes document metadata (title, author,
+  language) but does not emit tagged/accessible PDF structure. Stated future goal in
+  `.claude/skills/resume-export-standards`; currently export carries document metadata only.
+
+## Coverage limits worth remembering
+
+- Automated tooling catches roughly a third of WCAG issues. There has been **no third-party
+  audit** and **no testing with assistive-technology users** — both disclosed on the page.
+- Single-state scans miss state-dependent failures. `/world`'s accent cycles per section; axe
+  only ever measured the red state (3.93:1) while the **blue** state was 1.88:1 — a worse
+  failure found by reading the code, not by scanning. Assume other cyclic/stateful UI hides
+  similar cases.
