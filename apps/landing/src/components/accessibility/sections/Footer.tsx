@@ -4,6 +4,14 @@ import { GITHUB_REPO } from '@/lib/site-links';
 // "Feedback" + "Review cadence" blocks + the site footer of /accessibility,
 // split out of AccessibilityBody.tsx purely for file size — same shape as
 // components/privacy/sections/Footer.tsx. No props.
+
+// The single source of truth for the "Last updated" date rendered by
+// sections/Intro.tsx — kept here, next to the review-cadence promise below,
+// so bumping it is a one-constant edit. AccessibilityBody.test.tsx's
+// `LAST_UPDATED` suite fails once this is more than 12 months old, per the
+// promise on this page that it's reviewed at least annually.
+export const LAST_UPDATED = '1 August 2026';
+
 export function Footer() {
   return (
     <>

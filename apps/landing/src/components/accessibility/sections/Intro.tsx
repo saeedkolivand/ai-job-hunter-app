@@ -1,5 +1,7 @@
 import { BackLink } from '@/components/BackLink';
 
+import { LAST_UPDATED } from './Footer';
+
 // Intro + "Commitment", "Scope" and "Standard" blocks of /accessibility, split
 // out of AccessibilityBody.tsx purely for file size — same shape as
 // components/privacy/sections/IntroShort.tsx. No props.
@@ -9,7 +11,7 @@ export function Intro() {
       <BackLink />
 
       <h1>Accessibility Statement</h1>
-      <p className="updated">Last updated: 1 August 2026</p>
+      <p className="updated">Last updated: {LAST_UPDATED}</p>
 
       <p className="lede">
         This is an accessibility statement for AI Job Hunter: the landing site at{' '}

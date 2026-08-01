@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
 import { AccessibilityBody } from './AccessibilityBody';
+import { LAST_UPDATED } from './sections/Footer';
 
 afterEach(() => {
   cleanup();
@@ -39,6 +40,21 @@ describe('AccessibilityBody', () => {
     for (const id of ANCHOR_IDS) {
       expect(container.querySelectorAll(`#${id}`)).toHaveLength(1);
     }
+  });
+
+  // Reverse direction of the check above, derived from the DOM rather than a
+  // second hand-maintained list: every `<h2><a class="anchor" href="#x">` must
+  // point at an id that's actually rendered on an `<h2>` — a typo'd href would
+  // render a dead self-link without ever failing the "ids exist" check alone.
+  it('every h2 anchor self-link resolves to a rendered heading id', () => {
+    const { container } = render(<AccessibilityBody />);
+    const headingIds = Array.from(container.querySelectorAll('h2[id]')).map((h2) => h2.id);
+    const anchorTargets = Array.from(container.querySelectorAll('h2 a.anchor[href^="#"]')).map(
+      (a) => a.getAttribute('href')?.slice(1)
+    );
+
+    expect(anchorTargets).toHaveLength(headingIds.length);
+    expect(new Set(anchorTargets)).toEqual(new Set(headingIds));
   });
 
   it('renders exactly one h1 and the top back-link', () => {
@@ -105,5 +121,51 @@ describe('AccessibilityBody', () => {
 
     expect(text).toContain('scoped to the home view');
     expect(text).toContain('1,100');
+  });
+});
+
+// Mirrors scripts/bump-last-updated.mjs, which only bumps a "Last updated:"
+// header in .md files and can't reach this JSX constant — this is what makes
+// the "review cadence" section's annual-review promise mechanical instead of
+// something someone has to remember.
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+function parseStatementDate(display: string): Date {
+  const match = display.match(/^(\d{1,2}) (\w+) (\d{4})$/);
+  const day = match?.[1];
+  const monthName = match?.[2];
+  const year = match?.[3];
+  const monthIndex = monthName ? MONTHS.indexOf(monthName) : -1;
+  if (!day || !year || monthIndex === -1) {
+    throw new Error(`LAST_UPDATED "${display}" isn't in the expected "D Month YYYY" form.`);
+  }
+  return new Date(Number(year), monthIndex, Number(day));
+}
+
+describe('LAST_UPDATED', () => {
+  it('was reviewed within the last 12 months, per the review-cadence promise', () => {
+    const reviewedAt = parseStatementDate(LAST_UPDATED);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+    expect(
+      reviewedAt >= cutoff,
+      `The accessibility statement's LAST_UPDATED ("${LAST_UPDATED}") is over 12 months old — ` +
+        "re-review this page's claims against the current app and site, then bump LAST_UPDATED " +
+        'in apps/landing/src/components/accessibility/sections/Footer.tsx to today.'
+    ).toBe(true);
   });
 });
