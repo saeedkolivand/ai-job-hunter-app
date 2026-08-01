@@ -85,4 +85,25 @@ describe('AccessibilityBody', () => {
     expect(text).toContain('Partially conformant');
     expect(text.toLowerCase()).not.toContain('fully conformant');
   });
+
+  // Regression guard: no wording anywhere on the page — not just the
+  // conformance section — may upgrade the claim to "fully conformant". Zero
+  // automated violations after the 1 August 2026 fix round is not the same
+  // as WCAG conformance, and this must stay true even if other sections grow.
+  it('never claims "fully conformant" anywhere on the page', () => {
+    const { container } = render(<AccessibilityBody />);
+    expect((container.textContent ?? '').toLowerCase()).not.toContain('fully conformant');
+  });
+
+  // Regression guard: the desktop contrast fix only covers the home view —
+  // most of the renderer's low-alpha text-foreground usages are unaudited.
+  // A future edit must not silently drop this scope disclosure while the
+  // "0 violations" home-view claim stays on the page.
+  it('discloses that the desktop contrast fix is scoped to the home view', () => {
+    const { container } = render(<AccessibilityBody />);
+    const text = container.textContent ?? '';
+
+    expect(text).toContain('scoped to the home view');
+    expect(text).toContain('1,100');
+  });
 });

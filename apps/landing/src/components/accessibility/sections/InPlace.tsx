@@ -36,8 +36,9 @@ export function InPlace() {
           <b>Semantic markup</b> — headings and lists, not styled divs pretending to be them.
         </li>
         <li>
-          <b>The architecture map has real keyboard support</b> — arrow-key panning, zoom, fit, and
-          a help overlay with a focus trap. See the barrier above for the one gap.
+          <b>The architecture map has real keyboard support</b> — arrow-key panning, zoom, fit, a
+          help overlay with a focus trap, and (fixed 1 August 2026) a keyboard-focusable sidebar
+          that scrolls on its own arrow keys instead of panning the map underneath it.
         </li>
       </ul>
       <p>
@@ -57,15 +58,18 @@ export function InPlace() {
         </a>
       </h2>
       <p>
-        Self-assessed on 1 August 2026: an automated axe-core scan of the built landing site and the
-        desktop renderer's home view; a scripted keyboard tab-through of every built landing page,
-        which found a visible focus indicator on every stop it reached and no keyboard trap (it did
-        not reach every focusable element on every page — most likely elements sitting in inactive
-        tab/scene panels on <code>/how-it-works</code> and <code>/creature</code>, but that wasn't
-        confirmed, so we're not claiming full reachability); and a code review of the architecture
-        map's keyboard handling. There has been <b>no third-party audit</b> and{' '}
-        <b>no testing with assistive-technology users</b>. We'll say so again if either of those
-        changes.
+        Self-assessed on 1 August 2026, in two passes. First, an automated axe-core scan of the
+        built landing site and the desktop renderer's home view, a scripted keyboard tab-through of
+        every built landing page (a visible focus indicator on every stop it reached and no keyboard
+        trap — it did not reach every focusable element on every page, most likely elements sitting
+        in inactive tab/scene panels on <code>/how-it-works</code> and <code>/creature</code>, but
+        that wasn't confirmed), and a code review of the architecture map's keyboard handling. Then,
+        after fixing what that pass found, a second automated re-scan of the same surfaces —
+        independently re-verified against the fix code rather than taken on trust, and run against
+        the desktop app in both the light and dark colour schemes — plus a manual browser check that
+        the architecture map's sidebar actually receives keyboard focus and scrolls. There has been{' '}
+        <b>no third-party audit</b> and <b>no testing with assistive-technology users</b>. We'll say
+        so again if either of those changes.
       </p>
     </>
   );

@@ -13,15 +13,17 @@ export function Conformance() {
       <div className="card">
         <span className="label">Landing site</span>
         <p style={{ marginTop: '0' }}>
-          <b>Partially conformant</b> with WCAG 2.2 AA — most pages pass; the exceptions are listed
-          below.
+          <b>Partially conformant</b> with WCAG 2.2 AA. The most recent automated scan found no
+          violations, but zero violations isn't the same as full conformance — see Known barriers
+          below for what's still unaudited or out of scope.
         </p>
       </div>
       <div className="card">
         <span className="label">Desktop app</span>
         <p style={{ marginTop: '0' }}>
-          <b>Partially conformant</b> with WCAG 2.2 AA — the known issues are listed below;
-          everything else is unverified beyond that.
+          <b>Partially conformant</b> with WCAG 2.2 AA. The home view has no known automated
+          violations after a recent fix round, but that coverage doesn't reach past the home view —
+          see Known barriers below.
         </p>
       </div>
       <div className="card">
@@ -41,47 +43,81 @@ export function Conformance() {
         </a>
       </h2>
       <p>
-        Found by an automated axe-core scan (WCAG 2a/2aa/21a/21aa/22aa rules), a scripted keyboard
-        tab-through of every built landing page, and a code review of the architecture map's
-        keyboard handling, all on 1 August 2026. This is what we know is broken — not a claim that
-        nothing else is.
+        A first automated axe-core scan (WCAG 2a/2aa/21a/21aa/22aa rules) on 1 August 2026 found the
+        problems listed below, alongside how each was fixed. A second scan later the same day, after
+        the fixes, found{' '}
+        <b>0 violations across all 9 landing pages and the desktop app's home view</b>. That's not a
+        claim of zero barriers — the rest of this section says what's still scoped out, unaudited,
+        or otherwise open.
       </p>
       <div className="card">
         <span className="label">Landing site</span>
+        <p style={{ marginTop: '0' }}>
+          0 violations across all 9 pages (<code>/</code>, <code>/download</code>,{' '}
+          <code>/how-it-works</code>, <code>/privacy</code>, <code>/accessibility</code>,{' '}
+          <code>/creature</code>, <code>/world</code>, <code>/architecture-map</code>,{' '}
+          <code>/agent-system</code>). Three barriers an earlier version of this page listed here
+          have since been fixed:
+        </p>
         <ul>
           <li>
-            <code>/creature</code> — 1 serious <b>colour-contrast</b> violation, 4 elements (
-            <code>#d-todo</code>, <code>.strike</code>, <code>#d-page</code>, <code>.thint</code>).
-            It's a decorative short-film page; no information lives only there.
+            <code>/creature</code> — the four faded doodle annotations were a low-contrast grey on
+            the paper background (2.46–2.8:1); they're now a warmer grey (<code>#6b6459</code>) at
+            4.98:1.
           </li>
           <li>
-            <code>/world</code> — 1 serious <b>colour-contrast</b> violation, 1 element (
-            <code>.sw-nav__item.is-active</code>). Also decorative — a scroll-driven diorama with no
-            accessible equivalent, and no information that lives only there.
+            <code>/world</code> — the active nav pill's white-on-red text was 3.93:1; the pill
+            background is now darkened with <code>color-mix</code>, landing at 8.54:1. Worth noting:
+            the accent colour cycles per section, and the original scan only ever caught the red
+            state. A manual check of the others found the blue state at 1.88:1 — a worse failure the
+            first pass missed entirely — since fixed to 4.86:1. We're leaving this in as an honest
+            example of what a single-state automated scan can miss.
           </li>
           <li>
-            <code>/architecture-map</code> — 1 serious <b>scrollable-region-focusable</b> violation:
-            the <code>#side</code> sidebar's scroll container isn't reachable by keyboard.
-            Everything else on that page is — arrow keys pan, Shift moves faster, <code>+</code>/
-            <code>-</code> zoom, <code>0</code>/<code>f</code> fit, <code>?</code> opens a help
-            overlay with a focus trap, Escape closes it.
-          </li>
-          <li>
-            <code>/</code>, <code>/download</code>, <code>/how-it-works</code>,{' '}
-            <code>/privacy</code>, and <code>/agent-system</code> — no violations found by the scan.
+            <code>/architecture-map</code> — the <code>#side</code> sidebar wasn't reachable by
+            keyboard. It's now <code>tabindex="0"</code> with a label, and the map's arrow-key pan
+            handler skips it while it has focus, so arrow keys scroll the sidebar instead of panning
+            the map underneath it. Confirmed by hand in a browser: focus lands on the sidebar, and
+            ArrowDown moves its scroll position.
           </li>
         </ul>
       </div>
       <div className="card">
         <span className="label">Desktop app — home view</span>
+        <p style={{ marginTop: '0' }}>
+          0 violations at the WCAG A or AA level, in both the light and dark colour schemes (was 1
+          critical + 1 serious across 12 elements). What changed:
+        </p>
         <ul>
           <li>
-            <b>aria-allowed-attr</b> — critical, 1 element.
+            The critical <b>aria-allowed-attr</b> was an <code>aria-expanded</code> attribute on a
+            roleless wrapper <code>div</code> inside the shared <code>HoverPopover</code> component.
+            The invalid attribute is now removed from that wrapper everywhere the component is used,
+            not just here — and where the trigger is itself a real button, it moves onto that button
+            instead. Two call sites wrap a non-interactive element, so they lose the attribute
+            rather than relocating it; it was never reachable by assistive technology in those cases
+            either way.
           </li>
           <li>
-            <b>color-contrast</b> — serious, 11 elements.
+            The 11 <b>color-contrast</b> elements now use the existing{' '}
+            <code>text-muted-foreground</code> token (5.1:1 on white, 4.8:1 on <code>#f8f8f8</code>)
+            instead of low-alpha <code>text-foreground/30|40|55</code>.
           </li>
         </ul>
+        <p>
+          <b>This fix is scoped to the home view.</b> The renderer has roughly 1,100{' '}
+          <code>text-foreground/NN</code> usages, around 460 of them at the low-alpha steps (
+          <code>/30</code>, <code>/35</code>, <code>/40</code>, <code>/45</code>, <code>/55</code>)
+          that measure below 4.5:1 for small text. Only the home view has ever been scanned; every
+          other view is unaudited and likely carries the same defect. This is the single most
+          important known barrier on this page.
+        </p>
+        <p>
+          Two <code>best-practice</code> axe rules also remain here — <b>landmark-unique</b> (1
+          element) and <b>region</b> (5 elements). They're tagged best-practice, not WCAG A or AA,
+          so they sit outside the standard this page targets, but "0 violations" shouldn't be read
+          as a clean bill without mentioning them.
+        </p>
       </div>
       <div className="card">
         <span className="label">Desktop app — exported PDFs</span>
