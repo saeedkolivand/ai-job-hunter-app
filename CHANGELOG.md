@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.131.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.130.1...v0.131.0) (2026-08-01)
+
+### ✨ Features
+
+* add an accessibility statement and fix the barriers it found ([#924](https://github.com/saeedkolivand/ai-job-hunter-app/issues/924)) ([cf3f7c5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cf3f7c5c484ecab1cdaa1f38720fcb0a3f4c1797)), closes [896-#897](https://github.com/saeedkolivand/896-/issues/897)
+* diagnose the role a cover letter answers before drafting it ([#926](https://github.com/saeedkolivand/ai-job-hunter-app/issues/926)) ([820ceef](https://github.com/saeedkolivand/ai-job-hunter-app/commit/820ceef7f53e6164318518e5b31bc31210ade043))
+
+### ♻️ Refactors
+
+* split agent-fleet into sections and pure scroll modules ([#916](https://github.com/saeedkolivand/ai-job-hunter-app/issues/916)) ([aa63f2d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/aa63f2d7d5766c8dbb1a322205ee67551b3f9e7a))
+* split architecture-map interactions into focused modules ([#915](https://github.com/saeedkolivand/ai-job-hunter-app/issues/915)) ([2a3fdb8](https://github.com/saeedkolivand/ai-job-hunter-app/commit/2a3fdb8d6fc1ce42afc8bee6759010a90d3cf267))
+* split home body and beats into per-section components ([#917](https://github.com/saeedkolivand/ai-job-hunter-app/issues/917)) ([9c76d79](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9c76d79ba72620bb674d03eae170d8e3e7f4d0bd))
+* split mission-control into sections and a pure model module ([#914](https://github.com/saeedkolivand/ai-job-hunter-app/issues/914)) ([b227e9d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b227e9d50cf75179c32982f339e42aab53b10f0c))
+* split the remaining ported landing bodies into sections ([#920](https://github.com/saeedkolivand/ai-job-hunter-app/issues/920)) ([7007256](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7007256dbc55559915a9db7c52ef7acabaaa371b))
+
+### 📚 Documentation
+
+* consolidate 13 agent rule files into a canonical agents.md ([#903](https://github.com/saeedkolivand/ai-job-hunter-app/issues/903)) ([414d6d7](https://github.com/saeedkolivand/ai-job-hunter-app/commit/414d6d751b0595a898ece318f7ff1726b9d9b367))
+
 ## [0.130.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.130.0...v0.130.1) (2026-07-28)
 
 ### 🐛 Bug Fixes
