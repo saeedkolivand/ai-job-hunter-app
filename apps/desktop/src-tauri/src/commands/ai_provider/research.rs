@@ -21,10 +21,22 @@ pub struct SearchResult {
 
 /// Facets every brief covers. `{role}` is substituted by the callers' prompt
 /// text. Broadened beyond "what they do / size / products" to also serve
-/// application questions (mission, values, culture, recent news).
+/// application questions (mission, values, culture, recent news) and the
+/// cover letter's role diagnosis — a letter can only position the candidate
+/// against a business problem if the brief says who they compete with and what
+/// they are currently pushing on.
 const FACETS: &str = "what the company does; approximate size or stage; \
-notable products or customers; mission and values; culture and what they are known for; \
-and any recent news or milestones relevant to the candidate";
+notable products, customers, or competitors; mission and values; \
+culture and what they are known for; any recent news or milestones relevant to the candidate; \
+and the challenges or strategic priorities they appear to be working on right now";
+
+/// Appended to both user prompts: a brief that silently mixes sourced facts with
+/// plausible guesses is worse than a shorter one, because the letter downstream
+/// will state the guess as knowledge of the company. Hedged wording keeps the
+/// distinction visible to the generator.
+const VERIFIED_ONLY: &str = "Separate fact from inference: state a fact plainly only when a \
+search result supports it, and hedge anything you inferred (\"appears to\", \"likely\"). \
+Never present an assumption as a fact, and omit a facet entirely rather than guessing at it.";
 
 /// System prompt for the **synthesize** path (Ollama): turn snippets into a brief.
 pub const SYNTH_SYSTEM: &str = "You are a company research assistant. \
@@ -39,7 +51,7 @@ concise brief. Return ONLY the brief — no headers, no caveats, no markdown, no
 /// The web-search query for the explicit-query path (Ollama). Kept broad (no
 /// `site:` filter) so mission/culture/recent-news surface alongside the overview.
 pub fn search_query(company: &str) -> String {
-    format!("{company} company overview mission culture products recent news")
+    format!("{company} company overview mission culture products competitors strategy recent news")
 }
 
 /// User prompt for the **native** path (the provider's model searches + writes).
@@ -47,8 +59,8 @@ pub fn native_user(company: &str, role: &str) -> String {
     let role = role_or_default(role);
     format!(
         "Research the company \"{company}\" (currently hiring for a {role}). \
-         Search the web for current information and write a 120-150 word factual brief covering: \
-         {facets}. Be precise — only state facts you can verify from search results.",
+         Search the web for current information and write a 150-200 word factual brief covering: \
+         {facets}. Be precise — only state facts you can verify from search results. {VERIFIED_ONLY}",
         facets = FACETS.replace("the candidate", &format!("a {role} candidate"))
     )
 }
@@ -66,8 +78,8 @@ pub fn synth_user(company: &str, role: &str, results: &[SearchResult]) -> String
         "Company: {company}\n\
          Role being filled: {role}\n\n\
          Search result snippets:\n{snippets}\n\n\
-         Write a 120-150 word factual company brief covering: {facets}. \
-         Be precise — do not invent facts not present in the snippets.",
+         Write a 150-200 word factual company brief covering: {facets}. \
+         Be precise — do not invent facts not present in the snippets. {VERIFIED_ONLY}",
         facets = FACETS.replace("the candidate", &format!("a {role} candidate"))
     )
 }
@@ -341,6 +353,27 @@ mod tests {
         assert!(p.contains("Acme"));
         assert!(p.contains("Backend Engineer"));
         assert!(p.to_lowercase().contains("web"));
+    }
+
+    /// The cover letter positions the candidate against a business problem, so
+    /// both brief prompts must ask for competitors + current priorities and must
+    /// keep inference hedged rather than stated as fact.
+    #[test]
+    fn both_briefs_cover_competitors_priorities_and_hedge_inference() {
+        let native = native_user("Acme", "Backend Engineer");
+        let synth = synth_user("Acme", "Backend Engineer", &[]);
+        for p in [&native, &synth] {
+            let low = p.to_lowercase();
+            assert!(low.contains("competitors"), "missing competitors: {p}");
+            assert!(
+                low.contains("strategic priorities"),
+                "missing priorities: {p}"
+            );
+            assert!(
+                low.contains("separate fact from inference"),
+                "missing hedge rule: {p}"
+            );
+        }
     }
 
     #[test]

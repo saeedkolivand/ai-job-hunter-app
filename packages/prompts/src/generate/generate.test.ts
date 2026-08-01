@@ -697,6 +697,28 @@ describe('buildCoverLetterPrompt', () => {
     expect(prompt).not.toContain('<company_research>');
   });
 
+  it('asks for a private role diagnosis (why the role is open, the first 6-12 months) before drafting', () => {
+    const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(prompt).toContain('WHY THIS ROLE IS OPEN');
+    expect(prompt).toContain('THE FIRST 6 TO 12 MONTHS');
+    // The diagnosis is inference, so it stays evidence-bound and is voiced as
+    // the candidate's reading of the role — never as insider knowledge.
+    expect(prompt).toMatch(/keep the diagnosis broad instead of guessing/i);
+    expect(prompt).toMatch(/never insider knowledge/i);
+    // Internal only: it must not leak into the letter itself.
+    expect(prompt).toContain('WRITING NOTES (internal: do NOT output any of this)');
+  });
+
+  it('defers the letter length to the market conventions instead of a second hardcoded range', () => {
+    const prompt = buildCoverLetterPrompt(RESUME_WITH_LINKS, 'Job ad', META, 'recruiter');
+    expect(prompt).toMatch(/Length: 200 to 350 words/); // the intl baseline, from <market_conventions>
+    expect(buildCoverLetterSystemPrompt('recruiter', 'large')).not.toMatch(/200 to 300 words/);
+    expect(buildCoverLetterSystemPrompt('recruiter', 'small')).not.toMatch(/200 to 300 words/);
+    expect(buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' })).not.toMatch(
+      /200 to 300 words/
+    );
+  });
+
   it('folds in emphasis directives when selected (#15)', () => {
     const prompt = buildCoverLetterPrompt(
       RESUME_WITH_LINKS,
