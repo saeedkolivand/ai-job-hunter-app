@@ -1,5 +1,29 @@
 [
   {
+    "sha": "51ff94be6abbc6aa05fa91faff7836861712a871",
+    "commit": {
+      "message": "ci: let both claude review lanes post inline pr comments (#923)\n\nThe workflow has always told Claude to \"post findings as inline comments\non the changed lines\" and neither lane could. At the pinned action SHA the\ninline-comment MCP server only starts when allowedTools names something\nwith the mcp__github_inline_comment__ prefix, and tag mode's own list is\nGlob/Grep/LS/Read plus the comment-update and CI tools. So the instruction\nwas a silent no-op and findings landed in the tracking comment instead.\n\nName the tool in both lanes. Agent mode gates on the same prefix check, so\nthe automatic gate gets it too - capped by the prompt to blocking findings\nonly (HIGH/CRITICAL, confidence >= 0.8, introduced_by_diff), since that\nlane re-runs on every synchronize and inline comments are not deduplicated\nacross runs. The threshold matches ci-review-verdict.mjs so the inline\ncomments and the red check cannot disagree.\n\nThe two comment blocks explaining why inline posting \"worked\" were both\nwrong; replaced with the real mechanism and source citations so the next\naction bump can be re-verified. ADR-0008 repeated the same wrong claim\ntwice and is corrected.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-07-31T23:12:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "f8f83cf7408420b7d704d3edd148c2bac782a0e3",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-07-31T06:22:48Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a992a3941acf31c09a78f32f5a5a6daa031fd108",
     "commit": {
       "message": "chore: add robots.txt, sitemap.xml and llms.txt to the landing site (#922)\n\n* chore: add robots.txt, sitemap.xml and llms.txt to the landing site\n\nThe static site shipped with no crawl metadata at all: no robots.txt, no\nsitemap, and nothing aimed at LLM crawlers.\n\n- robots.ts allows everything except /mission-control (a live GitHub-API\n  dashboard that already sets robots index false on the page) and points at\n  the sitemap.\n- sitemap.ts lists the 8 indexable routes, matching each page's own canonical.\n  No lastModified/priority: Google ignores priority and a build-time timestamp\n  would churn the file on every deploy.\n- public/llms.txt follows the llms.txt convention (H1, summary blockquote, key\n  facts, Pages, Optional). Adoption by AI crawlers is currently unproven, but\n  the file is static and costs one bullet per new page.\n\nBoth metadata routes need a force-static dynamic export: Next 16 defaults them\nto dynamic and output export rejects that outright.\n\nVerified: typecheck, build (out/robots.txt + out/sitemap.xml + out/llms.txt all\nemitted), check:parity, and lint:strict --max-warnings 0 all pass.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: keep /mission-control crawlable so its noindex is readable\n\nReview findings on #922 (frontend-reviewer, all advisory).\n\nMEDIUM: the robots.txt Disallow on /mission-control cancelled the page-level\nnoindex instead of reinforcing it. A crawler that obeys Disallow never fetches\nthe page, so it never reads the noindex, and the bare URL stays indexable from\nexternal links — the exact outcome noindex prevents. Dropped the rule; the\ncomment now explains why the page must stay fetchable.\n\nLOW: /how-it-works and /creature shipped without a canonical, so the invariant\nasserted in sitemap.ts held for only 6 of 8 routes. Added both, matching the\nother six pages.\n\nLOW: added robots.txt, sitemap.xml and llms.txt to the existing REQUIRED_FILES\nlist in check-parity.mjs. Three entries in machinery that already runs in CI,\nand it catches the failure the PR itself documents: if the force-static export\nis dropped or Next changes metadata-route defaults, the build stops emitting\nthese files silently. Verified the guard bites by removing out/robots.txt —\ncheck:parity fails with the expected message, passes once restored.\n\nVerified: typecheck, build, check:parity, lint:strict --max-warnings 0.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
@@ -1169,30 +1193,6 @@
       "message": "chore: bump github/codeql-action/analyze from 4.37.0 to 4.37.3 (#850)\n\nBumps [github/codeql-action/analyze](https://github.com/github/codeql-action) from 4.37.0 to 4.37.3.\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/99df26d4f13ea111d4ec1a7dddef6063f76b97e9...e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action/analyze\n  dependency-version: 4.37.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
       "author": {
         "date": "2026-07-22T19:56:34Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "9e2123b91e72a93170a0eea19d614a2ad13ff232",
-    "commit": {
-      "message": "chore: bump actions/labeler from 6.2.0 to 7.0.0 (#849)\n\nBumps [actions/labeler](https://github.com/actions/labeler) from 6.2.0 to 7.0.0.\n- [Release notes](https://github.com/actions/labeler/releases)\n- [Commits](https://github.com/actions/labeler/compare/b8dd2d9be0f68b860e7dae5dae7d772984eacd6d...bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13)\n\n---\nupdated-dependencies:\n- dependency-name: actions/labeler\n  dependency-version: 7.0.0\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:56:20Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "c28b5d8bc537a47b476696d50714ac0edd131ad0",
-    "commit": {
-      "message": "chore: bump taiki-e/install-action from 2.84.0 to 2.84.1 (#848)\n\nBumps [taiki-e/install-action](https://github.com/taiki-e/install-action) from 2.84.0 to 2.84.1.\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9...c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.84.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Saeed Kolivand <51081940+saeedkolivand@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:56:10Z"
       }
     },
     "author": {
