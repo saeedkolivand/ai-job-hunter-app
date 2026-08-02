@@ -22,6 +22,7 @@
     "updater:default",
     "clipboard-manager:default",
     "log:default",
+    "sentry:default",
     "notification:allow-notify",
     "notification:allow-show",
     "notification:allow-request-permission",

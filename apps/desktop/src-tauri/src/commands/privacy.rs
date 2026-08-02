@@ -300,7 +300,14 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     // state: enabled, but not yet consented, so the setup wizard asks again
     // before anything is transmitted. Same direct-removal shape as the
     // `browser-state` wipe further down.
+    //
+    // `clear()` alone would only take effect at NEXT launch, and a factory reset
+    // does not restart the process — the renderer just clears its caches. Without
+    // the unbind, a user who had consented would keep transmitting for the rest
+    // of the session immediately after performing what reads as a full privacy
+    // wipe. Mirrors the opt-out path in `privacy_set_crash_reporting`.
     crate::crash_reporting::clear();
+    crate::crash_reporting::disable_current();
 
     // Wipe every persistent store registered via `manage_resettable` in
     // `main.rs::setup` — résumé/doc/generation stores, secrets, caches, and the
