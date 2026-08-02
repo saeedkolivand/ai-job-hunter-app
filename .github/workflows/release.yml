@@ -480,8 +480,65 @@ jobs:
           # `split-debuginfo = "packed"` puts them beside the binary in target/.
           # No `--include-sources`: that would ship our source into Sentry, and
           # line tables alone are enough to resolve a frame.
-          npx --yes @sentry/cli@^2 debug-files upload \
-            apps/desktop/src-tauri/target/
+          #
+          # SCOPED, not a directory walk. Handing sentry-cli the whole `target/`
+          # tree uploaded 474 files per leg (~1900 per release): dependency
+          # build scripts, proc-macro .so files, ring/aws-lc-sys object files,
+          # and every third-party system library bundled into the AppImage — all
+          # to symbolicate one binary.
+          #
+          # Paths below are taken from an actual release run, not inferred. On
+          # every platform the debug artifacts live in `release/deps/` under the
+          # LIBRARY name (`ajh_tauri`, underscore) rather than the bin name
+          # (`ajh-tauri`), and the copies under `release/`, `bundle/appimage/`
+          # and `bundle/deb/` are hardlinks that dedupe to the same debug id:
+          #   linux    deps/ajh_tauri-<hash>
+          #   windows  deps/ajh_tauri.exe + deps/ajh_tauri.pdb
+          #   macos    <triple>/deps/ajh_tauri-<hash> + .dSYM
+          # macOS builds with an explicit --target so it nests under <triple>/;
+          # `matrix.target` is empty on the other two, so that path just misses.
+          # Non-debug siblings caught by the glob (.d dep-info) are ignored by
+          # sentry-cli's own scan.
+          BASE="apps/desktop/src-tauri/target"
+          TRIPLE="${{ matrix.target }}"
+          shopt -s nullglob
+          # Only add the per-triple dir when there IS a triple: with TRIPLE empty
+          # the path collapses to the same directory (`target//release/deps`) and
+          # every file gets enumerated twice.
+          DEPS_DIRS=("$BASE/release/deps")
+          if [ -n "$TRIPLE" ]; then DEPS_DIRS+=("$BASE/$TRIPLE/release/deps"); fi
+          DIFS=()
+          for depsdir in "${DEPS_DIRS[@]}"; do
+            if [ -d "$depsdir" ]; then
+              for f in "$depsdir"/ajh_tauri*; do DIFS+=("$f"); done
+            fi
+          done
+          if [ ${#DIFS[@]} -eq 0 ]; then
+            echo "::error title=No debug files found::No ajh_tauri* artifacts under $BASE/**/release/deps on ${{ matrix.platform }} — nothing was uploaded, so crash reports from this release will show unresolved addresses."
+            exit 1
+          fi
+
+          # "Non-empty" is not the same as "symbolicatable". Finding
+          # `ajh_tauri.exe` while its `.pdb` is missing would pass the check
+          # above and still ship unresolvable stack traces — this feature's
+          # recurring failure shape. So assert the DEBUG COMPANION each platform
+          # actually produces, as observed in a real release run:
+          #   windows  a separate .pdb
+          #   macos    a .dSYM bundle
+          #   linux    none — DWARF stays inside the binary, nothing to require
+          case "${{ runner.os }}" in
+            Windows) NEED='\.pdb$';  NEED_DESC='a .pdb debug companion' ;;
+            macOS)   NEED='\.dSYM$'; NEED_DESC='a .dSYM debug companion' ;;
+            *)       NEED='';        NEED_DESC='' ;;
+          esac
+          if [ -n "$NEED" ] && ! printf '%s\n' "${DIFS[@]}" | grep -qE "$NEED"; then
+            echo "::error title=Debug companion missing::Found ajh_tauri artifacts on ${{ matrix.platform }} but not $NEED_DESC, so frames from this release will not resolve. Check the release profile's debug/split-debuginfo settings."
+            exit 1
+          fi
+
+          printf 'Uploading debug files:\n'
+          printf '  %s\n' "${DIFS[@]}"
+          npx --yes @sentry/cli@^2 debug-files upload "${DIFS[@]}"
           # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
           # but were never referenced from the shipped bundle.
           npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
