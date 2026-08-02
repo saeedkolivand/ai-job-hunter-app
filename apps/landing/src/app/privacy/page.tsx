@@ -8,20 +8,21 @@ import { readStyle } from '@/lib/styles';
 export const metadata: Metadata = {
   title: 'AI Job Hunter — Privacy Policy',
   description:
-    'How the AI Job Hunter desktop app and browser extension handle your data. No accounts, no analytics, no telemetry. Local-first.',
+    'How the AI Job Hunter desktop app and browser extension handle your data. No accounts, no behavioural analytics. Local-first, with opt-out crash reporting.',
   robots: { index: true, follow: true },
   alternates: { canonical: 'https://aijobhunter.app/privacy' },
   openGraph: {
     title: 'AI Job Hunter — Privacy Policy',
     description:
-      'How the AI Job Hunter desktop app and browser extension handle your data. No accounts, no analytics, no telemetry. Local-first.',
+      'How the AI Job Hunter desktop app and browser extension handle your data. No accounts, no behavioural analytics. Local-first, with opt-out crash reporting.',
     url: 'https://aijobhunter.app/privacy',
     type: 'website',
   },
   twitter: {
     card: 'summary',
     title: 'AI Job Hunter — Privacy Policy',
-    description: 'No accounts, no analytics, no telemetry. Local-first. How your data is handled.',
+    description:
+      'No accounts, no behavioural analytics. Local-first, with opt-out crash reporting. How your data is handled.',
   },
 };
 

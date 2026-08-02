@@ -15,6 +15,22 @@ export interface PrivacyResetResult {
   browserStateRetained?: boolean;
 }
 
+/**
+ * Crash-reporting consent. Rust-owned rather than a renderer preference: the
+ * Sentry client is constructed before `tauri::Builder` runs (the minidump
+ * supervisor forks at startup), so there is no WebView — and therefore no
+ * `localStorage` — to read at the moment the decision is needed.
+ *
+ * `enabled` is the user's choice and defaults to **true**. `consentShown`
+ * records whether the setup wizard has actually put that choice in front of
+ * them; nothing is transmitted until it has, so a default nobody saw never
+ * silently reports.
+ */
+export interface CrashReportingSettings {
+  enabled: boolean;
+  consentShown: boolean;
+}
+
 export interface PrivacyContract {
   /** Sign out all connected accounts by wiping Chromium profiles. */
   signOutAll(): Promise<void>;
@@ -24,10 +40,26 @@ export interface PrivacyContract {
 
   /** Factory reset: sign out all boards, clear all cached data. Frontend resets preferences separately. */
   resetApp(): Promise<PrivacyResetResult>;
+
+  /** Current crash-reporting consent state. */
+  getCrashReporting(): Promise<CrashReportingSettings>;
+
+  /**
+   * Persist crash-reporting consent.
+   *
+   * Turning it OFF unbinds the client immediately, so no further error or
+   * breadcrumb events are captured in this session. The native-crash supervisor
+   * is a separate process forked at launch and cannot be recalled mid-session,
+   * so a hard crash before the next restart could still be reported — the UI
+   * says so rather than implying a clean instant stop.
+   */
+  setCrashReporting(settings: CrashReportingSettings): Promise<CrashReportingSettings>;
 }
 
 export const PRIVACY_CHANNELS = {
   signOutAll: 'privacy:signOutAll',
   clearInteractions: 'privacy:clearInteractions',
   resetApp: 'privacy:resetApp',
+  getCrashReporting: 'privacy:getCrashReporting',
+  setCrashReporting: 'privacy:setCrashReporting',
 } as const;

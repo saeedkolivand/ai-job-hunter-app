@@ -296,6 +296,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Baked in by build.rs → `option_env!("AJH_SENTRY_DSN")`. Set ONLY here,
+          # so release installers report and every other build (local, CI checks,
+          # contributor clones) compiles with no DSN and cannot transmit at all.
+          AJH_SENTRY_DSN: ${{ secrets.AJH_SENTRY_DSN }}
         run: |
           echo "::group::Building Tauri application"
           if [ "${{ runner.os }}" == "macOS" ]; then
@@ -400,6 +404,45 @@ jobs:
             mv "$f" "$d/${p}-$b"
             echo "Prefixed: $b -> ${p}-$b"
           done
+          echo "::endgroup::"
+
+      # Debug files go to Sentry, NOT to the release. Without them every frame in
+      # a crash report is a bare address; with them Sentry resolves names and
+      # line numbers. Deliberately not attached as release assets — full DWARF
+      # for this dep tree (typst, chromiumoxide, rusqlite) is very large, which
+      # is the same reason the failure-log upload below is narrowly scoped.
+      #
+      # Skipped rather than failed when the org/token secrets are absent, so a
+      # fork or a release cut before Sentry is provisioned still ships installers.
+      - name: 🔍 Upload debug symbols to Sentry
+        if: success()
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          # Guarded in the shell, not in `if:` — neither the `secrets` nor a
+          # step's own `env` context is available to a step-level `if`.
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "Sentry secrets not configured — skipping symbol upload."
+            exit 0
+          fi
+          echo "::group::Uploading debug files + sourcemaps"
+          VERSION="${{ steps.resolve.outputs.version }}"
+          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
+          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
+          # `split-debuginfo = "packed"` puts them beside the binary in target/.
+          # No `--include-sources`: that would ship our source into Sentry, and
+          # line tables alone are enough to resolve a frame.
+          npx --yes @sentry/cli@^2 debug-files upload \
+            apps/desktop/src-tauri/target/
+          # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
+          # but were never referenced from the shipped bundle.
+          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
+          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
+            apps/desktop/dist/
+          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
           echo "::endgroup::"
 
       - name: Upload Release Assets

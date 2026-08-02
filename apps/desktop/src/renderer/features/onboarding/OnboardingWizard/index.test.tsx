@@ -223,6 +223,29 @@ vi.mock('../steps/ExtensionStep', () => ({
   ),
 }));
 
+vi.mock('../steps/CrashReportingStep', () => ({
+  CrashReportingStep: ({
+    onNext,
+    onBack,
+    stepIndex,
+    totalSteps,
+  }: {
+    onNext: () => void;
+    onBack?: () => void;
+    stepIndex: number;
+    totalSteps: number;
+  }) => (
+    <div
+      data-testid={TEST_IDS.onboarding.stepCrashReporting}
+      data-step-index={stepIndex}
+      data-total-steps={totalSteps}
+    >
+      <Button onClick={onNext}>next</Button>
+      {onBack && <Button onClick={onBack}>back</Button>}
+    </div>
+  ),
+}));
+
 vi.mock('../steps/AppearanceStep', () => ({
   AppearanceStep: ({
     onNext,
@@ -300,9 +323,19 @@ beforeEach(() => {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe('OnboardingWizard — step filter', () => {
-  it('includes research step (8 total) when activeProvider is ollama', () => {
+  it('includes research step (9 total) when activeProvider is ollama', () => {
     usePreferencesStore.setState({
       aiProviderConfig: { activeProvider: 'ollama', providers: {} },
+    });
+    renderWizard();
+
+    const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
+    expect(totalStepsOf(welcome)).toBe(9);
+  });
+
+  it('excludes research step (8 total) when activeProvider is openai', () => {
+    usePreferencesStore.setState({
+      aiProviderConfig: { activeProvider: 'openai', providers: {} },
     });
     renderWizard();
 
@@ -310,22 +343,12 @@ describe('OnboardingWizard — step filter', () => {
     expect(totalStepsOf(welcome)).toBe(8);
   });
 
-  it('excludes research step (7 total) when activeProvider is openai', () => {
-    usePreferencesStore.setState({
-      aiProviderConfig: { activeProvider: 'openai', providers: {} },
-    });
-    renderWizard();
-
-    const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
-    expect(totalStepsOf(welcome)).toBe(7);
-  });
-
-  it('excludes research step (7 total) when activeProvider is undefined', () => {
+  it('excludes research step (8 total) when activeProvider is undefined', () => {
     usePreferencesStore.setState({ aiProviderConfig: undefined });
     renderWizard();
 
     const welcome = screen.getByTestId(TEST_IDS.onboarding.stepWelcome);
-    expect(totalStepsOf(welcome)).toBe(7);
+    expect(totalStepsOf(welcome)).toBe(8);
   });
 
   it('research stub is present in the DOM when ollama is active after navigating to it', async () => {
@@ -400,6 +423,7 @@ describe('OnboardingWizard — navigation', () => {
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
     expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
@@ -420,6 +444,7 @@ describe('OnboardingWizard — navigation', () => {
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
     // Tour is visible; click finish
@@ -439,13 +464,14 @@ describe('OnboardingWizard — sidebar force-open on tour start', () => {
     const user = userEvent.setup();
     renderWizard();
 
-    // 7-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → appearance(6)
+    // 8-step sequence (openai): welcome(0) → resume(1) → ai(2) → browser(3) → adzunaKey(4) → extension(5) → crashReporting(6) → appearance(7)
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
 
     // Still on a regular step — sidebar must be untouched.
     expect(usePreferencesStore.getState().sidebarCollapsed).toBe(true);
@@ -483,6 +509,7 @@ describe('OnboardingWizard — sidebar force-open on tour start', () => {
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
     // Tour forced the sidebar open (see the test above).
@@ -511,6 +538,7 @@ describe('OnboardingWizard — sidebar force-open on tour start', () => {
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAppearance));
 
     expect(screen.getByTestId(TEST_IDS.onboarding.tour)).toBeInTheDocument();
@@ -577,7 +605,7 @@ describe('OnboardingWizard — clamp on provider flip', () => {
     const user = userEvent.setup();
     renderWizard();
 
-    // Advance to the last step of the 8-step ollama sequence (index 7 = appearance)
+    // Advance to the last step of the 9-step ollama sequence (index 8 = appearance)
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepWelcome));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepResume));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAi));
@@ -585,14 +613,15 @@ describe('OnboardingWizard — clamp on provider flip', () => {
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepBrowser));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepAdzunaKey));
     await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepExtension));
+    await clickNext(user, screen.getByTestId(TEST_IDS.onboarding.stepCrashReporting));
 
-    // At index 7 (appearance), totalSteps 8
+    // At index 8 (appearance), totalSteps 9
     expect(screen.getByTestId(TEST_IDS.onboarding.stepAppearance)).toBeInTheDocument();
-    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(7);
-    expect(totalStepsOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(8);
+    expect(stepIndexOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(8);
+    expect(totalStepsOf(screen.getByTestId(TEST_IDS.onboarding.stepAppearance))).toBe(9);
 
-    // Flip provider to openai — array shrinks to 7 steps (max valid index = 6).
-    // The clamp effect must land the wizard on step 6 = appearance. `useActiveConfig`
+    // Flip provider to openai — array shrinks to 8 steps (max valid index = 7).
+    // The clamp effect must land the wizard on step 7 = appearance. `useActiveConfig`
     // is backed by the Zustand store in this test, so the flip is a plain setState.
     act(() => {
       usePreferencesStore.setState({
@@ -600,7 +629,7 @@ describe('OnboardingWizard — clamp on provider flip', () => {
       });
     });
 
-    // The clamped visible step must be exactly appearance at index 6 / totalSteps 7.
+    // The clamped visible step must be exactly appearance at index 7 / totalSteps 8.
     const visibleStep = document.querySelector('[data-total-steps]');
     if (!visibleStep) throw new Error('expected a visible step after provider flip');
     const visibleStepEl = visibleStep as HTMLElement;
@@ -608,8 +637,8 @@ describe('OnboardingWizard — clamp on provider flip', () => {
     // Identity: must be the appearance stub (not a fallback to welcome at index 0)
     expect(visibleStepEl.getAttribute('data-testid')).toBe('step-appearance');
     // Exact clamped index — not just "within range"
-    expect(stepIndexOf(visibleStepEl)).toBe(6);
-    expect(totalStepsOf(visibleStepEl)).toBe(7);
+    expect(stepIndexOf(visibleStepEl)).toBe(7);
+    expect(totalStepsOf(visibleStepEl)).toBe(8);
   });
 });
 
