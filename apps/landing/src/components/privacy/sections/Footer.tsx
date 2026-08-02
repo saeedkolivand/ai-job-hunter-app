@@ -5,6 +5,18 @@ import { SiteFooter } from '@/components/SiteFooter';
 // ported markup, no props. See PrivacyBody.tsx for the shared conversion
 // notes. Nothing scripts this page (privacy-0.js is a console easter egg),
 // but scripts/check-parity.mjs pins its copy and anchor hrefs (ADR 0018).
+
+// The single source of truth for the "Last updated" date rendered by
+// sections/IntroShort.tsx — kept here, next to the "we'll bump the date"
+// promise below, so changing the policy and changing the date are one edit
+// apart instead of two files apart. Mirrors
+// components/accessibility/sections/Footer.tsx.
+//
+// This page is the privacy-policy URL filed with the Chrome Web Store and
+// Firefox AMO, so a stale date here is not cosmetic: it claims a review
+// happened before changes that came after it.
+export const LAST_UPDATED = '2 August 2026';
+
 export function Footer() {
   return (
     <>
