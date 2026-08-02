@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
 import { PrivacyBody } from './PrivacyBody';
+import { LAST_UPDATED } from './sections/Footer';
 
 afterEach(() => {
   cleanup();
@@ -54,5 +55,24 @@ describe('PrivacyBody', () => {
     expect(hrefs).not.toContain('/privacy');
     expect(hrefs).toContain('/');
     expect(hrefs).toContain('/download');
+  });
+
+  // Regression guard: the crash-reporting rewrite (#927) changed what this page
+  // says the app collects but left "Last updated: 30 June 2026" in place, so a
+  // store-filed legal document claimed a review that predated the change. The
+  // date now comes from one exported constant; this pins that the page actually
+  // renders it, so a future edit cannot silently reintroduce a hardcoded date.
+  //
+  // What this canNOT check is the page's own promise — "if this policy changes,
+  // we'll bump the date". Nothing mechanical ties a copy edit to a date bump;
+  // that one stays on the author.
+  it('renders the Last updated date from the shared constant, in the expected form', () => {
+    const { container } = render(<PrivacyBody />);
+    const updated = container.querySelector('.updated')?.textContent ?? '';
+
+    expect(updated).toBe(`Last updated: ${LAST_UPDATED}`);
+    expect(LAST_UPDATED, `"${LAST_UPDATED}" is not in "D Month YYYY" form`).toMatch(
+      /^\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/
+    );
   });
 });
