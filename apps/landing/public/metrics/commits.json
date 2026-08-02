@@ -1,5 +1,125 @@
 [
   {
+    "sha": "2da1f2e1268d7c08fc1f1da6b9e8ee9463bd6515",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-02T02:50:47Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "9023c41233c13fea9396c92a9df8aebdaf3d1d65",
+    "commit": {
+      "message": "feat: add opt-out crash reporting via sentry (#927)\n\n* feat: add opt-out crash reporting via sentry\n\nThe app was blind in production. The panic hook wrote crashes.log and the\ndiagnostics zip could export it, but both needed the user to notice a failure\nand file an issue by hand. React errors caught by a boundary never reached the\nwindow at all, so they were invisible even in principle.\n\nDesktop app only. The extension keeps its AMO data_collection_permissions of\n['none'] and the landing site keeps its no-third-party-JS origin invariant.\n\nConsent is Rust-owned rather than a renderer preference: sentry::init has to run\nbefore tauri::Builder, because sentry-rust-minidump forks the crash-reporter\nprocess at startup and panic = \"abort\" leaves nothing in-process able to flush a\ncrash. There is no WebView at that point, so no localStorage to read.\n\nTransmission requires enabled && consentShown, not just enabled. The default is\non, but nothing is sent until the setup wizard has actually shown the choice — a\ndefault nobody saw is not consent, and that gap is where privacy claims break.\nA user who never finishes onboarding never reports anything.\n\nEvery outgoing event is serialized, passed through the same redact_token\npipeline the diagnostics bundle uses, and deserialized — whole-event rather than\nfield-by-field, because a field list is a denylist that rots as the SDK adds\nfields. send_default_pii is off and server_name is overridden, since the SDK\notherwise sends the machine hostname.\n\nThe DSN is baked by build.rs from an env var set only in the signed release job\nand read with option_env!, so local builds, contributor clones and every CI\ncheck compile to None and cannot transmit.\n\nThis reverses a published promise: the privacy policy named Sentry as absent in\nthree places and ADR-0005 defined the boundary as \"no telemetry\". ADR-0005 gains\nan eighth egress class, ADR-0020 records the decision, and all twelve claim\nsites are rewritten — including Footer.tsx, whose \"no server-side copy, deleting\nlocally deletes it everywhere\" became false, and /privacy, which is the policy\nURL filed with both stores and now separates desktop collection from extension\nnon-collection.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: classify the crash-reporting module in the architecture layers\n\nThe architecture test caught it unclassified. Shell layer rather than lower: it\nis constructed by lib::run() before the Tauri builder exists, and it reaches\ndown into commands::support::redact_lines to reuse the diagnostics redactor\ninstead of growing a second, weaker one.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: resolve the crash-reporting consent directory exactly once\n\nReview found the feature could never activate. init() ran before\ntauri::Builder and resolved the consent file through\nplatform::config::data_dir(), which at that moment falls back to $HOME/.ajh\nbecause AJH_DATA_DIR is only exported later, inside setup(). The privacy\ncommands meanwhile wrote through app.path().app_data_dir(). Consent was\nwritten to one directory and read from another, so no user choice was ever\nobserved — and it failed silently, since a missing file is indistinguishable\nfrom \"user said no\".\n\nCache the first resolution in a OnceLock and funnel load/save/clear through\nit, so both sides agree by construction rather than by two call sites\nhappening to resolve alike. The commands no longer take an AppHandle at all.\n\nAdds a regression test pinning that every accessor shares one resolved\ndirectory and that a save() is observable through load().\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: stop transmission on factory reset and permit the sentry plugin\n\nTwo findings from the second review pass.\n\nFactory reset cleared the persisted consent file but left the in-memory client\nbound, so a user who had consented kept transmitting for the rest of the\nsession immediately after performing what reads as a full privacy wipe — the\nreset does not restart the process. Now unbinds alongside the clear, mirroring\nthe opt-out path in privacy_set_crash_reporting.\n\nThe plugin was registered without a capability entry. Its browser side forwards\nevents to Rust over invoke, and those commands (envelope, breadcrumb) are\npermission-gated in Tauri 2, so without \"sentry:default\" every renderer error\nwould have been denied at the IPC boundary and silently never reported — half\nthe feature dead while looking wired up.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: use the ureq transport and document where consent is stored\n\nThird review pass.\n\nDrop sentry's default features. The default transport is reqwest + native-tls,\nand sentry 0.42 pins reqwest 0.12 — a second copy alongside the app's 0.13, in\na binary optimized hard for size. ureq is lighter and also more correct here:\nthe reqwest transport needs tokio, but the minidump supervisor is a bare forked\nprocess with no async runtime to send on. Verified reqwest 0.12 is gone from\nthe tree and ureq 3.3 replaces it. The reported actix-web integration was not\nactually in the tree — defaults never enabled it.\n\nThe module claimed the consent file sits next to the other app data. It does\nnot: it lives where data_dir() resolves before Tauri starts, which in a default\ninstall is $HOME/.ajh, not the per-OS app-data dir. That placement is forced —\nsentry::init has no AppHandle, and the init cannot move into setup because the\nminidump supervisor re-executes everything above its own call in the forked\nchild. Corrected the claim rather than the location, and recorded the\nconsequence: deleting the app-data dir by hand leaves this file, though it\nholds two booleans and the factory reset clears it.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-02T02:28:17Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "d88896617df15528f05bfd9d4567849d7693f738",
+    "commit": {
+      "message": "chore: sync landing download version to v0.131.0",
+      "author": {
+        "date": "2026-08-01T23:24:16Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "cd4e7ebbd6aa0a48a440974b50a7fe6ccb5b9d97",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.131.0 [skip ci]",
+      "author": {
+        "date": "2026-08-01T23:23:51Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "9869ec10412e1c0b4ea416c7bb57489fb242b0a5",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-01T23:08:54Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "3f37237a7cdcec198dfc51524b5b9a5c14ef7f5f",
+    "commit": {
+      "message": "chore(release): 0.131.0 [skip ci]",
+      "author": {
+        "date": "2026-08-01T22:52:36Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "820ceef7f53e6164318518e5b31bc31210ade043",
+    "commit": {
+      "message": "feat: diagnose the role a cover letter answers before drafting it (#926)\n\n* feat: diagnose the role a cover letter answers before drafting it\n\nFold a company-and-vacancy intelligence pass into the existing single-pass\ncover-letter generation — no extra AI calls, no new IPC.\n\nCompany brief (opt-in \"Research company\", already provider-native web search):\nnow also covers competitors and the challenges/strategic priorities the company\nis working on, hedges anything inferred rather than stating it as fact, and runs\n150-200 words. The `<company_research>` fence cap moves 1200 -> 1600 chars so the\nlonger brief is not cut mid-sentence, and the Ollama search query asks for\ncompetitors/strategy too.\n\nCover letter: a private diagnosis before drafting — why the role is open, the 3\noutcomes the hire is judged on in the first 6-12 months, and which real résumé\nachievements make the candidate part of that solution. Every step is bound to\nevidence in the job ad, the brief, or the résumé; thin evidence keeps the\ndiagnosis broad instead of guessing, and the letter voices it as the candidate's\nreading of the role, never insider knowledge. The same one-liner goes into the\nagent-mode draft_cover_letter prompt.\n\nAlso drops the hardcoded \"200 to 300 words\" from four places: it contradicted\n<market_conventions>, which already carries the per-market band.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: harden the company brief and bound the role diagnosis to employer evidence\n\nReview findings from CodeRabbit + the claude PR review on #926.\n\n- Prompt injection (major): search results are attacker-reachable text and the\n  brief is the one stage that reads them unfenced, so VERIFIED_ONLY now tells\n  the model to treat every page and snippet as untrusted data, ignore\n  directives inside them, and never let them add claims about a candidate.\n- Diagnosis evidence (major): a résumé says what the candidate has done, never\n  why an employer opened a role or what they will measure. Steps 1 and 2 now\n  stand only on <job_ad> (+ <company_research> when fenced); <candidate_resume>\n  is reserved for step 3, the through-line.\n- Test coverage (high): the brief-present branch of the diagnosis was never\n  asserted. Both branches are now covered, including the negative case.\n- Localization: the hedge exemplars were English strings injected into every\n  target language; the prompt now asks for hedging in the target language.\n- Competitors are their own required facet, no longer an \"or\" the model may skip.\n- Reuse hasBrief instead of recomputing companyBrief.trim(), and restore the\n  role-context comment to the code it documents.\n- Record why the agent-path length band is deliberately market-agnostic.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-01T22:46:38Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "75768b8ed98dad9f4405d8a483441d4bd2b9c472",
+    "commit": {
+      "message": "ci: add a blocking accessibility gate for the landing site (#925)\n\n* ci: add a blocking accessibility gate for the landing site\n\nPR #924 fixed every WCAG A/AA violation on the landing site and published\n/accessibility, a page that states those results. Nothing re-checked them,\nso the fixes could regress silently and the statement would start lying.\nEvery scan in that PR ran from throwaway scripts under apps/desktop, the\nonly place @axe-core/playwright already resolved.\n\ncheck-a11y.mjs serves the built out/ with node:http, drives headless\nChromium and axe-core, and scans every route discovered by globbing\nout/**/*.html rather than a hardcoded list - a hardcoded list is the exact\nfailure mode the #924 review flagged, where a new route had to be added by\nhand in four places. It runs on pull requests inside the existing test job,\nreusing the Chromium already installed there.\n\nIt blocks rather than warns. That differs from the three desktop a11y\nchecks on purpose: those stay advisory because their surface is not clean\nyet, whereas this baseline is already 0, so anything it finds is a\nregression against a public claim.\n\nAuto-discovery immediately found 13 routes rather than the 9 previously\nscanned, and three had never been checked:\n\n- /404 and /_not-found are clean.\n- /mission-control failed contrast at 4.03:1 on row-title links. Fixed with\n  --doc-accent-text, the token docs-tokens.css already defines for this\n  case, at a specificity that beats the .doc-shell base rule; now 5.7:1.\n- /benchmarks/ fails contrast and lacks a lang attribute, but is generated\n  by benchmark-action and overwritten on every push-to-main perf run, so it\n  cannot be fixed in-repo. It is excluded by name, with the reason and both\n  violations recorded in EXCLUDED_ROUTES, and the gate logs the exclusion\n  rather than skipping silently.\n\nThe statement is updated to match: 12 covered routes instead of 9, the\n/mission-control fix, the gate itself under what is in place, and\n/benchmarks/ disclosed as a known barrier that is excluded, not passing.\nEvery prior disclosure stands - both surfaces remain partially conformant.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: contain the a11y gate's static server to out/\n\nCodeQL flagged two high-severity path-traversal sinks in the gate's own\nstatic server: resolveFile stripped leading slashes but nothing stopped\n../ escaping out/ through join(), so /../../../package.json resolved\noutside the served root.\n\nReal risk is negligible - the server is loopback-only on an ephemeral port\nfor the seconds a scan takes, reachable only by the Playwright instance the\nscript itself launches - but the alert is correct rather than a false\npositive, and the containment check is three lines. Resolving each\ncandidate and requiring it to sit inside out/ is the fix, not a\nsuppression.\n\nVerified against the running server: /../../../package.json,\n/..%2f..%2fpackage.json and /%2e%2e/%2e%2e/package.json all 404, while\n/privacy and /fonts/fonts.css still serve 200 and all 12 routes still scan\nclean - so no legitimate asset path was caught by the filter.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: serve the a11y gate from an allowlist instead of built paths\n\nThe previous commit added a containment check after building the path with\njoin(), and CodeQL still flagged both sinks - correctly, because the\ntainted request path reached the path expression before anything validated\nit. Sanitising a sink is weaker than not having one.\n\nThe server now walks out/ once at startup and serves only from the\nresulting Map of real files, keyed by the URL that serves them. The request\npath never reaches a path expression; it only ever looks up a key, so\ntraversal is impossible by construction rather than by a check a later\nrefactor could reorder or drop. It also removes the isFile stat dance,\nsince only real files are ever indexed - a route whose .html sits beside a\nsame-named directory of RSC payloads can no longer resolve to the\ndirectory.\n\nVerified against the running server: /../../../package.json,\n/..%2f..%2fpackage.json and /%2e%2e/%2e%2e/package.json all 404, while /,\n/privacy, /privacy.html, /fonts/fonts.css and /benchmarks/ all serve 200\nand all 12 routes still scan clean.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-01T19:03:21Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "cf3f7c5c484ecab1cdaa1f38720fcb0a3f4c1797",
+    "commit": {
+      "message": "feat: add an accessibility statement and fix the barriers it found (#924)\n\n* docs: add an accessibility statement to the landing site\n\nAdds /accessibility, a WAI-model statement covering all three surfaces: the\nlanding site, the desktop app and the browser extension.\n\nEvery claim is sourced from a measured pass rather than boilerplate. An\naxe-core scan (WCAG 2.0/2.1/2.2 A+AA) of the built site found three serious\nrules across eight pages — colour contrast on /creature and /world, a\nnon-focusable scroll region on /architecture-map — and two on the desktop\nrenderer's home view. A scripted keyboard tab-through of every page found a\nvisible focus indicator on every stop it reached and no keyboard trap.\n\nThe statement therefore declares partially conformant for the site and the\napp, and not assessed for the extension. It names the CI a11y gates as\nadvisory rather than blocking, states that exported PDFs are not tagged to\nPDF/UA-1, and says plainly that there has been no third-party audit and no\ntesting with assistive-technology users. Publishing it is voluntary — the\nEAA microenterprise exemption applies — so it makes no compliance claim.\n\nThe page itself scans clean: axe 0 violations, 24/24 tab stops with a\nvisible ring, no overflow at 320px under reduced motion. It reuses\nprivacy.css rather than adding a stylesheet, and is linked from the shared\nfooter and the home footer, the sitemap and llms.txt.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* docs: sync docs for accessibility statement pr #924\n\nUpdated ARCHITECTURE_STATUS.md: add /accessibility to authored routes (now 7), add\n\"Accessibility conformance statement\" row tracking WCAG 2.2 AA partial conformance.\nAdded \"Accessibility defects\" section to NEXT_ISSUES.md with known violations from\naxe-core audit. Recorded lesson: scripted audit findings must be verified against\nthe instrument before publishing as fact — two measurement artifacts (dedup key\ncollisions, deliberate CSS indicators) were caught before /accessibility shipped.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* docs: point the architecture-status date at the pr that bumped it\n\nThe bump-last-updated hook advanced the date to 2026-08-01 but left the\nparenthetical crediting PRs #896-#897, so the line claimed a fresh date for\nstale work.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: resolve the accessibility barriers the statement documented\n\nFixes every WCAG A/AA violation the /accessibility audit found, then updates\nthe statement to describe the new state rather than the old one.\n\nLanding site, now 0 violations across all 9 pages:\n\n- /creature: the faded doodle annotations diluted --ink toward the paper\n  background via opacity. They now use an explicit warm grey at 4.98:1,\n  up from 2.46-2.8:1.\n- /world: the active nav pill darkens its accent with color-mix. White on\n  the darkened red is 8.54:1, up from 3.93:1. The accent cycles per section\n  and the blue state was 1.88:1 - a worse failure the original single-state\n  scan never saw - now 4.86:1.\n- /architecture-map: the sidebar is keyboard-reachable and named. The map's\n  arrow-key pan handler now excludes it, so arrows scroll the sidebar\n  instead of panning the map underneath it, with a test covering the\n  exclusion.\n\nDesktop renderer home view, now 0 violations in both colour schemes:\n\n- The critical aria-allowed-attr was aria-expanded on a roleless wrapper div\n  in the shared HoverPopover. The invalid attribute is gone from that wrapper\n  everywhere the component is used, and moves onto the trigger where the\n  trigger is a real button.\n- The 11 contrast failures use the existing text-muted-foreground token\n  rather than low-alpha text-foreground steps.\n\nThe contrast fix is deliberately scoped to the home view. Roughly 460 of the\nrenderer's ~1100 text-foreground/NN usages sit at steps below 4.5:1, and no\nother view has been scanned. Both surfaces therefore stay partially\nconformant: zero automated violations is not conformance. The statement now\nsays that, discloses the unaudited scope and the two remaining best-practice\nlandmark rules, and keeps every prior disclosure intact.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* docs: refresh the accessibility tracking after the barrier fixes\n\nNEXT_ISSUES listed the audited violations as open; they were fixed in the same\nPR. Replaces that list with what is actually still open: the sub-AA\ntext-foreground/NN ramp outside the scanned home view, the two remaining\nbest-practice landmark rules, the missing landing a11y gate, the unscanned\nextension, and untagged PDFs. Adds the coverage limits worth remembering,\nincluding the state-dependent /world failure a single-state scan missed.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: apply the pr review findings on the accessibility statement\n\nFour advisory findings from the PR #924 review, none blocking:\n\n- The five new accessibility body components were outside\n  SECRET_SCAN_FILES in check-landing-drift.mjs, so a token pasted into a\n  code sample on this public page would not have been caught. Registered\n  them alongside the privacy components.\n- DocShell's footer now links to the statement. /architecture-map is the\n  page that carried the keyboard barrier, so someone who hits a problem\n  there had no in-page route to the statement or the feedback address.\n  The WAI model wants the statement reachable from every page; scoping\n  the doc-tier pages out was the weaker call.\n- The anchor test asserted that each heading id renders, but not that\n  every anchor href resolves to one. A typo'd self-link would have stayed\n  green. Both directions are now derived from the DOM.\n- The \"reviewed at least once a year\" promise depended on remembering:\n  the date was free text in JSX and bump-last-updated.mjs only reaches\n  .md files. The date is now a single constant with a test that fails\n  once it is over 12 months old, telling whoever trips it to re-review\n  the claims before bumping it.\n\nLeft alone: the route added by hand in four places is a pre-existing\ndivergence, and the selector-drift risk on the barrier list is better\nserved by the landing a11y gate already filed in NEXT_ISSUES.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-01T16:48:44Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "9fc1017d106e852dd0400ee342808b634ff9c5b6",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-01T06:11:49Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "51ff94be6abbc6aa05fa91faff7836861712a871",
     "commit": {
       "message": "ci: let both claude review lanes post inline pr comments (#923)\n\nThe workflow has always told Claude to \"post findings as inline comments\non the changed lines\" and neither lane could. At the pinned action SHA the\ninline-comment MCP server only starts when allowedTools names something\nwith the mcp__github_inline_comment__ prefix, and tag mode's own list is\nGlob/Grep/LS/Read plus the comment-update and CI tools. So the instruction\nwas a silent no-op and findings landed in the tracking comment instead.\n\nName the tool in both lanes. Agent mode gates on the same prefix check, so\nthe automatic gate gets it too - capped by the prompt to blocking findings\nonly (HIGH/CRITICAL, confidence >= 0.8, introduced_by_diff), since that\nlane re-runs on every synchronize and inline comments are not deduplicated\nacross runs. The threshold matches ci-review-verdict.mjs so the inline\ncomments and the red check cannot disagree.\n\nThe two comment blocks explaining why inline posting \"worked\" were both\nwrong; replaced with the real mechanism and source citations so the next\naction bump can be re-verified. ADR-0008 repeated the same wrong claim\ntwice and is corrected.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
@@ -1073,126 +1193,6 @@
       "message": "chore: bump typescript-eslint in the minor-and-patch group (#863)\n\nBumps the minor-and-patch group with 1 update: [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint).\n\n\nUpdates `typescript-eslint` from 8.64.0 to 8.65.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.65.0/packages/typescript-eslint)\n\n---\nupdated-dependencies:\n- dependency-name: typescript-eslint\n  dependency-version: 8.65.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
       "author": {
         "date": "2026-07-22T20:44:09Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "42e2c3a9c4eae8ea44a08ef05498864b5d97ab67",
-    "commit": {
-      "message": "chore: bump tauri-plugin-single-instance in /apps/desktop/src-tauri (#862)\n\nBumps [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) from 2.4.2 to 2.4.3.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.2...fs-v2.4.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-single-instance\n  dependency-version: 2.4.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T20:43:42Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "dcf74b527ada32c43910b9607579449dfe0798fe",
-    "commit": {
-      "message": "chore: bump tokio from 1.53.0 to 1.53.1 in /apps/desktop/src-tauri (#861)\n\nBumps [tokio](https://github.com/tokio-rs/tokio) from 1.53.0 to 1.53.1.\n- [Release notes](https://github.com/tokio-rs/tokio/releases)\n- [Commits](https://github.com/tokio-rs/tokio/compare/tokio-1.53.0...tokio-1.53.1)\n\n---\nupdated-dependencies:\n- dependency-name: tokio\n  dependency-version: 1.53.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T20:42:56Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "5cb8c5dab732ea7e04c2f9c072284e4774f41464",
-    "commit": {
-      "message": "ci: bump codeql-action init to 4.37.3 in lockstep with analyze (#857)\n\n* ci: bump codeql-action init and analyze to 4.37.3 in lockstep\n\nDependabot bumped only the analyze pin (#850), but init writes a config\nstamped with its own version and the newer analyze refuses to load it:\n\"Loaded a configuration file for version '4.37.0', but running version\n'4.37.3'\". Bump both pins together and group github/codeql-action* in\ndependabot config so future bumps arrive as one PR.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* ci: fix dependabot group pattern and align upload-sarif pins\n\nThe group pattern github/codeql-action* does not match the subpath\ndependency names (init/analyze/upload-sarif); use an explicit root\nentry plus github/codeql-action/* so the group actually fires. Also\nbump both upload-sarif pins to the same 4.37.3 commit for full\nlockstep across the workflow.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T20:27:00Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "7f1cf5740c0d16d1bcaadd44565deafc31be7cb0",
-    "commit": {
-      "message": "chore: bump the minor-and-patch group with 8 updates (#856)\n\nBumps the minor-and-patch group with 8 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [eslint-plugin-storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/lib/eslint-plugin) | `10.5.2` | `10.5.3` |\n| [@tanstack/react-query](https://github.com/TanStack/query/tree/HEAD/packages/react-query) | `5.101.2` | `5.101.3` |\n| [@tanstack/react-virtual](https://github.com/TanStack/virtual/tree/HEAD/packages/react-virtual) | `3.14.6` | `3.14.7` |\n| [@tanstack/router-vite-plugin](https://github.com/TanStack/router/tree/HEAD/packages/router-vite-plugin) | `1.167.22` | `1.167.23` |\n| [@storybook/addon-vitest](https://github.com/storybookjs/storybook/tree/HEAD/code/addons/vitest) | `10.5.2` | `10.5.3` |\n| [@storybook/react](https://github.com/storybookjs/storybook/tree/HEAD/code/renderers/react) | `10.5.2` | `10.5.3` |\n| [@storybook/react-vite](https://github.com/storybookjs/storybook/tree/HEAD/code/frameworks/react-vite) | `10.5.2` | `10.5.3` |\n| [storybook](https://github.com/storybookjs/storybook/tree/HEAD/code/core) | `10.5.2` | `10.5.3` |\n\n\nUpdates `eslint-plugin-storybook` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/lib/eslint-plugin)\n\nUpdates `@tanstack/react-query` from 5.101.2 to 5.101.3\n- [Release notes](https://github.com/TanStack/query/releases)\n- [Changelog](https://github.com/TanStack/query/blob/main/packages/react-query/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/query/commits/@tanstack/react-query@5.101.3/packages/react-query)\n\nUpdates `@tanstack/react-virtual` from 3.14.6 to 3.14.7\n- [Release notes](https://github.com/TanStack/virtual/releases)\n- [Changelog](https://github.com/TanStack/virtual/blob/main/packages/react-virtual/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/virtual/commits/@tanstack/react-virtual@3.14.7/packages/react-virtual)\n\nUpdates `@tanstack/router-vite-plugin` from 1.167.22 to 1.167.23\n- [Release notes](https://github.com/TanStack/router/releases)\n- [Changelog](https://github.com/TanStack/router/blob/main/packages/router-vite-plugin/CHANGELOG.md)\n- [Commits](https://github.com/TanStack/router/commits/@tanstack/router-vite-plugin@1.167.23/packages/router-vite-plugin)\n\nUpdates `@storybook/addon-vitest` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/addons/vitest)\n\nUpdates `@storybook/react` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/renderers/react)\n\nUpdates `@storybook/react-vite` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/frameworks/react-vite)\n\nUpdates `storybook` from 10.5.2 to 10.5.3\n- [Release notes](https://github.com/storybookjs/storybook/releases)\n- [Changelog](https://github.com/storybookjs/storybook/blob/next/CHANGELOG.md)\n- [Commits](https://github.com/storybookjs/storybook/commits/v10.5.3/code/core)\n\n---\nupdated-dependencies:\n- dependency-name: eslint-plugin-storybook\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-query\"\n  dependency-version: 5.101.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/react-virtual\"\n  dependency-version: 3.14.7\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@tanstack/router-vite-plugin\"\n  dependency-version: 1.167.23\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/addon-vitest\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: \"@storybook/react-vite\"\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n- dependency-name: storybook\n  dependency-version: 10.5.3\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:58:29Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "0e129a7767502b351f6541fee621be644cb92a4d",
-    "commit": {
-      "message": "chore: bump serde from 1.0.228 to 1.0.229 in /apps/desktop/src-tauri (#855)\n\nBumps [serde](https://github.com/serde-rs/serde) from 1.0.228 to 1.0.229.\n- [Release notes](https://github.com/serde-rs/serde/releases)\n- [Commits](https://github.com/serde-rs/serde/compare/v1.0.228...v1.0.229)\n\n---\nupdated-dependencies:\n- dependency-name: serde\n  dependency-version: 1.0.229\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:58:14Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "b0b3455ee640fb74faa851372b76e0ba1a798f89",
-    "commit": {
-      "message": "chore: bump thiserror from 2.0.18 to 2.0.19 in /apps/desktop/src-tauri (#854)\n\nBumps [thiserror](https://github.com/dtolnay/thiserror) from 2.0.18 to 2.0.19.\n- [Release notes](https://github.com/dtolnay/thiserror/releases)\n- [Commits](https://github.com/dtolnay/thiserror/compare/2.0.18...2.0.19)\n\n---\nupdated-dependencies:\n- dependency-name: thiserror\n  dependency-version: 2.0.19\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:57:59Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "89002c199119fa04b5457a9f1d0875776acd9370",
-    "commit": {
-      "message": "chore: bump tauri-plugin-positioner in /apps/desktop/src-tauri (#853)\n\nBumps [tauri-plugin-positioner](https://github.com/tauri-apps/plugins-workspace) from 2.3.2 to 2.3.3.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/os-v2.3.2...nfc-v2.3.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-positioner\n  dependency-version: 2.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:57:47Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "b5dfab503ca0db992133a9a0f1ea41cc8b9862d1",
-    "commit": {
-      "message": "chore: bump tauri-plugin-store in /apps/desktop/src-tauri (#852)\n\nBumps [tauri-plugin-store](https://github.com/tauri-apps/plugins-workspace) from 2.4.3 to 2.4.4.\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.3...fs-v2.4.4)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-store\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:57:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "fc6102ac74351d23ec0d6dafc9fd0537e5899d40",
-    "commit": {
-      "message": "chore: bump typst-layout in /apps/desktop/src-tauri (#851)\n\nBumps [typst-layout](https://github.com/typst/typst) from 0.15.0 to 0.15.1.\n- [Release notes](https://github.com/typst/typst/releases)\n- [Commits](https://github.com/typst/typst/compare/v0.15.0...v0.15.1)\n\n---\nupdated-dependencies:\n- dependency-name: typst-layout\n  dependency-version: 0.15.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:56:47Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "59119d14f60666b1d4374ac85a5489859de09338",
-    "commit": {
-      "message": "chore: bump github/codeql-action/analyze from 4.37.0 to 4.37.3 (#850)\n\nBumps [github/codeql-action/analyze](https://github.com/github/codeql-action) from 4.37.0 to 4.37.3.\n- [Release notes](https://github.com/github/codeql-action/releases)\n- [Changelog](https://github.com/github/codeql-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/github/codeql-action/compare/99df26d4f13ea111d4ec1a7dddef6063f76b97e9...e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81)\n\n---\nupdated-dependencies:\n- dependency-name: github/codeql-action/analyze\n  dependency-version: 4.37.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T19:56:34Z"
       }
     },
     "author": {
