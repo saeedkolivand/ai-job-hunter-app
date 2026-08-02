@@ -75,6 +75,13 @@ read the mission-control PAT from `localStorage`.
   sidecar debug files to Sentry. Without them every frame is a bare address.
   Symbols are never attached to the GitHub release — full DWARF for this
   dependency tree is very large.
+- **The consent file is not in the OS app-data directory.** It lives where
+  `platform::config::data_dir()` resolves before Tauri starts (`$AJH_DATA_DIR`,
+  else `$HOME/.ajh`), because `sentry::init` runs before any `AppHandle` exists
+  and the minidump supervisor re-executes everything above its own call in the
+  forked child, so the init cannot be moved later. It holds two booleans, no
+  personal data, and the factory reset clears it — but deleting the app-data
+  directory by hand will not.
 - Turning reporting off unbinds the client immediately, but the minidump
   supervisor is a separate process forked at launch and only stops at restart.
   The settings copy says so rather than implying a clean instant stop.

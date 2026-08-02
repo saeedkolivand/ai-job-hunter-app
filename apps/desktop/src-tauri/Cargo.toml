@@ -83,7 +83,28 @@ tauri-plugin-log = "2"
 # The plugin's browser side ships a custom transport that forwards WebView events
 # to the Rust SDK over `invoke`, so the renderer never egresses directly and the
 # CSP `connect-src` allowlist stays untouched.
-sentry = "0.42"
+#
+# Explicit features rather than defaults. The default `transport` feature is
+# `reqwest + native-tls`, and sentry 0.42 pins reqwest 0.12 — a SECOND copy
+# alongside the app's own 0.13, in a binary this project deliberately optimizes
+# for size (fat LTO, opt-level "s"). `ureq` is the lighter transport and also the
+# more correct one here: the reqwest transport pulls in tokio, but the minidump
+# supervisor is a bare forked process with no async runtime to send on.
+# `native-tls` is reused rather than adding a second TLS stack — reqwest 0.13
+# already brings that crate in.
+#
+# Both `tauri-plugin-sentry` and `sentry-rust-minidump` declare sentry with
+# `default-features = false`, so this declaration alone decides which transport
+# the whole tree gets.
+sentry = { version = "0.42", default-features = false, features = [
+  "backtrace",
+  "contexts",
+  "debug-images",
+  "panic",
+  "release-health",
+  "ureq",
+  "native-tls",
+] }
 # `minidump` (default feature) pulls `sentry-rust-minidump`, which supervises the
 # app from a SEPARATE process. That is required, not a nicety: `[profile.release]`
 # sets `panic = "abort"`, so nothing in-process can outlive a crash to flush it.

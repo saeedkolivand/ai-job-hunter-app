@@ -11,8 +11,27 @@
 //! `tauri::Builder`, because `sentry-rust-minidump` forks the crash-reporter
 //! process at startup and nothing after that fork can retroactively capture an
 //! early native crash. There is no WebView at that point, so no `localStorage`.
-//! The flag is therefore Rust-owned, in a small JSON file next to the other
-//! app data, and the renderer reads/writes it over IPC.
+//! The flag is therefore Rust-owned in a small JSON file, and the renderer
+//! reads and writes it over IPC.
+//!
+//! ## Where the file lives, and why it is NOT the OS app-data dir
+//!
+//! It lives in the directory [`crate::platform::config::data_dir`] resolves to
+//! *before* Tauri starts: `$AJH_DATA_DIR` if the user set one, else
+//! `$HOME/.ajh`. In a default install that is **not** the per-OS app-data
+//! directory the rest of the app's stores use.
+//!
+//! That is forced, not sloppy. Tauri's authoritative `app_data_dir()` needs an
+//! `AppHandle`, which does not exist this early, and `setup` — which resolves it
+//! and exports `AJH_DATA_DIR` — runs strictly later. Moving `init` into `setup`
+//! to get the handle is not an option either: the minidump supervisor re-executes
+//! everything above its own call in the forked child, so a late fork would have
+//! the child build a second Tauri app.
+//!
+//! Consequence worth knowing: deleting the app-data directory by hand does not
+//! remove this file. It holds two booleans and no personal data, and the factory
+//! reset in `commands::privacy` does clear it, so nothing user-identifying
+//! survives — but the file itself is elsewhere.
 //!
 //! ## Transmission gate
 //!
@@ -62,7 +81,9 @@ const FILE_NAME: &str = "crash-reporting.json";
 static STATE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// Resolve (once) and return the consent-file directory. First caller wins,
-/// which is [`init`] at startup in the real app.
+/// which is [`init`] at startup in the real app — so in practice this pins the
+/// PRE-setup resolution (`$AJH_DATA_DIR` or `$HOME/.ajh`), deliberately, not the
+/// OS app-data dir. See the module docs for why that is forced.
 pub fn state_dir() -> &'static Path {
     STATE_DIR.get_or_init(crate::platform::config::data_dir)
 }

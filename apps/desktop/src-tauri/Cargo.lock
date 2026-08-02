@@ -7396,7 +7396,6 @@ dependencies = [
  "sentry-debug-images",
  "sentry-panic",
  "sentry-tracing",
- "tokio",
  "ureq",
 ]
 
