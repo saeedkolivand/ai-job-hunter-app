@@ -70,13 +70,19 @@ read the mission-control PAT from `localStorage`.
   and Firefox AMO. It now has to state desktop collection and extension
   non-collection as clearly separate sections, or a reviewer reads one as the
   other while the manifest still declares `['none']`.
-- **The symbol upload runs after the installers are published and is allowed to
-  fail the job.** Installers ship first so a Sentry outage never costs a
-  release, but the run still goes red — this feature's failure mode is looking
-  healthy while reporting nothing, and a silently-skipped upload is exactly
-  that. Absent secrets remain a legitimate skip (forks, or a release cut before
-  provisioning) and emit a warning annotation, so "not configured" stays
-  distinguishable from "configured wrong".
+- **The symbol upload is loud but never fatal.** It runs after the installers
+  are published, keeps `continue-on-error`, and a failure is surfaced by an
+  `::error::` annotation plus a step-summary entry instead of a red job. That
+  asymmetry is deliberate: the step sits in a 4-leg matrix and
+  `generate-update-manifest` / `update-cask` / `update-download-page` all hang
+  off a bare `needs: build`, so failing the job on one leg would skip them —
+  `latest.json` never written, **auto-update broken for every existing user**,
+  with installers already attached to the release. Unreadable stack traces are
+  the cheaper failure. Loosening those three jobs to `if: always() && ...` is
+  not an acceptable alternative either: it would publish an updater manifest
+  even when a platform's build genuinely failed. Absent secrets stay a
+  legitimate skip (forks, pre-provisioning) with a warning annotation, so "not
+  configured" remains distinguishable from "configured wrong".
 - The release profile keeps symbols (`debug = "line-tables-only"`,
   `split-debuginfo = "packed"`, `strip = "debuginfo"`) and CI uploads the
   sidecar debug files to Sentry. Without them every frame is a bare address.

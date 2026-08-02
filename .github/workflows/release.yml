@@ -437,22 +437,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Runs AFTER the installers are published, and is allowed to FAIL THE JOB.
+      # Runs AFTER the installers are published, and must NOT gate the job.
       #
-      # Ordering: a Sentry outage or an expired token must not cost us the
-      # release — the binaries are already built and attached by this point.
-      # Failing loudly afterwards still turns the run red, so a broken symbol
-      # pipeline is visible instead of being discovered months later by a crash
-      # report full of bare addresses.
+      # `continue-on-error` is load-bearing here, not laziness. This step lives
+      # inside a 4-leg matrix, and `generate-update-manifest`, `update-cask` and
+      # `update-download-page` all sit behind a bare `needs: build`. Letting a
+      # Sentry hiccup on ONE leg fail the job flips the aggregate result and
+      # SKIPS all three — so `latest.json` is never written and auto-update
+      # breaks for every existing user, while the installers sit attached to the
+      # release. Unreadable stack traces are a far cheaper failure than a broken
+      # updater.
       #
-      # No `continue-on-error`: this feature's whole failure mode is looking
-      # healthy while reporting nothing, and a silently-skipped upload is exactly
-      # that. Absent secrets are the one legitimate skip (a fork, or a release
-      # cut before Sentry was provisioned) and are surfaced as a warning
-      # annotation rather than swallowed — so "not configured" stays
-      # distinguishable from "configured wrong".
+      # Loosening those three to `if: always() && ...` is not the fix either: it
+      # would publish an updater manifest even when a platform's build genuinely
+      # failed, pointing users at artifacts that do not exist.
+      #
+      # So failure is made loud instead of fatal — see the annotation step below.
+      # A swallowed failure was the original sin; an unmissable one that doesn't
+      # take the updater down with it is the trade.
       - name: 🔍 Upload debug symbols to Sentry
+        id: sentry_symbols
         if: success()
+        continue-on-error: true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
@@ -483,6 +489,24 @@ jobs:
             apps/desktop/dist/
           npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
           echo "::endgroup::"
+
+      # The visibility half of the trade above. `continue-on-error` keeps the
+      # matrix leg green so the release pipeline completes, but a failure must
+      # never pass unremarked — that is exactly how this feature would end up
+      # "working" while producing unreadable crash reports. An `::error::`
+      # annotation surfaces at the top of the run, and the step summary puts it
+      # on the run's landing page. Deliberately exits 0: raising here would
+      # re-create the cascade this whole arrangement exists to avoid.
+      - name: ❗ Flag a failed symbol upload
+        if: always() && steps.sentry_symbols.outcome == 'failure'
+        run: |
+          MSG="Symbol upload failed on ${{ matrix.platform }} for ${{ steps.resolve.outputs.version }} — crash reports from this release will show unresolved addresses. Check SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT. Installers were published; the updater manifest was NOT affected."
+          echo "::error title=Sentry symbol upload failed::$MSG"
+          {
+            echo "### ❗ Sentry symbol upload failed"
+            echo ""
+            echo "$MSG"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📊 Upload Build Logs on Failure
         if: failure()
