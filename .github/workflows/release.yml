@@ -517,6 +517,25 @@ jobs:
             echo "::error title=No debug files found::No ajh_tauri* artifacts under $BASE/**/release/deps on ${{ matrix.platform }} — nothing was uploaded, so crash reports from this release will show unresolved addresses."
             exit 1
           fi
+
+          # "Non-empty" is not the same as "symbolicatable". Finding
+          # `ajh_tauri.exe` while its `.pdb` is missing would pass the check
+          # above and still ship unresolvable stack traces — this feature's
+          # recurring failure shape. So assert the DEBUG COMPANION each platform
+          # actually produces, as observed in a real release run:
+          #   windows  a separate .pdb
+          #   macos    a .dSYM bundle
+          #   linux    none — DWARF stays inside the binary, nothing to require
+          case "${{ runner.os }}" in
+            Windows) NEED='\.pdb$';  NEED_DESC='a .pdb debug companion' ;;
+            macOS)   NEED='\.dSYM$'; NEED_DESC='a .dSYM debug companion' ;;
+            *)       NEED='';        NEED_DESC='' ;;
+          esac
+          if [ -n "$NEED" ] && ! printf '%s\n' "${DIFS[@]}" | grep -qE "$NEED"; then
+            echo "::error title=Debug companion missing::Found ajh_tauri artifacts on ${{ matrix.platform }} but not $NEED_DESC, so frames from this release will not resolve. Check the release profile's debug/split-debuginfo settings."
+            exit 1
+          fi
+
           printf 'Uploading debug files:\n'
           printf '  %s\n' "${DIFS[@]}"
           npx --yes @sentry/cli@^2 debug-files upload "${DIFS[@]}"
