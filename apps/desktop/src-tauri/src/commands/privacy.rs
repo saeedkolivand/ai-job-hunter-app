@@ -231,6 +231,44 @@ pub fn privacy_clear_interactions(app: AppHandle) -> Value {
     json!({ "success": true })
 }
 
+/// Read the crash-reporting consent state.
+///
+/// Falls back to the app-data dir the same way the rest of this module does; an
+/// unresolvable dir yields the default, which does not transmit.
+#[tauri::command]
+pub fn privacy_get_crash_reporting(app: AppHandle) -> crate::crash_reporting::Settings {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    crate::crash_reporting::load(&data_dir)
+}
+
+/// Persist the crash-reporting consent state and apply the "off" half of it
+/// immediately.
+///
+/// Turning reporting off unbinds the Sentry client from the current hub, so no
+/// further events or breadcrumbs are captured for the rest of this session —
+/// waiting for a restart would keep reporting someone who has just said no.
+/// Turning it back ON only takes effect at next launch: the client (and the
+/// minidump supervisor it forks) is constructed before the WebView exists and
+/// cannot be recreated mid-session.
+#[tauri::command]
+pub fn privacy_set_crash_reporting(
+    app: AppHandle,
+    settings: crate::crash_reporting::Settings,
+) -> crate::crash_reporting::Settings {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    crate::crash_reporting::save(&data_dir, settings);
+    if !settings.transmits() {
+        crate::crash_reporting::disable_current();
+    }
+    settings
+}
+
 /// Sign out of all connected job boards (sessions only, data is preserved).
 #[tauri::command]
 pub fn privacy_sign_out_all(app: AppHandle) -> Value {
@@ -264,6 +302,14 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     for board_id in &["linkedin", "indeed", "xing", "glassdoor"] {
         crate::scraping::board_login::disconnect(&data_dir, board_id);
     }
+
+    // Crash-reporting consent is a plain file rather than a `Resettable` store
+    // (it is read before Tauri exists — see `crash_reporting`), so the registry
+    // sweep below cannot reach it. Removing it here restores the fresh-install
+    // state: enabled, but not yet consented, so the setup wizard asks again
+    // before anything is transmitted. Same direct-removal shape as the
+    // `browser-state` wipe further down.
+    crate::crash_reporting::clear(&data_dir);
 
     // Wipe every persistent store registered via `manage_resettable` in
     // `main.rs::setup` — résumé/doc/generation stores, secrets, caches, and the

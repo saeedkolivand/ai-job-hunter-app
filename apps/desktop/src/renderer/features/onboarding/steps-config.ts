@@ -2,6 +2,7 @@ import { AdzunaKeyStep } from './steps/AdzunaKeyStep';
 import { AISelectionStep } from './steps/AISelectionStep';
 import { AppearanceStep } from './steps/AppearanceStep';
 import { BrowserStep } from './steps/BrowserStep';
+import { CrashReportingStep } from './steps/CrashReportingStep';
 import { ExtensionStep } from './steps/ExtensionStep';
 import { ResearchStep } from './steps/ResearchStep';
 import { ResumeStep } from './steps/ResumeStep';
@@ -15,5 +16,9 @@ export const ONBOARDING_STEPS = [
   { id: 'browser', component: BrowserStep },
   { id: 'adzunaKey', component: AdzunaKeyStep },
   { id: 'extension', component: ExtensionStep },
+  // Consent before the finish line: advancing past this step is what unlocks
+  // transmission (see CrashReportingStep), so it must be reachable in the normal
+  // flow rather than tucked behind an optional branch.
+  { id: 'crashReporting', component: CrashReportingStep },
   { id: 'appearance', component: AppearanceStep },
 ] as const;

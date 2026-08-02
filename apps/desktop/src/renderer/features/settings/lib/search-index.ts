@@ -340,6 +340,23 @@ export const SEARCH_INDEX: SearchEntry[] = [
     anchor: 'privacy-data',
   },
   {
+    id: 'privacy-crash-reporting',
+    section: 'privacy',
+    titleKey: 'settings.privacy.crashReportingTitle',
+    keywords: [
+      'crash',
+      'crash reports',
+      'error reporting',
+      'telemetry',
+      'analytics',
+      'sentry',
+      'diagnostics',
+      'opt out',
+      'privacy',
+    ],
+    anchor: 'privacy-crash-reporting',
+  },
+  {
     id: 'privacy-reset',
     section: 'privacy',
     titleKey: 'settings.privacy.resetApp',

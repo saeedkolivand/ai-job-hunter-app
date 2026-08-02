@@ -166,6 +166,7 @@ export const TEST_IDS = {
     stepBrowser: 'step-browser',
     stepAdzunaKey: 'step-adzuna-key',
     stepExtension: 'step-extension',
+    stepCrashReporting: 'step-crash-reporting',
     stepAppearance: 'step-appearance',
     tour: 'tour',
   },

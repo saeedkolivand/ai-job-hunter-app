@@ -20,6 +20,7 @@ pub mod autopilot_scheduler;
 pub mod commands;
 pub mod contact_profile;
 pub mod cover_letter;
+pub mod crash_reporting;
 pub mod credentials;
 pub mod data_store;
 pub mod db;
@@ -364,10 +365,34 @@ fn is_native_host_launch<I: IntoIterator<Item = String>>(args: I) -> bool {
 
 /// Build and run the Tauri application. Called by the binary shim in `main.rs`.
 pub fn run() {
+    // Remote crash reporting is initialised before ANYTHING else, for two
+    // reasons that both cut the same way:
+    //   1. `sentry-rust-minidump` FORKS a crash-reporter process at this line.
+    //      Everything above it therefore executes in *both* processes, so it
+    //      must stay cheap and side-effect-free — keyring init, the Tauri
+    //      builder, and the panic hook all deliberately live below.
+    //   2. `[profile.release] panic = "abort"` means nothing in-process can
+    //      outlive a crash to flush it, and a native crash during startup is
+    //      only captured if the supervisor is already watching by then.
+    //
+    // `None` whenever there is no baked-in DSN (every non-release build) or the
+    // user has not consented — no client is constructed at all, so there is
+    // nothing that could transmit, rather than a client sampled to zero.
+    let sentry_guard = crash_reporting::init(&crate::platform::config::data_dir());
+    #[cfg(not(target_os = "ios"))]
+    let _minidump_guard = sentry_guard
+        .as_ref()
+        .map(|client| tauri_plugin_sentry::minidump::init(client));
+
+    // ── Below here runs in the app process only ──────────────────────────────
+
     // Install the crash-reporter panic hook before everything else so panics
     // that occur during setup are also caught.  We chain the previous hook
     // (the default) so stderr still prints as usual.
-    // ponytail: file-log panic hook; upgrade to sentry only if remote crash aggregation is ever needed.
+    //
+    // Kept alongside Sentry rather than replaced by it: `crashes.log` is the
+    // offline record the user can export from Settings (ADR-027), and it must
+    // keep working when reporting is switched off or the machine is offline.
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         // Chain default hook first — keeps the familiar stderr output intact.
@@ -411,7 +436,19 @@ pub fn run() {
         log::warn!("[startup] OS keyring unavailable (credential features degraded): {e}");
     }
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    if let Some(client) = sentry_guard.as_ref() {
+        // Injects `@sentry/browser` into every WebView, wired to a transport that
+        // forwards renderer events and breadcrumbs to THIS Rust client over
+        // `invoke`. The WebView never talks to the network itself, so the CSP
+        // `connect-src` allowlist in tauri.conf.json is deliberately untouched
+        // (widening it is rated HIGH/CRITICAL — docs/knowledge/security-rules.md).
+        // It also means renderer events inherit the same `before_send` redaction
+        // as Rust events instead of needing a second, parallel scrubber.
+        builder = builder.plugin(tauri_plugin_sentry::init(client));
+    }
+
+    builder
         // Close-to-tray: intercept the window close (X / Cmd-W) and hide to the
         // tray instead — but ONLY when (a) a tray actually exists and (b) the
         // user's `CloseToTray` preference is on. A non-fatal `tray::build` failure
@@ -928,6 +965,8 @@ pub fn run() {
             commands::privacy::privacy_clear_interactions,
             commands::privacy::privacy_sign_out_all,
             commands::privacy::privacy_reset_app,
+            commands::privacy::privacy_get_crash_reporting,
+            commands::privacy::privacy_set_crash_reporting,
             // support
             commands::support::support_export_diagnostics,
             commands::support::support_get_system_info,

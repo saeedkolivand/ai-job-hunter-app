@@ -268,6 +268,10 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       signOutAll: noop,
       clearInteractions: noop,
       resetApp: async () => ({ success: true }),
+      // Mirrors the Rust default: on, but not yet consented — so a mock-driven
+      // test sees the same "does not transmit until asked" state as a fresh install.
+      getCrashReporting: async () => ({ enabled: true, consentShown: false }),
+      setCrashReporting: async (settings: { enabled: boolean; consentShown: boolean }) => settings,
     },
 
     referrals: {

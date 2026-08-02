@@ -26,8 +26,13 @@ export function Footer() {
         </li>
         <li>
           <b>Delete your local app data</b> by removing the app's data directory and clearing the
-          saved secrets from your OS keychain. Because there's no server-side copy, deleting locally
-          deletes it everywhere.
+          saved secrets from your OS keychain. Your résumés, job data and generated documents exist
+          only on your machine, so deleting them locally deletes them everywhere.
+        </li>
+        <li>
+          <b>Erase crash reports</b> — the one thing that is not local. If crash reporting was on,
+          reports are held by Sentry for 30 days. Switch it off in <i>Settings → Privacy</i> to stop
+          new ones, and e-mail us to have existing reports deleted sooner.
         </li>
         <li>
           <b>Stay fully local</b> by choosing a local model (Ollama) for AI and embeddings — then

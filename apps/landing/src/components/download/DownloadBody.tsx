@@ -19,10 +19,10 @@ export function DownloadBody({ version, installers }: { version: string; install
         <p className="lede">
           A <b>local-first desktop app</b> — it scrapes the job boards, ranks the matches, and
           writes the whole application on your own machine.{' '}
-          <b>Free for personal use. Source-available.</b> No accounts, no telemetry, no upsell. It
-          is also <b>unsigned</b>, because code-signing certificates cost money and I, famously, do
-          not have a job. Your operating system will fret. The notes under each button tell you how
-          to reassure it.
+          <b>Free for personal use. Source-available.</b> No accounts, no upsell, no tracking. It is
+          also <b>unsigned</b>, because code-signing certificates cost money and I, famously, do not
+          have a job. Your operating system will fret. The notes under each button tell you how to
+          reassure it.
         </p>
 
         <div className="platforms">

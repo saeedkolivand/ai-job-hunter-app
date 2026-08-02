@@ -14,7 +14,7 @@ Investigating each call showed none of them exfiltrate the data the guarantee is
 
 The local-first privacy boundary is defined in terms of **storage and telemetry**, not total network silence. The guarantee is:
 
-> Your résumés, generations, applications, tracked job data, and credentials live in a local database on your device — there is no telemetry and no app-operated backend collecting them. Data leaves the device only for services you configure or invoke (enumerated below) — notably the AI provider, which receives the résumé and job text you ask it to generate from — never for a first-party analytics or collection backend.
+> Your résumés, generations, applications, tracked job data, and credentials live in a local database on your device — there is no app-operated backend collecting them and no behavioural analytics. Data leaves the device only for services you configure or invoke (enumerated below) — notably the AI provider, which receives the résumé and job text you ask it to generate from — plus crash reports when the app fails, which carry the error and environment but never your documents or job data.
 
 Network egress is **permitted** and enumerated by class, each with a gating rule:
 
@@ -25,6 +25,8 @@ Network egress is **permitted** and enumerated by class, each with a gating rule
 5. **Location autocomplete** — **offline by default**: a bundled GeoNames index (`apps/desktop/src-tauri/geodata/`, CC BY 4.0) answers virtually every query with no network call at all. Only a query the index cannot match reaches Photon (photon.komoot.io, OpenStreetMap/ODbL) as a fallback; it sends only the location text the user types and returns city/country only. Nominatim was retired here — its usage policy forbids autocomplete.
 6. **Optional enrichment** (e.g. Clearbit logos) — must be **opt-in and default OFF**, CSP-scoped to the minimum hosts, and send no more than a public identifier (a company name). With the setting off, nothing leaves the device.
 7. **Email-confirmation watching** (IMAP to user's own mail host) — opt-in, default OFF; credential user-supplied and OS-keychain-backed; email content never leaves the device. See [ADR 0013](0013-email-confirmation-watching.md).
+
+8. **Crash reporting** (Sentry) — the one class that is **default ON** rather than default OFF, and the only first-party-initiated egress. Amended in by [ADR 0020](0020-crash-reporting.md); see it for why the default departs from rule 6, and for the redaction and consent-gating that make the departure survivable. Sends the error, stack trace, OS/architecture and app version only; never document, job, prompt or credential content. Desktop app only — the browser extension is excluded so its AMO `data_collection_permissions: ['none']` declaration stays true.
 
 **Rule for new egress:** any new outbound call that would send data derived from the user's documents, credentials, or tracked applications is prohibited by default; anything sending a public identifier or user-typed query for **enrichment** must follow rule 6 (opt-in, default OFF, CSP-scoped).
 

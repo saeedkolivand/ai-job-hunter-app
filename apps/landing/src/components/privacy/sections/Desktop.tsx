@@ -109,12 +109,30 @@ export function Desktop() {
       </div>
 
       <div className="flag">
-        <b>No telemetry. No analytics.</b> The desktop app contains no analytics or telemetry SDK
-        (no Sentry, Google Analytics, PostHog, Segment, Mixpanel, Amplitude, Datadog — none). AI Job
-        Hunter checks for application updates by contacting its update server; this transmits only
-        your current app version and operating system / architecture — no personal data. Other than
-        that, the only network calls are the AI-provider and job-board requests described above,
-        which you trigger; nothing about your usage is collected or sent to us.
+        <b>Crash reporting — on by default, and switchable off.</b> The desktop app sends crash and
+        error reports to <b>Sentry</b> (Functional Software, Inc.), our only data processor, so that
+        failures can be found and fixed.
+        <br />
+        <br />
+        <b>What is sent:</b> the error and its stack trace, your operating system and architecture,
+        and the app version. <b>What is never sent:</b> your résumés, cover letters, job data,
+        prompts, generated documents, credentials, or anything you typed. Before any report leaves
+        your machine, file paths, links, host names, e-mail addresses and credential-shaped values
+        are replaced with placeholders, and the machine name is not attached.
+        <br />
+        <br />
+        <b>Your choice:</b> you are asked during first-run setup, and{' '}
+        <i>nothing is sent until you have been asked</i>. You can turn it off there, or later under{' '}
+        <i>Settings → Privacy</i>. Reports are kept for 30 days. To have any report deleted, e-mail
+        us and we will remove it.
+        <br />
+        <br />
+        <b>No behavioural analytics.</b> There is no Google Analytics, PostHog, Segment, Mixpanel,
+        Amplitude or Datadog, and no advertising or cross-site tracking. Nothing records which
+        features you use or what you search for. AI Job Hunter also checks for updates by contacting
+        its update server; this transmits only your current app version and operating system /
+        architecture. Other than that, the only network calls are the AI-provider and job-board
+        requests described above, which you trigger.
       </div>
     </>
   );

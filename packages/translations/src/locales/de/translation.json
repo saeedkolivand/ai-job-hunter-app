@@ -877,7 +877,10 @@
       "importSuccess": "{{count}} Datensatz{{plural}} importiert.",
       "importPartial": "Einige Elemente konnten nicht wiederhergestellt werden. Ihre Daten sind möglicherweise unvollständig.",
       "fetchCompanyLogosTitle": "Unternehmenslogos abrufen",
-      "fetchCompanyLogosDescription": "Wenn aktiviert, wird der Unternehmensname jeder Stellenanzeige an einen Drittanbieter (Clearbit) gesendet, um ein Logo abzurufen. Standardmäßig deaktiviert."
+      "fetchCompanyLogosDescription": "Wenn aktiviert, wird der Unternehmensname jeder Stellenanzeige an einen Drittanbieter (Clearbit) gesendet, um ein Logo abzurufen. Standardmäßig deaktiviert.",
+      "crashReportingTitle": "Absturzberichte senden",
+      "crashReportingDescription": "Wenn aktiviert, werden Abstürze und Fehler an Sentry gesendet, damit sie behoben werden können: der Fehler samt Stacktrace, Ihr Betriebssystem und die App-Version. Pfade, Links und Zugangsdaten werden vorher entfernt. Ihre Lebensläufe, Stellendaten, Prompts und erzeugten Dokumente sind nie enthalten. Standardmäßig aktiviert.",
+      "crashReportingRestartNote": "Beim Deaktivieren werden Fehlerberichte sofort gestoppt. Die Meldung nativer Abstürze endet nach einem Neustart der App."
     },
     "location": {
       "title": "Bevorzugter Standort",
@@ -2235,6 +2238,16 @@
     "back": "Zurück",
     "continue": "Weiter",
     "skip": "Überspringen",
+    "crashReporting": {
+      "title": "Hilf mit, Abstürze zu beheben",
+      "subtitle": "Wenn die App abstürzt, zeigt ein Bericht, was schiefgelaufen ist, damit es behoben werden kann.",
+      "toggleLabel": "Absturzberichte senden",
+      "sends": "Sendet den Fehler samt Stacktrace, Ihr Betriebssystem und die App-Version. Pfade, Links und Zugangsdaten werden entfernt, bevor etwas Ihr Gerät verlässt.",
+      "neverSends": "Sendet niemals Ihre Lebensläufe, Stellendaten, Prompts oder erzeugten Dokumente.",
+      "changeLater": "Sie können dies jederzeit unter Einstellungen → Datenschutz ändern.",
+      "back": "Zurück",
+      "next": "Weiter"
+    },
     "welcome": {
       "title": "Willkommen bei AI Job Hunter",
       "subtitle": "Ihr lokaler, KI-nativer Job-Jagd-Assistent. Lassen Sie uns einrichten.",
