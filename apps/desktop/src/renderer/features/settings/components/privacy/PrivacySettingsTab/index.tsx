@@ -6,9 +6,11 @@ import { ConfirmModal, SettingsSection, Switch, useNotification } from '@ajh/ui'
 
 import {
   useClearInteractions,
+  useCrashReporting,
   useExportData,
   useImportData,
   useResetApp,
+  useSetCrashReporting,
   useSignOutAll,
 } from '@/services';
 import { useFetchCompanyLogos, usePreferencesStore } from '@/store/preferences-store';
@@ -25,6 +27,8 @@ export function PrivacySettingsTab() {
   });
   const notify = useNotification();
 
+  const crashReporting = useCrashReporting();
+  const setCrashReporting = useSetCrashReporting();
   const signOutAll = useSignOutAll();
   const clearInteractions = useClearInteractions();
   const exportData = useExportData();
@@ -217,6 +221,41 @@ export function PrivacySettingsTab() {
               checked={fetchCompanyLogos}
               onCheckedChange={setFetchCompanyLogos}
               aria-label={t('settings.privacy.fetchCompanyLogosTitle')}
+            />
+          </div>
+        </SettingsSection>
+      </div>
+
+      {/* ── Crash reporting ────────────────────────────────────────────── */}
+      <div data-settings-anchor="privacy-crash-reporting">
+        <SettingsSection icon={Shield} label={t('settings.privacy.crashReportingTitle')}>
+          <div className="flex items-start gap-4 rounded-xl border border-foreground/10 px-4 py-3.5">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-foreground/90">
+                {t('settings.privacy.crashReportingTitle')}
+              </div>
+              <div className="mt-0.5 text-xs leading-snug text-foreground/40">
+                {t('settings.privacy.crashReportingDescription')}
+              </div>
+              {/* Stated, not hidden: switching off stops error events at once, but
+                  the native-crash supervisor is a separate process started at
+                  launch and only stops on restart. */}
+              <div className="mt-1 text-xs leading-snug text-foreground/30">
+                {t('settings.privacy.crashReportingRestartNote')}
+              </div>
+            </div>
+            <Switch
+              checked={crashReporting.data?.enabled ?? true}
+              disabled={crashReporting.isLoading || setCrashReporting.isPending}
+              onCheckedChange={(enabled) =>
+                setCrashReporting.mutate({
+                  enabled,
+                  // Touching the toggle IS being asked, so a user who reaches
+                  // Settings before finishing the wizard still gets a real choice.
+                  consentShown: true,
+                })
+              }
+              aria-label={t('settings.privacy.crashReportingTitle')}
             />
           </div>
         </SettingsSection>

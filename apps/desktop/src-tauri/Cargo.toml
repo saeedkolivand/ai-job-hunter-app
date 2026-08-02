@@ -47,7 +47,21 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 panic = "abort"
-strip = true
+# Crash reports are unreadable without symbols: `strip = true` discards the
+# symbol table AND debuginfo, leaving every frame a bare address.
+#   * `debug = "line-tables-only"` — file/line per frame, far cheaper than full
+#     DWARF (no variables/types), which is all a stack trace needs.
+#   * `split-debuginfo = "packed"` — that debuginfo goes to a SIDECAR
+#     (.pdb / .dSYM / .dwp) instead of into the shipped binary, so users still
+#     download a lean artifact. CI uploads the sidecar to Sentry; it is never
+#     attached to the release.
+#   * `strip = "debuginfo"` — strip leftover debuginfo but KEEP the symbol table,
+#     so frames still resolve to names even if a symbol upload is ever missed.
+# `lto`/`opt-level = "s"` still inline aggressively, so frames stay lossy by
+# design — that trade was already made deliberately for artifact size.
+strip = "debuginfo"
+debug = "line-tables-only"
+split-debuginfo = "packed"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -60,6 +74,41 @@ tauri-plugin-updater = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-log = "2"
+# Remote crash aggregation (ADR: crash reporting egress class). Pinned to the
+# `sentry` MAJOR the plugin itself depends on — `tauri-plugin-sentry` 0.5 builds
+# against `sentry = "0.42"`, and a newer `sentry` here would link a SECOND,
+# type-incompatible copy of the SDK (the plugin's `init(&client)` would not accept
+# our `Client`). Bump both together or not at all.
+#
+# The plugin's browser side ships a custom transport that forwards WebView events
+# to the Rust SDK over `invoke`, so the renderer never egresses directly and the
+# CSP `connect-src` allowlist stays untouched.
+#
+# Explicit features rather than defaults. The default `transport` feature is
+# `reqwest + native-tls`, and sentry 0.42 pins reqwest 0.12 — a SECOND copy
+# alongside the app's own 0.13, in a binary this project deliberately optimizes
+# for size (fat LTO, opt-level "s"). `ureq` is the lighter transport and also the
+# more correct one here: the reqwest transport pulls in tokio, but the minidump
+# supervisor is a bare forked process with no async runtime to send on.
+# `native-tls` is reused rather than adding a second TLS stack — reqwest 0.13
+# already brings that crate in.
+#
+# Both `tauri-plugin-sentry` and `sentry-rust-minidump` declare sentry with
+# `default-features = false`, so this declaration alone decides which transport
+# the whole tree gets.
+sentry = { version = "0.42", default-features = false, features = [
+  "backtrace",
+  "contexts",
+  "debug-images",
+  "panic",
+  "release-health",
+  "ureq",
+  "native-tls",
+] }
+# `minidump` (default feature) pulls `sentry-rust-minidump`, which supervises the
+# app from a SEPARATE process. That is required, not a nicety: `[profile.release]`
+# sets `panic = "abort"`, so nothing in-process can outlive a crash to flush it.
+tauri-plugin-sentry = "0.5"
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification = "2"

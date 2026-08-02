@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-07-21
+Last updated: 2026-08-02
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of
@@ -17,7 +17,7 @@ lower layer; a lower layer may never use a higher one). Layer = the first path s
 a module under `src/`.
 
 ```
-L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent
+L3  Shell / IPC        commands, ipc_contracts, lib, main, updater, tray, deeplink, extension_bridge, notifications, events, agent, crash_reporting
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
@@ -88,7 +88,7 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
   from the L3 caller instead of reaching into `crate::commands` itself.
   `TODO(arch)`: relocate the prompt primitives to an L0/L1 prompt-utils module.
 
-### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `agent`)
+### L3 — Shell / IPC (`commands`, `ipc_contracts`, `lib`, `main`, `updater`, `tray`, `deeplink`, `extension_bridge`, `notifications`, `events`, `agent`, `crash_reporting`)
 
 - **Allowed deps:** anything below (L0/L1/L2).
 - **Forbidden deps:** none structurally — but L3 must stay **thin**: command handlers

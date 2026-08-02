@@ -11,7 +11,11 @@ use crate::error::{AppError, AppResult};
 
 /// Redact every whitespace-delimited token in every line, preserving line
 /// structure. Blank / whitespace-only lines become empty strings.
-fn redact_lines(text: &str) -> String {
+///
+/// Shared with [`crate::crash_reporting`], which runs it over every outgoing
+/// Sentry event. Both consumers are "text about to leave the machine", so they
+/// must not drift apart into two redactors of differing strength (ADR-027).
+pub(crate) fn redact_lines(text: &str) -> String {
     text.lines()
         .map(|line| {
             if line.trim().is_empty() {

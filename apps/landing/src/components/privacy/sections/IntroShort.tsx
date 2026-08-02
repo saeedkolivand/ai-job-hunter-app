@@ -15,9 +15,10 @@ export function IntroShort() {
 
       <p className="lede">
         AI Job Hunter is a <b>local-first desktop app</b> with an optional{' '}
-        <b>companion browser extension</b>. We don't track you — honestly, we can barely track
-        ourselves. There are no accounts to sign up for, nothing here phones home for analytics, and
-        most of what the app does never leaves your computer. The parts that <i>do</i> leave your
+        <b>companion browser extension</b>. There are no accounts to sign up for, and most of what
+        the app does never leaves your computer. The desktop app does send <b>crash reports</b> so
+        we can fix what breaks — on by default, switchable off, and never containing your résumés or
+        job data. The browser extension sends nothing at all. The parts that <i>do</i> leave your
         computer are spelled out plainly below, because store reviewers read this against the actual
         code, and so should you.
       </p>
@@ -36,8 +37,16 @@ export function IntroShort() {
             server to see it.
           </li>
           <li>
-            <b>No analytics, no telemetry, no tracking.</b> No Sentry, no Google Analytics, no
-            PostHog — nothing.
+            <b>No behavioural analytics or ad tracking.</b> No Google Analytics, no PostHog, no
+            Segment, no Mixpanel, no advertising or cross-site tracking of any kind. Nothing follows
+            you around, and nothing records what you do in the app.
+          </li>
+          <li>
+            <b>Crash reports, on by default, from the desktop app only.</b> When something breaks,
+            the error and its stack trace, your operating system and the app version are sent to{' '}
+            <b>Sentry</b> so it can be fixed. Paths, links, e-mail addresses and credentials are
+            stripped before anything is sent. You are asked during setup and can switch it off there
+            or in <i>Settings → Privacy</i> at any time. The browser extension is excluded entirely.
           </li>
           <li>
             <b>The browser extension is loopback-only.</b> It talks to <i>your own</i> running

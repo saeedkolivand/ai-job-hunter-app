@@ -78,6 +78,8 @@ vi.mock('@/services', () => ({
   useExtensionBridgeStatus: () => ({ data: undefined }),
   useGeneratePairingToken: () => ({ mutate: vi.fn(), isPending: false }),
   // PrivacySettingsTab
+  useCrashReporting: () => ({ data: { enabled: true, consentShown: true }, isLoading: false }),
+  useSetCrashReporting: () => ({ mutate: vi.fn(), isPending: false }),
   useClearInteractions: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useExportData: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useImportData: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -335,8 +337,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 30 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(30);
+  it('has exactly 31 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(31);
   });
 
   it('every SectionId has at least one entry', () => {

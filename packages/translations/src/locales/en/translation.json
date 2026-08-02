@@ -877,7 +877,10 @@
       "importSuccess": "Imported {{count}} record{{plural}}.",
       "importPartial": "Some items could not be restored. Your data may be incomplete.",
       "fetchCompanyLogosTitle": "Fetch company logos",
-      "fetchCompanyLogosDescription": "When on, the company name of each job posting is sent to a third-party logo provider (Clearbit) to fetch a logo image. Off by default."
+      "fetchCompanyLogosDescription": "When on, the company name of each job posting is sent to a third-party logo provider (Clearbit) to fetch a logo image. Off by default.",
+      "crashReportingTitle": "Send crash reports",
+      "crashReportingDescription": "When on, crashes and errors are sent to Sentry so they can be fixed: the error and its stack trace, your operating system, and the app version. Paths, links and credentials are stripped before sending. Your résumés, job data, prompts and generated documents are never included. On by default.",
+      "crashReportingRestartNote": "Turning this off stops error reports immediately. Native crash reporting stops after you restart the app."
     },
     "location": {
       "title": "Preferred Location",
@@ -2231,6 +2234,16 @@
     "back": "Back",
     "continue": "Continue",
     "skip": "Skip",
+    "crashReporting": {
+      "title": "Help fix crashes",
+      "subtitle": "When the app breaks, a report tells us what went wrong so it can be fixed.",
+      "toggleLabel": "Send crash reports",
+      "sends": "Sends the error and its stack trace, your operating system, and the app version. Paths, links and credentials are stripped before anything leaves your machine.",
+      "neverSends": "Never sends your résumés, job data, prompts or generated documents.",
+      "changeLater": "You can change this any time in Settings → Privacy.",
+      "back": "Back",
+      "next": "Continue"
+    },
     "welcome": {
       "title": "Welcome to AI Job Hunter",
       "subtitle": "Your local, AI-native job hunting assistant. Let's get you set up.",

@@ -1,10 +1,10 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-07-28
+Last updated: 2026-08-02
 
 ## High-Level Overview
 
-AI Job Hunter is a **local-first desktop application** built on [Tauri][tauri] 2. There is no cloud backend, no telemetry endpoint, and no remote database. Every computation — AI inference, web scraping, vector search, document parsing — runs on the user's machine.
+AI Job Hunter is a **local-first desktop application** built on [Tauri][tauri] 2. There is no cloud backend and no remote database; the only first-party egress is opt-out crash reporting (see ADR 0005). Every computation — AI inference, web scraping, vector search, document parsing — runs on the user's machine.
 
 The architecture follows a **ports-and-adapters** model: the [React][react] renderer communicates exclusively through typed IPC contracts, and the [Rust][rust] core handles everything else — command routing plus the heavy work (scraping, document processing, embeddings) natively, without a separate process.
 
