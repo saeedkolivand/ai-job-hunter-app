@@ -1,5 +1,7 @@
 import { BackLink } from '@/components/BackLink';
 
+import { LAST_UPDATED } from './Footer';
+
 // Intro + "The short version" block of /privacy, split out of
 // PrivacyBody.tsx purely for file size — verbatim ported markup, no props.
 // See PrivacyBody.tsx for the shared conversion notes. Nothing scripts this
@@ -11,7 +13,7 @@ export function IntroShort() {
       <BackLink />
 
       <h1>Privacy Policy</h1>
-      <p className="updated">Last updated: 30 June 2026</p>
+      <p className="updated">Last updated: {LAST_UPDATED}</p>
 
       <p className="lede">
         AI Job Hunter is a <b>local-first desktop app</b> with an optional{' '}
