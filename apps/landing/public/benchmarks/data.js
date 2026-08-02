@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785625734496,
+  "lastUpdate": 1785639047825,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5831,6 +5831,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 301023,
             "range": "± 3674",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9023c41233c13fea9396c92a9df8aebdaf3d1d65",
+          "message": "feat: add opt-out crash reporting via sentry (#927)\n\n* feat: add opt-out crash reporting via sentry\n\nThe app was blind in production. The panic hook wrote crashes.log and the\ndiagnostics zip could export it, but both needed the user to notice a failure\nand file an issue by hand. React errors caught by a boundary never reached the\nwindow at all, so they were invisible even in principle.\n\nDesktop app only. The extension keeps its AMO data_collection_permissions of\n['none'] and the landing site keeps its no-third-party-JS origin invariant.\n\nConsent is Rust-owned rather than a renderer preference: sentry::init has to run\nbefore tauri::Builder, because sentry-rust-minidump forks the crash-reporter\nprocess at startup and panic = \"abort\" leaves nothing in-process able to flush a\ncrash. There is no WebView at that point, so no localStorage to read.\n\nTransmission requires enabled && consentShown, not just enabled. The default is\non, but nothing is sent until the setup wizard has actually shown the choice — a\ndefault nobody saw is not consent, and that gap is where privacy claims break.\nA user who never finishes onboarding never reports anything.\n\nEvery outgoing event is serialized, passed through the same redact_token\npipeline the diagnostics bundle uses, and deserialized — whole-event rather than\nfield-by-field, because a field list is a denylist that rots as the SDK adds\nfields. send_default_pii is off and server_name is overridden, since the SDK\notherwise sends the machine hostname.\n\nThe DSN is baked by build.rs from an env var set only in the signed release job\nand read with option_env!, so local builds, contributor clones and every CI\ncheck compile to None and cannot transmit.\n\nThis reverses a published promise: the privacy policy named Sentry as absent in\nthree places and ADR-0005 defined the boundary as \"no telemetry\". ADR-0005 gains\nan eighth egress class, ADR-0020 records the decision, and all twelve claim\nsites are rewritten — including Footer.tsx, whose \"no server-side copy, deleting\nlocally deletes it everywhere\" became false, and /privacy, which is the policy\nURL filed with both stores and now separates desktop collection from extension\nnon-collection.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: classify the crash-reporting module in the architecture layers\n\nThe architecture test caught it unclassified. Shell layer rather than lower: it\nis constructed by lib::run() before the Tauri builder exists, and it reaches\ndown into commands::support::redact_lines to reuse the diagnostics redactor\ninstead of growing a second, weaker one.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: resolve the crash-reporting consent directory exactly once\n\nReview found the feature could never activate. init() ran before\ntauri::Builder and resolved the consent file through\nplatform::config::data_dir(), which at that moment falls back to $HOME/.ajh\nbecause AJH_DATA_DIR is only exported later, inside setup(). The privacy\ncommands meanwhile wrote through app.path().app_data_dir(). Consent was\nwritten to one directory and read from another, so no user choice was ever\nobserved — and it failed silently, since a missing file is indistinguishable\nfrom \"user said no\".\n\nCache the first resolution in a OnceLock and funnel load/save/clear through\nit, so both sides agree by construction rather than by two call sites\nhappening to resolve alike. The commands no longer take an AppHandle at all.\n\nAdds a regression test pinning that every accessor shares one resolved\ndirectory and that a save() is observable through load().\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: stop transmission on factory reset and permit the sentry plugin\n\nTwo findings from the second review pass.\n\nFactory reset cleared the persisted consent file but left the in-memory client\nbound, so a user who had consented kept transmitting for the rest of the\nsession immediately after performing what reads as a full privacy wipe — the\nreset does not restart the process. Now unbinds alongside the clear, mirroring\nthe opt-out path in privacy_set_crash_reporting.\n\nThe plugin was registered without a capability entry. Its browser side forwards\nevents to Rust over invoke, and those commands (envelope, breadcrumb) are\npermission-gated in Tauri 2, so without \"sentry:default\" every renderer error\nwould have been denied at the IPC boundary and silently never reported — half\nthe feature dead while looking wired up.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: use the ureq transport and document where consent is stored\n\nThird review pass.\n\nDrop sentry's default features. The default transport is reqwest + native-tls,\nand sentry 0.42 pins reqwest 0.12 — a second copy alongside the app's 0.13, in\na binary optimized hard for size. ureq is lighter and also more correct here:\nthe reqwest transport needs tokio, but the minidump supervisor is a bare forked\nprocess with no async runtime to send on. Verified reqwest 0.12 is gone from\nthe tree and ureq 3.3 replaces it. The reported actix-web integration was not\nactually in the tree — defaults never enabled it.\n\nThe module claimed the consent file sits next to the other app data. It does\nnot: it lives where data_dir() resolves before Tauri starts, which in a default\ninstall is $HOME/.ajh, not the per-OS app-data dir. That placement is forced —\nsentry::init has no AppHandle, and the init cannot move into setup because the\nminidump supervisor re-executes everything above its own call in the forked\nchild. Corrected the claim rather than the location, and recorded the\nconsequence: deleting the app-data dir by hand leaves this file, though it\nholds two booleans and the factory reset clears it.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-02T04:28:17+02:00",
+          "tree_id": "3f43c7a45aefb529aeb8c6555f756c119e48e339",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9023c41233c13fea9396c92a9df8aebdaf3d1d65"
+        },
+        "date": 1785639046986,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2189221,
+            "range": "± 66784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2705311,
+            "range": "± 26886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 251272,
+            "range": "± 3295",
             "unit": "ns/iter"
           }
         ]
