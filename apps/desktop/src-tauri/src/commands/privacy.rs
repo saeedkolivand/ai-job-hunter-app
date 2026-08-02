@@ -236,12 +236,8 @@ pub fn privacy_clear_interactions(app: AppHandle) -> Value {
 /// Falls back to the app-data dir the same way the rest of this module does; an
 /// unresolvable dir yields the default, which does not transmit.
 #[tauri::command]
-pub fn privacy_get_crash_reporting(app: AppHandle) -> crate::crash_reporting::Settings {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    crate::crash_reporting::load(&data_dir)
+pub fn privacy_get_crash_reporting() -> crate::crash_reporting::Settings {
+    crate::crash_reporting::load()
 }
 
 /// Persist the crash-reporting consent state and apply the "off" half of it
@@ -255,14 +251,9 @@ pub fn privacy_get_crash_reporting(app: AppHandle) -> crate::crash_reporting::Se
 /// cannot be recreated mid-session.
 #[tauri::command]
 pub fn privacy_set_crash_reporting(
-    app: AppHandle,
     settings: crate::crash_reporting::Settings,
 ) -> crate::crash_reporting::Settings {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    crate::crash_reporting::save(&data_dir, settings);
+    crate::crash_reporting::save(settings);
     if !settings.transmits() {
         crate::crash_reporting::disable_current();
     }
@@ -309,7 +300,7 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     // state: enabled, but not yet consented, so the setup wizard asks again
     // before anything is transmitted. Same direct-removal shape as the
     // `browser-state` wipe further down.
-    crate::crash_reporting::clear(&data_dir);
+    crate::crash_reporting::clear();
 
     // Wipe every persistent store registered via `manage_resettable` in
     // `main.rs::setup` — résumé/doc/generation stores, secrets, caches, and the

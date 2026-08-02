@@ -30,8 +30,8 @@
 //! through [`redact_event`], which reuses the same token redactor the
 //! diagnostics bundle uses (ADR-027) rather than inventing a second, weaker one.
 
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +39,33 @@ use crate::commands::support::redact_lines;
 
 /// Consent + "has the user been asked" state, persisted next to the app data.
 const FILE_NAME: &str = "crash-reporting.json";
+
+/// The directory holding the consent file, resolved exactly once.
+///
+/// This exists because the obvious implementation is silently broken. The two
+/// sides of this feature run at very different moments:
+///   * [`init`] runs at the top of `lib::run()`, BEFORE `tauri::Builder`, so it
+///     has no `AppHandle`.
+///   * the `privacy_*_crash_reporting` commands run long after `setup`.
+///
+/// `platform::config::data_dir()` is not stable across those two moments:
+/// `setup` calls `resolve_and_export_data_dir`, which EXPORTS `AJH_DATA_DIR`
+/// mid-process. So the same call returns `$HOME/.ajh` at startup and Tauri's
+/// app-data dir afterwards — consent would be written to one directory and read
+/// from another, and the feature would never activate no matter what the user
+/// chose. It would also fail silently, because "no consent found" is
+/// indistinguishable from "user said no".
+///
+/// Caching the first resolution makes both sides agree *by construction* rather
+/// than by two call sites happening to resolve alike. Whichever directory wins,
+/// it is the same one for reads, writes, and the factory-reset wipe.
+static STATE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Resolve (once) and return the consent-file directory. First caller wins,
+/// which is [`init`] at startup in the real app.
+pub fn state_dir() -> &'static Path {
+    STATE_DIR.get_or_init(crate::platform::config::data_dir)
+}
 
 /// Build-time ingest endpoint. `option_env!`, so a build without the secret —
 /// every local `cargo build`, every contributor clone, every CI check that is
@@ -70,10 +97,30 @@ impl Settings {
     }
 }
 
+/// Read the persisted settings from the resolved [`state_dir`].
+pub fn load() -> Settings {
+    load_from(state_dir())
+}
+
+/// Persist settings to the resolved [`state_dir`].
+pub fn save(settings: Settings) {
+    save_to(state_dir(), settings);
+}
+
+/// Remove the persisted flag from the resolved [`state_dir`] (factory reset).
+/// Back to default: enabled, not yet consented — so the wizard asks again
+/// before anything is sent.
+pub fn clear() {
+    let _ = std::fs::remove_file(state_dir().join(FILE_NAME));
+}
+
 /// Read the persisted settings. Any failure — missing file, unreadable file,
 /// corrupt JSON — yields the default, which does NOT transmit (because
 /// `consent_shown` is false). Failing closed matters more than failing loud.
-pub fn load(data_dir: &Path) -> Settings {
+///
+/// Directory-taking so tests can drive it without touching the process-wide
+/// [`STATE_DIR`]; production callers go through [`load`].
+fn load_from(data_dir: &Path) -> Settings {
     std::fs::read_to_string(data_dir.join(FILE_NAME))
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -83,7 +130,7 @@ pub fn load(data_dir: &Path) -> Settings {
 /// Persist settings. Best-effort: a write failure must never fail the caller's
 /// operation, but it is logged because a silently unpersisted opt-OUT would
 /// re-enable reporting on next launch.
-pub fn save(data_dir: &Path, settings: Settings) {
+fn save_to(data_dir: &Path, settings: Settings) {
     let write = || -> std::io::Result<()> {
         std::fs::create_dir_all(data_dir)?;
         let json = serde_json::to_string_pretty(&settings)
@@ -93,12 +140,6 @@ pub fn save(data_dir: &Path, settings: Settings) {
     if let Err(e) = write() {
         log::warn!("[crash-reporting] could not persist consent state: {e}");
     }
-}
-
-/// Remove the persisted flag (factory reset). Back to default: enabled, not yet
-/// consented — so the wizard asks again before anything is sent.
-pub fn clear(data_dir: &Path) {
-    let _ = std::fs::remove_file(data_dir.join(FILE_NAME));
 }
 
 /// Redact every string in a serialized Sentry event.
@@ -141,8 +182,10 @@ fn redact_event(
 /// Returns the guard the caller must hold for the process lifetime. `None`
 /// means the SDK was never created — a hard off, not a sampled-to-zero off, so
 /// there is no client that could transmit even if something later tried.
-pub fn init(data_dir: &Path) -> Option<sentry::ClientInitGuard> {
-    let settings = load(data_dir);
+pub fn init() -> Option<sentry::ClientInitGuard> {
+    // First call to `state_dir()` in the real app — this is what pins the
+    // directory that the privacy commands will later read and write.
+    let settings = load();
     if !settings.transmits() {
         return None;
     }
@@ -224,11 +267,17 @@ mod tests {
     fn load_falls_back_to_the_non_transmitting_default() {
         let dir = std::env::temp_dir().join("ajh-crash-reporting-missing");
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(!load(&dir).transmits(), "missing file must fail closed");
+        assert!(
+            !load_from(&dir).transmits(),
+            "missing file must fail closed"
+        );
 
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(FILE_NAME), "{ not json").unwrap();
-        assert!(!load(&dir).transmits(), "corrupt file must fail closed");
+        assert!(
+            !load_from(&dir).transmits(),
+            "corrupt file must fail closed"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -236,20 +285,66 @@ mod tests {
     fn save_load_round_trips_and_clear_restores_the_default() {
         let dir = std::env::temp_dir().join("ajh-crash-reporting-roundtrip");
         let _ = std::fs::remove_dir_all(&dir);
-        save(
+        save_to(
             &dir,
             Settings {
                 enabled: false,
                 consent_shown: true,
             },
         );
-        let loaded = load(&dir);
+        let loaded = load_from(&dir);
         assert!(!loaded.enabled);
         assert!(loaded.consent_shown);
 
-        clear(&dir);
-        assert_eq!(load(&dir), Settings::default());
+        let _ = std::fs::remove_file(dir.join(FILE_NAME));
+        assert_eq!(load_from(&dir), Settings::default());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regression guard for the bug this module's `STATE_DIR` exists to prevent.
+    ///
+    /// The original implementation resolved the directory separately on each
+    /// side: `init` called `platform::config::data_dir()` before `setup`, while
+    /// the privacy commands used `app.path().app_data_dir()`. Because `setup`
+    /// exports `AJH_DATA_DIR` mid-process, those resolved to DIFFERENT
+    /// directories — consent was written to one and read from the other, so the
+    /// feature never activated and did so silently, since "no file" reads as
+    /// "not consented".
+    ///
+    /// Pinning that every accessor funnels through one cached resolution is what
+    /// makes read/write agreement structural instead of coincidental.
+    #[test]
+    fn every_accessor_shares_one_resolved_directory() {
+        // Mutating AJH_DATA_DIR would race other tests in this binary, so assert
+        // on identity: repeated resolution is stable even though the underlying
+        // env-var-dependent resolver is not.
+        let first = state_dir();
+        let second = state_dir();
+        assert!(
+            std::ptr::eq(first, second),
+            "state_dir must hand back one cached path, not re-resolve per call"
+        );
+
+        // And the round-trip helpers must agree with it: writing through the
+        // public API must be readable through the public API.
+        let before = load();
+        save(Settings {
+            enabled: false,
+            consent_shown: true,
+        });
+        let after = load();
+        assert!(
+            !after.enabled && after.consent_shown,
+            "save() must be observable through load() — they resolved to different dirs otherwise"
+        );
+        assert!(!after.transmits(), "an explicit opt-out must not transmit");
+
+        // Restore whatever the environment had, so this test leaves no trace.
+        if before == Settings::default() {
+            clear();
+        } else {
+            save(before);
+        }
     }
 
     /// The gate that protects the privacy claim: nothing identifying may survive

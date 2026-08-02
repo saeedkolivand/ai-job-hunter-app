@@ -378,7 +378,7 @@ pub fn run() {
     // `None` whenever there is no baked-in DSN (every non-release build) or the
     // user has not consented — no client is constructed at all, so there is
     // nothing that could transmit, rather than a client sampled to zero.
-    let sentry_guard = crash_reporting::init(&crate::platform::config::data_dir());
+    let sentry_guard = crash_reporting::init();
     #[cfg(not(target_os = "ios"))]
     let _minidump_guard = sentry_guard
         .as_ref()
