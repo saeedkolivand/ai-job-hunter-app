@@ -412,39 +412,6 @@ jobs:
       # for this dep tree (typst, chromiumoxide, rusqlite) is very large, which
       # is the same reason the failure-log upload below is narrowly scoped.
       #
-      # Skipped rather than failed when the org/token secrets are absent, so a
-      # fork or a release cut before Sentry is provisioned still ships installers.
-      - name: 🔍 Upload debug symbols to Sentry
-        if: success()
-        continue-on-error: true
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-        run: |
-          # Guarded in the shell, not in `if:` — neither the `secrets` nor a
-          # step's own `env` context is available to a step-level `if`.
-          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
-            echo "Sentry secrets not configured — skipping symbol upload."
-            exit 0
-          fi
-          echo "::group::Uploading debug files + sourcemaps"
-          VERSION="${{ steps.resolve.outputs.version }}"
-          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
-          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
-          # `split-debuginfo = "packed"` puts them beside the binary in target/.
-          # No `--include-sources`: that would ship our source into Sentry, and
-          # line tables alone are enough to resolve a frame.
-          npx --yes @sentry/cli@^2 debug-files upload \
-            apps/desktop/src-tauri/target/
-          # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
-          # but were never referenced from the shipped bundle.
-          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
-          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
-            apps/desktop/dist/
-          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
-          echo "::endgroup::"
-
       - name: Upload Release Assets
         if: success()
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -469,6 +436,77 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs AFTER the installers are published, and must NOT gate the job.
+      #
+      # `continue-on-error` is load-bearing here, not laziness. This step lives
+      # inside a 4-leg matrix, and `generate-update-manifest`, `update-cask` and
+      # `update-download-page` all sit behind a bare `needs: build`. Letting a
+      # Sentry hiccup on ONE leg fail the job flips the aggregate result and
+      # SKIPS all three — so `latest.json` is never written and auto-update
+      # breaks for every existing user, while the installers sit attached to the
+      # release. Unreadable stack traces are a far cheaper failure than a broken
+      # updater.
+      #
+      # Loosening those three to `if: always() && ...` is not the fix either: it
+      # would publish an updater manifest even when a platform's build genuinely
+      # failed, pointing users at artifacts that do not exist.
+      #
+      # So failure is made loud instead of fatal — see the annotation step below.
+      # A swallowed failure was the original sin; an unmissable one that doesn't
+      # take the updater down with it is the trade.
+      - name: 🔍 Upload debug symbols to Sentry
+        id: sentry_symbols
+        if: success()
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          # Guarded in the shell, not in `if:` — neither the `secrets` nor a
+          # step's own `env` context is available to a step-level `if`.
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "::warning title=Sentry symbols skipped::SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT are not all set, so crash reports from this release will show unresolved addresses."
+            exit 0
+          fi
+          # Any failure past this point fails the job — the secrets are present,
+          # so a failure means they are wrong or Sentry rejected the upload.
+          set -euo pipefail
+          echo "::group::Uploading debug files + sourcemaps"
+          VERSION="${{ steps.resolve.outputs.version }}"
+          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
+          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
+          # `split-debuginfo = "packed"` puts them beside the binary in target/.
+          # No `--include-sources`: that would ship our source into Sentry, and
+          # line tables alone are enough to resolve a frame.
+          npx --yes @sentry/cli@^2 debug-files upload \
+            apps/desktop/src-tauri/target/
+          # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
+          # but were never referenced from the shipped bundle.
+          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
+          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
+            apps/desktop/dist/
+          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
+          echo "::endgroup::"
+
+      # The visibility half of the trade above. `continue-on-error` keeps the
+      # matrix leg green so the release pipeline completes, but a failure must
+      # never pass unremarked — that is exactly how this feature would end up
+      # "working" while producing unreadable crash reports. An `::error::`
+      # annotation surfaces at the top of the run, and the step summary puts it
+      # on the run's landing page. Deliberately exits 0: raising here would
+      # re-create the cascade this whole arrangement exists to avoid.
+      - name: ❗ Flag a failed symbol upload
+        if: always() && steps.sentry_symbols.outcome == 'failure'
+        run: |
+          MSG="Symbol upload failed on ${{ matrix.platform }} for ${{ steps.resolve.outputs.version }} — crash reports from this release will show unresolved addresses. Check SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT. Installers were published; the updater manifest was NOT affected."
+          echo "::error title=Sentry symbol upload failed::$MSG"
+          {
+            echo "### ❗ Sentry symbol upload failed"
+            echo ""
+            echo "$MSG"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📊 Upload Build Logs on Failure
         if: failure()
