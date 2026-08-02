@@ -70,6 +70,18 @@ read the mission-control PAT from `localStorage`.
   and Firefox AMO. It now has to state desktop collection and extension
   non-collection as clearly separate sections, or a reviewer reads one as the
   other while the manifest still declares `['none']`.
+- **A failed symbol upload is made loud, never fatal — and that asymmetry is a
+  decision, not an oversight.** A failing symbol upload must not be able to skip
+  the jobs that publish `latest.json`; losing symbols costs readable stack
+  traces, whereas losing the updater manifest breaks auto-update for every
+  existing user while the installers already sit on the release. Making the
+  downstream jobs tolerant instead was rejected for the mirror-image reason: it
+  would publish an updater manifest even when a platform's build genuinely
+  failed. "Not configured" must also stay distinguishable from "configured
+  wrong", so absent secrets skip while a real failure is surfaced.
+  The exact ordering and failure plumbing live in
+  [`.github/workflows/release.yml`](../../.github/workflows/release.yml), which
+  is authoritative — do not restate them here.
 - The release profile keeps symbols (`debug = "line-tables-only"`,
   `split-debuginfo = "packed"`, `strip = "debuginfo"`) and CI uploads the
   sidecar debug files to Sentry. Without them every frame is a bare address.
