@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.132.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.131.0...v0.132.0) (2026-08-02)
+
+### ✨ Features
+
+* add opt-out crash reporting via sentry ([#927](https://github.com/saeedkolivand/ai-job-hunter-app/issues/927)) ([9023c41](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9023c41233c13fea9396c92a9df8aebdaf3d1d65))
+
+### 🐛 Bug Fixes
+
+* bump the privacy policy last-updated date and centralize it ([#928](https://github.com/saeedkolivand/ai-job-hunter-app/issues/928)) ([cfaeaff](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cfaeaffc584bde37449ef6e519ac27d366419593))
+* fail the release when a configured sentry symbol upload breaks ([#929](https://github.com/saeedkolivand/ai-job-hunter-app/issues/929)) ([f9713f3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/f9713f3b986011332d6f2b8983421e0eddb6982a))
+
 ## [0.131.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.130.1...v0.131.0) (2026-08-01)
 
 ### ✨ Features
