@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785243038566,
+  "lastUpdate": 1785625734496,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5789,6 +5789,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 295906,
             "range": "± 7656",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "820ceef7f53e6164318518e5b31bc31210ade043",
+          "message": "feat: diagnose the role a cover letter answers before drafting it (#926)\n\n* feat: diagnose the role a cover letter answers before drafting it\n\nFold a company-and-vacancy intelligence pass into the existing single-pass\ncover-letter generation — no extra AI calls, no new IPC.\n\nCompany brief (opt-in \"Research company\", already provider-native web search):\nnow also covers competitors and the challenges/strategic priorities the company\nis working on, hedges anything inferred rather than stating it as fact, and runs\n150-200 words. The `<company_research>` fence cap moves 1200 -> 1600 chars so the\nlonger brief is not cut mid-sentence, and the Ollama search query asks for\ncompetitors/strategy too.\n\nCover letter: a private diagnosis before drafting — why the role is open, the 3\noutcomes the hire is judged on in the first 6-12 months, and which real résumé\nachievements make the candidate part of that solution. Every step is bound to\nevidence in the job ad, the brief, or the résumé; thin evidence keeps the\ndiagnosis broad instead of guessing, and the letter voices it as the candidate's\nreading of the role, never insider knowledge. The same one-liner goes into the\nagent-mode draft_cover_letter prompt.\n\nAlso drops the hardcoded \"200 to 300 words\" from four places: it contradicted\n<market_conventions>, which already carries the per-market band.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: harden the company brief and bound the role diagnosis to employer evidence\n\nReview findings from CodeRabbit + the claude PR review on #926.\n\n- Prompt injection (major): search results are attacker-reachable text and the\n  brief is the one stage that reads them unfenced, so VERIFIED_ONLY now tells\n  the model to treat every page and snippet as untrusted data, ignore\n  directives inside them, and never let them add claims about a candidate.\n- Diagnosis evidence (major): a résumé says what the candidate has done, never\n  why an employer opened a role or what they will measure. Steps 1 and 2 now\n  stand only on <job_ad> (+ <company_research> when fenced); <candidate_resume>\n  is reserved for step 3, the through-line.\n- Test coverage (high): the brief-present branch of the diagnosis was never\n  asserted. Both branches are now covered, including the negative case.\n- Localization: the hedge exemplars were English strings injected into every\n  target language; the prompt now asks for hedging in the target language.\n- Competitors are their own required facet, no longer an \"or\" the model may skip.\n- Reuse hasBrief instead of recomputing companyBrief.trim(), and restore the\n  role-context comment to the code it documents.\n- Record why the agent-path length band is deliberately market-agnostic.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-02T00:46:38+02:00",
+          "tree_id": "aa061e14aceed1b3d9bfec4252ece5b2e60b518c",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/820ceef7f53e6164318518e5b31bc31210ade043"
+        },
+        "date": 1785625733292,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2206555,
+            "range": "± 63837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2594150,
+            "range": "± 48597",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 301023,
+            "range": "± 3674",
             "unit": "ns/iter"
           }
         ]
