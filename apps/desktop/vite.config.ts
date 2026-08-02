@@ -62,5 +62,10 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     outDir: 'dist',
+    // 'hidden' emits the maps but omits the `//# sourceMappingURL` comment, so
+    // they are uploaded to Sentry from CI and never shipped to or fetched by the
+    // WebView. Renderer output is unminified already, so this buys original
+    // file/line boundaries rather than readable identifiers.
+    sourcemap: 'hidden',
   },
 });

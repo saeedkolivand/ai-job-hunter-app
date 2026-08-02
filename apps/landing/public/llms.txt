@@ -1,6 +1,6 @@
 # AI Job Hunter
 
-> A local-first, AI-native desktop app that finds jobs across 24 boards, tailors your resume and cover letter to each one, and does everything except hit submit. Free for personal use, source-available, no accounts, no telemetry. Built by one unemployed engineer — the site is also, openly, a job application.
+> A local-first, AI-native desktop app that finds jobs across 24 boards, tailors your resume and cover letter to each one, and does everything except hit submit. Free for personal use, source-available, no accounts, no tracking. Built by one unemployed engineer — the site is also, openly, a job application.
 
 - Tauri 2 shell, React renderer, Rust backend, pnpm monorepo. Ships for macOS, Windows and Linux; unsigned.
 - Everything runs on your machine: resume, job data and API keys never leave it. You bring your own AI provider key (Anthropic, OpenAI, Google, Ollama and others).
@@ -12,7 +12,7 @@
 - [Home](https://aijobhunter.app/): What the app does, board coverage, and the pitch. Start here.
 - [How It Works](https://aijobhunter.app/how-it-works): The end-to-end flow — find a job, analyse it, tailor the resume, generate the cover letter, apply.
 - [Download](https://aijobhunter.app/download): Installers per OS, current version, and the unsigned-binary caveats.
-- [Privacy](https://aijobhunter.app/privacy): How the desktop app and the browser extension handle data. No accounts, no analytics, no telemetry.
+- [Privacy](https://aijobhunter.app/privacy): How the desktop app and the browser extension handle data. No accounts, no behavioural analytics; the desktop app sends opt-out crash reports, the extension sends nothing.
 - [Accessibility Statement](https://aijobhunter.app/accessibility): WCAG 2.2 AA conformance status for the site, desktop app and extension — partially conformant, with known barriers listed.
 - [Architecture Map](https://aijobhunter.app/architecture-map): Interactive map of the codebase — renderer, service hooks, prompts, IPC contracts, Rust commands, scraper and provider registries. Every node points at real source; a drift checker fails CI if it lies.
 - [The Agent Fleet](https://aijobhunter.app/agent-system): How the repo's `.claude/` agent system works — paired author and critic per domain, routed by area, reviewed independently.

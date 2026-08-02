@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-07-16
+Last updated: 2026-08-02
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -747,13 +747,25 @@ Privacy and data control settings.
 
 #### `privacy.deleteAllData(): Promise<void>`
 
+#### `privacy.getCrashReporting(): Promise<CrashReportingSettings>`
+
+#### `privacy.setCrashReporting(settings: CrashReportingSettings): Promise<CrashReportingSettings>`
+
 ```typescript
-interface PrivacySettings {
-  enableCrashReporting: boolean;
-  enableAnalytics: boolean;
-  dataRetentionDays: number;
+interface CrashReportingSettings {
+  /** User's choice. Defaults to true. */
+  enabled: boolean;
+  /** Whether the setup wizard has shown that choice yet. */
+  consentShown: boolean;
 }
 ```
+
+Rust-owned rather than a renderer preference: the Sentry client is constructed
+before `tauri::Builder` runs, so there is no WebView (and no `localStorage`) at
+the moment the decision is needed. Transmission requires **both** flags — see
+[ADR 0020](adr/0020-crash-reporting.md). There is no `enableAnalytics` and no
+`dataRetentionDays`: no behavioural analytics is collected, and retention is the
+processor's 30-day window, not an app setting.
 
 ---
 

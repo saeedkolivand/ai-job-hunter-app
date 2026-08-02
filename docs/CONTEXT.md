@@ -23,11 +23,12 @@ _Avoid_: Tab bar, radio group (when the segmented control is meant)
 **Local-first privacy boundary**:
 The guarantee that the user's **personal data** — résumés, generations, applications,
 tracked job data, and credentials — lives in a local database on the device and is never
-collected by telemetry or an app-operated backend. It is **not** a claim that this data
+collected by an app-operated backend or behavioural analytics. It is **not** a claim that this data
 never leaves the machine: the app sends data out to services the user configures or invokes —
 notably the **AI provider**, which receives the résumé and job text it is asked to generate
 from — plus job-board scraping, opt-in web search, the updater check, user-typed location
-autocomplete, and opt-in enrichment. See [ADR 0005](adr/0005-network-egress-privacy-boundary.md).
+autocomplete, and opt-in enrichment. The app's own outbound reporting is limited to
+**crash reporting** (below). See [ADR 0005](adr/0005-network-egress-privacy-boundary.md).
 _Avoid_: "the only outbound calls are…" (an over-absolute phrasing — the boundary is about
 storage/telemetry, not call count), "no network" / "fully offline" (untrue; scraping is core),
 "personal data never leaves the device" (untrue — the AI provider receives the résumé + job text)
@@ -40,6 +41,17 @@ minimum hosts, and send no personal data. Distinct from **core egress** (AI prov
 scraping) which is required for the feature to function.
 _Avoid_: tracking, telemetry (enrichment sends no behavioral data); also avoid calling a
 **user-initiated lookup** enrichment — see below
+
+**Crash reporting**:
+The one **first-party-initiated** egress and the one class that is **default ON**: when the
+desktop app fails, the error, its stack trace, the OS/architecture and the app version go to
+Sentry. Gated on `enabled && consentShown` — the default is on but nothing is sent until the
+setup wizard has shown the choice — and every event is redacted with the same `redact_token`
+pipeline as the diagnostics bundle. Desktop only; the extension is excluded so its AMO
+`data_collection_permissions: ['none']` stays true. See [ADR 0020](adr/0020-crash-reporting.md).
+_Avoid_: "analytics", "telemetry" as a synonym (no behavioural or usage events are collected —
+only failures), "anonymous usage data", and any phrasing implying documents or job data are
+included
 
 **User-initiated lookup**:
 A call the user directly invoked by typing into a field and waiting for its result —

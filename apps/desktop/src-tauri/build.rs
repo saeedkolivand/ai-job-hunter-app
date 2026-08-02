@@ -1,4 +1,18 @@
 fn main() {
+    // Bake the Sentry ingest endpoint in at compile time so the shipped binary
+    // knows where to report. Read from the environment here and re-exported as a
+    // compile-time constant, which `crash_reporting` picks up with `option_env!`.
+    //
+    // Absent by default ON PURPOSE: only the signed release job sets it, so every
+    // local build, contributor clone, and CI check compiles to `None` and is
+    // physically incapable of transmitting. A DSN is an ingest address, not a
+    // credential — it is readable in any shipped binary by design — so this is
+    // build config, not a secret to protect.
+    println!("cargo:rerun-if-env-changed=AJH_SENTRY_DSN");
+    if let Ok(dsn) = std::env::var("AJH_SENTRY_DSN") {
+        println!("cargo:rustc-env=AJH_SENTRY_DSN={dsn}");
+    }
+
     // Windows/MSVC only: keep `cargo test` from aborting at load with
     // STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139).
     //

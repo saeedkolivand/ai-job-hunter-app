@@ -122,6 +122,13 @@ const L3: &[&str] = &[
     // factory-reset hook, exactly like `extension_bridge`. The store body itself
     // is pure data + disk (AppHandle-free); push orchestration is Phase 4.
     "notifications",
+    // Crash reporting (ADR-0020). Shell-role for two reasons: it is constructed
+    // by `lib::run()` before the Tauri builder exists (the minidump supervisor
+    // forks there), and it reaches DOWN into `commands::support::redact_lines` to
+    // reuse the diagnostics redactor rather than growing a second, weaker one —
+    // never the reverse. Its consent state is a plain file precisely because no
+    // store or WebView exists that early.
+    "crash_reporting",
     // Agentic controller foundation (Phase 1, backend only). Shell-role: its
     // `LiveAgentEnv` holds an AppHandle, emits `agent:step`, and reaches DOWN into
     // commands/pipeline/limits to run a budgeted tool-calling loop — never the

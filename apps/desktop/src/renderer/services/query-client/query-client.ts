@@ -88,6 +88,7 @@ export const keys = {
     resolve: (url: string) => ['postings', 'resolve', url] as const,
   },
   credentials: { all: ['credentials'] as const },
+  privacy: { crashReporting: ['privacy', 'crashReporting'] as const },
   cliAgents: { all: ['cliAgents'] as const },
   autopilot: { all: ['autopilot'] as const, detail: (id: string) => ['autopilot', id] as const },
   aiGenerations: { all: ['aiGenerations'] as const },
