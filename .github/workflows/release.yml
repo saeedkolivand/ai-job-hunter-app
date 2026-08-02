@@ -412,39 +412,6 @@ jobs:
       # for this dep tree (typst, chromiumoxide, rusqlite) is very large, which
       # is the same reason the failure-log upload below is narrowly scoped.
       #
-      # Skipped rather than failed when the org/token secrets are absent, so a
-      # fork or a release cut before Sentry is provisioned still ships installers.
-      - name: 🔍 Upload debug symbols to Sentry
-        if: success()
-        continue-on-error: true
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
-        run: |
-          # Guarded in the shell, not in `if:` — neither the `secrets` nor a
-          # step's own `env` context is available to a step-level `if`.
-          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
-            echo "Sentry secrets not configured — skipping symbol upload."
-            exit 0
-          fi
-          echo "::group::Uploading debug files + sourcemaps"
-          VERSION="${{ steps.resolve.outputs.version }}"
-          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
-          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
-          # `split-debuginfo = "packed"` puts them beside the binary in target/.
-          # No `--include-sources`: that would ship our source into Sentry, and
-          # line tables alone are enough to resolve a frame.
-          npx --yes @sentry/cli@^2 debug-files upload \
-            apps/desktop/src-tauri/target/
-          # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
-          # but were never referenced from the shipped bundle.
-          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
-          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
-            apps/desktop/dist/
-          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
-          echo "::endgroup::"
-
       - name: Upload Release Assets
         if: success()
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -469,6 +436,53 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs AFTER the installers are published, and is allowed to FAIL THE JOB.
+      #
+      # Ordering: a Sentry outage or an expired token must not cost us the
+      # release — the binaries are already built and attached by this point.
+      # Failing loudly afterwards still turns the run red, so a broken symbol
+      # pipeline is visible instead of being discovered months later by a crash
+      # report full of bare addresses.
+      #
+      # No `continue-on-error`: this feature's whole failure mode is looking
+      # healthy while reporting nothing, and a silently-skipped upload is exactly
+      # that. Absent secrets are the one legitimate skip (a fork, or a release
+      # cut before Sentry was provisioned) and are surfaced as a warning
+      # annotation rather than swallowed — so "not configured" stays
+      # distinguishable from "configured wrong".
+      - name: 🔍 Upload debug symbols to Sentry
+        if: success()
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+        run: |
+          # Guarded in the shell, not in `if:` — neither the `secrets` nor a
+          # step's own `env` context is available to a step-level `if`.
+          if [ -z "$SENTRY_AUTH_TOKEN" ] || [ -z "$SENTRY_ORG" ] || [ -z "$SENTRY_PROJECT" ]; then
+            echo "::warning title=Sentry symbols skipped::SENTRY_AUTH_TOKEN/SENTRY_ORG/SENTRY_PROJECT are not all set, so crash reports from this release will show unresolved addresses."
+            exit 0
+          fi
+          # Any failure past this point fails the job — the secrets are present,
+          # so a failure means they are wrong or Sentry rejected the upload.
+          set -euo pipefail
+          echo "::group::Uploading debug files + sourcemaps"
+          VERSION="${{ steps.resolve.outputs.version }}"
+          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
+          # Native debug files: PDB (Windows), dSYM (macOS), DWARF/dwp (Linux).
+          # `split-debuginfo = "packed"` puts them beside the binary in target/.
+          # No `--include-sources`: that would ship our source into Sentry, and
+          # line tables alone are enough to resolve a frame.
+          npx --yes @sentry/cli@^2 debug-files upload \
+            apps/desktop/src-tauri/target/
+          # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
+          # but were never referenced from the shipped bundle.
+          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
+          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
+            apps/desktop/dist/
+          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
+          echo "::endgroup::"
 
       - name: 📊 Upload Build Logs on Failure
         if: failure()

@@ -70,6 +70,13 @@ read the mission-control PAT from `localStorage`.
   and Firefox AMO. It now has to state desktop collection and extension
   non-collection as clearly separate sections, or a reviewer reads one as the
   other while the manifest still declares `['none']`.
+- **The symbol upload runs after the installers are published and is allowed to
+  fail the job.** Installers ship first so a Sentry outage never costs a
+  release, but the run still goes red — this feature's failure mode is looking
+  healthy while reporting nothing, and a silently-skipped upload is exactly
+  that. Absent secrets remain a legitimate skip (forks, or a release cut before
+  provisioning) and emit a warning annotation, so "not configured" stays
+  distinguishable from "configured wrong".
 - The release profile keeps symbols (`debug = "line-tables-only"`,
   `split-debuginfo = "packed"`, `strip = "debuginfo"`) and CI uploads the
   sidecar debug files to Sentry. Without them every frame is a bare address.
