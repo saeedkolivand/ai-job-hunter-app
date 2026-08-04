@@ -20,6 +20,12 @@ vi.mock('@/store/preferences-store', () => ({
   useAiProviderConfig: () => undefined,
 }));
 
+// EffortPicker's useModelCapabilities — no QueryClient mounted in these
+// focused tests, so stub it directly (not exercised by this file's guards).
+vi.mock('@/services', () => ({
+  useModelCapabilities: () => ({ data: undefined }),
+}));
+
 import { CliAgentConfig } from './index';
 
 const baseProps = {

@@ -55,6 +55,10 @@ impl AiProvider for OllamaCloudClient {
         }
     }
 
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        self.inner.effort_levels(model)
+    }
+
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -200,5 +204,16 @@ mod tests {
     fn capabilities_reports_web_search_support_despite_the_inner_openai_compatible_id() {
         let caps = OllamaCloudClient::new().capabilities("gpt-oss:120b");
         assert!(caps.supports_web_search);
+    }
+
+    #[test]
+    fn effort_levels_delegate_to_the_inner_client() {
+        assert_eq!(
+            OllamaCloudClient::new().effort_levels("gpt-oss:120b"),
+            vec!["low", "medium", "high"]
+        );
+        assert!(OllamaCloudClient::new()
+            .effort_levels("qwen3-coder:480b")
+            .is_empty());
     }
 }

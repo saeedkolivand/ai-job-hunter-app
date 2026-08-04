@@ -23,9 +23,14 @@ use crate::postings::PostingsCache;
 /// weighted `combined` score, the missing keywords (`gaps`), and short
 /// recommendations. Degrades gracefully to keyword-only when Ollama is offline.
 /// Cache-busting version for the match_scores result cache. Bump whenever the
-/// 0.6/0.4 weighting, the combined-score formula, or the keyword/stemmer logic
-/// changes — any of which would make a previously-cached score stale.
-const MATCH_FORMULA_VERSION: i64 = 1;
+/// 0.6/0.4 weighting, the combined-score formula, the keyword/stemmer logic,
+/// or how the underlying VECTORS themselves are produced changes — any of
+/// which would make a previously-cached score stale. Bumped to 2 when
+/// embeddings moved from a naive single truncation to chunk-and-mean-pool
+/// (`EMBEDDING_VECTOR_VERSION`): a cached score computed against the OLD
+/// (truncated-prefix) vector must not be served once the vector itself can
+/// now be a full-document mean-pooled one under the identical space tag.
+const MATCH_FORMULA_VERSION: i64 = 2;
 
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
 /// cache-key column: only an explicit `Some(true)` enables semantic scoring
@@ -120,7 +125,10 @@ async fn score_one(
         let rv = match store.get_vector_async(&resume.id).await {
             Some(v) if active.matches(&v.space) => Some(v),
             _ => {
-                let v = embed(app, &resume.text).await;
+                // `embed` surfaces its error (already logged inside it); this
+                // caller keeps its existing "degrade to keyword-only" contract
+                // for match scoring, so `.ok()` discards it here.
+                let v = embed(app, &resume.text).await.ok();
                 if let Some(ref ev) = v {
                     let _ = store.upsert_vector_async(&resume.id, ev).await;
                 }
@@ -587,7 +595,7 @@ mod test {
     #[test]
     fn formula_version_constant_is_pinned() {
         assert_eq!(
-            MATCH_FORMULA_VERSION, 1,
+            MATCH_FORMULA_VERSION, 2,
             "MATCH_FORMULA_VERSION changed — update this assert AND invalidate \
              cached match scores (clear match_scores table or bump the stored version)"
         );

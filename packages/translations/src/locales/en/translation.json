@@ -1127,6 +1127,8 @@
       "reindexStarted": "Re-indexing documents…",
       "reindexComplete": "Re-indexing complete.",
       "reindexIncomplete": "Re-indexing did not finish.",
+      "reindexFailedReason": "Re-indexing failed: {{reason}}",
+      "reindexPartial": "{{failed}} of {{total}} documents failed to re-index.",
       "semanticScoring": "Semantic scoring",
       "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring."
     },

@@ -20,6 +20,7 @@ pub use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
 
 mod anthropic;
 pub mod cli_agent; // pub: its registry/detection back the CLI-agent health probe
+mod embed; // adaptive chunk-and-mean-pool embedding machinery (R8 split — self-contained subsystem, own tests)
 mod gemini;
 pub mod ollama; // pub: its Ollama-only helpers back the local model list / health / embeddings
 mod ollama_cloud;
@@ -31,6 +32,7 @@ mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction o
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
+use embed::{embed_adaptive, ProviderEmbedAttempt};
 use gemini::GeminiClient;
 use ollama::OllamaClient;
 use ollama_cloud::OllamaCloudClient;
@@ -376,8 +378,42 @@ pub trait AiProvider: Send + Sync {
     /// Capability matrix for a given model on this provider.
     fn capabilities(&self, model: &str) -> ModelCapabilities;
 
+    /// The reasoning-effort levels this provider currently offers for
+    /// `model` — empty when the app has no LEVER to influence this model's
+    /// reasoning effort, which is NARROWER than "the model doesn't reason at
+    /// all" (`capabilities(model).supports_reasoning`). Those two are
+    /// related but NOT a strict mirror: `supports_reasoning` says whether
+    /// the model reasons at all (a CLI coding agent always does — it's
+    /// `true` uniformly across every backend, see
+    /// `cli_agent::CliAgentClient::capabilities`), while `effort_levels`
+    /// says whether THIS APP can steer that effort via a request parameter
+    /// — a CLI agent's `effort` field is honored only by Codex
+    /// (`cli_agent::CliAgentClient::effort_levels`), so every other backend
+    /// has `supports_reasoning: true` but `effort_levels()` empty. A
+    /// property of the provider's wire API otherwise: for a provider whose
+    /// accepted level SET is uniform across every reasoning-capable model
+    /// this is a fixed list; Gemini's genuinely varies per model tier (see
+    /// `gemini::gemini_effort_levels`'s doc comment) so it overrides this
+    /// per-model instead. `ai_model_capabilities` surfaces this as
+    /// `effortLevels` — the renderer's effort picker gates on THIS method's
+    /// result, never on `supportsReasoning` directly, and never a hardcoded
+    /// per-provider TS mirror, so a new model/provider needs zero renderer
+    /// change. DEFAULT: no reasoning-effort lever (empty) — every provider
+    /// that offers one overrides this.
+    fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
+        Vec::new()
+    }
+
     /// Stream a chat completion, emitting `ai:stream` deltas and marking the job
     /// complete/failed. Resolves its own API key (isolated auth per provider).
+    ///
+    /// `req.effort` (`AiGenerateRequest`) is the ONLY path that carries the
+    /// user's reasoning-effort setting into a provider call — every adapter's
+    /// effort-field wiring lives here. `complete`/`complete_with_usage`/
+    /// `chat_with_tools`/`research*` take `system`/`user`/`ChatMsg` directly,
+    /// not `AiGenerateRequest`, so the agent tool-calling loop, company/salary
+    /// research, and answer research keep the provider's default effort —
+    /// deliberately out of scope for the effort feature, not an oversight.
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -509,12 +545,13 @@ pub trait AiProvider: Send + Sync {
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
 
-    /// Max input length (in **chars**) accepted by this provider's embeddings API.
-    /// `embed_text` truncates to this (char-boundary-safe) before calling `embed`,
-    /// so over-long input degrades gracefully instead of erroring. The default is a
-    /// conservative bound that no supported provider's API rejects, so a NEW
-    /// provider works with zero code change; providers with larger real limits
-    /// override upward to avoid needlessly losing data.
+    /// Max input length (in **chars**) accepted by this provider's embeddings API,
+    /// per CHUNK. `embed_text` (via `embed_adaptive`) splits any longer input at
+    /// this boundary (char-safe) into multiple chunks, embeds each, and
+    /// mean-pools + L2-normalizes the result — the whole document is always
+    /// embedded, never silently truncated away. The default is a conservative
+    /// bound that no supported provider's API rejects, so a NEW provider works
+    /// with zero code change; providers with larger real limits override upward.
     fn max_embedding_input_chars(&self) -> usize {
         8_000
     }
@@ -667,15 +704,29 @@ pub async fn reachable_chat_model(provider_id: ProviderId) -> Option<String> {
 
 // ── Embeddings ────────────────────────────────────────────────────────────────
 
+/// Vector-FORMAT version — bumped whenever the ALGORITHM that produces a
+/// stored vector's VALUES changes for the same `(provider, model, dim)`, even
+/// though the provider/model IDENTITY is unchanged (e.g. replacing a naive
+/// single truncation with chunk-and-mean-pool — same tag, semantically
+/// different vector). `EmbeddingConfig::matches` checks this so a vector
+/// persisted before a bump is treated as stale and re-embedded, instead of
+/// being silently compared against a new-format vector under the identical
+/// `(provider, model, dim)` tag.
+pub const EMBEDDING_VECTOR_VERSION: i64 = 2;
+
 /// The identity of an embedding "space": vectors are only comparable when they
-/// share the same `(provider, model, dim)`. Stored alongside every vector so
-/// incompatible vectors can never be silently mixed.
+/// share the same `(provider, model, dim)` AND the same [`EMBEDDING_VECTOR_VERSION`]
+/// they were produced under. Stored alongside every vector so incompatible —
+/// or differently-produced — vectors can never be silently mixed. `version`
+/// is a storage-format detail, not part of the wire shape (`#[serde(skip)]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingSpace {
     pub provider: String,
     pub model: String,
     pub dim: usize,
+    #[serde(skip)]
+    pub version: i64,
 }
 
 impl std::fmt::Display for EmbeddingSpace {
@@ -727,20 +778,23 @@ pub async fn embed_text(
             provider.as_str()
         )));
     }
-    // Cap the input to the provider's real limit, char-boundary-safe (never splits a
-    // multi-byte char). Applied here so every provider is consistent and a new one
-    // inherits a safe default — see `AiProvider::max_embedding_input_chars`.
-    //
-    // Single pass: `char_indices().nth(cap)` finds the byte offset of the char *at*
-    // `cap` (i.e. the first char to drop). `Some` ⇒ the input exceeds `cap` chars, so
-    // slice there (a char-boundary offset); `None` ⇒ within cap, use as-is. Avoids the
-    // earlier `chars().count()` + `chars().take()` double scan.
-    let cap = client.max_embedding_input_chars();
-    let text = match text.char_indices().nth(cap) {
-        Some((byte_offset, _)) => &text[..byte_offset],
-        None => text,
+    // Cap the input to the provider's real limit, char-boundary-safe, then
+    // adaptively retry on a context-length overflow — see `embed_adaptive`.
+    // Applied here so every provider is consistent and a new one inherits a
+    // safe default — see `AiProvider::max_embedding_input_chars`.
+    let initial_cap = client.max_embedding_input_chars();
+    let attempt = ProviderEmbedAttempt {
+        app,
+        client: client.as_ref(),
+        model: &model,
     };
-    let (values, usage) = client.embed_with_usage(app, &model, text).await?;
+    // `usage` accumulates as `embed_adaptive` runs, even if it ultimately
+    // errors (a multi-chunk document can bill several real provider calls
+    // before failing on a later one) — record whatever was actually billed
+    // BEFORE propagating the error, so a partial failure never silently
+    // drops already-spent tokens from the ledger.
+    let mut usage = Usage::default();
+    let result = embed_adaptive(&attempt, text, initial_cap, &mut usage).await;
     record_usage(
         app,
         provider.as_str(),
@@ -749,6 +803,7 @@ pub async fn embed_text(
         usage.output_tokens,
         base_url.as_deref(),
     );
+    let values = result?;
     if values.is_empty() {
         return Err(AppError::Provider(format!(
             "{} returned an empty embedding.",
@@ -762,6 +817,7 @@ pub async fn embed_text(
             provider: provider.as_str().to_string(),
             model,
             dim,
+            version: EMBEDDING_VECTOR_VERSION,
         },
     })
 }
@@ -946,6 +1002,35 @@ mod tests {
             );
         }
         assert!(resolve_by_name("nope", None).is_err());
+    }
+
+    #[test]
+    fn reasoning_effort_support_is_capability_driven_per_provider_and_model() {
+        // Exercises the exact path `ai_model_capabilities` takes for
+        // `supportsReasoning` — a model-specific gate (unlike web search, which
+        // is per-provider only), so this checks BOTH a capable and a
+        // non-capable model per HTTP provider.
+        let cases = [
+            ("openai", "o3-mini", true),
+            ("openai", "gpt-4o", false),
+            ("anthropic", "claude-opus-5", true),
+            ("anthropic", "claude-3-5-sonnet-20241022", false),
+            ("gemini", "gemini-3-pro-preview", true),
+            ("gemini", "gemini-2.5-pro", false),
+            ("ollama", "gpt-oss:120b", true),
+            ("ollama", "llama3.1:8b", false),
+            ("ollama-cloud", "gpt-oss:120b", true),
+            ("ollama-cloud", "qwen3-coder:480b", false),
+            ("openai-compatible", "o3-mini", false),
+        ];
+        for (provider, model, expected) in cases {
+            let client = resolve_by_name(provider, None).unwrap();
+            assert_eq!(
+                client.capabilities(model).supports_reasoning,
+                expected,
+                "{provider}/{model} reasoning support"
+            );
+        }
     }
 
     #[test]
