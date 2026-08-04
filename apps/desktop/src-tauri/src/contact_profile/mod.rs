@@ -158,7 +158,12 @@ impl ContactProfile {
     /// reproduce, so the genuinely-rendered link fails set membership there
     /// and false-fires `header_url_mismatch`. Capping the bare URL first, the
     /// same way in both methods, is what keeps them recording the identical
-    /// post-cap string by construction.
+    /// post-cap string by construction. Every label/URL that ends up INSIDE
+    /// a `[Label](url)` construct goes through [`sanitize_link_part`], not
+    /// plain [`sanitize_header_part`] — it additionally drops `[`, `]`, `(`,
+    /// `)` so a value can't close the link early or open a second one;
+    /// location/email/phone stay on [`sanitize_header_part`] since they're
+    /// never bracket-wrapped.
     pub fn header_markdown(&self, lang: &str) -> String {
         let mut parts: Vec<String> = Vec::new();
         if let Some(loc) = &self.location {
@@ -174,21 +179,21 @@ impl ContactProfile {
             parts.push(sanitize_header_part(phone));
         }
         if let Some(url) = non_empty(&self.linkedin).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[LinkedIn]({})", sanitize_header_part(url)));
+            parts.push(format!("[LinkedIn]({})", sanitize_link_part(url)));
         }
         if let Some(url) = non_empty(&self.github).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[GitHub]({})", sanitize_header_part(url)));
+            parts.push(format!("[GitHub]({})", sanitize_link_part(url)));
         }
         if let Some(url) = non_empty(&self.website).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[Website]({})", sanitize_header_part(url)));
+            parts.push(format!("[Website]({})", sanitize_link_part(url)));
         }
         for link in &self.extra_links {
             let (label, url) = (link.label.trim(), link.url.trim());
             if !label.is_empty() && !url.is_empty() && is_safe_header_url(url) {
                 parts.push(format!(
                     "[{}]({})",
-                    sanitize_header_part(label),
-                    sanitize_header_part(url)
+                    sanitize_link_part(label),
+                    sanitize_link_part(url)
                 ));
             }
         }
@@ -250,19 +255,20 @@ impl ContactProfile {
     /// `validate::pdf_render_issues`'s `allowed` set). Email is included as a
     /// `mailto:` link.
     ///
-    /// Routed through the SAME `is_safe_header_url` filter and
-    /// `sanitize_header_part` sanitization [`Self::header_markdown`] applies —
-    /// to the bare url/email, exactly as there, BEFORE any `mailto:`/`[Label](…)`
-    /// wrapping — so the two can never fall out of lockstep: an unsafe-scheme
-    /// URL `header_markdown` drops must never appear here as "the profile's
-    /// own link" (a phantom entry that would otherwise cause a spurious,
-    /// non-blocking `header_url_missing`), and a URL/email carrying a control
-    /// character or exceeding the length cap must be compared here in the
-    /// SAME post-cap form it actually renders in — capping the WRAPPED string
-    /// instead (`mailto:{email}`, `[Label](url)`) can cap at a different
-    /// point than the bare-value cap `header_markdown` applies, so the
-    /// genuinely-rendered link fails set membership and `header_url_mismatch`
-    /// (CRITICAL, blocking) fires on an unmodified, legitimate profile.
+    /// Routed through the SAME `is_safe_header_url` filter [`Self::header_markdown`]
+    /// applies, and the same PER-VALUE sanitizer — `sanitize_link_part` for a
+    /// URL that renders inside `[Label](…)` there, `sanitize_header_part` for
+    /// the bare email — so the two can never fall out of lockstep: an
+    /// unsafe-scheme URL `header_markdown` drops must never appear here as
+    /// "the profile's own link" (a phantom entry that would otherwise cause a
+    /// spurious, non-blocking `header_url_missing`), and a URL/email carrying
+    /// a control character, a link-breaking bracket, or exceeding the length
+    /// cap must be compared here in the SAME post-sanitize form it actually
+    /// renders in — capping the WRAPPED string instead (`mailto:{email}`,
+    /// `[Label](url)`) can cap at a different point than the bare-value cap
+    /// `header_markdown` applies, so the genuinely-rendered link fails set
+    /// membership and `header_url_mismatch` (CRITICAL, blocking) fires on an
+    /// unmodified, legitimate profile.
     pub fn header_urls(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = non_empty(&self.email) {
@@ -277,12 +283,12 @@ impl ContactProfile {
         .flatten()
         .filter(|u| is_safe_header_url(u))
         {
-            out.push(sanitize_header_part(url));
+            out.push(sanitize_link_part(url));
         }
         for link in &self.extra_links {
             let url = link.url.trim();
             if !url.is_empty() && is_safe_header_url(url) {
-                out.push(sanitize_header_part(url));
+                out.push(sanitize_link_part(url));
             }
         }
         out
@@ -351,6 +357,26 @@ fn sanitize_header_part(s: &str) -> String {
     const MAX_LEN: usize = 200;
     s.chars()
         .filter(|c| !c.is_control())
+        .take(MAX_LEN)
+        .collect()
+}
+
+/// [`sanitize_header_part`], plus drops `[`, `]`, `(`, `)` — for a label or
+/// URL value that gets spliced into a `[Label](url)` markdown construct
+/// (never for a bare value like location/email/phone, which isn't bracket-
+/// wrapped). Those four characters could otherwise close the link early or
+/// open a second one; [`is_safe_header_url`] only checks the scheme prefix,
+/// so an `https://`-prefixed value can still carry one past it. A prior
+/// security round judged the live exploit surface already closed
+/// (import-derived labels come from [`url_label`], which cannot produce a
+/// bracket) — this is defense-in-depth, not a hole being patched, but it's
+/// cheap and it keeps every label/URL that reaches a `[Label](url)`
+/// construct byte-identical between [`ContactProfile::header_markdown`] and
+/// [`ContactProfile::header_urls`].
+fn sanitize_link_part(s: &str) -> String {
+    const MAX_LEN: usize = 200;
+    s.chars()
+        .filter(|c| !c.is_control() && !matches!(c, '[' | ']' | '(' | ')'))
         .take(MAX_LEN)
         .collect()
 }

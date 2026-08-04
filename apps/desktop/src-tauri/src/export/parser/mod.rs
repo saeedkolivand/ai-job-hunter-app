@@ -393,9 +393,30 @@ fn is_likely_company_or_role(text: &str) -> bool {
     words.iter().any(|word| COMPANY_KEYWORDS.contains(word))
 }
 
+/// True when `s` contains a run of 4+ consecutive ASCII digits — a bare year
+/// ("2021") or similar. The "no years" guard below needs this, not "some
+/// digit character appears exactly 4 times anywhere in the string": that
+/// crude check let a heading-shaped line carrying a genuine year (e.g.
+/// "PROJECT 2021", no second date to trip `DATE_RE`'s range shape) through
+/// misclassified as a section heading.
+fn has_four_consecutive_ascii_digits(s: &str) -> bool {
+    let mut run = 0;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            run += 1;
+            if run == 4 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
 /// The ALL-CAPS `SectionHeader` shape rule: fully uppercase, 4–60 chars, at
-/// least 2 alphabetic characters, no ASCII digit repeated exactly 4 times (a
-/// crude "no years" guard), not a likely company/role/acronym token
+/// least 2 alphabetic characters, no run of 4+ consecutive digits (a "no
+/// years" guard), not a likely company/role/acronym token
 /// (`is_likely_company_or_role`), no date-range shape (`DATE_RE`), and no
 /// `@`. This is what recognizes a locale's own ALL-CAPS heading
 /// (`PERFIL`/`PROFILO`/`WERKERVARING`/…, or an English heading not literally
@@ -409,9 +430,7 @@ pub(crate) fn is_all_caps_section_heading(clean: &str) -> bool {
         && clean.len() >= 4
         && clean.len() <= 60
         && clean.chars().filter(|c| c.is_alphabetic()).count() >= 2
-        && !clean
-            .chars()
-            .any(|c| c.is_ascii_digit() && clean.matches(c).count() == 4) // No years
+        && !has_four_consecutive_ascii_digits(clean)
         && !is_likely_company_or_role(clean)
         && !DATE_RE.is_match(clean)
         && !clean.contains('@')

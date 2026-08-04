@@ -429,6 +429,45 @@ fn job_board_host_is_warned_even_with_no_contact_profile_at_all() {
     );
 }
 
+/// The blocking path itself, not just its skip/warning branches (the gate
+/// narrowed to `profile_is_header_source`, and every other test here exercises
+/// a case where it doesn't fire): a body company link genuinely rendering
+/// inside the top-144pt header band, while the profile is the header's source
+/// of truth, is the exact URL-swap regression `header_url_mismatch` exists to
+/// catch — a body/company link is not one of the profile's own fields, so it
+/// must block, not warn.
+#[test]
+fn company_link_leaking_into_the_header_band_is_a_blocking_mismatch() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "\
+Jane Doe
+
+EXPERIENCE
+[Acme Corp](https://acme.example.com)  2020 - Present
+Senior Engineer
+- Led a team of five engineers delivering the core platform
+
+SKILLS
+- Rust, TypeScript, React
+"
+    .to_string();
+    request.contact = Some(profile_with("https://example.dev/portfolio"));
+    let result = validate_and_fix(request, crate::export::pdf::generate_pdf);
+    let (_bytes, report) = result.expect("pdf export (validate_and_fix reports, doesn't fail)");
+    assert!(
+        !report.ok,
+        "a company link leaking into the header band must block the export: {:?}",
+        report.issues
+    );
+    assert!(
+        report.issues.iter().any(|i| i.code == "header_url_mismatch"
+            && i.severity == Severity::Critical
+            && i.message.contains("https://acme.example.com")),
+        "the company link must be named as the mismatch: {:?}",
+        report.issues
+    );
+}
+
 #[test]
 fn txt_is_returned_unvalidated() {
     let (bytes, report) = validate_and_fix(

@@ -49,5 +49,11 @@
     "contact": false,
     "firstLine": false,
     "note": "single separator only"
+  },
+  {
+    "line": "**https://example.com**",
+    "contact": true,
+    "firstLine": false,
+    "note": "bold-wrapped URL — URL_RE's ^https?:// arm is anchored so it only matches once strip_md removes the leading **; a raw-line predicate would miss this"
   }
 ]

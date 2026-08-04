@@ -183,8 +183,12 @@ fn candidate_name_metadata_is_fallback_when_text_has_a_name() {
 fn candidate_name_metadata_fills_header_when_text_has_none() {
     let template = Template::get(TemplateId::SwissMinimal);
     let text = "jane@example.com\n\nSUMMARY\nSome text.";
+    // Padded on purpose: the emptiness check (`!name.trim().is_empty()`) used
+    // to trim while the assignment (`model.header.name = name.to_string()`)
+    // didn't, so a padded metadata name rendered with stray leading/trailing
+    // whitespace baked into the header run.
     let meta = GenerationMeta {
-        candidate_name: Some("Jane Smith".to_string()),
+        candidate_name: Some("  Jane Smith  ".to_string()),
         job_title: None,
         company_name: None,
         target_language: None,
@@ -192,10 +196,24 @@ fn candidate_name_metadata_fills_header_when_text_has_none() {
     let docx = generate_resume_docx(text, Some(&meta), &template, false).expect("generate docx");
     let mut buffer = Cursor::new(Vec::new());
     docx.build().pack(&mut buffer).expect("pack docx");
-    let doc_text = text_of(&part(&buffer.into_inner(), "word/document.xml"));
+    let bytes = buffer.into_inner();
+    let xml = part(&bytes, "word/document.xml");
+    // The run text itself must be exactly the trimmed name — bounded
+    // immediately by tags, no leaked interior whitespace from the untrimmed
+    // metadata field.
     assert!(
-        doc_text.contains("Jane Smith"),
-        "metadata must fill a header with no text-derived name"
+        xml.contains(">Jane Smith<"),
+        "the header run must contain the trimmed name with no stray \
+         whitespace: {xml}"
+    );
+    // Not just "appears somewhere in the body" — it must land as the header,
+    // first in the document, not e.g. folded into a later section by a
+    // fallback that reached the wrong branch.
+    let doc_text = text_of(&xml);
+    assert!(
+        doc_text.trim_start().starts_with("Jane Smith"),
+        "metadata name must fill the header and land first in the document, \
+         not merely appear somewhere in the body: {doc_text:?}"
     );
 }
 

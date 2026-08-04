@@ -1060,8 +1060,8 @@ export function buildBodyLinksBlock(resume: string): string {
         `REAL name as it appears in the résumé — never the key itself, never a URL or slug, and never ` +
         `appended to the title (the hyperlink is attached automatically by matching the item name). ` +
         `Every entry must end up with exactly one matching item. If an item has no natural home in ` +
-        `Experience or Skills, add a PROJECTS or PUBLICATIONS section and list it there. Drop none of ` +
-        `them:\n` +
+        `Experience or Skills, add a PROJECTS or PUBLICATIONS section and list it there — but never ` +
+        `invent a title or context just to force one in:\n` +
         reachable.map((b) => `- ${b.label}`).join('\n')
     );
   }
@@ -1071,7 +1071,7 @@ export function buildBodyLinksBlock(resume: string): string {
         `rename safely, so write EACH ONE exactly as shown below, verbatim, as the visible text on ` +
         `its matching item (the hyperlink is attached automatically by matching this exact text). If ` +
         `an item has no natural home in Experience or Skills, add a PROJECTS or PUBLICATIONS section ` +
-        `and list it there. Drop none of them:\n` +
+        `and list it there — but never invent a title or context just to force one in:\n` +
         unreachable.map((b) => `- ${b.label}`).join('\n')
     );
   }

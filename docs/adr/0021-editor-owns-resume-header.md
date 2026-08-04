@@ -35,11 +35,11 @@ Invert the ownership model at export time:
 
 **Trade-off accepted:**
 
-| Gain                                                                    | Loss                                                                                               |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| User edits are preserved; header is not silently overwritten            | Profile-parity validation removed; a hand-edited header can drift from the profile without warning |
-| Rich customization: users can reorder, drop, or add links to the header | New risk: user accidentally edits the contact line and loses an important link                     |
-| Simpler mental model: "edit the document, not the settings"             | Non-blocking warning less visible than a hard validation gate                                      |
+| Gain                                                                    | Loss                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User edits are preserved; header is not silently overwritten            | Profile-parity validation is skipped once the document text already carries its own header (the common case post-seeding) — the strict block is retained only for the smaller case where the profile is still the header's source |
+| Rich customization: users can reorder, drop, or add links to the header | New risk: user accidentally edits the contact line and loses an important link                                                                                                                                                    |
+| Simpler mental model: "edit the document, not the settings"             | For a text-owned header, drift from the profile surfaces only as the narrower, non-blocking job-board-host warning, not a hard validation gate                                                                                    |
 
 **Why this trade-off:**
 

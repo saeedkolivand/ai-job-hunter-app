@@ -82,7 +82,8 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
             .meta
             .as_ref()
             .and_then(|m| m.candidate_name.as_deref())
-            .filter(|s| !s.trim().is_empty())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
         {
             model.header.name = name.to_string();
         }

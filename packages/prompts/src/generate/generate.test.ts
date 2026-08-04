@@ -255,10 +255,17 @@ describe('Xing profile gate (#LOW, deliberate — xing.com is also a JOB_BOARD_H
     expect(getLinkMap(resume)).toEqual({});
     expect(getBodyLinkMap(resume)).toEqual({});
   });
+});
 
-  it('recognizes about.me / carrd.co as platform hosts, matching Rust WEBSITE_HOSTS', () => {
+describe('bio-link platform hosts, matching Rust WEBSITE_HOSTS', () => {
+  it('recognizes about.me as a platform host', () => {
     const resume = 'Body\n---\n- [About](https://about.me/janedoe)';
     expect(getLinkMap(resume).About).toBe('https://about.me/janedoe');
+  });
+
+  it('recognizes carrd.co as a platform host', () => {
+    const resume = 'Body\n---\n- [Site](https://janedoe.carrd.co)';
+    expect(getLinkMap(resume).Site).toBe('https://janedoe.carrd.co');
   });
 });
 

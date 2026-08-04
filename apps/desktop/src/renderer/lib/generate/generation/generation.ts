@@ -361,17 +361,14 @@ function pickReplacementIndex(lines: string[], matches: number[]): number {
  * line it mis-scans as contact-shaped) — whether by deleting it outright or
  * by silently overwriting it in place, which is just as much a loss.
  *
- * Line 0 is a candidate too when there's no `fullName` to write over it AND
- * it's already contact-shaped by Rust's narrower line-0 rule
- * (`isFirstLineContactShaped`) — a combined "Jane Doe | jane@example.com"
- * with no separate name line. Rust's own `idx == 0` case classifies that as
- * `Contact`, not `Name` (so `header.name` comes out empty from THIS line
- * either way). But index 0 is never itself the replacement target: were it
- * the ONLY candidate, overwriting it would erase "Jane Doe" entirely (there
- * is no separate name line to fall back to), which is worse than leaving it
- * untouched and inserting the profile's line right after — so index 0 is
- * excluded before {@link pickReplacementIndex} runs, and only feeds the
- * "insert" fallback when it was the sole match.
+ * Index 0 is never a candidate for the replacement scan below (which starts
+ * at `i = 1`), including when there's no `fullName` and line 0 is already
+ * contact-shaped by Rust's narrower line-0 rule (`isFirstLineContactShaped`)
+ * — a combined "Jane Doe | jane@example.com" with no separate name line.
+ * Were it eligible and the ONLY candidate, overwriting it would erase "Jane
+ * Doe" entirely (there is no separate name line to fall back to), which is
+ * worse than leaving it untouched and inserting the profile's line right
+ * after — so it always falls to the "insert" branch instead.
  *
  * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
  * is best-effort recognition, not this): the scan below never looks past the
@@ -394,7 +391,22 @@ export function seedHeaderFromProfile(
   if (!lines.length) return text;
 
   const fullName = profile.fullName?.trim();
-  if (fullName) lines[0] = sanitizeHeaderName(fullName);
+  if (fullName) {
+    // Guarded like every other write below: line 0 is only overwritten when
+    // it's actually name-shaped — not a section heading (`looksLikeHeaderBoundary`)
+    // and not already contact-shaped (`isFirstLineContactShaped`). A model
+    // that omits the name line (starts straight with "SUMMARY" or a
+    // "Jane Doe | jane@example.com" combined line) must never have that line
+    // clobbered — the name is INSERTED ahead of it instead, same
+    // never-remove-or-blind-overwrite invariant the rest of this function
+    // holds. See the doc comment above for the destructive repro this closes.
+    const line0 = lines[0] ?? '';
+    if (looksLikeHeaderBoundary(line0) || isFirstLineContactShaped(line0)) {
+      lines.unshift(sanitizeHeaderName(fullName));
+    } else {
+      lines[0] = sanitizeHeaderName(fullName);
+    }
+  }
 
   if (contactLine.trim()) {
     // The header block: line 0 up to (not including) the first blank line,
@@ -408,18 +420,17 @@ export function seedHeaderFromProfile(
       }
     }
 
+    // Starts at i = 1: index 0 is never a candidate here — see the doc
+    // comment above.
     const matches: number[] = [];
-    if (!fullName && isFirstLineContactShaped(lines[0] ?? '')) matches.push(0);
     for (let i = 1; i < blockEnd; i++) {
       const line = lines[i] ?? '';
       if (looksLikeHeaderBoundary(line)) break;
       if (isHeaderContactLine(line)) matches.push(i);
     }
 
-    // Index 0 is never the replacement target — see the doc comment above.
-    const replaceable = matches.filter((i) => i !== 0);
-    if (replaceable.length > 0) {
-      lines[pickReplacementIndex(lines, replaceable)] = contactLine;
+    if (matches.length > 0) {
+      lines[pickReplacementIndex(lines, matches)] = contactLine;
     } else {
       lines.splice(1, 0, contactLine);
     }
@@ -433,9 +444,11 @@ export function seedHeaderFromProfile(
  * `text` (H — the editor is the source of truth over whatever header the
  * model wrote). Shared by every résumé-producing generation path —
  * `generateResume` AND `synthesizeResume` (the Resume Builder), which has no
- * base résumé to derive a header from and is explicitly told by its own
- * prompt that the contact line it writes is provisional; only this call
- * makes that true.
+ * base résumé to derive a header from — its prompt
+ * (`packages/prompts/src/builder/builder-prompt.ts`) has the model write an
+ * ordinary name + contact line, same as any other résumé prompt, and this
+ * call overwrites it with the profile's own values regardless of what the
+ * model wrote, exactly like the base-résumé path.
  *
  * Both IPC calls are guarded (`.catch(() => undefined)`): header seeding is
  * cosmetic post-processing on an already-finished, already-paid-for AI
@@ -449,10 +462,19 @@ async function seedHeaderFromContactProfile(
   locale: string
 ): Promise<string> {
   const api = getClient();
-  const contact = await api.contactProfile.get().catch(() => undefined);
+  const contact = await api.contactProfile.get().catch((err: unknown) => {
+    console.warn('seedHeaderFromContactProfile: contactProfile.get failed, header not seeded', err);
+    return undefined;
+  });
   if (!contact) return text;
   const headerLang = toLanguageCode(meta.targetLanguage || locale);
-  const contactLine = await api.contactProfile.headerLine(headerLang).catch(() => undefined);
+  const contactLine = await api.contactProfile.headerLine(headerLang).catch((err: unknown) => {
+    console.warn(
+      'seedHeaderFromContactProfile: contactProfile.headerLine failed, header not seeded',
+      err
+    );
+    return undefined;
+  });
   if (contactLine === undefined) return text;
   return seedHeaderFromProfile(text, contact, contactLine);
 }
@@ -506,8 +528,9 @@ export async function generateResume(
  * builder prompts grounded on `<interview_answers>` instead of a base résumé + job
  * ad. Provided links are kept inline by the prompt, so no link-map injection is
  * needed (there is no source résumé to parse). Header-seeded exactly like
- * {@link generateResume} (H) — the builder prompt tells the model its contact
- * line is provisional; this is what makes that true.
+ * {@link generateResume} (H) — the builder prompt has the model write an
+ * ordinary name + contact line, and {@link seedHeaderFromContactProfile}
+ * overwrites it with the profile's own values regardless.
  */
 export async function synthesizeResume(
   answers: InterviewAnswers,

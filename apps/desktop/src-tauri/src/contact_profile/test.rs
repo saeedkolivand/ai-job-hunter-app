@@ -109,6 +109,28 @@ fn header_markdown_caps_an_overlong_part() {
     assert_eq!(md.len(), 200);
 }
 
+/// A `[`, `]`, `(`, or `)` in a URL/label that ends up inside a `[Label](url)`
+/// construct must be dropped, not just control characters — those four
+/// characters could otherwise close the link early or open a second one.
+/// `is_safe_header_url` only checks the scheme prefix, so an
+/// `https://`-prefixed value still carries the payload past it.
+#[test]
+fn header_markdown_strips_link_breaking_brackets_from_url_and_label() {
+    let p = ContactProfile {
+        website: Some("https://example.dev/site)[EXPERIENCE](https://evil.example".into()),
+        extra_links: vec![ContactLink {
+            label: "Real](url)[Fake".into(),
+            url: "https://example.dev/extra)[EXPERIENCE](https://evil.example".into(),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        p.header_markdown("en"),
+        "[Website](https://example.dev/siteEXPERIENCEhttps://evil.example) | \
+         [RealurlFake](https://example.dev/extraEXPERIENCEhttps://evil.example)"
+    );
+}
+
 // ── header_urls() ↔ header_markdown() sanitization lockstep (security review) ─
 //
 // `header_urls()` is the sole input to `validate::pdf_render_issues`'s
@@ -176,6 +198,28 @@ fn header_urls_allows_mailto_scheme_for_a_named_link() {
         ..Default::default()
     };
     assert_eq!(p.header_urls(), vec!["mailto:alex@example.com".to_string()]);
+}
+
+/// The bracket-stripping in `header_markdown` must apply identically in
+/// `header_urls`, or the genuinely-rendered (bracket-stripped) URL fails set
+/// membership against a differently-sanitized "expected" entry, firing
+/// `header_url_mismatch` on an unmodified profile.
+#[test]
+fn header_urls_strips_link_breaking_brackets_like_header_markdown() {
+    let p = ContactProfile {
+        website: Some("https://example.dev/site)[EXPERIENCE](https://evil.example".into()),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    let rendered_url = md
+        .strip_prefix("[Website](")
+        .and_then(|s| s.strip_suffix(')'))
+        .expect("well-formed [Website](url) part");
+    assert_eq!(
+        p.header_urls(),
+        vec![rendered_url.to_string()],
+        "header_urls() must report the exact same bracket-stripped URL header_markdown renders"
+    );
 }
 
 /// A URL long enough that the 200-char sanitization cap engages must be

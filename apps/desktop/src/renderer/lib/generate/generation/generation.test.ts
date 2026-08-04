@@ -39,6 +39,28 @@ function register() {
   return client;
 }
 
+/** `register()` plus a `contactProfile` override — the streaming stubs must
+ *  stay identical to `register()`'s or `flushUntilStreaming`/`emit`/`done`
+ *  never see the job. Shared by `generateResume` and `synthesizeResume`'s H
+ *  test suites — was duplicated verbatim in both `describe` blocks. */
+function registerWithContactProfile(
+  contactProfile: NonNullable<Parameters<typeof createMockClient>[0]>['contactProfile']
+) {
+  const client = createMockClient({
+    ai: {
+      generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+      onStream: vi.fn((h: (chunk: unknown) => void) => {
+        streamHandler = h;
+        return () => {};
+      }),
+    },
+    jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+    contactProfile,
+  });
+  _registerClient(client);
+  return client;
+}
+
 async function flushUntilStreaming() {
   for (let i = 0; i < 6 && !streamHandler; i++) await Promise.resolve();
 }
@@ -144,27 +166,6 @@ describe('generateResume', () => {
     companyName: 'Z',
     targetLanguage: 'en',
     topRequirements: [],
-  };
-
-  /** `register()` plus a `contactProfile` override — the streaming stubs must
-   *  stay identical to `register()`'s or `flushUntilStreaming`/`emit`/`done`
-   *  never see the job. */
-  const registerWithContactProfile = (
-    contactProfile: NonNullable<Parameters<typeof createMockClient>[0]>['contactProfile']
-  ) => {
-    const client = createMockClient({
-      ai: {
-        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
-        onStream: vi.fn((h: (chunk: unknown) => void) => {
-          streamHandler = h;
-          return () => {};
-        }),
-      },
-      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
-      contactProfile,
-    });
-    _registerClient(client);
-    return client;
   };
 
   // H — the editor is the source of truth: the header seeded from the Contact
@@ -321,28 +322,11 @@ describe('synthesizeResume', () => {
   };
   const ANSWERS = { fullName: 'Jordan Lee', experience: [], education: [], skills: [] };
 
-  const registerWithContactProfile = (
-    contactProfile: NonNullable<Parameters<typeof createMockClient>[0]>['contactProfile']
-  ) => {
-    const client = createMockClient({
-      ai: {
-        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
-        onStream: vi.fn((h: (chunk: unknown) => void) => {
-          streamHandler = h;
-          return () => {};
-        }),
-      },
-      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
-      contactProfile,
-    });
-    _registerClient(client);
-    return client;
-  };
-
   // Security re-review (CRITICAL): synthesizeResume (the Resume Builder) had
   // NO seeding call at all — `seedHeaderFromProfile` had exactly one
-  // production caller (`generateResume`). The builder prompt tells the model
-  // its contact line is provisional; only this call makes that true.
+  // production caller (`generateResume`). The builder prompt has the model
+  // write an ordinary name + contact line, same as any other résumé prompt;
+  // only this call overwrites it with the profile's own values.
   it('seeds the header from the contact profile — the CRITICAL repro (the Resume Builder path was never seeded)', async () => {
     registerWithContactProfile({
       get: vi.fn().mockResolvedValue({ fullName: 'Jordan Lee', email: 'jordan@example.com' }),
@@ -684,6 +668,32 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     expect(out).toBe(
       ['Jordan Lee', 'Berlin | jordan@profile.example.com', 'AWS | GCP | Kubernetes'].join('\n')
     );
+  });
+
+  // Security re-review (MAJOR, round 6) — the exact repro: line 0 used to be
+  // overwritten unconditionally whenever the profile has a fullName, with no
+  // classification of what line 0 actually IS. A model that omits the name
+  // line entirely (starts straight with a section heading) had that heading
+  // destroyed and replaced with the name instead.
+  it('does not destroy a section heading the model wrote on line 0 — inserts the name instead of overwriting it', () => {
+    const out = seedHeaderFromProfile(
+      'SUMMARY\nSenior engineer with …',
+      { fullName: 'Jordan Lee' },
+      ''
+    );
+    expect(out).toBe('Jordan Lee\nSUMMARY\nSenior engineer with …');
+  });
+
+  // Same guard, the other reachable shape: line 0 is already contact-shaped
+  // (no separate name line at all) AND the profile has a fullName this time
+  // (unlike the no-fullName case covered above) — the name must still be
+  // inserted, never overwritten onto the contact line, and the guard must
+  // compose cleanly with the contact-line scan that follows: the now-shifted
+  // contact line at index 1 is still found and replaced normally.
+  it('inserts the name ahead of a contact-shaped line 0 rather than overwriting it, when the profile has a fullName too', () => {
+    const text = 'jane@old.example.com | +1 555 0000\n\nEXPERIENCE\nAcme Corp';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nEXPERIENCE\nAcme Corp');
   });
 });
 

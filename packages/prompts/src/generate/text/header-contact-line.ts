@@ -18,6 +18,28 @@
 
 import sectionNames from '../../fixtures/section-names.json';
 
+/**
+ * Mirrors Rust's `let trimmed = raw.trim(); let clean = strip_md(trimmed);`
+ * pipeline — EVERY predicate in this file classifies `clean`, never the raw
+ * line, because that's what every Rust predicate it mirrors actually runs
+ * on. Order matches `strip_md` exactly: trim, remove every `**`, strip a
+ * leading `#` run then leading whitespace, strip a trailing `#` run then
+ * trailing whitespace. (`strip_md` does not touch `[label](url)` markdown —
+ * neither does this.) A previous version tested the raw line only, which
+ * silently diverges from Rust for a `**bold**`-wrapped or `#`-prefixed
+ * contact/heading line — the same parity class that has twice become a HIGH
+ * on this branch; see the shared fixtures' `**`-bearing cases.
+ */
+function toClean(rawLine: string): string {
+  return rawLine
+    .trim()
+    .replaceAll('**', '')
+    .replace(/^#+/, '')
+    .replace(/^\s+/, '')
+    .replace(/#+$/, '')
+    .replace(/\s+$/, '');
+}
+
 /** Mirrors the Rust parser's `PHONE_RE`: an optional leading `+`, a digit,
  *  then ≥7 more digits/space/`-`/`(`/`)`/`.`. */
 const HEADER_PHONE_RE = /\+?\d[\d\s\-().]{7,}/;
@@ -36,16 +58,16 @@ function headerSeparatorCount(line: string): number {
 /**
  * A pre-section line carrying contact info — a mirror of the Rust parser's
  * `is_contact_shaped`: `clean.contains('@') || PHONE_RE.is_match(clean) ||
- * pipe_count >= 2 || URL_RE.is_match(clean)`. `strip_md` does not strip
- * `[label](url)` markdown, so testing the raw line (no stripping here either)
- * matches what Rust's `clean` actually contains.
+ * pipe_count >= 2 || URL_RE.is_match(clean)`, run on {@link toClean}'d input
+ * exactly like Rust's `clean`.
  */
 export function isHeaderContactLine(line: string): boolean {
+  const clean = toClean(line);
   return (
-    line.includes('@') ||
-    HEADER_PHONE_RE.test(line) ||
-    headerSeparatorCount(line) >= 2 ||
-    HEADER_URL_RE.test(line)
+    clean.includes('@') ||
+    HEADER_PHONE_RE.test(clean) ||
+    headerSeparatorCount(clean) >= 2 ||
+    HEADER_URL_RE.test(clean)
   );
 }
 
@@ -59,7 +81,8 @@ export function isHeaderContactLine(line: string): boolean {
  * as an untouchable name line to scan past.
  */
 export function isFirstLineContactShaped(line: string): boolean {
-  return line.includes('@') || HEADER_PHONE_RE.test(line);
+  const clean = toClean(line);
+  return clean.includes('@') || HEADER_PHONE_RE.test(clean);
 }
 
 /** Rust's `SECTION_NAMES` const, read live from the shared fixture rather
@@ -68,9 +91,8 @@ export function isFirstLineContactShaped(line: string): boolean {
 const KNOWN_SECTION_NAMES = new Set<string>(sectionNames);
 
 /**
- * True when `line` (after trimming and stripping `**bold**` markers, mirroring
- * Rust's `strip_md`) is an EXACT, case-insensitive match for one of the known
- * multilingual section headings Rust's parser recognizes
+ * True when {@link toClean}'d `line` is an EXACT, case-insensitive match for
+ * one of the known multilingual section headings Rust's parser recognizes
  * (`SECTION_NAMES.contains(&lower.as_str())`) — a Title-Case heading
  * ("Experience", "Perfil") flips `seen_section` here even when it isn't
  * ALL-CAPS. Covers every locale `../../locale/index.ts`'s `CONVENTIONS` ships
@@ -79,7 +101,7 @@ const KNOWN_SECTION_NAMES = new Set<string>(sectionNames);
  * in this list.
  */
 export function isKnownSectionName(line: string): boolean {
-  return KNOWN_SECTION_NAMES.has(line.replace(/\*\*/g, '').trim().toLowerCase());
+  return KNOWN_SECTION_NAMES.has(toClean(line).toLowerCase());
 }
 
 /** Mirrors the Rust parser's `COMPANY_KEYWORDS` — whole-word tokens that make
@@ -140,16 +162,25 @@ function isLikelyCompanyOrRole(text: string): boolean {
 const DATE_RANGE_RE =
   /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}?(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b/i;
 
-/** Mirrors Rust's `clean.chars().any(|c| c.is_ascii_digit() &&
- *  clean.matches(c).count() == 4)` — a crude "no years" guard: true when SOME
- *  ASCII digit appears exactly 4 times anywhere in the string (not
- *  necessarily as a contiguous run). */
-function hasAsciiDigitRepeatedExactlyFourTimes(s: string): boolean {
-  const counts = new Map<string, number>();
+/** Mirrors Rust's `has_four_consecutive_ascii_digits` — a "no years" guard:
+ *  true when `s` contains a run of 4+ consecutive ASCII digits (a bare year
+ *  like "2021"). A prior version checked "some digit character appears
+ *  exactly 4 times anywhere in the string" instead, which let a
+ *  heading-shaped line carrying a genuine year through misclassified as a
+ *  section heading whenever nothing else disqualified it (no second date to
+ *  trip {@link DATE_RANGE_RE}'s range shape) — see the fixture's
+ *  "PROJECT 2021" case. */
+function hasFourConsecutiveAsciiDigits(s: string): boolean {
+  let run = 0;
   for (const ch of s) {
-    if (ch >= '0' && ch <= '9') counts.set(ch, (counts.get(ch) ?? 0) + 1);
+    if (ch >= '0' && ch <= '9') {
+      run += 1;
+      if (run === 4) return true;
+    } else {
+      run = 0;
+    }
   }
-  return [...counts.values()].some((n) => n === 4);
+  return false;
 }
 
 /** Unicode-alphabetic character count — mirrors Rust's
@@ -170,10 +201,11 @@ function byteLength(s: string): number {
 /**
  * The ALL-CAPS `SectionHeader` shape rule — a mirror of Rust's
  * `is_all_caps_section_heading`: fully uppercase, 4–60 BYTES (not JS
- * characters — see {@link byteLength}), ≥2 alphabetic characters, no ASCII
- * digit repeated exactly 4 times, not a likely company/role/acronym token
- * ({@link isLikelyCompanyOrRole}), no date-range shape ({@link DATE_RANGE_RE}),
- * and no `@`.
+ * characters — see {@link byteLength}), ≥2 alphabetic characters, no run of
+ * 4+ consecutive digits (a "no years" guard —
+ * {@link hasFourConsecutiveAsciiDigits}), not a likely company/role/acronym
+ * token ({@link isLikelyCompanyOrRole}), no date-range shape
+ * ({@link DATE_RANGE_RE}), and no `@`.
  *
  * This is what recognizes a locale's own ALL-CAPS heading (`PERFIL`,
  * `PROFILO`, `WERKERVARING`, …) — the résumé prompt mandates ALL-CAPS section
@@ -187,14 +219,15 @@ function byteLength(s: string): number {
  * catch (see the fixture's own history for the exact repro).
  */
 export function isAllCapsSectionHeading(line: string): boolean {
+  const clean = toClean(line);
   return (
-    line === line.toUpperCase() &&
-    byteLength(line) >= 4 &&
-    byteLength(line) <= 60 &&
-    alphabeticCount(line) >= 2 &&
-    !hasAsciiDigitRepeatedExactlyFourTimes(line) &&
-    !isLikelyCompanyOrRole(line) &&
-    !DATE_RANGE_RE.test(line) &&
-    !line.includes('@')
+    clean === clean.toUpperCase() &&
+    byteLength(clean) >= 4 &&
+    byteLength(clean) <= 60 &&
+    alphabeticCount(clean) >= 2 &&
+    !hasFourConsecutiveAsciiDigits(clean) &&
+    !isLikelyCompanyOrRole(clean) &&
+    !DATE_RANGE_RE.test(clean) &&
+    !clean.includes('@')
   );
 }

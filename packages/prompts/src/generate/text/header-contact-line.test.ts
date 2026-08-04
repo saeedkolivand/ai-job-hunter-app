@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import allCapsHeadings from '../../fixtures/all-caps-headings.json';
 import fixture from '../../fixtures/header-contact-line.json';
-import sectionNames from '../../fixtures/section-names.json';
 import {
   isAllCapsSectionHeading,
   isFirstLineContactShaped,
@@ -25,14 +24,14 @@ describe('isHeaderContactLine / isFirstLineContactShaped ↔ Rust parity', () =>
 });
 
 describe('isKnownSectionName', () => {
-  it('recognizes every name in the shared fixture (its own runtime data source)', () => {
-    const names = sectionNames as string[];
-    expect(names.length).toBeGreaterThan(0);
-    for (const name of names) {
-      expect(isKnownSectionName(name)).toBe(true);
-    }
-  });
-
+  // No "every fixture name resolves true" loop here: isKnownSectionName's
+  // Set is built directly FROM this same fixture (`const KNOWN_SECTION_NAMES
+  // = new Set(sectionNames)`), so that loop would test the JSON parser, not
+  // the predicate — it cannot fail. The real cross-implementation guard is
+  // Rust's `section_names_exactly_matches_ts_known_section_names_fixture`,
+  // which compares the fixture against its OWN independent `SECTION_NAMES`
+  // list. The behavioral assertions below (case/whitespace/markdown
+  // handling, exclusions) are what can actually break.
   it('is case-insensitive and trims whitespace', () => {
     expect(isKnownSectionName('EXPERIENCE')).toBe(true);
     expect(isKnownSectionName('  Experience  ')).toBe(true);
@@ -60,28 +59,10 @@ describe('isAllCapsSectionHeading ↔ Rust parity', () => {
     }
   });
 
-  it('recognizes every locale header CONVENTIONS ships, uppercased (the exact CRITICAL repro)', () => {
-    // packages/prompts/src/locale/index.ts CONVENTIONS — es/it/nl/pt headers,
-    // as the résumé prompt actually emits them (`.toUpperCase()`).
-    const localeHeaders = [
-      'PERFIL', // es/pt summary
-      'EXPERIENCIA PROFESIONAL', // es experience
-      'FORMACIÓN', // es education
-      'HABILIDADES', // es skills
-      'PROFILO', // it summary
-      'ESPERIENZA PROFESSIONALE', // it experience
-      'FORMAZIONE', // it education
-      'COMPETENZE', // it skills
-      'PROFIEL', // nl summary
-      'WERKERVARING', // nl experience
-      'OPLEIDING', // nl education
-      'VAARDIGHEDEN', // nl skills
-      'EXPERIÊNCIA PROFISSIONAL', // pt experience
-      'FORMAÇÃO', // pt education
-      'COMPETÊNCIAS', // pt skills
-    ];
-    for (const header of localeHeaders) {
-      expect(isAllCapsSectionHeading(header)).toBe(true);
-    }
-  });
+  // The es/it/nl/pt locale headers (PERFIL, FORMACIÓN, HABILIDADES,
+  // ESPERIENZA PROFESSIONALE, …) previously lived here as a second,
+  // TS-only hardcoded array — checked against nothing but this predicate,
+  // so the Rust side never verified them. They now live in
+  // fixtures/all-caps-headings.json instead, covered by both this fixture
+  // test and `cargo test export::parser`'s copy — one list, checked twice.
 });

@@ -91,17 +91,25 @@ fn is_contact_shaped_matches_ts_is_header_contact_line_fixture() {
         "header-contact-line parity fixture must not be empty"
     );
     for c in &cases {
+        // `parse_line` never calls `is_contact_shaped` on the raw line — only
+        // on `clean = strip_md(trimmed)`. Doing the same here is what makes
+        // this a real end-to-end parity check against a `**bold**`- or
+        // `#`-decorated line, not just an isolated-function coincidence: the
+        // TS mirror applies its own equivalent stripping internally now too.
+        let clean = strip_md(c.line.trim());
         assert_eq!(
-            is_contact_shaped(&c.line),
+            is_contact_shaped(&clean),
             c.contact,
-            "is_contact_shaped drift for {:?}",
-            c.line
+            "is_contact_shaped drift for {:?} (clean: {:?})",
+            c.line,
+            clean
         );
         assert_eq!(
-            is_first_line_contact_shaped(&c.line),
+            is_first_line_contact_shaped(&clean),
             c.first_line,
-            "is_first_line_contact_shaped drift for {:?}",
-            c.line
+            "is_first_line_contact_shaped drift for {:?} (clean: {:?})",
+            c.line,
+            clean
         );
     }
 }
@@ -136,6 +144,20 @@ fn section_names_exactly_matches_ts_known_section_names_fixture() {
     let fixture_set: std::collections::BTreeSet<&str> =
         fixture.iter().map(String::as_str).collect();
     let rust_set: std::collections::BTreeSet<&str> = SECTION_NAMES.iter().copied().collect();
+    // Set equality alone silently absorbs a duplicate entry on either side
+    // (a name authored twice collapses to one element and the comparison
+    // below would still pass) — catch that separately so a duplicate is a
+    // real, loud failure rather than a no-op.
+    assert_eq!(
+        fixture.len(),
+        fixture_set.len(),
+        "section-names fixture must not contain a duplicate entry"
+    );
+    assert_eq!(
+        SECTION_NAMES.len(),
+        rust_set.len(),
+        "SECTION_NAMES must not contain a duplicate entry"
+    );
     assert_eq!(
         fixture_set, rust_set,
         "SECTION_NAMES and the shared fixture must contain exactly the same names"
@@ -174,11 +196,16 @@ fn is_all_caps_section_heading_matches_ts_fixture() {
         "all-caps-headings parity fixture must not be empty"
     );
     for c in &cases {
+        // Same reasoning as the contact-line fixture above: `parse_line`
+        // always runs this predicate on `strip_md(trimmed)`, never the raw
+        // line, so the parity check must too.
+        let clean = strip_md(c.line.trim());
         assert_eq!(
-            is_all_caps_section_heading(&c.line),
+            is_all_caps_section_heading(&clean),
             c.heading,
-            "is_all_caps_section_heading drift for {:?}",
-            c.line
+            "is_all_caps_section_heading drift for {:?} (clean: {:?})",
+            c.line,
+            clean
         );
     }
 }
