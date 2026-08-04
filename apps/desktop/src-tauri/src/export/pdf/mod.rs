@@ -13,7 +13,14 @@ use super::typst_engine::{
 };
 use crate::model::document::DocumentModel;
 
-fn extract_section<'a>(text: &'a str, start_marker: &str, end_marker: Option<&str>) -> &'a str {
+/// `pub(crate)` — also used by `validate::pdf_render_issues` so the header-band
+/// URL checks parse the SAME résumé text `prepare_resume_render` actually
+/// renders from, not the raw (possibly marker-wrapped) `request.text`.
+pub(crate) fn extract_section<'a>(
+    text: &'a str,
+    start_marker: &str,
+    end_marker: Option<&str>,
+) -> &'a str {
     let start = if let Some(idx) = text.find(start_marker) {
         let after = &text[idx + start_marker.len()..];
         after
@@ -67,14 +74,19 @@ fn prepare_resume_render(request: &ExportRequest) -> ResumeRenderInputs {
     // override + optionally linearize for ATS.
     let mut model = crate::model::adapter::model_from_resume_text(text);
 
-    // Apply candidate name from metadata.
-    if let Some(name) = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.candidate_name.as_deref())
-        .filter(|s| !s.trim().is_empty())
-    {
-        model.header.name = name.to_string();
+    // Apply candidate name from metadata — fallback only: the text-derived
+    // header name (what the editor shows) wins whenever the document already
+    // has one; metadata fills a header that has none.
+    if model.header.name.trim().is_empty() {
+        if let Some(name) = request
+            .meta
+            .as_ref()
+            .and_then(|m| m.candidate_name.as_deref())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            model.header.name = name.to_string();
+        }
     }
 
     // Override contact line from the named profile fields (URL-swap safety).

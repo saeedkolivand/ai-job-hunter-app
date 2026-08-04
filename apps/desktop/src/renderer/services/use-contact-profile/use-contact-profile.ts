@@ -22,3 +22,9 @@ export const useSaveContactProfile = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.contactProfile.all }),
   });
 };
+
+// `contactProfile.headerLine` (H, header seeding) has no React-component
+// consumer — `generateResume` (a plain async lib function, not a hook context)
+// calls the tauri client directly, matching that file's existing pattern for
+// every other one-off IPC call it makes. No hook/query-key wraps it: adding
+// one with no caller would just be dead surface (removed 2026-08 review).
