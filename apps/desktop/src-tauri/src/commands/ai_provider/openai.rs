@@ -15,8 +15,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
-    ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    friendly_api_error, model_entry, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
+    ToolSpec, Usage,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -158,9 +159,17 @@ fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult
     }
 }
 
-/// Parse the `/models` response body into `{name}` entries, applying
-/// [`should_list_model`]'s per-provider filter. Pure so it's unit-testable
-/// without a network mock.
+/// Parse the `/models` response body into `{name, createdAt?}` entries,
+/// applying [`should_list_model`]'s per-provider filter. Pure so it's
+/// unit-testable without a network mock.
+///
+/// OpenAI's `/v1/models` (and every OpenAI-compatible gateway that mirrors
+/// its schema — Ollama Cloud included) reports `created` as unix epoch
+/// SECONDS — verified against the live docs, normalized to epoch millis (the
+/// convention every `createdAt` field in this codebase uses) via a plain
+/// `* 1000`, lossless for a whole-second value. Neither `displayName` nor
+/// `contextLength` is ever populated: OpenAI's catalogue endpoint doesn't
+/// return either.
 fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>> {
     let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
         AppError::Provider(format!(
@@ -170,9 +179,17 @@ fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>>
     })?;
     Ok(data
         .iter()
-        .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
-        .filter(|id| should_list_model(provider, id))
-        .map(|id| json!({ "name": id }))
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?;
+            if !should_list_model(provider, id) {
+                return None;
+            }
+            let created_at_ms = m
+                .get("created")
+                .and_then(|v| v.as_i64())
+                .map(|secs| secs * 1000);
+            Some(model_entry(id, None, created_at_ms, None))
+        })
         .collect())
 }
 

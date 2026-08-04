@@ -13,9 +13,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    friendly_api_error, model_entry, single_shot_turn, split_system, AgentTurn, AiGenerateRequest,
+    AiProvider, ChatMsg, ModelCapabilities, ProviderId, RequestTrace, Role, StopReason, TokenParam,
+    ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -53,13 +53,18 @@ fn require_gemini_key(app: &AppHandle) -> AppResult<String> {
     validate_gemini_key(get_provider_key(app, ProviderId::Gemini.credential_key()))
 }
 
-/// Parse ONE page of the `/v1beta/models` response body into `{name}`
-/// entries, stripping the `models/` prefix Gemini's wire format uses, plus
-/// the `nextPageToken` for the next page, if any. `-preview`/experimental
-/// ids are NOT filtered out here — `/v1beta` (unlike `/v1`) lists them, and
-/// they're valid, selectable models (e.g. the curated Pro-tier default in
-/// `provider-meta.ts` is a `-preview` id). Pure so it's unit-testable
-/// without a network mock.
+/// Parse ONE page of the `/v1beta/models` response body into `{name,
+/// displayName?, contextLength?}` entries, stripping the `models/` prefix
+/// Gemini's wire format uses, plus the `nextPageToken` for the next page, if
+/// any. `-preview`/experimental ids are NOT filtered out here — `/v1beta`
+/// (unlike `/v1`) lists them, and they're valid, selectable models (e.g. the
+/// curated Pro-tier default in `provider-meta.ts` is a `-preview` id). Pure
+/// so it's unit-testable without a network mock.
+///
+/// Gemini's `/v1beta/models` returns `displayName` (string) and
+/// `inputTokenLimit` (integer) — verified against the live docs. It does
+/// **not** return a creation timestamp at all, so no `createdAt` field is
+/// ever populated for this provider — never a fabricated one.
 fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
     let models = body
         .get("models")
@@ -67,9 +72,16 @@ fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
         .ok_or_else(|| AppError::Provider("Gemini: response missing `models` array".to_string()))?;
     let names = models
         .iter()
-        .filter_map(|m| m.get("name").and_then(|id| id.as_str()))
-        .filter(|id| id.starts_with("models/"))
-        .map(|id| json!({ "name": id.strip_prefix("models/").unwrap_or(id) }))
+        .filter_map(|m| {
+            let raw_name = m.get("name").and_then(|v| v.as_str())?;
+            if !raw_name.starts_with("models/") {
+                return None;
+            }
+            let name = raw_name.strip_prefix("models/").unwrap_or(raw_name);
+            let display_name = m.get("displayName").and_then(|v| v.as_str());
+            let context_length = m.get("inputTokenLimit").and_then(|v| v.as_i64());
+            Some(model_entry(name, display_name, None, context_length))
+        })
         .collect();
     let next_page_token = body
         .get("nextPageToken")

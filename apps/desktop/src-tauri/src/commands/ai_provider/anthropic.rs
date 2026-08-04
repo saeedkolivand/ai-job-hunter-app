@@ -13,9 +13,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    friendly_api_error, model_entry, parse_rfc3339_millis, single_shot_turn, split_system,
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, RequestTrace,
+    StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -37,18 +37,34 @@ fn require_anthropic_key(stored: Option<String>) -> AppResult<String> {
         .ok_or_else(|| AppError::Config("No API key found".to_string()))
 }
 
-/// Parse ONE page of the `/v1/models` response body into `{name}` entries
-/// (keeping only `claude-*` ids) plus the cursor for the next page when
-/// `has_more` is true. Pure so it's unit-testable without a network mock.
+/// Parse ONE page of the `/v1/models` response body into `{name, displayName?,
+/// createdAt?, contextLength?}` entries (keeping only `claude-*` ids) plus the
+/// cursor for the next page when `has_more` is true. Pure so it's
+/// unit-testable without a network mock.
+///
+/// Anthropic's `/v1/models` returns `display_name` (string), `created_at`
+/// (RFC3339 — normalized to epoch millis via [`parse_rfc3339_millis`]), and
+/// `max_input_tokens` (integer) — verified against the live docs. Any field
+/// the response omits is left out entirely, never defaulted.
 fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
     let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
         AppError::Provider("Anthropic: response missing `data` array".to_string())
     })?;
     let names = data
         .iter()
-        .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-        .filter(|id| id.starts_with("claude-"))
-        .map(|id| json!({ "name": id }))
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?;
+            if !id.starts_with("claude-") {
+                return None;
+            }
+            let display_name = m.get("display_name").and_then(|v| v.as_str());
+            let created_at_ms = m
+                .get("created_at")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc3339_millis);
+            let context_length = m.get("max_input_tokens").and_then(|v| v.as_i64());
+            Some(model_entry(id, display_name, created_at_ms, context_length))
+        })
         .collect();
     let has_more = body
         .get("has_more")

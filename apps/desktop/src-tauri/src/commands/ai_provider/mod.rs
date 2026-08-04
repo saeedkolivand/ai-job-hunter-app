@@ -11,7 +11,7 @@
 
 use async_trait::async_trait;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
@@ -368,6 +368,56 @@ pub(crate) fn record_usage(
     }
 }
 
+// ── Model catalogue (`list_models`) ─────────────────────────────────────────────
+
+/// Build one `list_models` entry: `{name, displayName?, createdAt?,
+/// contextLength?}`. `name` is the canonical id everything selects on — a
+/// stored model preference matches against it, so its shape/value must never
+/// change here. Every other field is `None`-able because no single provider
+/// endpoint returns all of them (see each adapter's `list_models`/
+/// `parse_model_page` for exactly which it supplies) — a provider that omits
+/// a field passes `None`, which is skipped entirely from the JSON, never a
+/// fabricated zero/empty-string/"unknown" sentinel. The renderer treats
+/// absent as absent.
+///
+/// `created_at_ms` is unix epoch MILLISECONDS — the SAME convention every
+/// other timestamp field in this codebase already uses (`captured_at`,
+/// `last_updated`, …: `chrono::Utc::now().timestamp_millis()`), not any
+/// provider's native wire format (Anthropic ships an RFC3339 string, OpenAI a
+/// unix-epoch-SECONDS integer, Ollama an RFC3339-with-offset string) — see
+/// [`parse_rfc3339_millis`] for the RFC3339 → millis half of that
+/// normalization. Chosen over keeping each provider's native representation
+/// so the renderer sorts numerically with zero per-provider branching.
+pub fn model_entry(
+    name: &str,
+    display_name: Option<&str>,
+    created_at_ms: Option<i64>,
+    context_length: Option<i64>,
+) -> Value {
+    let mut entry = json!({ "name": name });
+    if let Some(d) = display_name {
+        entry["displayName"] = json!(d);
+    }
+    if let Some(c) = created_at_ms {
+        entry["createdAt"] = json!(c);
+    }
+    if let Some(l) = context_length {
+        entry["contextLength"] = json!(l);
+    }
+    entry
+}
+
+/// Parse an RFC3339 timestamp (Anthropic's `created_at`, Ollama's
+/// `modified_at` — both may carry a non-UTC offset, e.g. Ollama's
+/// `-07:00`) into unix epoch milliseconds. `None` on any parse failure —
+/// never a fabricated/zero timestamp; a parse failure is treated exactly
+/// like the field being absent.
+pub fn parse_rfc3339_millis(s: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.timestamp_millis())
+}
+
 // ── Provider trait & registry ────────────────────────────────────────────────
 
 /// A chat backend. Object-safe so the registry can return `Box<dyn AiProvider>`.
@@ -559,6 +609,10 @@ pub trait AiProvider: Send + Sync {
     /// List the models this provider exposes. Resolves its own credentials/client
     /// (exactly like `chat_stream`/`complete`), so no HTTP/key transport detail
     /// leaks into the trait — a CLI agent has neither and just lists its aliases.
+    ///
+    /// Each entry is `{name, displayName?, createdAt?, contextLength?}` — see
+    /// [`model_entry`] for the exact contract (which fields are optional and
+    /// why, and `createdAt`'s normalized unit).
     ///
     /// `Err` on a missing/blank key, a request/transport failure, a non-success
     /// status, or a response body that doesn't carry the expected model-list
@@ -960,6 +1014,58 @@ pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── model_entry / parse_rfc3339_millis (list_models projection) ────────────
+
+    #[test]
+    fn model_entry_carries_only_name_when_every_other_field_is_none() {
+        // Byte-identical to the pre-widening shape — a stored model
+        // preference matches on `name` alone, so this must never gain a
+        // fabricated field just because it CAN.
+        assert_eq!(
+            model_entry("claude-sonnet-5", None, None, None),
+            json!({ "name": "claude-sonnet-5" })
+        );
+    }
+
+    #[test]
+    fn model_entry_includes_only_the_fields_that_are_some() {
+        assert_eq!(
+            model_entry("gpt-5.6", Some("GPT-5.6"), None, Some(200_000)),
+            json!({ "name": "gpt-5.6", "displayName": "GPT-5.6", "contextLength": 200_000 })
+        );
+    }
+
+    #[test]
+    fn parse_rfc3339_millis_converts_a_known_reference_timestamp() {
+        // 2024-01-01T00:00:00Z is the well-known 1704067200 unix-epoch-SECONDS
+        // reference point — asserted here as the expected epoch-MILLISECONDS
+        // value this codebase's `createdAt` convention uses.
+        assert_eq!(
+            parse_rfc3339_millis("2024-01-01T00:00:00Z"),
+            Some(1_704_067_200_000)
+        );
+    }
+
+    #[test]
+    fn parse_rfc3339_millis_handles_a_non_utc_offset() {
+        // Ollama's `modified_at` may carry a non-UTC offset (e.g. `-07:00`) —
+        // the epoch value is offset-independent, so 07:00 UTC-7 is the same
+        // instant as 00:00 UTC the same reference day plus 7 hours... concretely:
+        // 2024-01-01T00:00:00-07:00 == 2024-01-01T07:00:00Z.
+        assert_eq!(
+            parse_rfc3339_millis("2024-01-01T00:00:00-07:00"),
+            Some(1_704_067_200_000 + 7 * 3_600_000)
+        );
+    }
+
+    #[test]
+    fn parse_rfc3339_millis_is_none_on_a_malformed_timestamp() {
+        // Never a fabricated/zero timestamp — a parse failure degrades
+        // exactly like the field being absent.
+        assert_eq!(parse_rfc3339_millis("not a timestamp"), None);
+        assert_eq!(parse_rfc3339_millis(""), None);
+    }
 
     #[test]
     fn cosine_identical_vectors_is_one() {

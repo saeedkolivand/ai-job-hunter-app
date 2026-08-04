@@ -834,6 +834,38 @@ fn parse_model_page_keeps_only_claude_ids() {
 }
 
 #[test]
+fn parse_model_page_populates_display_name_created_at_and_context_length_when_present() {
+    let body = json!({
+        "data": [{
+            "type": "model",
+            "id": "claude-sonnet-5-20251101",
+            "display_name": "Claude Sonnet 5",
+            "created_at": "2024-01-01T00:00:00Z",
+            "max_input_tokens": 200_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({
+            "name": "claude-sonnet-5-20251101",
+            "displayName": "Claude Sonnet 5",
+            "createdAt": 1_704_067_200_000i64,
+            "contextLength": 200_000,
+        })]
+    );
+}
+
+#[test]
+fn parse_model_page_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it.
+    let body = json!({ "data": [{ "id": "claude-sonnet-5" }] });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "claude-sonnet-5" })]);
+}
+
+#[test]
 fn parse_model_page_ok_empty_on_genuinely_empty_catalogue() {
     let body = json!({ "data": [] });
     let (page, cursor) = parse_model_page(&body).unwrap();

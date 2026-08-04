@@ -386,6 +386,34 @@ fn parse_model_list_maps_tag_names() {
 }
 
 #[test]
+fn parse_model_list_normalizes_modified_at_to_millis_including_a_non_utc_offset() {
+    // Ollama's `modified_at` may carry a non-UTC offset — epoch is
+    // offset-independent, so `-07:00` shifts the millis value by +7h vs the
+    // same wall-clock time at `Z`.
+    let body = json!({
+        "models": [{ "name": "llama3.1:8b", "modified_at": "2024-01-01T00:00:00-07:00" }]
+    });
+    let page = parse_model_list(&body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({
+            "name": "llama3.1:8b",
+            "createdAt": 1_704_067_200_000i64 + 7 * 3_600_000,
+        })]
+    );
+}
+
+#[test]
+fn parse_model_list_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it. `/api/tags` never returns
+    // `displayName`/`contextLength` (context length is only on `/api/show`).
+    let body = json!({ "models": [{ "name": "llama3.1:8b" }] });
+    let page = parse_model_list(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "llama3.1:8b" })]);
+}
+
+#[test]
 fn parse_model_list_ok_empty_on_genuinely_empty_catalogue() {
     let body = json!({ "models": [] });
     assert_eq!(parse_model_list(&body).unwrap(), Vec::<Value>::new());

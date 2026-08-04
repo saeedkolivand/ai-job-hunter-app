@@ -17,8 +17,9 @@ use super::research::{self, SearchResult};
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities,
-    ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    model_entry, parse_rfc3339_millis, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
+    ToolSpec, Usage,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -376,8 +377,15 @@ impl AiProvider for OllamaClient {
 
 // ── Shared Ollama helpers (used by the AI commands, health, embeddings) ─────────
 
-/// Parse the `/api/tags` response body into `{name}` entries. Pure so it's
-/// unit-testable without a network mock.
+/// Parse the `/api/tags` response body into `{name, createdAt?}` entries.
+/// Pure so it's unit-testable without a network mock.
+///
+/// `/api/tags` returns `modified_at` (RFC3339, possibly with a non-UTC
+/// offset) — normalized to epoch millis via [`parse_rfc3339_millis`], the
+/// convention every `createdAt` field in this codebase uses. Neither
+/// `displayName` nor `contextLength` is ever populated: `/api/tags` reports
+/// neither (a model's context length is only on `/api/show`, a different
+/// endpoint this function doesn't call).
 fn parse_model_list(body: &Value) -> AppResult<Vec<Value>> {
     let models = body
         .get("models")
@@ -385,8 +393,14 @@ fn parse_model_list(body: &Value) -> AppResult<Vec<Value>> {
         .ok_or_else(|| AppError::Provider("Ollama: response missing `models` array".to_string()))?;
     Ok(models
         .iter()
-        .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
-        .map(|name| json!({ "name": name }))
+        .filter_map(|m| {
+            let name = m.get("name").and_then(|n| n.as_str())?;
+            let created_at_ms = m
+                .get("modified_at")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc3339_millis);
+            Some(model_entry(name, None, created_at_ms, None))
+        })
         .collect())
 }
 

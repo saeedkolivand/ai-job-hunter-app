@@ -626,6 +626,51 @@ fn parse_model_page_does_not_filter_out_preview_ids() {
 }
 
 #[test]
+fn parse_model_page_populates_display_name_and_context_length_when_present() {
+    let body = json!({
+        "models": [{
+            "name": "models/gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "inputTokenLimit": 1_000_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({
+            "name": "gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "contextLength": 1_000_000,
+        })]
+    );
+}
+
+#[test]
+fn parse_model_page_never_populates_created_at_gemini_does_not_return_one() {
+    // Gemini's `/v1beta/models` reports no creation timestamp at all —
+    // `createdAt` must be ABSENT from the entry, never defaulted to some
+    // sentinel, even when every other optional field IS present.
+    let body = json!({
+        "models": [{
+            "name": "models/gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "inputTokenLimit": 1_000_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert!(page[0].get("createdAt").is_none());
+}
+
+#[test]
+fn parse_model_page_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it.
+    let body = json!({ "models": [{ "name": "models/gemini-2.5-flash" }] });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gemini-2.5-flash" })]);
+}
+
+#[test]
 fn parse_model_page_ok_empty_on_genuinely_empty_catalogue() {
     let body = json!({ "models": [] });
     let (page, cursor) = parse_model_page(&body).unwrap();

@@ -1,6 +1,32 @@
 import type { AiGenerateRequest, ModelInspectResult } from '../../schemas/index.js';
 import type { AiStreamChunk } from '../../types/index.js';
 
+/**
+ * One entry in a provider's model catalogue (`listProviderModels`). `name` is
+ * the canonical id everything selects on (a stored model preference matches
+ * against it) and is always present — every other field is optional because
+ * no single provider's models endpoint returns all of them: see
+ * `AiProvider::list_models`/`model_entry` in the Rust backend
+ * (`apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`) for exactly
+ * which fields each provider supplies. A provider that doesn't return a
+ * field omits it here entirely — never a fabricated zero/empty-string/
+ * "unknown" sentinel; treat absent as absent.
+ */
+export interface ProviderModelInfo {
+  name: string;
+  /** Human-readable label, when the provider returns one distinct from `name`. */
+  displayName?: string;
+  /**
+   * Unix epoch MILLISECONDS. Normalized on the Rust side across providers'
+   * native wire formats (an RFC3339 string, a unix-epoch-SECONDS integer) —
+   * never a provider's raw representation — so this never needs per-provider
+   * branching to sort.
+   */
+  createdAt?: number;
+  /** Max input tokens, when the provider's catalogue endpoint reports one. */
+  contextLength?: number;
+}
+
 export interface AiContract {
   generate(req: AiGenerateRequest): Promise<{ jobId: string }>;
 
@@ -137,7 +163,7 @@ export interface AiContract {
    * Fetch available models from a cloud provider using its stored API key.
    * `baseUrl` is forwarded for OpenAI-compatible servers.
    */
-  listProviderModels(req: { provider: string; baseUrl?: string }): Promise<Array<{ name: string }>>;
+  listProviderModels(req: { provider: string; baseUrl?: string }): Promise<ProviderModelInfo[]>;
 
   /**
    * Static, network-free capability probe for a provider/model — whether it can

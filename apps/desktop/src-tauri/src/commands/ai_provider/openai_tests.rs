@@ -936,6 +936,31 @@ fn parse_model_list_passes_through_unfiltered_for_openai_compatible() {
 }
 
 #[test]
+fn parse_model_list_normalizes_created_epoch_seconds_to_millis() {
+    // OpenAI's `created` is unix-epoch SECONDS — 1704067200 is the well-known
+    // 2024-01-01T00:00:00Z reference point; the normalized `createdAt` must
+    // be that value in MILLISECONDS, this codebase's `createdAt` convention.
+    let body = json!({
+        "data": [{ "id": "gpt-4o", "created": 1_704_067_200i64 }]
+    });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({ "name": "gpt-4o", "createdAt": 1_704_067_200_000i64 })]
+    );
+}
+
+#[test]
+fn parse_model_list_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it. OpenAI's `/v1/models` never
+    // returns `displayName`/`contextLength` at all.
+    let body = json!({ "data": [{ "id": "gpt-4o" }] });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gpt-4o" })]);
+}
+
+#[test]
 fn parse_model_list_ok_empty_on_genuinely_empty_catalogue() {
     let body = json!({ "data": [] });
     assert_eq!(

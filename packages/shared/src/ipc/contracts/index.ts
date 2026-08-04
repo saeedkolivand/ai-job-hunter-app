@@ -151,6 +151,7 @@ export {
   type EmbeddingConfig,
   type EmbeddingSpaceInfo,
   type EmbeddingStatus,
+  type ProviderModelInfo,
   type SalaryRange,
 } from './ai.js';
 export {
