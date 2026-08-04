@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Gauge, type LucideIcon, SlidersHorizontal, Zap } 
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, Dropdown } from '@ajh/ui';
 
-import { isOllamaFamily } from '@/lib/ai-providers/provider-meta';
+import { useNeedsResearchKey } from '@/hooks/use-needs-research-key';
 import {
   EMPHASIS_OPTIONS,
   type EmphasisId,
@@ -12,8 +12,7 @@ import {
   letterConventions,
   MODES,
 } from '@/lib/generate';
-import { useActiveConfig, useHasProviderKey } from '@/services';
-import type { AiProvider, PromptQuality } from '@/store/preferences-schema';
+import type { PromptQuality } from '@/store/preferences-schema';
 import { usePreferencesStore, usePromptQuality } from '@/store/preferences-store';
 
 interface StepFineTuneProps {
@@ -73,14 +72,7 @@ export function StepFineTune({
   const promptQuality = usePromptQuality();
   const setPromptQuality = usePreferencesStore((s) => s.setPromptQuality);
 
-  const { data: providerConfig, isPending: configPending } = useActiveConfig();
-  const activeProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
-  const { data: ollamaKey } = useHasProviderKey('ollama-cloud');
-  // Cold boot: `activeProvider` defaults to 'ollama' before the config resolves,
-  // which would flash the Ollama research hint even for a non-Ollama provider —
-  // suppress it during that window (mirrors `useCanUseAI`'s isPending guard).
-  const showOllamaResearchHint =
-    !configPending && isOllamaFamily(activeProvider) && !(ollamaKey?.has ?? false);
+  const showOllamaResearchHint = useNeedsResearchKey();
 
   const showCoverOptions = target === 'cover' || target === 'both';
 
