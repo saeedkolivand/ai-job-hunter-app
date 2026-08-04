@@ -446,7 +446,10 @@ fn personal_xing_profile_in_the_header_is_exempt_from_the_job_board_warning() {
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
     assert!(report.ok, "must not block: {:?}", report.issues);
     assert!(
-        !report.issues.iter().any(|i| i.code == "header_url_job_board"),
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_job_board"),
         "a personal Xing profile must be exempt from the job-board warning: {:?}",
         report.issues
     );

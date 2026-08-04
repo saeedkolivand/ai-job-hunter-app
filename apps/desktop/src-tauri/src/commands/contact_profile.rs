@@ -44,7 +44,10 @@ pub async fn contact_profile_get(app: AppHandle) -> Value {
 // lost. Trading the `panic = "abort"` crash `try_state` avoids for silent
 // data loss was a worse trade; `Result` can't be ignored by a future caller
 // the way an ad-hoc JSON shape could.
-fn contact_profile_set_inner(store: Option<&ContactProfileStore>, profile: Value) -> AppResult<Value> {
+fn contact_profile_set_inner(
+    store: Option<&ContactProfileStore>,
+    profile: Value,
+) -> AppResult<Value> {
     let Some(store) = store else {
         return Err(AppError::Storage(
             "contact profile store unavailable".to_string(),
@@ -120,7 +123,10 @@ mod test {
 
     #[test]
     fn get_inner_degrades_to_default_profile_when_store_unmanaged() {
-        assert_eq!(contact_profile_get_inner(None), json!(ContactProfile::default()));
+        assert_eq!(
+            contact_profile_get_inner(None),
+            json!(ContactProfile::default())
+        );
     }
 
     #[test]
@@ -132,7 +138,10 @@ mod test {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(contact_profile_get_inner(Some(&store))["fullName"], "Jane Doe");
+        assert_eq!(
+            contact_profile_get_inner(Some(&store))["fullName"],
+            "Jane Doe"
+        );
     }
 
     // ── contact_profile_set_inner ───────────────────────────────────────────
