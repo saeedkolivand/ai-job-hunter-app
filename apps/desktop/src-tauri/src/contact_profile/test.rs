@@ -190,6 +190,53 @@ fn header_markdown_percent_encodes_parens_in_a_legitimate_url_without_corrupting
     );
 }
 
+/// LOW (security re-review): cap the RAW value BEFORE percent-encoding, not
+/// after — encoding EXPANDS (1 byte → 3), so capping the expanded string can
+/// truncate mid-escape and leave a mangled `%2`/bare `%` tail. The `(` here
+/// sits exactly at raw index 199 (the 200th raw char, the last one the
+/// MAX_LEN=200 cap includes) — proves the fix: it is either fully included
+/// (a whole `%28`) or fully excluded, never split. Everything after it (the
+/// closing paren + more) falls past the raw cap and is dropped whole, never
+/// half-encoded.
+#[test]
+fn header_markdown_never_truncates_a_percent_escape_at_the_raw_cap_boundary() {
+    let filler = "a".repeat(179); // 20-char prefix + 179 = 199, so '(' lands at index 199
+    let p = ContactProfile {
+        website: Some(format!("https://example.dev/{filler}()MORE")),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    let expected_url = format!("https://example.dev/{filler}%28");
+    assert_eq!(md, format!("[Website]({expected_url})"));
+    assert!(
+        !md.contains(")MORE"),
+        "content past the raw cap must not survive: {md:?}"
+    );
+    // No bare '%' or truncated escape anywhere in the output.
+    for (i, c) in md.char_indices() {
+        if c == '%' {
+            assert!(
+                md[i..].starts_with("%28") || md[i..].starts_with("%29"),
+                "found a truncated percent escape at byte {i}: {md:?}"
+            );
+        }
+    }
+}
+
+/// Second untested edge: `header_urls()` shares the exact same fix (both are
+/// `sanitize_link_url` call sites) — the boundary case above must produce
+/// byte-identical output there too, not just in `header_markdown`.
+#[test]
+fn header_urls_never_truncates_a_percent_escape_at_the_raw_cap_boundary_either() {
+    let filler = "a".repeat(179);
+    let p = ContactProfile {
+        website: Some(format!("https://example.dev/{filler}()MORE")),
+        ..Default::default()
+    };
+    let expected_url = format!("https://example.dev/{filler}%28");
+    assert_eq!(p.header_urls(), vec![expected_url]);
+}
+
 // ── header_urls() ↔ header_markdown() sanitization lockstep (security review) ─
 //
 // `header_urls()` is the sole input to `validate::pdf_render_issues`'s

@@ -442,16 +442,20 @@ fn sanitize_link_label(s: &str) -> String {
 /// unlike `(`/`)`.
 fn sanitize_link_url(s: &str) -> String {
     const MAX_LEN: usize = 200;
+    // Cap the RAW value BEFORE percent-encoding, not after. Encoding EXPANDS
+    // (`(` → `%28`, `)` → `%29`, 1 byte becomes 3) — capping the expanded
+    // string can truncate mid-escape, leaving a mangled `%2` (or bare `%`)
+    // tail: not valid percent-encoding, and not the sanitizer's own output
+    // contract. Capping first guarantees every emitted escape is whole; the
+    // final encoded string can run slightly past 200 chars in a paren-heavy
+    // URL, which is an acceptable, deliberate trade for never emitting a
+    // broken escape.
     let cleaned: String = s
         .chars()
         .filter(|c| !c.is_control() && !is_format_char(*c) && !matches!(c, '[' | ']'))
-        .collect();
-    cleaned
-        .replace('(', "%28")
-        .replace(')', "%29")
-        .chars()
         .take(MAX_LEN)
-        .collect()
+        .collect();
+    cleaned.replace('(', "%28").replace(')', "%29")
 }
 
 // ── Conflict detection (resolvable mismatches on import) ──────────────────────

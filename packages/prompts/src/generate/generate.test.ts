@@ -493,6 +493,43 @@ describe('injectLinksIntoGeneratedText', () => {
       expect(out).toBe('PROJECTS\n[Some Other Project](https://example.com/x)');
     });
 
+    // Security re-review (MEDIUM, round 7): an item-shaped line can still be
+    // a TITLE plus an inline description on the same line — wrapping the
+    // whole remainder swallowed the description into the clickable link
+    // text. The title becomes the link; the separator + description survive
+    // verbatim, unlinked, right after it.
+    it('cuts the sole-pairing link at a same-line " — " description separator, preserving the description as plain text', () => {
+      const text = ['PROJECTS', 'Orbital Simulator — A physics engine for Unity'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe(
+        'PROJECTS\n[Orbital Simulator](https://github.com/jane/orbit-sim) — A physics engine for Unity'
+      );
+    });
+
+    it('trims a trailing stray asterisk before wrapping the sole-pairing link, never leaving unbalanced bold', () => {
+      const text = ['PROJECTS', 'Orbital Simulator *'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe('PROJECTS\n[Orbital Simulator](https://github.com/jane/orbit-sim)');
+    });
+
+    it('preserves a genuinely balanced bold title intact when sole-pairing, never stripping its legitimate closing **', () => {
+      const text = ['PROJECTS', '**Orbital Simulator**'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe('PROJECTS\n[**Orbital Simulator**](https://github.com/jane/orbit-sim)');
+    });
+
     it('leaves a link unplaced — not appended, not fabricated — when no PROJECTS/PUBLICATIONS section exists at all (#HIGH part 2)', () => {
       const text = 'Just a summary paragraph with no sections.';
       const out = injectLinksIntoGeneratedText(
@@ -526,6 +563,37 @@ describe('injectLinksIntoGeneratedText', () => {
         { 'Untouched Project': 'https://example.com/x' }
       );
       expect(out).toBe(text);
+    });
+
+    // Security re-review (HIGH-3, round 7): `matchLineTitle` accepts a match
+    // once the LINE (not the label) is fully consumed, as long as it's a
+    // genuine (>= MIN_TITLE_KEY_LEN) prefix of the label key — deliberate,
+    // for a short renamed item ("orbit-sim" → "Orbital Simulator"). Without a
+    // bound excluding the header block, a body label that happens to START
+    // WITH the candidate's own name (a project plausibly named after them,
+    // "Jane Doe Consulting") could match the header's OWN name line, and the
+    // injector would wrap the candidate's name itself in a project
+    // hyperlink. The candidate scan is now bounded to lines at/after the
+    // first detected section heading, so the header block is never even
+    // considered.
+    it("never wraps the résumé's own name in a project hyperlink, even when a body label starts with it (#HIGH-3)", () => {
+      const text = [
+        'Jane Doe',
+        'jane@example.com',
+        '',
+        'EXPERIENCE',
+        'Software Engineer, Acme Corp',
+        '',
+        'PROJECTS',
+        'Some Other Project',
+      ].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Jane Doe Consulting': 'https://example.com/consulting' }
+      );
+      expect(out).toContain('Jane Doe\njane@example.com');
+      expect(out).not.toContain('[Jane Doe]');
     });
 
     it('never pairs a description bullet of an already-linked project as an open slot — the bullet stays untouched, the label appends safely instead (#HIGH-1)', () => {

@@ -536,7 +536,8 @@
       "photoErrorSize": "That image is too large. Choose one under 10 MB.",
       "photoErrorDecode": "That image couldn't be read. Try a different file.",
       "emailInvalid": "Enter a valid email address.",
-      "urlInvalid": "Enter a valid URL (https://…)."
+      "urlInvalid": "Enter a valid URL (https://…).",
+      "saveFailed": "Couldn't save your contact profile. Try again."
     },
     "contactConflict": {
       "title": "Update your contact details?",

@@ -467,12 +467,24 @@ export function seedHeaderFromProfile(
  * generation — a transient IPC failure here must degrade to "seed nothing"
  * (the model's own header stands, same as before H shipped), never throw and
  * discard the whole result the caller is about to persist.
+ *
+ * `signal` (LOW, security re-review): the generation `AbortSignal` — this
+ * step runs AFTER the model stream finishes, so it can't cancel an in-flight
+ * generation, but it must still honor a cancellation the user issued WHILE
+ * these two post-stream IPC calls were in flight (or already true when this
+ * runs). Tauri's `invoke()` has no native abort wiring, so this can't cancel
+ * the underlying calls themselves — it short-circuits to "seed nothing"
+ * before starting AND after they resolve, so a cancelled generation's
+ * discarded result is never silently patched by a seeding call the caller
+ * no longer wants applied.
  */
 async function seedHeaderFromContactProfile(
   text: string,
   meta: GenerationMeta,
-  locale: string
+  locale: string,
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) return text;
   const api = getClient();
   const headerLang = toLanguageCode(meta.targetLanguage || locale);
   // Fired concurrently, not sequentially — headerLine's input (headerLang)
@@ -496,6 +508,7 @@ async function seedHeaderFromContactProfile(
       return undefined;
     }),
   ]);
+  if (signal?.aborted) return text;
   if (!contact || contactLine === undefined) return text;
   return seedHeaderFromProfile(text, contact, contactLine);
 }
@@ -538,7 +551,7 @@ export async function generateResume(
   // AFTER link injection, so it wins over whatever contact-line links that step
   // wrote — leaving that step's contact-line pass in place is harmless, its
   // output is simply overwritten here.
-  return seedHeaderFromContactProfile(injected, meta, locale);
+  return seedHeaderFromContactProfile(injected, meta, locale, signal);
 }
 
 /**
@@ -576,7 +589,7 @@ export async function synthesizeResume(
     signal,
     onThinking
   );
-  return seedHeaderFromContactProfile(extractPlainText(raw), meta, locale);
+  return seedHeaderFromContactProfile(extractPlainText(raw), meta, locale, signal);
 }
 
 /**

@@ -4,7 +4,7 @@
 //! blocking of valid documents.
 
 use super::*;
-use crate::export::types::{LetterLayout, TemplateId};
+use crate::export::types::{GenerationMeta, LetterLayout, TemplateId};
 
 fn expected(headings: &[&str]) -> Expected {
     Expected {
@@ -93,6 +93,42 @@ fn missing_name_and_email_are_warnings() {
     assert!(!has_critical(&issues));
     assert!(issues.iter().any(|i| i.code == "missing_name"));
     assert!(issues.iter().any(|i| i.code == "missing_email"));
+}
+
+/// H: `meta.candidate_name` is a FALLBACK ONLY, mirroring the renderers'
+/// precedence — must never override a name the text already has. A stale
+/// `meta.candidate_name` from an earlier generation (the user has since
+/// edited the header) used to unconditionally win here, computing an
+/// "expected" name the real render never shows — firing a spurious
+/// `missing_name` warning on a perfectly valid, correctly-rendered document.
+#[test]
+fn expected_name_is_text_derived_when_present_metadata_never_overrides() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "Jane Doe\njane@example.com\n\nSUMMARY\nSome text.".to_string();
+    request.meta = Some(GenerationMeta {
+        candidate_name: Some("Someone Else".to_string()),
+        job_title: None,
+        company_name: None,
+        target_language: None,
+    });
+    let expected = expected_from_request(&request);
+    assert_eq!(expected.name.as_deref(), Some("Jane Doe"));
+}
+
+/// The other side: metadata still fills a genuinely blank header, same as
+/// the renderers' own fallback.
+#[test]
+fn expected_name_falls_back_to_metadata_when_text_has_none() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "jane@example.com\n\nSUMMARY\nSome text.".to_string();
+    request.meta = Some(GenerationMeta {
+        candidate_name: Some("Jane Smith".to_string()),
+        job_title: None,
+        company_name: None,
+        target_language: None,
+    });
+    let expected = expected_from_request(&request);
+    assert_eq!(expected.name.as_deref(), Some("Jane Smith"));
 }
 
 // ─── pure helpers ─────────────────────────────────────────────────────────────
@@ -262,9 +298,20 @@ fn reads_inline_dict_link_annotations_from_our_renderer() {
 /// The reading regression meant ANY non-empty contact profile produced a phantom
 /// "missing from the rendered header" critical and blocked every export. A profile
 /// whose link the renderer actually draws must export cleanly.
+///
+/// Security re-review (round 7): this used `req()`'s default text (`RESUME`),
+/// which already carries its own "jane@example.com" contact line — so under
+/// H's fallback-only semantics the profile is NEVER applied to the header at
+/// all, and this test's own claim ("a profile whose link the renderer
+/// actually draws") went vacuous: it passed only because nothing involving
+/// the profile ran, not because the scenario it names was exercised.
+/// `RESUME_NO_CONTACT_LINE` puts the profile back in the header source
+/// position, and the assertion now checks the link is genuinely drawn, not
+/// just that nothing blocked.
 #[test]
 fn contact_profile_export_is_not_falsely_blocked() {
     let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = RESUME_NO_CONTACT_LINE.to_string();
     request.contact = Some(profile_with(
         "https://drive.google.com/file/d/abc123/view?usp=drive_link",
     ));
@@ -283,6 +330,14 @@ fn contact_profile_export_is_not_falsely_blocked() {
             .any(|i| i.severity == Severity::Critical),
         "no critical header issues expected: {:?}",
         report.issues
+    );
+    let links = rendered_links(&bytes);
+    assert!(
+        links.iter().any(
+            |l| l.url == "https://drive.google.com/file/d/abc123/view?usp=drive_link"
+                && l.page == 0
+        ),
+        "the profile's own link must be genuinely drawn, not just absent-of-blocking: {links:?}"
     );
 }
 
@@ -476,17 +531,29 @@ fn non_personal_xing_url_still_warns_as_job_board() {
         "a non-personal Xing URL must still warn as job-board: {:?}",
         report.issues
     );
+    // The warning is advisory, never blocking — the header is user-owned and
+    // visible in the editor.
+    assert!(
+        report.ok,
+        "the job-board warning must not block: {:?}",
+        report.issues
+    );
 }
 
-/// The blocking path itself, not just its skip/warning branches (the gate
-/// narrowed to `profile_is_header_source`, and every other test here exercises
-/// a case where it doesn't fire): a body company link genuinely rendering
-/// inside the top-144pt header band, while the profile is the header's source
-/// of truth, is the exact URL-swap regression `header_url_mismatch` exists to
-/// catch — a body/company link is not one of the profile's own fields, so it
-/// must block, not warn.
+/// CodeRabbit (security re-review, round 7): the mismatch check must NOT run
+/// over the full 144pt geometric band — that band is a heuristic, and a
+/// genuine, correctly-placed BODY link (a job's own company site) rendering
+/// early on the page (a short header + an immediate section) is not "the
+/// header's" just because it falls inside the same zone. Flagging it there
+/// is exactly the false-block this check exists to avoid, not to cause.
+/// Narrowed to the header's own expected link COUNT: with the profile as the
+/// header's source (one expected link, its website), only the topmost band
+/// link is checked — the job's own company link one line down survives
+/// untouched, and the export is not blocked. (A prior round's test asserted
+/// the OPPOSITE of this — that the company link DID block — which was
+/// itself the false-block bug, not a real regression repro.)
 #[test]
-fn company_link_leaking_into_the_header_band_is_a_blocking_mismatch() {
+fn profile_sourced_header_with_a_genuine_body_link_in_the_band_does_not_false_block() {
     let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
     request.text = "\
 Jane Doe
@@ -501,33 +568,30 @@ SKILLS
 "
     .to_string();
     request.contact = Some(profile_with("https://example.dev/portfolio"));
-    let result = validate_and_fix(request, crate::export::pdf::generate_pdf);
-    let (_bytes, report) = result.expect("pdf export (validate_and_fix reports, doesn't fail)");
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
     assert!(
-        !report.ok,
-        "a company link leaking into the header band must block the export: {:?}",
+        report.ok,
+        "a genuine body link rendering inside the header band must not false-block: {:?}",
         report.issues
     );
     assert!(
-        report.issues.iter().any(|i| i.code == "header_url_mismatch"
-            && i.severity == Severity::Critical
-            && i.message.contains("https://acme.example.com")),
-        "the company link must be named as the mismatch: {:?}",
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch"),
+        "the job's own company link must never be flagged as a header mismatch: {:?}",
         report.issues
     );
 }
 
-/// HIGH-2 (security re-review): the mismatch check used to be gated on
-/// `profile_is_header_source` — skipped entirely (down to the narrower,
-/// job-board-only warning) once the text already had its own contact line,
-/// so a NON-job-board company link leaking into the header band went
-/// completely unvalidated in the common (text-owns-the-header) case. Fixed:
-/// `allowed` is now built from whichever header is actually authoritative
-/// for this render, so the exact same URL-swap-regression class this check
-/// exists for is caught here too — text-owned header, unrelated profile
-/// supplied, company link still blocks.
+/// The regression test both reviewers were circling this round: same
+/// scenario, but with the TEXT already owning the header (its own contact
+/// line present) — the exact case HIGH-2 (prior round) re-pointed the
+/// mismatch check onto. Must not false-block either — same narrowing, same
+/// reasoning, the profile-sourced sibling above.
 #[test]
-fn company_link_leaking_into_a_text_owned_header_band_still_blocks() {
+fn text_owned_header_with_a_genuine_body_link_in_the_band_does_not_false_block() {
     let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
     request.text = "\
 Jane Doe
@@ -543,21 +607,21 @@ SKILLS
 "
     .to_string();
     // A profile is supplied but irrelevant here — text already owns the
-    // header, so the profile is never applied; the mismatch must still fire
-    // against the text's OWN header links, not this unrelated profile.
+    // header, so the profile is never applied.
     request.contact = Some(profile_with("https://example.dev/portfolio"));
     let (_bytes, report) =
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
     assert!(
-        !report.ok,
-        "a company link leaking into a text-owned header band must block: {:?}",
+        report.ok,
+        "a genuine body link rendering inside a text-owned header band must not false-block: {:?}",
         report.issues
     );
     assert!(
-        report.issues.iter().any(|i| i.code == "header_url_mismatch"
-            && i.severity == Severity::Critical
-            && i.message.contains("https://acme.example.com")),
-        "the company link must be named as the mismatch: {:?}",
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch"),
+        "the job's own company link must never be flagged as a header mismatch: {:?}",
         report.issues
     );
 }

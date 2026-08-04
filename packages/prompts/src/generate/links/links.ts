@@ -902,8 +902,26 @@ export function injectLinksIntoGeneratedText(
       // single highest-scoring line — never "first match wins", which silently
       // swapped URLs between sibling items (a repo and its own live site both
       // named for the same project).
+      // Bound the scan to BODY lines only — never the header block
+      // (name/contact/tagline before the first section heading). Without
+      // this bound, `matchLineTitle` accepting a match once the LINE (not
+      // the label) is fully consumed — deliberate, for a short renamed item
+      // like "orbit-sim" → "Orbital Simulator" — means a body label that
+      // happens to literally START WITH the candidate's OWN NAME (a project
+      // plausibly named after them, "Jane Doe Portfolio") can match the
+      // header's own name line, and the injector wraps the candidate's own
+      // name in a project hyperlink (#HIGH-3, security re-review). No
+      // section heading found at all → scan nothing: with no identifiable
+      // header/body boundary, PLACEMENT is not worth the risk of matching
+      // into the header (the same "unplaced beats fabricated" trade-off
+      // this whole net already makes elsewhere).
+      const firstSectionIndex = lines.findIndex(
+        (l) => isKnownSectionName(l) || isAllCapsSectionHeading(l)
+      );
+      const bodyStart = firstSectionIndex === -1 ? lines.length : firstSectionIndex;
+
       const candidates: { lineIndex: number; label: string; url: string; span: TitleSpan }[] = [];
-      for (let i = 0; i < lines.length; i++) {
+      for (let i = bodyStart; i < lines.length; i++) {
         const line = lines[i] ?? '';
         for (const [label, url] of remaining) {
           const span = matchLineTitle(line, label);
@@ -995,10 +1013,56 @@ export function injectLinksIntoGeneratedText(
           if (soleEntry && soleSlot !== undefined) {
             const [label, url] = soleEntry;
             const line = lines[soleSlot] ?? '';
-            const start = stripLeadingMarker(line);
-            const title = line.slice(start);
+            const rawStart = stripLeadingMarker(line);
+            const rawPrefix = line.slice(0, rawStart);
+            // `stripLeadingMarker`'s marker class includes `*` (for a
+            // `* Item` bullet), so a run of PURELY `*` characters with
+            // nothing else is virtually always a swallowed BOLD-OPEN
+            // delimiter ("**Title**"), not a bullet — fold it back into the
+            // title so the wrap below can never split a bold span across
+            // the bracket boundary (leaving a bare, unlinked "**" before
+            // the link and an orphaned closer inside it).
+            const foldBackBold = rawPrefix !== '' && /^\*+$/.test(rawPrefix);
+            const start = foldBackBold ? 0 : rawStart;
+            const rest = line.slice(start);
+            // MEDIUM (security re-review): an item-shaped line can still be a
+            // TITLE plus an inline description on the same line ("Orbital
+            // Simulator — A physics engine for Unity" is <= 8 words, so
+            // isItemShapedLine admits it) — wrapping the WHOLE remainder in
+            // `[…](url)` pulled the description into the clickable link
+            // text. Cut at the first same-line separator (" — " / " – ")
+            // instead; the title becomes the link, the separator + description
+            // survive verbatim as plain trailing text on the same line —
+            // preserved, never dropped.
+            const sepMatch = /\s+[—–]\s+/.exec(rest);
+            const titleEnd = sepMatch ? sepMatch.index : rest.length;
+            let title = rest.slice(0, titleEnd).trimEnd();
+            const trailing = rest.slice(titleEnd);
+            // A lone trailing `*` (not part of a `**` pair) is never valid
+            // syntax on its own here — the markdown parser only recognizes
+            // `**bold**`, not single-`*` italic — so it's always safe to
+            // strip.
+            if (/[^*]\*$/.test(title)) {
+              title = title.slice(0, -1).trimEnd();
+            }
+            // A trailing `**` might be a stray marker (left dangling by the
+            // separator cut above, or already stray in the model's own
+            // output) OR the legitimate CLOSE of a real bold span whose
+            // open half lives in the preserved prefix (the fold-back above
+            // already handles the common case, but stays a set-once
+            // constant — re-check here against whatever prefix survives).
+            // Only strip when the total `**` count across prefix + title is
+            // ODD (a genuine dangling marker); an EVEN total means it
+            // legitimately closes something and must survive intact.
+            if (title.endsWith('**')) {
+              const prefix = line.slice(0, start);
+              const pairCount = (s: string) => (s.match(/\*\*/g) ?? []).length;
+              if ((pairCount(prefix) + pairCount(title)) % 2 !== 0) {
+                title = title.slice(0, -2).trimEnd();
+              }
+            }
             if (title.trim()) {
-              lines[soleSlot] = line.slice(0, start) + `[${title}](${url})`;
+              lines[soleSlot] = line.slice(0, start) + `[${title}](${url})` + trailing;
               remaining.delete(label);
             }
           }

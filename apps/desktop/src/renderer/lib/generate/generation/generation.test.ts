@@ -223,6 +223,44 @@ describe('generateResume', () => {
     expect(out.split('\n')[1]).toBe('jordan@example.com');
   });
 
+  // LOW (security re-review): the post-stream header-seeding IPC calls now
+  // honor the generation AbortSignal — a cancel that lands right as the
+  // stream finishes (before the seeding step runs) must skip it entirely
+  // (the model's own header survives untouched), not silently apply a
+  // seeding patch to a result the caller has already discarded. Aborted
+  // AFTER `done()` (not before) — `awaitAiStream` already rejects upfront
+  // for a pre-aborted signal (a separate, already-covered guard), so this
+  // isolates the seeding-step check specifically: the stream itself must
+  // still resolve successfully, with cancellation landing exactly in the
+  // gap between stream completion and the seeding IPC calls.
+  it('does not seed the header when the generation is cancelled right as the stream finishes', async () => {
+    const get = vi.fn().mockResolvedValue({ fullName: 'Jordan Lee', email: 'jordan@example.com' });
+    const headerLine = vi.fn().mockResolvedValue('Berlin | jordan@example.com');
+    registerWithContactProfile({ get, headerLine });
+    const controller = new AbortController();
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      controller.signal,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Model Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nModel-written summary.');
+    done();
+    controller.abort();
+    const out = await p;
+    expect(out).toBe(
+      'Model Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nModel-written summary.'
+    );
+    expect(get).not.toHaveBeenCalled();
+    expect(headerLine).not.toHaveBeenCalled();
+  });
+
   it('leaves the model header untouched when the contact profile is effectively empty', async () => {
     register();
     const p = generateResume(
