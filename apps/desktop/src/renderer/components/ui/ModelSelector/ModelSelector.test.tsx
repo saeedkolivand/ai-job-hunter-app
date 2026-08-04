@@ -13,6 +13,12 @@
  *  - A detected CLI agent with no model picked → warning RENDERS (CLI is no longer
  *    exempt — a model must always be visibly selected).
  *  - A detected CLI agent with one of its curated models selected → warning absent.
+ *  - A connected cloud provider whose `provider-models` query is in an error state
+ *    (PR 1: the query now rejects instead of resolving `[]`) still falls back to
+ *    the provider's curated `meta.models` and renders no error UI — the
+ *    behaviour-neutrality claim `buildModelOptions` relies on (`live.length > 0 ?
+ *    live : m.models`), exercised through the real component instead of asserted
+ *    from reading the source.
  *
  * All hooks that reach IPC / QueryClient / store persistence are stubbed so
  * the component renders without a full provider tree. The real ModelSelector
@@ -23,6 +29,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // ── i18n stub ─────────────────────────────────────────────────────────────────
 
@@ -78,7 +85,18 @@ vi.mock('@/services', () => ({
   useSystemHealth: () => stubbedHealth,
 }));
 
-// ── @tanstack/react-query stub — keep QueryClient et al, stub only useQueries ─
+// ── @tanstack/react-query stub — keep QueryClient et al, stub only useQueries ──
+//
+// ModelSelector fires two `useQueries` calls (key-status + model-list), each
+// keyed `[...keys.ai.models, 'provider-key' | 'provider-models', provider, ...]`
+// — a per-test fixture keyed by that same `[kind, provider]` pair lets a test
+// express a cloud provider as connected (`provider-key`) while its
+// `provider-models` query is in an error state (PR 1's rejection-on-failure),
+// so `buildModelOptions`'s live-empty → curated-fallback path is exercised
+// through the real component rather than stubbed away.
+type CloudQueryState = { data?: unknown; isLoading?: boolean; isError?: boolean };
+let stubbedCloudKeyQueries: Record<string, CloudQueryState> = {};
+let stubbedCloudModelQueries: Record<string, CloudQueryState> = {};
 
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   // Type the original module as a plain object record so the spread is valid
@@ -86,7 +104,20 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
   // below, so the exact shape is irrelevant. A generic (not an inline `import()`
   // type, nor a restricted `@tanstack/react-query` import) keeps ESLint happy.
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useQueries: () => [] };
+  return {
+    ...actual,
+    useQueries: ({ queries }: { queries: Array<{ queryKey: unknown[] }> }) =>
+      queries.map(({ queryKey }) => {
+        const [, , kind, provider] = queryKey as [unknown, unknown, string, string];
+        const table = kind === 'provider-key' ? stubbedCloudKeyQueries : stubbedCloudModelQueries;
+        return (
+          table[provider] ?? {
+            data: kind === 'provider-key' ? { has: false } : [],
+            isLoading: false,
+          }
+        );
+      }),
+  };
 });
 
 // ── component under test ──────────────────────────────────────────────────────
@@ -101,6 +132,14 @@ const cliAgentId = PROVIDER_ORDER.find((p) => PROVIDERS[p].kind === 'cli-agent')
 if (!cliAgentId) throw new Error('expected at least one cli-agent provider in the registry');
 const cliAgentModel = PROVIDERS[cliAgentId].models[0];
 if (!cliAgentModel) throw new Error(`expected ${cliAgentId} to expose a curated model`);
+
+// A real cloud provider id + its curated model list, likewise derived from the
+// registry rather than hardcoded.
+const cloudProviderId = PROVIDER_ORDER.find((p) => PROVIDERS[p].kind === 'cloud');
+if (!cloudProviderId) throw new Error('expected at least one cloud provider in the registry');
+const cloudProviderModels = PROVIDERS[cloudProviderId].models;
+const cloudProviderModel = cloudProviderModels[0];
+if (!cloudProviderModel) throw new Error(`expected ${cloudProviderId} to expose curated models`);
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,6 +157,8 @@ beforeEach(() => {
   stubbedActiveProviderModel = '';
   stubbedOllamaModels = [];
   stubbedHealth = { data: undefined, isLoading: false };
+  stubbedCloudKeyQueries = {};
+  stubbedCloudModelQueries = {};
 });
 
 describe('ModelSelector — no model selected (Ollama, model absent)', () => {
@@ -238,5 +279,38 @@ describe('ModelSelector — CLI agent detected, model selected and visible', () 
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.queryByText('models.noModelSelected')).not.toBeInTheDocument();
     expect(screen.queryByText('models.modelUnavailable')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — connected cloud provider, provider-models query rejected', () => {
+  it('falls back to the curated model list and renders no error UI', async () => {
+    // PR 1: `ai.listProviderModels` now REJECTS on a real failure instead of
+    // resolving `[]` — model this as `modelQueries[i]` settled in an error
+    // state (data undefined, isLoading false). `buildModelOptions` sees an
+    // empty live list either way (`sources.cloudModels` reads only `.data`)
+    // and falls back to `meta.models`, so the picker must render exactly as it
+    // did before the rejecting-command change: the curated options are all
+    // present and selectable, and there is no error text anywhere.
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = cloudProviderModel;
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: true }, isLoading: false } };
+    stubbedCloudModelQueries = {
+      [cloudProviderId]: { data: undefined, isLoading: false, isError: true },
+    };
+
+    renderSelector();
+
+    // The stored selection is visible (a curated model), so no warning fires.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.noModelSelected')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.modelUnavailable')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    // Opening the picker lists every one of the provider's curated models —
+    // proof the curated fallback, not an empty list, reached the dropdown.
+    await userEvent.click(screen.getByRole('button'));
+    for (const name of cloudProviderModels) {
+      expect(screen.getByRole('option', { name })).toBeInTheDocument();
+    }
   });
 });

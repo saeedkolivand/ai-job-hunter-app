@@ -21,6 +21,49 @@ use super::{
 const BASE: &str = "https://api.anthropic.com/v1";
 const VERSION: &str = "2023-06-01";
 
+/// Safety bound on `list_models` pagination — real catalogues are a few dozen
+/// models; this just prevents an unbounded loop if the API ever reports
+/// `has_more` forever.
+const MAX_LIST_MODELS_PAGES: usize = 50;
+
+/// Resolve the stored Anthropic key, erroring on a missing/blank one. Shared
+/// by `list_models` and `test_key` so the two structurally agree on what
+/// counts as "no key" (previously `test_key` alone accepted a whitespace-only
+/// key and burned a 401 round-trip on it). Pure (no `AppHandle`) so it's
+/// unit-testable without a mock-app harness.
+fn require_anthropic_key(stored: Option<String>) -> AppResult<String> {
+    stored
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| AppError::Config("No API key found".to_string()))
+}
+
+/// Parse ONE page of the `/v1/models` response body into `{name}` entries
+/// (keeping only `claude-*` ids) plus the cursor for the next page when
+/// `has_more` is true. Pure so it's unit-testable without a network mock.
+fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
+    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
+        AppError::Provider("Anthropic: response missing `data` array".to_string())
+    })?;
+    let names = data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
+        .filter(|id| id.starts_with("claude-"))
+        .map(|id| json!({ "name": id }))
+        .collect();
+    let has_more = body
+        .get("has_more")
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let cursor = if has_more {
+        body.get("last_id")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+    } else {
+        None
+    };
+    Ok((names, cursor))
+}
+
 /// Whether a model should be sent the classic `thinking: {type:"enabled",
 /// budget_tokens}` block (extended thinking).
 ///
@@ -949,37 +992,52 @@ impl AiProvider for AnthropicClient {
         None
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
-        let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) => k,
-            None => return vec![],
-        };
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
+        let api_key = require_anthropic_key(get_provider_key(app, self.id().credential_key()))?;
         let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{BASE}/models"))
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", VERSION)
-            .timeout(timeouts::LIST_MODELS)
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.json::<Value>().await {
-                if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
-                    return data
-                        .iter()
-                        .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-                        .filter(|id| id.starts_with("claude-"))
-                        .map(|id| json!({ "name": id }))
-                        .collect();
-                }
+        let mut all = Vec::new();
+        let mut after_id: Option<String> = None;
+        for _ in 0..MAX_LIST_MODELS_PAGES {
+            let mut req = client
+                .get(format!("{BASE}/models"))
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", VERSION)
+                // No explicit `limit`: the `after_id` cursor loop below already
+                // guarantees the full catalogue, so a page-size override would
+                // only save a round-trip on a 300s-cached query — in exchange
+                // for a hardcoded maximum we cannot verify, which would 400 the
+                // WHOLE listing if it were ever wrong. Verified fields are
+                // `has_more`/`last_id` (Anthropic SDK `SyncPage`); the accepted
+                // `limit` ceiling is not, so we don't assert one.
+                .timeout(timeouts::LIST_MODELS);
+            if let Some(id) = &after_id {
+                req = req.query(&[("after_id", id.as_str())]);
+            }
+            let resp = req.send().await.map_err(|e| {
+                AppError::Network(format!("{}: request failed: {e}", self.id().as_str()))
+            })?;
+            if !resp.status().is_success() {
+                return Err(AppError::Provider(format!(
+                    "API returned status: {}",
+                    resp.status()
+                )));
+            }
+            let body: Value = resp
+                .json()
+                .await
+                .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
+            let (mut page, cursor) = parse_model_page(&body)?;
+            all.append(&mut page);
+            match cursor {
+                Some(id) => after_id = Some(id),
+                None => break,
             }
         }
-        vec![]
+        Ok(all)
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id().credential_key())
-            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
+        let api_key = require_anthropic_key(get_provider_key(app, self.id().credential_key()))?;
         // Liveness probe via `GET /v1/models` (the same endpoint `list_models`
         // uses). A key-only authenticated GET avoids pinning a specific chat model
         // snapshot — the old probe hardcoded `claude-3-haiku-20240307`, so key

@@ -792,3 +792,85 @@ fn chat_stream_body_sends_xhigh_only_on_a_model_that_supports_it() {
     let body = build_chat_stream_body(&req);
     assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
 }
+
+// ── list_models ──────────────────────────────────────────────────────────────
+
+#[test]
+fn require_anthropic_key_errors_on_missing_or_blank_key() {
+    assert!(matches!(
+        require_anthropic_key(None),
+        Err(AppError::Config(_))
+    ));
+    assert!(matches!(
+        require_anthropic_key(Some("   ".to_string())),
+        Err(AppError::Config(_))
+    ));
+}
+
+#[test]
+fn require_anthropic_key_accepts_a_real_key() {
+    assert_eq!(
+        require_anthropic_key(Some("sk-ant-real".to_string())).unwrap(),
+        "sk-ant-real"
+    );
+}
+
+#[test]
+fn parse_model_page_keeps_only_claude_ids() {
+    let body = json!({
+        "data": [
+            { "id": "claude-sonnet-5" },
+            { "id": "claude-opus-4-5" },
+            { "id": "some-other-model" },
+        ]
+    });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    let names: Vec<String> = page
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["claude-sonnet-5", "claude-opus-4-5"]);
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_ok_empty_on_genuinely_empty_catalogue() {
+    let body = json!({ "data": [] });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(page, Vec::<Value>::new());
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_errors_when_data_field_is_missing() {
+    let body = json!({ "unexpected": "shape" });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
+fn parse_model_page_carries_the_cursor_only_when_has_more_is_true() {
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "claude-sonnet-5",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, Some("claude-sonnet-5".to_string()));
+}
+
+#[test]
+fn parse_model_page_omits_the_cursor_when_has_more_is_false_even_with_a_last_id() {
+    // A `last_id` can still be present on the final page — the cursor must be
+    // driven by `has_more`, never by `last_id`'s mere presence, or pagination
+    // would loop forever re-requesting the same last page.
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": false,
+        "last_id": "claude-sonnet-5",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, None);
+}

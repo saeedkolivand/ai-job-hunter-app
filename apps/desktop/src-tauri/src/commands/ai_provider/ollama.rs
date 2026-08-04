@@ -277,8 +277,8 @@ impl AiProvider for OllamaClient {
         Some(EMBED_MODEL)
     }
 
-    async fn list_models(&self, _app: &AppHandle) -> Vec<Value> {
-        list_tag_models().await
+    async fn list_models(&self, _app: &AppHandle) -> AppResult<Vec<Value>> {
+        fetch_tag_models().await
     }
 
     async fn test_key(&self, _app: &AppHandle) -> AppResult<()> {
@@ -376,30 +376,49 @@ impl AiProvider for OllamaClient {
 
 // ── Shared Ollama helpers (used by the AI commands, health, embeddings) ─────────
 
-/// `{ name }` list from `/api/tags`.
-pub async fn list_tag_models() -> Vec<Value> {
-    let resp = match crate::net::http::shared()
+/// Parse the `/api/tags` response body into `{name}` entries. Pure so it's
+/// unit-testable without a network mock.
+fn parse_model_list(body: &Value) -> AppResult<Vec<Value>> {
+    let models = body
+        .get("models")
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| AppError::Provider("Ollama: response missing `models` array".to_string()))?;
+    Ok(models
+        .iter()
+        .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+        .map(|name| json!({ "name": name }))
+        .collect())
+}
+
+/// Fetch + parse `/api/tags` — `Err` on any transport, status, parse, or
+/// missing-field failure; `Ok(vec![])` only for a genuinely empty catalogue.
+/// Ollama needs no key, so there is no missing-key case here.
+async fn fetch_tag_models() -> AppResult<Vec<Value>> {
+    let resp = crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
         .timeout(timeouts::LIST_MODELS)
         .send()
         .await
-    {
-        Ok(r) if r.status().is_success() => r,
-        _ => return vec![],
-    };
-    let body: Value = match resp.json().await {
-        Ok(v) => v,
-        Err(_) => return vec![],
-    };
-    body.get("models")
-        .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
-                .map(|name| json!({ "name": name }))
-                .collect()
-        })
-        .unwrap_or_default()
+        .map_err(|e| AppError::Network(format!("Ollama unreachable: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Provider(format!(
+            "Ollama returned status: {}",
+            resp.status()
+        )));
+    }
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Provider(format!("Ollama parse: {e}")))?;
+    parse_model_list(&body)
+}
+
+/// `{ name }` list from `/api/tags` — best-effort: collapses any transport,
+/// status, or parse failure to an empty list. Backs `ai_list_models` (the
+/// LOCAL model-list command, distinct from `ai_list_provider_models`), which
+/// is out of scope for this trait method's error-surfacing contract.
+pub async fn list_tag_models() -> Vec<Value> {
+    fetch_tag_models().await.unwrap_or_default()
 }
 
 /// `(reachable, first_model_name)` for the system health probe.

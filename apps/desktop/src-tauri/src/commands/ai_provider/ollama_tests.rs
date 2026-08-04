@@ -14,12 +14,13 @@
 
 use super::{
     build_chat_stream_body, build_ollama_embed_body, normalize_show,
-    ollama_family_supports_thinking, ollama_supports_tools, parse_ollama_frames, parse_ollama_turn,
-    parse_ollama_usage, parse_web_search, OllamaClient, StreamPiece,
+    ollama_family_supports_thinking, ollama_supports_tools, parse_model_list, parse_ollama_frames,
+    parse_ollama_turn, parse_ollama_usage, parse_web_search, OllamaClient, StreamPiece,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, AiProvider, StopReason, ToolCall};
+use crate::error::AppError;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn base_request() -> AiGenerateRequest {
     AiGenerateRequest {
@@ -365,4 +366,36 @@ fn chat_stream_body_omits_think_when_effort_not_set() {
     req.model = "gpt-oss:20b".to_string();
     let body = build_chat_stream_body(&req);
     assert!(body.get("think").is_none());
+}
+
+// ── list_models ──────────────────────────────────────────────────────────────
+// Ollama needs no key (a reachable host counts as healthy), so there is no
+// missing-key case here — only status/shape/empty are relevant.
+
+#[test]
+fn parse_model_list_maps_tag_names() {
+    let body = json!({
+        "models": [{ "name": "llama3.1:8b" }, { "name": "gpt-oss:20b" }]
+    });
+    let names: Vec<String> = parse_model_list(&body)
+        .unwrap()
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["llama3.1:8b", "gpt-oss:20b"]);
+}
+
+#[test]
+fn parse_model_list_ok_empty_on_genuinely_empty_catalogue() {
+    let body = json!({ "models": [] });
+    assert_eq!(parse_model_list(&body).unwrap(), Vec::<Value>::new());
+}
+
+#[test]
+fn parse_model_list_errors_when_models_field_is_missing() {
+    let body = json!({ "unexpected": "shape" });
+    assert!(matches!(
+        parse_model_list(&body),
+        Err(AppError::Provider(_))
+    ));
 }

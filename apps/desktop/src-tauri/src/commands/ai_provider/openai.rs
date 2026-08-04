@@ -114,6 +114,47 @@ fn should_list_model(provider: ProviderId, id: &str) -> bool {
         || id.starts_with("chatgpt")
 }
 
+/// Resolve the stored key for `list_models`/`test_key`. Missing/blank errors
+/// for every provider EXCEPT `OpenAiCompatible`: its keyless self-hosted
+/// deployments (LM Studio, vLLM, …) are an explicitly supported
+/// configuration (`mod.rs`'s `ProviderId::OpenAiCompatible` doc) that already
+/// generates fine with no key — `chat_stream`/`chat_with_tools` default a
+/// missing key to `""` and send it regardless — so hard-requiring one here
+/// would cement "generates fine, listing/testing always errors" for a
+/// working setup. `Ok(None)` means "build the request with no bearer header"
+/// (never an empty `Authorization: Bearer` value — some gateways reject a
+/// malformed header rather than ignoring it). Shared by `list_models` and
+/// `test_key` so the two structurally agree on what counts as "no key"
+/// (previously `test_key` alone accepted a whitespace-only key and burned a
+/// round-trip on it). Pure (no `AppHandle`) so it's unit-testable without a
+/// mock-app harness.
+fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult<Option<String>> {
+    let trimmed = stored.filter(|k| !k.trim().is_empty());
+    if trimmed.is_some() || provider == ProviderId::OpenAiCompatible {
+        Ok(trimmed)
+    } else {
+        Err(AppError::Config("No API key found".to_string()))
+    }
+}
+
+/// Parse the `/models` response body into `{name}` entries, applying
+/// [`should_list_model`]'s per-provider filter. Pure so it's unit-testable
+/// without a network mock.
+fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>> {
+    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
+        AppError::Provider(format!(
+            "{}: response missing `data` array",
+            provider.as_str()
+        ))
+    })?;
+    Ok(data
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
+        .filter(|id| should_list_model(provider, id))
+        .map(|id| json!({ "name": id }))
+        .collect())
+}
+
 /// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
 /// reject `temperature` and require `max_completion_tokens` instead of
 /// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
@@ -610,6 +651,46 @@ impl OpenAiClient {
         trace.end(Some(status.as_u16()), true);
         Ok(join_responses_text(&data))
     }
+
+    /// Build the `GET {base_url}/models` request, attaching the bearer header
+    /// only when a key is present — never an empty `Authorization: Bearer`
+    /// value for a keyless `OpenAiCompatible` deployment (some gateways
+    /// reject a malformed/empty header rather than ignoring it). Shared by
+    /// `list_models_transport` and `test_key`.
+    fn list_models_request(&self, api_key: Option<&str>) -> reqwest::RequestBuilder {
+        let req = crate::net::http::shared()
+            .get(format!("{}/models", self.base_url))
+            .timeout(timeouts::LIST_MODELS);
+        match api_key {
+            Some(key) => req.bearer_auth(key),
+            None => req,
+        }
+    }
+
+    /// The `/models` HTTP transport itself — no `AppHandle`/keychain, so it's
+    /// directly testable against a `wiremock::MockServer` (see the tests below),
+    /// mirroring [`web_search_transport`](Self::web_search_transport).
+    async fn list_models_transport(&self, api_key: Option<&str>) -> AppResult<Vec<Value>> {
+        let resp = self
+            .list_models_request(api_key)
+            .send()
+            .await
+            .map_err(|e| AppError::Network(format!("{}: request failed: {e}", self.id.as_str())))?;
+        if !resp.status().is_success() {
+            return Err(AppError::Provider(format!(
+                "API returned status: {}",
+                resp.status()
+            )));
+        }
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id.as_str())))?;
+        // OpenAI proper: only chat-capable families. Every other OpenAI-compatible
+        // backend (incl. Ollama Cloud) lists its own curated catalog, so pass those
+        // through unfiltered — see `should_list_model`.
+        parse_model_list(self.id, &body)
+    }
 }
 
 #[async_trait]
@@ -820,47 +901,18 @@ impl AiProvider for OpenAiClient {
         8_000
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
-        let api_key = match get_provider_key(app, self.id.credential_key()) {
-            Some(k) => k,
-            None => return vec![],
-        };
-        let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{}/models", self.base_url))
-            .bearer_auth(&api_key)
-            .timeout(timeouts::LIST_MODELS)
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.json::<Value>().await {
-                if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
-                    return data
-                        .iter()
-                        .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-                        // OpenAI proper: only chat-capable families. Every other
-                        // OpenAI-compatible backend (incl. Ollama Cloud) lists its
-                        // own curated catalog, so pass those through unfiltered.
-                        .filter(|id| should_list_model(self.id, id))
-                        .map(|id| json!({ "name": id }))
-                        .collect();
-                }
-            }
-        }
-        vec![]
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
+        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
+        self.list_models_transport(api_key.as_deref()).await
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id.credential_key())
-            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
-        let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{}/models", self.base_url))
-            .bearer_auth(&api_key)
-            .timeout(timeouts::LIST_MODELS)
+        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
+        let resp = self
+            .list_models_request(api_key.as_deref())
             .send()
             .await
-            .map_err(|e| format!("Request failed: {e}"))?;
+            .map_err(|e| AppError::Network(format!("{}: request failed: {e}", self.id.as_str())))?;
         if resp.status().is_success() {
             Ok(())
         } else {

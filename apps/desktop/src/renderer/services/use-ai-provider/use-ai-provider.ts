@@ -47,6 +47,10 @@ export const useListProviderModels = (provider: string, enabled = true, baseUrl?
     queryFn: () => api.ai.listProviderModels({ provider, baseUrl }),
     enabled: enabled && provider !== 'ollama',
     staleTime: QUERY_TIMES.VERY_LONG,
+    // A rejection now means "no key / network error / bad response" — not
+    // transient, so retrying just re-pays the backend's own timeout for no
+    // gain (see ModelSelector's `modelQueries` for the matching rationale).
+    retry: false,
   });
 };
 

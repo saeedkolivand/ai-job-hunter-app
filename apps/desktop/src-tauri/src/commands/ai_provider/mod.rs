@@ -559,7 +559,13 @@ pub trait AiProvider: Send + Sync {
     /// List the models this provider exposes. Resolves its own credentials/client
     /// (exactly like `chat_stream`/`complete`), so no HTTP/key transport detail
     /// leaks into the trait — a CLI agent has neither and just lists its aliases.
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value>;
+    ///
+    /// `Err` on a missing/blank key, a request/transport failure, a non-success
+    /// status, or a response body that doesn't carry the expected model-list
+    /// field — distinct from `Ok(vec![])`, which means the provider was reached
+    /// and genuinely reported an empty catalogue. Callers must not conflate the
+    /// two (see `commands::ai::ai_list_provider_models`).
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>>;
 
     /// Validate that the provider is usable: cloud → the stored key authenticates;
     /// local server / CLI agent → reachable / installed. Resolves its own deps from

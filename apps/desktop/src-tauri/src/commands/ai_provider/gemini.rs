@@ -20,6 +20,11 @@ use super::{
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
 
+/// Safety bound on `list_models` pagination — real catalogues are a few dozen
+/// models; this just prevents an unbounded loop if the API ever returns a
+/// `nextPageToken` forever.
+const MAX_LIST_MODELS_PAGES: usize = 50;
+
 /// Requested embedding output size. `gemini-embedding-2`'s default (unspecified)
 /// dimensionality is 3072 — 4x the retired text-embedding-004's 768. One of
 /// the model's documented "Recommended" sizes; auto-normalized by the API
@@ -46,6 +51,32 @@ fn validate_gemini_key(stored: Option<String>) -> AppResult<String> {
 /// Resolve the stored Gemini key, rejecting a missing/blank one before any request.
 fn require_gemini_key(app: &AppHandle) -> AppResult<String> {
     validate_gemini_key(get_provider_key(app, ProviderId::Gemini.credential_key()))
+}
+
+/// Parse ONE page of the `/v1beta/models` response body into `{name}`
+/// entries, stripping the `models/` prefix Gemini's wire format uses, plus
+/// the `nextPageToken` for the next page, if any. `-preview`/experimental
+/// ids are NOT filtered out here — `/v1beta` (unlike `/v1`) lists them, and
+/// they're valid, selectable models (e.g. the curated Pro-tier default in
+/// `provider-meta.ts` is a `-preview` id). Pure so it's unit-testable
+/// without a network mock.
+fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
+    let models = body
+        .get("models")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| AppError::Provider("Gemini: response missing `models` array".to_string()))?;
+    let names = models
+        .iter()
+        .filter_map(|m| m.get("name").and_then(|id| id.as_str()))
+        .filter(|id| id.starts_with("models/"))
+        .map(|id| json!({ "name": id.strip_prefix("models/").unwrap_or(id) }))
+        .collect();
+    let next_page_token = body
+        .get("nextPageToken")
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(String::from);
+    Ok((names, next_page_token))
 }
 
 /// Concatenate every `parts[].text` of the first candidate (non-streaming
@@ -955,41 +986,56 @@ impl AiProvider for GeminiClient {
         8_000
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
-        // Returns `Vec` (no `AppResult`), so a blank key can't surface the
-        // unauthorized error — short-circuit to the empty "no models" result
-        // instead of wasting a 401 round-trip with an empty header.
-        let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) if !k.trim().is_empty() => k,
-            _ => return vec![],
-        };
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
+        // `/v1beta`, not `/v1` — every generation path here already uses
+        // `/v1beta` (see the `endpoint_label`s elsewhere in this file), and
+        // `/v1` omits `-preview`/experimental models (e.g. the curated
+        // Pro-tier default in `provider-meta.ts` is a `-preview` id, which
+        // would silently vanish from the picker on `/v1`).
+        let api_key = require_gemini_key(app)?;
         let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{BASE}/v1/models"))
-            .header("x-goog-api-key", &api_key)
-            .timeout(timeouts::LIST_MODELS)
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.json::<Value>().await {
-                if let Some(models) = body.get("models").and_then(|d| d.as_array()) {
-                    return models
-                        .iter()
-                        .filter_map(|m| m.get("name").and_then(|id| id.as_str()))
-                        .filter(|id| id.starts_with("models/"))
-                        .map(|id| json!({ "name": id.strip_prefix("models/").unwrap_or(id) }))
-                        .collect();
-                }
+        let mut all = Vec::new();
+        let mut page_token: Option<String> = None;
+        for _ in 0..MAX_LIST_MODELS_PAGES {
+            let mut req = client
+                .get(format!("{BASE}/v1beta/models"))
+                .header("x-goog-api-key", &api_key)
+                // No explicit `pageSize` — see the matching note in
+                // `anthropic.rs`: the `pageToken` loop already yields every
+                // page, so an unverified page-size ceiling would risk 400-ing
+                // the whole listing to save one cached round-trip.
+                .timeout(timeouts::LIST_MODELS);
+            if let Some(token) = &page_token {
+                req = req.query(&[("pageToken", token.as_str())]);
+            }
+            let resp = req.send().await.map_err(|e| {
+                AppError::Network(format!("{}: request failed: {e}", self.id().as_str()))
+            })?;
+            if !resp.status().is_success() {
+                return Err(AppError::Provider(format!(
+                    "API returned status: {}",
+                    resp.status()
+                )));
+            }
+            let body: Value = resp
+                .json()
+                .await
+                .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
+            let (mut page, next) = parse_model_page(&body)?;
+            all.append(&mut page);
+            match next {
+                Some(token) => page_token = Some(token),
+                None => break,
             }
         }
-        vec![]
+        Ok(all)
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         let api_key = require_gemini_key(app)?;
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models"))
+            .get(format!("{BASE}/v1beta/models"))
             .header("x-goog-api-key", &api_key)
             .timeout(timeouts::LIST_MODELS)
             .send()
