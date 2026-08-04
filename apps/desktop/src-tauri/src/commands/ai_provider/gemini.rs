@@ -395,6 +395,29 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
     out
 }
 
+/// Effective `temperature` to send, or `None` to omit the field entirely.
+/// `explicit` (the user's own choice, if any) ALWAYS wins, on every model —
+/// this never overrides a deliberate value. Absent that, every call site in
+/// this file used to fall back to its own hardcoded default (`0.7` for chat/
+/// complete, `0.2` for research) regardless of model. Google's live docs
+/// (`ai.google.dev/gemini-api/docs/gemini-3`, fetched 2026-08-04): "For all
+/// Gemini 3 models, we strongly recommend keeping the temperature parameter
+/// at its default value of `1.0`... Changing the temperature (setting it
+/// below 1.0) may lead to unexpected behavior, such as looping or degraded
+/// performance, particularly in complex mathematical or reasoning tasks."
+/// This is NOT a 400 — Gemini 3 accepts the field — it is a SILENT quality
+/// regression: injecting either hardcoded default put every Gemini 3+ call
+/// (chat, complete, AND research/synthesis, which is exactly the "complex
+/// reasoning task" case) into the documented degradation case, including
+/// every new user via the onboarding default (`gemini-3.6-flash`, itself
+/// Gemini 3+). So on a v3+ model ([`gemini_is_v3_or_later`]) with no
+/// explicit value, this omits the field so the API applies its OWN 1.0
+/// default, instead of `fallback`; a pre-v3 model keeps `fallback`
+/// unchanged (Google's guidance is scoped to the 3.x family).
+fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f64) -> Option<f64> {
+    explicit.or_else(|| (!gemini_is_v3_or_later(model)).then_some(fallback))
+}
+
 /// Build the `streamGenerateContent` request body for a given
 /// [`AiGenerateRequest`]. Pure + unit-tested. `topP`/`frequencyPenalty`/
 /// `presencePenalty` are the detector-resistance sampling knobs (RAID, ACL
@@ -402,7 +425,7 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
 /// supports all three on `generationConfig`, each added only when `Some`
 /// (never sent as `null`).
 fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
-    let temperature = req.temperature.unwrap_or(0.7);
+    let temperature = gemini_effective_temperature(&req.model, req.temperature, 0.7);
     let system_text: String = req
         .messages
         .iter()
@@ -424,7 +447,10 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         })
         .collect();
 
-    let mut generation_config = json!({ "temperature": temperature });
+    let mut generation_config = json!({});
+    if let Some(t) = temperature {
+        generation_config["temperature"] = json!(t);
+    }
     if let Some(top_p) = req.top_p {
         generation_config["topP"] = json!(top_p);
     }
@@ -538,9 +564,13 @@ impl GeminiClient {
         let endpoint_label = format!("/v1beta/models/{m}:generateContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
 
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, temperature, 0.7) {
+            generation_config["temperature"] = json!(t);
+        }
         let mut body = json!({
             "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
-            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+            "generationConfig": generation_config,
         });
         if !system.is_empty() {
             body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
@@ -648,10 +678,21 @@ impl GeminiClient {
             false,
         );
 
+        // 0.2 favors precision over creativity for a research brief — but on
+        // Gemini 3+ this is exactly the case Google's docs warn against (see
+        // `gemini_effective_temperature`'s doc comment): research/synthesis is
+        // itself a "complex reasoning task", so forcing a below-1.0 value here
+        // was pushing v3+ research into the documented degradation case, not
+        // improving its precision. Omitted entirely on v3+ (API applies its
+        // own 1.0); kept for pre-v3 models where this concern doesn't apply.
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, None, 0.2) {
+            generation_config["temperature"] = json!(t);
+        }
         let body = json!({
             "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
             "systemInstruction": { "parts": [{ "text": system }] },
-            "generationConfig": { "temperature": 0.2 },
+            "generationConfig": generation_config,
             "tools": [{ "google_search": {} }],
         });
         let url = format!("{BASE}{endpoint_label}");
@@ -697,6 +738,21 @@ impl AiProvider for GeminiClient {
 
     fn capabilities(&self, model: &str) -> ModelCapabilities {
         ModelCapabilities {
+            // Verified, not assumed: stays `true` unconditionally, including
+            // for Gemini 3+. This field's established meaning across every
+            // provider in this crate (see `openai.rs`/`anthropic.rs`'s own
+            // `supports_temperature` gates) is "does the API REJECT this
+            // field" — OpenAI's o-series 400s on it, Anthropic's adaptive-
+            // thinking models 400 on it, but Gemini 3+ does not: Google's own
+            // docs (`ai.google.dev/gemini-api/docs/gemini-3`) only recommend
+            // AGAINST changing it from 1.0 for quality reasons, never say the
+            // field itself is rejected. That quality concern is handled at
+            // the send site instead (`gemini_effective_temperature`), which
+            // omits an INVENTED default rather than a user's real choice —
+            // this flag isn't consulted there today (unlike OpenAI/
+            // Anthropic's `caps.supports_temperature` gate) and has no
+            // renderer consumer either, so changing its value here wouldn't
+            // move anything user-visible; it would just make it inaccurate.
             supports_temperature: true,
             supports_system_role: true, // mapped to systemInstruction
             supports_streaming: true,
@@ -970,9 +1026,13 @@ impl AiProvider for GeminiClient {
             )
             .collect();
 
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, temperature, 0.7) {
+            generation_config["temperature"] = json!(t);
+        }
         let mut body = json!({
             "contents": contents,
-            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+            "generationConfig": generation_config,
             "tools": [{ "functionDeclarations": function_declarations }],
         });
         if !system.is_empty() {

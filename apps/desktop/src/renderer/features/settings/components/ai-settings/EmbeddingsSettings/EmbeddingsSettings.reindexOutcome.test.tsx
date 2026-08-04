@@ -226,6 +226,14 @@ describe('EmbeddingsSettings — reindex job outcome', () => {
     expect(notifySuccess).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'settings.embeddings.reindexComplete:{}' })
     );
+    // The ref fix must clear the tracked state too, not just let the toast
+    // fire — a regression that dropped the `reindexJobIdRef.current = null` /
+    // `setReindexJobId(null)` clear (rather than the event match itself)
+    // would pass the assertion above while leaving the button stuck showing
+    // "reindexing" forever. Its label reverting to the idle "reindex" text
+    // is the observable proof the state actually cleared.
+    expect(screen.getByText('settings.embeddings.reindex:{}')).toBeInTheDocument();
+    expect(screen.queryByText('settings.embeddings.reindexing:{}')).not.toBeInTheDocument();
   });
 
   it('ignores a job event for a different jobId', async () => {

@@ -11,10 +11,11 @@
 //! non-test scans.
 
 use super::{
-    build_chat_stream_body, build_embed_body, gemini_effort_levels, gemini_is_v3_or_later,
-    gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage, parse_gemini_frames,
-    parse_gemini_parts, parse_gemini_turn, parse_gemini_usage, validate_gemini_key, AiProvider,
-    GeminiClient, GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
+    build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
+    gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage,
+    parse_gemini_frames, parse_gemini_parts, parse_gemini_turn, parse_gemini_usage,
+    validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
+    EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -51,6 +52,70 @@ fn chat_stream_body_serializes_sampling_params_when_set() {
     assert_eq!(config["topP"], json!(0.95));
     assert_eq!(config["frequencyPenalty"], json!(0.3));
     assert_eq!(config["presencePenalty"], json!(0.2));
+}
+
+#[test]
+fn gemini_effective_temperature_omits_only_for_v3_with_no_explicit_value() {
+    // Explicit value ALWAYS wins, on every model — never overridden.
+    assert_eq!(
+        gemini_effective_temperature("gemini-3.6-flash", Some(0.3), 0.7),
+        Some(0.3)
+    );
+    assert_eq!(
+        gemini_effective_temperature("gemini-1.5-flash", Some(0.3), 0.7),
+        Some(0.3)
+    );
+    // No explicit value, pre-v3: keeps the caller's fallback (unchanged
+    // behavior — Google's don't-touch-1.0 guidance is scoped to Gemini 3+).
+    assert_eq!(
+        gemini_effective_temperature("gemini-1.5-flash", None, 0.7),
+        Some(0.7)
+    );
+    // No explicit value, v3+: omit entirely — `ai.google.dev/gemini-api/docs/gemini-3`
+    // (fetched 2026-08-04) warns a below-1.0 value risks looping/degraded
+    // performance on complex reasoning tasks; never invent one.
+    assert_eq!(
+        gemini_effective_temperature("gemini-3.6-flash", None, 0.7),
+        None
+    );
+}
+
+#[test]
+fn chat_stream_body_omits_temperature_for_a_v3_model_with_no_explicit_value() {
+    let mut req = base_request();
+    req.model = "gemini-3.6-flash".to_string();
+    req.temperature = None;
+    let body = build_chat_stream_body(&req);
+    assert!(
+        body["generationConfig"].get("temperature").is_none(),
+        "must not invent a temperature for a v3+ model — let the API apply its own 1.0"
+    );
+}
+
+#[test]
+fn chat_stream_body_sends_an_explicit_temperature_even_on_a_v3_model() {
+    let mut req = base_request();
+    req.model = "gemini-3.6-flash".to_string();
+    req.temperature = Some(0.3);
+    let body = build_chat_stream_body(&req);
+    assert_eq!(
+        body["generationConfig"]["temperature"],
+        json!(0.3),
+        "a deliberate user value must still be honored on a v3+ model"
+    );
+}
+
+#[test]
+fn chat_stream_body_keeps_the_default_temperature_for_a_pre_v3_model_with_no_explicit_value() {
+    let mut req = base_request();
+    req.model = "gemini-1.5-flash".to_string();
+    req.temperature = None;
+    let body = build_chat_stream_body(&req);
+    assert_eq!(
+        body["generationConfig"]["temperature"],
+        json!(0.7),
+        "unchanged behavior for pre-v3 models"
+    );
 }
 
 #[test]
