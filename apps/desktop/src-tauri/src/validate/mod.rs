@@ -327,6 +327,28 @@ struct PdfLink {
     page: usize,
 }
 
+/// The `n` links sitting highest on the page, ordered top-down.
+///
+/// Selection is **geometric**, never `/Annots` emission order.
+/// `page_link_annotations` yields annotations in array order, which carries no
+/// guarantee about vertical position — and for a two-column template it very
+/// likely doesn't, since a sidebar is emitted as its own run. Taking the first
+/// `n` in emission order could therefore pick a *body* link, raise a CRITICAL
+/// `header_url_mismatch`, and make `validate_and_fix` silently re-render the
+/// document single-column — losing the user's chosen layout to a false
+/// positive. Sorting by the same `rect` top edge the band filter already reads
+/// makes "the header's own n links" a statement about the page, not about the
+/// writer that produced it.
+///
+/// Pinned by `validate::tests::topmost_n_orders_by_geometry_not_annotation_order`.
+fn topmost_n<'a>(links: &[&'a PdfLink], n: usize) -> Vec<&'a PdfLink> {
+    let top = |l: &PdfLink| l.rect[1].max(l.rect[3]);
+    let mut by_position: Vec<&'a PdfLink> = links.to_vec();
+    by_position.sort_by(|a, b| top(b).total_cmp(&top(a)));
+    by_position.truncate(n);
+    by_position
+}
+
 /// Render-level checks over the actual PDF bytes (renderer-agnostic, so the modern
 /// résumé engine and the legacy cover-letter path are both covered):
 ///   * `header_url_mismatch` (critical) — a self-consistency check: every
@@ -488,8 +510,7 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             // band in this state is body content, full stop, and must not
             // block. Pinned by `validate::tests::linkless_header_with_a_genuine_body_link_in_the_band_does_not_false_block`.
             if !allowed.is_empty() {
-                let header_owned_links: Vec<&PdfLink> =
-                    header_links.iter().copied().take(allowed.len()).collect();
+                let header_owned_links = topmost_n(&header_links, allowed.len());
 
                 // A header-owned link that is NOT one of the header's own
                 // claimed links means the render itself disagrees with the

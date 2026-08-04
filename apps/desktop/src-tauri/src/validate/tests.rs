@@ -904,3 +904,51 @@ fn canonicalize_url_google_drive_link_is_stable() {
         "query must survive: {once}"
     );
 }
+
+/// Regression: which band links count as "the header's own" must be decided by
+/// where they sit on the page, never by `/Annots` emission order.
+///
+/// `page_link_annotations` returns annotations in array order, which carries no
+/// guarantee of vertical position — a two-column template emits its sidebar as
+/// its own run, so a body link can precede a header one. Selecting by emission
+/// order would then pick the body link, raise a CRITICAL `header_url_mismatch`,
+/// and make `validate_and_fix` silently re-render the document single-column.
+///
+/// The links below are deliberately supplied in the *worst* order: lowest on the
+/// page first. Taking the first two by emission order yields the two body links;
+/// taking them by geometry yields the header's.
+#[test]
+fn topmost_n_orders_by_geometry_not_annotation_order() {
+    let link = |y: f32, url: &str| PdfLink {
+        rect: [0.0, y, 100.0, y + 10.0],
+        url: url.to_string(),
+        page: 0,
+    };
+    // PDF user space is bottom-up: a larger y is higher on the page.
+    let body_low = link(100.0, "https://acme.example.com/careers");
+    let body_mid = link(300.0, "https://acme.example.com/team");
+    let header_b = link(700.0, "https://github.com/jane");
+    let header_a = link(720.0, "https://linkedin.com/in/jane");
+    let emission_order = [&body_low, &body_mid, &header_b, &header_a];
+
+    let picked = topmost_n(&emission_order, 2);
+
+    assert_eq!(
+        picked.iter().map(|l| l.url.as_str()).collect::<Vec<_>>(),
+        vec!["https://linkedin.com/in/jane", "https://github.com/jane"],
+        "must select the two highest links, top-down — selecting by emission \
+         order would have picked the body links and false-blocked the export"
+    );
+}
+
+/// `topmost_n` must not panic or over-take when asked for more links than exist.
+#[test]
+fn topmost_n_caps_at_the_available_link_count() {
+    let only = PdfLink {
+        rect: [0.0, 700.0, 100.0, 710.0],
+        url: "https://linkedin.com/in/jane".to_string(),
+        page: 0,
+    };
+    assert_eq!(topmost_n(&[&only], 5).len(), 1);
+    assert!(topmost_n(&[], 3).is_empty());
+}
