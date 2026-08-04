@@ -158,12 +158,22 @@ function alphabeticCount(s: string): number {
   return (s.match(/\p{L}/gu) ?? []).length;
 }
 
+/** UTF-8 byte length — mirrors Rust's `str::len()`, which counts bytes, not
+ *  Unicode code points or UTF-16 code units. A plain `.length` diverges for
+ *  any non-ASCII character: `"ÉÉ".length` is 2 (2 UTF-16 units) but Rust's
+ *  `"ÉÉ".len()` is 4 (2 bytes each) — enough to flip the 4/60 floor/ceiling
+ *  below for an accented locale heading. */
+function byteLength(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
 /**
  * The ALL-CAPS `SectionHeader` shape rule — a mirror of Rust's
- * `is_all_caps_section_heading`: fully uppercase, 4–60 chars, ≥2 alphabetic
- * characters, no ASCII digit repeated exactly 4 times, not a likely
- * company/role/acronym token ({@link isLikelyCompanyOrRole}), no date-range
- * shape ({@link DATE_RANGE_RE}), and no `@`.
+ * `is_all_caps_section_heading`: fully uppercase, 4–60 BYTES (not JS
+ * characters — see {@link byteLength}), ≥2 alphabetic characters, no ASCII
+ * digit repeated exactly 4 times, not a likely company/role/acronym token
+ * ({@link isLikelyCompanyOrRole}), no date-range shape ({@link DATE_RANGE_RE}),
+ * and no `@`.
  *
  * This is what recognizes a locale's own ALL-CAPS heading (`PERFIL`,
  * `PROFILO`, `WERKERVARING`, …) — the résumé prompt mandates ALL-CAPS section
@@ -179,8 +189,8 @@ function alphabeticCount(s: string): number {
 export function isAllCapsSectionHeading(line: string): boolean {
   return (
     line === line.toUpperCase() &&
-    line.length >= 4 &&
-    line.length <= 60 &&
+    byteLength(line) >= 4 &&
+    byteLength(line) <= 60 &&
     alphabeticCount(line) >= 2 &&
     !hasAsciiDigitRepeatedExactlyFourTimes(line) &&
     !isLikelyCompanyOrRole(line) &&

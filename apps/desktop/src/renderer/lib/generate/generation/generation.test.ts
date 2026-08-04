@@ -313,21 +313,26 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     );
   });
 
-  it('collapses a second pre-section contact line (phone on its own line) instead of leaving a duplicate', () => {
+  // Security re-review (HIGH, round 2): this function never removes a line —
+  // only the email-bearing match is replaced (positive signal, not
+  // position); the phone-only match survives as a duplicate rather than
+  // being spliced out. Deleting it was the actual defect (see the job-title
+  // repro below); a surviving duplicate is the accepted trade.
+  it('replaces the email-bearing match; a second pre-section contact line (phone on its own line) survives as a duplicate', () => {
     const text = 'Model Name\nmodel@old.example.com\n+1 555 0000\n\nSUMMARY\nSome text.';
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
-    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
-    expect(out).not.toContain('+1 555 0000');
-    expect(out).not.toContain('model@old.example.com');
+    expect(out).toBe(
+      'Jordan Lee\nBerlin | jordan@profile.example.com\n+1 555 0000\n\nSUMMARY\nSome text.'
+    );
   });
 
-  it('collapses a second pre-section contact line (URLs on their own line after the email)', () => {
+  it('replaces the email-bearing match; a second pre-section contact line (URLs on their own line) survives as a duplicate', () => {
     const text =
       'Model Name\nmodel@old.example.com\n[Portfolio](https://old.example.dev) | [GitHub](https://github.com/old)\n\nSUMMARY\nSome text.';
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
-    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
-    expect(out).not.toContain('old.example.dev');
-    expect(out).not.toContain('github.com/old');
+    expect(out).toBe(
+      'Jordan Lee\nBerlin | jordan@profile.example.com\n[Portfolio](https://old.example.dev) | [GitHub](https://github.com/old)\n\nSUMMARY\nSome text.'
+    );
   });
 
   it('finds an ALL-CAPS contact line instead of mistaking it for a section heading', () => {
@@ -374,6 +379,59 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const out = seedHeaderFromProfile(text, profile, contactLine);
     expect(out).toBe('+49 30 0000000\n\nEXPERIENCE\nAcme Corp');
     expect(out).not.toContain('jane@old.example.com');
+  });
+
+  // Security re-review (HIGH, round 2) — the actual required regression: the
+  // prompt mandates "Line 2: Job title (plain text)", models routinely put
+  // separators in it ("Senior Engineer | Cloud & AI | Berlin" → 2 pipes →
+  // contact-shaped), and it sits BEFORE the real, `@`-bearing contact line in
+  // the same header block. The old "replace matches[0], splice the rest"
+  // policy deleted the title. Never-remove + pick-by-positive-signal (prefer
+  // `@`) keeps it, verbatim, and still seeds the profile's contact line onto
+  // the correct target.
+  it('does not delete a separator-bearing job title sitting before the real contact line', () => {
+    const text = [
+      'Jane Doe',
+      'Senior Engineer | Cloud & AI | Berlin',
+      'Madrid, Spain | jane@example.com | +34 600 000 000 | LinkedIn | GitHub',
+      '',
+      'PERFIL',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      [
+        'Jordan Lee',
+        'Senior Engineer | Cloud & AI | Berlin',
+        'Berlin | jordan@profile.example.com',
+        '',
+        'PERFIL',
+      ].join('\n')
+    );
+  });
+
+  // The other reachable path to the same class of loss: a heading
+  // COMPANY_KEYWORDS vetoes out of isAllCapsSectionHeading ("IT" is a
+  // keyword) and that isn't in SECTION_NAMES either ("IT SKILLS" isn't a
+  // known name) — recognized as a boundary by neither predicate, and with no
+  // blank line anywhere the whole document is one block. Never-remove keeps
+  // every line under it, whatever else in the block also happens to look
+  // contact-shaped (2+ pipes).
+  it('never deletes lines under a heading COMPANY_KEYWORDS vetoes and SECTION_NAMES does not know ("IT SKILLS")', () => {
+    const text = [
+      'Jane Doe',
+      'jane@example.com | +1 555 0000',
+      'IT SKILLS',
+      'Python | JavaScript | Go',
+      'React | Node | Docker',
+      'AWS | GCP | Kubernetes',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toContain('IT SKILLS');
+    expect(out).toContain('Python | JavaScript | Go');
+    expect(out).toContain('React | Node | Docker');
+    expect(out).toContain('AWS | GCP | Kubernetes');
+    // Exactly one contact line remains — the seeded one.
+    expect(out.split('\n').filter((l) => l.includes('@')).length).toBe(1);
   });
 
   // Security re-review (CRITICAL): `packages/prompts/src/locale/index.ts`'s

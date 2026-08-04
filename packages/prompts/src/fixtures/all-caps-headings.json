@@ -44,5 +44,36 @@
     "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "heading": false,
     "note": "61 chars — over the 60-char ceiling"
+  },
+  {
+    "line": "Experience",
+    "heading": false,
+    "note": "Title Case, not ALL-CAPS — fails line === line.toUpperCase()"
+  },
+  { "line": "1234", "heading": false, "note": "no letters — fails the alphabetic >= 2 floor" },
+  {
+    "line": "- - -",
+    "heading": false,
+    "note": "no letters — fails the alphabetic >= 2 floor (dashes/spaces only)"
+  },
+  {
+    "line": "LEADERSHIP",
+    "heading": true,
+    "note": "whole word 'LEADERSHIP' is NOT in COMPANY_KEYWORDS — 'LEAD' matching it as a SUBSTRING would be a bug"
+  },
+  {
+    "line": "IT SKILLS",
+    "heading": false,
+    "note": "whole word 'IT' IS in COMPANY_KEYWORDS — not literally in SECTION_NAMES either, so this must be excluded by the keyword veto, not the known-name list"
+  },
+  {
+    "line": "ÉÉ",
+    "heading": true,
+    "note": "4 UTF-8 bytes (2 chars x 2 bytes) but only 2 JS UTF-16 units — must pass the >=4 floor on BYTE length, matching Rust's str::len()"
+  },
+  {
+    "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAÉ",
+    "heading": false,
+    "note": "59 ASCII 'A' + 1 accented char = 60 JS units but 61 UTF-8 bytes — must fail the <=60 ceiling on BYTE length"
   }
 ]

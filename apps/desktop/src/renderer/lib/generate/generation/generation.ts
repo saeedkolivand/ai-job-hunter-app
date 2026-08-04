@@ -298,42 +298,6 @@ function isContactProfileEffectivelyEmpty(profile: ContactProfile): boolean {
 }
 
 /**
- * Seed the generated text's header with the Contact Profile's own values, so
- * the canonical string already carries the exact header PDF/DOCX export
- * renders. Line 1 (the name) is replaced when the profile has a `fullName`;
- * every pre-section contact line is collapsed into ONE — the first is
- * replaced (or a new line is inserted, when the model wrote none) with
- * `contactLine` — built by the shared `ContactProfile::header_markdown`
- * (Rust), never re-implemented here — and any OTHER pre-section contact line
- * is removed outright. Leaving a second one behind would otherwise survive
- * into `header.contact` alongside the seeded line: Rust's
- * `model_from_resume_text` joins every pre-section Contact line with `" · "`,
- * not just the first, so a duplicate/leaked line would reach export
- * unvalidated (H's contact-line fallback only fires when `header.contact` is
- * entirely empty). No-op when the profile has nothing to contribute
- * (`contactLine` is then `''` too) — the model's own header stands.
- *
- * Line 0 is included in the scan too when there's no `fullName` to write over
- * it AND it's already contact-shaped by Rust's narrower line-0 rule
- * (`isFirstLineContactShaped`) — a combined "Jane Doe | jane@example.com"
- * with no separate name line. Rust's own `idx == 0` case classifies that as
- * `Contact`, not `Name` (so `header.name` comes out empty either way); left
- * out of this scan, it would neither get replaced nor count toward
- * `matches`, so the seeder inserts a second, duplicate contact line right
- * after it instead of recognizing it as the one to replace.
- *
- * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
- * is best-effort recognition, not this): the scan/splice below never looks
- * past the first blank-line-delimited block from the top of the text — the
- * header, by definition. `looksLikeHeaderBoundary` firing on a real heading
- * stops the scan earlier, inside that block, which is what makes ordinary
- * multi-line headers (name / title / contact, still one block) work; but a
- * heading-recognition MISS (an unfixtured locale, a creative heading) can now
- * only degrade to "didn't seed" or "inserted a duplicate line" — it can never
- * again scan into the document body and delete real résumé content (a job
- * entry, a skills line, a project) the way an unbounded scan once did.
- */
-/**
  * Strip control characters (a `\n` above all) and cap length — mirrors the
  * Rust `sanitize_header_part` treatment `contactLine` already went through
  * (it's built by `ContactProfile::header_markdown`). `fullName` reaches this
@@ -342,12 +306,81 @@ function isContactProfileEffectivelyEmpty(profile: ContactProfile): boolean {
  * be the one field spliced into the seeded text unsanitized: a raw `\n`
  * would inject an arbitrary extra physical line, including — if it happened
  * to read as a known section name — a fabricated section Rust's parser
- * would treat as real.
+ * would treat as real. Iterates Unicode code points (`[...name]`), not
+ * UTF-16 units (`.slice`) — a surrogate pair straddling the 200 cap would
+ * otherwise split into a lone, invalid surrogate.
  */
 function sanitizeHeaderName(name: string): string {
-  return name.replace(/\p{Cc}/gu, '').slice(0, 200);
+  return [...name.replace(/\p{Cc}/gu, '')].slice(0, 200).join('');
 }
 
+/**
+ * Choose which of possibly several contact-shaped `matches` to overwrite with
+ * `contactLine`, by a positive signal rather than by position. The real
+ * contact line nearly always carries the email, so a match containing `@`
+ * wins; failing that, a phone-shaped match; failing that, the LAST match in
+ * the block (closest to the body — the earliest matches in a multi-line
+ * header are more often a separator-heavy job title, e.g.
+ * "Senior Engineer | Cloud & AI | Berlin", than the actual contact line).
+ * Precondition: `matches` is non-empty.
+ */
+function pickReplacementIndex(lines: string[], matches: number[]): number {
+  const withAt = matches.find((i) => (lines[i] ?? '').includes('@'));
+  if (withAt !== undefined) return withAt;
+  const withPhone = matches.find((i) => {
+    const line = lines[i] ?? '';
+    return !line.includes('@') && isFirstLineContactShaped(line);
+  });
+  if (withPhone !== undefined) return withPhone;
+  return matches[matches.length - 1] ?? 0;
+}
+
+/**
+ * Seed the generated text's header with the Contact Profile's own values, so
+ * the canonical string already carries the exact header PDF/DOCX export
+ * renders. Line 1 (the name) is replaced when the profile has a `fullName`;
+ * exactly ONE pre-section contact-shaped line — chosen by
+ * {@link pickReplacementIndex}, not by position — is overwritten with
+ * `contactLine`, built by the shared `ContactProfile::header_markdown`
+ * (Rust), never re-implemented here. No-op when the profile has nothing to
+ * contribute (`contactLine` is then `''` too) — the model's own header
+ * stands.
+ *
+ * This function NEVER removes a line — only ever replaces one, or (when
+ * nothing in the block is contact-shaped) inserts a new one. A second
+ * contact-shaped line in the block (a duplicated/stale email, a job title
+ * that happens to have 2+ separators) therefore SURVIVES untouched rather
+ * than being deleted. That duplicate does reach export — Rust's
+ * `model_from_resume_text` joins every pre-section Contact line with `" · "`
+ * — so it is a real (visible, user-correctable) quality defect, not a no-op;
+ * it is the deliberate trade for the property that actually matters: this
+ * function can no longer delete real résumé content (a job title, a body
+ * line it mis-scans as contact-shaped). An earlier version replaced the
+ * FIRST match and spliced out every other one, which silently destroyed a
+ * job title like "Senior Engineer | Cloud & AI | Berlin" (2 pipes →
+ * contact-shaped) sitting before the real, `@`-bearing contact line.
+ *
+ * Line 0 is included in the scan too when there's no `fullName` to write over
+ * it AND it's already contact-shaped by Rust's narrower line-0 rule
+ * (`isFirstLineContactShaped`) — a combined "Jane Doe | jane@example.com"
+ * with no separate name line. Rust's own `idx == 0` case classifies that as
+ * `Contact`, not `Name` (so `header.name` comes out empty either way); left
+ * out of this scan, it would neither get replaced nor count toward
+ * `matches`, so the seeder would insert a second contact line right after it
+ * instead of recognizing it as a candidate.
+ *
+ * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
+ * is best-effort recognition, not this): the scan below never looks past the
+ * first blank-line-delimited block from the top of the text — the header, by
+ * definition. `looksLikeHeaderBoundary` firing on a real heading stops the
+ * scan earlier, inside that block, which is what makes ordinary multi-line
+ * headers (name / title / contact, still one block) work; but a
+ * heading-recognition MISS (an unfixtured locale, a creative heading) can now
+ * only degrade to "didn't seed" or "left a duplicate line" — combined with
+ * "never remove," it can never again scan into the document body and delete
+ * real résumé content (a job entry, a skills line, a project) the way an
+ * unbounded, removal-capable scan once did.
+ */
 export function seedHeaderFromProfile(
   text: string,
   profile: ContactProfile,
@@ -363,8 +396,8 @@ export function seedHeaderFromProfile(
 
   if (contactLine.trim()) {
     // The header block: line 0 up to (not including) the first blank line,
-    // or the whole text if there is none. Hard ceiling for both the scan and
-    // the splice below — see the STRUCTURAL bound note above.
+    // or the whole text if there is none. Hard ceiling for the scan below —
+    // see the STRUCTURAL bound note above.
     let blockEnd = lines.length;
     for (let i = 1; i < lines.length; i++) {
       if ((lines[i] ?? '').trim() === '') {
@@ -383,14 +416,7 @@ export function seedHeaderFromProfile(
     if (matches.length === 0) {
       lines.splice(1, 0, contactLine);
     } else {
-      const firstIdx = matches[0];
-      if (firstIdx !== undefined) lines[firstIdx] = contactLine;
-      // Remove every OTHER match, highest index first so earlier splices
-      // don't shift the indices still pending removal.
-      for (let i = matches.length - 1; i >= 1; i--) {
-        const idx = matches[i];
-        if (idx !== undefined) lines.splice(idx, 1);
-      }
+      lines[pickReplacementIndex(lines, matches)] = contactLine;
     }
   }
 
