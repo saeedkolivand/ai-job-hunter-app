@@ -1,5 +1,17 @@
 [
   {
+    "sha": "4960eba288a785a2d8000375a402c6332117151c",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-03T06:33:42Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "1ff031ad2c5aecbddf8aa66f3212acde188e2a18",
     "commit": {
       "message": "fix: upload only our own debug files to sentry (#930)\n\n* fix: upload only our own debug files to sentry\n\nThe first real release run uploaded 474 debug files per matrix leg, ~1900 per\nrelease: dependency build scripts, proc-macro .so files, ring/aws-lc-sys\nobject files, and every third-party system library bundled into the AppImage —\nall to symbolicate one binary. Cause was pointing sentry-cli at the whole\ntarget/ tree.\n\nScope it to the ajh_tauri* artifacts under release/deps. The paths come from\nthat run's logs rather than inference, which mattered: on every platform the\ndebug artifacts use the LIBRARY name (ajh_tauri, underscore) and live in\ndeps/, not the bin name at release/ajh-tauri. A guessed\nrelease/ajh-tauri.dSYM would have missed the macOS debug companion entirely\nand uploaded a binary with no symbols.\n\nGuard the per-triple directory behind a non-empty check — with no triple the\npath collapses to the same dir and enumerates everything twice. Verified by\nsimulating all three layouts: 2 files each, debug companion included, and an\nempty match still fails loudly.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: assert the debug companion is present, not just some artifact\n\nReview noted the empty-check proves some ajh_tauri* file was found, not that\nthe file needed to symbolicate the shipped binary is there. Finding\najh_tauri.exe while its .pdb is missing would pass and still ship\nunresolvable stack traces — the same looks-fine-reports-nothing shape this\nfeature keeps producing.\n\nAssert the companion each platform actually emits, taken from the release\nrun's uploaded-file list rather than assumed: .pdb on Windows, .dSYM on\nmacOS, and nothing on Linux where DWARF stays inside the binary. Verified the\npositive and negative case for each.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump apple-native-keyring-store in /apps/desktop/src-tauri (#870)\n\nBumps [apple-native-keyring-store](https://github.com/open-source-cooperative/apple-native-keyring-store) from 1.0.0 to 1.0.1.\n- [Release notes](https://github.com/open-source-cooperative/apple-native-keyring-store/releases)\n- [Commits](https://github.com/open-source-cooperative/apple-native-keyring-store/compare/v1.0.0...v1.0.1)\n\n---\nupdated-dependencies:\n- dependency-name: apple-native-keyring-store\n  dependency-version: 1.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
       "author": {
         "date": "2026-07-22T21:07:46Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "496942e078be7071a39d0f30302f677dc30cfd1c",
-    "commit": {
-      "message": "chore: bump anyhow from 1.0.103 to 1.0.104 in /apps/desktop/src-tauri (#869)\n\nBumps [anyhow](https://github.com/dtolnay/anyhow) from 1.0.103 to 1.0.104.\n- [Release notes](https://github.com/dtolnay/anyhow/releases)\n- [Commits](https://github.com/dtolnay/anyhow/compare/1.0.103...1.0.104)\n\n---\nupdated-dependencies:\n- dependency-name: anyhow\n  dependency-version: 1.0.104\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T21:07:22Z"
       }
     },
     "author": {
