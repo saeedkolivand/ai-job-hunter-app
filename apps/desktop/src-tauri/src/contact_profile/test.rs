@@ -221,7 +221,10 @@ fn header_urls_and_header_markdown_cap_a_long_url_identically() {
 #[test]
 fn header_urls_and_header_markdown_cap_a_long_email_identically() {
     let long_email = format!("{}@example.com", "a".repeat(250));
-    assert!(long_email.len() > 200, "test setup: email must exceed the cap");
+    assert!(
+        long_email.len() > 200,
+        "test setup: email must exceed the cap"
+    );
     let p = ContactProfile {
         email: Some(long_email),
         ..Default::default()
