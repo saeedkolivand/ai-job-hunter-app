@@ -76,9 +76,13 @@ pub(crate) fn generate_resume_docx_in(
 ) -> AppResult<Docx> {
     let mut model = model_from_resume_text(text);
 
-    if let Some(name) = meta.and_then(|m| m.candidate_name.as_deref()) {
-        if !name.trim().is_empty() {
-            model.header.name = name.to_string();
+    // Fallback only: the text-derived header name wins whenever the document
+    // already has one; metadata fills a header that has none.
+    if model.header.name.trim().is_empty() {
+        if let Some(name) = meta.and_then(|m| m.candidate_name.as_deref()) {
+            if !name.trim().is_empty() {
+                model.header.name = name.to_string();
+            }
         }
     }
 

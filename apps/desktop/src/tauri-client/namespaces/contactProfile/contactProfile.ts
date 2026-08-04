@@ -6,4 +6,5 @@ export const contactProfile = {
   get: () => invoke<ContactProfile>('contact_profile_get'),
   set: (profile: ContactProfile) =>
     invoke<{ success?: boolean; error?: string }>('contact_profile_set', { profile }),
+  headerLine: (lang: string) => invoke<string>('contact_profile_header_line', { lang }),
 };

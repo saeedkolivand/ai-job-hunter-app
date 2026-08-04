@@ -109,7 +109,11 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       hasProviderKey: async () => ({ has: false }),
       testProviderKey: async () => ({ success: true }),
       listProviderModels: emptyList,
-      modelCapabilities: async () => ({ supportsWebSearch: false }),
+      modelCapabilities: async () => ({
+        supportsWebSearch: false,
+        supportsReasoning: false,
+        effortLevels: [],
+      }),
       embeddingStatus: async () => ({
         active: { provider: 'ollama', model: 'nomic-embed-text' },
         spaces: [],
@@ -179,6 +183,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     contactProfile: {
       get: async () => ({}),
       set: async () => ({ success: true }),
+      headerLine: async () => '',
     },
 
     github: {

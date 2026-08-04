@@ -42,6 +42,9 @@ import {
   getBodyLinkMap,
   getLinkMap,
   injectLinksIntoGeneratedText,
+  isFirstLineContactShaped,
+  isHeaderContactLine,
+  isKnownSectionName,
   parseGitHubProjects,
   type ReferralFormat,
   resolveMarket,
@@ -49,7 +52,7 @@ import {
   type SalaryRange,
   validateMetadata,
 } from '@ajh/prompts/generate';
-import type { GitHubRepo } from '@ajh/shared';
+import type { ContactProfile, GitHubRepo } from '@ajh/shared';
 import { detectLanguages, getLanguageName, toLanguageCode } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -167,7 +170,8 @@ async function streamGenerate(
     // provider + baseUrl are NO LONGER sent (task #16): the backend resolves the
     // active provider/base_url from its own store and overwrites `model` before
     // streaming, so an XSS'd renderer can no longer point generation at an
-    // arbitrary endpoint. `effort` (a CLI reasoning knob, not routing) stays.
+    // arbitrary endpoint. `effort` (a generation tuning knob every
+    // reasoning-capable provider now reads, not routing) stays.
     effort: providerSettings?.effort,
     // Per-model local limits (Ollama) — context window (num_ctx) + max output
     // (num_predict). Omitted (undefined) for cloud/CLI or when unset.
@@ -231,6 +235,133 @@ export async function extractMetadata(
   };
 }
 
+// ─── Header seeding (H — the editor is the source of truth) ────────────────────
+//
+// PDF/DOCX export used to rebuild the header (name + contact line) from the
+// Contact Profile every time, discarding whatever the generated/edited text
+// said. That silently dropped edits to those two lines from PDF/DOCX while
+// they still shipped in TXT export and clipboard copy. The fix seeds the
+// profile's own header into the canonical text right after generation, so the
+// string the editor shows IS what exports — the Rust-side overrides
+// (`ContactProfile::apply_to_header`, the `candidate_name` overrides) are now
+// fallbacks for a header that has none, not unconditional rewrites.
+
+// `isHeaderContactLine` (a mirror of the Rust parser's `is_contact_shaped`)
+// lives in `@ajh/prompts/generate` — imported above — not here, so its
+// cross-language parity fixture test can live alongside it in that package
+// (packages/prompts/src/generate/text/header-contact-line.{ts,test.ts}),
+// consistent with `urlToFriendlyLabel`'s existing Rust-parity pattern.
+
+/**
+ * True once we're past the header block. Mirrors the Rust parser's
+ * `seen_section` flag: only an actual section heading ends the header zone —
+ * a BLANK line does not (Rust's parser leaves `seen_section` false across
+ * one), so the scan below must keep looking past it, not stop there. A
+ * markdown ATX heading (`#…`) is always a boundary (Rust's `strip_atx_heading`
+ * check runs unconditionally, before any contact classification); otherwise a
+ * line is a boundary only when it's a known section name
+ * (`isKnownSectionName`) — the check that actually flips `seen_section` in the
+ * common case.
+ *
+ * Deliberately NOT a mirror of Rust's separate ALL-CAPS `SectionHeader` rule
+ * (`export/parser/mod.rs`): that rule carries its own `len >= 4` floor, an
+ * `is_likely_company_or_role` keyword exclusion (ENGINEER/MANAGER/CEO/…), and
+ * date/repeated-digit exclusions — a hand-mirrored copy of it here previously
+ * dropped all three and false-triggered on exactly the ALL-CAPS job-title line
+ * the prompt mandates ("Line 2: Job title"), stopping the scan before it ever
+ * reached the real contact line below. Rather than mirror that whole
+ * multi-guard predicate (and need a second shared-fixture gate for it), the
+ * boundary here is narrowed to what `SECTION_NAMES` + the ATX check alone
+ * already catch in the realistic case — removing a hand-mirrored heuristic
+ * beats keeping two in sync.
+ */
+function looksLikeHeaderBoundary(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (/^#{1,6}\s/.test(t)) return true;
+  return isKnownSectionName(t);
+}
+
+/** True when the profile has no contact info to contribute — mirrors Rust's
+ *  `ContactProfile::is_effectively_empty` (a name alone doesn't count). */
+function isContactProfileEffectivelyEmpty(profile: ContactProfile): boolean {
+  const locationEmpty =
+    !profile.location?.default?.trim() &&
+    !Object.values(profile.location?.byLang ?? {}).some((v) => v.trim());
+  return (
+    !profile.email?.trim() &&
+    !profile.phone?.trim() &&
+    !profile.linkedin?.trim() &&
+    !profile.github?.trim() &&
+    !profile.website?.trim() &&
+    !profile.extraLinks?.length &&
+    locationEmpty
+  );
+}
+
+/**
+ * Seed the generated text's header with the Contact Profile's own values, so
+ * the canonical string already carries the exact header PDF/DOCX export
+ * renders. Line 1 (the name) is replaced when the profile has a `fullName`;
+ * every pre-section contact line is collapsed into ONE — the first is
+ * replaced (or a new line is inserted, when the model wrote none) with
+ * `contactLine` — built by the shared `ContactProfile::header_markdown`
+ * (Rust), never re-implemented here — and any OTHER pre-section contact line
+ * is removed outright. Leaving a second one behind would otherwise survive
+ * into `header.contact` alongside the seeded line: Rust's
+ * `model_from_resume_text` joins every pre-section Contact line with `" · "`,
+ * not just the first, so a duplicate/leaked line would reach export
+ * unvalidated (H's contact-line fallback only fires when `header.contact` is
+ * entirely empty). No-op when the profile has nothing to contribute
+ * (`contactLine` is then `''` too) — the model's own header stands.
+ *
+ * Line 0 is included in the scan too when there's no `fullName` to write over
+ * it AND it's already contact-shaped by Rust's narrower line-0 rule
+ * (`isFirstLineContactShaped`) — a combined "Jane Doe | jane@example.com"
+ * with no separate name line. Rust's own `idx == 0` case classifies that as
+ * `Contact`, not `Name` (so `header.name` comes out empty either way); left
+ * out of this scan, it would neither get replaced nor count toward
+ * `matches`, so the seeder inserts a second, duplicate contact line right
+ * after it instead of recognizing it as the one to replace.
+ */
+export function seedHeaderFromProfile(
+  text: string,
+  profile: ContactProfile,
+  contactLine: string
+): string {
+  if (isContactProfileEffectivelyEmpty(profile)) return text;
+
+  const lines = text.split('\n');
+  if (!lines.length) return text;
+
+  const fullName = profile.fullName?.trim();
+  if (fullName) lines[0] = fullName;
+
+  if (contactLine.trim()) {
+    const matches: number[] = [];
+    if (!fullName && isFirstLineContactShaped(lines[0] ?? '')) matches.push(0);
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i] ?? '';
+      if (looksLikeHeaderBoundary(line)) break;
+      if (isHeaderContactLine(line)) matches.push(i);
+    }
+    if (matches.length === 0) {
+      lines.splice(1, 0, contactLine);
+    } else {
+      const firstIdx = matches[0];
+      if (firstIdx !== undefined) lines[firstIdx] = contactLine;
+      // Remove every OTHER match, highest index first so earlier splices
+      // don't shift the indices still pending removal.
+      for (let i = matches.length - 1; i >= 1; i--) {
+        const idx = matches[i];
+        if (idx !== undefined) lines.splice(idx, 1);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export async function generateResume(
   resume: string,
   jobAd: string,
@@ -259,11 +390,21 @@ export async function generateResume(
   );
   // Contact links go on the header line; body links (projects/publications, #18)
   // are re-attached to their own items anywhere in the body.
-  return injectLinksIntoGeneratedText(
+  const injected = injectLinksIntoGeneratedText(
     extractPlainText(raw),
     getLinkMap(resume),
     getBodyLinkMap(resume)
   );
+
+  // H: seed the profile's own header (name + contact line) into the text now,
+  // AFTER link injection, so it wins over whatever contact-line links that step
+  // wrote — leaving that step's contact-line pass in place is harmless, its
+  // output is simply overwritten here.
+  const api = getClient();
+  const contact = await api.contactProfile.get();
+  const headerLang = toLanguageCode(meta.targetLanguage || locale);
+  const contactLine = await api.contactProfile.headerLine(headerLang);
+  return seedHeaderFromProfile(injected, contact, contactLine);
 }
 
 /**

@@ -154,6 +154,51 @@ fn contact_links_become_hyperlinks_with_correct_targets() {
     );
 }
 
+// ── candidate_name metadata is a fallback, not an override (H) ───────────────
+
+#[test]
+fn candidate_name_metadata_is_fallback_when_text_has_a_name() {
+    let template = Template::get(TemplateId::SwissMinimal);
+    let meta = GenerationMeta {
+        candidate_name: Some("Someone Else".to_string()),
+        job_title: None,
+        company_name: None,
+        target_language: None,
+    };
+    let docx = generate_resume_docx(RESUME, Some(&meta), &template, false).expect("generate docx");
+    let mut buffer = Cursor::new(Vec::new());
+    docx.build().pack(&mut buffer).expect("pack docx");
+    let text = text_of(&part(&buffer.into_inner(), "word/document.xml"));
+    assert!(
+        text.contains("Jane Doe"),
+        "text-derived name must win over meta.candidate_name"
+    );
+    assert!(
+        !text.contains("Someone Else"),
+        "metadata name must not override a text-derived name"
+    );
+}
+
+#[test]
+fn candidate_name_metadata_fills_header_when_text_has_none() {
+    let template = Template::get(TemplateId::SwissMinimal);
+    let text = "jane@example.com\n\nSUMMARY\nSome text.";
+    let meta = GenerationMeta {
+        candidate_name: Some("Jane Smith".to_string()),
+        job_title: None,
+        company_name: None,
+        target_language: None,
+    };
+    let docx = generate_resume_docx(text, Some(&meta), &template, false).expect("generate docx");
+    let mut buffer = Cursor::new(Vec::new());
+    docx.build().pack(&mut buffer).expect("pack docx");
+    let doc_text = text_of(&part(&buffer.into_inner(), "word/document.xml"));
+    assert!(
+        doc_text.contains("Jane Smith"),
+        "metadata must fill a header with no text-derived name"
+    );
+}
+
 #[test]
 fn declares_a4_page_size_and_fallback_fonts() {
     // Academic: name/heading/body all SourceSerif4 → Georgia.

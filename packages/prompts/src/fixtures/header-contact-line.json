@@ -1,0 +1,53 @@
+[
+  { "line": "jane@example.com", "contact": true, "firstLine": true, "note": "email" },
+  {
+    "line": "+49 170 1234567",
+    "contact": true,
+    "firstLine": true,
+    "note": "phone only, no email"
+  },
+  {
+    "line": "Berlin | Remote | Full-time",
+    "contact": true,
+    "firstLine": false,
+    "note": "2+ pipe separators — line-0 rule has no pipe arm"
+  },
+  {
+    "line": "[LinkedIn](https://linkedin.com/in/jane) | [GitHub](https://github.com/jane)",
+    "contact": true,
+    "firstLine": false,
+    "note": "markdown links — strip_md does not remove [label](url), so the URL keywords survive; line-0 rule has no URL arm"
+  },
+  {
+    "line": "Portfolio: https://janedoe.dev",
+    "contact": true,
+    "firstLine": false,
+    "note": "portfolio keyword — line-0 rule has no URL arm"
+  },
+  {
+    "line": "BERLIN | JANE@EXAMPLE.COM",
+    "contact": true,
+    "firstLine": true,
+    "note": "ALL-CAPS contact line"
+  },
+  {
+    "line": "+49 30 0000000 | [LinkedIn](https://linkedin.com/in/jane)",
+    "contact": true,
+    "firstLine": true,
+    "note": "phone + link, no email — the idempotent re-seed repro"
+  },
+  { "line": "EXPERIENCE", "contact": false, "firstLine": false, "note": "section heading" },
+  { "line": "Jane Doe", "contact": false, "firstLine": false, "note": "name line" },
+  {
+    "line": "- Led a team of five engineers",
+    "contact": false,
+    "firstLine": false,
+    "note": "body bullet"
+  },
+  {
+    "line": "Senior Engineer | Acme Corp",
+    "contact": false,
+    "firstLine": false,
+    "note": "single separator only"
+  }
+]

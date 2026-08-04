@@ -36,6 +36,148 @@ fn header_markdown_uses_named_fields_in_canonical_order() {
     assert!(p.header_markdown("en").starts_with("Netherlands | "));
 }
 
+/// `header_markdown`'s output is spliced verbatim into plain, `\n`-split
+/// document text (H's header-seeding path in the renderer), so a control
+/// character in any field — reachable via lenient upstream URL classification
+/// / `.trim()`-only import merging, not just direct user typing — must never
+/// survive into the joined string. A raw `\n` would otherwise inject an
+/// arbitrary extra physical line, including a well-formed section heading.
+#[test]
+fn header_markdown_strips_control_characters_from_every_part() {
+    let p = ContactProfile {
+        location: Some(LocalizedText {
+            default: "Berlin\nSKILLS\nRust (injected)".into(),
+            ..Default::default()
+        }),
+        email: Some("alex@example.com\r\nEDUCATION".into()),
+        website: Some("https://example.dev/site\nEXPERIENCE".into()),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    assert!(
+        !md.contains('\n') && !md.contains('\r'),
+        "no control character may survive into the joined header line: {md:?}"
+    );
+    assert!(md.contains("BerlinSKILLSRust (injected)"));
+    assert!(md.contains("alex@example.comEDUCATION"));
+    assert!(md.contains("[Website](https://example.dev/siteEXPERIENCE)"));
+}
+
+/// A non-`http(s)`/`mailto:` scheme (`javascript:`, `data:`, …) must never
+/// reach the header as a clickable link, however lenient the upstream URL
+/// classifier / import-merge path is about accepting it into the profile.
+#[test]
+fn header_markdown_drops_unsafe_url_schemes() {
+    let p = ContactProfile {
+        email: Some("alex@example.com".into()),
+        linkedin: Some("javascript:alert(1)".into()),
+        github: Some("data:text/html,<script>alert(1)</script>".into()),
+        website: Some("https://example.dev/site".into()),
+        extra_links: vec![ContactLink {
+            label: "Evil".into(),
+            url: "javascript:alert(2)".into(),
+        }],
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    assert_eq!(md, "alex@example.com | [Website](https://example.dev/site)");
+}
+
+/// `mailto:` is explicitly allowed (not just `http(s)`) for a named link field.
+#[test]
+fn header_markdown_allows_mailto_scheme_for_a_named_link() {
+    let p = ContactProfile {
+        website: Some("mailto:alex@example.com".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        p.header_markdown("en"),
+        "[Website](mailto:alex@example.com)"
+    );
+}
+
+/// A pathologically long field is capped rather than left to balloon the
+/// header line (and, once spliced into `generateResume`'s output, the whole
+/// document).
+#[test]
+fn header_markdown_caps_an_overlong_part() {
+    let p = ContactProfile {
+        email: Some("a".repeat(500)),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    assert_eq!(md.len(), 200);
+}
+
+// ── header_urls() ↔ header_markdown() sanitization lockstep (security review) ─
+//
+// `header_urls()` is the sole input to `validate::pdf_render_issues`'s
+// `allowed` set (compared via `canonicalize_url`, which does not strip
+// control characters). Any sanitization `header_markdown` applies but
+// `header_urls` doesn't means the ACTUALLY-rendered (sanitized) link fails
+// set membership against the UNSANITIZED "expected" entry — a legitimate
+// profile then hard-fails `header_url_mismatch` (CRITICAL, blocking) on its
+// own, unmodified link. The reverse (an entry `header_urls` lists that
+// `header_markdown` would never render) causes a spurious, non-blocking
+// `header_url_missing`.
+
+/// A control character in a URL/email must be sanitized identically by both
+/// functions, so the genuinely-rendered link is exactly what validation
+/// expects — not a lookalike that fails set membership.
+#[test]
+fn header_urls_sanitizes_control_characters_like_header_markdown() {
+    let p = ContactProfile {
+        email: Some("alex@example.com\nEDUCATION".into()),
+        website: Some("https://example.dev/site\nEXPERIENCE".into()),
+        ..Default::default()
+    };
+    let urls = p.header_urls();
+    assert!(
+        urls.contains(&"mailto:alex@example.comEDUCATION".to_string()),
+        "{urls:?}"
+    );
+    assert!(
+        urls.contains(&"https://example.dev/siteEXPERIENCE".to_string()),
+        "{urls:?}"
+    );
+    // What header_urls lists as "the profile's own link" must be exactly what
+    // header_markdown actually renders.
+    let md = p.header_markdown("en");
+    assert!(md.contains("[Website](https://example.dev/siteEXPERIENCE)"));
+}
+
+/// An unsafe-scheme URL must never appear in `header_urls()` — `header_markdown`
+/// drops it entirely, so it renders nothing; a phantom entry here would cause
+/// a spurious `header_url_missing` warning for a link that could never exist
+/// in the rendered PDF.
+#[test]
+fn header_urls_drops_unsafe_url_schemes_like_header_markdown() {
+    let p = ContactProfile {
+        linkedin: Some("javascript:alert(1)".into()),
+        github: Some("data:text/html,<script>alert(1)</script>".into()),
+        website: Some("https://example.dev/site".into()),
+        extra_links: vec![ContactLink {
+            label: "Evil".into(),
+            url: "javascript:alert(2)".into(),
+        }],
+        ..Default::default()
+    };
+    assert_eq!(
+        p.header_urls(),
+        vec!["https://example.dev/site".to_string()]
+    );
+}
+
+/// `mailto:` is allowed (matches `header_markdown`'s scheme allowlist).
+#[test]
+fn header_urls_allows_mailto_scheme_for_a_named_link() {
+    let p = ContactProfile {
+        website: Some("mailto:alex@example.com".into()),
+        ..Default::default()
+    };
+    assert_eq!(p.header_urls(), vec!["mailto:alex@example.com".to_string()]);
+}
+
 #[test]
 fn header_rich_makes_each_named_link_clickable_with_the_right_url() {
     let p = ContactProfile {
@@ -198,6 +340,78 @@ fn classify_excludes_deep_path_project_links_by_shape() {
         !extra_urls.contains(&"https://myapp.com/demo"),
         "a deep-path demo link must never seed the header: {extra_urls:?}"
     );
+}
+
+/// The bug data set: an apex domain, one of its own subdomains, an unrelated
+/// bare-root project domain, and a GitHub user + one of that user's repos.
+/// Only the apex reaches `website`; the unrelated bare-root domain and the
+/// subdomain never enter the profile anywhere (not `website`, not
+/// `extra_links`) since a personal bare-root domain that loses the website
+/// slot is a body link, never a header link.
+#[test]
+fn website_prefers_apex_over_subdomain_and_rejected_domains_never_leak_to_extras() {
+    let links = vec![
+        link("https://apex.dev"),
+        link("https://sub.apex.dev"),
+        link("https://other.app"),
+        link("https://github.com/u"),
+        link("https://github.com/u/repo"),
+    ];
+    let p = classify_contact_links(&links);
+    assert_eq!(p.website.as_deref(), Some("https://apex.dev"));
+    assert_eq!(p.github.as_deref(), Some("https://github.com/u"));
+    assert!(
+        p.extra_links.is_empty(),
+        "a rejected bare-root domain (sub.apex.dev, other.app) or a repo path \
+         (github.com/u/repo) must never leak into extra_links: {:?}",
+        p.extra_links
+    );
+}
+
+/// The SAME input, order reversed — proves website selection is
+/// order-independent: the apex/subdomain shape relationship decides the
+/// winner, not raw document position.
+#[test]
+fn website_prefers_apex_over_subdomain_order_independent() {
+    let links = vec![
+        link("https://github.com/u/repo"),
+        link("https://github.com/u"),
+        link("https://other.app"),
+        link("https://sub.apex.dev"),
+        link("https://apex.dev"),
+    ];
+    let p = classify_contact_links(&links);
+    assert_eq!(
+        p.website.as_deref(),
+        Some("https://apex.dev"),
+        "apex must win regardless of document order"
+    );
+    assert_eq!(p.github.as_deref(), Some("https://github.com/u"));
+    assert!(p.extra_links.is_empty(), "{:?}", p.extra_links);
+}
+
+/// A second GitHub user (not just a repo path under the first) is still a
+/// genuine platform profile and must still surface as an extra — the
+/// extras-are-platform-profiles-only tightening must not regress this
+/// documented intent (same for Dribbble / Behance).
+#[test]
+fn second_platform_profile_still_becomes_extra_after_extras_tightening() {
+    let links = vec![
+        link("https://github.com/alice"),
+        link("https://github.com/bob"),
+        link("https://dribbble.com/alice"),
+        link("https://www.behance.net/alice"),
+    ];
+    let p = classify_contact_links(&links);
+    assert_eq!(p.github.as_deref(), Some("https://github.com/alice"));
+    let extra_urls: Vec<&str> = p.extra_links.iter().map(|e| e.url.as_str()).collect();
+    assert!(
+        extra_urls.contains(&"https://github.com/bob"),
+        "a second GitHub user must still become an extra: {extra_urls:?}"
+    );
+    let labels: Vec<&str> = p.extra_links.iter().map(|e| e.label.as_str()).collect();
+    assert!(labels.contains(&"Dribbble"), "extras = {labels:?}");
+    assert!(labels.contains(&"Behance"), "extras = {labels:?}");
 }
 
 #[test]
@@ -728,6 +942,68 @@ fn apply_to_header_does_not_overwrite_existing_name() {
         model.header.name, "Alex Carter",
         "an already-populated header.name must never be overwritten"
     );
+}
+
+// ── apply_to_header — contact-line fallback (editor-is-source-of-truth) ──────
+
+/// When the text already parses a contact line, `apply_to_header` must leave it
+/// alone — the editor's text is the source of truth for what exports, and the
+/// profile is only a fallback for a document that has none.
+#[test]
+fn apply_to_header_keeps_text_derived_contact_line() {
+    use crate::model::adapter::model_from_resume_text;
+
+    let text = "Jordan Lee\nBerlin, Germany | jordan@editor.example.com | +49 30 0000000\n\nSUMMARY\nSome text.";
+    let mut model = model_from_resume_text(text);
+    assert!(
+        !model.header.contact.is_empty(),
+        "test setup: resume text must parse a contact line"
+    );
+    let before = model.header.contact.clone();
+
+    let profile = ContactProfile {
+        full_name: Some("Jordan Lee".into()),
+        email: Some("jordan@profile.example.com".into()),
+        phone: Some("+1 555 0100".into()),
+        ..Default::default()
+    };
+    profile.apply_to_header(&mut model.header, "en");
+
+    assert_eq!(
+        model.header.contact, before,
+        "a text-derived contact line must never be overwritten by the profile"
+    );
+}
+
+/// When the text has no contact line, `apply_to_header` fills it from the
+/// profile — the fallback case these overrides exist for.
+#[test]
+fn apply_to_header_fills_contact_from_profile_when_text_has_none() {
+    use crate::model::adapter::model_from_resume_text;
+
+    let text = "Jordan Lee\n\nSUMMARY\nSome text with no contact line at all.";
+    let mut model = model_from_resume_text(text);
+    assert!(
+        model.header.contact.is_empty(),
+        "test setup: resume text must parse with no contact line"
+    );
+
+    let profile = ContactProfile {
+        full_name: Some("Jordan Lee".into()),
+        email: Some("jordan@profile.example.com".into()),
+        ..Default::default()
+    };
+    profile.apply_to_header(&mut model.header, "en");
+
+    assert!(
+        !model.header.contact.is_empty(),
+        "the profile must fill a header that has no contact line"
+    );
+    assert!(model
+        .header
+        .contact
+        .iter()
+        .any(|r| r.link.as_deref() == Some("mailto:jordan@profile.example.com")));
 }
 
 /// extra_links differences are never reported as conflicts.

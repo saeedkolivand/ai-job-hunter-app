@@ -18,6 +18,7 @@ import {
   lookupSalaryRange,
   researchAnswer,
   researchCompany,
+  seedHeaderFromProfile,
 } from './generation';
 
 let streamHandler: ((chunk: unknown) => void) | null = null;
@@ -131,6 +132,238 @@ describe('generateResume', () => {
     expect(out).not.toContain('reasoning here');
     expect(onThinking).toHaveBeenCalled();
     expect(onToken).toHaveBeenCalled();
+  });
+
+  const RESUME_META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  /** `register()` plus a `contactProfile` override — the streaming stubs must
+   *  stay identical to `register()`'s or `flushUntilStreaming`/`emit`/`done`
+   *  never see the job. */
+  const registerWithContactProfile = (
+    contactProfile: NonNullable<Parameters<typeof createMockClient>[0]>['contactProfile']
+  ) => {
+    const client = createMockClient({
+      ai: {
+        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+        onStream: vi.fn((h: (chunk: unknown) => void) => {
+          streamHandler = h;
+          return () => {};
+        }),
+      },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+      contactProfile,
+    });
+    _registerClient(client);
+    return client;
+  };
+
+  // H — the editor is the source of truth: the header seeded from the Contact
+  // Profile after generation (see generation.ts `seedHeaderFromProfile`).
+  it('seeds the header from a non-empty contact profile after generation', async () => {
+    registerWithContactProfile({
+      get: vi.fn().mockResolvedValue({
+        fullName: 'Jordan Lee',
+        email: 'jordan@example.com',
+      }),
+      headerLine: vi.fn().mockResolvedValue('Berlin | jordan@example.com'),
+    });
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Model Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nModel-written summary.');
+    done();
+    const out = await p;
+    expect(out).toContain('Jordan Lee');
+    expect(out).toContain('Berlin | jordan@example.com');
+    expect(out).not.toContain('model@example.com');
+    // Body content survives the header rewrite.
+    expect(out).toContain('Model-written summary.');
+  });
+
+  it('inserts a contact line when the model generated none', async () => {
+    registerWithContactProfile({
+      get: vi.fn().mockResolvedValue({ email: 'jordan@example.com' }),
+      headerLine: vi.fn().mockResolvedValue('jordan@example.com'),
+    });
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Model Name\n\nSUMMARY\nNo contact line at all.');
+    done();
+    const out = await p;
+    expect(out.split('\n')[1]).toBe('jordan@example.com');
+  });
+
+  it('leaves the model header untouched when the contact profile is effectively empty', async () => {
+    register();
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Original Name\noriginal@example.com | +1 555 0100');
+    done();
+    const out = await p;
+    expect(out).toBe('Original Name\noriginal@example.com | +1 555 0100');
+  });
+
+  // Security review (2026-08): seeding runs AFTER injectLinksIntoGeneratedText,
+  // so its safety depends on isHeaderContactLine correctly recognising the
+  // line link-injection just wrote (a bare "Website" label turned into a
+  // markdown link), not just an email/phone-shaped line.
+  it('recognizes and replaces a contact line link-injection just wrote (URL keyword only, no email/phone)', async () => {
+    registerWithContactProfile({
+      get: vi.fn().mockResolvedValue({
+        fullName: 'Jordan Lee',
+        website: 'https://jordan.example.com',
+      }),
+      headerLine: vi.fn().mockResolvedValue('[Website](https://jordan.example.com)'),
+    });
+    // The source résumé's reference block seeds getLinkMap() with a
+    // Website-labelled contact link the model is expected to write as the
+    // bare label "Website" — injectLinksIntoGeneratedText() turns that into
+    // a markdown link before seedHeaderFromProfile ever runs.
+    const sourceResume = 'Some old resume content.\n---\n- [Website](https://real.example.com)';
+    const p = generateResume(
+      sourceResume,
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    // No email/phone anywhere — pipe + the "Website" label is the only signal.
+    emit('Model Name\nModel City | Website\n\nSUMMARY\nSome text.');
+    done();
+    const out = await p;
+    const lines = out.split('\n');
+    expect(lines[1]).toBe('[Website](https://jordan.example.com)');
+    expect(out).not.toContain('real.example.com');
+  });
+});
+
+// `isHeaderContactLine`'s cross-language parity fixture test now lives with
+// the function itself in @ajh/prompts/generate:
+// packages/prompts/src/generate/text/header-contact-line.test.ts (reads the
+// SAME packages/prompts/src/fixtures/header-contact-line.json read by
+// `cargo test export::parser`).
+
+describe('seedHeaderFromProfile — header-boundary edge cases (security review)', () => {
+  const PROFILE = { fullName: 'Jordan Lee', email: 'jordan@profile.example.com' };
+  const CONTACT_LINE = 'Berlin | jordan@profile.example.com';
+
+  it('replaces the conformant name/contact layout (baseline)', () => {
+    const text = 'Model Name\nmodel@old.example.com | +1 555 0000\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+  });
+
+  it('finds the contact line past a blank line — a blank line is not a header boundary', () => {
+    const text = 'Model Name\n\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\n\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out).not.toContain('model@old.example.com');
+  });
+
+  it('collapses a second pre-section contact line (phone on its own line) instead of leaving a duplicate', () => {
+    const text = 'Model Name\nmodel@old.example.com\n+1 555 0000\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out).not.toContain('+1 555 0000');
+    expect(out).not.toContain('model@old.example.com');
+  });
+
+  it('collapses a second pre-section contact line (URLs on their own line after the email)', () => {
+    const text =
+      'Model Name\nmodel@old.example.com\n[Portfolio](https://old.example.dev) | [GitHub](https://github.com/old)\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out).not.toContain('old.example.dev');
+    expect(out).not.toContain('github.com/old');
+  });
+
+  it('finds an ALL-CAPS contact line instead of mistaking it for a section heading', () => {
+    const text = 'Model Name\nBERLIN | MODEL@OLD.EXAMPLE.COM\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out).not.toContain('MODEL@OLD.EXAMPLE.COM');
+  });
+
+  it('is idempotent on a phone+link-only contact line (no email) across a second seeding pass', () => {
+    // A profile with only a phone and one link (no email) is exactly the shape
+    // that used to be missed pre-parity-fix: one pipe, no `@`.
+    const profile = { fullName: 'Jordan Lee', phone: '+49 30 0000000', linkedin: 'x' };
+    const contactLine = '+49 30 0000000 | [LinkedIn](https://linkedin.com/in/jordan)';
+    const text = 'Model Name\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const once = seedHeaderFromProfile(text, profile, contactLine);
+    const twice = seedHeaderFromProfile(once, profile, contactLine);
+    expect(twice).toBe(once);
+    expect(once.split('\n').filter((l) => l.includes('linkedin.com')).length).toBe(1);
+  });
+
+  // Security re-review (HIGH-1): the exact repro — the prompt mandates "Line
+  // 2: Job title", and an ALL-CAPS title used to stop the scan before it ever
+  // reached the real contact line below.
+  it('does not mistake an ALL-CAPS job title for a header boundary', () => {
+    const text =
+      'Jane Doe\nSENIOR SOFTWARE ENGINEER\njane@example.com | +49 30 1234567\n\nEXPERIENCE\nAcme Corp';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      'Jordan Lee\nSENIOR SOFTWARE ENGINEER\nBerlin | jordan@profile.example.com\n\nEXPERIENCE\nAcme Corp'
+    );
+    // No duplicate contact line, and the title survives untouched.
+    expect(out.split('\n').filter((l) => l.includes('@')).length).toBe(1);
+  });
+
+  // Security re-review (MEDIUM): a combined name+contact line 0 with a
+  // fullName-less profile — Rust's idx==0 rule classifies that line as
+  // Contact, not Name, so it must be in scope for the scan too, not silently
+  // skipped (which would insert a duplicate right after it).
+  it('recognizes a combined name+contact line 0 when the profile has no fullName to write over it', () => {
+    const profile = { phone: '+49 30 0000000' };
+    const contactLine = '+49 30 0000000';
+    const text = 'Jane Doe | jane@old.example.com\n\nEXPERIENCE\nAcme Corp';
+    const out = seedHeaderFromProfile(text, profile, contactLine);
+    expect(out).toBe('+49 30 0000000\n\nEXPERIENCE\nAcme Corp');
+    expect(out).not.toContain('jane@old.example.com');
   });
 });
 

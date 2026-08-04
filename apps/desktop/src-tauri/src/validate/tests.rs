@@ -129,6 +129,25 @@ State University  2013 - 2017
 BSc Computer Science
 ";
 
+/// Same as [`RESUME`] but with no pre-section contact line, so a contact
+/// profile applied via [`req`] is the header's source of truth (H) — needed by
+/// checks that specifically exercise a profile-driven header link.
+const RESUME_NO_CONTACT_LINE: &str = "\
+Jane Doe
+
+EXPERIENCE
+Acme Corp  2020 - Present
+Senior Engineer
+- Led a team of five engineers delivering the core platform
+
+SKILLS
+- Rust, TypeScript, React
+
+EDUCATION
+State University  2013 - 2017
+BSc Computer Science
+";
+
 fn req(format: ExportFormat, template_id: TemplateId, ats_mode: bool) -> ExportRequest {
     ExportRequest {
         text: RESUME.to_string(),
@@ -225,6 +244,9 @@ fn profile_with(website: &str) -> crate::contact_profile::ContactProfile {
 #[test]
 fn reads_inline_dict_link_annotations_from_our_renderer() {
     let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    // No pre-section contact line — the profile must be the header's source of
+    // truth (H) for its link to render at all.
+    request.text = RESUME_NO_CONTACT_LINE.to_string();
     request.contact = Some(profile_with("https://example.dev/portfolio"));
     let bytes = crate::export::pdf::generate_pdf(&request).expect("pdf");
 
@@ -277,6 +299,10 @@ fn missing_header_link_is_warning_not_block() {
         url: "https://example.dev/never-rendered".to_string(), // …but header_urls lists it
     }];
     let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    // No pre-section contact line in the text (H: the profile is only the
+    // header's source of truth for a document that has none of its own) — this
+    // check exercises exactly that case.
+    request.text = RESUME_NO_CONTACT_LINE.to_string();
     request.contact = Some(profile);
     let (_bytes, report) =
         validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
@@ -287,6 +313,88 @@ fn missing_header_link_is_warning_not_block() {
             .iter()
             .any(|i| i.code == "header_url_missing" && i.severity == Severity::Warning),
         "the unrendered profile link must surface as a warning: {:?}",
+        report.issues
+    );
+}
+
+/// H: when the résumé text already carries its own contact line, the profile
+/// is a fallback (never applied), so a profile URL that the text's own header
+/// doesn't happen to repeat must NOT be flagged — neither as a "leaked" link
+/// nor as "missing". This is the common real-world shape (an imported résumé's
+/// own email/links vs. a separately-maintained Contact Profile).
+#[test]
+fn text_derived_header_is_never_checked_against_an_unrelated_profile() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    // RESUME (the default req() text) already has its own pre-section contact
+    // line ("jane@example.com"); the profile below shares nothing with it.
+    request.contact = Some(profile_with("https://drive.google.com/unrelated"));
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(report.ok, "must not block: {:?}", report.issues);
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch" || i.code == "header_url_missing"),
+        "a text-derived header must not be checked against an unrelated, unapplied \
+         profile: {:?}",
+        report.issues
+    );
+}
+
+/// H: `profile_is_header_source` must parse the SAME text `prepare_resume_render`
+/// actually renders from. Left un-extracted, the "### CANDIDATE RESUME ###"
+/// marker classifies as a section heading at line 0, `header.contact` on the
+/// raw-parsed model looks empty, and the strict parity checks wrongly run
+/// against a header that was, in the real render, entirely text-derived —
+/// reintroducing the false `header_url_mismatch` block H exists to remove.
+#[test]
+fn marker_wrapped_text_is_extracted_before_the_header_source_check() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = format!(
+        "### CANDIDATE RESUME ###\n{RESUME}### JOB ADVERTISEMENT ###\n\
+         Some job ad text about a role."
+    );
+    request.contact = Some(profile_with("https://drive.google.com/unrelated"));
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(report.ok, "must not block: {:?}", report.issues);
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch"),
+        "marker-wrapped, text-derived header must not be checked against an \
+         unrelated profile: {:?}",
+        report.issues
+    );
+}
+
+/// When the profile is only a fallback (text already has its own contact
+/// line), a job-board/ATS host reaching the header band is still worth a
+/// warning — never blocking (the header is user-owned and visible in the
+/// editor), but not a silent skip either.
+#[test]
+fn job_board_host_in_a_text_derived_header_is_warned_not_blocked() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "Jane Doe\njane@example.com | https://www.indeed.com/cmp/acme\n\n\
+                     EXPERIENCE\nAcme Corp  2020 - Present\nSenior Engineer\n\
+                     - Led a team of five engineers delivering the core platform\n"
+        .to_string();
+    request.contact = Some(profile_with("https://example.dev/portfolio"));
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(
+        report.ok,
+        "a job-board link in a text-derived header must warn, not block: {:?}",
+        report.issues
+    );
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_job_board" && i.severity == Severity::Warning),
+        "a job-board host in a text-derived header must surface as a warning: {:?}",
         report.issues
     );
 }

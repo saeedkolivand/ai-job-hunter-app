@@ -149,6 +149,158 @@ describe('getBodyLinkMap (#18 — body links)', () => {
   });
 });
 
+describe('classifyLinks — apex-over-subdomain Website preference (#A parity)', () => {
+  it('prefers the apex host over its own subdomain, regardless of input order', () => {
+    const subFirst = [
+      'Body',
+      '---',
+      '- [Blog](https://blog.example.dev)',
+      '- [Site](https://example.dev)',
+    ].join('\n');
+    expect(getLinkMap(subFirst).Website).toBe('https://example.dev');
+
+    const apexFirst = [
+      'Body',
+      '---',
+      '- [Site](https://example.dev)',
+      '- [Blog](https://blog.example.dev)',
+    ].join('\n');
+    expect(getLinkMap(apexFirst).Website).toBe('https://example.dev');
+  });
+
+  it('resolves a 3-level chain to the true apex', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [A](https://a.b.c.dev)',
+      '- [B](https://b.c.dev)',
+      '- [C](https://c.dev)',
+    ].join('\n');
+    expect(getLinkMap(resume).Website).toBe('https://c.dev');
+  });
+
+  it('treats notexample.dev and example.dev as unrelated apexes (dot-prefix guard)', () => {
+    // A naive substring endsWith('example.dev') would wrongly treat
+    // "notexample.dev" as a subdomain of "example.dev" — neither is actually
+    // a subdomain of the other, so first-seen decides.
+    const resume = [
+      'Body',
+      '---',
+      '- [First](https://notexample.dev)',
+      '- [Second](https://example.dev)',
+    ].join('\n');
+    expect(getLinkMap(resume).Website).toBe('https://notexample.dev');
+  });
+
+  it('keeps the bare-root candidate that lost the Website slot as a body link', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [Blog](https://blog.example.dev)',
+      '- [Site](https://example.dev)',
+    ].join('\n');
+    expect(getBodyLinkMap(resume).Blog).toBe('https://blog.example.dev');
+  });
+});
+
+describe('LinkedIn /in/ gate (pre-existing parity with Rust is_personal_linkedin)', () => {
+  it('admits a personal LinkedIn profile to the contact line', () => {
+    const resume = 'Body\n---\n- [LinkedIn](https://linkedin.com/in/jane)';
+    expect(getLinkMap(resume).LinkedIn).toBe('https://linkedin.com/in/jane');
+  });
+
+  it('does not admit a LinkedIn company page as a contact link or a fabricated body link — it is dropped entirely (#M6)', () => {
+    // A body entry would make buildBodyLinksBlock ask the model to invent a
+    // PROJECTS item for an employer's LinkedIn page — mirrors Rust
+    // classify_contact_links, which drops these entirely.
+    const resume = 'Body\n---\n- [Acme](https://linkedin.com/company/acme)';
+    expect(getLinkMap(resume)).toEqual({});
+    expect(getBodyLinkMap(resume)).toEqual({});
+  });
+});
+
+describe('Website apex/first-seen pre-pass parity with Rust (#L1)', () => {
+  it('never admits a job-board apex as the Website contact link, or a fabricated body project either (#HIGH-3)', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [Indeed](https://indeed.com)',
+      '- [Portfolio](https://janedoe.dev)',
+    ].join('\n');
+    const map = getLinkMap(resume);
+    expect(map.Website).toBe('https://janedoe.dev');
+    expect(Object.values(map)).not.toContain('https://indeed.com');
+    // The prior fix only kept it off the Website pre-pass — it still fell
+    // through to `body`, and buildBodyLinksBlock would ask the model to
+    // invent a PROJECTS item named "Indeed" for it (#HIGH-3, the same
+    // fabrication risk #M6 closed for non-personal LinkedIn).
+    expect(getBodyLinkMap(resume)).toEqual({});
+  });
+
+  it('drops a job-board ATS apply link entirely — never a contact link, never a fabricated "Apply" project (#HIGH-3)', () => {
+    const resume = 'Body\n---\n- [Apply](https://boards.greenhouse.io/acme/jobs/123)';
+    expect(getLinkMap(resume)).toEqual({});
+    expect(getBodyLinkMap(resume)).toEqual({});
+  });
+});
+
+describe('Xing profile gate (#LOW, deliberate — xing.com is also a JOB_BOARD_HOSTS entry)', () => {
+  it('admits a personal Xing profile to the contact line', () => {
+    const resume = 'Body\n---\n- [Xing](https://www.xing.com/profile/Jane_Doe)';
+    expect(getLinkMap(resume).Xing).toBe('https://www.xing.com/profile/Jane_Doe');
+  });
+
+  it('drops a Xing job listing entirely — never a contact link, never a fabricated "Xing" project', () => {
+    const resume = 'Body\n---\n- [Job](https://www.xing.com/jobs/12345)';
+    expect(getLinkMap(resume)).toEqual({});
+    expect(getBodyLinkMap(resume)).toEqual({});
+  });
+
+  it('recognizes about.me / carrd.co as platform hosts, matching Rust WEBSITE_HOSTS', () => {
+    const resume = 'Body\n---\n- [About](https://about.me/janedoe)';
+    expect(getLinkMap(resume).About).toBe('https://about.me/janedoe');
+  });
+});
+
+describe('uniqueBodyLabel — colliding normalized keys stay distinct (#M4/#M5)', () => {
+  it('keeps two anchors that normalize to the same key as two entries with distinct keys, regardless of input order', () => {
+    const build = (first: string, second: string) => ['Body', '---', first, second].join('\n');
+    const crossKit = '- [CrossKit](https://example.com/crosskit-repo)';
+    const crossHyphenKit = '- [Cross-Kit](https://example.org/crosskit-pkg)';
+
+    for (const resume of [build(crossKit, crossHyphenKit), build(crossHyphenKit, crossKit)]) {
+      const body = getBodyLinkMap(resume);
+      const labels = Object.keys(body);
+      expect(labels).toHaveLength(2); // neither URL silently overwrote the other
+      expect(Object.values(body)).toEqual(
+        expect.arrayContaining([
+          'https://example.com/crosskit-repo',
+          'https://example.org/crosskit-pkg',
+        ])
+      );
+      // The disambiguator is a plain number, never parens (#M5).
+      const suffixed = labels.find((l) => l !== 'CrossKit' && l !== 'Cross-Kit');
+      expect(suffixed).toBeDefined();
+      expect(suffixed).not.toContain('(');
+    }
+  });
+
+  it('the numbered disambiguator stays literal-fallback-reachable, unlike the old "(2)" suffix (#M5)', () => {
+    // `\b…\b` cannot match a `)`-terminated label — the old suffix made a
+    // numbered duplicate unlinkable by any phrasing.
+    const resume = [
+      'Body',
+      '---',
+      '- [CrossKit](https://example.com/crosskit-repo)',
+      '- [CrossKit](https://example.org/crosskit-second)',
+    ].join('\n');
+    const body = getBodyLinkMap(resume);
+    expect(body['CrossKit 2']).toBe('https://example.org/crosskit-second');
+    const out = injectLinksIntoGeneratedText('The second CrossKit 2 tool I built.', {}, body);
+    expect(out).toContain('[CrossKit 2](https://example.org/crosskit-second)');
+  });
+});
+
 describe('injectLinksIntoGeneratedText', () => {
   it('replaces known labels in the contact line with markdown links', () => {
     const text = `John Doe\nSenior Engineer\nBerlin | john@example.com | LinkedIn | GitHub\n\nSUMMARY`;
@@ -268,6 +420,273 @@ describe('injectLinksIntoGeneratedText', () => {
     const text = '• orbit-sim — a simulator';
     expect(injectLinksIntoGeneratedText(text, { GitHub: 'https://github.com/x' })).toBe(text);
   });
+
+  describe('body-link title matching (#B/#C — real name, not the machine label)', () => {
+    it('links a real-name title against a dashed-slug label', () => {
+      const text = ['PROJECTS', 'AI Job Hunter'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'ai-job-hunter-app': 'https://aijobhunter.app' }
+      );
+      expect(out).toContain('[AI Job Hunter](https://aijobhunter.app)');
+    });
+
+    it('links the same real-name title against the humanised PDF-extraction label', () => {
+      // The actual bug case: pdf.rs falls back to the raw URL as anchor text, so
+      // bodyLabel() humanises "ai-job-hunter-app" into "ai job hunter app".
+      const text = ['PROJECTS', 'AI Job Hunter'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'ai job hunter app': 'https://aijobhunter.app' }
+      );
+      expect(out).toContain('[AI Job Hunter](https://aijobhunter.app)');
+    });
+
+    it('does not cross-link on a coincidental overlap AT the 6-char floor — declines to pair when two open slots make it ambiguous, and appends instead (#MEDIUM-1/#HIGH part 2, pinned)', () => {
+      // "Gotham" (6 chars) clears the floor, but the walk diverges right after
+      // ("burg" vs "city…") — a real match requires the full label OR the full
+      // line title to be consumed, never just enough chars to clear the floor.
+      // A SECOND untouched, item-shaped PROJECTS line keeps the last-resort
+      // net's exactly-one-slot pairing from kicking in, so this isolates the
+      // cross-link guard from the "never silently drop" guarantee.
+      const text = ['PROJECTS', 'Gothamburg Transit Map', 'Some Other Untouched Project'].join(
+        '\n'
+      );
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'gotham city guide': 'https://example.com/wrong' }
+      );
+      expect(out).toBe(`${text}\n[gotham city guide](https://example.com/wrong)`);
+    });
+
+    it('pairs the sole unmatched label with the sole open item-shaped slot — the actual pairing path, pinned (#HIGH part 2)', () => {
+      const text = ['PROJECTS', 'Some Other Project'].join('\n');
+      expect(() =>
+        injectLinksIntoGeneratedText(text, {}, { 'Untouched Project': 'https://example.com/x' })
+      ).not.toThrow();
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Untouched Project': 'https://example.com/x' }
+      );
+      expect(out).toBe('PROJECTS\n[Some Other Project](https://example.com/x)');
+    });
+
+    it('leaves a link unplaced — not appended, not fabricated — when no PROJECTS/PUBLICATIONS section exists at all (#HIGH part 2)', () => {
+      const text = 'Just a summary paragraph with no sections.';
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Untouched Project': 'https://example.com/x' }
+      );
+      expect(out).toBe(text);
+    });
+
+    it('never pairs a description bullet of an already-linked project as an open slot — the bullet stays untouched, the label appends safely instead (#HIGH-1)', () => {
+      const text = [
+        'PROJECTS',
+        '[Fleet Tracker](https://x.dev/fleet)',
+        '• Built with Rust and React, deployed to 3 regions',
+      ].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe(`${text}\n[orbit-sim](https://github.com/jane/orbit-sim)`);
+    });
+
+    it('locates a non-English PROJEKTE section via SECTION_LEXICON, not an English-only regex (#HIGH-2)', () => {
+      const text = ['PROJEKTE', 'Ein anderes Projekt'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://example.com/orbit-sim' }
+      );
+      expect(out).toBe('PROJEKTE\n[Ein anderes Projekt](https://example.com/orbit-sim)');
+    });
+
+    it('assigns each sibling label its own line instead of first-match-wins swapping URLs (#HIGH-1)', () => {
+      // The exact two-item shape prompt B now demands: a repo and its own live
+      // site, named for what each one is. First-match-wins used to attach the
+      // wrong URL to the wrong item.
+      const text = ['PROJECTS', 'CrossKit', 'CrossKit Web'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        {
+          'crosskit web': 'https://example.com/crosskit-web',
+          crosskit: 'https://example.com/crosskit',
+        }
+      );
+      expect(out).toContain('[CrossKit](https://example.com/crosskit)');
+      expect(out).toContain('[CrossKit Web](https://example.com/crosskit-web)');
+      // The bug swapped these — assert the wrong pairing never appears.
+      expect(out).not.toContain('[CrossKit](https://example.com/crosskit-web)');
+      expect(out).not.toContain('[CrossKit Web](https://example.com/crosskit)');
+    });
+
+    it('does not link a bare section-header line or wrap a full prose sentence — pinned end-to-end output (#MEDIUM-1/#HIGH-1/#HIGH part 2)', () => {
+      const text = ['PROJECTS', 'Machine learning toolkits are the core of my recent work.'].join(
+        '\n'
+      );
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        {
+          'projects 2024': 'https://example.com/wrong-header',
+          'machine-learning-toolkit': 'https://example.com/wrong-prose',
+        }
+      );
+      // Two labels — the last-resort net's single-pairing heuristic never
+      // applies — so both append as their own items; the header and the
+      // sentence itself are never touched.
+      expect(out).toBe(
+        `${text}\n[projects 2024](https://example.com/wrong-header)\n[machine-learning-toolkit](https://example.com/wrong-prose)`
+      );
+    });
+
+    it('is idempotent under a second invocation — no swapped or duplicated links (#MEDIUM-2)', () => {
+      const text = ['PROJECTS', 'CrossKit', 'CrossKit Web'].join('\n');
+      const map = {
+        'crosskit web': 'https://example.com/crosskit-web',
+        crosskit: 'https://example.com/crosskit',
+      };
+      const once = injectLinksIntoGeneratedText(text, {}, map);
+      const twice = injectLinksIntoGeneratedText(once, {}, map);
+      expect(twice).toBe(once);
+    });
+
+    it('the literal fallback reaches a SHORT key the title matcher cannot — the one case buildBodyLinksBlock still asks the model to echo verbatim (#HIGH part 1/#M7)', () => {
+      // "Demo" normalizes to a 4-char key, below MIN_TITLE_KEY_LEN — the
+      // title matcher can never reach it (by design), so this is the case
+      // the literal fallback actually exists for now, not a general escape
+      // hatch for renamed items (that's the last-resort net, tested below).
+      const text = 'I built the **Demo** as a side project last year.';
+      const out = injectLinksIntoGeneratedText(text, {}, { Demo: 'https://example.com/demo' });
+      expect(out).toContain('[Demo](https://example.com/demo)');
+    });
+
+    it('a digit-leading real-name title matches its slug label — the leading digit is not eaten as a list marker (#M1)', () => {
+      const text = ['PROJECTS', '3D Printing Pipeline'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { '3d-printing-pipeline': 'https://example.com/3d-print' }
+      );
+      expect(out).toContain('[3D Printing Pipeline](https://example.com/3d-print)');
+    });
+
+    it('a punctuated real-name title matches its slug label — punctuation is an insignificant separator, not just hyphen/underscore/space (#M2)', () => {
+      const text = ['PROJECTS', "Jane's Portfolio", 'CrossKit (v2)', 'CrossKit: The Toolkit'].join(
+        '\n'
+      );
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        {
+          'janes-portfolio': 'https://example.com/janes',
+          'crosskit-v2': 'https://example.com/v2',
+          'crosskit-the-toolkit': 'https://example.com/toolkit',
+        }
+      );
+      expect(out).toContain("[Jane's Portfolio](https://example.com/janes)");
+      expect(out).toContain('[CrossKit (v2)](https://example.com/v2)');
+      expect(out).toContain('[CrossKit: The Toolkit](https://example.com/toolkit)');
+    });
+
+    it('never wraps a span, or pairs a slot, containing `[`/`]` — the widened separator class must not let a match skip over brackets (#MEDIUM)', () => {
+      const text = ['PROJECTS', 'CrossKit [beta] Toolkit'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'crosskit-beta-toolkit': 'https://example.com/beta' }
+      );
+      // Never nested/broken markdown — the line is left exactly as written
+      // (excluded from the last-resort net's slot pool too), and the link
+      // is appended as its own clean item instead.
+      expect(out).toBe(
+        'PROJECTS\nCrossKit [beta] Toolkit\n[crosskit-beta-toolkit](https://example.com/beta)'
+      );
+    });
+
+    it('a sub-3-char label ("Go") is not silently dropped at intake — it reaches the last-resort net instead of risking the literal fallback on arbitrary prose (#MEDIUM)', () => {
+      const text = ['PROJECTS', 'Some Other Project'].join('\n');
+      const out = injectLinksIntoGeneratedText(text, {}, { Go: 'https://go.dev/x/y' });
+      expect(out).toBe('PROJECTS\n[Some Other Project](https://go.dev/x/y)');
+    });
+
+    it('an empty model output never gets a fabricated append — no section is ever detected, so nothing is placed (#LOW, resolved as a side effect of #HIGH-2)', () => {
+      const out = injectLinksIntoGeneratedText(
+        '',
+        {},
+        { 'orbit-sim': 'https://example.com/orbit-sim' }
+      );
+      expect(out).toBe('');
+    });
+
+    it('survives end-to-end for all eight realistic PDF-anchor shapes (#HIGH — the 7-of-8 drop repro)', () => {
+      // Five SHORT keys (echoed verbatim per buildBodyLinksBlock's partition,
+      // caught by the literal fallback), one renamed item ("orbit-sim" →
+      // "Orbital Simulator", caught only by the last-resort net), one
+      // digit-leading title (#M1), one trivial exact match.
+      const text = [
+        'Jane Dev',
+        'Engineer',
+        'Berlin | jane@example.com',
+        '',
+        'PROJECTS',
+        'Demo',
+        'Live',
+        'Paper',
+        'PDF',
+        'GitHub',
+        'Orbital Simulator',
+        '3D Printing Pipeline',
+        'CrossKit',
+      ].join('\n');
+      const bodyMap = {
+        Demo: 'https://example.com/demo',
+        Live: 'https://example.com/live',
+        Paper: 'https://example.com/paper',
+        PDF: 'https://example.com/pdf',
+        GitHub: 'https://example.com/gh',
+        'orbit-sim': 'https://example.com/orbit-sim',
+        '3d-printing-pipeline': 'https://example.com/3d-print',
+        CrossKit: 'https://example.com/crosskit',
+      };
+      const out = injectLinksIntoGeneratedText(text, {}, bodyMap);
+      for (const url of Object.values(bodyMap)) {
+        expect(out).toContain(`](${url})`);
+      }
+    });
+
+    it('folds accents so an accented real-name title matches its ASCII slug label (#MEDIUM-4)', () => {
+      const text = ['PROJECTS', 'Café Münster Planner'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'cafe-munster-planner': 'https://example.com/cafe' }
+      );
+      expect(out).toContain('[Café Münster Planner](https://example.com/cafe)');
+    });
+
+    it('never emits an unpaired UTF-16 surrogate for adjacent astral-plane characters (#MEDIUM-3)', () => {
+      const text = ['PROJECTS', 'Rocketry \u{1D550}Lab'].join('\n'); // 𝕐
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Rocketry \u{1D54F}Lab': 'https://example.com/x' } // 𝕏 — differs only in the low surrogate
+      );
+      // Regardless of whether this coincidentally matches, the output string
+      // must stay well-formed UTF-16 (encodeURIComponent throws on a lone
+      // surrogate, mirroring the serde_json rejection this guards against).
+      expect(() => encodeURIComponent(out)).not.toThrow();
+    });
+  });
 });
 
 describe('parseLinksFromResume', () => {
@@ -303,6 +722,23 @@ describe('buildBodyLinksBlock (#18)', () => {
 
   it('returns an empty string when there are no body links', () => {
     expect(buildBodyLinksBlock(RESUME_WITH_LINKS)).toBe('');
+  });
+
+  it('partitions short (unmatchable) keys into a verbatim-echo instruction, keeping the real-name wording for the rest (#HIGH part 1)', () => {
+    const resume = [
+      'Body',
+      '---',
+      '- [Demo](https://example.com/demo)', // 4-char key — below MIN_TITLE_KEY_LEN
+      '- [orbit-sim](https://github.com/jane/orbit-sim)', // 8-char key — reachable
+    ].join('\n');
+    const block = buildBodyLinksBlock(resume);
+    expect(block).toContain('SHORT KEYS');
+    expect(block).toMatch(/SHORT KEYS[\s\S]*- Demo/);
+    expect(block).toMatch(/REAL name[\s\S]*- orbit-sim/);
+    // The short-key section is the only place still asking for a verbatim
+    // echo — the real-name section still forbids it.
+    expect(block).toContain('write EACH ONE exactly as shown below, verbatim');
+    expect(block).toContain('never the key itself');
   });
 });
 
@@ -454,6 +890,19 @@ describe('buildResumePrompt', () => {
     expect(withEmphasis).toContain('EMPHASIS — apply these user-selected biases');
     expect(withEmphasis).toContain('Quantify impact');
     expect(withEmphasis).toContain('More concise');
+  });
+
+  it('instructs the PROJECTS section to use the real item title, not "Title — Label" (#B)', () => {
+    const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
+    expect(prompt).toContain('one item per line as "Item title"');
+    expect(prompt).toContain("project's real name as it appears in the résumé");
+    // The old machine-label suffix instruction must be gone.
+    expect(prompt).not.toContain('Item title — Label');
+    expect(prompt).not.toContain('using the short labels');
+    // Two links for the same project stay two items, named for what they are —
+    // never merged, never disambiguated with a generic suffix.
+    expect(prompt).toContain('do NOT merge them');
+    expect(prompt).toContain('disambiguator like "Web"');
   });
 
   it('surfaces body project/publication links so they survive generation (#18)', () => {

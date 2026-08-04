@@ -143,7 +143,12 @@ impl ContactProfile {
     /// [`tokenize_rich`] / `split_urls` machinery makes every part clickable.
     ///
     /// This is the single header builder shared by the résumé, cover letter, and
-    /// DOCX paths — there is no other place a header URL is chosen.
+    /// DOCX paths — there is no other place a header URL is chosen. Every part
+    /// is scheme-checked (link fields only; `javascript:`/`data:` never render as
+    /// a clickable header link) and sanitized (control characters incl. `\n`
+    /// stripped, length capped) before joining — this string is spliced verbatim
+    /// into plain, `\n`-split document text (H's header-seeding path), so an
+    /// embedded newline would otherwise inject an arbitrary extra line.
     pub fn header_markdown(&self, lang: &str) -> String {
         let mut parts: Vec<String> = Vec::new();
         if let Some(loc) = &self.location {
@@ -158,21 +163,27 @@ impl ContactProfile {
         if let Some(phone) = non_empty(&self.phone) {
             parts.push(phone.to_string());
         }
-        if let Some(url) = non_empty(&self.linkedin) {
+        if let Some(url) = non_empty(&self.linkedin).filter(|u| is_safe_header_url(u)) {
             parts.push(format!("[LinkedIn]({url})"));
         }
-        if let Some(url) = non_empty(&self.github) {
+        if let Some(url) = non_empty(&self.github).filter(|u| is_safe_header_url(u)) {
             parts.push(format!("[GitHub]({url})"));
         }
-        if let Some(url) = non_empty(&self.website) {
+        if let Some(url) = non_empty(&self.website).filter(|u| is_safe_header_url(u)) {
             parts.push(format!("[Website]({url})"));
         }
         for link in &self.extra_links {
-            if !link.label.trim().is_empty() && !link.url.trim().is_empty() {
-                parts.push(format!("[{}]({})", link.label.trim(), link.url.trim()));
+            let (label, url) = (link.label.trim(), link.url.trim());
+            if !label.is_empty() && !url.is_empty() && is_safe_header_url(url) {
+                parts.push(format!("[{label}]({url})"));
             }
         }
-        parts.join(" | ")
+        parts
+            .into_iter()
+            .map(|p| sanitize_header_part(&p))
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>()
+            .join(" | ")
     }
 
     /// The header contact line as [`RichText`] (link runs first-class) for the
@@ -187,9 +198,12 @@ impl ContactProfile {
         }
     }
 
-    /// Override a document header's contact line from this profile, localized for
-    /// `lang`. No-op when the profile has no contact parts, so the caller keeps the
-    /// text-derived header. This fixes the contact/link line (the URL-swap symptom).
+    /// Fill in a document header's name / contact line from this profile,
+    /// localized for `lang` — a **fallback only**. The editor's text is the source
+    /// of truth: a header that already carries a name or a contact line (parsed
+    /// from the document text) is left untouched; the profile fills in whichever
+    /// of the two the text-derived header is missing. No-op on both fields when
+    /// the profile itself has nothing to contribute.
     ///
     /// Name fallback: when `header.name` is blank (e.g. export without generation
     /// metadata that normally fills it), `full_name` from this profile is used so
@@ -202,18 +216,36 @@ impl ContactProfile {
             }
         }
 
-        let rich = self.header_rich(lang);
-        if !rich.is_empty() {
-            header.contact = rich;
+        // Fill the contact line from the profile only when the text-derived
+        // header carries none — the text (what the editor shows) wins whenever
+        // it already has a contact line.
+        if header.contact.is_empty() {
+            let rich = self.header_rich(lang);
+            if !rich.is_empty() {
+                header.contact = rich;
+            }
         }
     }
 
     /// The set of header URLs this profile would render (for validation parity
-    /// checks across documents). Email is included as a `mailto:` link.
+    /// checks across documents — the sole input to
+    /// `validate::pdf_render_issues`'s `allowed` set). Email is included as a
+    /// `mailto:` link.
+    ///
+    /// Routed through the SAME `is_safe_header_url` filter and
+    /// `sanitize_header_part` sanitization [`Self::header_markdown`] applies,
+    /// so the two can never fall out of lockstep: an unsafe-scheme URL
+    /// `header_markdown` drops must never appear here as "the profile's own
+    /// link" (a phantom entry that would otherwise cause a spurious, non-
+    /// blocking `header_url_missing`), and a URL carrying a control character
+    /// must be compared here in the SAME sanitized form it actually renders in
+    /// — otherwise the genuinely-rendered, sanitized link fails set
+    /// membership and `header_url_mismatch` (CRITICAL, blocking) fires on an
+    /// unmodified, legitimate profile.
     pub fn header_urls(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = non_empty(&self.email) {
-            out.push(format!("mailto:{email}"));
+            out.push(sanitize_header_part(&format!("mailto:{email}")));
         }
         for url in [
             non_empty(&self.linkedin),
@@ -222,12 +254,14 @@ impl ContactProfile {
         ]
         .into_iter()
         .flatten()
+        .filter(|u| is_safe_header_url(u))
         {
-            out.push(url.to_string());
+            out.push(sanitize_header_part(url));
         }
         for link in &self.extra_links {
-            if !link.url.trim().is_empty() {
-                out.push(link.url.trim().to_string());
+            let url = link.url.trim();
+            if !url.is_empty() && is_safe_header_url(url) {
+                out.push(sanitize_header_part(url));
             }
         }
         out
@@ -277,6 +311,27 @@ impl ContactProfile {
 
 fn non_empty(v: &Option<String>) -> Option<&str> {
     v.as_deref().map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Scheme allowlist for a header link — `http(s)` or `mailto:` only.
+/// `javascript:`/`data:` (and anything else) never render as a clickable
+/// header link, however lenient upstream URL classification/import is.
+fn is_safe_header_url(url: &str) -> bool {
+    let lower = url.trim().to_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+}
+
+/// Strip control characters (newlines above all) and cap length on one
+/// already-formatted `header_markdown` part. A raw `\n` in a profile field
+/// would otherwise inject an arbitrary extra physical line — including a
+/// well-formed section heading — once the header line is spliced into plain,
+/// `\n`-split document text.
+fn sanitize_header_part(s: &str) -> String {
+    const MAX_LEN: usize = 200;
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_LEN)
+        .collect()
 }
 
 // ── Conflict detection (resolvable mismatches on import) ──────────────────────
@@ -525,18 +580,25 @@ fn is_profile_shaped(url: &str) -> bool {
     true
 }
 
-/// A link shaped like a contact-line entry: a profile-shaped platform profile,
-/// or a bare-root personal domain. LinkedIn keeps the stricter
-/// `is_personal_linkedin` (`/in/`) gate instead of the generic
+/// A link shaped like a **platform profile** — the only kind of link that may
+/// seed `extra_links`: a profile-shaped host from [`PROFILE_HOSTS`] (GitHub,
+/// Dribbble, Behance, …), or a personal LinkedIn (`/in/`) profile. LinkedIn
+/// keeps the stricter `is_personal_linkedin` gate instead of the generic
 /// `is_profile_shaped` rule — a company/school page is otherwise
-/// indistinguishable by shape but must never seed the header. Canonical rule
-/// (keep in sync): `isProfileShaped`/`classifyLinks` in
-/// `packages/prompts/src/generate/links/links.ts`.
-fn is_contact_link(url: &str) -> bool {
+/// indistinguishable by shape but must never seed the header. A bare-root
+/// *personal* domain (no known platform) is deliberately excluded here — at
+/// most one such domain is ever admitted to the profile at all, as `website`
+/// (see the fallback in [`classify_contact_links`]); every other one is a
+/// body/project link and must never re-enter the profile. Shared rule with
+/// `isProfileUrl`/`isProfileShaped`/`classifyLinks` in
+/// `packages/prompts/src/generate/links/links.ts`: a platform-profile URL
+/// stays on the contact side; a non-platform URL is admitted at most once
+/// (`Website`) — every other one is a body link.
+fn is_platform_profile_link(url: &str) -> bool {
     if host_is(url, "linkedin.com") {
         return is_personal_linkedin(url);
     }
-    (is_profile_host(url) && is_profile_shaped(url)) || (!is_profile_host(url) && is_bare_root(url))
+    is_profile_host(url) && is_profile_shaped(url)
 }
 
 /// Personal-site / link-in-bio hosts that belong under "Website".
@@ -549,21 +611,35 @@ const WEBSITE_HOSTS: &[&str] = &[
     "carrd.co",
 ];
 
-fn is_job_board(url: &str) -> bool {
+/// Public for `validate::pdf_render_issues` — a header-band link is still
+/// worth a warning when it resolves to a known job-board/ATS host, even on the
+/// text-derived-header path where the profile isn't the source of truth.
+pub(crate) fn is_job_board(url: &str) -> bool {
     JOB_BOARD_HOSTS.iter().any(|d| host_is(url, d))
 }
 
 /// Classify extracted résumé links into a [`ContactProfile`] by NAME and SHAPE,
 /// not by position. Picks the first personal LinkedIn (`/in/`), the first
 /// profile-shaped GitHub (`github.com/<user>`, never `/<user>/<repo>`), and a
-/// personal website (a known link-in-bio host, else the first bare-root,
-/// non-platform `http(s)` link). Every remaining *contact-shaped* link — a
-/// profile-shaped platform profile (Dribbble, Behance, a second GitHub user) or
-/// a bare-root personal domain — is kept as a labelled [`ContactLink`] in
-/// `extra_links`; a deep-path project/demo/article/repo link never seeds the
-/// header. Canonical rule (keep in sync): `isProfileShaped`/`classifyLinks` in
-/// `packages/prompts/src/generate/links/links.ts`. This is a suggestion to seed
-/// the editable profile, never the final header on its own.
+/// personal website (a known link-in-bio host, else a bare-root, non-platform
+/// `http(s)` link — an apex host wins over any candidate that is one of its
+/// own subdomains, then first-seen decides; this is order-independent). Every
+/// remaining *platform-profile* link — a profile-shaped platform profile
+/// (Dribbble, Behance, a second GitHub user) — is kept as a labelled
+/// [`ContactLink`] in `extra_links`. A bare-root personal domain that was not
+/// promoted to `website`, and any deep-path project/demo/article/repo link,
+/// never enters the profile at all — it belongs in the résumé body, not the
+/// header. Shared rule with `classifyLinks` in
+/// `packages/prompts/src/generate/links/links.ts`: a platform-profile URL
+/// stays on the contact side (LinkedIn gated to `/in/`, same as
+/// `is_personal_linkedin` here); a non-platform URL is admitted at most once,
+/// as `Website`, via the same order-independent apex-over-subdomain
+/// preference (`pickWebsiteUrl` there mirrors `is_subdomain_of_another` /
+/// `is_apex_of_another` here, dot-prefixed suffix check included) — every
+/// other bare-root candidate is a body/project link.
+///
+/// This is a suggestion to seed the editable profile, never the final header on
+/// its own.
 pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
     let mut profile = ContactProfile::default();
     for link in links {
@@ -591,26 +667,57 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
             continue;
         }
     }
-    // Website fallback: the first non-job-board, non-platform, bare-root http(s)
-    // link, so a personal portfolio homepage is still surfaced — but an
+    // Website fallback: a non-job-board, non-platform, bare-root http(s) link,
+    // so a personal portfolio homepage is still surfaced — but an
     // employer/company URL or a deep link (e.g. a project demo path) never is.
     // `!is_profile_host` subsumes the old explicit linkedin/github checks.
+    //
+    // Which candidate wins is order-independent: an apex host (one that is
+    // itself the parent of another candidate host in this same document, e.g.
+    // `apex.dev` alongside `sub.apex.dev`) is preferred over every standalone
+    // candidate, because the apex/subdomain relationship is stronger, shape-
+    // based evidence of "the" personal domain than raw document position.
+    // Among hosts tied on that signal, first-seen decides.
     if profile.website.is_none() {
-        for link in links {
-            let url = link.url.trim();
-            if (url.starts_with("http://") || url.starts_with("https://"))
-                && !is_job_board(url)
-                && !is_profile_host(url)
-                && is_bare_root(url)
-            {
-                profile.website = Some(url.to_string());
-                break;
-            }
+        let candidates: Vec<(String, &str)> = links
+            .iter()
+            .filter_map(|link| {
+                let url = link.url.trim();
+                let is_candidate = (url.starts_with("http://") || url.starts_with("https://"))
+                    && !is_job_board(url)
+                    && !is_profile_host(url)
+                    && is_bare_root(url);
+                if !is_candidate {
+                    return None;
+                }
+                host_of(url).map(|h| (h, url))
+            })
+            .collect();
+        let hosts: Vec<&str> = candidates.iter().map(|(h, _)| h.as_str()).collect();
+        let is_subdomain_of_another = |host: &str| {
+            hosts
+                .iter()
+                .any(|o| *o != host && host.ends_with(&format!(".{o}")))
+        };
+        let is_apex_of_another = |host: &str| {
+            hosts
+                .iter()
+                .any(|o| *o != host && o.ends_with(&format!(".{host}")))
+        };
+        let apex_pick = candidates
+            .iter()
+            .find(|(h, _)| !is_subdomain_of_another(h) && is_apex_of_another(h));
+        let first_pick = candidates.iter().find(|(h, _)| !is_subdomain_of_another(h));
+        if let Some((_, url)) = apex_pick.or(first_pick) {
+            profile.website = Some(url.to_string());
         }
     }
-    // Extras: every other personal http(s) link, labelled by domain (Dribbble,
-    // Behance, …). Skips job boards and the links already promoted to a named
-    // field, and de-dupes by URL so the same link is never listed twice.
+    // Extras: every other platform-profile http(s) link, labelled by domain
+    // (Dribbble, Behance, a second GitHub user, …). A bare-root personal
+    // domain that lost the `website` slot above is NOT an extra — it never
+    // re-enters the profile. Skips job boards and the links already promoted
+    // to a named field, and de-dupes by URL so the same link is never listed
+    // twice.
     let named: std::collections::BTreeSet<&str> = [
         profile.linkedin.as_deref(),
         profile.github.as_deref(),
@@ -623,7 +730,7 @@ pub fn classify_contact_links(links: &[Link]) -> ContactProfile {
         let url = link.url.trim();
         if !(url.starts_with("http://") || url.starts_with("https://"))
             || is_job_board(url)
-            || !is_contact_link(url)
+            || !is_platform_profile_link(url)
             || named.contains(url)
             || profile.extra_links.iter().any(|e| e.url == url)
         {

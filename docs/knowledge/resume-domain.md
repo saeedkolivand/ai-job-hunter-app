@@ -1,12 +1,12 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-07-16
+Last updated: 2026-08-04
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
 ## Résumé structure
 
-`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. Header/contact links come from `contact_profile/` (single source of truth — don't duplicate in templates).
+`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. **Header contact line is editor-owned at export time** ([ADR 0021](../adr/0021-editor-owns-resume-header.md)). Two distinct moments — don't conflate them: **generation** (`generateResume` → `seedHeaderFromProfile`) always replaces the name line and every detected contact line with the profile's `contact_profile_header_line` output, so re-generating a document discards header edits by design; **export** (`apply_to_header`, `meta.candidate_name`) fills from the profile only when the parsed header is blank, so whatever the text says wins for PDF/DOCX/TXT. Export validation gates on the extracted header text, not the profile.
 
 ## Templates
 
@@ -53,7 +53,7 @@ blocks in page backgrounds — see [`docs/EXPORT_TEMPLATES.md` § Accessibility]
 
 ## Review heuristics
 
-- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`); a photo path that accepts file URIs.
+- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (validation must parse the same text as the renderer — `validate/` must run `extract_section` exactly as `prepare_resume_render` does, or the gate is dead for marker-wrapped text; links come from the document's extracted header, with a non-blocking `header_url_job_board` warning when a job-board host appears there); a photo path that accepts file URIs.
 - MEDIUM: missing golden/edge-case test, non-deterministic snapshot, avoidable re-shaping in the render loop (perf → `performance-profiler`).
 
 [docx-rs]: https://github.com/bokuweb/docx-rs

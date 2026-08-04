@@ -40,9 +40,17 @@ export interface ContactProfile {
 export interface ContactProfileContract {
   get(): Promise<ContactProfile>;
   set(profile: ContactProfile): Promise<{ success?: boolean; error?: string }>;
+  /**
+   * The stored profile's header contact line as markdown, localized for `lang`
+   * — built by the single shared `ContactProfile::header_markdown` (Rust), never
+   * re-implemented here, so the ordering rules can't drift between the two
+   * languages. `''` when the profile has nothing to contribute.
+   */
+  headerLine(lang: string): Promise<string>;
 }
 
 export const CONTACT_PROFILE_CHANNELS = {
   get: 'contact_profile_get',
   set: 'contact_profile_set',
+  headerLine: 'contact_profile_header_line',
 } as const;

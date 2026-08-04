@@ -186,6 +186,40 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)linkedin\.com|github\.com|portfolio|website|^https?://").unwrap()
 });
 
+/// Combined `|`/`·`/`•` separator count — shared by the job-entry
+/// pipe/middot-with-date check and [`is_contact_shaped`] below.
+fn separator_count(clean: &str) -> usize {
+    clean.matches('|').count() + clean.matches('·').count() + clean.matches('•').count()
+}
+
+/// The Contact-line shape test: an `@`, a phone number, ≥2 pipe/middot/bullet
+/// separators, or a known contact-platform keyword / bare `http(s)://` URL.
+/// `pub(crate)` as the single source of truth for what counts as a résumé's
+/// contact line — mirrored in TS by `isHeaderContactLine`
+/// (`packages/prompts/src/generate/text/header-contact-line.ts`). A
+/// shared-fixture parity test (`fixtures/header-contact-line.json`, read by
+/// both `cargo test export::parser` and that file's TS test) keeps the two
+/// from silently drifting.
+pub(crate) fn is_contact_shaped(clean: &str) -> bool {
+    clean.contains('@')
+        || PHONE_RE.is_match(clean)
+        || separator_count(clean) >= 2
+        || URL_RE.is_match(clean)
+}
+
+/// The line-0-ONLY Contact test — narrower than [`is_contact_shaped`]: just an
+/// `@` or a phone shape, with no pipe/URL arms. This is what decides Name vs
+/// Contact for the résumé's first line (`parse_line`'s `idx == 0` case) — a
+/// combined "Jane Doe | jane@example.com" is classified `Contact`, not `Name`,
+/// there, so `header.name` comes out empty for that input shape regardless of
+/// what runs downstream. `pub(crate)` for the same reason as
+/// `is_contact_shaped`: mirrored in TS (`isFirstLineContactShaped` in the same
+/// `header-contact-line.ts`) and kept in parity by the same shared fixture's
+/// `firstLine` field.
+pub(crate) fn is_first_line_contact_shaped(clean: &str) -> bool {
+    clean.contains('@') || PHONE_RE.is_match(clean)
+}
+
 // Section names (multilingual)
 const SECTION_NAMES: &[&str] = &[
     "professional summary",
@@ -436,7 +470,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
                 right_text: None,
             };
         }
-        if clean.contains('@') || PHONE_RE.is_match(&clean) {
+        if is_first_line_contact_shaped(&clean) {
             return ParsedLine {
                 kind: LineKind::Contact,
                 raw: trimmed.to_string(),
@@ -548,8 +582,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // Job entry: pipe/middot-separated with a date segment and no email address —
     // "Role | Company | 2020 – Present" or "Role · Company · Jan 2021 – Mar 2023".
     // Excludes contact lines: an email, or a non-date phone/URL segment, keeps Contact.
-    let pipe_count =
-        clean.matches('|').count() + clean.matches('·').count() + clean.matches('•').count();
+    let pipe_count = separator_count(&clean);
     if pipe_count >= 1 && !clean.contains('@') {
         let seg_is_date = |s: &str| DATE_RE.is_match(s) || SOLO_DATE_RE.is_match(s);
         // A non-date phone/URL segment marks this as a CONTACT line, not an entry
@@ -581,11 +614,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
 
     // Contact: has @ or phone or pipe separators or URLs
     // (pipe_count was computed above for the pipe-date job-entry check)
-    if clean.contains('@')
-        || PHONE_RE.is_match(&clean)
-        || pipe_count >= 2
-        || URL_RE.is_match(&clean)
-    {
+    if is_contact_shaped(&clean) {
         return ParsedLine {
             kind: LineKind::Contact,
             raw: trimmed.to_string(),

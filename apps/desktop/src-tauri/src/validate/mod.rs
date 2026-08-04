@@ -348,13 +348,53 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
     // URL-correctness checks below (content-based, not geometric) still run.
 
     // Header URL correctness against the contact profile (when supplied).
+    //
+    // H — the editor is the source of truth: `ContactProfile::apply_to_header`
+    // now fills the header's contact line from the profile ONLY when the
+    // text-derived header has none. When the résumé text already carries its
+    // own contact line, the profile never reaches the rendered header, so the
+    // strict parity checks below's premise ("the profile is the header's
+    // source of truth") no longer holds — narrowed to a job-board-only warning
+    // in that case (see the `else` arm below) rather than skipped outright, so
+    // an obviously-wrong link isn't left completely unvalidated. Cover letters
+    // are unaffected (their header override wasn't part of H).
+    //
+    // Parses the SAME text `prepare_resume_render` actually renders from, not
+    // the raw `request.text` — which can still carry the
+    // "### CANDIDATE RESUME ###" / "### JOB ADVERTISEMENT ###" wrapper. Left
+    // un-extracted, `parse_resume` reads that marker as an ATX heading at line
+    // 0 (`strip_atx_heading` runs before the idx==0 name/contact case),
+    // `seen_section` flips true immediately, and the real name/contact lines
+    // never reach `header.contact` at all — making `profile_is_header_source`
+    // wrongly `true` and reintroducing the exact false-block this exists to
+    // prevent.
+    let resume_text = (request.document_type == DocumentType::Resume).then(|| {
+        let extracted = crate::export::pdf::extract_section(
+            &request.text,
+            "### CANDIDATE RESUME ###",
+            Some("### JOB ADVERTISEMENT ###"),
+        );
+        if extracted.is_empty() {
+            request.text.as_str()
+        } else {
+            extracted
+        }
+    });
+    let profile_is_header_source = resume_text
+        .map(|t| {
+            crate::model::adapter::model_from_resume_text(t)
+                .header
+                .contact
+                .is_empty()
+        })
+        // Cover letters: unaffected by H, so the checks below still run as before.
+        .unwrap_or(true);
+
     if let Some(profile) = request
         .contact
         .as_ref()
         .filter(|p| !p.is_effectively_empty())
     {
-        let allowed: std::collections::BTreeSet<String> =
-            profile.header_urls().into_iter().collect();
         // Header region: the top ~2 inches (144 pt) of the first page.
         let header_band_bottom = page_h_pt - 144.0;
         let header_links: Vec<&PdfLink> = links
@@ -362,41 +402,66 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
             .collect();
 
-        // Canonicalise URLs before comparing so trivial differences (trailing slash,
-        // scheme/host case, a percent-encoded space) do not cause false positives.
-        // The check's intent — catching a wrong link in the header — is preserved;
-        // we only avoid blocking on byte-identical-but-semantically-equal URLs.
-        let allowed_canonical: std::collections::BTreeSet<String> =
-            allowed.iter().map(|u| canonicalize_url(u)).collect();
+        if profile_is_header_source {
+            let allowed: std::collections::BTreeSet<String> =
+                profile.header_urls().into_iter().collect();
+            // Canonicalise URLs before comparing so trivial differences (trailing
+            // slash, scheme/host case, a percent-encoded space) do not cause false
+            // positives. The check's intent — catching a wrong link in the header —
+            // is preserved; we only avoid blocking on byte-identical-but-
+            // semantically-equal URLs.
+            let allowed_canonical: std::collections::BTreeSet<String> =
+                allowed.iter().map(|u| canonicalize_url(u)).collect();
 
-        // A header-band link that is NOT one of the profile's own fields means a
-        // body/company link displaced a personal one (the URL-swap regression) —
-        // the document shows a wrong link, so this stays blocking.
-        for link in &header_links {
-            if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
-                issues.push(ExportIssue::critical(
-                    "header_url_mismatch",
-                    format!(
-                        "Header link {} is not one of the contact profile's fields — a \
-                         body/company link leaked into the header.",
-                        link.url
-                    ),
-                ));
+            // A header-band link that is NOT one of the profile's own fields means a
+            // body/company link displaced a personal one (the URL-swap regression) —
+            // the document shows a wrong link, so this stays blocking.
+            for link in &header_links {
+                if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
+                    issues.push(ExportIssue::critical(
+                        "header_url_mismatch",
+                        format!(
+                            "Header link {} is not one of the contact profile's fields — a \
+                             body/company link leaked into the header.",
+                            link.url
+                        ),
+                    ));
+                }
             }
-        }
-        // The reverse (a profile link that did not surface in the header band) is a
-        // *completeness* signal that depends on the 144 pt band heuristic, so it is
-        // advisory — a missing/displaced contact link is a quality note, never a
-        // reason to stop the user exporting an otherwise-valid, readable document.
-        for url in &allowed {
-            if !header_links
-                .iter()
-                .any(|l| canonicalize_url(&l.url) == canonicalize_url(url))
-            {
-                issues.push(ExportIssue::warning(
-                    "header_url_missing",
-                    format!("Contact profile link {url} is missing from the rendered header."),
-                ));
+            // The reverse (a profile link that did not surface in the header band) is
+            // a *completeness* signal that depends on the 144 pt band heuristic, so it
+            // is advisory — a missing/displaced contact link is a quality note, never
+            // a reason to stop the user exporting an otherwise-valid, readable
+            // document.
+            for url in &allowed {
+                if !header_links
+                    .iter()
+                    .any(|l| canonicalize_url(&l.url) == canonicalize_url(url))
+                {
+                    issues.push(ExportIssue::warning(
+                        "header_url_missing",
+                        format!("Contact profile link {url} is missing from the rendered header."),
+                    ));
+                }
+            }
+        } else {
+            // The profile is only a fallback here — the text-derived header won,
+            // so its own parity against the profile is meaningless (it was never
+            // applied). A job-board/ATS host in the header band is still never a
+            // legitimate personal contact link, whatever the now-authoritative
+            // text says, so it's worth a warning — advisory, not blocking, since
+            // the header is user-owned and visible in the editor.
+            for link in &header_links {
+                if crate::contact_profile::is_job_board(&link.url) {
+                    issues.push(ExportIssue::warning(
+                        "header_url_job_board",
+                        format!(
+                            "Header link {} looks like a job board/ATS URL, not a personal \
+                             contact link.",
+                            link.url
+                        ),
+                    ));
+                }
             }
         }
     }

@@ -23,3 +23,38 @@ pub async fn contact_profile_set(app: AppHandle, profile: Value) -> Value {
         Err(e) => json!({ "error": e.to_string() }),
     }
 }
+
+/// Clamp to a short ISO-639-1(-ish) tag length before it reaches
+/// `LocalizedText::resolve`'s map-key comparisons. `lang` is not purely
+/// renderer-chosen — the renderer derives it from `meta.targetLanguage`
+/// (AI-detected, so ultimately shaped by the job ad text).
+fn clamp_lang(lang: &str) -> String {
+    lang.chars().take(16).collect()
+}
+
+/// The stored profile's header contact line, localized for `lang` — the single
+/// header builder (`ContactProfile::header_markdown`) shared by every render
+/// backend, exposed so the renderer can seed it into generated text (H) without
+/// re-implementing the ordering rules in TypeScript.
+#[tauri::command]
+pub async fn contact_profile_header_line(app: AppHandle, lang: String) -> String {
+    let store = app.state::<ContactProfileStore>();
+    store.get().header_markdown(&clamp_lang(&lang))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn clamp_lang_passes_a_short_code_through_unchanged() {
+        assert_eq!(clamp_lang("de"), "de");
+        assert_eq!(clamp_lang("en-US"), "en-US");
+    }
+
+    #[test]
+    fn clamp_lang_truncates_an_oversized_value() {
+        let huge = "x".repeat(1000);
+        assert_eq!(clamp_lang(&huge).len(), 16);
+    }
+}
