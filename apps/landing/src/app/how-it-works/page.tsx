@@ -10,8 +10,30 @@ import { readStyle } from '@/lib/styles';
 // → original styles.css → shell override; last :root wins). The copy, the DOM the
 // 55 KB pipeline player queries, and the console egg are all unchanged.
 export const metadata: Metadata = {
-  title: 'AI Job Hunter — How It Works (End to End)',
+  title: 'AI Job Hunter — How It Works, Step by Step',
+  description:
+    'A layer-by-layer, click-through map of the AI Job Hunter pipeline — React UI, Rust core, AI models, scrapers, and disk — from job board to finished application.',
   alternates: { canonical: 'https://aijobhunter.app/how-it-works' },
+  openGraph: {
+    title: 'SEE THE WHOLE PIPELINE.',
+    description:
+      'Click through every layer of the AI Job Hunter pipeline, from job board to finished application.',
+    url: 'https://aijobhunter.app/how-it-works',
+    type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — How It Works, click-through architecture of the whole pipeline.',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'SEE THE WHOLE PIPELINE.',
+    description: 'Click through every layer, from job board to finished application.',
+  },
 };
 
 export default function HowItWorksPage() {

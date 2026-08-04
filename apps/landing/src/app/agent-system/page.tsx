@@ -16,6 +16,14 @@ export const metadata: Metadata = {
       'Paired author + critic per domain. The .claude/ system that builds and reviews this repo, explained.',
     url: 'https://aijobhunter.app/agent-system',
     type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — the .claude/ agent fleet that builds and reviews this repo.',
+      },
+    ],
   },
   twitter: {
     card: 'summary',

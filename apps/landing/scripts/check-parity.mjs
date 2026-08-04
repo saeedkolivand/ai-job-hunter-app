@@ -65,7 +65,7 @@ const PHRASES = [
   'you opened the console, not the installer',
   'brew install --cask ai-job-hunter',
   // how-it-works (/how-it-works)
-  'How It Works (End to End)',
+  'How It Works, Step by Step',
   'you press send',
   // privacy (/privacy)
   'Privacy Policy',

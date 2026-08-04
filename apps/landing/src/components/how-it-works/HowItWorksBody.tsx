@@ -32,7 +32,7 @@ export function HowItWorksBody() {
         <Subsystems />
         <CheatSheet />
       </main>
-      <SiteFooter />
+      <SiteFooter current="how-it-works" />
     </div>
   );
 }

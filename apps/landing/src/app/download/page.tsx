@@ -9,21 +9,29 @@ import { readStyle } from '@/lib/styles';
 import type { VersionData } from '@/lib/version';
 
 export const metadata: Metadata = {
-  title: 'AI Job Hunter — Download',
+  title: 'AI Job Hunter — Download for macOS, Windows, Linux',
   description:
     'Download the AI Job Hunter desktop app for macOS, Windows, and Linux. A local-first, AI-native job-hunting assistant. Free for personal use, source-available, unsigned, and unemployed.',
   robots: { index: true, follow: true },
   alternates: { canonical: 'https://aijobhunter.app/download' },
   openGraph: {
-    title: 'AI Job Hunter — Download',
+    title: 'TAKE THE APP.',
     description:
       'Get the desktop app for macOS, Windows, and Linux. Plus the browser extension. Local-first. No accounts. Still unemployed.',
     url: 'https://aijobhunter.app/download',
     type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — download the desktop app for macOS, Windows, and Linux.',
+      },
+    ],
   },
   twitter: {
     card: 'summary',
-    title: 'AI Job Hunter — Download',
+    title: 'TAKE THE APP.',
     description: 'Get the desktop app for macOS, Windows, and Linux. Plus the browser extension.',
   },
 };
