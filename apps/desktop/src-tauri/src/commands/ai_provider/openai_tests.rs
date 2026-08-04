@@ -587,8 +587,12 @@ async fn scrub_url_secret_removes_the_query_but_keeps_scheme_host_path() {
     // A genuine transport failure (not a synthetic error — `reqwest::Error`
     // has no public constructor) against an unreachable loopback port, so the
     // resulting error carries a real, reqwest-attached URL.
+    // Built through `net::http::shared()`, not `reqwest::Client::new()` — R5
+    // confines client construction to `net/http.rs`, and this test is more
+    // faithful for it: the error being scrubbed comes from the same client
+    // the production path uses.
     let url = reqwest::Url::parse("http://127.0.0.1:1/v1/models?api-key=SECRET123").unwrap();
-    let err = reqwest::Client::new()
+    let err = crate::net::http::shared()
         .get(url)
         .timeout(std::time::Duration::from_millis(500))
         .send()
