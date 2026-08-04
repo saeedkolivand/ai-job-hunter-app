@@ -526,17 +526,20 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
 /// auto-normalizes a truncated-dimension embedding (verified in the live
 /// Gemini API docs), so this needs no extra normalization step on our side.
 ///
-/// **Nesting matters.** The REST reference for `models.embedContent` lists a
-/// TOP-LEVEL `outputDimensionality` field as `(deprecated)` — "Please use
-/// `EmbedContentConfig.output_dimensionality` instead" — and
-/// `EmbedContentConfig`'s own JSON representation confirms the nested field
-/// name is `outputDimensionality` (camelCase) — both verified against the
-/// live `/api/embeddings` REST reference, not memory. The wire field is
-/// therefore nested camelCase JSON: `embedContentConfig: { outputDimensionality }`,
-/// NOT a snake_case field at the request root — sending the deprecated
-/// top-level form would risk the API silently ignoring it (proto3-JSON
-/// transcoding may accept an unknown/deprecated field with no error),
-/// silently storing 3072-dim vectors again with no visible failure.
+/// **Nesting matters — and is now self-verifying, not just argued from docs.**
+/// The REST reference for `models.embedContent` lists a TOP-LEVEL
+/// `outputDimensionality` field as `(deprecated)`, and `EmbedContentConfig`'s
+/// own JSON representation gives the nested field name as `outputDimensionality`
+/// (camelCase) — this shape has been read from the live reference twice now
+/// by two different reviewers who reached opposite conclusions, which is
+/// exactly the failure mode "trust whoever read the docs last" has. Rather
+/// than argue it a third time: proto3-JSON transcoding tolerates an unknown
+/// or misplaced field with NO error, so a wrong nesting here would silently
+/// return the model's full default dimension instead of
+/// [`EMBED_OUTPUT_DIMENSIONALITY`] — `embed_impl` checks the ACTUAL returned
+/// vector length against it and fails loudly on any mismatch, so the wire
+/// shape is verified by the code at runtime on every real call, not by
+/// whoever last read the docs.
 fn build_embed_body(m: &str, text: &str) -> Value {
     json!({
         "model": format!("models/{m}"),
@@ -650,6 +653,19 @@ impl GeminiClient {
             .ok_or_else(|| {
                 AppError::Provider("Gemini: missing embedding in response".to_string())
             })?;
+        // Self-verify the wire shape rather than trust it: see
+        // `build_embed_body`'s doc comment. If `outputDimensionality` were
+        // ever silently ignored (wrong nesting, a future API change, proto3
+        // tolerating an unknown field), the API would return its full
+        // default dimension instead of what was requested — catch that HERE,
+        // loudly, instead of silently storing an oversized vector.
+        if vector.len() != EMBED_OUTPUT_DIMENSIONALITY as usize {
+            return Err(AppError::Provider(format!(
+                "Gemini: requested a {EMBED_OUTPUT_DIMENSIONALITY}-dim embedding but the API \
+                 returned {} dims — outputDimensionality was not honored",
+                vector.len()
+            )));
+        }
         Ok((vector, parse_gemini_embed_usage(&data)))
     }
 

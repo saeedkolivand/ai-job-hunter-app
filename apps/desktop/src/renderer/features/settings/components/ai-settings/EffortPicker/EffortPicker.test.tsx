@@ -25,16 +25,21 @@ vi.mock('@/services', () => ({
 
 const setProviderSettings = vi.fn();
 
+const providerConfigState: {
+  data: { providers?: Record<string, { effort?: string }> } | undefined;
+} = { data: undefined };
+
 vi.mock('@/store/preferences-store', () => ({
   usePreferencesStore: (
     selector: (s: { setProviderSettings: typeof setProviderSettings }) => unknown
   ) => selector({ setProviderSettings }),
-  useAiProviderConfig: () => undefined,
+  useAiProviderConfig: () => providerConfigState.data,
 }));
 
 afterEach(() => {
   vi.clearAllMocks();
   modelCapsState.data = undefined;
+  providerConfigState.data = undefined;
 });
 
 import { EffortPicker } from './index';
@@ -82,5 +87,19 @@ describe('EffortPicker', () => {
     await user.click(screen.getByText('high'));
 
     expect(setProviderSettings).toHaveBeenCalledWith('openai', { effort: 'high' });
+  });
+
+  it('shows a previously-persisted effort value as selected, not the default placeholder', () => {
+    modelCapsState.data = { effortLevels: ['low', 'medium', 'high'] };
+    providerConfigState.data = { providers: { openai: { effort: 'high' } } };
+    render(<EffortPicker provider="openai" model="gpt-5.6" />);
+
+    // The trigger shows the persisted level's own label, not the
+    // "effortDefault" placeholder — proves the picker actually reads the
+    // saved config on mount instead of always starting blank.
+    expect(screen.getByRole('button', { name: 'high' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /settings\.aiProvider\.effortDefault/ })
+    ).not.toBeInTheDocument();
   });
 });
