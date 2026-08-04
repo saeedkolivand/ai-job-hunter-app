@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { detectLanguage, type InterviewQuestion, toLanguageCode } from '@ajh/shared';
 
-import { useNeedsResearchKey } from '@/hooks/use-needs-research-key';
 import {
   extractMetadata,
   generateInterviewQuestions,
@@ -13,6 +12,8 @@ import {
 } from '@/lib/generate';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { keys } from '@/services/query-client';
+
+import { useNeedsResearchKey } from './use-needs-research-key';
 
 /** Default target interviewers — the two earliest rounds (recruiter/HR + hiring manager). */
 const DEFAULT_AUDIENCES = ['recruiter', 'hiringManager'];

@@ -47,11 +47,15 @@ vi.mock('@/lib/generate', async () => {
 });
 
 // Active provider + Ollama web-search key — controllable so we can exercise the
-// needsResearchKey hint (Ollama-family provider without the key).
+// needsResearchKey hint (Ollama-family provider without the key), routed through
+// the shared `useNeedsResearchKey` hook's own dependencies (both settled, so the
+// hook's cold-boot pending guard never suppresses these).
 let mockProvider = 'openai';
 let mockHasOllamaKey = true;
-vi.mock('@/components/ui/ModelSelector', () => ({ useSelectedProvider: () => mockProvider }));
-vi.mock('@/services', () => ({ useHasProviderKey: () => ({ data: { has: mockHasOllamaKey } }) }));
+vi.mock('@/services', () => ({
+  useActiveConfig: () => ({ data: { activeProvider: mockProvider }, isPending: false }),
+  useHasProviderKey: () => ({ data: { has: mockHasOllamaKey }, isPending: false }),
+}));
 
 const params = {
   resume: 'my resume',

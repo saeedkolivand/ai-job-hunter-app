@@ -27,27 +27,38 @@ function Wrapper({ children }: { children: ReactNode }) {
   return <FormProvider {...methods}>{children}</FormProvider>;
 }
 
-const renderStep = (canUse = true) => render(<StepModel canUse={canUse} />, { wrapper: Wrapper });
+const renderStep = (canUse: boolean) => render(<StepModel canUse={canUse} />, { wrapper: Wrapper });
 
 describe('StepModel — Ollama research-key hint', () => {
-  it('renders the amber hint when the active provider is Ollama-family without the key', () => {
+  it('renders an announced (role="status", aria-live="polite") hint when the active provider is Ollama-family without the key', () => {
     mockNeedsResearchKey = true;
-    renderStep();
-    expect(screen.getByText('aiGenerate.research.ollamaKeyHint')).toBeInTheDocument();
+    renderStep(true);
+    const hint = screen.getByRole('status');
+    expect(hint).toHaveAttribute('aria-live', 'polite');
+    expect(hint).toHaveTextContent('aiGenerate.research.ollamaKeyHint');
   });
 
   it('does not render the hint when the key is present / provider is not Ollama-family', () => {
     mockNeedsResearchKey = false;
-    renderStep();
-    expect(screen.queryByText('aiGenerate.research.ollamaKeyHint')).not.toBeInTheDocument();
+    renderStep(true);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('keeps the research toggle interactive regardless of the hint', async () => {
     mockNeedsResearchKey = true;
     const user = userEvent.setup();
-    renderStep();
+    renderStep(true);
     const toggle = screen.getByRole('switch');
     expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('keeps the research toggle interactive even when AI is unavailable (canUse=false)', async () => {
+    mockNeedsResearchKey = false;
+    const user = userEvent.setup();
+    renderStep(false);
+    const toggle = screen.getByRole('switch');
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-checked', 'true');
   });
