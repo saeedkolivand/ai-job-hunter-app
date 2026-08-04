@@ -11,11 +11,11 @@
 //! non-test scans.
 
 use super::{
-    build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
-    gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage,
-    parse_gemini_frames, parse_gemini_parts, parse_gemini_turn, parse_gemini_usage,
-    parse_model_page, validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
-    EMBED_OUTPUT_DIMENSIONALITY,
+    advance_cursor, build_chat_stream_body, build_embed_body, gemini_effective_temperature,
+    gemini_effort_levels, gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text,
+    parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
+    parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider, GeminiClient,
+    GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -660,4 +660,33 @@ fn parse_model_page_treats_an_empty_next_page_token_as_the_last_page() {
     });
     let (_, cursor) = parse_model_page(&body).unwrap();
     assert_eq!(cursor, None);
+}
+
+#[test]
+fn advance_cursor_stops_when_there_is_no_next_page() {
+    assert_eq!(advance_cursor(&None, None), None);
+    assert_eq!(advance_cursor(&Some("t1".to_string()), None), None);
+}
+
+#[test]
+fn advance_cursor_stops_on_a_non_advancing_token() {
+    // The exact bug this guards against: a provider returning the same
+    // `nextPageToken` forever must not loop `MAX_LIST_MODELS_PAGES` times
+    // re-fetching the same page.
+    assert_eq!(
+        advance_cursor(&Some("t1".to_string()), Some("t1".to_string())),
+        None
+    );
+}
+
+#[test]
+fn advance_cursor_continues_on_a_genuinely_new_token() {
+    assert_eq!(
+        advance_cursor(&None, Some("t1".to_string())),
+        Some("t1".to_string())
+    );
+    assert_eq!(
+        advance_cursor(&Some("t1".to_string()), Some("t2".to_string())),
+        Some("t2".to_string())
+    );
 }

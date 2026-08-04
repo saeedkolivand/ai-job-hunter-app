@@ -79,6 +79,19 @@ fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
     Ok((names, next_page_token))
 }
 
+/// Whether pagination should continue to `next` — `None` when there's no next
+/// page OR when `next` doesn't differ from `current` (a provider returning a
+/// non-advancing token must stop the loop, not re-fetch the same page up to
+/// `MAX_LIST_MODELS_PAGES` times, duplicating entries). Pure so the
+/// progress-guard is unit-testable without a network mock.
+fn advance_cursor(current: &Option<String>, next: Option<String>) -> Option<String> {
+    if next.is_none() || &next == current {
+        None
+    } else {
+        next
+    }
+}
+
 /// Concatenate every `parts[].text` of the first candidate (non-streaming
 /// `generateContent`, incl. grounded responses) into one string. Pure +
 /// unit-tested.
@@ -996,6 +1009,10 @@ impl AiProvider for GeminiClient {
         let client = crate::net::http::shared();
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
+        // One deadline for the WHOLE paginated fetch, not per-request — a
+        // per-request-only timeout lets up to `MAX_LIST_MODELS_PAGES` individual
+        // `LIST_MODELS` timeouts chain into one very long invoke.
+        let deadline = tokio::time::Instant::now() + timeouts::LIST_MODELS_TOTAL;
         for _ in 0..MAX_LIST_MODELS_PAGES {
             let mut req = client
                 .get(format!("{BASE}/v1beta/models"))
@@ -1008,9 +1025,21 @@ impl AiProvider for GeminiClient {
             if let Some(token) = &page_token {
                 req = req.query(&[("pageToken", token.as_str())]);
             }
-            let resp = req.send().await.map_err(|e| {
-                AppError::Network(format!("{}: request failed: {e}", self.id().as_str()))
-            })?;
+            let resp = match tokio::time::timeout_at(deadline, req.send()).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => {
+                    return Err(AppError::Network(format!(
+                        "{}: request failed: {e}",
+                        self.id().as_str()
+                    )))
+                }
+                Err(_elapsed) => {
+                    return Err(AppError::Network(format!(
+                        "{}: timed out listing models across multiple pages",
+                        self.id().as_str()
+                    )))
+                }
+            };
             if !resp.status().is_success() {
                 return Err(AppError::Provider(format!(
                     "API returned status: {}",
@@ -1023,7 +1052,7 @@ impl AiProvider for GeminiClient {
                 .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
             let (mut page, next) = parse_model_page(&body)?;
             all.append(&mut page);
-            match next {
+            match advance_cursor(&page_token, next) {
                 Some(token) => page_token = Some(token),
                 None => break,
             }

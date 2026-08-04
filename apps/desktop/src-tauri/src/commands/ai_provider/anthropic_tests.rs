@@ -874,3 +874,32 @@ fn parse_model_page_omits_the_cursor_when_has_more_is_false_even_with_a_last_id(
     let (_, cursor) = parse_model_page(&body).unwrap();
     assert_eq!(cursor, None);
 }
+
+#[test]
+fn advance_cursor_stops_when_there_is_no_next_page() {
+    assert_eq!(advance_cursor(&None, None), None);
+    assert_eq!(advance_cursor(&Some("id1".to_string()), None), None);
+}
+
+#[test]
+fn advance_cursor_stops_on_a_non_advancing_cursor() {
+    // The exact bug this guards against: a provider returning the same
+    // `last_id` forever must not loop `MAX_LIST_MODELS_PAGES` times
+    // re-fetching the same page.
+    assert_eq!(
+        advance_cursor(&Some("id1".to_string()), Some("id1".to_string())),
+        None
+    );
+}
+
+#[test]
+fn advance_cursor_continues_on_a_genuinely_new_cursor() {
+    assert_eq!(
+        advance_cursor(&None, Some("id1".to_string())),
+        Some("id1".to_string())
+    );
+    assert_eq!(
+        advance_cursor(&Some("id1".to_string()), Some("id2".to_string())),
+        Some("id2".to_string())
+    );
+}

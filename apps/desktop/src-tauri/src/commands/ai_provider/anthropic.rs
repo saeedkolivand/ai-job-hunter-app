@@ -64,6 +64,19 @@ fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
     Ok((names, cursor))
 }
 
+/// Whether pagination should continue to `next` — `None` when there's no next
+/// page OR when `next` doesn't differ from `current` (a provider returning a
+/// non-advancing cursor must stop the loop, not re-fetch the same page up to
+/// `MAX_LIST_MODELS_PAGES` times, duplicating entries). Pure so the
+/// progress-guard is unit-testable without a network mock.
+fn advance_cursor(current: &Option<String>, next: Option<String>) -> Option<String> {
+    if next.is_none() || &next == current {
+        None
+    } else {
+        next
+    }
+}
+
 /// Whether a model should be sent the classic `thinking: {type:"enabled",
 /// budget_tokens}` block (extended thinking).
 ///
@@ -997,6 +1010,10 @@ impl AiProvider for AnthropicClient {
         let client = crate::net::http::shared();
         let mut all = Vec::new();
         let mut after_id: Option<String> = None;
+        // One deadline for the WHOLE paginated fetch, not per-request — a
+        // per-request-only timeout lets up to `MAX_LIST_MODELS_PAGES` individual
+        // `LIST_MODELS` timeouts chain into one very long invoke.
+        let deadline = tokio::time::Instant::now() + timeouts::LIST_MODELS_TOTAL;
         for _ in 0..MAX_LIST_MODELS_PAGES {
             let mut req = client
                 .get(format!("{BASE}/models"))
@@ -1013,9 +1030,21 @@ impl AiProvider for AnthropicClient {
             if let Some(id) = &after_id {
                 req = req.query(&[("after_id", id.as_str())]);
             }
-            let resp = req.send().await.map_err(|e| {
-                AppError::Network(format!("{}: request failed: {e}", self.id().as_str()))
-            })?;
+            let resp = match tokio::time::timeout_at(deadline, req.send()).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => {
+                    return Err(AppError::Network(format!(
+                        "{}: request failed: {e}",
+                        self.id().as_str()
+                    )))
+                }
+                Err(_elapsed) => {
+                    return Err(AppError::Network(format!(
+                        "{}: timed out listing models across multiple pages",
+                        self.id().as_str()
+                    )))
+                }
+            };
             if !resp.status().is_success() {
                 return Err(AppError::Provider(format!(
                     "API returned status: {}",
@@ -1028,7 +1057,7 @@ impl AiProvider for AnthropicClient {
                 .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
             let (mut page, cursor) = parse_model_page(&body)?;
             all.append(&mut page);
-            match cursor {
+            match advance_cursor(&after_id, cursor) {
                 Some(id) => after_id = Some(id),
                 None => break,
             }
