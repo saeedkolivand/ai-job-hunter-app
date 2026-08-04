@@ -263,12 +263,16 @@ export function CloudProviderConfig({
         </div>
       )}
 
-      {connected && (
-        <EffortPicker
-          provider={provider}
-          model={providerModel}
-          baseUrl={provider === 'openai-compatible' ? baseUrlInput || undefined : undefined}
-        />
+      {/* `openai-compatible` never reports effort levels — the backend
+          deliberately never guesses reasoning support for an unknown gateway
+          catalog (`OpenAiClient::supports_reasoning_effort` is a hard
+          `false` for it) — so the picker can never render for it anyway.
+          Skipping it here (instead of passing a `baseUrl` that would make
+          `useModelCapabilities`'s query key change on every un-debounced
+          keystroke in the base-URL input) avoids firing a capability probe
+          per keystroke for a picker that would stay empty regardless. */}
+      {connected && provider !== 'openai-compatible' && (
+        <EffortPicker provider={provider} model={providerModel} />
       )}
 
       {/* Set active button */}

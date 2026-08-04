@@ -110,16 +110,16 @@ export const useSetEmbeddingConfig = () => {
 
 export const useReembedAll = () => {
   const api = useAppClient();
-  const qc = useQueryClient();
   return useMutation({
+    // `reembedAll` only returns the job id the instant the job STARTS — the
+    // real outcome (reembedded/failed/total) arrives later over `jobs:event`,
+    // which `EmbeddingsSettings`'s own listener refetches
+    // `keys.ai.embeddingStatus` on (`job.completed`/`job.failed`/
+    // `job.cancelled`). An `onSuccess` invalidation here would fire at job
+    // START, before a single vector is written — not a safety net for a
+    // missed completion event (it can't be, at that timing), just a
+    // guaranteed premature refetch of the still-stale status.
     mutationFn: () => api.ai.reembedAll(),
-    // `reembedAll` only returns the job id — the real outcome (reembedded/
-    // failed/total) arrives later over `jobs:event`, which the settings strip
-    // already refetches on. This invalidation is a safety net so the strip
-    // still refreshes even if that event is missed (tab backgrounded, etc.).
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
-    },
   });
 };
 

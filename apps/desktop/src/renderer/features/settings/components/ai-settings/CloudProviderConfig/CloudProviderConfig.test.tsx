@@ -218,4 +218,19 @@ describe('CloudProviderConfig — reasoning-effort picker is capability-driven',
     render(<CloudProviderConfig {...baseProps} provider="openai" providerModel="gpt-5.6" />);
     expect(screen.queryByText('settings.aiProvider.reasoningEffort')).not.toBeInTheDocument();
   });
+
+  it('never renders for openai-compatible, even if the (stubbed) probe reports levels', () => {
+    // The real backend never guesses reasoning support for an unknown
+    // openai-compatible gateway catalog (`supports_reasoning_effort` is a
+    // hard `false` for it), so `effortLevels` can never be non-empty here in
+    // production — but this pins the RENDER-level guard too, since dropping
+    // it would resume firing a capability probe on every un-debounced
+    // keystroke in the base-URL input for a picker that can never show
+    // anything.
+    modelCapsState.data = { effortLevels: ['low', 'medium', 'high'] };
+    render(
+      <CloudProviderConfig {...baseProps} provider="openai-compatible" baseUrlInput="https://x" />
+    );
+    expect(screen.queryByText('settings.aiProvider.reasoningEffort')).not.toBeInTheDocument();
+  });
 });

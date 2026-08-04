@@ -204,6 +204,12 @@ impl AiProvider for CliAgentClient {
             supports_temperature: false,
             supports_system_role: false,
             supports_streaming: true,
+            // Every CLI coding agent reasons internally regardless of
+            // backend — `true` uniformly. This is DELIBERATELY not mirrored
+            // by `effort_levels()` below, which is empty for every backend
+            // except Codex (the app has no lever into the others' effort,
+            // even though they still reason) — see `AiProvider::effort_levels`'s
+            // doc comment for the full distinction.
             supports_reasoning: true,
             supports_tools: false,
             supports_json_mode: false,

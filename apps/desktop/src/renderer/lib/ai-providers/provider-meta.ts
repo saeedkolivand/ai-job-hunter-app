@@ -20,13 +20,20 @@ export interface ProviderMeta {
 }
 
 // Reasoning-effort vocabulary is NOT listed here: some providers' accepted
-// level SET genuinely varies by model tier (Gemini — `gemini-3-pro-preview`
-// only accepts low/high; `gemini-3.1-pro-preview` also accepts medium), so a
-// static per-provider TS list would either be wrong for some models or need
-// its own per-model table duplicating the Rust one. `EffortPicker` instead
-// reads `effortLevels` straight from `ai_model_capabilities` (backed by
-// `AiProvider::effort_levels`, computed per model) — zero TS change for a
-// new provider or model.
+// level SET genuinely varies by model tier (Gemini —
+// `gemini-3.1-flash-lite-image` only accepts minimal/high;
+// `gemini-3.1-pro-preview` also accepts medium), so a static per-provider TS
+// list would either be wrong for some models or need its own per-model table
+// duplicating the Rust one. `EffortPicker` instead reads `effortLevels`
+// straight from `ai_model_capabilities` (backed by `AiProvider::effort_levels`,
+// computed per model) — zero TS change for a new provider or model.
+//
+// The `models` arrays below are hand-curated, not fetched — each list that
+// names a specific model id should say which live authority page + date it
+// was checked against, since a curated id CAN go stale (`gemini-3-pro-preview`
+// did — see the Gemini entry). A genuinely self-updating curated list
+// (deriving it from `listProviderModels` at runtime) is feasible but is its
+// own piece of work, not folded into this fix.
 
 export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
   ollama: {
@@ -68,10 +75,13 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Gemini 2.0 Flash and Gemini 1.5 Pro via the Gemini API.',
     docsUrl: 'https://aistudio.google.com/app/apikey',
     color: 'text-blue-400',
-    // `gemini-3-pro-preview` keeps the reasoning-effort picker reachable via
-    // the curated list too, not just a live-fetched model — the other three
-    // entries stay for the onboarding CLOUD_DEFAULT_MODELS contract test.
-    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-3-pro-preview'],
+    // `gemini-3.6-flash` keeps the reasoning-effort picker reachable via the
+    // curated list too, not just a live-fetched model — LIVE, Stable status
+    // (`ai.google.dev/gemini-api/docs/models`, checked 2026-08-04). It
+    // replaces the former `gemini-3-pro-preview` entry, which the same page
+    // now lists as shut down. The other three entries stay for the
+    // onboarding CLOUD_DEFAULT_MODELS contract test.
+    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-3.6-flash'],
   },
   'openai-compatible': {
     kind: 'cloud',

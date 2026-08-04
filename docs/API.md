@@ -471,9 +471,9 @@ Candidate contact information — the single source of truth for the document he
 
 Fetches the stored contact profile.
 
-#### `contactProfile.set(profile: ContactProfile): Promise<{ success?: boolean; error?: string }>`
+#### `contactProfile.set(profile: ContactProfile): Promise<{ success: true }>`
 
-Persists the contact profile. The profile is the seed for document headers; user edits to generated text are preserved.
+Persists the contact profile. Rejects (throws) on failure — an unmanaged store or an invalid payload — instead of resolving with an in-band `{ error }` field, so a failed save can never be silently mistaken for success. The profile is the seed for document headers; user edits to generated text are preserved.
 
 #### `contactProfile.headerLine(lang: string): Promise<string>`
 

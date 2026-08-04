@@ -370,6 +370,11 @@ fn is_localhost_url(url: &str) -> bool {
 /// `gpt-4o-mini`) must precede a shorter prefix it also satisfies (`gpt-4o`),
 /// since the first match wins. Approximate list prices as of 2026 — a
 /// best-effort ballpark, not a billing-accurate source (see module docs).
+/// Hand-curated, not fetched, same staleness risk as `provider-meta.ts`'s
+/// model lists: a row for a model that gets retired should stay (so
+/// already-recorded spend keeps its real rate) but a NEW/replacement model
+/// needs its own row, added with the authority page + date it was checked
+/// against, not carried over from a sibling by memory.
 const RATES: &[(&str, f64, f64)] = &[
     // OpenAI
     ("gpt-4o-mini", 0.15, 0.60),
@@ -409,6 +414,17 @@ const RATES: &[(&str, f64, f64)] = &[
     ("claude-3-5-sonnet", 3.00, 15.00),
     ("claude-3-sonnet", 3.00, 15.00),
     // Gemini
+    // `gemini-3-pro-preview` is SHUT DOWN (`ai.google.dev/gemini-api/docs/models`,
+    // checked 2026-08-04) and no longer in the curated list (`provider-meta.ts`
+    // now ships `gemini-3.6-flash` instead). This row is kept anyway — same
+    // precedent as `text-embedding-004` elsewhere in this file — so an
+    // already-recorded historical spend entry for it still gets its real rate
+    // instead of silently falling through to DEFAULT_RATE.
+    ("gemini-3-pro-preview", 2.00, 12.00),
+    // gemini-3.6-flash — LIVE, Stable status, curated-list default (see
+    // `provider-meta.ts`). Standard tier, verified live rate
+    // (`ai.google.dev/gemini-api/docs/pricing`, checked 2026-08-04).
+    ("gemini-3.6-flash", 1.50, 7.50),
     ("gemini-2.5-pro", 1.25, 10.00),
     ("gemini-2.5-flash-lite", 0.10, 0.40),
     ("gemini-2.5-flash", 0.30, 2.50),

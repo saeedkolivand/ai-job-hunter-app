@@ -19,8 +19,8 @@ interface Props {
  * The offered levels come straight from the backend's `effortLevels` (via
  * `useModelCapabilities`) — a per-MODEL lookup, not a hardcoded per-provider
  * TS list: some providers' accepted level set genuinely varies by model tier
- * (Gemini's `thinkingLevel` — `gemini-3-pro-preview` only accepts low/high,
- * `gemini-3.1-pro-preview` also accepts medium), so a static list would be
+ * (Gemini's `thinkingLevel` — `gemini-3.1-flash-lite-image` only accepts
+ * minimal/high, `gemini-3.1-pro-preview` also accepts medium), so a static list would be
  * wrong for some models. Hidden entirely while `effortLevels` is empty —
  * either the capability query hasn't resolved yet, or this model genuinely
  * doesn't support reasoning.

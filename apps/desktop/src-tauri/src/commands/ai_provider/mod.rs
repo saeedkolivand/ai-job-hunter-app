@@ -376,19 +376,28 @@ pub trait AiProvider: Send + Sync {
     /// Capability matrix for a given model on this provider.
     fn capabilities(&self, model: &str) -> ModelCapabilities;
 
-    /// The reasoning-effort levels this provider currently offers for `model` —
-    /// empty when the model doesn't support reasoning at all (mirrors
-    /// `capabilities(model).supports_reasoning`; empty whenever that is
-    /// false). A property of the provider's wire API: for a provider whose
+    /// The reasoning-effort levels this provider currently offers for
+    /// `model` — empty when the app has no LEVER to influence this model's
+    /// reasoning effort, which is NARROWER than "the model doesn't reason at
+    /// all" (`capabilities(model).supports_reasoning`). Those two are
+    /// related but NOT a strict mirror: `supports_reasoning` says whether
+    /// the model reasons at all (a CLI coding agent always does — it's
+    /// `true` uniformly across every backend, see
+    /// `cli_agent::CliAgentClient::capabilities`), while `effort_levels`
+    /// says whether THIS APP can steer that effort via a request parameter
+    /// — a CLI agent's `effort` field is honored only by Codex
+    /// (`cli_agent::CliAgentClient::effort_levels`), so every other backend
+    /// has `supports_reasoning: true` but `effort_levels()` empty. A
+    /// property of the provider's wire API otherwise: for a provider whose
     /// accepted level SET is uniform across every reasoning-capable model
     /// this is a fixed list; Gemini's genuinely varies per model tier (see
     /// `gemini::gemini_effort_levels`'s doc comment) so it overrides this
     /// per-model instead. `ai_model_capabilities` surfaces this as
-    /// `effortLevels` — the renderer's effort picker renders exactly what
-    /// this method returns, never a hardcoded per-provider TS mirror, so a
-    /// new model/provider needs zero renderer change. DEFAULT: no reasoning
-    /// support (empty) — every provider that supports reasoning overrides
-    /// this.
+    /// `effortLevels` — the renderer's effort picker gates on THIS method's
+    /// result, never on `supportsReasoning` directly, and never a hardcoded
+    /// per-provider TS mirror, so a new model/provider needs zero renderer
+    /// change. DEFAULT: no reasoning-effort lever (empty) — every provider
+    /// that offers one overrides this.
     fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
         Vec::new()
     }
@@ -930,20 +939,39 @@ fn l2_normalize(v: &mut [f64]) {
 /// immediately (never retried), abandoning whatever of the chunk is still
 /// unsent.
 ///
-/// Returns the FINAL working cap alongside the vectors/usage — the caller
-/// carries it forward as the STARTING cap for the next chunk, so the halving
-/// ladder is learned once per document, not re-paid by every chunk (see
+/// Returns the FINAL working cap alongside the vectors — the caller carries
+/// it forward as the STARTING cap for the next chunk, so the halving ladder
+/// is learned once per document, not re-paid by every chunk (see
 /// `embed_adaptive`).
+///
+/// `learned` (the returned/carried-forward value) is DELIBERATELY a
+/// SEPARATE variable from the per-attempt `cap` used to size each actual
+/// send. Only a genuine provider context-length REJECTION lowers `learned`;
+/// clamping `cap` down to whatever's left in a short final remainder (e.g.
+/// the chunk's last 200 chars) must NEVER also shrink `learned` — that was
+/// the bug: on a doc long enough to hit `bounded_split_cap`'s growth path,
+/// the tiny leftover tail of chunk N would poison the cap chunk N+1 starts
+/// at, permanently collapsing the "learned once" optimization into a
+/// near-worst-case per-piece ladder for the REST of the document (measured:
+/// a 300k-char document degraded to 1-char sends and hit
+/// `MAX_TOTAL_EMBED_ATTEMPTS` with barely 3% actually embedded).
+///
+/// `usage` is an OUTPUT parameter, not part of the return value, because it
+/// must accumulate a REAL provider-reported token count for every call that
+/// actually succeeded even when a LATER attempt in this same chunk fails —
+/// an early `return Err(..)` (the attempt ceiling, a non-context-length
+/// error, or the length-floor give-up) must never silently discard the
+/// spend already billed by the provider for the pieces that DID succeed.
 async fn embed_chunk_adaptive<A: EmbedAttempt>(
     attempt: &A,
     chunk: &str,
     initial_cap: usize,
     attempts_used: &mut usize,
-) -> AppResult<(Vec<Vec<f64>>, Usage, usize)> {
+    usage: &mut Usage,
+) -> AppResult<(Vec<Vec<f64>>, usize)> {
     let mut vectors = Vec::new();
-    let mut usage = Usage::default();
     let mut rest = chunk;
-    let mut cap = initial_cap.min(chunk.chars().count());
+    let mut learned = initial_cap.min(chunk.chars().count());
     // `while first_pass || !rest.is_empty()`: an empty chunk (the whole
     // document was empty) still makes exactly ONE provider call, matching
     // every other caller's single-attempt behavior for empty input — it does
@@ -951,7 +979,10 @@ async fn embed_chunk_adaptive<A: EmbedAttempt>(
     let mut first_pass = true;
     while first_pass || !rest.is_empty() {
         first_pass = false;
-        cap = cap.min(rest.chars().count());
+        // The length to actually send THIS pass — bounded by what's left in
+        // `rest` and by the best-known working size (`learned`). This local
+        // clamp must never feed back into `learned` itself (see doc comment).
+        let mut cap = learned.min(rest.chars().count());
         loop {
             if *attempts_used >= MAX_TOTAL_EMBED_ATTEMPTS {
                 return Err(AppError::Provider(format!(
@@ -981,6 +1012,9 @@ async fn embed_chunk_adaptive<A: EmbedAttempt>(
                                 "embed context-length error at {sent_len} chars — retrying at {smaller} chars"
                             );
                             cap = smaller;
+                            // A genuine discovery — this is the one place
+                            // `learned` may legitimately shrink.
+                            learned = smaller;
                         }
                         None => {
                             return Err(AppError::Provider(format!(
@@ -994,7 +1028,7 @@ async fn embed_chunk_adaptive<A: EmbedAttempt>(
             }
         }
     }
-    Ok((vectors, usage, cap))
+    Ok((vectors, learned))
 }
 
 /// Embed the FULL `text` — chunk it at `initial_cap` chars
@@ -1021,27 +1055,33 @@ async fn embed_chunk_adaptive<A: EmbedAttempt>(
 /// against a provider whose real limit was far below the nominal cap; with
 /// this, only the first chunk pays that discovery cost. `attempts` is the
 /// running TOTAL across every chunk, bounded by [`MAX_TOTAL_EMBED_ATTEMPTS`].
+///
+/// `usage` is an OUTPUT parameter (see `embed_chunk_adaptive`'s doc comment)
+/// so a failure partway through a multi-chunk document — the attempt
+/// ceiling, or ANY error on chunk 5 of 8 — still leaves the REAL usage
+/// billed for chunks 1-4 available to the caller (`embed_text`) to record.
+/// Before this, `embed_text`'s `.await?` on the old `AppResult<(Vec<f64>,
+/// Usage)>` return discarded the whole `Usage` on any error, silently
+/// dropping already-billed spend from the ledger — a cost-VISIBILITY
+/// regression versus the pre-chunking code (which made exactly one call, so
+/// a failure billed nothing to begin with).
 async fn embed_adaptive<A: EmbedAttempt>(
     attempt: &A,
     text: &str,
     initial_cap: usize,
-) -> AppResult<(Vec<f64>, Usage)> {
+    usage: &mut Usage,
+) -> AppResult<Vec<f64>> {
     let split_cap = bounded_split_cap(text.chars().count(), initial_cap);
     let chunks = split_into_chunks(text, split_cap);
     let mut pooled: Vec<f64> = Vec::new();
     let mut expected_dim: Option<usize> = None;
     let mut piece_count: usize = 0;
-    let mut usage = Usage::default();
     let mut attempts: usize = 0;
     let mut learned_cap = split_cap;
     for chunk in chunks {
-        let (pieces, chunk_usage, cap_used) =
-            embed_chunk_adaptive(attempt, chunk, learned_cap, &mut attempts).await?;
+        let (pieces, cap_used) =
+            embed_chunk_adaptive(attempt, chunk, learned_cap, &mut attempts, usage).await?;
         learned_cap = cap_used;
-        usage.input_tokens = usage.input_tokens.saturating_add(chunk_usage.input_tokens);
-        usage.output_tokens = usage
-            .output_tokens
-            .saturating_add(chunk_usage.output_tokens);
         for values in pieces {
             piece_count += 1;
             match expected_dim {
@@ -1076,7 +1116,7 @@ async fn embed_adaptive<A: EmbedAttempt>(
         }
     }
     l2_normalize(&mut pooled);
-    Ok((pooled, usage))
+    Ok(pooled)
 }
 
 /// Embed `text` with an explicit provider/model, returning a space-tagged vector.
@@ -1125,7 +1165,13 @@ pub async fn embed_text(
         client: client.as_ref(),
         model: &model,
     };
-    let (values, usage) = embed_adaptive(&attempt, text, initial_cap).await?;
+    // `usage` accumulates as `embed_adaptive` runs, even if it ultimately
+    // errors (a multi-chunk document can bill several real provider calls
+    // before failing on a later one) — record whatever was actually billed
+    // BEFORE propagating the error, so a partial failure never silently
+    // drops already-spent tokens from the ledger.
+    let mut usage = Usage::default();
+    let result = embed_adaptive(&attempt, text, initial_cap, &mut usage).await;
     record_usage(
         app,
         provider.as_str(),
@@ -1134,6 +1180,7 @@ pub async fn embed_text(
         usage.output_tokens,
         base_url.as_deref(),
     );
+    let values = result?;
     if values.is_empty() {
         return Err(AppError::Provider(format!(
             "{} returned an empty embedding.",
@@ -1587,7 +1634,7 @@ mod tests {
     async fn embed_adaptive_retries_and_succeeds_on_shorter_input() {
         let attempt = FakeEmbedAttempt::new(3000);
         let text = "a".repeat(8000);
-        let result = embed_adaptive(&attempt, &text, 8000).await;
+        let result = embed_adaptive(&attempt, &text, 8000, &mut Usage::default()).await;
         assert!(result.is_ok());
         // 8000 (fail) -> 4000 (fail) -> 2000 (succeeds, <= 3000). The
         // successful 2000-char cap then STICKS for the rest of this chunk
@@ -1621,7 +1668,7 @@ mod tests {
         // complete, indexed vector.
         let attempt = FakeEmbedAttempt::new(2000); // provider accepts <= 2000 chars
         let text = "a".repeat(24_000);
-        let result = embed_adaptive(&attempt, &text, 8000).await;
+        let result = embed_adaptive(&attempt, &text, 8000, &mut Usage::default()).await;
         assert!(result.is_ok());
         assert_eq!(
             attempt
@@ -1642,13 +1689,53 @@ mod tests {
         // chunks 2 and 3 start straight at the already-learned 2000-char cap.
         let attempt = FakeEmbedAttempt::new(2000);
         let text = "a".repeat(24_000);
-        let result = embed_adaptive(&attempt, &text, 8000).await;
+        let result = embed_adaptive(&attempt, &text, 8000, &mut Usage::default()).await;
         assert!(result.is_ok());
         // chunk 1: 2 failures (8000, 4000) + 4 successes (2000 chars x4) = 6.
         // chunk 2 and chunk 3: 4 successes each, ZERO failures (learned) = 8.
         // 6 + 8 = 14 — NOT the 18 it would be if every chunk re-discovered
         // the cap independently.
         assert_eq!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst), 14);
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_does_not_let_a_chunks_remainder_poison_the_learned_cap() {
+        // The reported production bug, specifically on the `bounded_split_cap`
+        // GROWTH path (document long enough to need more than
+        // `MAX_CHUNKS_PER_DOCUMENT` chunks at the nominal cap — the growth
+        // ratio doesn't divide evenly by the provider's real limit, so every
+        // chunk ends with a short remainder). A chunk's tiny final remainder
+        // used to permanently shrink the "learned" cap the NEXT chunk started
+        // at, collapsing the whole rest of the document toward 1-char sends
+        // and hitting the attempt ceiling with only a sliver actually
+        // embedded. 300,000 chars at cap=8000 needs 38 chunks (> 32), so
+        // `bounded_split_cap` grows the chunk size to 9,375; the provider
+        // only accepts <= 5,000 chars, forcing exactly one real discovery
+        // (9375 fails, halves to 4687, which succeeds) — that 4687 must
+        // carry forward, not the 1-char tail left over after it.
+        let attempt = FakeEmbedAttempt::new(5000);
+        let text = "a".repeat(300_000);
+        let result = embed_adaptive(&attempt, &text, 8000, &mut Usage::default()).await;
+        assert!(
+            result.is_ok(),
+            "must complete, not hit the {MAX_TOTAL_EMBED_ATTEMPTS}-call ceiling"
+        );
+        assert_eq!(
+            attempt
+                .success_len_sum
+                .load(std::sync::atomic::Ordering::SeqCst),
+            300_000,
+            "the whole document must be embedded"
+        );
+        // Chunk 1: [9375 FAIL, 4687 OK, 4687 OK, 1 OK] = 4 calls, learns 4687.
+        // Chunks 2-32 (31 more): each starts AT the learned 4687, so
+        // [4687 OK, 4687 OK, 1 OK] = 3 calls, ZERO re-discovery failures.
+        // 4 + 31*3 = 97 — nowhere near the un-fixed near-200-and-abort.
+        assert_eq!(
+            attempt.calls.load(std::sync::atomic::Ordering::SeqCst),
+            97,
+            "the learned cap must carry across chunks, not be re-discovered near-per-char"
+        );
     }
 
     #[tokio::test]
@@ -1664,7 +1751,9 @@ mod tests {
         // discovery failures — far past the 200-call ceiling.
         let attempt = FakeEmbedAttempt::new(EMBED_TRUNCATION_FLOOR_CHARS);
         let text = "a".repeat(200_000);
-        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let err = embed_adaptive(&attempt, &text, 8000, &mut Usage::default())
+            .await
+            .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains(&MAX_TOTAL_EMBED_ATTEMPTS.to_string()),
@@ -1688,7 +1777,7 @@ mod tests {
         // halving logic tested elsewhere.
         let attempt = FakeEmbedAttempt::new(usize::MAX);
         let text = "a".repeat(2_000_000);
-        let result = embed_adaptive(&attempt, &text, 8000).await;
+        let result = embed_adaptive(&attempt, &text, 8000, &mut Usage::default()).await;
         assert!(result.is_ok());
         let calls = attempt.calls.load(std::sync::atomic::Ordering::SeqCst);
         assert!(calls <= 32, "expected at most 32 calls, got {calls}");
@@ -1706,7 +1795,9 @@ mod tests {
         // A threshold below the floor never succeeds — the loop must stop.
         let attempt = FakeEmbedAttempt::new(100);
         let text = "a".repeat(8000);
-        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let err = embed_adaptive(&attempt, &text, 8000, &mut Usage::default())
+            .await
+            .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains(&EMBED_TRUNCATION_FLOOR_CHARS.to_string()),
@@ -1726,7 +1817,9 @@ mod tests {
         // requests), and the give-up error falsely said "500 characters".
         let attempt = FakeEmbedAttempt::new(100); // never succeeds — forces a give-up
         let text = "a".repeat(300);
-        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let err = embed_adaptive(&attempt, &text, 8000, &mut Usage::default())
+            .await
+            .unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("300"),
@@ -1762,11 +1855,62 @@ mod tests {
         }
 
         let attempt = AlwaysUnauthorized(std::sync::atomic::AtomicUsize::new(0));
-        let err = embed_adaptive(&attempt, "short text", 8000)
+        let err = embed_adaptive(&attempt, "short text", 8000, &mut Usage::default())
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Config(_)));
         assert_eq!(attempt.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_leaves_partial_usage_in_the_output_param_when_a_later_chunk_fails() {
+        // Simulates a 429 on chunk 3 of 4 (a non-context-length error, never
+        // retried): the FIRST 2 chunks' REAL provider-reported usage must
+        // still be visible to the caller via the `usage` OUTPUT param, never
+        // silently discarded just because the overall call ultimately
+        // failed — `embed_text` records this before propagating the error,
+        // so a partial embed no longer drops already-billed spend from the
+        // ledger (the pre-chunking code made exactly one call per document,
+        // so a failure billed nothing to begin with; this restores that
+        // "never lose real usage" property for the new multi-chunk path).
+        struct FailAfterNSuccesses {
+            succeed_calls: usize,
+            calls: std::sync::atomic::AtomicUsize,
+        }
+
+        #[async_trait]
+        impl EmbedAttempt for FailAfterNSuccesses {
+            async fn attempt(&self, _text: &str) -> AppResult<(Vec<f64>, Usage)> {
+                let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n < self.succeed_calls {
+                    Ok((
+                        vec![0.1, 0.2],
+                        Usage {
+                            input_tokens: 100,
+                            output_tokens: 0,
+                        },
+                    ))
+                } else {
+                    Err(AppError::RateLimited("mock 429".to_string()))
+                }
+            }
+        }
+
+        let attempt = FailAfterNSuccesses {
+            succeed_calls: 2,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let text = "a".repeat(40); // cap=10 -> 4 top-level chunks, no growth
+        let mut usage = Usage::default();
+        let result = embed_adaptive(&attempt, &text, 10, &mut usage).await;
+        assert!(
+            result.is_err(),
+            "the 3rd chunk's failure must still propagate"
+        );
+        assert_eq!(
+            usage.input_tokens, 200,
+            "usage from the 2 chunks that succeeded before the failure must survive"
+        );
     }
 
     // ── split_into_chunks / l2_normalize (pure helpers) ─────────────────────
@@ -1876,7 +2020,10 @@ mod tests {
             vectors: vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]],
         };
 
-        let (values, usage) = embed_adaptive(&attempt, &text, 10).await.unwrap();
+        let mut usage = Usage::default();
+        let values = embed_adaptive(&attempt, &text, 10, &mut usage)
+            .await
+            .unwrap();
 
         let texts = attempt.call_texts.lock().unwrap();
         assert_eq!(texts.len(), 3, "the whole document must be embedded");
@@ -1903,7 +2050,10 @@ mod tests {
             call_texts: std::sync::Mutex::new(Vec::new()),
             vectors: vec![vec![3.0, 4.0]],
         };
-        let (values, usage) = embed_adaptive(&attempt, "short doc", 8000).await.unwrap();
+        let mut usage = Usage::default();
+        let values = embed_adaptive(&attempt, "short doc", 8000, &mut usage)
+            .await
+            .unwrap();
         assert_eq!(attempt.call_texts.lock().unwrap().len(), 1);
         assert!((values[0] - 0.6).abs() < 1e-9);
         assert!((values[1] - 0.8).abs() < 1e-9);

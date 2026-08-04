@@ -184,6 +184,40 @@ fn rate_for_matches_a_dot_form_id_against_a_dash_form_row() {
 }
 
 #[test]
+fn rate_for_gives_gemini_3_pro_preview_its_own_row_not_the_default_fallback() {
+    // No longer curated-list selectable — the model is SHUT DOWN and
+    // `provider-meta.ts` now ships `gemini-3.6-flash` instead — but the row
+    // is kept for historical spend records (see the doc comment in
+    // `spend/mod.rs`), so it must still resolve to its own real rate rather
+    // than falling through to DEFAULT_RATE (3.00/15.00).
+    assert_eq!(
+        rate_for("gemini-3-pro-preview").map(|(p, _, _)| *p),
+        Some("gemini-3-pro-preview")
+    );
+    let cost = estimate_cost("gemini-3-pro-preview", 1_000_000, 1_000_000);
+    assert!((cost - (2.00 + 12.00)).abs() < 1e-9, "got {cost}");
+    // Its `.1` sibling shares the "gemini-3-" prefix after dot/dash
+    // normalization but must NOT collide with this row (or vice versa).
+    assert_ne!(
+        rate_for("gemini-3.1-pro-preview").map(|(p, _, _)| *p),
+        Some("gemini-3-pro-preview")
+    );
+}
+
+#[test]
+fn rate_for_gives_gemini_3_6_flash_its_own_row_not_the_default_fallback() {
+    // Curated-list default (`provider-meta.ts`, replacing the shut-down
+    // `gemini-3-pro-preview`) — must resolve to its own real rate, not
+    // DEFAULT_RATE (3.00/15.00).
+    assert_eq!(
+        rate_for("gemini-3.6-flash").map(|(p, _, _)| *p),
+        Some("gemini-3.6-flash")
+    );
+    let cost = estimate_cost("gemini-3.6-flash", 1_000_000, 1_000_000);
+    assert!((cost - (1.50 + 7.50)).abs() < 1e-9, "got {cost}");
+}
+
+#[test]
 fn estimate_cost_strips_a_vendor_prefix_before_matching() {
     // An id seen through an OpenRouter-style gateway (`anthropic/claude-fable-5`)
     // must hit the bare model's row, not silently fall through to DEFAULT_RATE.

@@ -204,23 +204,33 @@ fn gemini_is_v3_or_later(model: &str) -> bool {
 /// Reasoning-effort levels Gemini 3.x accepts, PER MODEL — Google's live
 /// table (`ai.google.dev/gemini-api/docs/thinking`, fetched 2026-08-04)
 /// shows the accepted subset genuinely varies by model TIER, not just by
-/// version (`gemini-3-pro-preview` supports only `low`/`high`;
-/// `gemini-3.1-pro-preview` additionally supports `medium`) — unlike every
+/// version (`gemini-3.1-flash-lite-image` supports only `minimal`/`high`;
+/// `gemini-3.1-pro-preview` supports `low`/`medium`/`high`) — unlike every
 /// other predicate in this crate, there is no clean shape rule to derive
 /// this from the model id, so this is a genuine per-model lookup sourced
 /// directly from that table:
 ///
 /// | model                       | levels                          |
 /// |------------------------------|---------------------------------|
-/// | gemini-3-pro-preview          | low, high                       |
 /// | gemini-3.1-pro-preview         | low, medium, high                |
 /// | gemini-3.1-flash-lite-image    | minimal, high                    |
 /// | gemini-3-flash-preview, gemini-3.5-flash(-lite), gemini-3.6-flash | minimal, low, medium, high |
+/// | gemini-3-pro-preview (SHUT DOWN — `ai.google.dev/gemini-api/docs/models`, checked 2026-08-04) | low, high |
 ///
 /// Level acceptance is enforced POST-auth (proto/shape validation accepts
 /// any `ThinkingLevel` enum member on every model — a request 400s only
 /// later, on the model-specific check), so this table could not be probed
 /// live without a key; treat Google's docs table as authoritative.
+///
+/// `gemini-3-pro-preview`'s row is kept even though the model itself is
+/// shut down: a user with an already-saved config (or who types a model id
+/// manually — the field is free text) still gets its real historical
+/// levels instead of the generic `["high"]` fallback below, and a genuinely
+/// wrong 400 is strictly worse than an accurate answer for a dead model
+/// either way (the actual `embedContent`/`generateContent` call still fails
+/// the SAME way regardless of what this function returns). Dropping the row
+/// would be equally defensible — re-litigate if it becomes confusing rather
+/// than helpful.
 ///
 /// A model that passes [`gemini_is_v3_or_later`] but is NOT one of the rows
 /// above is a genuinely new/unreleased id — falls back to `["high"]`, the
@@ -242,6 +252,8 @@ fn gemini_effort_levels(model: &str) -> Vec<&'static str> {
     } else if m.contains("gemini-3.1-pro-preview") {
         vec!["low", "medium", "high"]
     } else if m.contains("gemini-3-pro-preview") {
+        // SHUT DOWN as of 2026-08-04 (`ai.google.dev/gemini-api/docs/models`)
+        // — kept for a saved/manually-typed id, see the doc comment above.
         vec!["low", "high"]
     } else if m.contains("gemini-3-flash-preview")
         || m.contains("gemini-3.5-flash")
@@ -427,13 +439,24 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     // DIFFERENT API this app does not call — going by the reference for the
     // endpoint actually in use here, pre-3 models (2.5 and earlier) simply
     // don't get an effort-driven thinking config.
+    //
+    // GATED ON THE PER-MODEL LEVEL SET (`gemini_effort_levels`), not just
+    // "is this Gemini 3+" — `effort` is stored PER PROVIDER, not per model
+    // (`preferences-store.ts`), and nothing clears it on a model switch:
+    // picking `medium` on `gemini-3.1-pro-preview` (valid there) then
+    // switching to `gemini-3-pro-preview` (same provider, only accepts
+    // low/high) must not ship `thinkingLevel: "MEDIUM"` to a model that
+    // 400s on it. `gemini_effort_levels` already returns `[]` for a pre-3
+    // model, so this one check covers both gates — an invalid/stale level
+    // for the CURRENT model is silently omitted (the request still sends,
+    // just without an effort override) rather than sent and rejected.
     if let Some(effort) = req
         .effort
         .as_deref()
         .map(str::trim)
         .filter(|e| !e.is_empty())
     {
-        if gemini_is_v3_or_later(&req.model) {
+        if gemini_effort_levels(&req.model).contains(&effort) {
             thinking_config.insert(
                 "thinkingLevel".to_string(),
                 json!(effort.to_ascii_uppercase()),
@@ -465,16 +488,15 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
 ///
 /// **Nesting matters.** The REST reference for `models.embedContent` lists a
 /// TOP-LEVEL `outputDimensionality` field as `(deprecated)` — "Please use
-/// `EmbedContentConfig.output_dimensionality` instead" — verified against the
+/// `EmbedContentConfig.output_dimensionality` instead" — and
+/// `EmbedContentConfig`'s own JSON representation confirms the nested field
+/// name is `outputDimensionality` (camelCase) — both verified against the
 /// live `/api/embeddings` REST reference, not memory. The wire field is
-/// nested camelCase JSON: `embedContentConfig: { outputDimensionality }`, NOT
-/// a snake_case field at the request root. Sending the deprecated top-level
-/// form risks the API silently ignoring it (proto3-JSON transcoding may
-/// still accept an unknown/deprecated field with no error), which would
-/// silently store 3072-dim vectors again with no visible failure — this is
-/// UNVERIFIED against a live call (no API key available in this
-/// environment); confirm the returned vector's `dim` is 768 on first real
-/// use.
+/// therefore nested camelCase JSON: `embedContentConfig: { outputDimensionality }`,
+/// NOT a snake_case field at the request root — sending the deprecated
+/// top-level form would risk the API silently ignoring it (proto3-JSON
+/// transcoding may accept an unknown/deprecated field with no error),
+/// silently storing 3072-dim vectors again with no visible failure.
 fn build_embed_body(m: &str, text: &str) -> Value {
     json!({
         "model": format!("models/{m}"),
@@ -1377,13 +1399,38 @@ mod tests {
 
     #[test]
     fn chat_stream_body_sends_thinking_level_for_a_v3_model_with_effort_set() {
+        // gemini-3.1-pro-preview — LIVE, Preview status
+        // (`ai.google.dev/gemini-api/docs/models`, checked 2026-08-04).
         let mut req = base_request();
-        req.model = "gemini-3-pro-preview".to_string();
+        req.model = "gemini-3.1-pro-preview".to_string();
         req.effort = Some("low".to_string());
         let body = build_chat_stream_body(&req);
         assert_eq!(
             body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
             json!("LOW")
+        );
+    }
+
+    #[test]
+    fn chat_stream_body_omits_thinking_level_invalid_for_the_current_model_tier() {
+        // The reported model-switch scenario: `effort` is stored PER PROVIDER
+        // (`preferences-store.ts`), not per model, and nothing clears it on a
+        // model switch. "medium" is valid for gemini-3.1-pro-preview but NOT
+        // for gemini-3.1-flash-lite-image (minimal/high only — LIVE, Stable
+        // status, `ai.google.dev/gemini-api/docs/models`, checked
+        // 2026-08-04) — both are Gemini 3+, so gating on
+        // `gemini_is_v3_or_later` alone would ship an invalid level and 400.
+        // Must omit `thinkingLevel` entirely rather than send a level the
+        // CURRENT model rejects.
+        let mut req = base_request();
+        req.model = "gemini-3.1-flash-lite-image".to_string();
+        req.effort = Some("medium".to_string());
+        let body = build_chat_stream_body(&req);
+        assert!(
+            body["generationConfig"]["thinkingConfig"]
+                .get("thinkingLevel")
+                .is_none(),
+            "medium is invalid for gemini-3.1-flash-lite-image (minimal/high only) — must not be sent"
         );
     }
 
@@ -1417,9 +1464,11 @@ mod tests {
         // gate and the v3 effort gate — both fields must land in the SAME
         // thinkingConfig object, not one clobbering the other. "high" is the
         // one level every row in `gemini_effort_levels`'s table accepts, so
-        // it's valid for gemini-3-pro-preview specifically too.
+        // it's valid for gemini-3.1-pro-preview specifically too.
+        // gemini-3.1-pro-preview — LIVE, Preview status
+        // (`ai.google.dev/gemini-api/docs/models`, checked 2026-08-04).
         let mut req = base_request();
-        req.model = "gemini-3-pro-preview".to_string();
+        req.model = "gemini-3.1-pro-preview".to_string();
         req.effort = Some("high".to_string());
         let body = build_chat_stream_body(&req);
         let tc = &body["generationConfig"]["thinkingConfig"];
@@ -1429,6 +1478,10 @@ mod tests {
 
     #[test]
     fn effort_levels_are_looked_up_per_model_tier_not_per_provider() {
+        // gemini-3-pro-preview is SHUT DOWN (checked 2026-08-04) — this
+        // assertion is intentional, not stale: it locks in the row's kept
+        // historical value (see the doc comment on `gemini_effort_levels`),
+        // not a claim the model is selectable.
         assert_eq!(
             gemini_effort_levels("gemini-3-pro-preview"),
             vec!["low", "high"]
