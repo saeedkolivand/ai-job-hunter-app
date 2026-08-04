@@ -20,8 +20,10 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use parking_lot::Mutex;
+use regex::Regex;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -158,12 +160,14 @@ impl ContactProfile {
     /// reproduce, so the genuinely-rendered link fails set membership there
     /// and false-fires `header_url_mismatch`. Capping the bare URL first, the
     /// same way in both methods, is what keeps them recording the identical
-    /// post-cap string by construction. Every label/URL that ends up INSIDE
-    /// a `[Label](url)` construct goes through [`sanitize_link_part`], not
-    /// plain [`sanitize_header_part`] — it additionally drops `[`, `]`, `(`,
-    /// `)` so a value can't close the link early or open a second one;
-    /// location/email/phone stay on [`sanitize_header_part`] since they're
-    /// never bracket-wrapped.
+    /// post-cap string by construction. Every label that ends up INSIDE a
+    /// `[Label](url)` construct goes through [`sanitize_link_label`] (drops
+    /// `[`, `]`, `(`, `)` — safe for display text); every URL goes through
+    /// [`sanitize_link_url`] instead (drops `[`/`]` but PERCENT-ENCODES
+    /// `(`/`)` — deleting a paren from a URL corrupts it into a different
+    /// destination, unlike a label). Neither is plain [`sanitize_header_part`]
+    /// — location/email/phone stay on that since they're never
+    /// bracket-wrapped.
     pub fn header_markdown(&self, lang: &str) -> String {
         let mut parts: Vec<String> = Vec::new();
         if let Some(loc) = &self.location {
@@ -179,21 +183,21 @@ impl ContactProfile {
             parts.push(sanitize_header_part(phone));
         }
         if let Some(url) = non_empty(&self.linkedin).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[LinkedIn]({})", sanitize_link_part(url)));
+            parts.push(format!("[LinkedIn]({})", sanitize_link_url(url)));
         }
         if let Some(url) = non_empty(&self.github).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[GitHub]({})", sanitize_link_part(url)));
+            parts.push(format!("[GitHub]({})", sanitize_link_url(url)));
         }
         if let Some(url) = non_empty(&self.website).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[Website]({})", sanitize_link_part(url)));
+            parts.push(format!("[Website]({})", sanitize_link_url(url)));
         }
         for link in &self.extra_links {
             let (label, url) = (link.label.trim(), link.url.trim());
             if !label.is_empty() && !url.is_empty() && is_safe_header_url(url) {
                 parts.push(format!(
                     "[{}]({})",
-                    sanitize_link_part(label),
-                    sanitize_link_part(url)
+                    sanitize_link_label(label),
+                    sanitize_link_url(url)
                 ));
             }
         }
@@ -256,7 +260,7 @@ impl ContactProfile {
     /// `mailto:` link.
     ///
     /// Routed through the SAME `is_safe_header_url` filter [`Self::header_markdown`]
-    /// applies, and the same PER-VALUE sanitizer — `sanitize_link_part` for a
+    /// applies, and the same PER-VALUE sanitizer — [`sanitize_link_url`] for a
     /// URL that renders inside `[Label](…)` there, `sanitize_header_part` for
     /// the bare email — so the two can never fall out of lockstep: an
     /// unsafe-scheme URL `header_markdown` drops must never appear here as
@@ -269,6 +273,17 @@ impl ContactProfile {
     /// `header_markdown` applies, so the genuinely-rendered link fails set
     /// membership and `header_url_mismatch` (CRITICAL, blocking) fires on an
     /// unmodified, legitimate profile.
+    ///
+    /// ONE deliberate, tested exception to that lockstep (LOW, security
+    /// re-review — a stale "always in lockstep" claim with no named
+    /// exception is exactly the kind of drift this branch keeps re-finding):
+    /// the `extra_links` loop below does NOT require a non-empty `label`,
+    /// while [`Self::header_markdown`]'s does — an extra link with an empty
+    /// label is listed here as "the profile's own link" even though
+    /// `header_markdown` never renders it. That is intentional, not a bug:
+    /// it is what makes an incomplete extra-link entry (a URL saved with no
+    /// label yet) surface as a `header_url_missing` warning instead of
+    /// silently vanishing from validation entirely.
     pub fn header_urls(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = non_empty(&self.email) {
@@ -283,12 +298,12 @@ impl ContactProfile {
         .flatten()
         .filter(|u| is_safe_header_url(u))
         {
-            out.push(sanitize_link_part(url));
+            out.push(sanitize_link_url(url));
         }
         for link in &self.extra_links {
             let url = link.url.trim();
             if !url.is_empty() && is_safe_header_url(url) {
-                out.push(sanitize_link_part(url));
+                out.push(sanitize_link_url(url));
             }
         }
         out
@@ -340,43 +355,101 @@ fn non_empty(v: &Option<String>) -> Option<&str> {
     v.as_deref().map(str::trim).filter(|s| !s.is_empty())
 }
 
-/// Scheme allowlist for a header link — `http(s)` or `mailto:` only.
+/// Scheme allowlist for the four fields that get wrapped in `[Label](url)` —
+/// `linkedin`/`github`/`website`/`extra_links` — `http(s)` ONLY.
 /// `javascript:`/`data:` (and anything else) never render as a clickable
 /// header link, however lenient upstream URL classification/import is.
+///
+/// MEDIUM (security re-review): `mailto:` used to be allowed here too, but
+/// this allowlist ONLY ever gates a value headed into `[Label](url)` — and
+/// `model::rich::MD_LINK_RE` (the downstream matcher that turns that markdown
+/// back into a real, clickable [`TextRun`](crate::model::rich::TextRun) link)
+/// only recognizes an `https?://` URL group, never `mailto:`. A
+/// `mailto:`-valued Website/LinkedIn/GitHub/extra-link rendered as literal,
+/// unlinked `[Website](mailto:…)` markdown text instead of a clickable link
+/// — `EMAIL_RE` would still auto-link the bare address INSIDE that literal
+/// text, but the surrounding `[Website](mailto:` / `)` bytes stayed visible.
+/// The dedicated `email` field is the correct, and only, place a `mailto:`
+/// target belongs — it renders bare and is auto-linked by `EMAIL_RE`, never
+/// through this allowlist or the `[Label](url)` construct at all.
 fn is_safe_header_url(url: &str) -> bool {
     let lower = url.trim().to_lowercase();
-    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+    lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// Strip control characters (newlines above all) and cap length on one
-/// already-formatted `header_markdown` part. A raw `\n` in a profile field
-/// would otherwise inject an arbitrary extra physical line — including a
-/// well-formed section heading — once the header line is spliced into plain,
-/// `\n`-split document text.
+/// True for a Unicode Format (`Cf`) character — invisible, non-rendering
+/// characters `char::is_control()` (category `Cc`) does NOT cover. LOW
+/// (security re-review): a bidi override — `RIGHT-TO-LEFT OVERRIDE` (U+202E)
+/// is the canonical example — embedded in a header value can visually
+/// REVERSE the surrounding rendered text, making a label or URL read
+/// differently than its actual byte content; every sanitizer below filters
+/// this alongside `is_control()`, not just newlines/control characters.
+/// Backed by the `regex` crate's Unicode general-category support
+/// (`\p{Cf}`) rather than a new dependency — `regex` is already a direct
+/// dependency used throughout this crate.
+fn is_format_char(c: char) -> bool {
+    static CF_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{Cf}").unwrap());
+    let mut buf = [0u8; 4];
+    CF_RE.is_match(c.encode_utf8(&mut buf))
+}
+
+/// Strip control characters (newlines above all) + Unicode Format characters
+/// (see [`is_format_char`]) and cap length on one already-formatted
+/// `header_markdown` part. A raw `\n` in a profile field would otherwise
+/// inject an arbitrary extra physical line — including a well-formed section
+/// heading — once the header line is spliced into plain, `\n`-split
+/// document text.
 fn sanitize_header_part(s: &str) -> String {
     const MAX_LEN: usize = 200;
     s.chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_format_char(*c))
         .take(MAX_LEN)
         .collect()
 }
 
-/// [`sanitize_header_part`], plus drops `[`, `]`, `(`, `)` — for a label or
-/// URL value that gets spliced into a `[Label](url)` markdown construct
-/// (never for a bare value like location/email/phone, which isn't bracket-
-/// wrapped). Those four characters could otherwise close the link early or
-/// open a second one; [`is_safe_header_url`] only checks the scheme prefix,
-/// so an `https://`-prefixed value can still carry one past it. A prior
-/// security round judged the live exploit surface already closed
-/// (import-derived labels come from [`url_label`], which cannot produce a
-/// bracket) — this is defense-in-depth, not a hole being patched, but it's
-/// cheap and it keeps every label/URL that reaches a `[Label](url)`
-/// construct byte-identical between [`ContactProfile::header_markdown`] and
-/// [`ContactProfile::header_urls`].
-fn sanitize_link_part(s: &str) -> String {
+/// [`sanitize_header_part`], plus drops `[`, `]`, `(`, `)` — for a LABEL
+/// (display text, never a real navigable target) that gets spliced into a
+/// `[Label](url)` markdown construct. Those four characters could otherwise
+/// close the link early or open a second one; [`is_safe_header_url`] only
+/// checks the scheme prefix, so an `https://`-prefixed value can still carry
+/// one past it. A prior security round judged the live exploit surface
+/// already closed (import-derived labels come from [`url_label`], which
+/// cannot produce a bracket) — this is defense-in-depth, not a hole being
+/// patched. Deleting these characters is fine for a label (display text with
+/// no semantic content to preserve); it is NOT fine for a URL — see
+/// [`sanitize_link_url`], which this is NOT used for.
+fn sanitize_link_label(s: &str) -> String {
     const MAX_LEN: usize = 200;
     s.chars()
-        .filter(|c| !c.is_control() && !matches!(c, '[' | ']' | '(' | ')'))
+        .filter(|c| !c.is_control() && !is_format_char(*c) && !matches!(c, '[' | ']' | '(' | ')'))
+        .take(MAX_LEN)
+        .collect()
+}
+
+/// [`sanitize_header_part`], plus drops `[`/`]` and PERCENT-ENCODES `(`/`)`
+/// (`%28`/`%29`) — for a URL value that gets spliced into a `[Label](url)`
+/// markdown construct. MEDIUM (security re-review): a URL sanitizer must
+/// never DELETE `(`/`)` the way [`sanitize_link_label`] does for a label —
+/// parens are common in legitimate URLs (a Wikipedia-style path segment, some
+/// callback/redirect URLs with an encoded payload) and deleting them silently
+/// corrupts the URL into a DIFFERENT destination, not a broken one.
+/// Percent-encoding is semantically transparent (a compliant client decodes
+/// `%28`/`%29` back to the exact same URL) while still removing the literal
+/// byte that could close the markdown link construct early — the actual
+/// property this sanitizer exists for. `[`/`]` stay dropped: a URL
+/// legitimately containing them is vanishingly rare (an IPv6 host literal,
+/// which never appears in a résumé profile link) and worth nothing real,
+/// unlike `(`/`)`.
+fn sanitize_link_url(s: &str) -> String {
+    const MAX_LEN: usize = 200;
+    let cleaned: String = s
+        .chars()
+        .filter(|c| !c.is_control() && !is_format_char(*c) && !matches!(c, '[' | ']'))
+        .collect();
+    cleaned
+        .replace('(', "%28")
+        .replace(')', "%29")
+        .chars()
         .take(MAX_LEN)
         .collect()
 }
@@ -555,6 +628,16 @@ fn is_personal_linkedin(url: &str) -> bool {
     host_is(url, "linkedin.com") && url.to_lowercase().contains("/in/")
 }
 
+/// A personal Xing profile is `/profile/…` — same gate shape as
+/// [`is_personal_linkedin`]'s `/in/`. `xing.com` is also a [`JOB_BOARD_HOSTS`]
+/// entry (Xing hosts job listings too), so without this a legitimate DACH
+/// candidate's personal profile link reads as job-board-adjacent to
+/// `validate::pdf_render_issues`'s header-band warning. Mirrors
+/// `isPersonalXing` in `packages/prompts/src/generate/links/links.ts`.
+pub(crate) fn is_personal_xing(url: &str) -> bool {
+    host_is(url, "xing.com") && url.to_lowercase().contains("/profile/")
+}
+
 /// A github.com URL. Combined with `is_profile_shaped` at the call site so only
 /// `github.com/<user>` (not `/<user>/<repo>`) is promoted to the candidate's
 /// GitHub — a repo link is a project reference, not an identity.
@@ -564,7 +647,16 @@ fn is_github(url: &str) -> bool {
 
 /// Known social/portfolio platform hosts whose profile page belongs on the
 /// contact line. Mirrors `PROFILE_DOMAINS` in
-/// `packages/prompts/src/generate/links/links.ts` — keep the two lists in sync.
+/// `packages/prompts/src/generate/links/links.ts` — keep the two lists in
+/// sync, WITH THREE DELIBERATE, NAMED EXCEPTIONS (a stale "keep in sync" claim
+/// with no named exceptions is what caused half this branch's parity
+/// findings — this list is not silently allowed to drift again):
+/// `about.me`/`carrd.co` are TS-only here because Rust splits what TS keeps
+/// as one list into two — they're covered on this side by [`WEBSITE_HOSTS`]
+/// instead (the "Website" field, not `extra_links`). `xing.com` is TS-only
+/// because TS's `isPersonalXing` gate (the `/profile/` shape, mirrored here by
+/// [`is_personal_xing`]) is only wired into the import path on the TS side —
+/// Rust's `classify_contact_links` has no Xing handling yet.
 const PROFILE_HOSTS: &[&str] = &[
     "linkedin.com",
     "github.com",

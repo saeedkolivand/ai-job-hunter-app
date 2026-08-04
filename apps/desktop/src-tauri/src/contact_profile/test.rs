@@ -63,6 +63,25 @@ fn header_markdown_strips_control_characters_from_every_part() {
     assert!(md.contains("[Website](https://example.dev/siteEXPERIENCE)"));
 }
 
+/// LOW (security re-review): a Unicode Format (`Cf`) character — a bidi
+/// override (`RIGHT-TO-LEFT OVERRIDE`, U+202E) above all — must be stripped
+/// too, not just `char::is_control()`'s `Cc` category. Left in, a bidi
+/// override embedded in a name/location could visually REVERSE the
+/// surrounding rendered header text.
+#[test]
+fn header_markdown_strips_bidi_override_characters() {
+    let p = ContactProfile {
+        location: Some(LocalizedText {
+            default: "Berlin\u{202E}nilreB".into(), // U+202E RIGHT-TO-LEFT OVERRIDE
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    assert_eq!(md, "BerlinnilreB");
+    assert!(!md.contains('\u{202E}'));
+}
+
 /// A non-`http(s)`/`mailto:` scheme (`javascript:`, `data:`, …) must never
 /// reach the header as a clickable link, however lenient the upstream URL
 /// classifier / import-merge path is about accepting it into the profile.
@@ -83,17 +102,32 @@ fn header_markdown_drops_unsafe_url_schemes() {
     assert_eq!(md, "alex@example.com | [Website](https://example.dev/site)");
 }
 
-/// `mailto:` is explicitly allowed (not just `http(s)`) for a named link field.
+/// MEDIUM (security re-review): `mailto:` is DROPPED, not allowed, for a
+/// named link field — `model::rich::MD_LINK_RE` (the downstream matcher that
+/// turns `[Label](url)` markdown back into a real clickable link) only
+/// recognizes an `http(s)://` URL group, never `mailto:`. A `mailto:`-valued
+/// Website used to render as literal, unlinked `[Website](mailto:…)`
+/// markdown text — `EMAIL_RE` still auto-linked the bare address buried
+/// inside it, but the surrounding brackets/parens stayed visible as text.
+/// Same shape as the javascript:/data: rejection above; proven against the
+/// actual `tokenize_rich` output below, not just the markdown string.
 #[test]
-fn header_markdown_allows_mailto_scheme_for_a_named_link() {
+fn header_markdown_drops_mailto_scheme_for_a_named_link() {
     let p = ContactProfile {
+        email: Some("alex@example.com".into()),
         website: Some("mailto:alex@example.com".into()),
         ..Default::default()
     };
+    let md = p.header_markdown("en");
+    assert_eq!(md, "alex@example.com");
+    let rich = tokenize_rich(&md);
     assert_eq!(
-        p.header_markdown("en"),
-        "[Website](mailto:alex@example.com)"
+        rich.len(),
+        1,
+        "must render as ONE clean run, never literal [Website](mailto:…) text: {rich:?}"
     );
+    assert_eq!(rich[0].link.as_deref(), Some("mailto:alex@example.com"));
+    assert_eq!(rich[0].text, "alex@example.com");
 }
 
 /// A pathologically long field is capped rather than left to balloon the
@@ -110,10 +144,12 @@ fn header_markdown_caps_an_overlong_part() {
 }
 
 /// A `[`, `]`, `(`, or `)` in a URL/label that ends up inside a `[Label](url)`
-/// construct must be dropped, not just control characters — those four
-/// characters could otherwise close the link early or open a second one.
-/// `is_safe_header_url` only checks the scheme prefix, so an
-/// `https://`-prefixed value still carries the payload past it.
+/// construct must never survive as a literal byte, not just control
+/// characters — those four characters could otherwise close the link early
+/// or open a second one. `is_safe_header_url` only checks the scheme prefix,
+/// so an `https://`-prefixed value still carries the payload past it. `[`/`]`
+/// are dropped on both sides; `(`/`)` are dropped for a label but
+/// PERCENT-ENCODED for a URL (see the next test for why).
 #[test]
 fn header_markdown_strips_link_breaking_brackets_from_url_and_label() {
     let p = ContactProfile {
@@ -124,10 +160,33 @@ fn header_markdown_strips_link_breaking_brackets_from_url_and_label() {
         }],
         ..Default::default()
     };
+    // MEDIUM (security re-review): `(`/`)` are PERCENT-ENCODED in a URL, not
+    // deleted — deleting them (as the label sanitizer still does) would
+    // corrupt a legitimate paren-bearing URL into a different destination.
+    // `%28`/`%29` decode back to the exact same URL while still removing the
+    // literal byte that could close the markdown construct early. `[`/`]`
+    // stay dropped on both sides (label AND url).
     assert_eq!(
         p.header_markdown("en"),
-        "[Website](https://example.dev/siteEXPERIENCEhttps://evil.example) | \
-         [RealurlFake](https://example.dev/extraEXPERIENCEhttps://evil.example)"
+        "[Website](https://example.dev/site%29EXPERIENCE%28https://evil.example) | \
+         [RealurlFake](https://example.dev/extra%29EXPERIENCE%28https://evil.example)"
+    );
+}
+
+/// MEDIUM (security re-review): a legitimate paren-bearing URL (a
+/// Wikipedia-style path segment is the canonical real-world example) must
+/// still resolve to the SAME destination after sanitization — the sanitizer
+/// must not corrupt it into a different URL just because it happens to
+/// contain the same two characters a malicious value would abuse.
+#[test]
+fn header_markdown_percent_encodes_parens_in_a_legitimate_url_without_corrupting_it() {
+    let p = ContactProfile {
+        website: Some("https://en.wikipedia.org/wiki/Rust_(programming_language)".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        p.header_markdown("en"),
+        "[Website](https://en.wikipedia.org/wiki/Rust_%28programming_language%29)"
     );
 }
 
@@ -190,14 +249,15 @@ fn header_urls_drops_unsafe_url_schemes_like_header_markdown() {
     );
 }
 
-/// `mailto:` is allowed (matches `header_markdown`'s scheme allowlist).
+/// `mailto:` is dropped for a named link field (matches `header_markdown`'s
+/// scheme allowlist).
 #[test]
-fn header_urls_allows_mailto_scheme_for_a_named_link() {
+fn header_urls_drops_mailto_scheme_for_a_named_link() {
     let p = ContactProfile {
         website: Some("mailto:alex@example.com".into()),
         ..Default::default()
     };
-    assert_eq!(p.header_urls(), vec!["mailto:alex@example.com".to_string()]);
+    assert_eq!(p.header_urls(), Vec::<String>::new());
 }
 
 /// The bracket-stripping in `header_markdown` must apply identically in

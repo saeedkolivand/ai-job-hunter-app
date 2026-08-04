@@ -55,5 +55,11 @@
     "contact": true,
     "firstLine": false,
     "note": "bold-wrapped URL — URL_RE's ^https?:// arm is anchored so it only matches once strip_md removes the leading **; a raw-line predicate would miss this"
+  },
+  {
+    "line": "### **Berlin · jane@example.com** ###",
+    "contact": true,
+    "firstLine": true,
+    "note": "MEDIUM: an ATX heading wrapped on BOTH ends (#-prefix AND #-suffix), bold-wrapped, with a · middot separator — none of these were exercised together before. toClean strips the ###/** on both sides to 'Berlin · jane@example.com', which has a genuine email so both arms are true"
   }
 ]

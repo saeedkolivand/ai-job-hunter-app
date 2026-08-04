@@ -97,5 +97,10 @@
     "line": "**AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA**",
     "heading": true,
     "note": "57 'A' wrapped in ** = 61 bytes RAW (over the 60-byte ceiling) but 57 bytes once strip_md removes the ** — proves the predicate must run on stripped input, not raw"
+  },
+  {
+    "line": "# PROFESSIONAL EXPERIENCE",
+    "heading": true,
+    "note": "MEDIUM: an ATX (#-prefixed) heading line was never exercised here before — toClean strips the leading '# ' the same way it strips '**', leaving the same 'PROFESSIONAL EXPERIENCE' the un-prefixed case above already proves true"
   }
 ]

@@ -39,7 +39,14 @@ export interface ContactProfile {
 
 export interface ContactProfileContract {
   get(): Promise<ContactProfile>;
-  set(profile: ContactProfile): Promise<{ success?: boolean; error?: string }>;
+  /**
+   * Rejects on failure (unmanaged store, invalid payload, storage error) —
+   * there is no in-band `{ error }` shape to inspect. A Tauri command
+   * returning `Result` rejects the invoke promise on `Err`, which is what
+   * lets `useSaveContactProfile`'s `onError` fire; an in-band error field
+   * that no caller reads is a silent, permanent save failure.
+   */
+  set(profile: ContactProfile): Promise<{ success: true }>;
   /**
    * The stored profile's header contact line as markdown, localized for `lang`
    * — built by the single shared `ContactProfile::header_markdown` (Rust), never

@@ -291,10 +291,13 @@ function looksLikeHeaderBoundary(line: string): boolean {
  * to read as a known section name — a fabricated section Rust's parser
  * would treat as real. Iterates Unicode code points (`[...name]`), not
  * UTF-16 units (`.slice`) — a surrogate pair straddling the 200 cap would
- * otherwise split into a lone, invalid surrogate.
+ * otherwise split into a lone, invalid surrogate. Strips `\p{Cc}` (control
+ * characters) AND `\p{Cf}` (Format characters, e.g. the bidi override
+ * U+202E) — a bidi override can visually REVERSE the surrounding rendered
+ * name, mirrors Rust's `is_format_char` in `contact_profile/mod.rs`.
  */
 function sanitizeHeaderName(name: string): string {
-  return [...name.replace(/\p{Cc}/gu, '')].slice(0, 200).join('');
+  return [...name.replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, 200).join('');
 }
 
 /** A real email shape (local-part `@` domain `.` tld), not just a bare `@` —
@@ -432,7 +435,16 @@ export function seedHeaderFromProfile(
     if (matches.length > 0) {
       lines[pickReplacementIndex(lines, matches)] = contactLine;
     } else {
-      lines.splice(1, 0, contactLine);
+      // CodeRabbit (security re-review): index 1 assumes line 0 is always
+      // the name — true after the fullName-driven unshift/replace above, or
+      // when the model already wrote a name/contact line on its own. But
+      // when there's no fullName to seed AND line 0 is itself a section
+      // heading (the model omitted the name line entirely), splicing at 1
+      // put the contact line INSIDE that section, right under its heading,
+      // not in the header block above it. Insert at 0 (ahead of the
+      // heading) in that case instead.
+      const insertAt = looksLikeHeaderBoundary(lines[0] ?? '') ? 0 : 1;
+      lines.splice(insertAt, 0, contactLine);
     }
   }
 
@@ -462,20 +474,29 @@ async function seedHeaderFromContactProfile(
   locale: string
 ): Promise<string> {
   const api = getClient();
-  const contact = await api.contactProfile.get().catch((err: unknown) => {
-    console.warn('seedHeaderFromContactProfile: contactProfile.get failed, header not seeded', err);
-    return undefined;
-  });
-  if (!contact) return text;
   const headerLang = toLanguageCode(meta.targetLanguage || locale);
-  const contactLine = await api.contactProfile.headerLine(headerLang).catch((err: unknown) => {
-    console.warn(
-      'seedHeaderFromContactProfile: contactProfile.headerLine failed, header not seeded',
-      err
-    );
-    return undefined;
-  });
-  if (contactLine === undefined) return text;
+  // Fired concurrently, not sequentially — headerLine's input (headerLang)
+  // doesn't depend on the fetched profile, so there is nothing to gain by
+  // awaiting `get` first; Promise.all saves a round-trip on the common
+  // (both-succeed) path. Each call keeps its own independent guard: a
+  // rejection on either one still degrades to "seed nothing," never throws.
+  const [contact, contactLine] = await Promise.all([
+    api.contactProfile.get().catch((err: unknown) => {
+      console.warn(
+        'seedHeaderFromContactProfile: contactProfile.get failed, header not seeded',
+        err
+      );
+      return undefined;
+    }),
+    api.contactProfile.headerLine(headerLang).catch((err: unknown) => {
+      console.warn(
+        'seedHeaderFromContactProfile: contactProfile.headerLine failed, header not seeded',
+        err
+      );
+      return undefined;
+    }),
+  ]);
+  if (!contact || contactLine === undefined) return text;
   return seedHeaderFromProfile(text, contact, contactLine);
 }
 

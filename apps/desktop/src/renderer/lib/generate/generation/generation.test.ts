@@ -627,6 +627,46 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     expect(out).not.toContain('\nAWARDS\n');
   });
 
+  // MEDIUM (security re-review): sanitizeHeaderName's cap iterates Unicode
+  // CODE POINTS (`[...name]`), not UTF-16 units (`.slice`) — an astral
+  // character (outside the BMP, a surrogate PAIR in UTF-16) straddling the
+  // 200 boundary would otherwise split into a lone, invalid surrogate. These
+  // two cases pin the boundary from both sides: just inside the cap, the
+  // whole character survives; just past it, the whole character is excluded
+  // — never half of one either way.
+  it('caps fullName at 200 CODE POINTS, not UTF-16 units — an astral character just inside the cap survives whole', () => {
+    const fullName = 'A'.repeat(199) + '😀' + 'BBBB';
+    const out = seedHeaderFromProfile('Some AI Written Name\n\nSUMMARY\nBody.', { fullName }, '');
+    const name = out.split('\n')[0] ?? '';
+    expect([...name]).toHaveLength(200);
+    expect(name).toBe(`${'A'.repeat(199)}😀`);
+    expect(/[\uD800-\uDBFF]$/.test(name)).toBe(false); // no lone surrogate at the cut
+  });
+
+  it('caps fullName at 200 CODE POINTS — an astral character just past the cap is excluded whole, never split into a lone surrogate', () => {
+    const fullName = `${'A'.repeat(200)}😀`;
+    const out = seedHeaderFromProfile('Some AI Written Name\n\nSUMMARY\nBody.', { fullName }, '');
+    const name = out.split('\n')[0] ?? '';
+    expect([...name]).toHaveLength(200);
+    expect(name).toBe('A'.repeat(200));
+    expect(/[\uD800-\uDBFF]$/.test(name)).toBe(false);
+  });
+
+  // LOW (security re-review): sanitizeHeaderName strips `\p{Cf}` (Unicode
+  // Format characters) too, not just `\p{Cc}` — a bidi override (U+202E)
+  // left in place could visually REVERSE the surrounding rendered name.
+  // Mirrors Rust's `is_format_char` in `contact_profile/mod.rs`.
+  it('strips a bidi override character from fullName', () => {
+    // \u202E RIGHT-TO-LEFT OVERRIDE — a JS unicode escape, not a literal bidi
+    // character in source (a literal one here would visually scramble this
+    // file for anyone viewing it, the "Trojan Source" class of concern).
+    const fullName = 'Berlin\u202EnilreB';
+    const out = seedHeaderFromProfile('Some AI Written Name\n\nSUMMARY\nBody.', { fullName }, '');
+    const name = out.split('\n')[0] ?? '';
+    expect(name).toBe('BerlinnilreB');
+    expect(name).not.toContain('\u202E');
+  });
+
   // Security re-review (HIGH, round 4): `isContactProfileEffectivelyEmpty`
   // correctly excludes `fullName` when deciding whether there's a CONTACT
   // LINE to build, but it used to also gate the whole function's early
@@ -694,6 +734,21 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const text = 'jane@old.example.com | +1 555 0000\n\nEXPERIENCE\nAcme Corp';
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
     expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nEXPERIENCE\nAcme Corp');
+  });
+
+  // CodeRabbit (security re-review): follows from the line-0 guard above —
+  // with no fullName to seed a name line, and line 0 already a section
+  // heading (the model omitted the name entirely), the no-match insertion
+  // used to hardcode index 1, which put the contact line INSIDE that
+  // section, right under its own heading, rather than in the header block
+  // above it. It must land BEFORE the heading instead.
+  it('inserts the contact line before a first-line section heading, not inside the section under it', () => {
+    const out = seedHeaderFromProfile(
+      'SUMMARY\nSenior engineer with great experience.',
+      { phone: '+49 30 0000000' },
+      '+49 30 0000000'
+    );
+    expect(out).toBe('+49 30 0000000\nSUMMARY\nSenior engineer with great experience.');
   });
 });
 

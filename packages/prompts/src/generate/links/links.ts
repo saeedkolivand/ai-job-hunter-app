@@ -8,6 +8,7 @@
  */
 
 import { detectSections, type ResumeSection } from '../../context-manager/sections.js';
+import { isAllCapsSectionHeading, isKnownSectionName } from '../text/header-contact-line.js';
 
 // Known social/portfolio domains that belong in a resume contact line.
 // `about.me`/`carrd.co` added for parity with Rust WEBSITE_HOSTS (#L1,
@@ -352,10 +353,17 @@ function classifyLinks(resume: string): ClassifiedLinks {
   // the "Website" slot — decided up front so admission below doesn't depend
   // on document order. `!isJobBoard` mirrors Rust's `!is_job_board` filter at
   // this exact point (#L1) — a job-board apex like indeed.com must never
-  // become the "Website" contact link.
+  // become the "Website" contact link. The scheme check is CASE-SENSITIVE
+  // (`startsWith`, not a case-insensitive regex) — Rust's mirrored
+  // `classify_contact_links` pre-pass uses a plain `starts_with("http://") ||
+  // starts_with("https://")`, with no lowercasing; a case-insensitive check
+  // here would admit an "HTTPS://…" candidate Rust's own pre-pass never would
+  // (LOW, security re-review — same-class divergence as everything else
+  // fixed on this branch).
   const websiteCandidates: { host: string; url: string }[] = [];
   for (const { url } of entries) {
-    if (url.startsWith('mailto:') || !/^https?:\/\//i.test(url)) continue;
+    if (url.startsWith('mailto:')) continue;
+    if (!(url.startsWith('http://') || url.startsWith('https://'))) continue;
     if (isProfileUrl(url) || !isBareRoot(url) || isJobBoard(url)) continue;
     const host = hostOf(url);
     if (host) websiteCandidates.push({ host, url });
@@ -675,17 +683,30 @@ const MD_LINK_SPAN_RE = /\[[^\]]{1,200}\]\([^)]{1,2000}\)/g;
 const HAS_MD_LINK_RE = /\[[^\]]{1,200}\]\([^)]{1,2000}\)/;
 
 /**
- * Is `line` shaped like an item TITLE — not a bullet/description line, and
- * not a full sentence (#HIGH-1)? The last-resort net's pairing step must
- * never treat a description bullet of an already-linked project, or a prose
- * sentence, as an "open slot" for a different, unrelated label. Also refuses
- * a line containing `[`/`]` (#MEDIUM) — pairing wraps the line's own raw
- * text, so a bracket inside it would produce the same broken nested-bracket
- * markdown the bracket check in `matchLineTitle` exists to prevent.
+ * Is `line` shaped like an item TITLE — not a nested/indented description
+ * line, and not a full sentence (#HIGH-1)? The last-resort net's pairing
+ * step must never treat a description bullet of an already-linked project,
+ * or a prose sentence, as an "open slot" for a different, unrelated label.
+ * Also refuses a line containing `[`/`]` (#MEDIUM) — pairing wraps the
+ * line's own raw text, so a bracket inside it would produce the same broken
+ * nested-bracket markdown the bracket check in `matchLineTitle` exists to
+ * prevent.
+ *
+ * MEDIUM (security re-review): a single top-level bullet marker ("- Fleet
+ * Tracker", "• Fleet Tracker") is stripped and the REMAINDER tested — many
+ * résumés format project TITLES themselves as a flat bulleted list, not just
+ * their descriptions, so flatly rejecting every marked line made this pool
+ * unreachable for that (common) shape. Only genuine nesting — leading
+ * whitespace/indentation before the marker, the actual textual signal of a
+ * sub-point under a parent bullet — is still rejected as a description.
+ * `unlinkedItemLineIndices`'s caller already slices on
+ * `stripLeadingMarker`'s own index when splicing the link in, so a
+ * top-level-bulleted title's marker is preserved untouched either way.
  */
 function isItemShapedLine(line: string): boolean {
-  if (stripLeadingMarker(line) > 0) return false; // a bullet/marker — a description, not a title
-  const trimmed = line.trim();
+  if (/^\s/.test(line)) return false; // indented — nested under a parent bullet, a description
+  const markerEnd = stripLeadingMarker(line);
+  const trimmed = line.slice(markerEnd).trim();
   if (!trimmed || /[.!?]\s*$/.test(trimmed)) return false; // sentence-final punctuation
   if (trimmed.includes('[') || trimmed.includes(']')) return false;
   const words = trimmed.split(/\s+/).filter(Boolean);
@@ -937,9 +958,27 @@ export function injectLinksIntoGeneratedText(
     // unreachable for every non-English résumé (PROJEKTE, PROJETS,
     // PROYECTOS, …).
     if (remaining.size) {
-      const sections = detectSections(lines.join('\n')).filter(
-        (s) => s.name === 'Projects' || s.name === 'Publications'
-      );
+      const sections = detectSections(lines.join('\n'))
+        .filter((s) => s.name === 'Projects' || s.name === 'Publications')
+        // HIGH-4 (security re-review): `detectSections`' own boundary
+        // detection (`matchesHeaderTerm` in `context-manager/sections.ts`) is
+        // a lexicon PREFIX match — `line.startsWith(term)` plus a boundary
+        // character — not a standalone-heading check. A body line merely
+        // STARTING with a lexicon term (a "Research …" job title, a
+        // "Projects" bullet) is misclassified as the section's own heading,
+        // corrupting the boundary this net writes a spliced-in link into —
+        // the fabrication class this file closes twice already, reopened
+        // through a different door. Re-verify the line `detectSections`
+        // pointed at against this PR's own standalone-heading predicates
+        // before trusting it as a boundary that may receive a write; a
+        // section whose "heading" doesn't actually pass either shape check
+        // is discarded here, same as a section detectSections never found at
+        // all — the link is left unplaced (PLACEMENT, not PRESENCE), never
+        // spliced into an unrelated body line.
+        .filter((s) => {
+          const headingLine = (lines[s.startIndex] ?? '').trim();
+          return isKnownSectionName(headingLine) || isAllCapsSectionHeading(headingLine);
+        });
       if (sections.length) {
         // If exactly one item-shaped, still-unlinked line and exactly one
         // label remain, pair them — by elimination it is almost certainly

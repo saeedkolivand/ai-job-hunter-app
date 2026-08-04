@@ -429,6 +429,52 @@ fn job_board_host_is_warned_even_with_no_contact_profile_at_all() {
     );
 }
 
+/// MEDIUM-3 (security re-review): `xing.com` is also a `JOB_BOARD_HOSTS`
+/// entry (Xing hosts job listings too), so without a personal-profile
+/// exemption a legitimate DACH candidate's own `/profile/…` Xing link warned
+/// every time — the same shape of exemption LinkedIn already has via its
+/// `/in/` gate.
+#[test]
+fn personal_xing_profile_in_the_header_is_exempt_from_the_job_board_warning() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "Jane Doe\njane@example.com | https://www.xing.com/profile/Jane_Doe\n\n\
+                     EXPERIENCE\nAcme Corp  2020 - Present\nSenior Engineer\n\
+                     - Led a team of five engineers delivering the core platform\n"
+        .to_string();
+    request.contact = None;
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(report.ok, "must not block: {:?}", report.issues);
+    assert!(
+        !report.issues.iter().any(|i| i.code == "header_url_job_board"),
+        "a personal Xing profile must be exempt from the job-board warning: {:?}",
+        report.issues
+    );
+}
+
+/// The exemption is narrow: a Xing URL that is NOT the `/profile/…` shape (a
+/// job listing, the same host) must still warn — otherwise the exemption
+/// would swallow the exact regression it sits next to.
+#[test]
+fn non_personal_xing_url_still_warns_as_job_board() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "Jane Doe\njane@example.com | https://www.xing.com/jobs/12345\n\n\
+                     EXPERIENCE\nAcme Corp  2020 - Present\nSenior Engineer\n\
+                     - Led a team of five engineers delivering the core platform\n"
+        .to_string();
+    request.contact = None;
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_job_board" && i.severity == Severity::Warning),
+        "a non-personal Xing URL must still warn as job-board: {:?}",
+        report.issues
+    );
+}
+
 /// The blocking path itself, not just its skip/warning branches (the gate
 /// narrowed to `profile_is_header_source`, and every other test here exercises
 /// a case where it doesn't fire): a body company link genuinely rendering
@@ -464,6 +510,71 @@ SKILLS
             && i.severity == Severity::Critical
             && i.message.contains("https://acme.example.com")),
         "the company link must be named as the mismatch: {:?}",
+        report.issues
+    );
+}
+
+/// HIGH-2 (security re-review): the mismatch check used to be gated on
+/// `profile_is_header_source` — skipped entirely (down to the narrower,
+/// job-board-only warning) once the text already had its own contact line,
+/// so a NON-job-board company link leaking into the header band went
+/// completely unvalidated in the common (text-owns-the-header) case. Fixed:
+/// `allowed` is now built from whichever header is actually authoritative
+/// for this render, so the exact same URL-swap-regression class this check
+/// exists for is caught here too — text-owned header, unrelated profile
+/// supplied, company link still blocks.
+#[test]
+fn company_link_leaking_into_a_text_owned_header_band_still_blocks() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+[Acme Corp](https://acme.example.com)  2020 - Present
+Senior Engineer
+- Led a team of five engineers delivering the core platform
+
+SKILLS
+- Rust, TypeScript, React
+"
+    .to_string();
+    // A profile is supplied but irrelevant here — text already owns the
+    // header, so the profile is never applied; the mismatch must still fire
+    // against the text's OWN header links, not this unrelated profile.
+    request.contact = Some(profile_with("https://example.dev/portfolio"));
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(
+        !report.ok,
+        "a company link leaking into a text-owned header band must block: {:?}",
+        report.issues
+    );
+    assert!(
+        report.issues.iter().any(|i| i.code == "header_url_mismatch"
+            && i.severity == Severity::Critical
+            && i.message.contains("https://acme.example.com")),
+        "the company link must be named as the mismatch: {:?}",
+        report.issues
+    );
+}
+
+/// The completeness/"missing" check stays scoped to when the profile
+/// actually supplied the header — comparing an unrelated profile's links
+/// against a text-owned header would otherwise fire a false "missing" for
+/// every one of the profile's links, on a document the profile never
+/// touched at all.
+#[test]
+fn missing_check_does_not_fire_against_an_unrelated_profile_on_a_text_owned_header() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = RESUME.to_string(); // already has its own "jane@example.com" contact line
+    request.contact = Some(profile_with("https://drive.google.com/unrelated"));
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(report.ok, "must not block: {:?}", report.issues);
+    assert!(
+        !report.issues.iter().any(|i| i.code == "header_url_missing"),
+        "an unrelated, unapplied profile's links must not be reported missing: {:?}",
         report.issues
     );
 }

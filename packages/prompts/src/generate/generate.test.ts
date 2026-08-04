@@ -95,6 +95,17 @@ describe('getLinkMap', () => {
     expect(getBodyLinkMap(resume).Blog).toBe('https://janeblog.example');
   });
 
+  // LOW (security re-review): the Website pre-pass's scheme check is
+  // case-sensitive — matches Rust's mirrored `classify_contact_links`, which
+  // uses a plain `starts_with("http://") || starts_with("https://")` with no
+  // lowercasing. A case-insensitive check would admit an uppercase-scheme
+  // candidate Rust's own pre-pass never would.
+  it('does not admit an uppercase-scheme URL to the Website slot (case-sensitive, matches Rust)', () => {
+    const resume = ['Body', '---', '- [Portfolio](HTTPS://janedoe.dev)'].join('\n');
+    const map = getLinkMap(resume);
+    expect(map.Website).toBeUndefined();
+  });
+
   it('returns an empty map when there is no reference block', () => {
     expect(getLinkMap('Just a plain resume with no separator')).toEqual({});
   });
@@ -492,6 +503,31 @@ describe('injectLinksIntoGeneratedText', () => {
       expect(out).toBe(text);
     });
 
+    // Security re-review (HIGH-4): `detectSections`' own boundary detection
+    // (`matchesHeaderTerm` in context-manager/sections.ts) is a lexicon
+    // PREFIX match, not a standalone-heading check — "research" is a
+    // Publications lexicon term, so a "Research Assistant, Acme Labs" job
+    // title (starts with "research" + a space) used to be misdetected as a
+    // Publications section boundary. The net then spliced the unmatched
+    // label right after that job's own bullet — fabricated content in the
+    // EXPERIENCE section, the exact class this file closes twice already.
+    // Gating section detection on the real standalone-heading predicates
+    // (isKnownSectionName / isAllCapsSectionHeading) rejects the phantom
+    // section entirely, so the link is left unplaced instead.
+    it('does not treat a "Research …" job title as a Publications section boundary (#HIGH-4)', () => {
+      const text = [
+        'EXPERIENCE',
+        'Research Assistant, Acme Labs',
+        '- Studied materials science under Dr. Smith',
+      ].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Untouched Project': 'https://example.com/x' }
+      );
+      expect(out).toBe(text);
+    });
+
     it('never pairs a description bullet of an already-linked project as an open slot — the bullet stays untouched, the label appends safely instead (#HIGH-1)', () => {
       const text = [
         'PROJECTS',
@@ -504,6 +540,40 @@ describe('injectLinksIntoGeneratedText', () => {
         { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
       );
       expect(out).toBe(`${text}\n[orbit-sim](https://github.com/jane/orbit-sim)`);
+    });
+
+    // Security re-review (MEDIUM-6): a single top-level bullet marker is now
+    // stripped before the shape test, not a blanket rejection — many résumés
+    // format project TITLES themselves as a flat bulleted list, not just
+    // their descriptions, so the old "any marker = reject" rule made this
+    // (common) shape unreachable for the sole-pairing path.
+    it('reaches a bulleted project TITLE as an open slot — the marker survives, only the title gets linked (#MEDIUM-6)', () => {
+      const text = ['PROJECTS', '- Orbital Simulator'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe('PROJECTS\n- [Orbital Simulator](https://github.com/jane/orbit-sim)');
+    });
+
+    it('still rejects a NESTED/indented sub-bullet as an open slot — only the top-level marker is stripped, not sub-point indentation (#MEDIUM-6)', () => {
+      // If indentation weren't rejected, BOTH lines below would count as open
+      // slots (2, not 1), so the exactly-one-slot pairing condition would
+      // never fire and the label would append as a new item instead of
+      // pairing with the top-level title — this differential is what
+      // actually proves the indentation check works. Sole-pairing wraps the
+      // LINE'S OWN text (the model's real title), not the label — "Orbital
+      // Simulator" surviving verbatim is the point (the renamed-item case).
+      const text = ['PROJECTS', '- Orbital Simulator', '  - Built with Rust'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'Untouched Project': 'https://example.com/x' }
+      );
+      expect(out).toBe(
+        'PROJECTS\n- [Orbital Simulator](https://example.com/x)\n  - Built with Rust'
+      );
     });
 
     it('locates a non-English PROJEKTE section via SECTION_LEXICON, not an English-only regex (#HIGH-2)', () => {
