@@ -87,8 +87,10 @@ interface PreferencesActions {
   // Routing (activeProvider / per-provider model+baseUrl) is now backend-owned
   // (task #16); the renderer switches/edits it via the `ai_set_*` service hooks.
   // Only the renderer-side TUNING knobs survive here: `setProviderSettings` still
-  // writes `effort` (CLI reasoning) and `setLocalModelLimits` writes `modelLimits`
-  // (num_ctx / temperature) onto `aiProviderConfig`.
+  // writes `effort` (reasoning effort — any provider whose CURRENT model
+  // supports it, not just a CLI agent; see `PerProviderSettingsSchema`'s doc
+  // comment) and `setLocalModelLimits` writes `modelLimits` (num_ctx /
+  // temperature) onto `aiProviderConfig`.
   setProviderSettings: (provider: AiProvider, settings: Partial<PerProviderSettings>) => void;
   setLocalModelLimits: (model: string, limits: Partial<LocalModelLimits>) => void;
   setOutputTone: (outputTone: Preferences['outputTone']) => void;

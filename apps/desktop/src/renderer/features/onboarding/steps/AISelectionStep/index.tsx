@@ -28,7 +28,10 @@ export const CLOUD_DEFAULT_MODELS: Record<string, string> = {
   'ollama-cloud': 'gpt-oss:120b',
   openai: 'gpt-4o',
   anthropic: 'claude-sonnet-5',
-  gemini: 'gemini-2.0-flash',
+  // `gemini-2.0-flash` (the prior default) was retired — `ai.google.dev/gemini-api/docs/models`
+  // now lists it under "Previous models (Shut down)". Moved to `gemini-3.6-flash`,
+  // the curated list's new first (live, Stable) entry — see `provider-meta.ts`.
+  gemini: 'gemini-3.6-flash',
   'openai-compatible': 'gpt-4o',
 };
 

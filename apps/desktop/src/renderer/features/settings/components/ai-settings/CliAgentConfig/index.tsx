@@ -3,9 +3,9 @@ import { Button, Dropdown } from '@ajh/ui';
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
-import { useAiProviderConfig, usePreferencesStore } from '@/store/preferences-store';
 
 import { CliAgentInstall } from '../CliAgentInstall';
+import { EffortPicker } from '../EffortPicker';
 
 interface Props {
   provider: AiProvider;
@@ -42,10 +42,6 @@ export function CliAgentConfig({
 }: Props) {
   const { t } = useTranslation();
   const meta = PROVIDERS[provider];
-  const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
-  const providerConfig = useAiProviderConfig();
-  const efforts = meta.efforts ?? [];
-  const currentEffort = providerConfig?.providers?.[provider]?.effort ?? '';
 
   const modelOptions =
     expandedModels.length > 0
@@ -86,22 +82,7 @@ export function CliAgentConfig({
             />
           </div>
 
-          {efforts.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
-                {t('settings.aiProvider.reasoningEffort')}
-              </div>
-              <Dropdown
-                options={[
-                  { value: '', label: t('settings.aiProvider.effortDefault') },
-                  ...efforts.map((e) => ({ value: e, label: e })),
-                ]}
-                value={currentEffort}
-                onChange={(value) => setProviderSettings(provider, { effort: value })}
-                placeholder={t('settings.aiProvider.effortDefault')}
-              />
-            </div>
-          )}
+          <EffortPicker provider={provider} model={providerModel} />
 
           <Button
             variant="glass"

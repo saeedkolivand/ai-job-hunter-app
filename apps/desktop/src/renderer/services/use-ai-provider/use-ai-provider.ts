@@ -111,6 +111,14 @@ export const useSetEmbeddingConfig = () => {
 export const useReembedAll = () => {
   const api = useAppClient();
   return useMutation({
+    // `reembedAll` only returns the job id the instant the job STARTS — the
+    // real outcome (reembedded/failed/total) arrives later over `jobs:event`,
+    // which `EmbeddingsSettings`'s own listener refetches
+    // `keys.ai.embeddingStatus` on (`job.completed`/`job.failed`/
+    // `job.cancelled`). An `onSuccess` invalidation here would fire at job
+    // START, before a single vector is written — not a safety net for a
+    // missed completion event (it can't be, at that timing), just a
+    // guaranteed premature refetch of the still-stale status.
     mutationFn: () => api.ai.reembedAll(),
   });
 };
@@ -215,7 +223,8 @@ export const useConfigureActiveProvider = () => {
 /**
  * Returns the provider/model/baseUrl to inject into every ai_generate call —
  * now backed by the backend `ai_active_config` store (task #16), not Zustand.
- * `effort` STAYS renderer-side (a per-call CLI tuning knob, not routing/egress).
+ * `effort` STAYS renderer-side (a per-call generation tuning knob read by
+ * every reasoning-capable HTTP/CLI provider, not routing/egress).
  * `isPending` distinguishes "config not yet loaded" from "resolved but empty" so
  * cold-boot `canRun`/status gates don't flash a false "no provider" state.
  */
@@ -235,12 +244,14 @@ export const useGenerateConfig = () => {
 };
 
 /**
- * Static capabilities of a provider/model (currently just web-search support),
- * read straight from the Rust `ModelCapabilities` matrix — never a TS mirror, so
- * a new provider is picked up with zero renderer change. Cheap + rarely-changing,
- * so cached for a long while.
+ * Static capabilities of a provider/model (web-search + reasoning-effort
+ * support), read straight from the Rust `ModelCapabilities` matrix — never a
+ * TS mirror, so a new provider is picked up with zero renderer change. Cheap +
+ * rarely-changing, so cached for a long while. Exported so the AI-settings
+ * provider-config components can drive the effort picker's visibility from
+ * this SAME query, per (provider, model) row — not just the active one.
  */
-const useModelCapabilities = (provider: string, model: string, baseUrl?: string) => {
+export const useModelCapabilities = (provider: string, model: string, baseUrl?: string) => {
   const api = useAppClient();
   return useQuery({
     queryKey: [...keys.ai.capabilities, provider, model, baseUrl ?? ''],

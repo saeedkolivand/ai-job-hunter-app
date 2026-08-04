@@ -106,8 +106,14 @@ export interface AiContract {
 
   unloadModel(model: string): Promise<void>;
 
-  /** Synchronous embedding — returns the vector. Falls back gracefully if Ollama is offline. */
-  embed(req: { text: string; model?: string }): Promise<{ vector: number[]; dim: number } | null>;
+  /** Synchronous embedding — returns the vector, or `{ error }` on any provider/config
+   *  failure (a context-length overflow, a missing key, an unreachable host, …). */
+  embed(req: {
+    text: string;
+    model?: string;
+  }): Promise<
+    { vector: number[]; dim: number; provider: string; model: string } | { error: string }
+  >;
 
   /** Store an API key for a cloud AI provider in the OS keychain. */
   setProviderKey(req: { provider: string; apiKey: string }): Promise<{ success: boolean }>;
@@ -134,20 +140,27 @@ export interface AiContract {
   listProviderModels(req: { provider: string; baseUrl?: string }): Promise<Array<{ name: string }>>;
 
   /**
-   * Static, network-free capability probe for a provider/model — currently just
-   * whether it can attempt a web-grounded company/role search. Reads the Rust
-   * `ModelCapabilities` matrix (the same value the backend gates `research*` on),
-   * so the renderer never mirrors the per-provider booleans and a new provider
-   * needs zero TS change. Drives the capability-driven default of the tailoring
-   * "search company" toggle. Unknown/unresolvable providers degrade to
-   * `{ supportsWebSearch: false }`. `baseUrl` is forwarded for OpenAI-compatible
-   * servers.
+   * Static, network-free capability probe for a provider/model — whether it can
+   * attempt a web-grounded company/role search, whether it accepts a
+   * reasoning-effort value, and (when it does) exactly which levels this MODEL
+   * accepts. Reads the Rust `ModelCapabilities` matrix + `AiProvider::effort_levels`
+   * (the same values the backend gates `research*` and each adapter's own
+   * effort field on), so the renderer never mirrors the per-provider/per-model
+   * vocabulary and a new provider or model needs zero TS change — some
+   * providers' accepted level SET genuinely varies by model tier (Gemini), not
+   * just by provider, which is why this is a per-model lookup rather than a
+   * static per-provider list. Drives the capability-driven default of the
+   * tailoring "search company" toggle, and the Settings → AI effort picker
+   * (which renders exactly the `effortLevels` this returns). Unknown/
+   * unresolvable providers degrade to `supportsWebSearch: false`,
+   * `supportsReasoning: false`, `effortLevels: []`. `baseUrl` is forwarded for
+   * OpenAI-compatible servers.
    */
   modelCapabilities(req: {
     provider: string;
     model?: string;
     baseUrl?: string;
-  }): Promise<{ supportsWebSearch: boolean }>;
+  }): Promise<{ supportsWebSearch: boolean; supportsReasoning: boolean; effortLevels: string[] }>;
 
   /** Active embedding space, per-space vector counts, and document index coverage. */
   embeddingStatus(): Promise<EmbeddingStatus>;
