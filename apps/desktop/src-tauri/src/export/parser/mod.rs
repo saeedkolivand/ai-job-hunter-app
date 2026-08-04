@@ -186,6 +186,40 @@ static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)linkedin\.com|github\.com|portfolio|website|^https?://").unwrap()
 });
 
+/// Combined `|`/`·`/`•` separator count — shared by the job-entry
+/// pipe/middot-with-date check and [`is_contact_shaped`] below.
+fn separator_count(clean: &str) -> usize {
+    clean.matches('|').count() + clean.matches('·').count() + clean.matches('•').count()
+}
+
+/// The Contact-line shape test: an `@`, a phone number, ≥2 pipe/middot/bullet
+/// separators, or a known contact-platform keyword / bare `http(s)://` URL.
+/// `pub(crate)` as the single source of truth for what counts as a résumé's
+/// contact line — mirrored in TS by `isHeaderContactLine`
+/// (`packages/prompts/src/generate/text/header-contact-line.ts`). A
+/// shared-fixture parity test (`fixtures/header-contact-line.json`, read by
+/// both `cargo test export::parser` and that file's TS test) keeps the two
+/// from silently drifting.
+pub(crate) fn is_contact_shaped(clean: &str) -> bool {
+    clean.contains('@')
+        || PHONE_RE.is_match(clean)
+        || separator_count(clean) >= 2
+        || URL_RE.is_match(clean)
+}
+
+/// The line-0-ONLY Contact test — narrower than [`is_contact_shaped`]: just an
+/// `@` or a phone shape, with no pipe/URL arms. This is what decides Name vs
+/// Contact for the résumé's first line (`parse_line`'s `idx == 0` case) — a
+/// combined "Jane Doe | jane@example.com" is classified `Contact`, not `Name`,
+/// there, so `header.name` comes out empty for that input shape regardless of
+/// what runs downstream. `pub(crate)` for the same reason as
+/// `is_contact_shaped`: mirrored in TS (`isFirstLineContactShaped` in the same
+/// `header-contact-line.ts`) and kept in parity by the same shared fixture's
+/// `firstLine` field.
+pub(crate) fn is_first_line_contact_shaped(clean: &str) -> bool {
+    clean.contains('@') || PHONE_RE.is_match(clean)
+}
+
 // Section names (multilingual)
 const SECTION_NAMES: &[&str] = &[
     "professional summary",
@@ -239,6 +273,25 @@ const SECTION_NAMES: &[&str] = &[
     "expérience professionnelle",
     "formation",
     "compétences",
+    // Spanish (shares "perfil" with Portuguese below)
+    "perfil",
+    "experiencia profesional",
+    "formación",
+    "habilidades",
+    // Italian
+    "profilo",
+    "esperienza professionale",
+    "formazione",
+    "competenze",
+    // Dutch
+    "profiel",
+    "werkervaring",
+    "opleiding",
+    "vaardigheden",
+    // Portuguese
+    "experiência profissional",
+    "formação",
+    "competências",
 ];
 
 // Company/role keywords (should NOT be treated as section headers)
@@ -340,6 +393,49 @@ fn is_likely_company_or_role(text: &str) -> bool {
     words.iter().any(|word| COMPANY_KEYWORDS.contains(word))
 }
 
+/// True when `s` contains a run of 4+ consecutive ASCII digits — a bare year
+/// ("2021") or similar. The "no years" guard below needs this, not "some
+/// digit character appears exactly 4 times anywhere in the string": that
+/// crude check let a heading-shaped line carrying a genuine year (e.g.
+/// "PROJECT 2021", no second date to trip `DATE_RE`'s range shape) through
+/// misclassified as a section heading.
+fn has_four_consecutive_ascii_digits(s: &str) -> bool {
+    let mut run = 0;
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            run += 1;
+            if run == 4 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+/// The ALL-CAPS `SectionHeader` shape rule: fully uppercase, 4–60 chars, at
+/// least 2 alphabetic characters, no run of 4+ consecutive digits (a "no
+/// years" guard), not a likely company/role/acronym token
+/// (`is_likely_company_or_role`), no date-range shape (`DATE_RE`), and no
+/// `@`. This is what recognizes a locale's own ALL-CAPS heading
+/// (`PERFIL`/`PROFILO`/`WERKERVARING`/…, or an English heading not literally
+/// in [`SECTION_NAMES`] such as "PROFESSIONAL EXPERIENCE") without a
+/// per-locale word list. `pub(crate)` — mirrored in TS by
+/// `isAllCapsSectionHeading`
+/// (`packages/prompts/src/generate/text/header-contact-line.ts`) and kept in
+/// parity by the shared fixture `fixtures/all-caps-headings.json`.
+pub(crate) fn is_all_caps_section_heading(clean: &str) -> bool {
+    clean == clean.to_uppercase()
+        && clean.len() >= 4
+        && clean.len() <= 60
+        && clean.chars().filter(|c| c.is_alphabetic()).count() >= 2
+        && !has_four_consecutive_ascii_digits(clean)
+        && !is_likely_company_or_role(clean)
+        && !DATE_RE.is_match(clean)
+        && !clean.contains('@')
+}
+
 /// A Markdown thematic break: 3+ identical `-`, `*`, or `_` markers (optionally
 /// separated by spaces) and nothing else — e.g. `---`, `***`, `___`, `- - -`.
 /// The model emits these as section separators, but every template already draws
@@ -436,7 +532,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
                 right_text: None,
             };
         }
-        if clean.contains('@') || PHONE_RE.is_match(&clean) {
+        if is_first_line_contact_shaped(&clean) {
             return ParsedLine {
                 kind: LineKind::Contact,
                 raw: trimmed.to_string(),
@@ -491,15 +587,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     }
 
     // All-caps detection (but exclude company names and roles)
-    if clean == clean.to_uppercase()
-        && clean.len() >= 4
-        && clean.len() <= 60
-        && clean.chars().filter(|c| c.is_alphabetic()).count() >= 2
-        && !clean.chars().any(|c| c.is_ascii_digit() && clean.matches(c).count() == 4) // No years
-        && !is_likely_company_or_role(&clean)
-        && !DATE_RE.is_match(&clean)
-        && !clean.contains('@')
-    {
+    if is_all_caps_section_heading(&clean) {
         return ParsedLine {
             kind: LineKind::SectionHeader,
             raw: trimmed.to_string(),
@@ -548,8 +636,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // Job entry: pipe/middot-separated with a date segment and no email address —
     // "Role | Company | 2020 – Present" or "Role · Company · Jan 2021 – Mar 2023".
     // Excludes contact lines: an email, or a non-date phone/URL segment, keeps Contact.
-    let pipe_count =
-        clean.matches('|').count() + clean.matches('·').count() + clean.matches('•').count();
+    let pipe_count = separator_count(&clean);
     if pipe_count >= 1 && !clean.contains('@') {
         let seg_is_date = |s: &str| DATE_RE.is_match(s) || SOLO_DATE_RE.is_match(s);
         // A non-date phone/URL segment marks this as a CONTACT line, not an entry
@@ -581,11 +668,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
 
     // Contact: has @ or phone or pipe separators or URLs
     // (pipe_count was computed above for the pipe-date job-entry check)
-    if clean.contains('@')
-        || PHONE_RE.is_match(&clean)
-        || pipe_count >= 2
-        || URL_RE.is_match(&clean)
-    {
+    if is_contact_shaped(&clean) {
         return ParsedLine {
             kind: LineKind::Contact,
             raw: trimmed.to_string(),

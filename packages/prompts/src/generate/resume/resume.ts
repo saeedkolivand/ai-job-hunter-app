@@ -377,9 +377,9 @@ ${conv.headers.skills.toUpperCase()}
 Category: Skill1, **Skill2**, Skill3
 ...
 (blank line)
-(ONLY if CANDIDATE PROJECT / PUBLICATION LINKS were provided AND a link has no natural home in a role above — add a PROJECTS or PUBLICATIONS section here, one item per line as "Item title — Label", using the short labels. Otherwise omit this section entirely.)
+(ONLY if CANDIDATE PROJECT / PUBLICATION LINKS were provided AND a link has no natural home in a role above — add a PROJECTS or PUBLICATIONS section here, one item per line as "Item title", using the project's real name as it appears in the résumé — never the machine label and never a URL slug — UNLESS that specific entry's own instruction (e.g. a "SHORT KEYS" list) explicitly says to write it verbatim, in which case follow that instead. If two links belong to the same project (e.g. a repo and its live site), keep them as TWO separate items — do NOT merge them — and name each item for what it actually is, rather than appending a generic disambiguator like "Web". Otherwise omit this section entirely.)
 
-Preserve EVERY label from CANDIDATE PROJECT / PUBLICATION LINKS somewhere in the output — drop none. Keep any [label](url) markdown links already present in <candidate_resume> intact on their items.
+Every entry in CANDIDATE PROJECT / PUBLICATION LINKS should end up with exactly one matching item somewhere in the output — follow each entry's own instruction above for how to name it, but never invent a title or context just to force one in. Keep any [label](url) markdown links already present in <candidate_resume> intact on their items.
 
 Start the resume now:`;
 }

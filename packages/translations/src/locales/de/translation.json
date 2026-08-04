@@ -536,7 +536,8 @@
       "photoErrorSize": "Dieses Bild ist zu groß. Wählen Sie eines unter 10 MB.",
       "photoErrorDecode": "Dieses Bild konnte nicht gelesen werden. Versuchen Sie eine andere Datei.",
       "emailInvalid": "Geben Sie eine gültige E-Mail-Adresse ein.",
-      "urlInvalid": "Geben Sie eine gültige URL ein (https://…)."
+      "urlInvalid": "Geben Sie eine gültige URL ein (https://…).",
+      "saveFailed": "Kontaktprofil konnte nicht gespeichert werden. Versuchen Sie es erneut."
     },
     "contactConflict": {
       "title": "Kontaktdaten aktualisieren?",
