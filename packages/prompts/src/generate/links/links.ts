@@ -860,8 +860,15 @@ export function injectLinksIntoGeneratedText(
     // different, weaker-matching line on the second pass).
     const linkedUrls = new Set<string>();
     for (const m of text.matchAll(MD_LINK_SPAN_RE)) {
-      const urlMatch = /\]\(([^)]*)\)$/.exec(m[0]);
-      if (urlMatch?.[1]) linkedUrls.add(urlMatch[1]);
+      // Sliced, not matched: `/\]\(([^)]*)\)$/` is unanchored at the start, so on
+      // a span full of `](` it retries every one of them and degrades to O(n²)
+      // (CodeQL js/polynomial-redos). The span always ends `](url)`, so the last
+      // `](` is the only candidate — one scan, no backtracking.
+      const open = m[0].lastIndexOf('](');
+      if (open !== -1 && m[0].endsWith(')')) {
+        const url = m[0].slice(open + 2, -1);
+        if (url) linkedUrls.add(url);
+      }
     }
     const remaining = new Map(
       bodyLabels

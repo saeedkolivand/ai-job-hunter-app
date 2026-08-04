@@ -438,7 +438,11 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const once = seedHeaderFromProfile(text, profile, contactLine);
     const twice = seedHeaderFromProfile(once, profile, contactLine);
     expect(twice).toBe(once);
-    expect(once.split('\n').filter((l) => l.includes('linkedin.com')).length).toBe(1);
+    // Assert on the whole seeded line, not a bare host substring: counting
+    // `includes('linkedin.com')` reads as URL-host sanitization to CodeQL
+    // (js/incomplete-url-substring-sanitization) and is weaker anyway — it
+    // would pass if the line were mangled as long as the host survived.
+    expect(once.split('\n').filter((l) => l === contactLine).length).toBe(1);
   });
 
   // Security re-review (HIGH-1): the exact repro — the prompt mandates "Line
