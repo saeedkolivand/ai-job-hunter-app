@@ -462,24 +462,51 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             // document whose header renders fewer links than expected (the
             // band clipped a wrapped line) simply checks fewer — never more
             // than are legitimately the header's.
-            let header_owned_links: Vec<&PdfLink> =
-                header_links.iter().copied().take(allowed.len()).collect();
+            //
+            // A SECOND reviewer (post-push, round 8) read `take(allowed.len())`
+            // silently degrading to zero checks when `allowed` is empty as an
+            // unintentional hole and proposed falling back to the FULL band
+            // in that case. Verified empirically before writing this: that
+            // fallback is wrong and would reintroduce the exact false-block
+            // this round removed — a name-only header with no profile and no
+            // email/phone-with-a-link produces `allowed = {}` (a phone/
+            // location line never gets a `.link` run; a bare name never
+            // does either), and a job's own company link rendering early on
+            // the page (short header, immediate EXPERIENCE section) would be
+            // flagged as `header_url_mismatch` and BLOCK a perfectly valid
+            // export, on a fresh un-narrowed-band check identical in kind to
+            // the one this round already fixed.
+            //
+            // INVARIANT, made explicit rather than left as an accident of
+            // `take(0)`: an empty `allowed` means the reconstructed header —
+            // the one the renderer will actually emit — owns NO links at
+            // all. `header.contact`'s runs carry zero `.link` values (no
+            // email, no LinkedIn/GitHub/Website, no extra link), and
+            // `header.name` is a plain `String` that can never carry one
+            // either. There is therefore nothing legitimately "the
+            // header's" to check a band link against; every link in the
+            // band in this state is body content, full stop, and must not
+            // block. Pinned by `validate::tests::linkless_header_with_a_genuine_body_link_in_the_band_does_not_false_block`.
+            if !allowed.is_empty() {
+                let header_owned_links: Vec<&PdfLink> =
+                    header_links.iter().copied().take(allowed.len()).collect();
 
-            // A header-owned link that is NOT one of the header's own
-            // claimed links means the render itself disagrees with the
-            // reconstructed model (the URL-swap regression: the document
-            // shows a wrong link where its own header should be) — this
-            // stays blocking, unconditionally (no profile required).
-            for link in &header_owned_links {
-                if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
-                    issues.push(ExportIssue::critical(
-                        "header_url_mismatch",
-                        format!(
-                            "Header link {} is not one of the document header's own links — \
-                             a body/company link leaked into the header.",
-                            link.url
-                        ),
-                    ));
+                // A header-owned link that is NOT one of the header's own
+                // claimed links means the render itself disagrees with the
+                // reconstructed model (the URL-swap regression: the document
+                // shows a wrong link where its own header should be) — this
+                // stays blocking, unconditionally (no profile required).
+                for link in &header_owned_links {
+                    if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
+                        issues.push(ExportIssue::critical(
+                            "header_url_mismatch",
+                            format!(
+                                "Header link {} is not one of the document header's own links \
+                                 — a body/company link leaked into the header.",
+                                link.url
+                            ),
+                        ));
+                    }
                 }
             }
 

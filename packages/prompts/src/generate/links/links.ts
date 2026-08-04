@@ -499,6 +499,36 @@ const MIN_TITLE_KEY_LEN = 6;
  * happened to produce. NFD + combining-mark strip folds accents ("Café" /
  * "cafe") so real-name titles in accented languages still match their slug.
  */
+/** True for a single whitespace character. One char in, so no backtracking. */
+function isWs(ch: string | undefined): boolean {
+  return ch !== undefined && /\s/.test(ch);
+}
+
+/**
+ * Index of the whitespace run preceding the first ` — `/` – ` inline separator,
+ * or -1 when the line has none.
+ *
+ * Deliberately NOT `/\s+[—–]\s+/`: that pattern has two unbounded whitespace
+ * runs, so on a line with many spaces and no dash the engine retries from every
+ * start position and degrades to O(n²) — CodeQL `js/polynomial-redos`, on text
+ * extracted from a user-supplied PDF. This is a single left-to-right pass that
+ * remembers where the current whitespace run began, so each character is
+ * examined once.
+ */
+function findInlineSeparator(s: string): number {
+  let wsStart = -1;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (isWs(ch)) {
+      if (wsStart === -1) wsStart = i;
+      continue;
+    }
+    if ((ch === '—' || ch === '–') && wsStart !== -1 && isWs(s[i + 1])) return wsStart;
+    wsStart = -1;
+  }
+  return -1;
+}
+
 function normalizeKey(s: string): string {
   return s
     .normalize('NFD')
@@ -1034,8 +1064,8 @@ export function injectLinksIntoGeneratedText(
             // instead; the title becomes the link, the separator + description
             // survive verbatim as plain trailing text on the same line —
             // preserved, never dropped.
-            const sepMatch = /\s+[—–]\s+/.exec(rest);
-            const titleEnd = sepMatch ? sepMatch.index : rest.length;
+            const sepIndex = findInlineSeparator(rest);
+            const titleEnd = sepIndex === -1 ? rest.length : sepIndex;
             let title = rest.slice(0, titleEnd).trimEnd();
             const trailing = rest.slice(titleEnd);
             // A lone trailing `*` (not part of a `**` pair) is never valid

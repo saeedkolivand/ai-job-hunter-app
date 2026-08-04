@@ -261,6 +261,50 @@ describe('generateResume', () => {
     expect(headerLine).not.toHaveBeenCalled();
   });
 
+  // CodeRabbit (test-coverage re-review): the test above only exercises the
+  // PRE-CALL guard (`get`/`headerLine` are never invoked at all — the signal
+  // is already aborted when seeding starts). The SECOND guard —
+  // `if (signal?.aborted) return text;` AFTER the `Promise.all` resolves,
+  // before `seedHeaderFromProfile` is applied — had no coverage. Here the
+  // signal is NOT aborted when seeding starts (so both IPC calls genuinely
+  // fire and resolve), and only becomes aborted WHILE they're in flight (via
+  // a side effect inside the `get` mock) — proving the patch is still
+  // discarded even though the calls themselves completed successfully.
+  it('does not apply the seeding patch when the signal aborts while the post-stream IPC calls are in flight', async () => {
+    const controller = new AbortController();
+    const get = vi.fn().mockImplementation(async () => {
+      // Cancellation lands here — after this call starts, before Promise.all
+      // (and therefore the post-resolve guard) settles.
+      controller.abort();
+      return { fullName: 'Jordan Lee', email: 'jordan@example.com' };
+    });
+    const headerLine = vi.fn().mockResolvedValue('Berlin | jordan@example.com');
+    registerWithContactProfile({ get, headerLine });
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      controller.signal,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Model Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nModel-written summary.');
+    done();
+    const out = await p;
+    // Both calls genuinely fired (the pre-call guard did not block them)...
+    expect(get).toHaveBeenCalled();
+    expect(headerLine).toHaveBeenCalled();
+    // ...but the resolved profile/header-line was never applied — the
+    // model's own header survives untouched.
+    expect(out).toBe(
+      'Model Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nModel-written summary.'
+    );
+  });
+
   it('leaves the model header untouched when the contact profile is effectively empty', async () => {
     register();
     const p = generateResume(

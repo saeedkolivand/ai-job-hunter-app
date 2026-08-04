@@ -223,6 +223,27 @@ fn header_markdown_never_truncates_a_percent_escape_at_the_raw_cap_boundary() {
     }
 }
 
+/// CodeRabbit (test-coverage re-review): the mirrored boundary case — the
+/// `(` sits at raw index 200 (the FIRST char `take(MAX_LEN)` EXCLUDES, one
+/// past the test above's inclusive boundary). It must be dropped whole, not
+/// partially encoded — no `%2`/bare `%` fragment, and no bare `(` either.
+#[test]
+fn header_markdown_never_truncates_a_percent_escape_just_past_the_raw_cap_boundary() {
+    let filler = "a".repeat(180); // 20-char prefix + 180 = 200, so '(' lands at index 200
+    let p = ContactProfile {
+        website: Some(format!("https://example.dev/{filler}()MORE")),
+        ..Default::default()
+    };
+    let md = p.header_markdown("en");
+    // Exact match: the paren just past the cap (and everything after it) is
+    // dropped whole — no `%28`/`%29`, no bare `(`/`)`, no `%2`/`%` fragment
+    // anywhere in the URL. If the cap-before-encode ordering ever regressed
+    // back to encode-then-cap, this URL would instead grow to 200+ chars and
+    // this exact-match assertion would fail immediately.
+    let expected_url = format!("https://example.dev/{filler}");
+    assert_eq!(md, format!("[Website]({expected_url})"));
+}
+
 /// Second untested edge: `header_urls()` shares the exact same fix (both are
 /// `sanitize_link_url` call sites) — the boundary case above must produce
 /// byte-identical output there too, not just in `header_markdown`.

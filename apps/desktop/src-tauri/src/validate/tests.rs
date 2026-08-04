@@ -626,6 +626,58 @@ SKILLS
     );
 }
 
+/// Post-push security re-review (round 8): a SECOND reviewer read
+/// `header_owned_links = header_links.take(allowed.len())` silently checking
+/// zero links when `allowed` is empty as an unintentional hole and proposed
+/// falling back to the FULL band in that case. Verified empirically (see the
+/// commit history / round-8 report) before writing this: that fallback is
+/// WRONG and would reintroduce the exact false-block this file's other
+/// "…does_not_false_block" tests exist to prevent — a name-only header with
+/// no contact profile and no email/phone-with-a-link produces `allowed = {}`
+/// (a bare name is a plain `String`, never linked; a phone/location line
+/// never gets a `.link` run either), so a job's own company link rendering
+/// early on the page (short header, immediate EXPERIENCE section) is body
+/// content, not the header's, and must not block. This is the SAME
+/// invariant the other two tests pin, for the specific `allowed.is_empty()`
+/// case neither of them actually exercises (both have exactly one expected
+/// link) — added so the intent is an assertion, not something inferred from
+/// `take(0)`'s iterator semantics.
+#[test]
+fn linkless_header_with_a_genuine_body_link_in_the_band_does_not_false_block() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "\
+Jane Doe
+
+EXPERIENCE
+[Acme Corp](https://acme.example.com)  2020 - Present
+Senior Engineer
+- Led a team of five engineers delivering the core platform
+
+SKILLS
+- Rust, TypeScript, React
+"
+    .to_string();
+    // No contact profile, and the text's own header (just a bare name, no
+    // contact line at all) supplies no links either — `allowed` is empty.
+    request.contact = None;
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(
+        report.ok,
+        "a genuine body link inside the band of a linkless header must not false-block: {:?}",
+        report.issues
+    );
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch"),
+        "the job's own company link must never be flagged as a header mismatch just because \
+         the header itself has no links to compare against: {:?}",
+        report.issues
+    );
+}
+
 /// The completeness/"missing" check stays scoped to when the profile
 /// actually supplied the header — comparing an unrelated profile's links
 /// against a text-owned header would otherwise fire a false "missing" for

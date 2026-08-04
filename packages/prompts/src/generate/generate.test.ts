@@ -530,6 +530,22 @@ describe('injectLinksIntoGeneratedText', () => {
       expect(out).toBe('PROJECTS\n[**Orbital Simulator**](https://github.com/jane/orbit-sim)');
     });
 
+    // CodeRabbit (test-coverage re-review): the sibling test above covers
+    // the EVEN-count case ("**Orbital Simulator**" — one opening pair, one
+    // legitimate closing pair, must survive). This covers the ODD-count
+    // case — a trailing `**` with no matching open anywhere (a stray marker,
+    // not a real bold span) — which must still be trimmed, the same way a
+    // stray single `*` already is.
+    it('trims a trailing STRAY ** (odd pair count, not a legitimate close) before wrapping the sole-pairing link', () => {
+      const text = ['PROJECTS', 'Orbital Simulator **'].join('\n');
+      const out = injectLinksIntoGeneratedText(
+        text,
+        {},
+        { 'orbit-sim': 'https://github.com/jane/orbit-sim' }
+      );
+      expect(out).toBe('PROJECTS\n[Orbital Simulator](https://github.com/jane/orbit-sim)');
+    });
+
     it('leaves a link unplaced — not appended, not fabricated — when no PROJECTS/PUBLICATIONS section exists at all (#HIGH part 2)', () => {
       const text = 'Just a summary paragraph with no sections.';
       const out = injectLinksIntoGeneratedText(
@@ -592,8 +608,23 @@ describe('injectLinksIntoGeneratedText', () => {
         {},
         { 'Jane Doe Consulting': 'https://example.com/consulting' }
       );
-      expect(out).toContain('Jane Doe\njane@example.com');
-      expect(out).not.toContain('[Jane Doe]');
+      // Byte-for-byte, and asserting WHERE the link actually landed — not
+      // just that the header survived. A presence-only assertion is what let
+      // the link-fabrication class of bug through four separate times on
+      // this branch; it would not have caught a fifth (a mismatch that
+      // duplicates the link, or attaches it to the wrong line elsewhere).
+      expect(out).toBe(
+        [
+          'Jane Doe',
+          'jane@example.com',
+          '',
+          'EXPERIENCE',
+          'Software Engineer, Acme Corp',
+          '',
+          'PROJECTS',
+          '[Some Other Project](https://example.com/consulting)',
+        ].join('\n')
+      );
     });
 
     it('never pairs a description bullet of an already-linked project as an open slot — the bullet stays untouched, the label appends safely instead (#HIGH-1)', () => {
