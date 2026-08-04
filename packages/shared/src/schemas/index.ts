@@ -77,7 +77,12 @@ export const AiGenerateRequestSchema = z.object({
   // point generation at an arbitrary endpoint (key-exfiltration SSRF). The Rust
   // side resolves routing from the store and overwrites `model` before streaming
   // — `model` stays on the wire only because every `chat_stream` impl reads it.
-  /** Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high). */
+  /**
+   * Reasoning effort for any provider/model that supports it (backend-gated
+   * per `ModelCapabilities.supports_reasoning` — see `ai_model_capabilities`'s
+   * `effortLevels`). Only reaches `chat_stream` (streaming generation); the
+   * agent tool-calling loop and `research*` calls keep the provider default.
+   */
   effort: z.string().optional(),
 });
 

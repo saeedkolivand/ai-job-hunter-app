@@ -1,6 +1,6 @@
 use tempfile::TempDir;
 
-use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
+use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, EMBEDDING_VECTOR_VERSION};
 
 use super::*;
 
@@ -13,6 +13,7 @@ fn fake_embedding() -> EmbeddingVector {
             provider: "test".to_string(),
             model: "test-model".to_string(),
             dim: 3,
+            version: EMBEDDING_VECTOR_VERSION,
         },
     }
 }

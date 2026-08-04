@@ -20,6 +20,12 @@ use super::{
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
 
+/// Requested embedding output size. `gemini-embedding-2`'s default (unspecified)
+/// dimensionality is 3072 — 4x the retired text-embedding-004's 768. One of
+/// the model's documented "Recommended" sizes; auto-normalized by the API
+/// (see `embed_impl`'s call site for the full rationale).
+const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
+
 /// Validate the key the keychain returned, rejecting a missing/blank one early.
 ///
 /// Pure (no `AppHandle`) so it's unit-testable. Several call paths previously
@@ -161,12 +167,116 @@ fn parse_gemini_embed_usage(data: &Value) -> Usage {
 }
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
-/// 2.0 models reject `thinkingConfig` with a 400, so we only enable it for the
-/// 2.5 family and any explicit `*-thinking-*` model. Unknown future models simply
-/// don't surface thoughts (a graceful miss, never a broken request).
+/// 2.0 (non-thinking) models reject `thinkingConfig` with a 400, so this
+/// enables it for Gemini 3+ ([`gemini_is_v3_or_later`] — the SAME v3+
+/// boundary the effort feature's `thinkingLevel` shape uses; a real Gemini 3
+/// id like `gemini-3-pro-preview` matches neither `"2.5"` nor `"thinking"`
+/// on its own), the 2.5 family, and any explicit `*-thinking-*` model.
+/// Unknown pre-3 future models simply don't surface thoughts (a graceful
+/// miss, never a broken request).
 fn gemini_supports_thinking(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
-    m.contains("2.5") || m.contains("thinking")
+    gemini_is_v3_or_later(model) || m.contains("2.5") || m.contains("thinking")
+}
+
+/// Whether `model` is Gemini 3 or later — the boundary where the newer
+/// `thinkingConfig.thinkingLevel` enum (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH`) takes
+/// over from the older `thinkingConfig.thinkingBudget` integer. Verified
+/// against the live REST reference (`ai.google.dev/api/generate-content`,
+/// fetched 2026-08-03): "`thinkingLevel` ... Recommended for Gemini 3 or
+/// later models. Use with earlier models results in an error." Parses the
+/// major version number right after the `gemini-` prefix (`gemini-3-pro-
+/// preview`, `gemini-3.5-flash`, `gemini-3.6-flash`, …) so a future Gemini
+/// 4/5/… release is recognized with no code change, unlike a growing
+/// enumerated list.
+fn gemini_is_v3_or_later(model: &str) -> bool {
+    let m = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    let Some(rest) = m.strip_prefix("gemini-") else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().is_ok_and(|major| major >= 3)
+}
+
+/// Reasoning-effort levels Gemini 3.x accepts, PER MODEL — Google's live
+/// table (`ai.google.dev/gemini-api/docs/thinking`, fetched 2026-08-04)
+/// shows the accepted subset genuinely varies by model TIER, not just by
+/// version (`gemini-3.1-flash-lite-image` supports only `minimal`/`high`;
+/// `gemini-3.1-pro-preview` supports `low`/`medium`/`high`) — unlike every
+/// other predicate in this crate, there is no clean shape rule to derive
+/// this from the model id, so this is a genuine per-model lookup sourced
+/// directly from that table:
+///
+/// | model                       | levels                          |
+/// |------------------------------|---------------------------------|
+/// | gemini-3.1-pro-preview         | low, medium, high                |
+/// | gemini-3.1-flash-lite-image    | minimal, high                    |
+/// | gemini-3-flash-preview, gemini-3.5-flash(-lite), gemini-3.6-flash | minimal, low, medium, high |
+/// | gemini-3-pro-preview (SHUT DOWN — `ai.google.dev/gemini-api/docs/models`, checked 2026-08-04) | low, high |
+///
+/// `gemini-3.1-flash-lite` — the TEXT model (Stable, live), distinct from
+/// `gemini-3.1-flash-lite-image` above — is deliberately absent from this
+/// table, not an oversight: re-checked against the live thinking table
+/// (`ai.google.dev/gemini-api/docs/thinking`, checked 2026-08-04) and it has
+/// no row there at all, unlike every model listed above. Guessing it shares
+/// its `-image` sibling's (or `gemini-3.5-flash-lite`'s) level set would be
+/// exactly the "guessed value that could 400" this function exists to avoid
+/// — it correctly falls through to the safe universal `["high"]` default
+/// below until Google's table documents it.
+///
+/// Level acceptance is enforced POST-auth (proto/shape validation accepts
+/// any `ThinkingLevel` enum member on every model — a request 400s only
+/// later, on the model-specific check), so this table could not be probed
+/// live without a key; treat Google's docs table as authoritative.
+///
+/// `gemini-3-pro-preview`'s row is kept even though the model itself is
+/// shut down: a user with an already-saved config (or who types a model id
+/// manually — the field is free text) still gets its real historical
+/// levels instead of the generic `["high"]` fallback below, and a genuinely
+/// wrong 400 is strictly worse than an accurate answer for a dead model
+/// either way (the actual `embedContent`/`generateContent` call still fails
+/// the SAME way regardless of what this function returns). Dropping the row
+/// would be equally defensible — re-litigate if it becomes confusing rather
+/// than helpful.
+///
+/// A model that passes [`gemini_is_v3_or_later`] but is NOT one of the rows
+/// above is a genuinely new/unreleased id — falls back to `["high"]`, the
+/// one level every row in the current table accepts (never a guessed value
+/// that could 400; `effort: high` is also the documented no-op-equivalent
+/// default on every provider in this crate, so it degrades gracefully as
+/// "no override"). Pre-3 models (including the 2.5 family — see
+/// `build_chat_stream_body`'s doc comment) get no levels at all.
+fn gemini_effort_levels(model: &str) -> Vec<&'static str> {
+    if !gemini_is_v3_or_later(model) {
+        return Vec::new();
+    }
+    let m = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    if m.contains("gemini-3.1-flash-lite-image") {
+        vec!["minimal", "high"]
+    } else if m.contains("gemini-3.1-pro-preview") {
+        vec!["low", "medium", "high"]
+    } else if m.contains("gemini-3-pro-preview") {
+        // SHUT DOWN as of 2026-08-04 (`ai.google.dev/gemini-api/docs/models`)
+        // — kept for a saved/manually-typed id, see the doc comment above.
+        vec!["low", "high"]
+    } else if m.contains("gemini-3-flash-preview")
+        || m.contains("gemini-3.5-flash")
+        || m.contains("gemini-3.6-flash")
+    {
+        vec!["minimal", "low", "medium", "high"]
+    } else {
+        // Includes `gemini-3.1-flash-lite` (the text model, NOT `-image`) —
+        // absent from the live thinking table as of the date above, so this
+        // safe universal fallback is the correct answer, not a gap. See the
+        // doc comment above before "fixing" this by guessing its levels.
+        vec!["high"]
+    }
 }
 
 /// Extract a Gemini chunk's streamed parts as `(is_thought, text)` pairs. 2.5
@@ -285,6 +395,29 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
     out
 }
 
+/// Effective `temperature` to send, or `None` to omit the field entirely.
+/// `explicit` (the user's own choice, if any) ALWAYS wins, on every model —
+/// this never overrides a deliberate value. Absent that, every call site in
+/// this file used to fall back to its own hardcoded default (`0.7` for chat/
+/// complete, `0.2` for research) regardless of model. Google's live docs
+/// (`ai.google.dev/gemini-api/docs/gemini-3`, fetched 2026-08-04): "For all
+/// Gemini 3 models, we strongly recommend keeping the temperature parameter
+/// at its default value of `1.0`... Changing the temperature (setting it
+/// below 1.0) may lead to unexpected behavior, such as looping or degraded
+/// performance, particularly in complex mathematical or reasoning tasks."
+/// This is NOT a 400 — Gemini 3 accepts the field — it is a SILENT quality
+/// regression: injecting either hardcoded default put every Gemini 3+ call
+/// (chat, complete, AND research/synthesis, which is exactly the "complex
+/// reasoning task" case) into the documented degradation case, including
+/// every new user via the onboarding default (`gemini-3.6-flash`, itself
+/// Gemini 3+). So on a v3+ model ([`gemini_is_v3_or_later`]) with no
+/// explicit value, this omits the field so the API applies its OWN 1.0
+/// default, instead of `fallback`; a pre-v3 model keeps `fallback`
+/// unchanged (Google's guidance is scoped to the 3.x family).
+fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f64) -> Option<f64> {
+    explicit.or_else(|| (!gemini_is_v3_or_later(model)).then_some(fallback))
+}
+
 /// Build the `streamGenerateContent` request body for a given
 /// [`AiGenerateRequest`]. Pure + unit-tested. `topP`/`frequencyPenalty`/
 /// `presencePenalty` are the detector-resistance sampling knobs (RAID, ACL
@@ -292,7 +425,7 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
 /// supports all three on `generationConfig`, each added only when `Some`
 /// (never sent as `null`).
 fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
-    let temperature = req.temperature.unwrap_or(0.7);
+    let temperature = gemini_effective_temperature(&req.model, req.temperature, 0.7);
     let system_text: String = req
         .messages
         .iter()
@@ -314,7 +447,10 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         })
         .collect();
 
-    let mut generation_config = json!({ "temperature": temperature });
+    let mut generation_config = json!({});
+    if let Some(t) = temperature {
+        generation_config["temperature"] = json!(t);
+    }
     if let Some(top_p) = req.top_p {
         generation_config["topP"] = json!(top_p);
     }
@@ -327,15 +463,89 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     if let Some(mt) = req.max_tokens {
         generation_config["maxOutputTokens"] = json!(mt);
     }
+    // Both fields live under the SAME `thinkingConfig` object — build it
+    // incrementally so setting one never clobbers the other.
+    let mut thinking_config = serde_json::Map::new();
     // Ask thinking-capable models to stream their reasoning as `thought` parts.
     if gemini_supports_thinking(&req.model) {
-        generation_config["thinkingConfig"] = json!({ "includeThoughts": true });
+        thinking_config.insert("includeThoughts".to_string(), json!(true));
+    }
+    // `thinkingLevel` is gated on Gemini 3+ ([`gemini_is_v3_or_later`]) per
+    // THIS endpoint's own REST reference (`ThinkingConfig.thinkingLevel`,
+    // `generateContent`/`streamGenerateContent` — what this file calls):
+    // "Recommended for Gemini 3 or later models. Use with earlier models
+    // results in an error." Google's newer Interactions API separately
+    // publishes a level vocabulary for the 2.5 family too, but that is a
+    // DIFFERENT API this app does not call — going by the reference for the
+    // endpoint actually in use here, pre-3 models (2.5 and earlier) simply
+    // don't get an effort-driven thinking config.
+    //
+    // GATED ON THE PER-MODEL LEVEL SET (`gemini_effort_levels`), not just
+    // "is this Gemini 3+" — `effort` is stored PER PROVIDER, not per model
+    // (`preferences-store.ts`), and nothing clears it on a model switch:
+    // picking `medium` on `gemini-3.1-pro-preview` (valid there) then
+    // switching to `gemini-3-pro-preview` (same provider, only accepts
+    // low/high) must not ship `thinkingLevel: "MEDIUM"` to a model that
+    // 400s on it. `gemini_effort_levels` already returns `[]` for a pre-3
+    // model, so this one check covers both gates — an invalid/stale level
+    // for the CURRENT model is silently omitted (the request still sends,
+    // just without an effort override) rather than sent and rejected.
+    if let Some(effort) = req
+        .effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        if gemini_effort_levels(&req.model).contains(&effort) {
+            thinking_config.insert(
+                "thinkingLevel".to_string(),
+                json!(effort.to_ascii_uppercase()),
+            );
+        }
+    }
+    if !thinking_config.is_empty() {
+        generation_config["thinkingConfig"] = Value::Object(thinking_config);
     }
     let mut body = json!({ "contents": contents, "generationConfig": generation_config });
     if !system_text.is_empty() {
         body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
     }
     body
+}
+
+/// Build the `embedContent` request body. Pure + unit-tested — the ONLY place
+/// `outputDimensionality` is set, so a request can never silently drop it.
+/// `m` is the model id with any `models/` prefix already stripped (mirrors
+/// `embed_impl`'s own stripping, done once there for the endpoint label too).
+///
+/// Without it, `gemini-embedding-2` returns its default 3072-dim vector — 4x
+/// the retired text-embedding-004's 768 — stored as JSON f64 text in both
+/// `vectors` and `posting_vectors` at ~4x the space. 768 keeps ~99.5% of
+/// full-dimension MTEB quality (Google's own published numbers) and is one
+/// of the model's documented "Recommended" sizes; `gemini-embedding-2`
+/// auto-normalizes a truncated-dimension embedding (verified in the live
+/// Gemini API docs), so this needs no extra normalization step on our side.
+///
+/// **Nesting matters — and is now self-verifying, not just argued from docs.**
+/// The REST reference for `models.embedContent` lists a TOP-LEVEL
+/// `outputDimensionality` field as `(deprecated)`, and `EmbedContentConfig`'s
+/// own JSON representation gives the nested field name as `outputDimensionality`
+/// (camelCase) — this shape has been read from the live reference twice now
+/// by two different reviewers who reached opposite conclusions, which is
+/// exactly the failure mode "trust whoever read the docs last" has. Rather
+/// than argue it a third time: proto3-JSON transcoding tolerates an unknown
+/// or misplaced field with NO error, so a wrong nesting here would silently
+/// return the model's full default dimension instead of
+/// [`EMBED_OUTPUT_DIMENSIONALITY`] — `embed_impl` checks the ACTUAL returned
+/// vector length against it and fails loudly on any mismatch, so the wire
+/// shape is verified by the code at runtime on every real call, not by
+/// whoever last read the docs.
+fn build_embed_body(m: &str, text: &str) -> Value {
+    json!({
+        "model": format!("models/{m}"),
+        "content": { "parts": [{ "text": text }] },
+        "embedContentConfig": { "outputDimensionality": EMBED_OUTPUT_DIMENSIONALITY },
+    })
 }
 
 pub struct GeminiClient;
@@ -357,9 +567,13 @@ impl GeminiClient {
         let endpoint_label = format!("/v1beta/models/{m}:generateContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
 
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, temperature, 0.7) {
+            generation_config["temperature"] = json!(t);
+        }
         let mut body = json!({
             "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
-            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+            "generationConfig": generation_config,
         });
         if !system.is_empty() {
             body["systemInstruction"] = json!({ "parts": [{ "text": system }] });
@@ -412,10 +626,7 @@ impl GeminiClient {
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:embedContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
-        let body = json!({
-            "model": format!("models/{m}"),
-            "content": { "parts": [{ "text": text }] },
-        });
+        let body = build_embed_body(m, text);
         let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -442,6 +653,19 @@ impl GeminiClient {
             .ok_or_else(|| {
                 AppError::Provider("Gemini: missing embedding in response".to_string())
             })?;
+        // Self-verify the wire shape rather than trust it: see
+        // `build_embed_body`'s doc comment. If `outputDimensionality` were
+        // ever silently ignored (wrong nesting, a future API change, proto3
+        // tolerating an unknown field), the API would return its full
+        // default dimension instead of what was requested — catch that HERE,
+        // loudly, instead of silently storing an oversized vector.
+        if vector.len() != EMBED_OUTPUT_DIMENSIONALITY as usize {
+            return Err(AppError::Provider(format!(
+                "Gemini: requested a {EMBED_OUTPUT_DIMENSIONALITY}-dim embedding but the API \
+                 returned {} dims — outputDimensionality was not honored",
+                vector.len()
+            )));
+        }
         Ok((vector, parse_gemini_embed_usage(&data)))
     }
 
@@ -470,10 +694,21 @@ impl GeminiClient {
             false,
         );
 
+        // 0.2 favors precision over creativity for a research brief — but on
+        // Gemini 3+ this is exactly the case Google's docs warn against (see
+        // `gemini_effective_temperature`'s doc comment): research/synthesis is
+        // itself a "complex reasoning task", so forcing a below-1.0 value here
+        // was pushing v3+ research into the documented degradation case, not
+        // improving its precision. Omitted entirely on v3+ (API applies its
+        // own 1.0); kept for pre-v3 models where this concern doesn't apply.
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, None, 0.2) {
+            generation_config["temperature"] = json!(t);
+        }
         let body = json!({
             "contents": [ { "role": "user", "parts": [{ "text": user }] } ],
             "systemInstruction": { "parts": [{ "text": system }] },
-            "generationConfig": { "temperature": 0.2 },
+            "generationConfig": generation_config,
             "tools": [{ "google_search": {} }],
         });
         let url = format!("{BASE}{endpoint_label}");
@@ -517,12 +752,27 @@ impl AiProvider for GeminiClient {
         ProviderId::Gemini
     }
 
-    fn capabilities(&self, _model: &str) -> ModelCapabilities {
+    fn capabilities(&self, model: &str) -> ModelCapabilities {
         ModelCapabilities {
+            // Verified, not assumed: stays `true` unconditionally, including
+            // for Gemini 3+. This field's established meaning across every
+            // provider in this crate (see `openai.rs`/`anthropic.rs`'s own
+            // `supports_temperature` gates) is "does the API REJECT this
+            // field" — OpenAI's o-series 400s on it, Anthropic's adaptive-
+            // thinking models 400 on it, but Gemini 3+ does not: Google's own
+            // docs (`ai.google.dev/gemini-api/docs/gemini-3`) only recommend
+            // AGAINST changing it from 1.0 for quality reasons, never say the
+            // field itself is rejected. That quality concern is handled at
+            // the send site instead (`gemini_effective_temperature`), which
+            // omits an INVENTED default rather than a user's real choice —
+            // this flag isn't consulted there today (unlike OpenAI/
+            // Anthropic's `caps.supports_temperature` gate) and has no
+            // renderer consumer either, so changing its value here wouldn't
+            // move anything user-visible; it would just make it inaccurate.
             supports_temperature: true,
             supports_system_role: true, // mapped to systemInstruction
             supports_streaming: true,
-            supports_reasoning: false,
+            supports_reasoning: gemini_is_v3_or_later(model),
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
@@ -530,6 +780,10 @@ impl AiProvider for GeminiClient {
             supports_web_search: true,
             token_param: TokenParam::MaxOutputTokens,
         }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        gemini_effort_levels(model)
     }
 
     async fn chat_stream(
@@ -681,13 +935,23 @@ impl AiProvider for GeminiClient {
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
-        Some("text-embedding-004")
+        // text-embedding-004 was retired (shutdown Jan 14, 2026 — the exact
+        // error this app was seeing). Google's own deprecation table names
+        // `gemini-embedding-2` as the migration target for every retired
+        // embedding model (verified via the live Gemini API docs, not memory).
+        Some("gemini-embedding-2")
     }
 
     fn max_embedding_input_chars(&self) -> usize {
-        // text-embedding-004 accepts 2048 tokens (~4 chars/token ≈ 8000 chars). This
-        // matches the conservative default but is stated explicitly so Gemini's real
-        // cap is documented at the adapter and won't drift if the default changes.
+        // gemini-embedding-2's documented input limit is 8,192 tokens (~4
+        // chars/token ≈ 32000 chars for English). Cap conservatively at 8000
+        // chars: in the worst case (token-dense scripts, ~1 char/token) that
+        // still stays under 8,192 tokens for every language. This is the
+        // per-CHUNK size `embed_adaptive` uses — a document longer than this
+        // is split into multiple chunks and mean-pooled (never truncated
+        // away), and `embed_chunk_adaptive` halves-and-retries a single chunk
+        // on an actual context-length error, so this default only needs to be
+        // a safe starting point, not a perfect guess.
         8_000
     }
 
@@ -778,9 +1042,13 @@ impl AiProvider for GeminiClient {
             )
             .collect();
 
+        let mut generation_config = json!({});
+        if let Some(t) = gemini_effective_temperature(model, temperature, 0.7) {
+            generation_config["temperature"] = json!(t);
+        }
         let mut body = json!({
             "contents": contents,
-            "generationConfig": { "temperature": temperature.unwrap_or(0.7) },
+            "generationConfig": generation_config,
             "tools": [{ "functionDeclarations": function_declarations }],
         });
         if !system.is_empty() {
@@ -827,306 +1095,5 @@ impl AiProvider for GeminiClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        build_chat_stream_body, gemini_supports_thinking, join_parts_text,
-        parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
-        parse_gemini_usage, validate_gemini_key, GeminiScanner, StreamPiece,
-    };
-    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
-    use crate::error::AppError;
-    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-    use serde_json::json;
-
-    fn base_request() -> AiGenerateRequest {
-        AiGenerateRequest {
-            model: "gemini-1.5-flash".to_string(),
-            messages: vec![AiGenerateRequestMessage {
-                role: "user".to_string(),
-                content: "hi".to_string(),
-            }],
-            locale: "en".to_string(),
-            temperature: Some(0.8),
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: None,
-            effort: None,
-        }
-    }
-
-    #[test]
-    fn chat_stream_body_serializes_sampling_params_when_set() {
-        let mut req = base_request();
-        req.top_p = Some(0.95);
-        req.frequency_penalty = Some(0.3);
-        req.presence_penalty = Some(0.2);
-        let body = build_chat_stream_body(&req);
-        let config = &body["generationConfig"];
-        assert_eq!(config["topP"], json!(0.95));
-        assert_eq!(config["frequencyPenalty"], json!(0.3));
-        assert_eq!(config["presencePenalty"], json!(0.2));
-    }
-
-    #[test]
-    fn chat_stream_body_omits_sampling_params_when_none() {
-        let body = build_chat_stream_body(&base_request());
-        let config = &body["generationConfig"];
-        assert!(config.get("topP").is_none());
-        assert!(config.get("frequencyPenalty").is_none());
-        assert!(config.get("presencePenalty").is_none());
-    }
-
-    #[test]
-    fn blank_or_missing_key_is_rejected_with_unauthorized() {
-        // A missing key, an empty string, and whitespace-only must all fail fast with
-        // the same unauthorized message `friendly_api_error` maps a real 401/403 to —
-        // never sending an empty `x-goog-api-key` header for a wasted round-trip.
-        for stored in [None, Some(String::new()), Some("   \n\t".to_string())] {
-            match validate_gemini_key(stored) {
-                Err(AppError::Config(msg)) => {
-                    assert_eq!(msg, "gemini: invalid or unauthorized API key.")
-                }
-                other => panic!("expected unauthorized Config error, got {other:?}"),
-            }
-        }
-    }
-
-    #[test]
-    fn present_key_passes_through_untrimmed() {
-        // A real key is returned verbatim (surrounding content preserved, only blank
-        // rejected) so the request uses exactly what the user stored.
-        assert_eq!(
-            validate_gemini_key(Some("AIza-secret".to_string())).unwrap(),
-            "AIza-secret"
-        );
-    }
-
-    #[test]
-    fn join_parts_text_concatenates_first_candidate_parts() {
-        let data = json!({
-            "candidates": [{
-                "content": { "parts": [{ "text": "Acme is " }, { "text": "a widget maker." }] },
-                "groundingMetadata": { "webSearchQueries": ["Acme"] }
-            }]
-        });
-        assert_eq!(join_parts_text(&data), "Acme is a widget maker.");
-        assert_eq!(join_parts_text(&json!({})), "");
-        assert_eq!(join_parts_text(&json!({ "candidates": [] })), "");
-    }
-
-    #[test]
-    fn thinking_gate_enables_only_known_models() {
-        for m in [
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash-thinking",
-        ] {
-            assert!(gemini_supports_thinking(m), "{m} should enable thinking");
-        }
-        for m in ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"] {
-            assert!(
-                !gemini_supports_thinking(m),
-                "{m} must not request thinkingConfig (it 400s)"
-            );
-        }
-    }
-
-    #[test]
-    fn parse_parts_splits_thought_from_answer() {
-        let ev = json!({
-            "candidates": [{
-                "content": { "parts": [
-                    { "text": "reasoning…", "thought": true },
-                    { "text": "the answer" }
-                ] }
-            }]
-        });
-        assert_eq!(
-            parse_gemini_parts(&ev),
-            vec![(true, "reasoning…"), (false, "the answer")]
-        );
-    }
-
-    #[test]
-    fn parse_parts_empty_without_candidates() {
-        assert!(parse_gemini_parts(&json!({})).is_empty());
-        assert!(parse_gemini_parts(&json!({ "candidates": [] })).is_empty());
-    }
-
-    #[test]
-    fn frames_parse_a_single_object_to_pieces() {
-        // A self-contained object (no array wrapper) — the scanner finds it when
-        // depth returns to 0 and the accumulated text starts with `{`.
-        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"reasoning","thought":true},{"text":"answer"}]}}]}"#;
-        let mut state = GeminiScanner::default();
-        let mut buf = String::from(obj);
-        let pieces = parse_gemini_frames(&mut buf, &mut state);
-        assert_eq!(
-            pieces,
-            vec![
-                StreamPiece::thinking("reasoning"),
-                StreamPiece::text("answer")
-            ]
-        );
-        // The buffer is fully consumed and no partial object remains.
-        assert!(buf.is_empty());
-        assert!(state.pending.is_empty());
-    }
-
-    #[test]
-    fn frames_reassemble_object_split_across_chunks() {
-        // An object delivered in two chunks is buffered in `state.pending` until
-        // complete, then emitted exactly once.
-        let mut state = GeminiScanner::default();
-        let mut buf = String::from(r#"{"candidates":[{"content":{"parts":[{"text":"hel"#);
-        assert!(parse_gemini_frames(&mut buf, &mut state).is_empty());
-        assert!(!state.pending.is_empty());
-        buf.push_str(r#"lo"}]}}]}"#);
-        assert_eq!(
-            parse_gemini_frames(&mut buf, &mut state),
-            vec![StreamPiece::text("hello")]
-        );
-    }
-
-    #[test]
-    fn frames_handle_braces_inside_strings() {
-        // Braces inside a string value must not move the depth counter.
-        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"a } b { c"}]}}]}"#;
-        let mut state = GeminiScanner::default();
-        let mut buf = String::from(obj);
-        assert_eq!(
-            parse_gemini_frames(&mut buf, &mut state),
-            vec![StreamPiece::text("a } b { c")]
-        );
-    }
-
-    #[test]
-    fn parse_usage_reads_prompt_and_candidates_token_counts() {
-        let data = json!({ "usageMetadata": { "promptTokenCount": 55, "candidatesTokenCount": 22, "totalTokenCount": 77 } });
-        let usage = parse_gemini_usage(&data).expect("usage present");
-        assert_eq!(usage.input_tokens, 55);
-        assert_eq!(usage.output_tokens, 22);
-    }
-
-    #[test]
-    fn parse_usage_is_none_when_absent() {
-        assert!(parse_gemini_usage(&json!({})).is_none());
-    }
-
-    #[test]
-    fn parse_embed_usage_reads_prompt_token_count_when_present() {
-        let data = json!({ "usageMetadata": { "promptTokenCount": 7 } });
-        let usage = parse_gemini_embed_usage(&data);
-        assert_eq!(usage.input_tokens, 7);
-        assert_eq!(usage.output_tokens, 0);
-    }
-
-    #[test]
-    fn parse_embed_usage_zero_when_absent() {
-        // Gemini's embedContent response typically carries no usageMetadata —
-        // must degrade to zero, never fabricate a token count.
-        let usage = parse_gemini_embed_usage(&json!({ "embedding": { "values": [0.1] } }));
-        assert_eq!(usage.input_tokens, 0);
-        assert_eq!(usage.output_tokens, 0);
-    }
-
-    #[test]
-    fn frames_emit_a_usage_piece_when_usage_metadata_is_present() {
-        let obj = r#"{"candidates":[{"content":{"parts":[{"text":"answer"}]}}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}"#;
-        let mut state = GeminiScanner::default();
-        let mut buf = String::from(obj);
-        let pieces = parse_gemini_frames(&mut buf, &mut state);
-        assert_eq!(pieces.len(), 2);
-        assert_eq!(pieces[0], StreamPiece::text("answer"));
-        let usage_piece = &pieces[1];
-        assert!(usage_piece.usage.is_some());
-        let usage = usage_piece.usage.unwrap();
-        assert_eq!(usage.input_tokens, 10);
-        assert_eq!(usage.output_tokens, 5);
-    }
-
-    #[test]
-    fn frames_emit_both_objects_in_a_json_array_payload() {
-        // A realistic streamed array (`[{…},{…}]`) split across two chunks: the
-        // depth-0 framing (`[`, `,`, `]`, whitespace) must be dropped so the
-        // `starts_with('{')` guard fires for the second object too. Both objects'
-        // text deltas must be emitted in order.
-        let mut state = GeminiScanner::default();
-        let mut buf =
-            String::from(r#"[{"candidates":[{"content":{"parts":[{"text":"Hello"}]}}]}, {"candi"#);
-        let first = parse_gemini_frames(&mut buf, &mut state);
-        assert_eq!(first, vec![StreamPiece::text("Hello")]);
-
-        buf.push_str(r#"dates":[{"content":{"parts":[{"text":" world"}]}}]}]"#);
-        let second = parse_gemini_frames(&mut buf, &mut state);
-        assert_eq!(second, vec![StreamPiece::text(" world")]);
-        assert!(buf.is_empty());
-        assert!(state.pending.is_empty());
-    }
-
-    #[test]
-    fn parse_turn_extracts_function_calls_alongside_text() {
-        // Gemini reports finishReason "STOP" even when it emits a functionCall — the
-        // call's presence, not the finishReason, is the "wants tools back" signal.
-        let data = json!({
-            "candidates": [{
-                "content": { "parts": [
-                    { "text": "Looking up the company." },
-                    { "functionCall": { "name": "research_company", "args": { "company": "Acme" } } }
-                ] },
-                "finishReason": "STOP"
-            }]
-        });
-        let turn = parse_gemini_turn(&data);
-        assert_eq!(turn.text, "Looking up the company.");
-        assert_eq!(turn.stop, StopReason::ToolUse);
-        assert_eq!(
-            turn.tool_calls,
-            vec![ToolCall {
-                id: "research_company-1".to_string(),
-                name: "research_company".to_string(),
-                args: json!({ "company": "Acme" }),
-            }]
-        );
-    }
-
-    #[test]
-    fn parse_turn_plain_answer_maps_stop_reason() {
-        let data = json!({
-            "candidates": [{
-                "content": { "parts": [{ "text": "Final answer." }] },
-                "finishReason": "STOP"
-            }]
-        });
-        let turn = parse_gemini_turn(&data);
-        assert_eq!(turn.text, "Final answer.");
-        assert!(turn.tool_calls.is_empty());
-        assert_eq!(turn.stop, StopReason::End);
-
-        let truncated = json!({
-            "candidates": [{ "content": { "parts": [{ "text": "..." }] }, "finishReason": "MAX_TOKENS" }]
-        });
-        assert_eq!(parse_gemini_turn(&truncated).stop, StopReason::Length);
-    }
-
-    #[test]
-    fn parse_turn_malformed_function_call_maps_to_length_not_tool_use() {
-        // A tool call truncated by the output-token limit comes back with
-        // `finishReason: "MALFORMED_FUNCTION_CALL"` (NOT `MAX_TOKENS`) — it must
-        // route through the same non-executable/truncated path as `MAX_TOKENS`, so
-        // the (possibly half-serialized) args never reach a tool handler.
-        let data = json!({
-            "candidates": [{
-                "content": { "parts": [
-                    { "functionCall": { "name": "research_company", "args": { "company": "Ac" } } }
-                ] },
-                "finishReason": "MALFORMED_FUNCTION_CALL"
-            }]
-        });
-        let turn = parse_gemini_turn(&data);
-        assert_eq!(turn.stop, StopReason::Length);
-    }
-}
+#[path = "gemini_tests.rs"]
+mod tests;

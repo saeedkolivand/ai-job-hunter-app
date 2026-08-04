@@ -92,11 +92,16 @@ export const LocalModelLimitsSchema = z.object({
     .optional(),
 });
 
-// Per-provider settings (model choice, optional base URL, optional CLI effort)
+// Per-provider settings (model choice, optional base URL, optional reasoning effort)
 const PerProviderSettingsSchema = z.object({
   model: z.string().default(''),
   baseUrl: z.string().optional(),
-  // Reasoning effort for CLI agents that support it (e.g. Codex: low/medium/high).
+  // Reasoning effort for any provider whose CURRENT model supports it — a CLI
+  // agent (Codex: low/medium/high) or an HTTP provider (OpenAI's gpt-5.x/
+  // o-series, Gemini 3+ — its accepted level set varies per model tier, see
+  // `AiProvider::effort_levels`). Stored PER PROVIDER, not per model, so the
+  // backend re-validates it against the CURRENT model on every request
+  // rather than trusting a value picked for a previously-selected model.
   effort: z.string().optional(),
   // Per-model generation limits, keyed by model name (local/Ollama only).
   // Optional so existing per-provider settings (and the many `{ model }` literals)

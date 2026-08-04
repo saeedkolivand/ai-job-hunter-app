@@ -7,6 +7,8 @@ import { Button, Dropdown, Input, useNotification } from '@ajh/ui';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
+import { EffortPicker } from '../EffortPicker';
+
 interface ProviderMeta {
   label: string;
   description: string;
@@ -259,6 +261,18 @@ export function CloudProviderConfig({
             placeholder="Select a model…"
           />
         </div>
+      )}
+
+      {/* `openai-compatible` never reports effort levels — the backend
+          deliberately never guesses reasoning support for an unknown gateway
+          catalog (`OpenAiClient::supports_reasoning_effort` is a hard
+          `false` for it) — so the picker can never render for it anyway.
+          Skipping it here (instead of passing a `baseUrl` that would make
+          `useModelCapabilities`'s query key change on every un-debounced
+          keystroke in the base-URL input) avoids firing a capability probe
+          per keystroke for a picker that would stay empty regardless. */}
+      {connected && provider !== 'openai-compatible' && (
+        <EffortPicker provider={provider} model={providerModel} />
       )}
 
       {/* Set active button */}

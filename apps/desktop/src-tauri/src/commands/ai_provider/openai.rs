@@ -118,10 +118,46 @@ fn should_list_model(provider: ProviderId, id: &str) -> bool {
 /// reject `temperature` and require `max_completion_tokens` instead of
 /// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
 /// handled without a code change.
+///
+/// This predicate is the `supports_temperature`/`token_param` gate ONLY — it
+/// does NOT cover OpenAI's current gpt-5.x reasoning line (see
+/// [`is_gpt5_or_later_reasoning_family`]), which accepts a normal
+/// `temperature`/`max_tokens` unlike the o-series. Reusing this for the
+/// `reasoning_effort` gate would silently exclude gpt-5.x — the two gates
+/// answer different questions and must stay separate.
 fn is_reasoning_model(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
     let mut bytes = m.bytes();
     matches!((bytes.next(), bytes.next()), (Some(b'o'), Some(d)) if d.is_ascii_digit())
+}
+
+/// OpenAI's CURRENT reasoning-model line — gpt-5 and later (verified against
+/// the live reasoning guide, `platform.openai.com/docs/guides/reasoning`,
+/// fetched 2026-08-04: "Start with `gpt-5.6` for most reasoning workloads");
+/// `docs/models/gpt-5.6.md`-style model pages confirm `reasoning_effort`
+/// support on `/v1/chat/completions`. Distinct from (and additive to)
+/// [`is_reasoning_model`]'s legacy o-series gate — a REQUEST SCHEMA
+/// (`CreateChatCompletionRequest`) never carries a model list, so this is
+/// verified against the provider's model/capability docs, not the schema.
+///
+/// Matches any `gpt-`+digit-major≥5 id (`gpt-5`, `gpt-5-mini`, `gpt-5.4`,
+/// `gpt-5.5`, `gpt-5.6` and its `-sol`/`-terra`/`-luna` aliases) so a NEW
+/// gpt-5.x variant — or a later numbered major line, should OpenAI keep this
+/// convention — is picked up with no code change, EXCEPT the `-chat-latest`
+/// family (`gpt-5-chat-latest`, `gpt-5.1-chat-latest`, …): OpenAI's
+/// non-reasoning conversational variant of each gpt-5.x generation (mirrors
+/// the older `chatgpt-4o-latest` naming), confirmed in the live
+/// `ModelIdsShared` enum — explicitly excluded.
+fn is_gpt5_or_later_reasoning_family(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    if m.contains("chat-latest") {
+        return false;
+    }
+    let Some(rest) = m.strip_prefix("gpt-") else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().is_ok_and(|major| major >= 5)
 }
 
 /// Split one streaming chunk into `(reasoning, content)` deltas.
@@ -231,6 +267,39 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     out
 }
 
+/// Levels `reasoning_effort` accepts on every reasoning-capable model this
+/// adapter recognizes (native OpenAI's o-series + gpt-5.x, and Ollama
+/// Cloud's thinking family — see [`OpenAiClient::supports_reasoning_effort`]).
+/// Verified against the live OpenAPI schema
+/// (`raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml`,
+/// `ReasoningEffort` schema, checked 2026-08-04): the real wire enum has
+/// grown to SEVEN values (`none, minimal, low, medium, high, xhigh, max`),
+/// and the live reasoning guide (`platform.openai.com/docs/guides/reasoning`,
+/// same date) states plainly: "Some models support only a subset of these
+/// values, so check the relevant model page" — genuinely per-model, the SAME
+/// class of variance Gemini's `thinkingLevel` and Anthropic's
+/// `output_config.effort` have (see `gemini_effort_levels` / `anthropic_effort_levels`).
+///
+/// This adapter deliberately exposes only the THREE values every recognized
+/// reasoning model accepts with no further per-model check. Unlike
+/// Gemini/Anthropic, OpenAI's guide has no single closed table mapping value
+/// -> supporting models — it defers to each individual model's own page, and
+/// [`is_gpt5_or_later_reasoning_family`] deliberately matches ANY `gpt-5.x`+
+/// id (including snapshots that predate `xhigh`/`max`, which the guide
+/// frames as a recent addition alongside GPT-5.6's reasoning-mode overhaul).
+/// Enumerating a real per-model-id table here would mean checking each
+/// model's own page individually — a materially larger, separate piece of
+/// work, not a same-shaped fix as the Gemini/Anthropic tables (flag as a
+/// follow-up, don't guess it here). `low`/`medium`/`high` carry no per-model
+/// caveat in either source, so they stay the safe universal baseline.
+///
+/// Still gated with `.contains(&effort)` on the send path below, not just
+/// the `supports_reasoning` boolean — the same protection Gemini/Anthropic
+/// use, so this stays correct with zero further change the day a follow-up
+/// DOES expose a richer, genuinely per-model set here (`effort` is stored
+/// PER PROVIDER, not per model — `preferences-store.ts`).
+const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
+
 /// Build the `/chat/completions` streaming request body for a given
 /// [`AiGenerateRequest`] + capability matrix. Pure + unit-tested — this is the
 /// shared body shape for native OpenAI, any OpenAI-compatible gateway, and
@@ -272,6 +341,22 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
         };
         body[field] = json!(mt);
     }
+    // Only ever sent when it's one of `OPENAI_EFFORT_LEVELS` (see its doc
+    // comment) AND `caps.supports_reasoning` is true (native OpenAI's
+    // o-series, or Ollama Cloud's thinking-family models — see
+    // `OpenAiClient::supports_reasoning_effort`) — a wrong/guessed value 400s.
+    if caps.supports_reasoning {
+        if let Some(effort) = req
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+        {
+            if OPENAI_EFFORT_LEVELS.contains(&effort) {
+                body["reasoning_effort"] = json!(effort);
+            }
+        }
+    }
     body
 }
 
@@ -299,6 +384,36 @@ impl OpenAiClient {
     /// to end — see the same note on `salary_research::SalaryResearch::enrich`).
     fn supports_web_search(&self) -> bool {
         self.id == ProviderId::OpenAi
+    }
+
+    /// Whether this client's provider id + model accepts the `reasoning_effort`
+    /// field on `/chat/completions` (verified against the provider's live
+    /// model/capability docs — a REQUEST SCHEMA like
+    /// `CreateChatCompletionRequest` never carries a model list, so a gate
+    /// like this one is checked against OpenAI's reasoning guide + model
+    /// pages, not the schema — and Ollama's OpenAI-compatibility reference,
+    /// fetched 2026-08-04). Native OpenAI: the legacy o-series
+    /// ([`is_reasoning_model`]) OR the current gpt-5.x line
+    /// ([`is_gpt5_or_later_reasoning_family`]) — two SEPARATE gates ORed
+    /// together, not one reused, because gpt-5.x accepts a normal
+    /// `temperature` unlike the o-series (see `is_reasoning_model`'s doc
+    /// comment). Ollama Cloud: a DIFFERENT gate —
+    /// [`ollama::ollama_family_supports_thinking`], the same
+    /// thinking-model-family classifier local Ollama's native `think` field
+    /// uses — its `/v1` endpoint is OpenAI-compatible but its model CATALOG is
+    /// Ollama's own (e.g. `gpt-oss:120b` doesn't match the `o`+digit or
+    /// `gpt-5`+ conventions). Every other OpenAI-compatible gateway (LM
+    /// Studio, OpenRouter, generic `openai-compatible`) is an unknown catalog
+    /// — never guessed, so a wrong value can't 400 a gateway this adapter
+    /// knows nothing about.
+    fn supports_reasoning_effort(&self, model: &str) -> bool {
+        match self.id {
+            ProviderId::OpenAi => {
+                is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model)
+            }
+            ProviderId::OllamaCloud => super::ollama::ollama_family_supports_thinking(model),
+            _ => false,
+        }
     }
 
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
@@ -504,12 +619,16 @@ impl AiProvider for OpenAiClient {
     }
 
     fn capabilities(&self, model: &str) -> ModelCapabilities {
-        let reasoning = is_reasoning_model(model);
+        // Rejecting `temperature` is an o-series-ONLY quirk — distinct from
+        // "accepts reasoning_effort" (Ollama Cloud's gpt-oss/deepseek/qwen3
+        // models accept both temperature AND reasoning_effort), so these are
+        // two separate gates, not one reused variable.
+        let rejects_temperature = is_reasoning_model(model);
         ModelCapabilities {
-            supports_temperature: !reasoning,
+            supports_temperature: !rejects_temperature,
             supports_system_role: true,
             supports_streaming: true,
-            supports_reasoning: reasoning,
+            supports_reasoning: self.supports_reasoning_effort(model),
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
@@ -517,11 +636,19 @@ impl AiProvider for OpenAiClient {
             // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be
             // assumed to — see `supports_web_search()`.
             supports_web_search: self.supports_web_search(),
-            token_param: if reasoning {
+            token_param: if rejects_temperature {
                 TokenParam::MaxCompletionTokens
             } else {
                 TokenParam::MaxTokens
             },
+        }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        if self.supports_reasoning_effort(model) {
+            OPENAI_EFFORT_LEVELS.to_vec()
+        } else {
+            Vec::new()
         }
     }
 
@@ -685,10 +812,11 @@ impl AiProvider for OpenAiClient {
         // text-embedding-3-* enforce a hard 8191-TOKEN limit and ERROR (no
         // auto-truncate) when exceeded. The old 32k-char cap assumed ~4 chars/token
         // (English); for token-dense scripts (CJK ≈ 1 char/token) 32k chars ≈ 32k
-        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars: in
-        // the worst case (≈1 char/token) that stays under 8191 tokens for every
-        // language. Slightly over-truncates very long English, but safety (never a
-        // failed request) wins over maximizing English length.
+        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars
+        // PER CHUNK: in the worst case (≈1 char/token) that stays under 8191
+        // tokens for every language. A document longer than this is split into
+        // multiple chunks and mean-pooled by `embed_adaptive` — never silently
+        // truncated away.
         8_000
     }
 
@@ -827,434 +955,5 @@ impl AiProvider for OpenAiClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        build_chat_stream_body, is_reasoning_model, join_responses_text, parse_openai_delta,
-        parse_openai_embed_usage, parse_openai_frames, parse_openai_turn, parse_openai_usage,
-        should_list_model, OpenAiClient,
-    };
-    use crate::commands::ai_provider::{
-        AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam,
-        ToolCall,
-    };
-    use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-    use serde_json::json;
-
-    fn base_request() -> AiGenerateRequest {
-        AiGenerateRequest {
-            model: "gpt-4o".to_string(),
-            messages: vec![AiGenerateRequestMessage {
-                role: "user".to_string(),
-                content: "hi".to_string(),
-            }],
-            locale: "en".to_string(),
-            temperature: Some(0.8),
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: None,
-            effort: None,
-        }
-    }
-
-    fn chat_caps(supports_temperature: bool) -> ModelCapabilities {
-        ModelCapabilities {
-            supports_temperature,
-            supports_system_role: true,
-            supports_streaming: true,
-            supports_reasoning: !supports_temperature,
-            supports_tools: true,
-            supports_json_mode: true,
-            supports_embeddings: true,
-            supports_web_search: false,
-            token_param: TokenParam::MaxTokens,
-        }
-    }
-
-    #[test]
-    fn chat_stream_body_always_requests_streamed_usage() {
-        // AI-spend visibility depends on this flag being sent on every OpenAI
-        // Chat Completions stream (native, OpenAI-compatible, and Ollama Cloud).
-        let body = build_chat_stream_body(&base_request(), chat_caps(true));
-        assert_eq!(body["stream_options"], json!({ "include_usage": true }));
-    }
-
-    #[test]
-    fn parse_usage_extracts_real_token_counts() {
-        let data = json!({ "usage": { "prompt_tokens": 42, "completion_tokens": 17 } });
-        let usage = parse_openai_usage(&data).expect("usage present");
-        assert_eq!(usage.input_tokens, 42);
-        assert_eq!(usage.output_tokens, 17);
-    }
-
-    #[test]
-    fn parse_usage_is_none_when_absent() {
-        // Every streamed chunk except the final one has no `usage` field.
-        assert!(parse_openai_usage(&json!({ "choices": [] })).is_none());
-        assert!(parse_openai_usage(&json!({})).is_none());
-    }
-
-    #[test]
-    fn parse_embed_usage_prefers_prompt_tokens() {
-        let data = json!({ "usage": { "prompt_tokens": 12, "total_tokens": 12 } });
-        let usage = parse_openai_embed_usage(&data);
-        assert_eq!(usage.input_tokens, 12);
-        assert_eq!(usage.output_tokens, 0, "an embed call has no output tokens");
-    }
-
-    #[test]
-    fn parse_embed_usage_falls_back_to_total_tokens() {
-        // Some OpenAI-compatible embed servers send only `total_tokens`.
-        let data = json!({ "usage": { "total_tokens": 9 } });
-        assert_eq!(parse_openai_embed_usage(&data).input_tokens, 9);
-    }
-
-    #[test]
-    fn parse_embed_usage_zero_when_absent() {
-        let usage = parse_openai_embed_usage(&json!({}));
-        assert_eq!(usage.input_tokens, 0);
-        assert_eq!(usage.output_tokens, 0);
-    }
-
-    #[test]
-    fn chat_stream_body_serializes_sampling_params_when_set() {
-        let mut req = base_request();
-        req.top_p = Some(0.95);
-        req.frequency_penalty = Some(0.3);
-        req.presence_penalty = Some(0.2);
-        let body = build_chat_stream_body(&req, chat_caps(true));
-        assert_eq!(body["top_p"], json!(0.95));
-        assert_eq!(body["frequency_penalty"], json!(0.3));
-        assert_eq!(body["presence_penalty"], json!(0.2));
-    }
-
-    #[test]
-    fn chat_stream_body_omits_sampling_params_when_none() {
-        let body = build_chat_stream_body(&base_request(), chat_caps(true));
-        assert!(body.get("top_p").is_none());
-        assert!(body.get("frequency_penalty").is_none());
-        assert!(body.get("presence_penalty").is_none());
-    }
-
-    #[test]
-    fn chat_stream_body_skips_sampling_params_on_reasoning_models() {
-        // o-series models reject `temperature` entirely — sampling knobs must be
-        // skipped alongside it, never sent to a model that 400s on them.
-        let mut req = base_request();
-        req.top_p = Some(0.95);
-        req.frequency_penalty = Some(0.3);
-        req.presence_penalty = Some(0.2);
-        let body = build_chat_stream_body(&req, chat_caps(false));
-        assert!(body.get("temperature").is_none());
-        assert!(body.get("top_p").is_none());
-        assert!(body.get("frequency_penalty").is_none());
-        assert!(body.get("presence_penalty").is_none());
-    }
-
-    #[test]
-    fn embedding_cap_is_token_safe_for_every_language() {
-        // text-embedding-3-* hard-error past 8191 tokens. Token-dense scripts (CJK)
-        // run ≈1 char/token, so the char cap must itself stay under 8191 — otherwise
-        // a full-cap CJK input exceeds the token limit and the request FAILS.
-        let cap = OpenAiClient::new(ProviderId::OpenAi, None).max_embedding_input_chars();
-        assert!(
-            cap <= 8191,
-            "char cap {cap} can exceed 8191 tokens for ~1-char/token languages"
-        );
-        // Sanity: still a useful amount of text (not collapsed to near-zero).
-        assert!(cap >= 4_000, "cap {cap} truncates too aggressively");
-    }
-
-    #[test]
-    fn list_filter_only_restricts_native_openai() {
-        // Native OpenAI exposes a large non-chat catalog — keep only chat families.
-        assert!(should_list_model(ProviderId::OpenAi, "gpt-4o"));
-        assert!(should_list_model(ProviderId::OpenAi, "o3-mini"));
-        assert!(should_list_model(ProviderId::OpenAi, "chatgpt-4o-latest"));
-        for non_chat in ["text-embedding-3-small", "dall-e-3", "whisper-1", "tts-1"] {
-            assert!(
-                !should_list_model(ProviderId::OpenAi, non_chat),
-                "{non_chat} should be filtered out for native OpenAI"
-            );
-        }
-
-        // Ollama Cloud + generic OpenAI-compatible servers return their own
-        // curated catalog under arbitrary names — never filter those, so the
-        // full Ollama Cloud list (not just gpt-oss:*) reaches the picker.
-        for id in [
-            "gpt-oss:120b",
-            "qwen3-coder:480b",
-            "deepseek-v3.1:671b",
-            "kimi-k2:1t",
-            "glm-4.6",
-        ] {
-            assert!(should_list_model(ProviderId::OllamaCloud, id), "{id}");
-            assert!(should_list_model(ProviderId::OpenAiCompatible, id), "{id}");
-        }
-    }
-
-    #[test]
-    fn join_responses_text_takes_message_items_only() {
-        // The Responses `output` array interleaves the web_search_call with the
-        // final assistant message.
-        let data = json!({
-            "output": [
-                { "type": "web_search_call", "id": "ws_1", "status": "completed" },
-                { "type": "message", "role": "assistant", "content": [
-                    { "type": "output_text", "text": "Acme is a ", "annotations": [] },
-                    { "type": "output_text", "text": "widget maker.", "annotations": [] }
-                ]}
-            ]
-        });
-        assert_eq!(join_responses_text(&data), "Acme is a widget maker.");
-        assert_eq!(join_responses_text(&json!({})), "");
-        assert_eq!(join_responses_text(&json!({ "output": [] })), "");
-    }
-
-    #[test]
-    fn detects_o_series_including_future_models() {
-        for m in ["o1", "o1-mini", "o3", "o3-mini", "o4-mini", "o5", "o9-pro"] {
-            assert!(is_reasoning_model(m), "{m} should be a reasoning model");
-        }
-        for m in [
-            "gpt-4o",
-            "gpt-4o-mini",
-            "gpt-3.5-turbo",
-            "omni",
-            "chatgpt-4o",
-        ] {
-            assert!(
-                !is_reasoning_model(m),
-                "{m} should not be a reasoning model"
-            );
-        }
-    }
-
-    #[test]
-    fn parse_delta_splits_reasoning_from_content() {
-        // DeepSeek-R1 / vLLM style: reasoning on `reasoning_content`.
-        let ev = json!({ "choices": [{ "delta": { "reasoning_content": "let me think" } }] });
-        assert_eq!(parse_openai_delta(&ev), ("let me think", ""));
-
-        // OpenRouter style: reasoning on `reasoning`.
-        let ev = json!({ "choices": [{ "delta": { "reasoning": "pondering" } }] });
-        assert_eq!(parse_openai_delta(&ev), ("pondering", ""));
-
-        // Normal answer content.
-        let ev = json!({ "choices": [{ "delta": { "content": "the answer" } }] });
-        assert_eq!(parse_openai_delta(&ev), ("", "the answer"));
-    }
-
-    #[test]
-    fn parse_delta_empty_when_no_choices_or_fields() {
-        assert_eq!(parse_openai_delta(&json!({})), ("", ""));
-        assert_eq!(
-            parse_openai_delta(&json!({ "choices": [{ "delta": {} }] })),
-            ("", "")
-        );
-    }
-
-    #[test]
-    fn parse_frames_splits_sse_lines_into_pieces() {
-        use super::StreamPiece;
-        // Two complete data lines (reasoning then content) + a partial trailing line.
-        let mut buf = String::from(
-            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"think\"}}]}\n\
-             data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\
-             data: {\"choices\":[{\"delta\":{\"con",
-        );
-        let pieces = parse_openai_frames(&mut buf);
-        assert_eq!(
-            pieces,
-            vec![StreamPiece::thinking("think"), StreamPiece::text("hello")]
-        );
-        // The incomplete final line is left buffered for the next chunk.
-        assert!(buf.starts_with("data: {\"choices\""));
-        assert!(!buf.contains('\n'));
-    }
-
-    #[test]
-    fn parse_frames_emits_done_sentinel_on_done_marker() {
-        use super::StreamPiece;
-        let mut buf = String::from(
-            "data: {\"choices\":[{\"delta\":{\"content\":\"last\"}}]}\n\
-             data: [DONE]\n",
-        );
-        let pieces = parse_openai_frames(&mut buf);
-        assert_eq!(
-            pieces,
-            vec![StreamPiece::text("last"), StreamPiece::done("")]
-        );
-    }
-
-    #[test]
-    fn parse_frames_skips_non_data_and_unparseable_lines() {
-        // Comment/keepalive lines and malformed JSON are ignored, not errors.
-        let mut buf = String::from(": keepalive\ndata: not-json\n\n");
-        assert!(parse_openai_frames(&mut buf).is_empty());
-    }
-
-    #[test]
-    fn parse_turn_decodes_tool_calls_with_stringified_arguments() {
-        // Chat Completions puts function args in a JSON *string* — it must be decoded.
-        let data = json!({
-            "choices": [{
-                "message": {
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "call_1",
-                        "type": "function",
-                        "function": { "name": "match_resume", "arguments": "{\"resumeId\":\"r1\",\"jobId\":\"j1\"}" }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }]
-        });
-        let turn = parse_openai_turn(&data);
-        assert_eq!(turn.text, "");
-        assert_eq!(turn.stop, StopReason::ToolUse);
-        assert_eq!(
-            turn.tool_calls,
-            vec![ToolCall {
-                id: "call_1".to_string(),
-                name: "match_resume".to_string(),
-                args: json!({ "resumeId": "r1", "jobId": "j1" }),
-            }]
-        );
-    }
-
-    #[test]
-    fn parse_turn_plain_answer_has_no_tool_calls() {
-        let data = json!({
-            "choices": [{ "message": { "content": "Here is the answer." }, "finish_reason": "stop" }]
-        });
-        let turn = parse_openai_turn(&data);
-        assert_eq!(turn.text, "Here is the answer.");
-        assert!(turn.tool_calls.is_empty());
-        assert_eq!(turn.stop, StopReason::End);
-    }
-
-    #[test]
-    fn parse_turn_malformed_arguments_degrade_to_empty_object() {
-        // A truncated/invalid arguments string must not error the whole turn.
-        let data = json!({
-            "choices": [{
-                "message": { "tool_calls": [{ "id": "c", "function": { "name": "f", "arguments": "{not json" } }] },
-                "finish_reason": "tool_calls"
-            }]
-        });
-        let turn = parse_openai_turn(&data);
-        assert_eq!(turn.tool_calls.len(), 1);
-        assert_eq!(turn.tool_calls[0].args, json!({}));
-    }
-
-    // ── web_search_transport (wiremock against `crate::net::http::shared()`,
-    // mirroring the pattern in `retry.rs`'s `retry_loop_tests`) ────────────────
-
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    #[tokio::test]
-    async fn web_search_transport_degrades_to_empty_on_http_500() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(500))
-            .mount(&server)
-            .await;
-
-        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
-        let text = client
-            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
-            .await
-            .expect("never an error, only degrades to empty");
-        assert_eq!(text, "");
-    }
-
-    #[tokio::test]
-    async fn web_search_transport_degrades_to_empty_on_non_json_200() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
-            .mount(&server)
-            .await;
-
-        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
-        let text = client
-            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
-            .await
-            .expect("never an error, only degrades to empty");
-        assert_eq!(text, "");
-    }
-
-    #[tokio::test]
-    async fn web_search_transport_extracts_text_from_a_realistic_responses_payload() {
-        let server = MockServer::start().await;
-        let payload = json!({
-            "output": [
-                { "type": "web_search_call", "id": "ws_1", "status": "completed" },
-                { "type": "message", "role": "assistant", "content": [
-                    { "type": "output_text", "text": "Acme is a ", "annotations": [] },
-                    { "type": "output_text", "text": "widget maker.", "annotations": [] }
-                ]}
-            ]
-        });
-        Mock::given(method("POST"))
-            .and(path("/responses"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(payload))
-            .mount(&server)
-            .await;
-
-        let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
-        let text = client
-            .web_search_transport("dummy-key", "gpt-4o", "system", "user")
-            .await
-            .expect("ok");
-        assert_eq!(text, "Acme is a widget maker.");
-    }
-
-    #[test]
-    fn supports_web_search_gate_only_allows_native_openai() {
-        // Regression guard against silently dropping the provider gate in a
-        // future refactor: a non-OpenAI id must never reach `/responses` (a
-        // generic OpenAI-compatible gateway can't be assumed to support the
-        // native `web_search` tool). `web_search_complete` itself can't be
-        // driven end to end here — it needs a live `AppHandle`, and this crate
-        // has no `tauri::test` mock-app harness (see its doc comment, and the
-        // same note on `salary_research::SalaryResearch::enrich`) — so this
-        // exercises the pure gate predicate it's built on before any HTTP call.
-        assert!(OpenAiClient::new(ProviderId::OpenAi, None).supports_web_search());
-        for other in [
-            ProviderId::OpenAiCompatible,
-            ProviderId::OllamaCloud,
-            ProviderId::Ollama,
-            ProviderId::Anthropic,
-            ProviderId::Gemini,
-        ] {
-            assert!(
-                !OpenAiClient::new(other, None).supports_web_search(),
-                "{other:?} must not pass the web_search gate"
-            );
-        }
-    }
-
-    /// `ModelCapabilities::supports_web_search` (what `ai_research_answer` gates
-    /// the daily-budget charge on) must mirror the private gate predicate above —
-    /// this is the field a caller actually reads.
-    #[test]
-    fn capabilities_supports_web_search_mirrors_the_gate() {
-        assert!(
-            OpenAiClient::new(ProviderId::OpenAi, None)
-                .capabilities("gpt-4o")
-                .supports_web_search
-        );
-        assert!(
-            !OpenAiClient::new(ProviderId::OpenAiCompatible, None)
-                .capabilities("some-model")
-                .supports_web_search
-        );
-    }
-}
+#[path = "openai_tests.rs"]
+mod tests;
