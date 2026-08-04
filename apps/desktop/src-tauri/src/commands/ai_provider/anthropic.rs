@@ -213,6 +213,49 @@ fn anthropic_supports_effort(model: &str) -> bool {
         || contains_version_needle(&m, "mythos-preview")
 }
 
+/// Effort LEVELS `model` actually accepts — same live page as
+/// `anthropic_supports_effort` (`platform.claude.com/docs/en/build-with-claude/effort`,
+/// fetched 2026-08-04). The accepted level SET genuinely varies by model
+/// tier, exactly like Gemini's `thinkingLevel` (see `gemini_effort_levels` in
+/// `gemini.rs`) — this is NOT the binary "supports effort or doesn't" gate
+/// above; it's a second, finer-grained lookup:
+///
+/// | tier | models | levels |
+/// |---|---|---|
+/// | full (5) | Fable 5, Mythos 5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5 | low, medium, high, max, xhigh |
+/// | no `xhigh` (4) | Mythos Preview, Opus 4.6, Sonnet 4.6 | low, medium, high, max |
+/// | `low`/`medium`/`high` only (1) | Opus 4.5 | low, medium, high |
+///
+/// The page states this explicitly per level, not per model: `max` is
+/// "Available on Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Opus
+/// 4.8, Claude Mythos Preview, Claude Opus 4.7, Claude Opus 4.6, Claude
+/// Sonnet 5, and Claude Sonnet 4.6" — every `anthropic_supports_effort`
+/// model EXCEPT Opus 4.5 (confirmed separately: "On Claude Opus 4.5, the
+/// only extended-thinking-only model that supports effort..."). `xhigh` is
+/// "Available on Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Opus
+/// 4.8, Claude Opus 4.7, and Claude Sonnet 5" — narrower again, dropping
+/// Mythos Preview/Opus 4.6/Sonnet 4.6 too ("xhigh is a newer level; some
+/// models that support max don't support xhigh"). `low`/`medium`/`high` are
+/// universal across every effort-capable model (no per-model exclusion
+/// documented for any of the three). Empty for a model
+/// `anthropic_supports_effort` rejects outright.
+fn anthropic_effort_levels(model: &str) -> Vec<&'static str> {
+    if !anthropic_supports_effort(model) {
+        return Vec::new();
+    }
+    let m = normalize_model_id(model);
+    if contains_version_needle(&m, "opus-4-5") {
+        vec!["low", "medium", "high"]
+    } else if contains_version_needle(&m, "mythos-preview")
+        || contains_version_needle(&m, "opus-4-6")
+        || contains_version_needle(&m, "sonnet-4-6")
+    {
+        vec!["low", "medium", "high", "max"]
+    } else {
+        vec!["low", "medium", "high", "max", "xhigh"]
+    }
+}
+
 /// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
 /// into one string (web-search responses interleave `server_tool_use` /
 /// `web_search_tool_result` blocks, which have no `text` field and are skipped).
@@ -465,15 +508,20 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         body["system"] = json!(system_content);
     }
     // `output_config.effort` is orthogonal to `thinking` (works with or
-    // without it, per Anthropic's docs) — only ever sent on a model that
-    // supports it (see `anthropic_supports_effort`'s doc comment).
+    // without it, per Anthropic's docs) — only ever sent when it's one of
+    // the levels THIS model's tier actually accepts (`anthropic_effort_levels`),
+    // not just when the model supports effort at all: `effort` is stored PER
+    // PROVIDER (`preferences-store.ts`), not per model, so a saved `xhigh`
+    // from Sonnet 5 must not survive a switch to Sonnet 4.6 (no `xhigh`) or
+    // Opus 4.5 (no `xhigh`/`max`) — same class of bug as Gemini's
+    // `thinkingLevel` gate in `gemini.rs`.
     if let Some(effort) = req
         .effort
         .as_deref()
         .map(str::trim)
         .filter(|e| !e.is_empty())
     {
-        if anthropic_supports_effort(&req.model) {
+        if anthropic_effort_levels(&req.model).contains(&effort) {
             body["output_config"] = json!({ "effort": effort });
         }
     }
@@ -750,11 +798,7 @@ impl AiProvider for AnthropicClient {
     }
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
-        if anthropic_supports_effort(model) {
-            vec!["low", "medium", "high"]
-        } else {
-            Vec::new()
-        }
+        anthropic_effort_levels(model)
     }
 
     async fn chat_stream(

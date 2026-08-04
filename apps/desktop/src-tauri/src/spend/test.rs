@@ -197,10 +197,17 @@ fn rate_for_gives_gemini_3_pro_preview_its_own_row_not_the_default_fallback() {
     let cost = estimate_cost("gemini-3-pro-preview", 1_000_000, 1_000_000);
     assert!((cost - (2.00 + 12.00)).abs() < 1e-9, "got {cost}");
     // Its `.1` sibling shares the "gemini-3-" prefix after dot/dash
-    // normalization but must NOT collide with this row (or vice versa).
-    assert_ne!(
+    // normalization but must resolve to ITS OWN row, not this one (or
+    // DEFAULT_RATE) — a bare `assert_ne!` only proves no WRONG collision,
+    // not that the right row exists at all.
+    assert_eq!(
         rate_for("gemini-3.1-pro-preview").map(|(p, _, _)| *p),
-        Some("gemini-3-pro-preview")
+        Some("gemini-3.1-pro-preview")
+    );
+    let sibling_cost = estimate_cost("gemini-3.1-pro-preview", 1_000_000, 1_000_000);
+    assert!(
+        (sibling_cost - (2.00 + 12.00)).abs() < 1e-9,
+        "got {sibling_cost}"
     );
 }
 
@@ -215,6 +222,29 @@ fn rate_for_gives_gemini_3_6_flash_its_own_row_not_the_default_fallback() {
     );
     let cost = estimate_cost("gemini-3.6-flash", 1_000_000, 1_000_000);
     assert!((cost - (1.50 + 7.50)).abs() < 1e-9, "got {cost}");
+}
+
+#[test]
+fn rate_for_gives_gemini_3_5_flash_and_lite_their_own_rows_not_the_default_fallback() {
+    // Both curated-list entries (`provider-meta.ts`) — `-lite` must resolve
+    // to its OWN row, not fall through to the bare `-flash` row it shares a
+    // dot/dash-normalized prefix with.
+    assert_eq!(
+        rate_for("gemini-3.5-flash-lite").map(|(p, _, _)| *p),
+        Some("gemini-3.5-flash-lite")
+    );
+    let lite_cost = estimate_cost("gemini-3.5-flash-lite", 1_000_000, 1_000_000);
+    assert!((lite_cost - (0.30 + 2.50)).abs() < 1e-9, "got {lite_cost}");
+
+    assert_eq!(
+        rate_for("gemini-3.5-flash").map(|(p, _, _)| *p),
+        Some("gemini-3.5-flash")
+    );
+    let flash_cost = estimate_cost("gemini-3.5-flash", 1_000_000, 1_000_000);
+    assert!(
+        (flash_cost - (1.50 + 9.00)).abs() < 1e-9,
+        "got {flash_cost}"
+    );
 }
 
 #[test]

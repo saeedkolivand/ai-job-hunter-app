@@ -217,6 +217,16 @@ fn gemini_is_v3_or_later(model: &str) -> bool {
 /// | gemini-3-flash-preview, gemini-3.5-flash(-lite), gemini-3.6-flash | minimal, low, medium, high |
 /// | gemini-3-pro-preview (SHUT DOWN — `ai.google.dev/gemini-api/docs/models`, checked 2026-08-04) | low, high |
 ///
+/// `gemini-3.1-flash-lite` — the TEXT model (Stable, live), distinct from
+/// `gemini-3.1-flash-lite-image` above — is deliberately absent from this
+/// table, not an oversight: re-checked against the live thinking table
+/// (`ai.google.dev/gemini-api/docs/thinking`, checked 2026-08-04) and it has
+/// no row there at all, unlike every model listed above. Guessing it shares
+/// its `-image` sibling's (or `gemini-3.5-flash-lite`'s) level set would be
+/// exactly the "guessed value that could 400" this function exists to avoid
+/// — it correctly falls through to the safe universal `["high"]` default
+/// below until Google's table documents it.
+///
 /// Level acceptance is enforced POST-auth (proto/shape validation accepts
 /// any `ThinkingLevel` enum member on every model — a request 400s only
 /// later, on the model-specific check), so this table could not be probed
@@ -261,6 +271,10 @@ fn gemini_effort_levels(model: &str) -> Vec<&'static str> {
     {
         vec!["minimal", "low", "medium", "high"]
     } else {
+        // Includes `gemini-3.1-flash-lite` (the text model, NOT `-image`) —
+        // absent from the live thinking table as of the date above, so this
+        // safe universal fallback is the correct answer, not a gap. See the
+        // doc comment above before "fixing" this by guessing its levels.
         vec!["high"]
     }
 }

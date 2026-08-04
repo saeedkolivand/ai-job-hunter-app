@@ -31,9 +31,13 @@ export interface ProviderMeta {
 // The `models` arrays below are hand-curated, not fetched — each list that
 // names a specific model id should say which live authority page + date it
 // was checked against, since a curated id CAN go stale (`gemini-3-pro-preview`
-// did — see the Gemini entry). A genuinely self-updating curated list
-// (deriving it from `listProviderModels` at runtime) is feasible but is its
-// own piece of work, not folded into this fix.
+// did — see the Gemini entry). When re-checking, verify EVERY entry in the
+// array, not just the one being changed: a prior round replaced only the one
+// dead id it already knew about and left its three neighbours unchecked —
+// all three had also gone stale, including the array's first entry, which is
+// the onboarding default (`CLOUD_DEFAULT_MODELS`). A genuinely self-updating
+// curated list (deriving it from `listProviderModels` at runtime) is
+// feasible but is its own piece of work, not folded into this fix.
 
 export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
   ollama: {
@@ -72,16 +76,29 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
   gemini: {
     kind: 'cloud',
     label: 'Google Gemini',
-    description: 'Gemini 2.0 Flash and Gemini 1.5 Pro via the Gemini API.',
+    description: 'Gemini 3.6 Flash and Gemini 3.1 Pro via the Gemini API.',
     docsUrl: 'https://aistudio.google.com/app/apikey',
     color: 'text-blue-400',
-    // `gemini-3.6-flash` keeps the reasoning-effort picker reachable via the
-    // curated list too, not just a live-fetched model — LIVE, Stable status
-    // (`ai.google.dev/gemini-api/docs/models`, checked 2026-08-04). It
-    // replaces the former `gemini-3-pro-preview` entry, which the same page
-    // now lists as shut down. The other three entries stay for the
-    // onboarding CLOUD_DEFAULT_MODELS contract test.
-    models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-3.6-flash'],
+    // ALL FOUR entries verified LIVE against `ai.google.dev/gemini-api/docs/models`,
+    // checked 2026-08-04 (the page's own "Last updated" footer matches) — not
+    // just the one being changed this time. The previous round only re-checked
+    // the single entry it touched (`gemini-3-pro-preview` -> `gemini-3.6-flash`)
+    // and left its three neighbours unverified; all three turned out to be dead
+    // (`gemini-2.0-flash` is now "Previous models — Shut down"; `gemini-1.5-pro`
+    // and `gemini-1.5-flash` aren't on the page at all anymore) — including
+    // `gemini-2.0-flash`, which was the FIRST entry and therefore the onboarding
+    // default (`CLOUD_DEFAULT_MODELS` in both `AISelectionStep` and
+    // `CloudProviderPanel` — updated alongside this to `gemini-3.6-flash`, the
+    // new first entry). Replacements, all Stable except where noted:
+    // `gemini-3.6-flash` (Stable, general default), `gemini-3.1-pro-preview`
+    // (Preview — the "Pro" tier; no Stable Pro-class 3.x model exists yet),
+    // `gemini-3.5-flash`, `gemini-3.5-flash-lite` (Stable).
+    models: [
+      'gemini-3.6-flash',
+      'gemini-3.1-pro-preview',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+    ],
   },
   'openai-compatible': {
     kind: 'cloud',

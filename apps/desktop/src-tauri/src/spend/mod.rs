@@ -425,6 +425,17 @@ const RATES: &[(&str, f64, f64)] = &[
     // `provider-meta.ts`). Standard tier, verified live rate
     // (`ai.google.dev/gemini-api/docs/pricing`, checked 2026-08-04).
     ("gemini-3.6-flash", 1.50, 7.50),
+    // gemini-3.1-pro-preview — LIVE, Preview status, curated-list "Pro" tier
+    // entry (see `provider-meta.ts`). Standard tier, prompts <=200k tokens
+    // (`ai.google.dev/gemini-api/docs/pricing`, checked 2026-08-04).
+    ("gemini-3.1-pro-preview", 2.00, 12.00),
+    // gemini-3.5-flash / -lite — both LIVE, Stable, curated-list entries (see
+    // `provider-meta.ts`). Standard tier, verified live rates
+    // (`ai.google.dev/gemini-api/docs/pricing`, checked 2026-08-04). `-lite`
+    // must precede the bare `-flash` row — same dot/dash-normalized-prefix
+    // reason as the `gemini-2.5-flash-lite`/`gemini-2.5-flash` pair below.
+    ("gemini-3.5-flash-lite", 0.30, 2.50),
+    ("gemini-3.5-flash", 1.50, 9.00),
     ("gemini-2.5-pro", 1.25, 10.00),
     ("gemini-2.5-flash-lite", 0.10, 0.40),
     ("gemini-2.5-flash", 0.30, 2.50),

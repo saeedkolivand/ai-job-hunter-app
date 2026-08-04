@@ -637,10 +637,24 @@ impl DocumentStore {
                         provider,
                         model,
                         dim: dim as usize,
-                        // `posting_vectors` has no persisted version column
-                        // (unlike `vectors`) — always the current version, so
-                        // this table's freshness is governed purely by its
-                        // existing `text_hash` guard, unchanged by this field.
+                        // `posting_vectors` has no persisted `version` column
+                        // (unlike `vectors`) — this ALWAYS synthesizes the
+                        // CURRENT `EMBEDDING_VECTOR_VERSION`, so
+                        // `EmbeddingConfig::matches` can never reject a row
+                        // here on format version; freshness is governed
+                        // purely by the `text_hash` guard. No current defect
+                        // — the `evict_posting_vectors_for_embedding_format_v2`
+                        // migration already covers the v1->v2 bump by wiping
+                        // the table outright — but this is a HAND-MAINTAINED
+                        // invariant, not a self-detecting one: every FUTURE
+                        // `EMBEDDING_VECTOR_VERSION` bump MUST ship its own
+                        // eviction migration for this table too, because this
+                        // read has no way to notice a mismatch on its own. A
+                        // missed one would silently mix formats under an
+                        // identical space tag. Add a real `version` column
+                        // (backfilled from the row's `created_at` relative to
+                        // the bump, or just evicted like today) if this
+                        // invariant ever proves easy to forget in practice.
                         version: EMBEDDING_VECTOR_VERSION,
                     },
                 },

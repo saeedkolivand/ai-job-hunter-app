@@ -267,6 +267,39 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     out
 }
 
+/// Levels `reasoning_effort` accepts on every reasoning-capable model this
+/// adapter recognizes (native OpenAI's o-series + gpt-5.x, and Ollama
+/// Cloud's thinking family — see [`OpenAiClient::supports_reasoning_effort`]).
+/// Verified against the live OpenAPI schema
+/// (`raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml`,
+/// `ReasoningEffort` schema, checked 2026-08-04): the real wire enum has
+/// grown to SEVEN values (`none, minimal, low, medium, high, xhigh, max`),
+/// and the live reasoning guide (`platform.openai.com/docs/guides/reasoning`,
+/// same date) states plainly: "Some models support only a subset of these
+/// values, so check the relevant model page" — genuinely per-model, the SAME
+/// class of variance Gemini's `thinkingLevel` and Anthropic's
+/// `output_config.effort` have (see `gemini_effort_levels` / `anthropic_effort_levels`).
+///
+/// This adapter deliberately exposes only the THREE values every recognized
+/// reasoning model accepts with no further per-model check. Unlike
+/// Gemini/Anthropic, OpenAI's guide has no single closed table mapping value
+/// -> supporting models — it defers to each individual model's own page, and
+/// [`is_gpt5_or_later_reasoning_family`] deliberately matches ANY `gpt-5.x`+
+/// id (including snapshots that predate `xhigh`/`max`, which the guide
+/// frames as a recent addition alongside GPT-5.6's reasoning-mode overhaul).
+/// Enumerating a real per-model-id table here would mean checking each
+/// model's own page individually — a materially larger, separate piece of
+/// work, not a same-shaped fix as the Gemini/Anthropic tables (flag as a
+/// follow-up, don't guess it here). `low`/`medium`/`high` carry no per-model
+/// caveat in either source, so they stay the safe universal baseline.
+///
+/// Still gated with `.contains(&effort)` on the send path below, not just
+/// the `supports_reasoning` boolean — the same protection Gemini/Anthropic
+/// use, so this stays correct with zero further change the day a follow-up
+/// DOES expose a richer, genuinely per-model set here (`effort` is stored
+/// PER PROVIDER, not per model — `preferences-store.ts`).
+const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
+
 /// Build the `/chat/completions` streaming request body for a given
 /// [`AiGenerateRequest`] + capability matrix. Pure + unit-tested — this is the
 /// shared body shape for native OpenAI, any OpenAI-compatible gateway, and
@@ -308,7 +341,8 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
         };
         body[field] = json!(mt);
     }
-    // Only ever sent when `caps.supports_reasoning` is true (native OpenAI's
+    // Only ever sent when it's one of `OPENAI_EFFORT_LEVELS` (see its doc
+    // comment) AND `caps.supports_reasoning` is true (native OpenAI's
     // o-series, or Ollama Cloud's thinking-family models — see
     // `OpenAiClient::supports_reasoning_effort`) — a wrong/guessed value 400s.
     if caps.supports_reasoning {
@@ -318,7 +352,9 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
             .map(str::trim)
             .filter(|e| !e.is_empty())
         {
-            body["reasoning_effort"] = json!(effort);
+            if OPENAI_EFFORT_LEVELS.contains(&effort) {
+                body["reasoning_effort"] = json!(effort);
+            }
         }
     }
     body
@@ -610,7 +646,7 @@ impl AiProvider for OpenAiClient {
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
         if self.supports_reasoning_effort(model) {
-            vec!["low", "medium", "high"]
+            OPENAI_EFFORT_LEVELS.to_vec()
         } else {
             Vec::new()
         }

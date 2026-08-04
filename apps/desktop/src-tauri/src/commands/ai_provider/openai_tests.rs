@@ -562,3 +562,40 @@ fn chat_stream_body_omits_reasoning_effort_when_not_set() {
     let body = build_chat_stream_body(&req, caps);
     assert!(body.get("reasoning_effort").is_none());
 }
+
+#[test]
+fn chat_stream_body_omits_reasoning_effort_outside_the_verified_level_set() {
+    // OpenAI's real `reasoning_effort` enum has grown to 7 values (see
+    // `OPENAI_EFFORT_LEVELS`'s doc comment) but this adapter only exposes the
+    // 3 verified-universal ones — a stale/unrecognized value (e.g. carried
+    // over from a DIFFERENT provider's richer picker, since `effort` is
+    // stored per provider, not per model) must never be sent through just
+    // because `caps.supports_reasoning` is true.
+    let mut req = base_request();
+    req.model = "o3-mini".to_string();
+    req.effort = Some("xhigh".to_string());
+    let caps = ModelCapabilities {
+        supports_reasoning: true,
+        ..chat_caps(false)
+    };
+    let body = build_chat_stream_body(&req, caps);
+    assert!(
+        body.get("reasoning_effort").is_none(),
+        "xhigh is outside OPENAI_EFFORT_LEVELS — must not be sent"
+    );
+}
+
+#[test]
+fn effort_levels_returns_the_verified_universal_set_for_every_reasoning_model() {
+    assert_eq!(
+        OpenAiClient::new(ProviderId::OpenAi, None).effort_levels("o3-mini"),
+        vec!["low", "medium", "high"]
+    );
+    assert_eq!(
+        OpenAiClient::new(ProviderId::OpenAi, None).effort_levels("gpt-5.6"),
+        vec!["low", "medium", "high"]
+    );
+    assert!(OpenAiClient::new(ProviderId::OpenAi, None)
+        .effort_levels("gpt-4o")
+        .is_empty());
+}

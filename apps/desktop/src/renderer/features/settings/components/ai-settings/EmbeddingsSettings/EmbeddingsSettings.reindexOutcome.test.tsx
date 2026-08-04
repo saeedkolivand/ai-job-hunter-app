@@ -196,6 +196,38 @@ describe('EmbeddingsSettings — reindex job outcome', () => {
     expect(notifyError).not.toHaveBeenCalled();
   });
 
+  it('a terminal event delivered via a stale (pre-commit) handler closure still resolves — the ref, not the closed-over state, gates the match', async () => {
+    render(<EmbeddingsSettings />);
+
+    // The closure `useJobEvents` registered on the FIRST render — it closes
+    // over `reindexJobId === null`, exactly like a real handler still would
+    // be if a `job.completed` event raced ahead of the `setReindexJobId`
+    // commit. `jobEventHandler` itself gets reassigned to a fresh closure
+    // by the second render below, so this reference has to be grabbed now.
+    const staleHandler = jobEventHandler;
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('settings.embeddings.reindex:{}'));
+    });
+
+    // Deliver the terminal event through the STALE closure, not the current
+    // one. Before the ref fix this dropped the event (`reindexJobId` inside
+    // that closure still reads `null`), leaving the panel stuck
+    // "reindexing" forever with no success/failure toast and no refetch.
+    act(() => {
+      staleHandler?.({
+        type: 'job.completed',
+        jobId: 'reembed-1',
+        data: { reembedded: 3, failed: 0, total: 3 },
+        ts: 0,
+      });
+    });
+
+    expect(notifySuccess).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'settings.embeddings.reindexComplete:{}' })
+    );
+  });
+
   it('ignores a job event for a different jobId', async () => {
     await startReindex();
 

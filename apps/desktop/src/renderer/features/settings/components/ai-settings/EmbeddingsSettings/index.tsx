@@ -1,5 +1,5 @@
 import { Database, Loader2, RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { JobEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -29,6 +29,17 @@ export function EmbeddingsSettings() {
   const [model, setModel] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [reindexJobId, setReindexJobId] = useState<string | null>(null);
+  // `setReindexJobId` schedules a render — until it commits, any closure
+  // registered BEFORE this update (e.g. `useJobEvents`'s callback from the
+  // prior render) still reads `reindexJobId` as `null`. A fast terminal
+  // event racing ahead of that commit would then be silently dropped (jobId
+  // mismatch against `null`), leaving the panel stuck "reindexing" forever
+  // — nothing else ever clears the tracked id or refetches. A ref is a
+  // single mutable box shared by every closure regardless of which render
+  // captured it, so writing it FIRST (synchronously, before the state
+  // update) closes that window: even a stale-closure handler invocation
+  // still reads the just-written value.
+  const reindexJobIdRef = useRef<string | null>(null);
 
   // Mirror the persisted active config into the form once it loads / changes.
   const activeProvider = status?.active.provider;
@@ -49,9 +60,10 @@ export function EmbeddingsSettings() {
   // some didn't) — it must never read as the same flat "success" as a clean run.
   useJobEvents((evt: JobEvent) => {
     const e = evt as { type: string; jobId: string; data?: unknown };
-    if (!reindexJobId || e.jobId !== reindexJobId) return;
+    if (!reindexJobIdRef.current || e.jobId !== reindexJobIdRef.current) return;
     if (e.type !== 'job.completed' && e.type !== 'job.failed' && e.type !== 'job.cancelled') return;
 
+    reindexJobIdRef.current = null;
     setReindexJobId(null);
     void statusQuery.refetch();
 
@@ -114,6 +126,7 @@ export function EmbeddingsSettings() {
 
   const onReindex = async () => {
     const { jobId } = await reembed.mutateAsync();
+    reindexJobIdRef.current = jobId;
     setReindexJobId(jobId);
     // `info`, not `success` — "started" is not "succeeded"; the job-event
     // handler above is the only place that reports the real outcome.

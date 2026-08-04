@@ -785,15 +785,33 @@ fn alias_retired_gemini_text_embedding_004_evicts_posting_and_match_caches_only_
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
-    // Seed a posting-vector row that would otherwise survive untouched.
+    // Seed a posting-vector row AND a match-score row — the test name claims
+    // BOTH caches are evicted, so both must actually be seeded and asserted;
+    // asserting only `posting_vectors` would stay green even if the
+    // `DELETE FROM match_scores` half of `alias_retired_gemini_text_embedding_004`
+    // were ever removed, silently leaving stale scores (computed in the
+    // retired embedding space) to keep being served.
     store
         .upsert_posting_vector("job-1", &sha256_hex("job text"), &ev(vec![0.1, 0.2]))
         .unwrap();
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT OR REPLACE INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              job_text_hash, score_json, created_at)
+             VALUES ('r', 'job-1', 'gemini', 'text-embedding-004', 1, 1, ?1, '{\"score\":1}', ?2)",
+            params![sha256_hex("job text"), ts_to_db(now_ms())],
+        )
+        .unwrap();
+    }
     assert_eq!(count_table(&store, "posting_vectors"), 1);
+    assert_eq!(count_table(&store, "match_scores"), 1);
 
     // A stale-model row that DOESN'T match the retired model must not evict.
     alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
     assert_eq!(count_table(&store, "posting_vectors"), 1);
+    assert_eq!(count_table(&store, "match_scores"), 1);
 
     // Now seed the actual stale model and re-run — this IS a real space
     // change, so it must evict, mirroring `ai_set_embedding_config`'s
@@ -808,6 +826,7 @@ fn alias_retired_gemini_text_embedding_004_evicts_posting_and_match_caches_only_
     }
     alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
     assert_eq!(count_table(&store, "posting_vectors"), 0);
+    assert_eq!(count_table(&store, "match_scores"), 0);
 }
 
 // ── Migration WIRING (not just the bare function) ───────────────────────────

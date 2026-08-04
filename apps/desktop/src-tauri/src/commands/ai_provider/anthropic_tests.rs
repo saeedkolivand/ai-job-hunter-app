@@ -676,11 +676,49 @@ fn effort_gate_needles_are_boundary_aware_not_raw_substring() {
 fn effort_levels_mirror_the_effort_gate() {
     assert_eq!(
         AnthropicClient.effort_levels("claude-opus-5"),
-        vec!["low", "medium", "high"]
+        vec!["low", "medium", "high", "max", "xhigh"]
     );
     assert!(AnthropicClient
         .effort_levels("claude-3-5-sonnet-20241022")
         .is_empty());
+}
+
+#[test]
+fn effort_levels_are_looked_up_per_model_tier_not_binary() {
+    // Full 5-level tier.
+    for m in [
+        "claude-fable-5",
+        "claude-mythos-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-sonnet-5",
+    ] {
+        assert_eq!(
+            anthropic_effort_levels(m),
+            vec!["low", "medium", "high", "max", "xhigh"],
+            "{m} should support the full 5-level set"
+        );
+    }
+    // `max` but no `xhigh`.
+    for m in [
+        "claude-mythos-preview",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+    ] {
+        assert_eq!(
+            anthropic_effort_levels(m),
+            vec!["low", "medium", "high", "max"],
+            "{m} should support max but not xhigh"
+        );
+    }
+    // Neither `max` nor `xhigh` — the one extended-thinking-only exception.
+    assert_eq!(
+        anthropic_effort_levels("claude-opus-4-5"),
+        vec!["low", "medium", "high"]
+    );
+    // Not an effort-capable model at all -> no levels.
+    assert!(anthropic_effort_levels("claude-3-5-sonnet-20241022").is_empty());
 }
 
 #[test]
@@ -716,4 +754,41 @@ fn chat_stream_body_omits_output_config_when_effort_not_set() {
     let req = base_request("claude-opus-5");
     let body = build_chat_stream_body(&req);
     assert!(body.get("output_config").is_none());
+}
+
+#[test]
+fn chat_stream_body_omits_output_config_effort_invalid_for_the_current_model_tier() {
+    // The reported model-switch scenario: `effort` is stored PER PROVIDER
+    // (`preferences-store.ts`), not per model. "xhigh" is valid on Sonnet 5
+    // but NOT on Sonnet 4.6 (max but no xhigh) — both are effort-capable, so
+    // gating on `anthropic_supports_effort` alone would ship an invalid
+    // level and 400. Must omit `output_config` entirely rather than send a
+    // level the CURRENT model rejects.
+    let mut req = base_request("claude-sonnet-4-6");
+    req.effort = Some("xhigh".to_string());
+    let body = build_chat_stream_body(&req);
+    assert!(
+        body.get("output_config").is_none(),
+        "xhigh is invalid for claude-sonnet-4-6 (max but no xhigh) — must not be sent"
+    );
+}
+
+#[test]
+fn chat_stream_body_omits_output_config_effort_invalid_for_opus_4_5() {
+    // Opus 4.5 is the one effort-capable model with NEITHER max nor xhigh.
+    let mut req = base_request("claude-opus-4-5");
+    req.effort = Some("max".to_string());
+    let body = build_chat_stream_body(&req);
+    assert!(
+        body.get("output_config").is_none(),
+        "max is invalid for claude-opus-4-5 (low/medium/high only) — must not be sent"
+    );
+}
+
+#[test]
+fn chat_stream_body_sends_xhigh_only_on_a_model_that_supports_it() {
+    let mut req = base_request("claude-sonnet-5");
+    req.effort = Some("xhigh".to_string());
+    let body = build_chat_stream_body(&req);
+    assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
 }

@@ -506,6 +506,11 @@ fn effort_levels_are_looked_up_per_model_tier_not_per_provider() {
         gemini_effort_levels("gemini-3.6-flash"),
         vec!["minimal", "low", "medium", "high"]
     );
+    // `gemini-3.1-flash-lite` (the TEXT model, distinct from `-image`) has no
+    // row in the live thinking table — this locks in the safe universal
+    // fallback so a future "fix" doesn't silently guess it belongs in the
+    // full-level branch (see the doc comment above `gemini_effort_levels`).
+    assert_eq!(gemini_effort_levels("gemini-3.1-flash-lite"), vec!["high"]);
     // An unrecognized future v3+ id falls back to the one universally-safe
     // level, never a guess that could 400.
     assert_eq!(gemini_effort_levels("gemini-4-pro"), vec!["high"]);

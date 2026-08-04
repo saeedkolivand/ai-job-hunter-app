@@ -104,9 +104,9 @@ Returns per-model context-window and max-token limits from [Ollama][ollama] (`/a
 
 Accepts the full **job ad text** (not a company name). The backend extracts the company internally via the `CompanyResearch` enricher (`cover_letter/research/`), runs the **active provider's own web search + synthesis** (each provider's native `research()` — a native web-search tool, or the Ollama Web Search API for Ollama), and caches the result in `KvCache`. Returns `{ company, brief }`. Degrades gracefully — returns `{ company: "", brief: "" }` when the provider can't search or the search/synthesis fails (or times out), so generation always proceeds. The brief is folded into cover-letter and application-answer prompts as an untrusted-fenced block (see ADR-010). See `commands/ai.rs: ai_research_company`.
 
-#### `ai.embed(text: string): Promise<{ vector: number[]; dim: number; provider: string; model: string } | { error: string }>`
+#### `ai.embed(req: { text: string; model?: string }): Promise<{ vector: number[]; dim: number; provider: string; model: string } | { error: string }>`
 
-Generates a vector embedding for the given text using the configured embedding model. Input longer than the provider's per-chunk limit is split into chunks, embedded separately, mean-pooled, and L2-normalized. Returns the vector + metadata (provider, model, embedding dimensions) on success, or an error object on failure (which triggers a re-embed retry with adaptive truncation if the error is a context-length overflow).
+Generates a vector embedding for `req.text` using the active embedding provider/model persisted in the document store (`req.model` is part of the IPC contract but not currently read by the handler — the active config always wins). Input longer than the provider's per-chunk limit is split into chunks, each embedded separately, mean-pooled, and L2-normalized. A context-length overflow triggers an ADAPTIVE-TRUNCATION RETRY internally, inside this same call (the chunk is halved and re-sent, down to a hard floor) — never a separate follow-up request the caller has to issue. Returns the vector + metadata (provider, model, embedding dimensions) on success, or `{ error: string }` on failure (e.g. once truncation hits its floor with no success).
 
 #### `ai.setProviderKey(provider: AIProvider, key: string): Promise<void>`
 
@@ -121,8 +121,8 @@ Returns all configured providers and their availability status.
 Network-free capability probe for a provider/model combination. Returns:
 
 - `supportsWebSearch` — whether this model can attempt web-grounded research (per `ModelCapabilities` matrix)
-- `supportsReasoning` — whether this model accepts a reasoning-effort value
-- `effortLevels` — when `supportsReasoning` is true, the exact set of reasoning effort levels this model accepts (e.g., `["low", "medium", "high"]`). Empty when reasoning is unsupported or the provider/model is unknown. **Per-model**: Gemini's accepted level subset genuinely varies by model tier; callers should not assume all models of a provider share the same levels.
+- `supportsReasoning` — whether this model reasons at all, NOT whether the app can steer that reasoning via a parameter (that's `effortLevels`, below — narrower). A CLI coding agent is `true` here uniformly across every backend even though the app has no lever to influence its effort on most of them.
+- `effortLevels` — the exact set of reasoning-effort values the app can actually SEND for this model (e.g., `["low", "medium", "high"]`). Can be empty even when `supportsReasoning` is true — either the provider/model genuinely doesn't accept the parameter (most CLI agents besides Codex), reasoning is unsupported, or the provider/model is unknown. **Per-model**: several providers' accepted level SET genuinely varies by model tier (Gemini's `thinkingLevel`, Anthropic's `output_config.effort`) — callers should not assume all models of a provider share the same levels.
 
 Degrades gracefully for unknown providers to `{ supportsWebSearch: false, supportsReasoning: false, effortLevels: [] }`. Used by the Settings → AI effort picker to render exactly which effort levels are valid for the chosen model.
 
@@ -466,6 +466,8 @@ See: `packages/shared/src/ipc/contracts/cliAgents.ts` (contract), `apps/desktop/
 ## `contactProfile`
 
 Candidate contact information — the single source of truth for the document header contact line. Built from named fields (name, email, phone, location, LinkedIn, GitHub, website, and custom links), localized per language.
+
+### Methods
 
 #### `contactProfile.get(): Promise<ContactProfile>`
 
