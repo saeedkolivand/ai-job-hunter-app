@@ -118,10 +118,46 @@ fn should_list_model(provider: ProviderId, id: &str) -> bool {
 /// reject `temperature` and require `max_completion_tokens` instead of
 /// `max_tokens`. Matched by the `o`+digit convention so new o-series models are
 /// handled without a code change.
+///
+/// This predicate is the `supports_temperature`/`token_param` gate ONLY — it
+/// does NOT cover OpenAI's current gpt-5.x reasoning line (see
+/// [`is_gpt5_or_later_reasoning_family`]), which accepts a normal
+/// `temperature`/`max_tokens` unlike the o-series. Reusing this for the
+/// `reasoning_effort` gate would silently exclude gpt-5.x — the two gates
+/// answer different questions and must stay separate.
 fn is_reasoning_model(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
     let mut bytes = m.bytes();
     matches!((bytes.next(), bytes.next()), (Some(b'o'), Some(d)) if d.is_ascii_digit())
+}
+
+/// OpenAI's CURRENT reasoning-model line — gpt-5 and later (verified against
+/// the live reasoning guide, `platform.openai.com/docs/guides/reasoning`,
+/// fetched 2026-08-04: "Start with `gpt-5.6` for most reasoning workloads");
+/// `docs/models/gpt-5.6.md`-style model pages confirm `reasoning_effort`
+/// support on `/v1/chat/completions`. Distinct from (and additive to)
+/// [`is_reasoning_model`]'s legacy o-series gate — a REQUEST SCHEMA
+/// (`CreateChatCompletionRequest`) never carries a model list, so this is
+/// verified against the provider's model/capability docs, not the schema.
+///
+/// Matches any `gpt-`+digit-major≥5 id (`gpt-5`, `gpt-5-mini`, `gpt-5.4`,
+/// `gpt-5.5`, `gpt-5.6` and its `-sol`/`-terra`/`-luna` aliases) so a NEW
+/// gpt-5.x variant — or a later numbered major line, should OpenAI keep this
+/// convention — is picked up with no code change, EXCEPT the `-chat-latest`
+/// family (`gpt-5-chat-latest`, `gpt-5.1-chat-latest`, …): OpenAI's
+/// non-reasoning conversational variant of each gpt-5.x generation (mirrors
+/// the older `chatgpt-4o-latest` naming), confirmed in the live
+/// `ModelIdsShared` enum — explicitly excluded.
+fn is_gpt5_or_later_reasoning_family(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    if m.contains("chat-latest") {
+        return false;
+    }
+    let Some(rest) = m.strip_prefix("gpt-") else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().is_ok_and(|major| major >= 5)
 }
 
 /// Split one streaming chunk into `(reasoning, content)` deltas.
@@ -272,6 +308,19 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
         };
         body[field] = json!(mt);
     }
+    // Only ever sent when `caps.supports_reasoning` is true (native OpenAI's
+    // o-series, or Ollama Cloud's thinking-family models — see
+    // `OpenAiClient::supports_reasoning_effort`) — a wrong/guessed value 400s.
+    if caps.supports_reasoning {
+        if let Some(effort) = req
+            .effort
+            .as_deref()
+            .map(str::trim)
+            .filter(|e| !e.is_empty())
+        {
+            body["reasoning_effort"] = json!(effort);
+        }
+    }
     body
 }
 
@@ -299,6 +348,36 @@ impl OpenAiClient {
     /// to end — see the same note on `salary_research::SalaryResearch::enrich`).
     fn supports_web_search(&self) -> bool {
         self.id == ProviderId::OpenAi
+    }
+
+    /// Whether this client's provider id + model accepts the `reasoning_effort`
+    /// field on `/chat/completions` (verified against the provider's live
+    /// model/capability docs — a REQUEST SCHEMA like
+    /// `CreateChatCompletionRequest` never carries a model list, so a gate
+    /// like this one is checked against OpenAI's reasoning guide + model
+    /// pages, not the schema — and Ollama's OpenAI-compatibility reference,
+    /// fetched 2026-08-04). Native OpenAI: the legacy o-series
+    /// ([`is_reasoning_model`]) OR the current gpt-5.x line
+    /// ([`is_gpt5_or_later_reasoning_family`]) — two SEPARATE gates ORed
+    /// together, not one reused, because gpt-5.x accepts a normal
+    /// `temperature` unlike the o-series (see `is_reasoning_model`'s doc
+    /// comment). Ollama Cloud: a DIFFERENT gate —
+    /// [`ollama::ollama_family_supports_thinking`], the same
+    /// thinking-model-family classifier local Ollama's native `think` field
+    /// uses — its `/v1` endpoint is OpenAI-compatible but its model CATALOG is
+    /// Ollama's own (e.g. `gpt-oss:120b` doesn't match the `o`+digit or
+    /// `gpt-5`+ conventions). Every other OpenAI-compatible gateway (LM
+    /// Studio, OpenRouter, generic `openai-compatible`) is an unknown catalog
+    /// — never guessed, so a wrong value can't 400 a gateway this adapter
+    /// knows nothing about.
+    fn supports_reasoning_effort(&self, model: &str) -> bool {
+        match self.id {
+            ProviderId::OpenAi => {
+                is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model)
+            }
+            ProviderId::OllamaCloud => super::ollama::ollama_family_supports_thinking(model),
+            _ => false,
+        }
     }
 
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
@@ -504,12 +583,16 @@ impl AiProvider for OpenAiClient {
     }
 
     fn capabilities(&self, model: &str) -> ModelCapabilities {
-        let reasoning = is_reasoning_model(model);
+        // Rejecting `temperature` is an o-series-ONLY quirk — distinct from
+        // "accepts reasoning_effort" (Ollama Cloud's gpt-oss/deepseek/qwen3
+        // models accept both temperature AND reasoning_effort), so these are
+        // two separate gates, not one reused variable.
+        let rejects_temperature = is_reasoning_model(model);
         ModelCapabilities {
-            supports_temperature: !reasoning,
+            supports_temperature: !rejects_temperature,
             supports_system_role: true,
             supports_streaming: true,
-            supports_reasoning: reasoning,
+            supports_reasoning: self.supports_reasoning_effort(model),
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
@@ -517,11 +600,19 @@ impl AiProvider for OpenAiClient {
             // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be
             // assumed to — see `supports_web_search()`.
             supports_web_search: self.supports_web_search(),
-            token_param: if reasoning {
+            token_param: if rejects_temperature {
                 TokenParam::MaxCompletionTokens
             } else {
                 TokenParam::MaxTokens
             },
+        }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        if self.supports_reasoning_effort(model) {
+            vec!["low", "medium", "high"]
+        } else {
+            Vec::new()
         }
     }
 
@@ -685,10 +776,11 @@ impl AiProvider for OpenAiClient {
         // text-embedding-3-* enforce a hard 8191-TOKEN limit and ERROR (no
         // auto-truncate) when exceeded. The old 32k-char cap assumed ~4 chars/token
         // (English); for token-dense scripts (CJK ≈ 1 char/token) 32k chars ≈ 32k
-        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars: in
-        // the worst case (≈1 char/token) that stays under 8191 tokens for every
-        // language. Slightly over-truncates very long English, but safety (never a
-        // failed request) wins over maximizing English length.
+        // tokens — far over 8191 — so the request would FAIL. Cap at 8000 chars
+        // PER CHUNK: in the worst case (≈1 char/token) that stays under 8191
+        // tokens for every language. A document longer than this is split into
+        // multiple chunks and mean-pooled by `embed_adaptive` — never silently
+        // truncated away.
         8_000
     }
 
@@ -829,9 +921,9 @@ impl AiProvider for OpenAiClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_chat_stream_body, is_reasoning_model, join_responses_text, parse_openai_delta,
-        parse_openai_embed_usage, parse_openai_frames, parse_openai_turn, parse_openai_usage,
-        should_list_model, OpenAiClient,
+        build_chat_stream_body, is_gpt5_or_later_reasoning_family, is_reasoning_model,
+        join_responses_text, parse_openai_delta, parse_openai_embed_usage, parse_openai_frames,
+        parse_openai_turn, parse_openai_usage, should_list_model, OpenAiClient,
     };
     use crate::commands::ai_provider::{
         AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam,
@@ -1256,5 +1348,127 @@ mod tests {
                 .capabilities("some-model")
                 .supports_web_search
         );
+    }
+
+    #[test]
+    fn reasoning_effort_gate_differs_by_provider_id_and_model_catalog() {
+        // Native OpenAI: the legacy o-series AND the current gpt-5.x line.
+        assert!(OpenAiClient::new(ProviderId::OpenAi, None).supports_reasoning_effort("o3-mini"));
+        assert!(!OpenAiClient::new(ProviderId::OpenAi, None).supports_reasoning_effort("gpt-4o"));
+        for m in [
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5.4",
+            "gpt-5.5",
+            "gpt-5.6",
+            "gpt-5.6-sol",
+        ] {
+            assert!(
+                OpenAiClient::new(ProviderId::OpenAi, None).supports_reasoning_effort(m),
+                "{m} should accept reasoning_effort"
+            );
+        }
+        // The `-chat-latest` variant of each gpt-5.x generation is the
+        // non-reasoning conversational sibling — must stay excluded.
+        for m in ["gpt-5-chat-latest", "gpt-5.1-chat-latest"] {
+            assert!(
+                !OpenAiClient::new(ProviderId::OpenAi, None).supports_reasoning_effort(m),
+                "{m} must not accept reasoning_effort"
+            );
+        }
+        // Ollama Cloud: the Ollama thinking-family catalog, NOT the o-series/gpt-5
+        // rule — gpt-oss doesn't match either, and qwen3-coder must stay excluded.
+        assert!(OpenAiClient::new(ProviderId::OllamaCloud, None)
+            .supports_reasoning_effort("gpt-oss:120b"));
+        assert!(!OpenAiClient::new(ProviderId::OllamaCloud, None)
+            .supports_reasoning_effort("qwen3-coder:480b"));
+        // A generic OpenAI-compatible gateway is an unknown catalog — never guessed.
+        assert!(!OpenAiClient::new(ProviderId::OpenAiCompatible, None)
+            .supports_reasoning_effort("o3-mini"));
+    }
+
+    #[test]
+    fn gpt5_family_gate_excludes_earlier_majors_and_the_chat_latest_siblings() {
+        for m in [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "gpt-3.5-turbo",
+            "gpt-5-chat-latest",
+            "gpt-5.1-chat-latest",
+            "gpt-5.2-chat-latest",
+            "gpt-5.3-chat-latest",
+            "not-a-gpt-model",
+        ] {
+            assert!(
+                !is_gpt5_or_later_reasoning_family(m),
+                "{m} should not be gpt-5+ reasoning"
+            );
+        }
+        for m in [
+            "gpt-5",
+            "gpt-5-mini",
+            "gpt-5-nano",
+            "gpt-5.1",
+            "gpt-5.1-codex",
+            "gpt-5.4",
+            "gpt-5.6-sol",
+            "gpt-5.6-terra",
+            "gpt-5.6-luna",
+            "gpt-6", // not-yet-released — must degrade forward, not backward
+        ] {
+            assert!(
+                is_gpt5_or_later_reasoning_family(m),
+                "{m} should be gpt-5+ reasoning"
+            );
+        }
+    }
+
+    #[test]
+    fn effort_levels_mirror_the_reasoning_gate() {
+        assert_eq!(
+            OpenAiClient::new(ProviderId::OpenAi, None).effort_levels("gpt-5.6"),
+            vec!["low", "medium", "high"]
+        );
+        assert!(OpenAiClient::new(ProviderId::OpenAi, None)
+            .effort_levels("gpt-4o")
+            .is_empty());
+    }
+
+    #[test]
+    fn chat_stream_body_sends_reasoning_effort_for_a_reasoning_capable_model() {
+        let mut req = base_request();
+        req.model = "o3-mini".to_string();
+        req.effort = Some("high".to_string());
+        let caps = ModelCapabilities {
+            supports_reasoning: true,
+            ..chat_caps(false)
+        };
+        let body = build_chat_stream_body(&req, caps);
+        assert_eq!(body["reasoning_effort"], json!("high"));
+    }
+
+    #[test]
+    fn chat_stream_body_omits_reasoning_effort_for_a_non_reasoning_model() {
+        let mut req = base_request();
+        req.model = "gpt-4o".to_string();
+        req.effort = Some("high".to_string());
+        let caps = ModelCapabilities {
+            supports_reasoning: false,
+            ..chat_caps(true)
+        };
+        let body = build_chat_stream_body(&req, caps);
+        assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_omits_reasoning_effort_when_not_set() {
+        let req = base_request();
+        let caps = ModelCapabilities {
+            supports_reasoning: true,
+            ..chat_caps(true)
+        };
+        let body = build_chat_stream_body(&req, caps);
+        assert!(body.get("reasoning_effort").is_none());
     }
 }

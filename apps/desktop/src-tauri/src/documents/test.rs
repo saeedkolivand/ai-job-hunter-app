@@ -11,8 +11,50 @@ fn ev(values: Vec<f64>) -> EmbeddingVector {
             provider: "ollama".to_string(),
             model: "nomic-embed-text".to_string(),
             dim,
+            version: EMBEDDING_VECTOR_VERSION,
         },
     }
+}
+
+/// A restored-backup vector is an OLD-FORMAT value (pre-chunk-pool, truncated
+/// prefix), so `import()` tags it `version: 0` to force a re-embed. The write
+/// path used to bind `EMBEDDING_VECTOR_VERSION` literally, silently advancing it
+/// to the current version — the row then read as fresh and was never re-embedded,
+/// which is exactly the cross-format mixing the version field exists to prevent.
+#[test]
+fn upsert_vector_persists_an_older_space_version_instead_of_force_advancing_it() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let mut imported = ev(vec![0.1, 0.2, 0.3]);
+    imported.space.version = 0; // what `import()` tags a restored backup with
+    store.upsert_vector("doc-imported", &imported).unwrap();
+
+    let stored = store
+        .get_vector("doc-imported")
+        .expect("vector round-trips");
+    assert_eq!(
+        stored.space.version, 0,
+        "import's stale tag must survive the write, or the vector is never re-embedded"
+    );
+    assert!(
+        !EmbeddingConfig {
+            provider: "ollama".to_string(),
+            model: "nomic-embed-text".to_string(),
+            base_url: None,
+        }
+        .matches(&stored.space),
+        "a version-0 vector must read as stale for the active space"
+    );
+
+    // A freshly-produced vector still lands at the current version.
+    store
+        .upsert_vector("doc-fresh", &ev(vec![0.4, 0.5, 0.6]))
+        .unwrap();
+    assert_eq!(
+        store.get_vector("doc-fresh").unwrap().space.version,
+        EMBEDDING_VECTOR_VERSION
+    );
 }
 
 #[test]
@@ -212,6 +254,37 @@ fn test_get_vector() {
     store.upsert_vector(doc_id, &ev(vector.clone())).unwrap();
     assert_eq!(store.get_vector(doc_id).map(|e| e.values), Some(vector));
     assert!(store.get_vector("nonexistent").is_none());
+}
+
+#[test]
+fn count_vectors_in_space_excludes_old_format_rows_sharing_the_same_provider_and_model() {
+    // Same {provider, model} as `ev(..)`, but tagged with the OLD (pre-bump)
+    // vector format — `EmbeddingConfig::matches` rejects these, so the
+    // status strip's `indexedInActiveSpace` figure (and therefore its
+    // derived `stale` count) must too, or a stale index would report "N/N
+    // indexed" with `stale: 0` and the settings warning would never fire.
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .upsert_vector("doc-current", &ev(vec![0.1, 0.2]))
+        .unwrap();
+    assert_eq!(
+        store.count_vectors_in_space("ollama", "nomic-embed-text"),
+        1
+    );
+
+    let mut stale = ev(vec![0.3, 0.4]);
+    stale.space.version = 0; // pre-chunk-pool format, same provider/model
+    store.upsert_vector("doc-stale", &stale).unwrap();
+
+    // The raw row count is 2, but the CURRENT-format count must still be 1 —
+    // the stale row is invisible to the space-count that drives "indexed".
+    assert_eq!(
+        store.count_vectors_in_space("ollama", "nomic-embed-text"),
+        1,
+        "a version-0 row must not count as indexed in the current space"
+    );
 }
 
 #[test]
@@ -604,6 +677,234 @@ fn embedding_space_changed_true_on_base_url_change() {
         ..cfg_ollama()
     };
     assert!(embedding_space_changed(&old, &new));
+}
+
+// ── alias_retired_gemini_text_embedding_004 (HIGH-1 fix) ───────────────────────
+//
+// Any install that persisted `text-embedding-004` before the default changed
+// to `gemini-embedding-2` must self-heal on the next `open()`, not keep
+// 404-ing forever.
+
+#[test]
+#[serial]
+fn alias_retired_gemini_text_embedding_004_rewrites_a_persisted_stale_row() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Simulate an install that saved the now-retired model BEFORE this fix
+    // shipped (bypassing `set_embedding_config` — this is exactly the shape
+    // the retired code path used to write).
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "UPDATE embedding_config SET provider = 'gemini', model = 'text-embedding-004'",
+            [],
+        )
+        .unwrap();
+    }
+
+    alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+
+    let cfg = store.embedding_config();
+    assert_eq!(cfg.provider, "gemini");
+    assert_eq!(cfg.model, "gemini-embedding-2");
+}
+
+#[test]
+#[serial]
+fn alias_retired_gemini_text_embedding_004_leaves_other_configs_untouched() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // A non-Gemini provider, and a Gemini row already on the current model,
+    // must both survive unchanged — the migration is WHERE-scoped to the
+    // exact retired (provider, model) pair only.
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "UPDATE embedding_config SET provider = 'openai', model = 'text-embedding-3-small'",
+            [],
+        )
+        .unwrap();
+    }
+    alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+    let cfg = store.embedding_config();
+    assert_eq!(cfg.provider, "openai");
+    assert_eq!(cfg.model, "text-embedding-3-small");
+
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "UPDATE embedding_config SET provider = 'gemini', model = 'gemini-embedding-2'",
+            [],
+        )
+        .unwrap();
+    }
+    alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+    let cfg = store.embedding_config();
+    assert_eq!(cfg.provider, "gemini");
+    assert_eq!(cfg.model, "gemini-embedding-2");
+}
+
+#[test]
+#[serial]
+fn alias_retired_gemini_text_embedding_004_catches_real_stored_variants() {
+    // The model column is free text — the Gemini adapter itself strips a
+    // leading `models/`, so that form is a real variant users' saved
+    // strings can carry, not a hypothetical one. Case and surrounding
+    // whitespace are also user-input noise, not signal.
+    for stale_model in [
+        "models/text-embedding-004",
+        "TEXT-EMBEDDING-004",
+        " text-embedding-004 ",
+        "Models/Text-Embedding-004",
+    ] {
+        let temp_dir = TempDir::new().unwrap();
+        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+        {
+            let conn = store.conn.lock();
+            conn.execute(
+                "UPDATE embedding_config SET provider = 'gemini', model = ?1",
+                params![stale_model],
+            )
+            .unwrap();
+        }
+        alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+        let cfg = store.embedding_config();
+        assert_eq!(
+            cfg.model, "gemini-embedding-2",
+            "stored variant {stale_model:?} was not healed"
+        );
+    }
+}
+
+#[test]
+#[serial]
+fn alias_retired_gemini_text_embedding_004_evicts_posting_and_match_caches_only_when_it_changes_something(
+) {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // Seed a posting-vector row that would otherwise survive untouched.
+    store
+        .upsert_posting_vector("job-1", &sha256_hex("job text"), &ev(vec![0.1, 0.2]))
+        .unwrap();
+    assert_eq!(count_table(&store, "posting_vectors"), 1);
+
+    // A stale-model row that DOESN'T match the retired model must not evict.
+    alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+    assert_eq!(count_table(&store, "posting_vectors"), 1);
+
+    // Now seed the actual stale model and re-run — this IS a real space
+    // change, so it must evict, mirroring `ai_set_embedding_config`'s
+    // runtime eviction for the same kind of change.
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "UPDATE embedding_config SET provider = 'gemini', model = 'text-embedding-004'",
+            [],
+        )
+        .unwrap();
+    }
+    alias_retired_gemini_text_embedding_004(&store.conn.lock()).unwrap();
+    assert_eq!(count_table(&store, "posting_vectors"), 0);
+}
+
+// ── Migration WIRING (not just the bare function) ───────────────────────────
+//
+// The two test groups above call `alias_retired_gemini_text_embedding_004`
+// directly — they'd stay green even if its `Migration { .. }` entry were
+// deleted from `DocumentStore::MIGRATIONS`. These exercise the REAL
+// end-to-end path instead.
+
+#[test]
+#[serial]
+fn every_registered_migration_actually_applies_on_open() {
+    // Sanity check on the migration SYSTEM itself: `user_version` must land
+    // exactly at the registered migration count after a fresh `open()` —
+    // catches a migration silently failing to run.
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let version: i64 = store
+        .conn
+        .lock()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, DocumentStore::MIGRATIONS.len() as i64);
+}
+
+#[test]
+#[serial]
+fn alias_retired_gemini_text_embedding_004_heals_a_pre_seeded_row_through_a_real_open() {
+    // Bring a fresh DB up to JUST BEFORE the alias-fix migration (simulating
+    // an install created on an older app version), seed the stale row, then
+    // open it for REAL — proving the `Migration { .. }` entry is actually
+    // registered and reached, not just that the function works standalone.
+    // Looked up BY NAME rather than "all but the last" so this stays correct
+    // regardless of where later migrations get appended in the array.
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let alias_idx = all
+        .iter()
+        .position(|m| m.name == "alias_retired_gemini_text_embedding_004")
+        .expect("alias_retired_gemini_text_embedding_004 must still be registered");
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..alias_idx]).unwrap();
+        conn.execute(
+            "UPDATE embedding_config SET provider = 'gemini', model = 'text-embedding-004'",
+            [],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, including the
+    // alias-fix one.
+    let store = DocumentStore::open(&dir).unwrap();
+    let cfg = store.embedding_config();
+    assert_eq!(cfg.provider, "gemini");
+    assert_eq!(cfg.model, "gemini-embedding-2");
+}
+
+#[test]
+#[serial]
+fn evict_posting_vectors_for_embedding_format_v2_heals_a_pre_seeded_row_through_a_real_open() {
+    // The real end-to-end path: seed a posting vector for a NON-Gemini
+    // provider under an OLD DB (every migration except this one applied),
+    // then open it for real — proving the migration is actually registered
+    // in `MIGRATIONS` (unlike the Gemini-specific alias migration, this one
+    // has no WHERE clause and must wipe the cache for EVERY provider, since
+    // the chunk-and-mean-pool format change affects all of them).
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let evict_idx = all
+        .iter()
+        .position(|m| m.name == "evict_posting_vectors_for_embedding_format_v2")
+        .expect("evict_posting_vectors_for_embedding_format_v2 must still be registered");
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..evict_idx]).unwrap();
+        // `posting_vectors` exists by this point (created several migrations
+        // earlier) — seed a row directly via raw SQL (no `DocumentStore` yet).
+        // Ollama, not Gemini — proves the WHERE-less DELETE isn't scoped.
+        conn.execute(
+            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, created_at) \
+             VALUES ('job-1', 'hash', '[0.1,0.2]', 'ollama', 'nomic-embed-text', 2, 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    let store = DocumentStore::open(&dir).unwrap();
+    assert_eq!(count_table(&store, "posting_vectors"), 0);
 }
 
 // ── Match-result cache ────────────────────────────────────────────────────────

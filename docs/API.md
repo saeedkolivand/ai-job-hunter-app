@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-08-02
+Last updated: 2026-08-04
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -27,6 +27,7 @@ All renderer ↔ Rust communication is defined as typed contracts in `packages/s
 | [autopilot](#autopilot)           | Scheduled job-discovery agent              |
 | [boards](#boards)                 | Job board management                       |
 | [cliAgents](#cliagents)           | CLI agent install management               |
+| [contactProfile](#contactprofile) | Candidate contact information              |
 | [credentials](#credentials)       | Encrypted credential storage               |
 | [dialog](#dialog)                 | Native file dialogs                        |
 | [documents](#documents)           | Document import/export                     |
@@ -103,9 +104,9 @@ Returns per-model context-window and max-token limits from [Ollama][ollama] (`/a
 
 Accepts the full **job ad text** (not a company name). The backend extracts the company internally via the `CompanyResearch` enricher (`cover_letter/research/`), runs the **active provider's own web search + synthesis** (each provider's native `research()` — a native web-search tool, or the Ollama Web Search API for Ollama), and caches the result in `KvCache`. Returns `{ company, brief }`. Degrades gracefully — returns `{ company: "", brief: "" }` when the provider can't search or the search/synthesis fails (or times out), so generation always proceeds. The brief is folded into cover-letter and application-answer prompts as an untrusted-fenced block (see ADR-010). See `commands/ai.rs: ai_research_company`.
 
-#### `ai.embed(text: string): Promise<number[]>`
+#### `ai.embed(text: string): Promise<{ vector: number[]; dim: number; provider: string; model: string } | { error: string }>`
 
-Generates a vector embedding for the given text using the configured embedding model.
+Generates a vector embedding for the given text using the configured embedding model. Input longer than the provider's per-chunk limit is split into chunks, embedded separately, mean-pooled, and L2-normalized. Returns the vector + metadata (provider, model, embedding dimensions) on success, or an error object on failure (which triggers a re-embed retry with adaptive truncation if the error is a context-length overflow).
 
 #### `ai.setProviderKey(provider: AIProvider, key: string): Promise<void>`
 
@@ -114,6 +115,16 @@ Stores an API key in the OS keychain for the given provider.
 #### `ai.getProviders(): Promise<ProviderConfig[]>`
 
 Returns all configured providers and their availability status.
+
+#### `ai.modelCapabilities(provider: string, model?: string, baseUrl?: string): Promise<{ supportsWebSearch: boolean; supportsReasoning: boolean; effortLevels: string[] }>`
+
+Network-free capability probe for a provider/model combination. Returns:
+
+- `supportsWebSearch` — whether this model can attempt web-grounded research (per `ModelCapabilities` matrix)
+- `supportsReasoning` — whether this model accepts a reasoning-effort value
+- `effortLevels` — when `supportsReasoning` is true, the exact set of reasoning effort levels this model accepts (e.g., `["low", "medium", "high"]`). Empty when reasoning is unsupported or the provider/model is unknown. **Per-model**: Gemini's accepted level subset genuinely varies by model tier; callers should not assume all models of a provider share the same levels.
+
+Degrades gracefully for unknown providers to `{ supportsWebSearch: false, supportsReasoning: false, effortLevels: [] }`. Used by the Settings → AI effort picker to render exactly which effort levels are valid for the chosen model.
 
 ### Events
 
@@ -449,6 +460,40 @@ interface CliAgentInstallResult {
 ```
 
 See: `packages/shared/src/ipc/contracts/cliAgents.ts` (contract), `apps/desktop/src-tauri/src/commands/cli_agents.rs` (read-only Rust commands).
+
+---
+
+## `contactProfile`
+
+Candidate contact information — the single source of truth for the document header contact line. Built from named fields (name, email, phone, location, LinkedIn, GitHub, website, and custom links), localized per language.
+
+#### `contactProfile.get(): Promise<ContactProfile>`
+
+Fetches the stored contact profile.
+
+#### `contactProfile.set(profile: ContactProfile): Promise<{ success?: boolean; error?: string }>`
+
+Persists the contact profile. The profile is the seed for document headers; user edits to generated text are preserved.
+
+#### `contactProfile.headerLine(lang: string): Promise<string>`
+
+Returns the profile's header contact line as markdown, localized for the given ISO-639-1 language code (e.g., `"de"`, `"en-US"`). This is the same line built by the Rust backend, shared across all render paths (résumé, cover letter, DOCX), ensuring no format/language-specific divergence. Returns an empty string when the profile contributes nothing.
+
+```typescript
+interface ContactProfile {
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  location?: LocalizedText; // { default: string, byLang?: Record<string, string> }
+  linkedin?: string; // URL
+  github?: string; // URL
+  website?: string; // URL
+  extraLinks?: ContactLink[]; // [{ label: string, url: string }, …]
+  photo?: string; // data: URI only (JPEG/PNG/WebP/GIF, square-cropped)
+}
+```
+
+See: `packages/shared/src/ipc/contracts/contactProfile.ts` (contract), `apps/desktop/src-tauri/src/commands/contact_profile.rs` + `apps/desktop/src-tauri/src/contact_profile/mod.rs` (implementation).
 
 ---
 

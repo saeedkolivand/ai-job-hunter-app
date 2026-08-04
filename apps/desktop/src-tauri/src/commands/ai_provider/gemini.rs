@@ -20,6 +20,12 @@ use super::{
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
 
+/// Requested embedding output size. `gemini-embedding-2`'s default (unspecified)
+/// dimensionality is 3072 — 4x the retired text-embedding-004's 768. One of
+/// the model's documented "Recommended" sizes; auto-normalized by the API
+/// (see `embed_impl`'s call site for the full rationale).
+const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
+
 /// Validate the key the keychain returned, rejecting a missing/blank one early.
 ///
 /// Pure (no `AppHandle`) so it's unit-testable. Several call paths previously
@@ -161,12 +167,90 @@ fn parse_gemini_embed_usage(data: &Value) -> Usage {
 }
 
 /// Whether to request `thinkingConfig.includeThoughts`. Gemini 1.5 and the GA
-/// 2.0 models reject `thinkingConfig` with a 400, so we only enable it for the
-/// 2.5 family and any explicit `*-thinking-*` model. Unknown future models simply
-/// don't surface thoughts (a graceful miss, never a broken request).
+/// 2.0 (non-thinking) models reject `thinkingConfig` with a 400, so this
+/// enables it for Gemini 3+ ([`gemini_is_v3_or_later`] — the SAME v3+
+/// boundary the effort feature's `thinkingLevel` shape uses; a real Gemini 3
+/// id like `gemini-3-pro-preview` matches neither `"2.5"` nor `"thinking"`
+/// on its own), the 2.5 family, and any explicit `*-thinking-*` model.
+/// Unknown pre-3 future models simply don't surface thoughts (a graceful
+/// miss, never a broken request).
 fn gemini_supports_thinking(model: &str) -> bool {
     let m = model.to_ascii_lowercase();
-    m.contains("2.5") || m.contains("thinking")
+    gemini_is_v3_or_later(model) || m.contains("2.5") || m.contains("thinking")
+}
+
+/// Whether `model` is Gemini 3 or later — the boundary where the newer
+/// `thinkingConfig.thinkingLevel` enum (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH`) takes
+/// over from the older `thinkingConfig.thinkingBudget` integer. Verified
+/// against the live REST reference (`ai.google.dev/api/generate-content`,
+/// fetched 2026-08-03): "`thinkingLevel` ... Recommended for Gemini 3 or
+/// later models. Use with earlier models results in an error." Parses the
+/// major version number right after the `gemini-` prefix (`gemini-3-pro-
+/// preview`, `gemini-3.5-flash`, `gemini-3.6-flash`, …) so a future Gemini
+/// 4/5/… release is recognized with no code change, unlike a growing
+/// enumerated list.
+fn gemini_is_v3_or_later(model: &str) -> bool {
+    let m = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    let Some(rest) = m.strip_prefix("gemini-") else {
+        return false;
+    };
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u32>().is_ok_and(|major| major >= 3)
+}
+
+/// Reasoning-effort levels Gemini 3.x accepts, PER MODEL — Google's live
+/// table (`ai.google.dev/gemini-api/docs/thinking`, fetched 2026-08-04)
+/// shows the accepted subset genuinely varies by model TIER, not just by
+/// version (`gemini-3-pro-preview` supports only `low`/`high`;
+/// `gemini-3.1-pro-preview` additionally supports `medium`) — unlike every
+/// other predicate in this crate, there is no clean shape rule to derive
+/// this from the model id, so this is a genuine per-model lookup sourced
+/// directly from that table:
+///
+/// | model                       | levels                          |
+/// |------------------------------|---------------------------------|
+/// | gemini-3-pro-preview          | low, high                       |
+/// | gemini-3.1-pro-preview         | low, medium, high                |
+/// | gemini-3.1-flash-lite-image    | minimal, high                    |
+/// | gemini-3-flash-preview, gemini-3.5-flash(-lite), gemini-3.6-flash | minimal, low, medium, high |
+///
+/// Level acceptance is enforced POST-auth (proto/shape validation accepts
+/// any `ThinkingLevel` enum member on every model — a request 400s only
+/// later, on the model-specific check), so this table could not be probed
+/// live without a key; treat Google's docs table as authoritative.
+///
+/// A model that passes [`gemini_is_v3_or_later`] but is NOT one of the rows
+/// above is a genuinely new/unreleased id — falls back to `["high"]`, the
+/// one level every row in the current table accepts (never a guessed value
+/// that could 400; `effort: high` is also the documented no-op-equivalent
+/// default on every provider in this crate, so it degrades gracefully as
+/// "no override"). Pre-3 models (including the 2.5 family — see
+/// `build_chat_stream_body`'s doc comment) get no levels at all.
+fn gemini_effort_levels(model: &str) -> Vec<&'static str> {
+    if !gemini_is_v3_or_later(model) {
+        return Vec::new();
+    }
+    let m = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    if m.contains("gemini-3.1-flash-lite-image") {
+        vec!["minimal", "high"]
+    } else if m.contains("gemini-3.1-pro-preview") {
+        vec!["low", "medium", "high"]
+    } else if m.contains("gemini-3-pro-preview") {
+        vec!["low", "high"]
+    } else if m.contains("gemini-3-flash-preview")
+        || m.contains("gemini-3.5-flash")
+        || m.contains("gemini-3.6-flash")
+    {
+        vec!["minimal", "low", "medium", "high"]
+    } else {
+        vec!["high"]
+    }
 }
 
 /// Extract a Gemini chunk's streamed parts as `(is_thought, text)` pairs. 2.5
@@ -327,15 +411,76 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     if let Some(mt) = req.max_tokens {
         generation_config["maxOutputTokens"] = json!(mt);
     }
+    // Both fields live under the SAME `thinkingConfig` object — build it
+    // incrementally so setting one never clobbers the other.
+    let mut thinking_config = serde_json::Map::new();
     // Ask thinking-capable models to stream their reasoning as `thought` parts.
     if gemini_supports_thinking(&req.model) {
-        generation_config["thinkingConfig"] = json!({ "includeThoughts": true });
+        thinking_config.insert("includeThoughts".to_string(), json!(true));
+    }
+    // `thinkingLevel` is gated on Gemini 3+ ([`gemini_is_v3_or_later`]) per
+    // THIS endpoint's own REST reference (`ThinkingConfig.thinkingLevel`,
+    // `generateContent`/`streamGenerateContent` — what this file calls):
+    // "Recommended for Gemini 3 or later models. Use with earlier models
+    // results in an error." Google's newer Interactions API separately
+    // publishes a level vocabulary for the 2.5 family too, but that is a
+    // DIFFERENT API this app does not call — going by the reference for the
+    // endpoint actually in use here, pre-3 models (2.5 and earlier) simply
+    // don't get an effort-driven thinking config.
+    if let Some(effort) = req
+        .effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        if gemini_is_v3_or_later(&req.model) {
+            thinking_config.insert(
+                "thinkingLevel".to_string(),
+                json!(effort.to_ascii_uppercase()),
+            );
+        }
+    }
+    if !thinking_config.is_empty() {
+        generation_config["thinkingConfig"] = Value::Object(thinking_config);
     }
     let mut body = json!({ "contents": contents, "generationConfig": generation_config });
     if !system_text.is_empty() {
         body["systemInstruction"] = json!({ "parts": [{ "text": system_text }] });
     }
     body
+}
+
+/// Build the `embedContent` request body. Pure + unit-tested — the ONLY place
+/// `outputDimensionality` is set, so a request can never silently drop it.
+/// `m` is the model id with any `models/` prefix already stripped (mirrors
+/// `embed_impl`'s own stripping, done once there for the endpoint label too).
+///
+/// Without it, `gemini-embedding-2` returns its default 3072-dim vector — 4x
+/// the retired text-embedding-004's 768 — stored as JSON f64 text in both
+/// `vectors` and `posting_vectors` at ~4x the space. 768 keeps ~99.5% of
+/// full-dimension MTEB quality (Google's own published numbers) and is one
+/// of the model's documented "Recommended" sizes; `gemini-embedding-2`
+/// auto-normalizes a truncated-dimension embedding (verified in the live
+/// Gemini API docs), so this needs no extra normalization step on our side.
+///
+/// **Nesting matters.** The REST reference for `models.embedContent` lists a
+/// TOP-LEVEL `outputDimensionality` field as `(deprecated)` — "Please use
+/// `EmbedContentConfig.output_dimensionality` instead" — verified against the
+/// live `/api/embeddings` REST reference, not memory. The wire field is
+/// nested camelCase JSON: `embedContentConfig: { outputDimensionality }`, NOT
+/// a snake_case field at the request root. Sending the deprecated top-level
+/// form risks the API silently ignoring it (proto3-JSON transcoding may
+/// still accept an unknown/deprecated field with no error), which would
+/// silently store 3072-dim vectors again with no visible failure — this is
+/// UNVERIFIED against a live call (no API key available in this
+/// environment); confirm the returned vector's `dim` is 768 on first real
+/// use.
+fn build_embed_body(m: &str, text: &str) -> Value {
+    json!({
+        "model": format!("models/{m}"),
+        "content": { "parts": [{ "text": text }] },
+        "embedContentConfig": { "outputDimensionality": EMBED_OUTPUT_DIMENSIONALITY },
+    })
 }
 
 pub struct GeminiClient;
@@ -412,10 +557,7 @@ impl GeminiClient {
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:embedContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
-        let body = json!({
-            "model": format!("models/{m}"),
-            "content": { "parts": [{ "text": text }] },
-        });
+        let body = build_embed_body(m, text);
         let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -517,12 +659,12 @@ impl AiProvider for GeminiClient {
         ProviderId::Gemini
     }
 
-    fn capabilities(&self, _model: &str) -> ModelCapabilities {
+    fn capabilities(&self, model: &str) -> ModelCapabilities {
         ModelCapabilities {
             supports_temperature: true,
             supports_system_role: true, // mapped to systemInstruction
             supports_streaming: true,
-            supports_reasoning: false,
+            supports_reasoning: gemini_is_v3_or_later(model),
             supports_tools: true,
             supports_json_mode: true,
             supports_embeddings: true,
@@ -530,6 +672,10 @@ impl AiProvider for GeminiClient {
             supports_web_search: true,
             token_param: TokenParam::MaxOutputTokens,
         }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        gemini_effort_levels(model)
     }
 
     async fn chat_stream(
@@ -681,13 +827,23 @@ impl AiProvider for GeminiClient {
     }
 
     fn default_embedding_model(&self) -> Option<&'static str> {
-        Some("text-embedding-004")
+        // text-embedding-004 was retired (shutdown Jan 14, 2026 — the exact
+        // error this app was seeing). Google's own deprecation table names
+        // `gemini-embedding-2` as the migration target for every retired
+        // embedding model (verified via the live Gemini API docs, not memory).
+        Some("gemini-embedding-2")
     }
 
     fn max_embedding_input_chars(&self) -> usize {
-        // text-embedding-004 accepts 2048 tokens (~4 chars/token ≈ 8000 chars). This
-        // matches the conservative default but is stated explicitly so Gemini's real
-        // cap is documented at the adapter and won't drift if the default changes.
+        // gemini-embedding-2's documented input limit is 8,192 tokens (~4
+        // chars/token ≈ 32000 chars for English). Cap conservatively at 8000
+        // chars: in the worst case (token-dense scripts, ~1 char/token) that
+        // still stays under 8,192 tokens for every language. This is the
+        // per-CHUNK size `embed_adaptive` uses — a document longer than this
+        // is split into multiple chunks and mean-pooled (never truncated
+        // away), and `embed_chunk_adaptive` halves-and-retries a single chunk
+        // on an actual context-length error, so this default only needs to be
+        // a safe starting point, not a perfect guess.
         8_000
     }
 
@@ -829,9 +985,10 @@ impl AiProvider for GeminiClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_chat_stream_body, gemini_supports_thinking, join_parts_text,
-        parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
-        parse_gemini_usage, validate_gemini_key, GeminiScanner, StreamPiece,
+        build_chat_stream_body, build_embed_body, gemini_effort_levels, gemini_is_v3_or_later,
+        gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage, parse_gemini_frames,
+        parse_gemini_parts, parse_gemini_turn, parse_gemini_usage, validate_gemini_key, AiProvider,
+        GeminiClient, GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
     };
     use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
     use crate::error::AppError;
@@ -905,6 +1062,50 @@ mod tests {
     }
 
     #[test]
+    fn default_embedding_model_is_not_the_retired_text_embedding_004() {
+        // text-embedding-004 was retired by Google (shutdown Jan 14, 2026) —
+        // the exact "model or endpoint not found" error this app was seeing.
+        let model = GeminiClient.default_embedding_model().unwrap();
+        assert_ne!(model, "text-embedding-004");
+        assert_eq!(model, "gemini-embedding-2");
+    }
+
+    #[test]
+    fn embed_body_requests_the_reduced_output_dimensionality() {
+        // Without this, gemini-embedding-2 defaults to 3072 dims (4x the
+        // retired text-embedding-004's 768), quadrupling stored-vector size
+        // for no accuracy benefit this app uses. Must be NESTED inside
+        // `embedContentConfig` (camelCase) — the top-level `outputDimensionality`
+        // field is deprecated per the live REST reference and may be silently
+        // ignored.
+        let body = build_embed_body("gemini-embedding-2", "hello");
+        assert_eq!(
+            body["embedContentConfig"]["outputDimensionality"],
+            json!(EMBED_OUTPUT_DIMENSIONALITY)
+        );
+        assert_eq!(EMBED_OUTPUT_DIMENSIONALITY, 768);
+        // Never at the deprecated top-level location.
+        assert!(body.get("output_dimensionality").is_none());
+        assert!(body.get("outputDimensionality").is_none());
+        assert_eq!(body["model"], json!("models/gemini-embedding-2"));
+        assert_eq!(body["content"]["parts"][0]["text"], json!("hello"));
+    }
+
+    #[test]
+    fn embedding_cap_is_within_the_documented_token_limit_range() {
+        // Drift-pinning only, NOT proof of token safety on its own (that would
+        // need a real tokenizer, which this crate doesn't have) — it just
+        // pins the char cap to a sane range relative to gemini-embedding-2's
+        // documented 8,192-token limit, so a future edit can't silently set
+        // it absurdly high or low. The real per-language safety net is
+        // `embed_chunk_adaptive`'s halve-and-retry on an actual provider
+        // context-length error, which this test does not exercise.
+        let cap = GeminiClient.max_embedding_input_chars();
+        assert!(cap <= 8192, "char cap {cap} can exceed 8192 tokens");
+        assert!(cap >= 4_000, "cap {cap} truncates too aggressively");
+    }
+
+    #[test]
     fn join_parts_text_concatenates_first_candidate_parts() {
         let data = json!({
             "candidates": [{
@@ -923,6 +1124,11 @@ mod tests {
             "gemini-2.5-pro",
             "gemini-2.5-flash",
             "gemini-2.0-flash-thinking",
+            // Real Gemini 3 ids match neither "2.5" nor "thinking" on their
+            // own — must be reached via the v3+ boundary, not the substrings.
+            "gemini-3-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-3.6-flash",
         ] {
             assert!(gemini_supports_thinking(m), "{m} should enable thinking");
         }
@@ -1128,5 +1334,134 @@ mod tests {
         });
         let turn = parse_gemini_turn(&data);
         assert_eq!(turn.stop, StopReason::Length);
+    }
+
+    #[test]
+    fn v3_gate_recognizes_the_current_and_future_gemini_3_family() {
+        for m in [
+            "gemini-3-pro-preview",
+            "gemini-3-flash-preview",
+            "gemini-3.1-pro-preview",
+            "gemini-3.5-flash",
+            "gemini-3.6-flash",
+            "models/gemini-3-pro-preview",
+            "gemini-4-pro", // not-yet-released — must degrade forward, not backward
+        ] {
+            assert!(gemini_is_v3_or_later(m), "{m} should be v3+");
+        }
+        for m in [
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+            "not-a-gemini-model",
+        ] {
+            assert!(!gemini_is_v3_or_later(m), "{m} should not be v3+");
+        }
+    }
+
+    #[test]
+    fn capabilities_supports_reasoning_mirrors_the_v3_gate() {
+        assert!(
+            GeminiClient
+                .capabilities("gemini-3-pro-preview")
+                .supports_reasoning
+        );
+        assert!(
+            !GeminiClient
+                .capabilities("gemini-2.5-pro")
+                .supports_reasoning
+        );
+    }
+
+    #[test]
+    fn chat_stream_body_sends_thinking_level_for_a_v3_model_with_effort_set() {
+        let mut req = base_request();
+        req.model = "gemini-3-pro-preview".to_string();
+        req.effort = Some("low".to_string());
+        let body = build_chat_stream_body(&req);
+        assert_eq!(
+            body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+            json!("LOW")
+        );
+    }
+
+    #[test]
+    fn chat_stream_body_omits_thinking_level_for_a_pre_v3_model_even_with_effort_set() {
+        // `thinkingLevel` is documented "Recommended for Gemini 3 or later
+        // models. Use with earlier models results in an error" on THIS
+        // endpoint's own REST reference — a pre-v3 model (2.5 and earlier)
+        // must never get thinkingLevel/thinkingBudget.
+        let mut req = base_request();
+        req.model = "gemini-2.5-pro".to_string();
+        req.effort = Some("low".to_string());
+        let body = build_chat_stream_body(&req);
+        assert!(body["generationConfig"]["thinkingConfig"]
+            .get("thinkingLevel")
+            .is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_omits_thinking_config_for_a_non_thinking_model_with_no_effort() {
+        let mut req = base_request();
+        // Pre-v3, non-2.5, non-"*-thinking-*" — genuinely no thinking support.
+        req.model = "gemini-2.0-flash".to_string();
+        let body = build_chat_stream_body(&req);
+        assert!(body["generationConfig"].get("thinkingConfig").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_keeps_include_thoughts_alongside_thinking_level() {
+        // A real Gemini 3 id matches BOTH the (now-widened) "thinking" display
+        // gate and the v3 effort gate — both fields must land in the SAME
+        // thinkingConfig object, not one clobbering the other. "high" is the
+        // one level every row in `gemini_effort_levels`'s table accepts, so
+        // it's valid for gemini-3-pro-preview specifically too.
+        let mut req = base_request();
+        req.model = "gemini-3-pro-preview".to_string();
+        req.effort = Some("high".to_string());
+        let body = build_chat_stream_body(&req);
+        let tc = &body["generationConfig"]["thinkingConfig"];
+        assert_eq!(tc["includeThoughts"], json!(true));
+        assert_eq!(tc["thinkingLevel"], json!("HIGH"));
+    }
+
+    #[test]
+    fn effort_levels_are_looked_up_per_model_tier_not_per_provider() {
+        assert_eq!(
+            gemini_effort_levels("gemini-3-pro-preview"),
+            vec!["low", "high"]
+        );
+        assert_eq!(
+            gemini_effort_levels("gemini-3.1-pro-preview"),
+            vec!["low", "medium", "high"]
+        );
+        assert_eq!(
+            gemini_effort_levels("gemini-3.1-flash-lite-image"),
+            vec!["minimal", "high"]
+        );
+        assert_eq!(
+            gemini_effort_levels("gemini-3-flash-preview"),
+            vec!["minimal", "low", "medium", "high"]
+        );
+        assert_eq!(
+            gemini_effort_levels("gemini-3.6-flash"),
+            vec!["minimal", "low", "medium", "high"]
+        );
+        // An unrecognized future v3+ id falls back to the one universally-safe
+        // level, never a guess that could 400.
+        assert_eq!(gemini_effort_levels("gemini-4-pro"), vec!["high"]);
+        // Pre-v3 models get no levels at all.
+        assert!(gemini_effort_levels("gemini-2.5-pro").is_empty());
+        assert!(gemini_effort_levels("gemini-1.5-flash").is_empty());
+    }
+
+    #[test]
+    fn capabilities_effort_levels_matches_the_free_function() {
+        assert_eq!(
+            GeminiClient.effort_levels("gemini-3-pro-preview"),
+            gemini_effort_levels("gemini-3-pro-preview")
+        );
     }
 }

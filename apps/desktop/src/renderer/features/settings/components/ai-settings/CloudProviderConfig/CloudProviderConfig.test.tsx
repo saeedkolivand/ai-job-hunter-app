@@ -53,12 +53,27 @@ const mockSetProviderSettingsMutate = vi.fn((_req: unknown, opts?: { onError?: (
   opts?.onError?.()
 );
 
+// EffortPicker's capability probe — controllable per-test via this mutable
+// state object (avoids a real QueryClient/AppClientProvider in these focused
+// tests, mirroring the useSetProviderSettings stub above).
+const modelCapsState: { data: { effortLevels: string[] } | undefined } = {
+  data: undefined,
+};
+
 vi.mock('@/services', () => ({
   useSetProviderSettings: () => ({ mutate: mockSetProviderSettingsMutate }),
+  useModelCapabilities: () => modelCapsState,
+}));
+
+vi.mock('@/store/preferences-store', () => ({
+  usePreferencesStore: (selector: (s: { setProviderSettings: () => void }) => unknown) =>
+    selector({ setProviderSettings: vi.fn() }),
+  useAiProviderConfig: () => undefined,
 }));
 
 afterEach(() => {
   vi.clearAllMocks();
+  modelCapsState.data = undefined;
 });
 
 // ── component under test ───────────────────────────────────────────────────
@@ -182,5 +197,25 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
     expect(mockNotify.error).toHaveBeenCalledWith({
       message: 'settings.aiProvider.saveUrlFailed',
     });
+  });
+});
+
+describe('CloudProviderConfig — reasoning-effort picker is capability-driven', () => {
+  it('appears once the backend reports levels for the selected model', () => {
+    modelCapsState.data = { effortLevels: ['low', 'medium', 'high'] };
+    render(<CloudProviderConfig {...baseProps} provider="openai" providerModel="gpt-5.6" />);
+    expect(screen.getByText('settings.aiProvider.reasoningEffort')).toBeInTheDocument();
+  });
+
+  it('disappears for a model the backend reports no levels for', () => {
+    modelCapsState.data = { effortLevels: [] };
+    render(<CloudProviderConfig {...baseProps} provider="openai" providerModel="gpt-4o" />);
+    expect(screen.queryByText('settings.aiProvider.reasoningEffort')).not.toBeInTheDocument();
+  });
+
+  it('stays hidden while the capability query has not resolved yet', () => {
+    modelCapsState.data = undefined;
+    render(<CloudProviderConfig {...baseProps} provider="openai" providerModel="gpt-5.6" />);
+    expect(screen.queryByText('settings.aiProvider.reasoningEffort')).not.toBeInTheDocument();
   });
 });

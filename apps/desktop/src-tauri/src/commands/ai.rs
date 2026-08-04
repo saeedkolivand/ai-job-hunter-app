@@ -151,28 +151,41 @@ pub async fn ai_list_provider_models(
     json!(provider_client.list_models(&app).await)
 }
 
-/// Static, network-free capability probe for a provider/model — currently only
-/// whether it can attempt a web-grounded `research*` search. Reads the resolved
-/// [`ModelCapabilities`] matrix (the SAME value consumed server-side by
-/// `ai_research_*`), so the renderer never mirrors the per-provider booleans: a
-/// NEW provider is exposed with zero TypeScript change. Drives the
-/// capability-driven default of the tailoring "search company" toggle. An
+/// Static, network-free capability probe for a provider/model — whether it can
+/// attempt a web-grounded `research*` search, whether it accepts a
+/// reasoning-effort value, and (when it does) exactly which levels this
+/// model accepts (drives the Settings → AI effort picker). Reads the
+/// resolved [`ModelCapabilities`] matrix + [`AiProvider::effort_levels`] (the
+/// SAME values consumed server-side by `ai_research_*` and by each adapter's
+/// own effort-field gate), so the renderer never mirrors the per-provider
+/// vocabulary or booleans: a NEW provider/model is exposed with zero
+/// TypeScript change — this is a per-MODEL lookup (Gemini's accepted level
+/// subset genuinely varies by model tier, not just by provider). An
 /// unknown/unresolvable provider degrades to `supportsWebSearch: false`,
-/// matching the caller's safe default-off fallback.
+/// `supportsReasoning: false`, `effortLevels: []`, matching the caller's safe
+/// default-off fallback.
 #[tauri::command]
 pub fn ai_model_capabilities(
     provider: String,
     model: Option<String>,
     base_url: Option<String>,
 ) -> Value {
-    let supports_web_search = resolve_by_name(&provider, base_url)
-        .map(|client| {
-            client
-                .capabilities(&model.unwrap_or_default())
-                .supports_web_search
-        })
-        .unwrap_or(false);
-    json!({ "supportsWebSearch": supports_web_search })
+    let model = model.unwrap_or_default();
+    match resolve_by_name(&provider, base_url) {
+        Ok(client) => {
+            let caps = client.capabilities(&model);
+            json!({
+                "supportsWebSearch": caps.supports_web_search,
+                "supportsReasoning": caps.supports_reasoning,
+                "effortLevels": client.effort_levels(&model),
+            })
+        }
+        Err(_) => json!({
+            "supportsWebSearch": false,
+            "supportsReasoning": false,
+            "effortLevels": Vec::<&str>::new(),
+        }),
+    }
 }
 
 /// Local (Ollama) model list — powers the model picker's "Ollama (Local)"
@@ -551,13 +564,13 @@ pub fn ai_unload_model(_model: String) -> Value {
 #[tauri::command]
 pub async fn ai_embed(app: AppHandle, req: AiEmbedRequest) -> Value {
     match crate::documents::embed(&app, &req.text).await {
-        Some(ev) => json!({
+        Ok(ev) => json!({
             "vector": ev.values,
             "dim": ev.space.dim,
             "provider": ev.space.provider,
             "model": ev.space.model,
         }),
-        None => json!(null),
+        Err(e) => json!({ "error": e.to_string() }),
     }
 }
 
@@ -765,6 +778,17 @@ pub async fn ai_set_embedding_config(
     }
 }
 
+/// Whether a re-embed run should report failure (`job.failed`) rather than a
+/// `job.completed` with a 0/N payload — true only when EVERY document failed
+/// and there was at least one to embed. Pure + unit-tested so the bug this
+/// fixes (a total failure used to still emit `job.completed`, leaving the
+/// settings strip showing a stale success toast over an unchanged index)
+/// can't silently regress. A run with zero documents (`failed == 0`) is not a
+/// failure — there was nothing to fail at.
+fn reembed_run_failed(done: u32, failed: u32) -> bool {
+    done == 0 && failed > 0
+}
+
 /// Re-embed every document with the active embedding config, rebuilding the
 /// vector index in the active space. Emits `jobs:event` progress and returns a
 /// job id. Clears the live posting embedding cache so stale-space entries go too.
@@ -787,9 +811,16 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         let total = docs.len();
         let mut done = 0u32;
         let mut failed = 0u32;
+        // The FIRST embedding/write error, carried through to `job_fail` so a
+        // total failure surfaces its real cause instead of dying in the log
+        // (e.g. an Ollama context-length overflow or a retired Gemini model).
+        let mut first_error: Option<String> = None;
 
-        // Re-embed with bounded concurrency: each document is one HTTP round-trip,
-        // so a small fan-out keeps the provider busy without overwhelming it (or
+        // Re-embed with bounded concurrency: each document is normally one HTTP
+        // round-trip, though a document longer than the provider's per-chunk cap
+        // now costs several (see `ai_provider::embed_adaptive` — chunk-and-mean-
+        // pool, bounded to at most `MAX_CHUNKS_PER_DOCUMENT` chunks). A small
+        // fan-out here keeps the provider busy without overwhelming it (or
         // hammering a rate limit). Cancellation is honored between chunks; store
         // writes (sync) stay serialized to avoid lock contention.
         const REEMBED_CONCURRENCY: usize = 4;
@@ -817,7 +848,7 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
 
             for (doc, ev) in chunk.iter().zip(embeds) {
                 match ev {
-                    Some(ev) => {
+                    Ok(ev) => {
                         let store = app_clone.state::<DocumentStore>();
                         match store
                             .upsert_vector(&doc.id, &ev)
@@ -826,11 +857,15 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
                             Ok(()) => done += 1,
                             Err(e) => {
                                 log::warn!("reembed write failed for {}: {e}", doc.id);
+                                first_error.get_or_insert_with(|| e.to_string());
                                 failed += 1;
                             }
                         }
                     }
-                    None => failed += 1,
+                    Err(e) => {
+                        first_error.get_or_insert_with(|| e.to_string());
+                        failed += 1;
+                    }
                 }
             }
 
@@ -849,6 +884,21 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
         // A user-cancelled job is already in Cancelled status; calling
         // job_complete would overwrite it with Completed. Bail with partial counts.
         if was_cancelled {
+            return;
+        }
+
+        // Every document failed — this is a failure, not a "completed" run with
+        // a 0/N count (the bug this branch fixes: the embed provider erroring
+        // for every document used to still emit `job.completed`, so the
+        // settings strip showed a stale "success" toast over an unchanged
+        // 0/N index). Partial success still completes with the existing
+        // `{reembedded, failed, total}` payload.
+        if reembed_run_failed(done, failed) {
+            crate::commands::jobs::job_fail(
+                &app_clone,
+                &job_id_clone,
+                first_error.unwrap_or_else(|| "embedding failed for every document".to_string()),
+            );
             return;
         }
 
@@ -1027,5 +1077,33 @@ mod research_answer_tests {
         let truncated = truncate_question(&long);
         assert_eq!(truncated.chars().count(), ANSWER_QUESTION_MAX_CHARS);
         assert!(truncated.chars().all(|c| c == '日'));
+    }
+}
+
+#[cfg(test)]
+mod reembed_tests {
+    //! `reembed_run_failed` is the pure decision `ai_reembed_all` uses to pick
+    //! `job_fail` vs `job_complete`. The command itself needs a live
+    //! `AppHandle` this crate has no test harness for (see the same note on
+    //! `AnswerSearcher`), so the fix (a total-failure run must emit
+    //! `job.failed`, never `job.completed`) is pinned here instead.
+    use super::reembed_run_failed;
+
+    #[test]
+    fn every_document_failing_reports_failure() {
+        assert!(reembed_run_failed(0, 5));
+    }
+
+    #[test]
+    fn any_success_is_not_a_failed_run() {
+        assert!(!reembed_run_failed(1, 4));
+        assert!(!reembed_run_failed(5, 0));
+    }
+
+    #[test]
+    fn zero_documents_is_not_a_failed_run() {
+        // Nothing to embed — a `job.completed` with a 0/0 payload is correct,
+        // not a failure.
+        assert!(!reembed_run_failed(0, 0));
     }
 }

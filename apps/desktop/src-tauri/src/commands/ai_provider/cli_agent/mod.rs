@@ -214,6 +214,18 @@ impl AiProvider for CliAgentClient {
         }
     }
 
+    /// Only Codex actually reads `effort` (`codex::exec_args`'s
+    /// `-c model_reasoning_effort=…` override) — every other CLI agent's
+    /// `stream_invocation`/`complete_invocation` accepts the `effort`
+    /// parameter but ignores it, so the picker must not appear for them.
+    fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
+        if self.backend.id() == ProviderId::Codex {
+            vec!["low", "medium", "high"]
+        } else {
+            Vec::new()
+        }
+    }
+
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -956,6 +968,27 @@ mod tests {
     #[test]
     fn non_cli_provider_has_no_backend() {
         assert!(backend_for(ProviderId::Anthropic).is_none());
+    }
+
+    #[test]
+    fn effort_levels_only_populated_for_codex() {
+        assert_eq!(
+            CliAgentClient::new(backend_for(ProviderId::Codex).unwrap()).effort_levels(""),
+            vec!["low", "medium", "high"]
+        );
+        for id in [
+            ProviderId::ClaudeCode,
+            ProviderId::GeminiCli,
+            ProviderId::Antigravity,
+        ] {
+            assert!(
+                CliAgentClient::new(backend_for(id).unwrap())
+                    .effort_levels("")
+                    .is_empty(),
+                "{} must not offer an effort picker",
+                id.as_str()
+            );
+        }
     }
 
     #[test]

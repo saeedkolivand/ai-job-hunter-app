@@ -421,7 +421,15 @@ const RATES: &[(&str, f64, f64)] = &[
     ("text-embedding-3-small", 0.02, 0.0),
     ("text-embedding-3-large", 0.13, 0.0),
     ("text-embedding-ada-002", 0.10, 0.0),
+    // text-embedding-004 was retired by Google (shutdown Jan 14, 2026); the
+    // adapter now defaults to gemini-embedding-2, with gemini-embedding-001
+    // still available for text-only use. Verified via the live Gemini API
+    // pricing docs, not memory. The retired row stays — historical spend
+    // records made against it still exist, and letting them fall through to
+    // DEFAULT_RATE would silently 120x-overestimate an already-recorded call.
     ("text-embedding-004", 0.025, 0.0),
+    ("gemini-embedding-2", 0.20, 0.0),
+    ("gemini-embedding-001", 0.15, 0.0),
 ];
 
 /// Conservative default for a cloud model this table doesn't recognize (a

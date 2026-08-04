@@ -54,6 +54,32 @@ fn ollama_supports_tools(model: &str) -> bool {
         || m.contains("granite")
 }
 
+/// Ollama's family of thinking-capable models — shared by local Ollama's
+/// native `/api/chat` `think` field (this file, [`build_chat_stream_body`])
+/// and Ollama Cloud's OpenAI-compatible `reasoning_effort` field
+/// (`openai.rs`, gated on `ProviderId::OllamaCloud`): both wire shapes gate
+/// on the SAME model catalog, so the classifier lives once here rather than
+/// drifting into two copies. Per Ollama's docs
+/// (`docs/capabilities/thinking.mdx`, fetched 2026-08-03): Qwen 3, GPT-OSS,
+/// DeepSeek-v3.1, and DeepSeek R1 are the currently-documented thinking
+/// families. Unknown models default to `false` (a graceful miss — the
+/// `think`/`reasoning_effort` field 400s on a non-thinking model, so
+/// guessing wrong is never safe).
+///
+/// The `qwen3-coder` exclusion is scoped to the `qwen3` branch specifically
+/// (not a blanket "any model containing `coder`" check) — `qwen3-coder`/
+/// `qwen3-coder-plus` are separate, non-thinking models despite matching the
+/// `qwen3` substring, but a hypothetical future thinking-capable coder model
+/// in the gpt-oss/deepseek families must not be swept out by an unrelated
+/// name collision.
+pub(super) fn ollama_family_supports_thinking(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    if m.contains("qwen3") {
+        return !m.contains("coder");
+    }
+    m.contains("gpt-oss") || m.contains("deepseek-r1") || m.contains("deepseek-v3.1")
+}
+
 /// Parse a non-streaming `/api/chat` response into an [`AgentTurn`]:
 /// `message.content` is the text, each `message.tool_calls[]` maps to a
 /// [`ToolCall`] (Ollama returns `function.arguments` as an already-decoded JSON
@@ -138,7 +164,7 @@ impl AiProvider for OllamaClient {
             supports_temperature: true,
             supports_system_role: true,
             supports_streaming: true,
-            supports_reasoning: false,
+            supports_reasoning: ollama_family_supports_thinking(model),
             // Per-model: only tool-calling families advertise it (see the allowlist);
             // unknown models stay `false` so an agent turn degrades safely.
             supports_tools: ollama_supports_tools(model),
@@ -148,6 +174,14 @@ impl AiProvider for OllamaClient {
             // gated at call time, not statically known here).
             supports_web_search: true,
             token_param: TokenParam::NumPredict,
+        }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        if ollama_family_supports_thinking(model) {
+            vec!["low", "medium", "high"]
+        } else {
+            Vec::new()
         }
     }
 
@@ -790,6 +824,19 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     .unwrap_or(json!([]));
 
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
+    // `think` is a top-level request field (NOT nested under `options`), and only
+    // safe to send on a model that actually advertises thinking — it 400s on a
+    // non-thinking model (see `ollama_family_supports_thinking`'s doc comment).
+    if let Some(effort) = req
+        .effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        if ollama_family_supports_thinking(&req.model) {
+            body["think"] = json!(effort);
+        }
+    }
     let mut options = serde_json::Map::new();
     if let Some(t) = req.temperature {
         options.insert("temperature".to_string(), json!(t));
@@ -847,8 +894,9 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
     // The shared loop owns cancel-check + chunk read + emit + complete; the closure
     // is the only Ollama-specific part (newline-delimited JSON framing). Structured
     // reasoning from thinking models rides on `message.thinking`; models that embed
-    // <think>…</think> in `content` are split renderer-side. We do not force Ollama's
-    // `think` flag here — it 400s on non-thinking models.
+    // <think>…</think> in `content` are split renderer-side. `think` is only sent
+    // (by `build_chat_stream_body`) when the caller set an effort AND the model is
+    // in the known thinking family — it 400s on a non-thinking model otherwise.
     stream_response(
         app,
         job_id,
@@ -928,10 +976,11 @@ async fn complete_impl(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_chat_stream_body, normalize_show, ollama_supports_tools, parse_ollama_frames,
-        parse_ollama_turn, parse_ollama_usage, parse_web_search, StreamPiece,
+        build_chat_stream_body, normalize_show, ollama_family_supports_thinking,
+        ollama_supports_tools, parse_ollama_frames, parse_ollama_turn, parse_ollama_usage,
+        parse_web_search, OllamaClient, StreamPiece,
     };
-    use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
+    use crate::commands::ai_provider::{AiGenerateRequest, AiProvider, StopReason, ToolCall};
     use crate::ipc_contracts::ai::AiGenerateRequestMessage;
     use serde_json::json;
 
@@ -1172,5 +1221,77 @@ mod tests {
         });
         let turn = parse_ollama_turn(&data);
         assert_eq!(turn.stop, StopReason::Length);
+    }
+
+    #[test]
+    fn thinking_family_gate_matches_documented_models_only() {
+        for m in [
+            "qwen3",
+            "qwen3:30b",
+            "qwen3:8b",
+            "my-qwen3",
+            "gpt-oss:20b",
+            "gpt-oss:120b",
+            "deepseek-r1",
+            "deepseek-r1:70b",
+            "deepseek-v3.1:671b",
+        ] {
+            assert!(ollama_family_supports_thinking(m), "{m} should think");
+        }
+        // qwen3-coder(-plus) matches the "qwen3" substring but is a separate,
+        // non-thinking model — must NOT be swept in by a broad substring match.
+        for m in [
+            "qwen3-coder:480b",
+            "qwen3-coder-plus",
+            "llama3.1:8b",
+            "mistral",
+            "nomic-embed-text",
+        ] {
+            assert!(!ollama_family_supports_thinking(m), "{m} must not think");
+        }
+    }
+
+    #[test]
+    fn coder_exclusion_is_scoped_to_qwen3_not_every_model_containing_coder() {
+        // The exclusion is narrow — a hypothetical thinking-capable "coder"
+        // variant in an UNRELATED family must not be swept out by name
+        // collision alone (only the qwen3 branch excludes "coder").
+        assert!(ollama_family_supports_thinking("gpt-oss-coder"));
+        assert!(ollama_family_supports_thinking("deepseek-r1-coder"));
+    }
+
+    #[test]
+    fn effort_levels_mirror_the_thinking_gate() {
+        assert_eq!(
+            OllamaClient.effort_levels("gpt-oss:120b"),
+            vec!["low", "medium", "high"]
+        );
+        assert!(OllamaClient.effort_levels("llama3.1:8b").is_empty());
+    }
+
+    #[test]
+    fn chat_stream_body_sends_think_only_for_a_thinking_model_with_effort_set() {
+        let mut req = base_request();
+        req.model = "gpt-oss:20b".to_string();
+        req.effort = Some("high".to_string());
+        let body = build_chat_stream_body(&req);
+        assert_eq!(body["think"], json!("high"));
+    }
+
+    #[test]
+    fn chat_stream_body_omits_think_for_a_non_thinking_model_even_with_effort_set() {
+        let mut req = base_request();
+        req.model = "llama3.1:8b".to_string();
+        req.effort = Some("high".to_string());
+        let body = build_chat_stream_body(&req);
+        assert!(body.get("think").is_none());
+    }
+
+    #[test]
+    fn chat_stream_body_omits_think_when_effort_not_set() {
+        let mut req = base_request();
+        req.model = "gpt-oss:20b".to_string();
+        let body = build_chat_stream_body(&req);
+        assert!(body.get("think").is_none());
     }
 }

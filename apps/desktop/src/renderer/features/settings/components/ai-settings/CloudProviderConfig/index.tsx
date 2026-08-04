@@ -7,6 +7,8 @@ import { Button, Dropdown, Input, useNotification } from '@ajh/ui';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
+import { EffortPicker } from '../EffortPicker';
+
 interface ProviderMeta {
   label: string;
   description: string;
@@ -259,6 +261,14 @@ export function CloudProviderConfig({
             placeholder="Select a model…"
           />
         </div>
+      )}
+
+      {connected && (
+        <EffortPicker
+          provider={provider}
+          model={providerModel}
+          baseUrl={provider === 'openai-compatible' ? baseUrlInput || undefined : undefined}
+        />
       )}
 
       {/* Set active button */}

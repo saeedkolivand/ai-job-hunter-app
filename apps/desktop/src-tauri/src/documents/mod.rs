@@ -14,7 +14,9 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector, ProviderId};
+use crate::commands::ai_provider::{
+    EmbeddingSpace, EmbeddingVector, ProviderId, EMBEDDING_VECTOR_VERSION,
+};
 use crate::data_store::DataStore;
 use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
@@ -36,9 +38,16 @@ pub struct EmbeddingConfig {
 }
 
 impl EmbeddingConfig {
-    /// True when a stored vector's space was produced by this exact config.
+    /// True when a stored vector's space was produced by this exact config
+    /// AND the current [`EMBEDDING_VECTOR_VERSION`] — a version bump (e.g.
+    /// replacing naive truncation with chunk-and-mean-pool) makes an
+    /// old-format vector a miss even though its provider/model tag is
+    /// unchanged, so a re-embed picks up the new format instead of silently
+    /// comparing across formats.
     pub fn matches(&self, space: &EmbeddingSpace) -> bool {
-        self.provider == space.provider && self.model == space.model
+        self.provider == space.provider
+            && self.model == space.model
+            && space.version == EMBEDDING_VECTOR_VERSION
     }
 }
 
@@ -71,6 +80,45 @@ fn backfill_vector_dims(conn: &Connection) -> rusqlite::Result<()> {
                 params![v.len() as i64, doc_id],
             )?;
         }
+    }
+    Ok(())
+}
+
+/// One-time migration: `text-embedding-004` was retired by Google (shutdown
+/// Jan 14, 2026). Any install that had already persisted it as the active
+/// Gemini embedding model would keep 404-ing forever even after the code
+/// default changed to `gemini-embedding-2` — `embed_text` only falls back to
+/// `AiProvider::default_embedding_model()` when the STORED model is empty
+/// (`ai_provider/mod.rs`), so a non-empty retired id is never revisited on
+/// its own. Idempotent and self-healing: rewrites the persisted row
+/// directly, so the Settings UI (which mirrors `status.active.model`
+/// verbatim) shows the corrected model with no additional read-time
+/// special-casing anywhere.
+///
+/// The model column is free text (whatever the user typed/pasted into the
+/// Settings model field), so the `WHERE` matches on `trim(lower(model))`
+/// against BOTH the bare id and its `models/`-prefixed form — the Gemini
+/// adapter (`gemini.rs`) itself deliberately strips a leading `models/`, so
+/// that form is a real, deliberately-accepted variant, not a hypothetical
+/// one. An exact-only match would miss `models/text-embedding-004`,
+/// `TEXT-EMBEDDING-004`, and a trailing-space paste — leaving those installs
+/// 404-ing forever, the exact failure mode this migration exists to fix.
+///
+/// This IS a real embedding-space change (retired model → current model),
+/// exactly the case `ai_set_embedding_config` evicts `posting_vectors` /
+/// `match_scores` for at runtime (see `embedding_space_changed`) — so this
+/// migration performs the SAME eviction, only when the `UPDATE` actually
+/// touched a row (an install that never had the stale model is left alone,
+/// no needless cache wipe).
+fn alias_retired_gemini_text_embedding_004(conn: &Connection) -> rusqlite::Result<()> {
+    let rows_changed = conn.execute(
+        "UPDATE embedding_config SET model = 'gemini-embedding-2' \
+         WHERE provider = 'gemini' \
+           AND trim(lower(model)) IN ('text-embedding-004', 'models/text-embedding-004')",
+        [],
+    )?;
+    if rows_changed > 0 {
+        conn.execute_batch("DELETE FROM posting_vectors; DELETE FROM match_scores;")?;
     }
     Ok(())
 }
@@ -330,6 +378,42 @@ impl DocumentStore {
             name: "backfill_vector_dims",
             up: backfill_vector_dims,
         },
+        Migration {
+            // text-embedding-004 was retired by Google (shutdown Jan 14, 2026 —
+            // the exact "model or endpoint not found" error this fixes). Any
+            // install that had already persisted it as the active embedding
+            // model would keep 404-ing FOREVER even after the code default
+            // changed to gemini-embedding-2: `embed_text` only falls back to
+            // `AiProvider::default_embedding_model()` when the STORED model
+            // string is empty, so a non-empty retired id is never revisited.
+            // One-time, idempotent (WHERE-scoped), self-healing alias — chosen
+            // over a read-time alias in `embedding_config()` so the fix is a
+            // single UPDATE rather than special-casing every reader forever,
+            // and so the Settings UI mirrors the corrected model immediately
+            // (it reads the persisted `model` verbatim).
+            name: "alias_retired_gemini_text_embedding_004",
+            up: alias_retired_gemini_text_embedding_004,
+        },
+        Migration {
+            // `EMBEDDING_VECTOR_VERSION` bumped 1 -> 2 when embeddings moved
+            // from a naive single truncation to chunk-and-mean-pool. The
+            // résumé/document `vectors` table carries its own `version`
+            // column, so a stale row there is already caught by
+            // `EmbeddingConfig::matches` on the next read. `posting_vectors`
+            // (job-posting embeddings) has NO version column — its only
+            // built-in staleness guard is the TTL/row-cap prune, and the TTL
+            // is NOT a guarantee: the top preference tier sets
+            // `cacheTtlSecs: null`, which `ttl_cutoff_ms()` reads as "never
+            // expires" (only the row cap still applies). Without this, a
+            // pre-upgrade (truncated-prefix) posting vector can be cosined
+            // against a post-upgrade (mean-pooled) résumé vector under the
+            // identical space tag for however long the row cap allows.
+            // Unconditional and applies to EVERY provider (unlike the
+            // Gemini-specific migration above) — the format change affects
+            // every provider's embeddings, not just Gemini's.
+            name: "evict_posting_vectors_for_embedding_format_v2",
+            up: |conn| conn.execute_batch("DELETE FROM posting_vectors;"),
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -553,6 +637,11 @@ impl DocumentStore {
                         provider,
                         model,
                         dim: dim as usize,
+                        // `posting_vectors` has no persisted version column
+                        // (unlike `vectors`) — always the current version, so
+                        // this table's freshness is governed purely by its
+                        // existing `text_hash` guard, unchanged by this field.
+                        version: EMBEDDING_VECTOR_VERSION,
                     },
                 },
                 text_hash,
@@ -731,13 +820,17 @@ impl DocumentStore {
     /// Count of stored vectors in one embedding space, by SQL `COUNT(*)` — never
     /// deserializes the float-array blobs. Powers `ai_embedding_status`'s
     /// indexed-in-active-space figure (the old path loaded every vector via a
-    /// full vector scan just to count the matching ones). Matches the same
-    /// provider+model identity as [`EmbeddingConfig::matches`].
+    /// full vector scan just to count the matching ones). Matches the SAME
+    /// identity [`EmbeddingConfig::matches`] uses — provider + model AND the
+    /// current [`EMBEDDING_VECTOR_VERSION`] — so a version bump (an old-format
+    /// row every real match-check now rejects) is also reflected here: without
+    /// the version filter, the status strip would report `stale: 0` and "N/N
+    /// indexed" over an index where every row is actually stale.
     pub fn count_vectors_in_space(&self, provider: &str, model: &str) -> usize {
         let conn = self.conn.lock();
         conn.query_row(
-            "SELECT COUNT(*) FROM vectors WHERE provider = ?1 AND model = ?2",
-            params![provider, model],
+            "SELECT COUNT(*) FROM vectors WHERE provider = ?1 AND model = ?2 AND version = ?3",
+            params![provider, model, EMBEDDING_VECTOR_VERSION],
             |row| row.get::<_, i64>(0),
         )
         .map(|n| n as usize)
@@ -758,6 +851,10 @@ impl DocumentStore {
                         provider: row.get::<_, String>(0)?,
                         model: row.get::<_, String>(1)?,
                         dim: row.get::<_, i64>(2)? as usize,
+                        // Display-only aggregate (grouped by provider/model/dim,
+                        // not version) — never fed into `.matches()`/`compare()`,
+                        // so a placeholder is fine here.
+                        version: EMBEDDING_VECTOR_VERSION,
                     },
                     row.get::<_, i64>(3)? as usize,
                 ))
@@ -810,24 +907,21 @@ impl DocumentStore {
 // vector is tagged with the space that produced it. No provider/endpoint strings
 // live here.
 
-pub async fn embed(app: &AppHandle, text: &str) -> Option<EmbeddingVector> {
+pub async fn embed(app: &AppHandle, text: &str) -> AppResult<EmbeddingVector> {
     let cfg = app.state::<DocumentStore>().embedding_config();
-    let provider = ProviderId::parse(&cfg.provider).ok()?;
-    match crate::commands::ai_provider::embed_text(
-        app,
-        provider,
-        &cfg.model,
-        cfg.base_url.clone(),
-        text,
-    )
-    .await
-    {
-        Ok(v) => Some(v),
-        Err(e) => {
+    let provider = ProviderId::parse(&cfg.provider).map_err(|e| {
+        tracing::warn!(
+            "embed failed: unknown embedding provider '{}': {e}",
+            cfg.provider
+        );
+        e
+    })?;
+    crate::commands::ai_provider::embed_text(app, provider, &cfg.model, cfg.base_url.clone(), text)
+        .await
+        .map_err(|e| {
             tracing::warn!("embed failed ({}): {e}", cfg.provider);
-            None
-        }
-    }
+            e
+        })
 }
 
 /// Lowercase-hex SHA-256 of `text`. Deterministic and stable across process
@@ -884,7 +978,11 @@ pub async fn posting_vector_or_embed(
     if posting_vector_is_fresh(&active, &hash, cached.as_ref()) {
         return cached.map(|(v, _)| v); // cache hit — no embed
     }
-    let v = embed(app, text).await?;
+    // `embed` now surfaces its error (see its own doc comment); this caller's
+    // contract stays "gracefully skip semantic scoring on failure" — the
+    // warning is already logged inside `embed`, so `.ok()` here doesn't lose
+    // it, just discards it from this Option-returning caller.
+    let v = embed(app, text).await.ok()?;
     app.state::<DocumentStore>()
         .upsert_posting_vector(job_id, &hash, &v)
         .ok();
@@ -902,9 +1000,17 @@ pub async fn posting_vector_or_embed(
 
 fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
     let json = serde_json::to_string(&v.values)?;
+    // Persists the vector's OWN `space.version` rather than force-advancing to
+    // `EMBEDDING_VECTOR_VERSION`. Every caller that produces a *fresh* vector
+    // already builds it at the current version (`embed_text`), so binding the
+    // field is equivalent for them — but `import()` deliberately tags a restored
+    // backup vector `version: 0` (it is an old-format, pre-chunk-pool value), and
+    // force-advancing here silently overwrote that to the current version, so the
+    // restored vector read as fresh and was never re-embedded. A write path must
+    // persist an identity field, not re-derive it.
     conn.execute(
         "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
-         VALUES (?1, ?2, ?3, ?4, ?5, 1)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(doc_id) DO UPDATE SET
             vector = excluded.vector, provider = excluded.provider,
             model = excluded.model, dim = excluded.dim, version = excluded.version",
@@ -913,7 +1019,8 @@ fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector)
             json,
             v.space.provider,
             v.space.model,
-            v.space.dim as i64
+            v.space.dim as i64,
+            v.space.version,
         ],
     )?;
     Ok(())
@@ -921,7 +1028,7 @@ fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector)
 
 fn get_vector_with_conn(conn: &Connection, doc_id: &str) -> Option<EmbeddingVector> {
     conn.query_row(
-        "SELECT vector, provider, model, dim FROM vectors WHERE doc_id = ?1",
+        "SELECT vector, provider, model, dim, version FROM vectors WHERE doc_id = ?1",
         params![doc_id],
         |row| {
             Ok((
@@ -929,11 +1036,12 @@ fn get_vector_with_conn(conn: &Connection, doc_id: &str) -> Option<EmbeddingVect
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
             ))
         },
     )
     .ok()
-    .and_then(|(json, provider, model, dim)| {
+    .and_then(|(json, provider, model, dim, version)| {
         let values: Vec<f64> = serde_json::from_str(&json).ok()?;
         Some(EmbeddingVector {
             values,
@@ -941,6 +1049,7 @@ fn get_vector_with_conn(conn: &Connection, doc_id: &str) -> Option<EmbeddingVect
                 provider,
                 model,
                 dim: dim as usize,
+                version,
             },
         })
     })
@@ -1034,7 +1143,12 @@ pub fn make_doc_id() -> String {
 /// Read an exported document's optional embedding vector out of its JSON row.
 ///
 /// Legacy exports carry no `vectorSpace` — they predate cloud embeddings and were
-/// all Ollama/nomic-embed-text, which is what the fallback records.
+/// all Ollama/nomic-embed-text, which is what the fallback records. The export
+/// JSON never carries a `version` (see `export()` below), so every imported
+/// vector is tagged `version: 0` — never [`EMBEDDING_VECTOR_VERSION`] — so
+/// `EmbeddingConfig::matches` always treats a just-imported vector as stale
+/// and re-embeds it. Conservative on purpose: we genuinely don't know which
+/// format version produced a vector from another install/app version.
 fn parse_exported_vector(item: &serde_json::Value) -> Option<EmbeddingVector> {
     let values: Vec<f64> = item
         .get("vector")?
@@ -1064,11 +1178,13 @@ fn parse_exported_vector(item: &serde_json::Value) -> Option<EmbeddingVector> {
                 .and_then(|v| v.as_u64())
                 .map(|d| d as usize)
                 .unwrap_or(dim),
+            version: 0,
         })
         .unwrap_or_else(|| EmbeddingSpace {
             provider: "ollama".to_string(),
             model: "nomic-embed-text".to_string(),
             dim,
+            version: 0,
         });
     Some(EmbeddingVector { values, space })
 }

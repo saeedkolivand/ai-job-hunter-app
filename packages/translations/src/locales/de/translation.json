@@ -1130,6 +1130,8 @@
       "reindexStarted": "Dokumente werden neu indiziert…",
       "reindexComplete": "Neuindizierung abgeschlossen.",
       "reindexIncomplete": "Neuindizierung nicht abgeschlossen.",
+      "reindexFailedReason": "Neuindizierung fehlgeschlagen: {{reason}}",
+      "reindexPartial": "{{failed}} von {{total}} Dokumenten konnten nicht neu indiziert werden.",
       "semanticScoring": "Semantische Bewertung",
       "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung."
     },

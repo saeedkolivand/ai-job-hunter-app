@@ -13,7 +13,7 @@ import { usePreferencesStore, useSemanticScoring } from '@/store/preferences-sto
 const EMBED_PROVIDERS = [
   { value: 'ollama', label: 'Ollama (Local)', defaultModel: 'nomic-embed-text' },
   { value: 'openai', label: 'OpenAI', defaultModel: 'text-embedding-3-small' },
-  { value: 'gemini', label: 'Gemini', defaultModel: 'text-embedding-004' },
+  { value: 'gemini', label: 'Gemini', defaultModel: 'gemini-embedding-2' },
   { value: 'openai-compatible', label: 'OpenAI-compatible', defaultModel: '' },
 ] as const;
 
@@ -43,20 +43,48 @@ export function EmbeddingsSettings() {
   }, [activeProvider, activeModel, activeBaseUrl]);
 
   // Watch the re-index job to surface completion and refresh the status panel.
+  // `job.completed`'s data is `{ reembedded, failed, total }`; `job.failed`'s
+  // data is the first provider error string (see `commands::ai::ai_reembed_all`).
+  // A `failed > 0` completed run is a PARTIAL failure (some documents wrote,
+  // some didn't) — it must never read as the same flat "success" as a clean run.
   useJobEvents((evt: JobEvent) => {
-    const e = evt as { type: string; jobId: string };
+    const e = evt as { type: string; jobId: string; data?: unknown };
     if (!reindexJobId || e.jobId !== reindexJobId) return;
-    if (e.type === 'job.completed' || e.type === 'job.failed' || e.type === 'job.cancelled') {
-      setReindexJobId(null);
-      void statusQuery.refetch();
-      notify.open({
-        message:
-          e.type === 'job.completed'
-            ? t('settings.embeddings.reindexComplete')
-            : t('settings.embeddings.reindexIncomplete'),
-        variant: e.type === 'job.completed' ? 'success' : 'error',
+    if (e.type !== 'job.completed' && e.type !== 'job.failed' && e.type !== 'job.cancelled') return;
+
+    setReindexJobId(null);
+    void statusQuery.refetch();
+
+    if (e.type === 'job.failed') {
+      const reason = typeof e.data === 'string' ? e.data : undefined;
+      notify.error({
+        message: reason
+          ? t('settings.embeddings.reindexFailedReason', { reason })
+          : t('settings.embeddings.reindexIncomplete'),
       });
+      return;
     }
+
+    if (e.type === 'job.cancelled') {
+      // A user-initiated cancel isn't a failure — `warning` (the index is
+      // still stale, worth noting) reads better than `error`.
+      notify.warning({ message: t('settings.embeddings.reindexIncomplete') });
+      return;
+    }
+
+    const data = e.data as { failed?: number; total?: number } | undefined;
+    const failedCount = data?.failed ?? 0;
+    if (failedCount > 0) {
+      notify.warning({
+        message: t('settings.embeddings.reindexPartial', {
+          failed: failedCount,
+          total: data?.total ?? 0,
+        }),
+      });
+      return;
+    }
+
+    notify.success({ message: t('settings.embeddings.reindexComplete') });
   });
 
   const onProviderChange = (p: string) => {
@@ -87,7 +115,9 @@ export function EmbeddingsSettings() {
   const onReindex = async () => {
     const { jobId } = await reembed.mutateAsync();
     setReindexJobId(jobId);
-    notify.success({ message: t('settings.embeddings.reindexStarted') });
+    // `info`, not `success` — "started" is not "succeeded"; the job-event
+    // handler above is the only place that reports the real outcome.
+    notify.info({ message: t('settings.embeddings.reindexStarted') });
   };
 
   const docs = status?.documents;

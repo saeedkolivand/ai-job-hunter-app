@@ -626,3 +626,94 @@ fn parse_turn_maps_max_tokens_and_missing_input() {
     assert_eq!(turn.tool_calls.len(), 1);
     assert_eq!(turn.tool_calls[0].args, json!({}));
 }
+
+#[test]
+fn effort_gate_matches_the_documented_model_list() {
+    for m in [
+        "claude-opus-4-5",
+        "claude-opus-4.5",
+        "claude-opus-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-4-6",
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "claude-fable-5",
+        "claude-mythos-5",
+        "claude-mythos-preview",
+    ] {
+        assert!(anthropic_supports_effort(m), "{m} should support effort");
+    }
+    // Models NOT in Anthropic's documented effort list — including thinking-
+    // capable ones (classic 3.7/4.x, and Sonnet 4.5 which is adjacent to but
+    // distinct from the documented Sonnet 4.6) — must stay off.
+    for m in [
+        "claude-3-7-sonnet-20250219",
+        "claude-sonnet-4",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+        "claude-3-5-sonnet-20241022",
+    ] {
+        assert!(!anthropic_supports_effort(m), "{m} must not support effort");
+    }
+}
+
+#[test]
+fn effort_gate_needles_are_boundary_aware_not_raw_substring() {
+    // The classic prefix-collision trap this file already guards elsewhere
+    // (`version_needles_are_boundary_aware_not_raw_substring`): a longer
+    // version number must not falsely match a shorter documented needle.
+    assert!(!anthropic_supports_effort("claude-sonnet-50"));
+    assert!(!anthropic_supports_effort("claude-opus-4-50"));
+    // A bare "mythos" with no recognized suffix, or an unlisted future
+    // Mythos version, must not guess `true` — only the two currently
+    // documented names ("Mythos 5", "Mythos Preview") match.
+    assert!(!anthropic_supports_effort("claude-mythos"));
+    assert!(!anthropic_supports_effort("claude-mythos-6"));
+}
+
+#[test]
+fn effort_levels_mirror_the_effort_gate() {
+    assert_eq!(
+        AnthropicClient.effort_levels("claude-opus-5"),
+        vec!["low", "medium", "high"]
+    );
+    assert!(AnthropicClient
+        .effort_levels("claude-3-5-sonnet-20241022")
+        .is_empty());
+}
+
+#[test]
+fn capabilities_supports_reasoning_mirrors_the_effort_gate() {
+    assert_eq!(
+        caps_for("claude-opus-5").supports_reasoning,
+        anthropic_supports_effort("claude-opus-5")
+    );
+    assert_eq!(
+        caps_for("claude-3-5-sonnet-20241022").supports_reasoning,
+        anthropic_supports_effort("claude-3-5-sonnet-20241022")
+    );
+}
+
+#[test]
+fn chat_stream_body_sends_output_config_effort_for_an_effort_capable_model() {
+    let mut req = base_request("claude-opus-5");
+    req.effort = Some("low".to_string());
+    let body = build_chat_stream_body(&req);
+    assert_eq!(body["output_config"], json!({ "effort": "low" }));
+}
+
+#[test]
+fn chat_stream_body_omits_output_config_for_a_non_effort_capable_model() {
+    let mut req = base_request("claude-3-5-sonnet-20241022");
+    req.effort = Some("low".to_string());
+    let body = build_chat_stream_body(&req);
+    assert!(body.get("output_config").is_none());
+}
+
+#[test]
+fn chat_stream_body_omits_output_config_when_effort_not_set() {
+    let req = base_request("claude-opus-5");
+    let body = build_chat_stream_body(&req);
+    assert!(body.get("output_config").is_none());
+}

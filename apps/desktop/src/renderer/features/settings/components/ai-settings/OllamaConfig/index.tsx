@@ -5,6 +5,8 @@ import { Button, Dropdown } from '@ajh/ui';
 
 import type { Model } from '@/types';
 
+import { EffortPicker } from '../EffortPicker';
+
 const QUICK_MODELS = ['llama3.2', 'mistral', 'llama3.1:8b', 'llama3.2:1b'];
 
 interface Props {
@@ -95,6 +97,7 @@ export function OllamaConfig({
       {connected && (
         <div className="space-y-2">
           {children}
+          <EffortPicker provider="ollama" model={providerModel} />
           <Button
             variant="glass"
             onClick={onSetActive}

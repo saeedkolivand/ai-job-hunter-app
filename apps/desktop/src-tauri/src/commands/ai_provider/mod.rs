@@ -376,8 +376,33 @@ pub trait AiProvider: Send + Sync {
     /// Capability matrix for a given model on this provider.
     fn capabilities(&self, model: &str) -> ModelCapabilities;
 
+    /// The reasoning-effort levels this provider currently offers for `model` —
+    /// empty when the model doesn't support reasoning at all (mirrors
+    /// `capabilities(model).supports_reasoning`; empty whenever that is
+    /// false). A property of the provider's wire API: for a provider whose
+    /// accepted level SET is uniform across every reasoning-capable model
+    /// this is a fixed list; Gemini's genuinely varies per model tier (see
+    /// `gemini::gemini_effort_levels`'s doc comment) so it overrides this
+    /// per-model instead. `ai_model_capabilities` surfaces this as
+    /// `effortLevels` — the renderer's effort picker renders exactly what
+    /// this method returns, never a hardcoded per-provider TS mirror, so a
+    /// new model/provider needs zero renderer change. DEFAULT: no reasoning
+    /// support (empty) — every provider that supports reasoning overrides
+    /// this.
+    fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
+        Vec::new()
+    }
+
     /// Stream a chat completion, emitting `ai:stream` deltas and marking the job
     /// complete/failed. Resolves its own API key (isolated auth per provider).
+    ///
+    /// `req.effort` (`AiGenerateRequest`) is the ONLY path that carries the
+    /// user's reasoning-effort setting into a provider call — every adapter's
+    /// effort-field wiring lives here. `complete`/`complete_with_usage`/
+    /// `chat_with_tools`/`research*` take `system`/`user`/`ChatMsg` directly,
+    /// not `AiGenerateRequest`, so the agent tool-calling loop, company/salary
+    /// research, and answer research keep the provider's default effort —
+    /// deliberately out of scope for the effort feature, not an oversight.
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -509,12 +534,13 @@ pub trait AiProvider: Send + Sync {
     /// The provider's default embedding model, or `None` if it has no embeddings API.
     fn default_embedding_model(&self) -> Option<&'static str>;
 
-    /// Max input length (in **chars**) accepted by this provider's embeddings API.
-    /// `embed_text` truncates to this (char-boundary-safe) before calling `embed`,
-    /// so over-long input degrades gracefully instead of erroring. The default is a
-    /// conservative bound that no supported provider's API rejects, so a NEW
-    /// provider works with zero code change; providers with larger real limits
-    /// override upward to avoid needlessly losing data.
+    /// Max input length (in **chars**) accepted by this provider's embeddings API,
+    /// per CHUNK. `embed_text` (via `embed_adaptive`) splits any longer input at
+    /// this boundary (char-safe) into multiple chunks, embeds each, and
+    /// mean-pools + L2-normalizes the result — the whole document is always
+    /// embedded, never silently truncated away. The default is a conservative
+    /// bound that no supported provider's API rejects, so a NEW provider works
+    /// with zero code change; providers with larger real limits override upward.
     fn max_embedding_input_chars(&self) -> usize {
         8_000
     }
@@ -667,15 +693,29 @@ pub async fn reachable_chat_model(provider_id: ProviderId) -> Option<String> {
 
 // ── Embeddings ────────────────────────────────────────────────────────────────
 
+/// Vector-FORMAT version — bumped whenever the ALGORITHM that produces a
+/// stored vector's VALUES changes for the same `(provider, model, dim)`, even
+/// though the provider/model IDENTITY is unchanged (e.g. replacing a naive
+/// single truncation with chunk-and-mean-pool — same tag, semantically
+/// different vector). `EmbeddingConfig::matches` checks this so a vector
+/// persisted before a bump is treated as stale and re-embedded, instead of
+/// being silently compared against a new-format vector under the identical
+/// `(provider, model, dim)` tag.
+pub const EMBEDDING_VECTOR_VERSION: i64 = 2;
+
 /// The identity of an embedding "space": vectors are only comparable when they
-/// share the same `(provider, model, dim)`. Stored alongside every vector so
-/// incompatible vectors can never be silently mixed.
+/// share the same `(provider, model, dim)` AND the same [`EMBEDDING_VECTOR_VERSION`]
+/// they were produced under. Stored alongside every vector so incompatible —
+/// or differently-produced — vectors can never be silently mixed. `version`
+/// is a storage-format detail, not part of the wire shape (`#[serde(skip)]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingSpace {
     pub provider: String,
     pub model: String,
     pub dim: usize,
+    #[serde(skip)]
+    pub version: i64,
 }
 
 impl std::fmt::Display for EmbeddingSpace {
@@ -689,6 +729,354 @@ impl std::fmt::Display for EmbeddingSpace {
 pub struct EmbeddingVector {
     pub values: Vec<f64>,
     pub space: EmbeddingSpace,
+}
+
+/// Char-boundary-safe truncation to at most `cap` chars (never splits a
+/// multi-byte char). Single pass: `char_indices().nth(cap)` finds the byte
+/// offset of the char *at* `cap` (i.e. the first char to drop). `Some` ⇒ the
+/// input exceeds `cap` chars, so slice there (a char-boundary offset); `None`
+/// ⇒ within cap, use as-is. Pure + unit-tested.
+fn truncate_chars(text: &str, cap: usize) -> &str {
+    match text.char_indices().nth(cap) {
+        Some((byte_offset, _)) => &text[..byte_offset],
+        None => text,
+    }
+}
+
+/// Never truncate an embedding input below this many chars — halving a
+/// context-length error down to nothing would still fail (an empty/near-empty
+/// embedding is meaningless) and would just multiply retries for no benefit.
+const EMBED_TRUNCATION_FLOOR_CHARS: usize = 500;
+
+/// Halve `current` for the next adaptive-truncation retry, clamped at
+/// [`EMBED_TRUNCATION_FLOOR_CHARS`]. `None` once `current` is already at or
+/// below the floor — the caller gives up rather than retry forever with the
+/// same (or a degenerate) length. Pure + unit-tested.
+fn next_truncation_len(current: usize) -> Option<usize> {
+    if current <= EMBED_TRUNCATION_FLOOR_CHARS {
+        None
+    } else {
+        Some((current / 2).max(EMBED_TRUNCATION_FLOOR_CHARS))
+    }
+}
+
+/// Whether an error MESSAGE (never a provider-specific error shape) reads as a
+/// context-length/input-too-long overflow — provider-agnostic on purpose, so a
+/// brand-new provider's own overflow wording is retried with zero code change
+/// here. Matches Ollama's `"...exceeds the context length"`, OpenAI's
+/// `"...maximum context length..."`/`"...too long..."`, Gemini's
+/// `"...exceeds the maximum number of tokens..."`, and the `friendly_api_error`
+/// 413 mapping (`"request too large"`). Pure + unit-tested.
+///
+/// Deliberately narrower than a bare `"too large"`/`"too long"` substring
+/// where that would over-match a same-wording RATE-LIMIT message (e.g. a
+/// "request too large for tokens-per-minute" 429 body) — `"request too
+/// large"`/`"payload too large"` are scoped to the actual over-length
+/// wording. This is NOT airtight (a provider could still phrase a rate-limit
+/// message with that exact phrase), but it is strictly narrower than the
+/// prior bare match and every known real provider wording still matches.
+///
+/// NOTE: deliberately does NOT attempt to fix this via a per-request
+/// `num_ctx`/`options.num_ctx` — Ollama ignores that per request; the model's
+/// context has to be baked into a derived model, which is out of scope here.
+fn is_context_length_error(msg: &str) -> bool {
+    let m = msg.to_ascii_lowercase();
+    m.contains("context length")
+        || m.contains("context_length_exceeded")
+        || m.contains("maximum context")
+        || m.contains("token limit")
+        || m.contains("too many tokens")
+        || m.contains("input length exceeds")
+        || m.contains("too long")
+        || m.contains("exceeds the maximum number of tokens")
+        || m.contains("request too large")
+        || m.contains("payload too large")
+}
+
+/// `AppHandle`-free shape of "embed this (already-truncated) text", so the
+/// adaptive-truncation retry loop (`embed_chunk_adaptive`) is unit-testable
+/// without a live `tauri::test` mock app — this crate has none (see the same
+/// note on `commands::ai::AnswerSearcher`). `embed_text` adapts the real
+/// `AiProvider::embed_with_usage` call (which needs `&AppHandle`) to this
+/// shape via `ProviderEmbedAttempt`.
+#[async_trait]
+trait EmbedAttempt {
+    async fn attempt(&self, text: &str) -> AppResult<(Vec<f64>, Usage)>;
+}
+
+struct ProviderEmbedAttempt<'a> {
+    app: &'a AppHandle,
+    client: &'a dyn AiProvider,
+    model: &'a str,
+}
+
+#[async_trait]
+impl EmbedAttempt for ProviderEmbedAttempt<'_> {
+    async fn attempt(&self, text: &str) -> AppResult<(Vec<f64>, Usage)> {
+        self.client
+            .embed_with_usage(self.app, self.model, text)
+            .await
+    }
+}
+
+/// Split `text` into consecutive, char-boundary-safe, non-overlapping chunks
+/// of at most `cap` chars each, preserving the WHOLE text (a naive single
+/// truncation silently drops everything past `cap` — indistinguishable from a
+/// complete embedding once stored, since the space tag is only
+/// `{provider, model, dim}`). Empty `text` yields exactly one empty chunk (so
+/// the caller still makes its usual single provider call rather than zero).
+/// Pure + unit-tested.
+fn split_into_chunks(text: &str, cap: usize) -> Vec<&str> {
+    if cap == 0 || text.is_empty() {
+        return vec![text];
+    }
+    let mut chunks = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let piece = truncate_chars(rest, cap);
+        chunks.push(piece);
+        rest = &rest[piece.len()..];
+    }
+    chunks
+}
+
+/// Hard ceiling on the number of TOP-LEVEL chunks a single document is split
+/// into. On its own this does NOT bound total provider calls — a document
+/// needing several MAX_CHUNKS_PER_DOCUMENT-sized chunks, each independently
+/// re-discovering the provider's real per-request limit via
+/// `embed_chunk_adaptive`'s halving ladder, is still hundreds to thousands of
+/// calls. [`MAX_TOTAL_EMBED_ATTEMPTS`] is the real backstop on call volume;
+/// `embed_adaptive` also LEARNS the working cap once (across the whole
+/// document, not per chunk — see its own doc comment) so the halving ladder
+/// is normally paid only once, not once per chunk. There is no separate
+/// spend/budget cap in `crate::spend` for this — the exposure these two
+/// constants bound is call VOLUME/latency, not silent cost.
+const MAX_CHUNKS_PER_DOCUMENT: usize = 32;
+
+/// Hard ceiling on TOTAL provider calls (success + failure, across every
+/// chunk) for a single document's `embed_adaptive`. `MAX_CHUNKS_PER_DOCUMENT`
+/// alone bounds only the TOP-LEVEL chunk count, not the retries/sub-splits
+/// within them — measured up to ~4224 sequential calls for a 2MB document
+/// against a provider whose real limit was far below the nominal cap. This
+/// also bounds how long a single document can block its caller:
+/// `ai_reembed_all`'s cancellation check runs BETWEEN documents (in
+/// `commands::ai`), not within one, so an unbounded single-document embed
+/// makes Cancel unresponsive for however long that document takes. Once hit,
+/// `embed_adaptive` aborts with a clear error rather than continuing
+/// indefinitely — the caller's existing per-document failure handling
+/// (`ai_reembed_all` counts it as `failed` and moves on) takes it from there.
+const MAX_TOTAL_EMBED_ATTEMPTS: usize = 200;
+
+/// The per-chunk char cap `split_into_chunks` should actually use for `text`:
+/// `initial_cap`, UNLESS the document would need more than
+/// [`MAX_CHUNKS_PER_DOCUMENT`] chunks at that size — in which case the chunk
+/// size is grown just enough to stay within the cap. This NEVER drops text
+/// (unlike shrinking the document itself would): a larger chunk that still
+/// overflows the provider's real token window is caught and fully covered by
+/// `embed_chunk_adaptive`'s per-chunk halving-with-remainder, same as any
+/// other chunk — it just does a little more of that work. Pure + unit-tested.
+fn bounded_split_cap(total_chars: usize, initial_cap: usize) -> usize {
+    let cap = initial_cap.max(1);
+    let needed = total_chars.div_ceil(cap);
+    if needed <= MAX_CHUNKS_PER_DOCUMENT {
+        return cap;
+    }
+    let grown = total_chars.div_ceil(MAX_CHUNKS_PER_DOCUMENT);
+    tracing::warn!(
+        "embedding a {total_chars}-char document would need {needed} chunks at {cap} chars \
+         each — capping to {MAX_CHUNKS_PER_DOCUMENT} chunks of ~{grown} chars instead \
+         (adaptive per-chunk halving still covers the whole document, no text is dropped)"
+    );
+    grown
+}
+
+/// L2-normalize `v` in place (a no-op on an already-zero vector). Cosine
+/// similarity is normalization-invariant, so this doesn't change match
+/// quality — it keeps a mean-pooled vector on the same footing as a
+/// provider's own (typically already-normalized) single-call embedding.
+/// NOTE: this makes even a single-chunk embedding's stored VALUES
+/// byte-different from what the provider returned (same direction, unit
+/// length) — harmless for every current consumer, which all go through the
+/// scale-invariant `vector::cosine`, but a future DOT-PRODUCT (not cosine)
+/// consumer would silently mix normalized and un-normalized magnitudes if it
+/// read a pre-this-change stored row. Pure + unit-tested.
+fn l2_normalize(v: &mut [f64]) {
+    let norm = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if norm > 0.0 {
+        for x in v.iter_mut() {
+            *x /= norm;
+        }
+    }
+}
+
+/// Embed ONE chunk (already at-or-under `initial_cap` chars) in full,
+/// adaptively re-sizing when the provider reports a context-length overflow
+/// — the per-chunk fallback for a token-dense language where even a
+/// `cap`-sized chunk overflows the model's real token window (a fixed char
+/// cap is fine for English but not for German, which tokenizes far denser).
+///
+/// Critically, a successful length that's SMALLER than the chunk is NOT the
+/// end — the unsent remainder is never discarded: once a length succeeds,
+/// that same length becomes the working cap for the rest of THIS chunk too
+/// (no repeating the failed larger caps), so the chunk's full text is always
+/// embedded, possibly as several vectors. `initial_cap` is clamped to the
+/// remaining length up front so a short remainder is never "halved" through
+/// cap values it was never actually sent at, and both the retry log and the
+/// give-up error name the length ACTUALLY sent, not the nominal cap. Gives up
+/// with the LAST provider error once truncating further would fall at/below
+/// [`EMBED_TRUNCATION_FLOOR_CHARS`], or once `attempts_used` (shared across
+/// every chunk of the same document — see `embed_adaptive`) would exceed
+/// [`MAX_TOTAL_EMBED_ATTEMPTS`]. Any non-context-length error returns
+/// immediately (never retried), abandoning whatever of the chunk is still
+/// unsent.
+///
+/// Returns the FINAL working cap alongside the vectors/usage — the caller
+/// carries it forward as the STARTING cap for the next chunk, so the halving
+/// ladder is learned once per document, not re-paid by every chunk (see
+/// `embed_adaptive`).
+async fn embed_chunk_adaptive<A: EmbedAttempt>(
+    attempt: &A,
+    chunk: &str,
+    initial_cap: usize,
+    attempts_used: &mut usize,
+) -> AppResult<(Vec<Vec<f64>>, Usage, usize)> {
+    let mut vectors = Vec::new();
+    let mut usage = Usage::default();
+    let mut rest = chunk;
+    let mut cap = initial_cap.min(chunk.chars().count());
+    // `while first_pass || !rest.is_empty()`: an empty chunk (the whole
+    // document was empty) still makes exactly ONE provider call, matching
+    // every other caller's single-attempt behavior for empty input — it does
+    // NOT silently make zero calls just because `rest` starts empty.
+    let mut first_pass = true;
+    while first_pass || !rest.is_empty() {
+        first_pass = false;
+        cap = cap.min(rest.chars().count());
+        loop {
+            if *attempts_used >= MAX_TOTAL_EMBED_ATTEMPTS {
+                return Err(AppError::Provider(format!(
+                    "embedding this document needed more than {MAX_TOTAL_EMBED_ATTEMPTS} \
+                     provider calls (context-length retries + chunk splits) — aborting rather \
+                     than continuing indefinitely"
+                )));
+            }
+            let truncated = truncate_chars(rest, cap);
+            let sent_len = truncated.chars().count();
+            *attempts_used += 1;
+            match attempt.attempt(truncated).await {
+                Ok((values, piece_usage)) => {
+                    usage.input_tokens =
+                        usage.input_tokens.saturating_add(piece_usage.input_tokens);
+                    usage.output_tokens = usage
+                        .output_tokens
+                        .saturating_add(piece_usage.output_tokens);
+                    vectors.push(values);
+                    rest = &rest[truncated.len()..];
+                    break;
+                }
+                Err(e) if is_context_length_error(&e.to_string()) => {
+                    match next_truncation_len(cap) {
+                        Some(smaller) => {
+                            tracing::warn!(
+                                "embed context-length error at {sent_len} chars — retrying at {smaller} chars"
+                            );
+                            cap = smaller;
+                        }
+                        None => {
+                            return Err(AppError::Provider(format!(
+                                "embedding input is too long for this model even after truncating to \
+                                 {sent_len} characters: {e}"
+                            )));
+                        }
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+    Ok((vectors, usage, cap))
+}
+
+/// Embed the FULL `text` — chunk it at `initial_cap` chars
+/// ([`split_into_chunks`], bounded to at most [`MAX_CHUNKS_PER_DOCUMENT`] top-
+/// level chunks by [`bounded_split_cap`]), embed every chunk in full
+/// ([`embed_chunk_adaptive`] never drops a chunk's unsent remainder even
+/// when it has to sub-split on a context-length error), then mean-pool +
+/// L2-normalize every resulting vector into one ([`l2_normalize`]). This is
+/// what makes re-indexing self-tuning per document/language AND lossless: a
+/// naive single truncation silently drops everything past the cap while
+/// still tagging the result as a complete embedding (the space is only
+/// `{provider, model, dim}` — nothing marks a truncated vector as partial),
+/// so a long résumé would be indexed on roughly its first quarter with no
+/// way to tell. Usage is the REAL sum across every provider call actually
+/// made (chunking/sub-splitting a document legitimately costs proportionally
+/// more tokens than embedding it whole).
+///
+/// The working cap is LEARNED ONCE across the whole document, not
+/// re-discovered per chunk: `embed_chunk_adaptive` returns the cap it ended
+/// up succeeding at, and that becomes the STARTING cap for the next
+/// top-level chunk. Without this, a document needing `MAX_CHUNKS_PER_DOCUMENT`
+/// grown chunks would pay the full halving-ladder discovery cost on EVERY
+/// chunk — measured ~224 wholly wasted failed round-trips for a 2MB document
+/// against a provider whose real limit was far below the nominal cap; with
+/// this, only the first chunk pays that discovery cost. `attempts` is the
+/// running TOTAL across every chunk, bounded by [`MAX_TOTAL_EMBED_ATTEMPTS`].
+async fn embed_adaptive<A: EmbedAttempt>(
+    attempt: &A,
+    text: &str,
+    initial_cap: usize,
+) -> AppResult<(Vec<f64>, Usage)> {
+    let split_cap = bounded_split_cap(text.chars().count(), initial_cap);
+    let chunks = split_into_chunks(text, split_cap);
+    let mut pooled: Vec<f64> = Vec::new();
+    let mut expected_dim: Option<usize> = None;
+    let mut piece_count: usize = 0;
+    let mut usage = Usage::default();
+    let mut attempts: usize = 0;
+    let mut learned_cap = split_cap;
+    for chunk in chunks {
+        let (pieces, chunk_usage, cap_used) =
+            embed_chunk_adaptive(attempt, chunk, learned_cap, &mut attempts).await?;
+        learned_cap = cap_used;
+        usage.input_tokens = usage.input_tokens.saturating_add(chunk_usage.input_tokens);
+        usage.output_tokens = usage
+            .output_tokens
+            .saturating_add(chunk_usage.output_tokens);
+        for values in pieces {
+            piece_count += 1;
+            match expected_dim {
+                None => {
+                    expected_dim = Some(values.len());
+                    pooled = values;
+                }
+                Some(d) if d == values.len() => {
+                    for (p, v) in pooled.iter_mut().zip(values.iter()) {
+                        *p += v;
+                    }
+                }
+                Some(_) => {
+                    // Same model/provider must always yield the same
+                    // dimension — a mismatch means the provider itself is
+                    // inconsistent, not something averaging can paper over.
+                    return Err(AppError::Provider(
+                        "embedding dimension changed between chunks of the same document"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    // Mean-pool (a single piece is already its own mean — skip the no-op
+    // divide-by-one), then L2-normalize so a multi-piece pooled vector sits
+    // on the same footing as a provider's own single-call embedding.
+    if piece_count > 1 {
+        let n = piece_count as f64;
+        for p in pooled.iter_mut() {
+            *p /= n;
+        }
+    }
+    l2_normalize(&mut pooled);
+    Ok((pooled, usage))
 }
 
 /// Embed `text` with an explicit provider/model, returning a space-tagged vector.
@@ -727,20 +1115,17 @@ pub async fn embed_text(
             provider.as_str()
         )));
     }
-    // Cap the input to the provider's real limit, char-boundary-safe (never splits a
-    // multi-byte char). Applied here so every provider is consistent and a new one
-    // inherits a safe default — see `AiProvider::max_embedding_input_chars`.
-    //
-    // Single pass: `char_indices().nth(cap)` finds the byte offset of the char *at*
-    // `cap` (i.e. the first char to drop). `Some` ⇒ the input exceeds `cap` chars, so
-    // slice there (a char-boundary offset); `None` ⇒ within cap, use as-is. Avoids the
-    // earlier `chars().count()` + `chars().take()` double scan.
-    let cap = client.max_embedding_input_chars();
-    let text = match text.char_indices().nth(cap) {
-        Some((byte_offset, _)) => &text[..byte_offset],
-        None => text,
+    // Cap the input to the provider's real limit, char-boundary-safe, then
+    // adaptively retry on a context-length overflow — see `embed_adaptive`.
+    // Applied here so every provider is consistent and a new one inherits a
+    // safe default — see `AiProvider::max_embedding_input_chars`.
+    let initial_cap = client.max_embedding_input_chars();
+    let attempt = ProviderEmbedAttempt {
+        app,
+        client: client.as_ref(),
+        model: &model,
     };
-    let (values, usage) = client.embed_with_usage(app, &model, text).await?;
+    let (values, usage) = embed_adaptive(&attempt, text, initial_cap).await?;
     record_usage(
         app,
         provider.as_str(),
@@ -762,6 +1147,7 @@ pub async fn embed_text(
             provider: provider.as_str().to_string(),
             model,
             dim,
+            version: EMBEDDING_VECTOR_VERSION,
         },
     })
 }
@@ -949,6 +1335,35 @@ mod tests {
     }
 
     #[test]
+    fn reasoning_effort_support_is_capability_driven_per_provider_and_model() {
+        // Exercises the exact path `ai_model_capabilities` takes for
+        // `supportsReasoning` — a model-specific gate (unlike web search, which
+        // is per-provider only), so this checks BOTH a capable and a
+        // non-capable model per HTTP provider.
+        let cases = [
+            ("openai", "o3-mini", true),
+            ("openai", "gpt-4o", false),
+            ("anthropic", "claude-opus-5", true),
+            ("anthropic", "claude-3-5-sonnet-20241022", false),
+            ("gemini", "gemini-3-pro-preview", true),
+            ("gemini", "gemini-2.5-pro", false),
+            ("ollama", "gpt-oss:120b", true),
+            ("ollama", "llama3.1:8b", false),
+            ("ollama-cloud", "gpt-oss:120b", true),
+            ("ollama-cloud", "qwen3-coder:480b", false),
+            ("openai-compatible", "o3-mini", false),
+        ];
+        for (provider, model, expected) in cases {
+            let client = resolve_by_name(provider, None).unwrap();
+            assert_eq!(
+                client.capabilities(model).supports_reasoning,
+                expected,
+                "{provider}/{model} reasoning support"
+            );
+        }
+    }
+
+    #[test]
     fn provider_id_round_trips() {
         for id in [
             ProviderId::Ollama,
@@ -1072,5 +1487,426 @@ mod tests {
     #[test]
     fn validate_model_cloud_requires_a_model() {
         assert!(ProviderId::OpenAi.validate_model("").is_err());
+    }
+
+    // ── Adaptive embedding truncation ───────────────────────────────────────
+
+    #[test]
+    fn truncate_chars_respects_char_boundaries() {
+        let text = "héllo wörld"; // multi-byte chars
+        assert_eq!(truncate_chars(text, 100), text);
+        assert_eq!(truncate_chars(text, 1), "h");
+        assert_eq!(truncate_chars(text, 2), "hé");
+    }
+
+    #[test]
+    fn next_truncation_len_halves_down_to_the_floor_then_gives_up() {
+        assert_eq!(next_truncation_len(8000), Some(4000));
+        assert_eq!(next_truncation_len(4000), Some(2000));
+        assert_eq!(next_truncation_len(2000), Some(1000));
+        assert_eq!(next_truncation_len(1000), Some(500));
+        assert_eq!(next_truncation_len(500), None);
+        assert_eq!(next_truncation_len(200), None);
+    }
+
+    #[test]
+    fn is_context_length_error_matches_known_provider_wordings() {
+        // The exact Ollama wording seen in production (see app log).
+        assert!(is_context_length_error(
+            "Ollama 500 Internal Server Error: {\"error\":\"the input length exceeds the context length\"}"
+        ));
+        assert!(is_context_length_error(
+            "openai: this model's maximum context length is 8192 tokens"
+        ));
+        // OpenAI's plain "too long" wording.
+        assert!(is_context_length_error("openai: Input text is too long"));
+        // Gemini's real over-length wording.
+        assert!(is_context_length_error(
+            "gemini: the input token count (12000) exceeds the maximum number of tokens allowed (8192)."
+        ));
+        assert!(is_context_length_error(
+            "gemini: request too large — try a smaller resume/job ad."
+        ));
+        assert!(!is_context_length_error(
+            "gemini: invalid or unauthorized API key."
+        ));
+        assert!(!is_context_length_error(
+            "Ollama unreachable: connection refused"
+        ));
+        // 404 model-not-found must never be mistaken for a length overflow.
+        assert!(!is_context_length_error(
+            "gemini: model or endpoint not found — models/text-embedding-004 is not found"
+        ));
+    }
+
+    /// `AppHandle`-free fake — succeeds once the (truncated) text is at or
+    /// below `success_at_or_below` chars, otherwise reports a context-length
+    /// overflow. Lets `embed_adaptive`'s retry loop be exercised with no
+    /// network/provider at all. `success_len_sum` accumulates the length of
+    /// every SUCCESSFUL call only — the direct measure of how much of the
+    /// original document actually got embedded, as opposed to `last_len`
+    /// (the most recent attempt, success or failure).
+    struct FakeEmbedAttempt {
+        success_at_or_below: usize,
+        calls: std::sync::atomic::AtomicUsize,
+        last_len: std::sync::atomic::AtomicUsize,
+        success_len_sum: std::sync::atomic::AtomicUsize,
+    }
+
+    impl FakeEmbedAttempt {
+        fn new(success_at_or_below: usize) -> Self {
+            Self {
+                success_at_or_below,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                last_len: std::sync::atomic::AtomicUsize::new(0),
+                success_len_sum: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl EmbedAttempt for FakeEmbedAttempt {
+        async fn attempt(&self, text: &str) -> AppResult<(Vec<f64>, Usage)> {
+            let len = text.chars().count();
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.last_len
+                .store(len, std::sync::atomic::Ordering::SeqCst);
+            if len <= self.success_at_or_below {
+                self.success_len_sum
+                    .fetch_add(len, std::sync::atomic::Ordering::SeqCst);
+                Ok((vec![0.1, 0.2, 0.3], Usage::default()))
+            } else {
+                Err(AppError::Provider(
+                    "mock 500: the input length exceeds the context length".to_string(),
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_retries_and_succeeds_on_shorter_input() {
+        let attempt = FakeEmbedAttempt::new(3000);
+        let text = "a".repeat(8000);
+        let result = embed_adaptive(&attempt, &text, 8000).await;
+        assert!(result.is_ok());
+        // 8000 (fail) -> 4000 (fail) -> 2000 (succeeds, <= 3000). The
+        // successful 2000-char cap then STICKS for the rest of this chunk
+        // too (M1 fix) instead of discarding the remaining 6000 chars: 3
+        // more successful 2000-char sends. 2 failures + 4 successes = 6.
+        assert_eq!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst), 6);
+        assert_eq!(
+            attempt.last_len.load(std::sync::atomic::Ordering::SeqCst),
+            2000
+        );
+        // The WHOLE document was embedded (4 x 2000), not just its first
+        // successful-cap's worth.
+        assert_eq!(
+            attempt
+                .success_len_sum
+                .load(std::sync::atomic::Ordering::SeqCst),
+            8000
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_never_drops_the_unsent_remainder_of_a_chunk() {
+        // The reported production scenario: cap=8000 (Ollama's default), a
+        // document long enough to split into several top-level chunks, and
+        // a provider whose REAL token window only accepts much shorter input
+        // (nomic-embed-text's 2048-token window on a token-dense language).
+        // Before the fix, once a smaller cap succeeded, everything past that
+        // smaller cap within the SAME top-level chunk was silently dropped
+        // forever — a 24,000-char document would embed only 6,000 chars
+        // (3 chunks x first-successful-2000) while still being tagged as a
+        // complete, indexed vector.
+        let attempt = FakeEmbedAttempt::new(2000); // provider accepts <= 2000 chars
+        let text = "a".repeat(24_000);
+        let result = embed_adaptive(&attempt, &text, 8000).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            attempt
+                .success_len_sum
+                .load(std::sync::atomic::Ordering::SeqCst),
+            24_000,
+            "every char of the document must eventually be embedded"
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_learns_the_working_cap_once_not_per_chunk() {
+        // 3 top-level 8000-char chunks (24,000 / 8000, no growth needed),
+        // provider only accepts <= 2000 chars. WITHOUT hoisting the learned
+        // cap out of `embed_chunk_adaptive`, every chunk independently
+        // re-pays the 8000 -> 4000 -> 2000 discovery ladder (2 wasted failing
+        // calls each = 6 total); WITH it, only chunk 1 pays that cost —
+        // chunks 2 and 3 start straight at the already-learned 2000-char cap.
+        let attempt = FakeEmbedAttempt::new(2000);
+        let text = "a".repeat(24_000);
+        let result = embed_adaptive(&attempt, &text, 8000).await;
+        assert!(result.is_ok());
+        // chunk 1: 2 failures (8000, 4000) + 4 successes (2000 chars x4) = 6.
+        // chunk 2 and chunk 3: 4 successes each, ZERO failures (learned) = 8.
+        // 6 + 8 = 14 — NOT the 18 it would be if every chunk re-discovered
+        // the cap independently.
+        assert_eq!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst), 14);
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_aborts_with_a_clear_error_past_the_total_attempt_ceiling() {
+        // A document long enough that even the DISCOVERED (floor) cap still
+        // needs hundreds of successful sends to fully cover it — this must
+        // abort with a clear error rather than making the caller
+        // (`ai_reembed_all`'s cancellation check runs BETWEEN documents, not
+        // within one) unresponsive for however long that would take. 25
+        // top-level 8,000-char chunks (200,000 / 8,000, no growth needed);
+        // only the floor length (500 chars) ever succeeds, so covering the
+        // whole document would need ~400 successful sends plus the initial
+        // discovery failures — far past the 200-call ceiling.
+        let attempt = FakeEmbedAttempt::new(EMBED_TRUNCATION_FLOOR_CHARS);
+        let text = "a".repeat(200_000);
+        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&MAX_TOTAL_EMBED_ATTEMPTS.to_string()),
+            "error should cite the ceiling: {msg}"
+        );
+        assert!(msg.to_ascii_lowercase().contains("provider calls"));
+        // Must stop EXACTLY at the ceiling, never run past it.
+        assert_eq!(
+            attempt.calls.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_TOTAL_EMBED_ATTEMPTS
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_bounds_chunk_count_for_a_pathologically_large_document() {
+        // A 2 MB document at cap=8000 would be 250 SEQUENTIAL top-level
+        // chunks (each up to 3 HTTP attempts x up to 5 adaptive-halving
+        // steps worst case) — it was 1 call before this whole feature
+        // existed. `usize::MAX` as the success threshold means every attempt
+        // succeeds immediately, isolating the CHUNK-COUNT bound from the
+        // halving logic tested elsewhere.
+        let attempt = FakeEmbedAttempt::new(usize::MAX);
+        let text = "a".repeat(2_000_000);
+        let result = embed_adaptive(&attempt, &text, 8000).await;
+        assert!(result.is_ok());
+        let calls = attempt.calls.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(calls <= 32, "expected at most 32 calls, got {calls}");
+        assert_eq!(
+            attempt
+                .success_len_sum
+                .load(std::sync::atomic::Ordering::SeqCst),
+            2_000_000,
+            "the whole document must still be embedded, not truncated to fit the chunk cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_gives_up_at_the_floor_with_a_clear_error() {
+        // A threshold below the floor never succeeds — the loop must stop.
+        let attempt = FakeEmbedAttempt::new(100);
+        let text = "a".repeat(8000);
+        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&EMBED_TRUNCATION_FLOOR_CHARS.to_string()),
+            "error should mention the floor length: {msg}"
+        );
+        assert!(msg.to_ascii_lowercase().contains("too long"));
+        // 8000 -> 4000 -> 2000 -> 1000 -> 500 (floor): 5 attempts, then give up.
+        assert_eq!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst), 5);
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_never_inflates_a_short_documents_reported_length() {
+        // A 300-char document (well under the 8000-char provider cap) must
+        // never be reported/retried against a cap it was never actually sent
+        // at. Before the fix, `cap` halved 8000→4000→2000→1000→500 while the
+        // ACTUAL bytes sent stayed 300 the whole time (5 byte-identical
+        // requests), and the give-up error falsely said "500 characters".
+        let attempt = FakeEmbedAttempt::new(100); // never succeeds — forces a give-up
+        let text = "a".repeat(300);
+        let err = embed_adaptive(&attempt, &text, 8000).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("300"),
+            "error must cite the ACTUAL sent length: {msg}"
+        );
+        for phantom in ["8000", "4000", "2000", "1000"] {
+            assert!(
+                !msg.contains(phantom),
+                "error must not cite a cap the document was never sent at: {msg}"
+            );
+        }
+        // 300 chars is already at/below the floor (500) — no retries are
+        // possible, so exactly ONE request is made, not five.
+        assert_eq!(attempt.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            attempt.last_len.load(std::sync::atomic::Ordering::SeqCst),
+            300
+        );
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_does_not_retry_a_non_context_length_error() {
+        struct AlwaysUnauthorized(std::sync::atomic::AtomicUsize);
+
+        #[async_trait]
+        impl EmbedAttempt for AlwaysUnauthorized {
+            async fn attempt(&self, _text: &str) -> AppResult<(Vec<f64>, Usage)> {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(AppError::Config(
+                    "gemini: invalid or unauthorized API key.".to_string(),
+                ))
+            }
+        }
+
+        let attempt = AlwaysUnauthorized(std::sync::atomic::AtomicUsize::new(0));
+        let err = embed_adaptive(&attempt, "short text", 8000)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Config(_)));
+        assert_eq!(attempt.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // ── split_into_chunks / l2_normalize (pure helpers) ─────────────────────
+
+    #[test]
+    fn split_into_chunks_covers_the_whole_text_without_dropping_a_tail() {
+        let text = "a".repeat(25);
+        let chunks = split_into_chunks(&text, 10);
+        assert_eq!(chunks, vec!["a".repeat(10), "a".repeat(10), "a".repeat(5)]);
+        // Every char of the original text is present across the chunks.
+        assert_eq!(chunks.concat().chars().count(), 25);
+    }
+
+    #[test]
+    fn split_into_chunks_is_a_single_chunk_when_under_the_cap() {
+        assert_eq!(split_into_chunks("short", 8000), vec!["short"]);
+    }
+
+    #[test]
+    fn split_into_chunks_respects_char_boundaries() {
+        let text = "é".repeat(7); // multi-byte char, 2 bytes each
+        let chunks = split_into_chunks(&text, 3);
+        assert_eq!(chunks, vec!["é".repeat(3), "é".repeat(3), "é".to_string()]);
+    }
+
+    #[test]
+    fn split_into_chunks_of_empty_text_is_one_empty_chunk() {
+        // So the caller still makes its usual single provider call rather
+        // than zero (preserves prior single-empty-call behavior).
+        assert_eq!(split_into_chunks("", 8000), vec![""]);
+    }
+
+    #[test]
+    fn bounded_split_cap_is_a_no_op_within_the_chunk_limit() {
+        // 24,000 chars at cap=8000 is 3 chunks — well under the 32 ceiling.
+        assert_eq!(bounded_split_cap(24_000, 8000), 8000);
+    }
+
+    #[test]
+    fn bounded_split_cap_grows_the_cap_to_stay_within_the_limit_without_dropping_text() {
+        // 2 MB at cap=8000 would need 250 chunks — far over the 32 ceiling.
+        let total = 2_000_000;
+        let cap = bounded_split_cap(total, 8000);
+        let needed = total.div_ceil(cap);
+        assert!(needed <= 32, "grown cap {cap} still needs {needed} chunks");
+        // The grown cap must still cover the WHOLE document across at most
+        // 32 chunks — growing the chunk size, never truncating the document.
+        assert!(cap * 32 >= total);
+    }
+
+    #[test]
+    fn l2_normalize_scales_to_unit_length() {
+        let mut v = vec![3.0, 4.0]; // 3-4-5 triangle
+        l2_normalize(&mut v);
+        assert!((v[0] - 0.6).abs() < 1e-9);
+        assert!((v[1] - 0.8).abs() < 1e-9);
+        let norm = (v[0] * v[0] + v[1] * v[1]).sqrt();
+        assert!((norm - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn l2_normalize_is_a_no_op_on_an_all_zero_vector() {
+        let mut v = vec![0.0, 0.0];
+        l2_normalize(&mut v);
+        assert_eq!(v, vec![0.0, 0.0]);
+    }
+
+    // ── embed_adaptive: chunk-and-mean-pool (the whole-document fix) ────────
+
+    /// Returns a distinct, caller-scripted vector per call (in call order), so
+    /// a test can verify BOTH which text each chunk actually received and how
+    /// the resulting per-chunk vectors were combined.
+    struct SequencedEmbedAttempt {
+        call_texts: std::sync::Mutex<Vec<String>>,
+        vectors: Vec<Vec<f64>>,
+    }
+
+    #[async_trait]
+    impl EmbedAttempt for SequencedEmbedAttempt {
+        async fn attempt(&self, text: &str) -> AppResult<(Vec<f64>, Usage)> {
+            let mut texts = self.call_texts.lock().unwrap();
+            let i = texts.len();
+            texts.push(text.to_string());
+            let v = self
+                .vectors
+                .get(i)
+                .cloned()
+                .expect("test provided fewer scripted vectors than chunks");
+            Ok((
+                v,
+                Usage {
+                    input_tokens: 10,
+                    output_tokens: 0,
+                },
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_embeds_every_chunk_of_a_long_document_not_just_its_prefix() {
+        // cap=10, a 25-char document -> 3 chunks (10 + 10 + 5). A naive single
+        // truncation would have sent ONLY the first 10 chars and silently
+        // dropped the rest while still tagging the result as "complete".
+        let text = format!("{}{}{}", "a".repeat(10), "b".repeat(10), "c".repeat(5));
+        let attempt = SequencedEmbedAttempt {
+            call_texts: std::sync::Mutex::new(Vec::new()),
+            vectors: vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]],
+        };
+
+        let (values, usage) = embed_adaptive(&attempt, &text, 10).await.unwrap();
+
+        let texts = attempt.call_texts.lock().unwrap();
+        assert_eq!(texts.len(), 3, "the whole document must be embedded");
+        assert_eq!(*texts, vec!["a".repeat(10), "b".repeat(10), "c".repeat(5)]);
+
+        // Mean of [1,0], [0,1], [1,1] = [2/3, 2/3] -> L2-normalized both
+        // components are equal and the result has unit length.
+        assert!((values[0] - values[1]).abs() < 1e-9);
+        let norm = (values[0] * values[0] + values[1] * values[1]).sqrt();
+        assert!(
+            (norm - 1.0).abs() < 1e-9,
+            "pooled vector must be L2-normalized"
+        );
+
+        // REAL usage summed across every chunk call — 3 chunks x 10 tokens.
+        assert_eq!(usage.input_tokens, 30);
+    }
+
+    #[tokio::test]
+    async fn embed_adaptive_single_chunk_document_is_returned_unpooled() {
+        // Under the cap -> one chunk -> the provider's own vector passes
+        // through mean-pooling as a no-op, then gets L2-normalized.
+        let attempt = SequencedEmbedAttempt {
+            call_texts: std::sync::Mutex::new(Vec::new()),
+            vectors: vec![vec![3.0, 4.0]],
+        };
+        let (values, usage) = embed_adaptive(&attempt, "short doc", 8000).await.unwrap();
+        assert_eq!(attempt.call_texts.lock().unwrap().len(), 1);
+        assert!((values[0] - 0.6).abs() < 1e-9);
+        assert!((values[1] - 0.8).abs() < 1e-9);
+        assert_eq!(usage.input_tokens, 10);
     }
 }

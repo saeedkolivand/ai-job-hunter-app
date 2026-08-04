@@ -178,6 +178,41 @@ fn anthropic_supports_temperature(model: &str) -> bool {
     true
 }
 
+/// Whether `model` accepts the `output_config.effort` parameter — verified
+/// against Anthropic's live docs
+/// (`platform.claude.com/docs/en/build-with-claude/effort`, fetched
+/// 2026-08-03): "The effort parameter is supported by Claude Fable 5, Claude
+/// Mythos 5, Claude Opus 5, Claude Opus 4.8, Claude Mythos Preview, Claude
+/// Opus 4.7, Claude Opus 4.6, Claude Sonnet 5, Claude Sonnet 4.6, and Claude
+/// Opus 4.5." This is a DIFFERENT (larger) set than
+/// [`anthropic_uses_adaptive_thinking`] — that same page: "On Claude Opus
+/// 4.5, the only extended-thinking-only model that supports effort" — and
+/// Opus/Sonnet 4.6 support effort without being adaptive-thinking models at
+/// all, so effort support can't be derived from either existing thinking
+/// predicate. A closed, explicitly-verified list (mirrors this file's other
+/// version-needle gates) — an unrecognized future model defaults to `false`
+/// (never a guessed value; `output_config.effort` 400s on a model that
+/// doesn't support it). Every needle (including the two Mythos names below)
+/// is boundary-checked via [`contains_version_needle`] — unlike
+/// [`anthropic_uses_adaptive_thinking`]'s pre-existing bare `m.contains("mythos")`
+/// (a different, broader predicate this one deliberately does NOT reuse),
+/// this gate never guesses `true` for an unlisted/future model: only the
+/// two Mythos names the effort page currently documents ("Claude Mythos 5",
+/// "Claude Mythos Preview") match.
+fn anthropic_supports_effort(model: &str) -> bool {
+    let m = normalize_model_id(model);
+    contains_version_needle(&m, "opus-4-5")
+        || contains_version_needle(&m, "opus-4-6")
+        || contains_version_needle(&m, "opus-4-7")
+        || contains_version_needle(&m, "opus-4-8")
+        || contains_version_needle(&m, "sonnet-4-6")
+        || contains_version_needle(&m, "sonnet-5")
+        || contains_version_needle(&m, "opus-5")
+        || contains_version_needle(&m, "fable-5")
+        || contains_version_needle(&m, "mythos-5")
+        || contains_version_needle(&m, "mythos-preview")
+}
+
 /// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
 /// into one string (web-search responses interleave `server_tool_use` /
 /// `web_search_tool_result` blocks, which have no `text` field and are skipped).
@@ -428,6 +463,19 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     }
     if !system_content.is_empty() {
         body["system"] = json!(system_content);
+    }
+    // `output_config.effort` is orthogonal to `thinking` (works with or
+    // without it, per Anthropic's docs) — only ever sent on a model that
+    // supports it (see `anthropic_supports_effort`'s doc comment).
+    if let Some(effort) = req
+        .effort
+        .as_deref()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
+        if anthropic_supports_effort(&req.model) {
+            body["output_config"] = json!({ "effort": effort });
+        }
     }
     body
 }
@@ -691,13 +739,21 @@ impl AiProvider for AnthropicClient {
             // Anthropic carries the system prompt as a top-level field, not a role.
             supports_system_role: false,
             supports_streaming: true,
-            supports_reasoning: true,
+            supports_reasoning: anthropic_supports_effort(model),
             supports_tools: true,
             supports_json_mode: false,
             supports_embeddings: false,
             // Native server-side web_search tool (account-key gated at call time).
             supports_web_search: true,
             token_param: TokenParam::MaxTokens,
+        }
+    }
+
+    fn effort_levels(&self, model: &str) -> Vec<&'static str> {
+        if anthropic_supports_effort(model) {
+            vec!["low", "medium", "high"]
+        } else {
+            Vec::new()
         }
     }
 
