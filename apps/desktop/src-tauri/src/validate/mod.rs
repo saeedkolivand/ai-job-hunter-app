@@ -167,14 +167,26 @@ fn expected_from_request(request: &ExportRequest) -> Expected {
         }
     }
 
-    // The candidate name from metadata overrides the parsed first line.
-    if let Some(meta_name) = request
-        .meta
-        .as_ref()
-        .and_then(|m| m.candidate_name.as_deref())
-    {
-        if !meta_name.trim().is_empty() {
-            name = Some(meta_name.to_string());
+    // The candidate name from metadata is a FALLBACK ONLY (H: the editor is
+    // the source of truth) — mirrors `export/pdf/mod.rs`'s and
+    // `export/model_docx.rs`'s own precedence (both only fill `header.name`
+    // from `meta.candidate_name` when the text-derived name is blank). An
+    // unconditional override here made this expectation diverge from what
+    // actually renders whenever the two differ (a stale `meta.candidate_name`
+    // vs. an edited header) — the real, rendered document correctly shows
+    // the text's own name, but this function still "expected" the stale
+    // metadata one, firing a spurious `missing_name` warning against a
+    // correctly-rendered document.
+    let name_is_blank = name.as_deref().map(str::trim).unwrap_or("").is_empty();
+    if name_is_blank {
+        if let Some(meta_name) = request
+            .meta
+            .as_ref()
+            .and_then(|m| m.candidate_name.as_deref())
+        {
+            if !meta_name.trim().is_empty() {
+                name = Some(meta_name.to_string());
+            }
         }
     }
 
@@ -315,14 +327,49 @@ struct PdfLink {
     page: usize,
 }
 
+/// The `n` links sitting highest on the page, ordered top-down.
+///
+/// Selection is **geometric**, never `/Annots` emission order.
+/// `page_link_annotations` yields annotations in array order, which carries no
+/// guarantee about vertical position — and for a two-column template it very
+/// likely doesn't, since a sidebar is emitted as its own run. Taking the first
+/// `n` in emission order could therefore pick a *body* link, raise a CRITICAL
+/// `header_url_mismatch`, and make `validate_and_fix` silently re-render the
+/// document single-column — losing the user's chosen layout to a false
+/// positive. Sorting by the same `rect` top edge the band filter already reads
+/// makes "the header's own n links" a statement about the page, not about the
+/// writer that produced it.
+///
+/// Pinned by `validate::tests::topmost_n_orders_by_geometry_not_annotation_order`.
+fn topmost_n<'a>(links: &[&'a PdfLink], n: usize) -> Vec<&'a PdfLink> {
+    let top = |l: &PdfLink| l.rect[1].max(l.rect[3]);
+    let mut by_position: Vec<&'a PdfLink> = links.to_vec();
+    by_position.sort_by(|a, b| top(b).total_cmp(&top(a)));
+    by_position.truncate(n);
+    by_position
+}
+
 /// Render-level checks over the actual PDF bytes (renderer-agnostic, so the modern
 /// résumé engine and the legacy cover-letter path are both covered):
-///   * `header_url_mismatch` (critical) — when a contact profile is the source of
-///     truth, every header-region link URL must be one of the profile's named
-///     fields (catches a company-link displacing a personal profile / site).
-///   * `header_url_missing` (warning) — the reverse completeness check (a profile
-///     link that did not surface in the header band); advisory only, as it leans on
-///     the band heuristic and a missing link never corrupts the document.
+///   * `header_url_mismatch` (critical) — a self-consistency check: every
+///     link at the header's OWN position must be one of the document's own,
+///     actually-authoritative header links (catches a company-link
+///     displacing a personal profile / site, or a render/model
+///     desynchronization). For a résumé this is whichever side (text or
+///     profile) actually supplied the header — not only the profile;
+///     narrowed to the header's own expected link COUNT (not the whole
+///     144pt band) so a genuine, correctly-placed body link near the top of
+///     page 1 is never mistaken for a header link. For a cover letter it is
+///     always the profile, over the full band (no body section can render
+///     into a cover letter's header-band the way a résumé's can).
+///   * `header_url_missing` (warning) — the reverse completeness check (a
+///     profile link that did not surface anywhere in the full header band,
+///     only checked when the profile is what supplied the header); advisory
+///     only, as it leans on the band heuristic and a missing link never
+///     corrupts the document.
+///   * `header_url_job_board` (warning) — a job-board/ATS host anywhere in
+///     the full header band, whoever put it there, résumé or cover letter;
+///     exempts a personal Xing profile.
 fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     let doc = match lopdf::Document::load_mem(bytes) {
         Ok(d) => d,
@@ -347,57 +394,251 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
     // vs /Rect coordinate spaces) and false-flagged every valid Typst link. The
     // URL-correctness checks below (content-based, not geometric) still run.
 
-    // Header URL correctness against the contact profile (when supplied).
-    if let Some(profile) = request
-        .contact
-        .as_ref()
-        .filter(|p| !p.is_effectively_empty())
-    {
-        let allowed: std::collections::BTreeSet<String> =
-            profile.header_urls().into_iter().collect();
-        // Header region: the top ~2 inches (144 pt) of the first page.
-        let header_band_bottom = page_h_pt - 144.0;
-        let header_links: Vec<&PdfLink> = links
-            .iter()
-            .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
-            .collect();
+    // A self-consistency check against the header ACTUALLY rendered — not a
+    // profile-parity check, and not skipped for any document shape (see ADR
+    // 0021's "Export validation" section for the full rationale/history).
+    //
+    // H — the editor is the source of truth: `ContactProfile::apply_to_header`
+    // fills the header's contact line from the profile ONLY when the
+    // text-derived header has none. `allowed` below is built from whichever
+    // header runs are actually authoritative for THIS render (reconstructed
+    // by running the SAME `model_from_resume_text` → `apply_to_header`
+    // pipeline `prepare_resume_render` uses), not only the profile's fields —
+    // so the strict block runs unconditionally for résumés, text-owned
+    // header or not, profile supplied or not. Cover letters are unaffected
+    // (their header override wasn't part of H) and keep the original,
+    // profile-only form.
+    //
+    // Parses the SAME text `prepare_resume_render` actually renders from, not
+    // the raw `request.text` — which can still carry the
+    // "### CANDIDATE RESUME ###" / "### JOB ADVERTISEMENT ###" wrapper. Left
+    // un-extracted, `parse_resume` reads that marker as an ATX heading at line
+    // 0 (`strip_atx_heading` runs before the idx==0 name/contact case),
+    // `seen_section` flips true immediately, and the real name/contact lines
+    // never reach `header.contact` at all.
+    let resume_text = (request.document_type == DocumentType::Resume).then(|| {
+        let extracted = crate::export::pdf::extract_section(
+            &request.text,
+            "### CANDIDATE RESUME ###",
+            Some("### JOB ADVERTISEMENT ###"),
+        );
+        if extracted.is_empty() {
+            request.text.as_str()
+        } else {
+            extracted
+        }
+    });
+    // `(profile_is_header_source, header)` — the boolean is recorded from the
+    // text-only parse, BEFORE the profile fallback runs, so it still answers
+    // "did the profile actually supply this header's contact line" for the
+    // completeness/"missing" check below (only a meaningful signal relative
+    // to a profile that was actually applied).
+    let resume_header = resume_text.map(|t| {
+        let mut model = crate::model::adapter::model_from_resume_text(t);
+        let profile_is_header_source = model.header.contact.is_empty();
+        if let Some(profile) = request.contact.as_ref() {
+            profile.apply_to_header(&mut model.header, &request.target_lang());
+        }
+        (profile_is_header_source, model.header)
+    });
 
-        // Canonicalise URLs before comparing so trivial differences (trailing slash,
-        // scheme/host case, a percent-encoded space) do not cause false positives.
-        // The check's intent — catching a wrong link in the header — is preserved;
-        // we only avoid blocking on byte-identical-but-semantically-equal URLs.
-        let allowed_canonical: std::collections::BTreeSet<String> =
-            allowed.iter().map(|u| canonicalize_url(u)).collect();
+    // Header region: the top ~2 inches (144 pt) of the first page. A
+    // HEURISTIC, not a semantic boundary — a short header followed
+    // immediately by a section (EXPERIENCE, say) can put a genuine, correctly
+    // placed BODY link (a job's own company site) geometrically inside this
+    // band. `header_links` (every band-falling annotation) still backs the
+    // advisory completeness/job-board checks below, where a false positive
+    // only produces a non-blocking warning; the BLOCKING mismatch check uses
+    // `header_owned_links` instead (narrower — see there).
+    let header_band_bottom = page_h_pt - 144.0;
+    let header_links: Vec<&PdfLink> = links
+        .iter()
+        .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
+        .collect();
 
-        // A header-band link that is NOT one of the profile's own fields means a
-        // body/company link displaced a personal one (the URL-swap regression) —
-        // the document shows a wrong link, so this stays blocking.
-        for link in &header_links {
-            if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
-                issues.push(ExportIssue::critical(
-                    "header_url_mismatch",
-                    format!(
-                        "Header link {} is not one of the contact profile's fields — a \
-                         body/company link leaked into the header.",
-                        link.url
-                    ),
-                ));
+    match &resume_header {
+        Some((profile_is_header_source, header)) => {
+            // `allowed`: the URLs the document's own, actually-authoritative
+            // header claims — the reconstructed header's own link runs,
+            // whichever side (text or profile) supplied them.
+            let allowed: std::collections::BTreeSet<String> = header
+                .contact
+                .iter()
+                .filter_map(|r| r.link.clone())
+                .collect();
+            let allowed_canonical: std::collections::BTreeSet<String> =
+                allowed.iter().map(|u| canonicalize_url(u)).collect();
+
+            // CodeRabbit (security re-review): the mismatch check below must
+            // NOT run over the full `header_links` band — the band is a
+            // geometric heuristic (see above), and a genuine body link
+            // rendering early on the page (a short header + an immediate
+            // section) is not "the header's" just because it falls inside
+            // the same 144 pt zone; flagging it there is exactly the
+            // false-block this check must never produce. Narrowed to
+            // `header_owned_links`: the FIRST `allowed.len()` band links, in
+            // the PDF's own annotation order — which tracks top-to-bottom
+            // render order for a normal single-column document, so this is
+            // "the header's own N links, whichever N are actually
+            // expected," not "everything that happens to be nearby." A
+            // document whose header renders fewer links than expected (the
+            // band clipped a wrapped line) simply checks fewer — never more
+            // than are legitimately the header's.
+            //
+            // A SECOND reviewer (post-push, round 8) read `take(allowed.len())`
+            // silently degrading to zero checks when `allowed` is empty as an
+            // unintentional hole and proposed falling back to the FULL band
+            // in that case. Verified empirically before writing this: that
+            // fallback is wrong and would reintroduce the exact false-block
+            // this round removed — a name-only header with no profile and no
+            // email/phone-with-a-link produces `allowed = {}` (a phone/
+            // location line never gets a `.link` run; a bare name never
+            // does either), and a job's own company link rendering early on
+            // the page (short header, immediate EXPERIENCE section) would be
+            // flagged as `header_url_mismatch` and BLOCK a perfectly valid
+            // export, on a fresh un-narrowed-band check identical in kind to
+            // the one this round already fixed.
+            //
+            // INVARIANT, made explicit rather than left as an accident of
+            // `take(0)`: an empty `allowed` means the reconstructed header —
+            // the one the renderer will actually emit — owns NO links at
+            // all. `header.contact`'s runs carry zero `.link` values (no
+            // email, no LinkedIn/GitHub/Website, no extra link), and
+            // `header.name` is a plain `String` that can never carry one
+            // either. There is therefore nothing legitimately "the
+            // header's" to check a band link against; every link in the
+            // band in this state is body content, full stop, and must not
+            // block. Pinned by `validate::tests::linkless_header_with_a_genuine_body_link_in_the_band_does_not_false_block`.
+            if !allowed.is_empty() {
+                let header_owned_links = topmost_n(&header_links, allowed.len());
+
+                // A header-owned link that is NOT one of the header's own
+                // claimed links means the render itself disagrees with the
+                // reconstructed model (the URL-swap regression: the document
+                // shows a wrong link where its own header should be) — this
+                // stays blocking, unconditionally (no profile required).
+                for link in &header_owned_links {
+                    if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
+                        issues.push(ExportIssue::critical(
+                            "header_url_mismatch",
+                            format!(
+                                "Header link {} is not one of the document header's own links \
+                                 — a body/company link leaked into the header.",
+                                link.url
+                            ),
+                        ));
+                    }
+                }
+            }
+
+            // The reverse (a profile link that did not surface in the header
+            // band) is a *completeness* signal that depends on the 144 pt
+            // band heuristic, so it is advisory — checked against the FULL
+            // `header_links` (not narrowed: "did this expected link render
+            // somewhere in the band at all" is a different question than
+            // "is this band link one of the header's own") — and only
+            // meaningful when the profile actually supplied this header
+            // (comparing an unrelated profile's links against a text-owned
+            // header would be a false, unactionable "missing" for every one
+            // of them).
+            if *profile_is_header_source {
+                if let Some(profile) = request
+                    .contact
+                    .as_ref()
+                    .filter(|p| !p.is_effectively_empty())
+                {
+                    for url in profile.header_urls() {
+                        if !header_links
+                            .iter()
+                            .any(|l| canonicalize_url(&l.url) == canonicalize_url(&url))
+                        {
+                            issues.push(ExportIssue::warning(
+                                "header_url_missing",
+                                format!(
+                                    "Contact profile link {url} is missing from the rendered \
+                                     header."
+                                ),
+                            ));
+                        }
+                    }
+                }
             }
         }
-        // The reverse (a profile link that did not surface in the header band) is a
-        // *completeness* signal that depends on the 144 pt band heuristic, so it is
-        // advisory — a missing/displaced contact link is a quality note, never a
-        // reason to stop the user exporting an otherwise-valid, readable document.
-        for url in &allowed {
-            if !header_links
-                .iter()
-                .any(|l| canonicalize_url(&l.url) == canonicalize_url(url))
+        None => {
+            // Cover letter: H doesn't apply — the header always comes
+            // straight from the profile (there is no text-derived header to
+            // prefer), so this keeps the original, simpler profile-parity
+            // form. The strict checks genuinely need a profile to compare
+            // against — no profile (or an empty one) means nothing to check.
+            // Not narrowed the way the résumé arm is: a cover letter's
+            // header is short and fixed-shape (no body section can render
+            // early into its band the way a résumé's can), so the band
+            // heuristic doesn't carry the same false-block risk here.
+            if let Some(profile) = request
+                .contact
+                .as_ref()
+                .filter(|p| !p.is_effectively_empty())
             {
-                issues.push(ExportIssue::warning(
-                    "header_url_missing",
-                    format!("Contact profile link {url} is missing from the rendered header."),
-                ));
+                let allowed: std::collections::BTreeSet<String> =
+                    profile.header_urls().into_iter().collect();
+                let allowed_canonical: std::collections::BTreeSet<String> =
+                    allowed.iter().map(|u| canonicalize_url(u)).collect();
+
+                for link in &header_links {
+                    if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
+                        issues.push(ExportIssue::critical(
+                            "header_url_mismatch",
+                            format!(
+                                "Header link {} is not one of the contact profile's fields — \
+                                 a body/company link leaked into the header.",
+                                link.url
+                            ),
+                        ));
+                    }
+                }
+                for url in &allowed {
+                    if !header_links
+                        .iter()
+                        .any(|l| canonicalize_url(&l.url) == canonicalize_url(url))
+                    {
+                        issues.push(ExportIssue::warning(
+                            "header_url_missing",
+                            format!(
+                                "Contact profile link {url} is missing from the rendered header."
+                            ),
+                        ));
+                    }
+                }
             }
+        }
+    }
+
+    // A job-board/ATS host is never a legitimate personal contact link,
+    // whoever put it there and whichever document type this is — checked
+    // unconditionally: not gated on a profile being present (the people most
+    // likely to export a raw imported header untouched are exactly the ones
+    // who never filled one in), and now hoisted above the résumé/cover-letter
+    // match (LOW, security re-review — it used to run only in the résumé
+    // arm, silently never firing for a cover letter's own job-board host,
+    // contradicting this warning's "unconditional" design intent). Runs
+    // against the FULL band, same as the missing-completeness check: a
+    // job-board URL that IS part of the header's own claimed links (the
+    // user's own header literally contains one) passes the mismatch check
+    // above by construction but must still warn here. Exempts a personal
+    // Xing profile (`/profile/…`) — `xing.com` is also a job-board host (it
+    // lists job postings too), so without the exemption a legitimate DACH
+    // candidate's own profile link would warn every time.
+    for link in &header_links {
+        if crate::contact_profile::is_job_board(&link.url)
+            && !crate::contact_profile::is_personal_xing(&link.url)
+        {
+            issues.push(ExportIssue::warning(
+                "header_url_job_board",
+                format!(
+                    "Header link {} looks like a job board/ATS URL, not a personal contact link.",
+                    link.url
+                ),
+            ));
         }
     }
 

@@ -61,6 +61,156 @@ fn test_contact_detection() {
 }
 
 #[test]
+fn is_contact_shaped_matches_ts_is_header_contact_line_fixture() {
+    // Cross-language parity guard: this exact fixture is also asserted by the TS
+    // isHeaderContactLine() / isFirstLineContactShaped() tests in
+    // packages/prompts/src/generate/text/header-contact-line.test.ts. Both read
+    // the same file, so the two implementations can never silently drift — see
+    // docs/knowledge (item H, header-seeding) for why this matters: a divergence
+    // here either lets a leaked link survive re-seeding unrecognised, or
+    // duplicates the seeded line on regeneration.
+    #[derive(serde::Deserialize)]
+    struct Case {
+        line: String,
+        contact: bool,
+        #[serde(rename = "firstLine")]
+        first_line: bool,
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/header-contact-line.json");
+    let raw = std::fs::read_to_string(&path).expect(
+        "read header-contact-line parity fixture \
+         (packages/prompts/src/fixtures/header-contact-line.json)",
+    );
+    let cases: Vec<Case> =
+        serde_json::from_str(&raw).expect("parse header-contact-line parity fixture");
+
+    assert!(
+        !cases.is_empty(),
+        "header-contact-line parity fixture must not be empty"
+    );
+    for c in &cases {
+        // `parse_line` never calls `is_contact_shaped` on the raw line — only
+        // on `clean = strip_md(trimmed)`. Doing the same here is what makes
+        // this a real end-to-end parity check against a `**bold**`- or
+        // `#`-decorated line, not just an isolated-function coincidence: the
+        // TS mirror applies its own equivalent stripping internally now too.
+        let clean = strip_md(c.line.trim());
+        assert_eq!(
+            is_contact_shaped(&clean),
+            c.contact,
+            "is_contact_shaped drift for {:?} (clean: {:?})",
+            c.line,
+            clean
+        );
+        assert_eq!(
+            is_first_line_contact_shaped(&clean),
+            c.first_line,
+            "is_first_line_contact_shaped drift for {:?} (clean: {:?})",
+            c.line,
+            clean
+        );
+    }
+}
+
+#[test]
+fn section_names_exactly_matches_ts_known_section_names_fixture() {
+    // Cross-language parity guard, same shape as the contact-line fixture
+    // above, but for one of the TWO predicates that gate the renderer's
+    // header-seeding scan boundary (`isKnownSectionName` in
+    // packages/prompts/src/generate/text/header-contact-line.ts — the other
+    // is `isAllCapsSectionHeading`, tested below). Asserted both ways
+    // (fixture ⊆ SECTION_NAMES and SECTION_NAMES ⊆ fixture) so extending
+    // either list without the other fails immediately. Covers all 7 locales
+    // `packages/prompts/src/locale/index.ts`'s `CONVENTIONS` ships résumé
+    // headers for (en/de/fr/es/it/nl/pt) — a résumé generated for any of them
+    // whose model wrote a Title-Case (not ALL-CAPS) heading still stops the
+    // scan here. TS doesn't hold a second copy of this list at all — it
+    // imports the fixture directly as its runtime data — so only this
+    // direction can ever drift.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/section-names.json");
+    let raw = std::fs::read_to_string(&path).expect(
+        "read section-names parity fixture (packages/prompts/src/fixtures/section-names.json)",
+    );
+    let fixture: Vec<String> =
+        serde_json::from_str(&raw).expect("parse section-names parity fixture");
+
+    assert!(
+        !fixture.is_empty(),
+        "section-names parity fixture must not be empty"
+    );
+    let fixture_set: std::collections::BTreeSet<&str> =
+        fixture.iter().map(String::as_str).collect();
+    let rust_set: std::collections::BTreeSet<&str> = SECTION_NAMES.iter().copied().collect();
+    // Set equality alone silently absorbs a duplicate entry on either side
+    // (a name authored twice collapses to one element and the comparison
+    // below would still pass) — catch that separately so a duplicate is a
+    // real, loud failure rather than a no-op.
+    assert_eq!(
+        fixture.len(),
+        fixture_set.len(),
+        "section-names fixture must not contain a duplicate entry"
+    );
+    assert_eq!(
+        SECTION_NAMES.len(),
+        rust_set.len(),
+        "SECTION_NAMES must not contain a duplicate entry"
+    );
+    assert_eq!(
+        fixture_set, rust_set,
+        "SECTION_NAMES and the shared fixture must contain exactly the same names"
+    );
+}
+
+#[test]
+fn is_all_caps_section_heading_matches_ts_fixture() {
+    // Cross-language parity guard for the shape-based (not list-based)
+    // heading predicate — this is what recognizes a locale's own ALL-CAPS
+    // heading (the résumé prompt mandates ALL-CAPS section titles) without a
+    // per-locale word list, and what an unfixtured/unrecognised locale falls
+    // back to when it isn't literally in SECTION_NAMES. A previous version of
+    // this predicate was deleted from the TS mirror without a fixture gate,
+    // which silently broke header-seeding for es/it/nl/pt résumés (and any
+    // en résumé whose first heading — "PROFESSIONAL EXPERIENCE", "KEY
+    // ACHIEVEMENTS" — isn't literally in SECTION_NAMES either); restoring it
+    // WITHOUT this gate would be the same mistake again.
+    #[derive(serde::Deserialize)]
+    struct Case {
+        line: String,
+        heading: bool,
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/all-caps-headings.json");
+    let raw = std::fs::read_to_string(&path).expect(
+        "read all-caps-headings parity fixture \
+         (packages/prompts/src/fixtures/all-caps-headings.json)",
+    );
+    let cases: Vec<Case> =
+        serde_json::from_str(&raw).expect("parse all-caps-headings parity fixture");
+
+    assert!(
+        !cases.is_empty(),
+        "all-caps-headings parity fixture must not be empty"
+    );
+    for c in &cases {
+        // Same reasoning as the contact-line fixture above: `parse_line`
+        // always runs this predicate on `strip_md(trimmed)`, never the raw
+        // line, so the parity check must too.
+        let clean = strip_md(c.line.trim());
+        assert_eq!(
+            is_all_caps_section_heading(&clean),
+            c.heading,
+            "is_all_caps_section_heading drift for {:?} (clean: {:?})",
+            c.line,
+            clean
+        );
+    }
+}
+
+#[test]
 fn test_job_title_detection() {
     let lines = vec!["Software Engineer  Jan 2020 - Present", "Senior Developer"];
     let line = parse_line("Senior Developer", 1, &lines);

@@ -62,9 +62,12 @@ pub(crate) fn generate_resume_docx(
 
 /// Render a resume to a `Docx` on a specific page geometry (locale-driven).
 ///
-/// `contact` (when present) is the single source of truth for the header contact
-/// line, localized by `lang` — shared with the PDF backend so both documents'
-/// headers carry identical, correctly-named links.
+/// `contact` (when present) is applied via `ContactProfile::apply_to_header` —
+/// a FALLBACK only (H: the editor is the source of truth), filling the header
+/// name/contact line ONLY when the text-derived header carries none. Shared
+/// with the PDF backend (same `apply_to_header` call, same localization by
+/// `lang`) so both documents' headers stay in lockstep whichever side (text
+/// or profile) actually supplied them.
 pub(crate) fn generate_resume_docx_in(
     text: &str,
     meta: Option<&GenerationMeta>,
@@ -76,9 +79,14 @@ pub(crate) fn generate_resume_docx_in(
 ) -> AppResult<Docx> {
     let mut model = model_from_resume_text(text);
 
-    if let Some(name) = meta.and_then(|m| m.candidate_name.as_deref()) {
-        if !name.trim().is_empty() {
-            model.header.name = name.to_string();
+    // Fallback only: the text-derived header name wins whenever the document
+    // already has one; metadata fills a header that has none.
+    if model.header.name.trim().is_empty() {
+        if let Some(name) = meta.and_then(|m| m.candidate_name.as_deref()) {
+            let name = name.trim();
+            if !name.is_empty() {
+                model.header.name = name.to_string();
+            }
         }
     }
 
