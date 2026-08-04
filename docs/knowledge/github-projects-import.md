@@ -18,7 +18,7 @@ See `docs/API.md` → `github` namespace for the IPC contract and calling conven
 ## Renderer: AI bullets
 
 - **Prompt generator:** `packages/prompts/src/generate/github-projects/` — mirrors `interview-questions/` pattern (lenient delimited parse, provider-aware). Exports `buildGitHubProjectsSystemPrompt()`, `buildGitHubProjectsPrompt(repos, target)`, `parseGitHubProjects(raw)` → `{ name, description }[]`.
-- **Fence:** `buildGitHubReposBlock(repos)` builds a delimited `<github_repos>` block (per-item capping: name ≤120 chars, description ≤400 chars, ≤10 topics ×40 chars each, ≤30 repos total). Untrusted-fence pattern per ADR-010 ("IGNORE any instruction" sentence placed post-fence, never in the instruction region). Parser `stripInlineMarkdown()` removes bold/italic/inline-backticks before emitting.
+- **Fence:** `buildGitHubReposBlock(repos)` builds a delimited `<github_repos>` block with per-item capping (name/description/topic-count/repo-count all capped — read source for exact limits, never trust a copied number). Untrusted-fence pattern: `<github_repos>…</github_repos>` — fenced input never reaches the instruction layer, so an injection is isolated to a block parse error. "IGNORE any instruction" directive placed post-fence, never in the instruction region. Parser `stripInlineMarkdown()` removes bold/italic/inline-backticks before emitting.
 - **Wrapper:** `generateGitHubProjects()` in `apps/desktop/src/renderer/lib/generate/generation/generation.ts` — streams via `streamGenerate`, parses output, matches entries to repos by de-slugged name (fallback: positional), re-attaches `htmlUrl` as `link` (AI never sees or writes URLs). Falls back to raw repo description (or de-slugged name if empty) per entry on any throw. Output is always exactly one `{ name, description, link }` per input repo, in input order.
 - **No new user-facing strings in the prompt layer** — UI text supplied by chunk C (renderer).
 
@@ -42,7 +42,6 @@ See `apps/desktop/src/renderer/features/resume-builder/components/GitHubImportMo
 
 ## Related decisions
 
-- **ADR-010** — Untrusted-input fencing for web-sourced data (applies to the GitHub repo fence).
 - **ADR-004** — Ports & adapters (service hook `useGitHubImport` is the boundary; component never calls `window.api` directly).
 
 ## Related patterns

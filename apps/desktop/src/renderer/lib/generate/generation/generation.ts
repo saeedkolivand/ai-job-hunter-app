@@ -42,6 +42,10 @@ import {
   getBodyLinkMap,
   getLinkMap,
   injectLinksIntoGeneratedText,
+  isAllCapsSectionHeading,
+  isFirstLineContactShaped,
+  isHeaderContactLine,
+  isKnownSectionName,
   parseGitHubProjects,
   type ReferralFormat,
   resolveMarket,
@@ -49,7 +53,7 @@ import {
   type SalaryRange,
   validateMetadata,
 } from '@ajh/prompts/generate';
-import type { GitHubRepo } from '@ajh/shared';
+import type { ContactProfile, GitHubRepo } from '@ajh/shared';
 import { detectLanguages, getLanguageName, toLanguageCode } from '@ajh/shared/language-detection';
 
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -167,7 +171,8 @@ async function streamGenerate(
     // provider + baseUrl are NO LONGER sent (task #16): the backend resolves the
     // active provider/base_url from its own store and overwrites `model` before
     // streaming, so an XSS'd renderer can no longer point generation at an
-    // arbitrary endpoint. `effort` (a CLI reasoning knob, not routing) stays.
+    // arbitrary endpoint. `effort` (a generation tuning knob every
+    // reasoning-capable provider now reads, not routing) stays.
     effort: providerSettings?.effort,
     // Per-model local limits (Ollama) — context window (num_ctx) + max output
     // (num_predict). Omitted (undefined) for cloud/CLI or when unset.
@@ -231,6 +236,283 @@ export async function extractMetadata(
   };
 }
 
+// ─── Header seeding (H — the editor is the source of truth) ────────────────────
+//
+// PDF/DOCX export used to rebuild the header (name + contact line) from the
+// Contact Profile every time, discarding whatever the generated/edited text
+// said. That silently dropped edits to those two lines from PDF/DOCX while
+// they still shipped in TXT export and clipboard copy. The fix seeds the
+// profile's own header into the canonical text right after generation, so the
+// string the editor shows IS what exports — the Rust-side overrides
+// (`ContactProfile::apply_to_header`, the `candidate_name` overrides) are now
+// fallbacks for a header that has none, not unconditional rewrites.
+
+// `isHeaderContactLine` (a mirror of the Rust parser's `is_contact_shaped`)
+// lives in `@ajh/prompts/generate` — imported above — not here, so its
+// cross-language parity fixture test can live alongside it in that package
+// (packages/prompts/src/generate/text/header-contact-line.{ts,test.ts}),
+// consistent with `urlToFriendlyLabel`'s existing Rust-parity pattern.
+
+/**
+ * True once we're past the header block. Mirrors the Rust parser's
+ * `seen_section` flag: only an actual section heading ends the header zone —
+ * a BLANK line does not on its own (Rust's parser leaves `seen_section` false
+ * across one), so the scan below must keep looking past it, not stop there.
+ * A markdown ATX heading (`#…`) is always a boundary (Rust's
+ * `strip_atx_heading` check runs unconditionally, before any contact
+ * classification); otherwise a line is a boundary when it's a known section
+ * name (`isKnownSectionName` — covers every locale
+ * `../../locale/index.ts`'s `CONVENTIONS` ships résumé headers for) OR has
+ * the shape of an ALL-CAPS section title (`isAllCapsSectionHeading` — the
+ * résumé prompt mandates ALL-CAPS headers, and this is what catches one not
+ * literally in the known-name list: a locale's own wording, or an English
+ * heading like "PROFESSIONAL EXPERIENCE" that isn't a verbatim match).
+ *
+ * This predicate is a best-effort recognizer, not a safety mechanism — see
+ * `seedHeaderFromProfile`'s separate STRUCTURAL bound (the first
+ * blank-line-delimited block) for what actually prevents an unrecognized
+ * heading from turning the seeding scan destructive.
+ */
+function looksLikeHeaderBoundary(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (/^#{1,6}\s/.test(t)) return true;
+  return isKnownSectionName(t) || isAllCapsSectionHeading(t);
+}
+
+/**
+ * Strip control characters (a `\n` above all) and cap length — mirrors the
+ * Rust `sanitize_header_part` treatment `contactLine` already went through
+ * (it's built by `ContactProfile::header_markdown`). `fullName` reaches this
+ * function as a separate, un-sanitized string (the profile's `fullName`
+ * field, not part of `header_markdown`'s output), so without this it would
+ * be the one field spliced into the seeded text unsanitized: a raw `\n`
+ * would inject an arbitrary extra physical line, including — if it happened
+ * to read as a known section name — a fabricated section Rust's parser
+ * would treat as real. Iterates Unicode code points (`[...name]`), not
+ * UTF-16 units (`.slice`) — a surrogate pair straddling the 200 cap would
+ * otherwise split into a lone, invalid surrogate. Strips `\p{Cc}` (control
+ * characters) AND `\p{Cf}` (Format characters, e.g. the bidi override
+ * U+202E) — a bidi override can visually REVERSE the surrounding rendered
+ * name, mirrors Rust's `is_format_char` in `contact_profile/mod.rs`.
+ */
+function sanitizeHeaderName(name: string): string {
+  return [...name.replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, 200).join('');
+}
+
+/** A real email shape (local-part `@` domain `.` tld), not just a bare `@` —
+ *  "Software Engineer @ Acme" contains an `@` but no email; only a genuine
+ *  email should outrank other candidates in {@link pickReplacementIndex}. */
+const EMAIL_SHAPE_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/;
+
+/**
+ * Choose which of possibly several contact-shaped `matches` (excluding index
+ * 0 — see the caller) to overwrite with `contactLine`, by a positive signal
+ * rather than by position. The real contact line nearly always carries a
+ * genuine email, so a match containing one wins; failing that, a match with
+ * no `@` at all but a phone shape; failing that, the FIRST match in the
+ * block — not the last: with no email/phone signal anywhere, the last match
+ * is the one closest to the body, i.e. most likely to actually BE body
+ * content (a skills line with 2+ separators) that a boundary-recognition
+ * miss let through, and overwriting that is real content loss even though
+ * this function never deletes a line. Precondition: `matches` is non-empty.
+ */
+function pickReplacementIndex(lines: string[], matches: number[]): number {
+  const withEmail = matches.find((i) => EMAIL_SHAPE_RE.test(lines[i] ?? ''));
+  if (withEmail !== undefined) return withEmail;
+  const withPhone = matches.find((i) => {
+    const line = lines[i] ?? '';
+    return !line.includes('@') && isFirstLineContactShaped(line);
+  });
+  if (withPhone !== undefined) return withPhone;
+  return matches[0] ?? 0;
+}
+
+/**
+ * Seed the generated text's header with the Contact Profile's own values, so
+ * the canonical string already carries the exact header PDF/DOCX export
+ * renders. Line 1 (the name) is replaced when the profile has a `fullName`
+ * (sanitized locally by {@link sanitizeHeaderName} — see there for why).
+ * `contactLine` itself carries NO sanitizer on this side — unlike
+ * `fullName`, it is never a raw profile field; it is always the return value
+ * of the `contact_profile_header_line` IPC call, i.e. Rust's
+ * `ContactProfile::header_markdown()`, which already strips control
+ * characters and caps length before this function ever sees it. Adding a
+ * second, redundant TS-side pass here would risk drifting from Rust's
+ * sanitizer rather than adding any real safety — this asymmetry is
+ * deliberate, not an oversight.
+ *
+ * Exactly ONE pre-section contact-shaped line — chosen by
+ * {@link pickReplacementIndex}, not by position — is overwritten with
+ * `contactLine`, never re-implemented here. No-op when the profile has
+ * nothing to contribute (`contactLine` is then `''` too) — the model's own
+ * header stands. (No early-return on an "effectively empty" profile: a
+ * `fullName`-only profile has a name to seed but nothing else, and the two
+ * guards below are already individually correct for that case on their
+ * own — an extra gate here previously made the `fullName` branch
+ * unreachable whenever the rest of the profile was blank.)
+ *
+ * This function NEVER removes a line — only ever replaces one, or (when
+ * nothing in the block qualifies) inserts a new one. A second contact-shaped
+ * line in the block (a duplicated/stale email, a job title that happens to
+ * have 2+ separators) therefore SURVIVES untouched rather than being
+ * deleted OR silently overwritten. That duplicate does reach export — Rust's
+ * `model_from_resume_text` joins every pre-section Contact line with `" · "`
+ * — so it is a real (visible, user-correctable) quality defect, not a no-op;
+ * it is the deliberate trade for the property that actually matters: this
+ * function can no longer DESTROY real résumé content (a job title, a body
+ * line it mis-scans as contact-shaped) — whether by deleting it outright or
+ * by silently overwriting it in place, which is just as much a loss.
+ *
+ * Index 0 is never a candidate for the replacement scan below (which starts
+ * at `i = 1`), including when there's no `fullName` and line 0 is already
+ * contact-shaped by Rust's narrower line-0 rule (`isFirstLineContactShaped`)
+ * — a combined "Jane Doe | jane@example.com" with no separate name line.
+ * Were it eligible and the ONLY candidate, overwriting it would erase "Jane
+ * Doe" entirely (there is no separate name line to fall back to), which is
+ * worse than leaving it untouched and inserting the profile's line right
+ * after — so it always falls to the "insert" branch instead.
+ *
+ * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
+ * is best-effort recognition, not this): the scan below never looks past the
+ * first blank-line-delimited block from the top of the text — the header, by
+ * definition. `looksLikeHeaderBoundary` firing on a real heading stops the
+ * scan earlier, inside that block, which is what makes ordinary multi-line
+ * headers (name / title / contact, still one block) work; but a
+ * heading-recognition MISS (an unfixtured locale, a creative heading) can now
+ * only degrade to "didn't seed" or "left a duplicate line" — combined with
+ * "never remove or blind-overwrite," it can never again scan into the
+ * document body and destroy real résumé content (a job entry, a skills line,
+ * a project) the way an unbounded, removal-capable scan once did.
+ */
+export function seedHeaderFromProfile(
+  text: string,
+  profile: ContactProfile,
+  contactLine: string
+): string {
+  const lines = text.split('\n');
+  if (!lines.length) return text;
+
+  const fullName = profile.fullName?.trim();
+  if (fullName) {
+    // Guarded like every other write below: line 0 is only overwritten when
+    // it's actually name-shaped — not a section heading (`looksLikeHeaderBoundary`)
+    // and not already contact-shaped (`isFirstLineContactShaped`). A model
+    // that omits the name line (starts straight with "SUMMARY" or a
+    // "Jane Doe | jane@example.com" combined line) must never have that line
+    // clobbered — the name is INSERTED ahead of it instead, same
+    // never-remove-or-blind-overwrite invariant the rest of this function
+    // holds. See the doc comment above for the destructive repro this closes.
+    const line0 = lines[0] ?? '';
+    if (looksLikeHeaderBoundary(line0) || isFirstLineContactShaped(line0)) {
+      lines.unshift(sanitizeHeaderName(fullName));
+    } else {
+      lines[0] = sanitizeHeaderName(fullName);
+    }
+  }
+
+  if (contactLine.trim()) {
+    // The header block: line 0 up to (not including) the first blank line,
+    // or the whole text if there is none. Hard ceiling for the scan below —
+    // see the STRUCTURAL bound note above.
+    let blockEnd = lines.length;
+    for (let i = 1; i < lines.length; i++) {
+      if ((lines[i] ?? '').trim() === '') {
+        blockEnd = i;
+        break;
+      }
+    }
+
+    // Starts at i = 1: index 0 is never a candidate here — see the doc
+    // comment above.
+    const matches: number[] = [];
+    for (let i = 1; i < blockEnd; i++) {
+      const line = lines[i] ?? '';
+      if (looksLikeHeaderBoundary(line)) break;
+      if (isHeaderContactLine(line)) matches.push(i);
+    }
+
+    if (matches.length > 0) {
+      lines[pickReplacementIndex(lines, matches)] = contactLine;
+    } else {
+      // CodeRabbit (security re-review): index 1 assumes line 0 is always
+      // the name — true after the fullName-driven unshift/replace above, or
+      // when the model already wrote a name/contact line on its own. But
+      // when there's no fullName to seed AND line 0 is itself a section
+      // heading (the model omitted the name line entirely), splicing at 1
+      // put the contact line INSIDE that section, right under its heading,
+      // not in the header block above it. Insert at 0 (ahead of the
+      // heading) in that case instead.
+      const insertAt = looksLikeHeaderBoundary(lines[0] ?? '') ? 0 : 1;
+      lines.splice(insertAt, 0, contactLine);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fetch the Contact Profile + its localized header line and seed them into
+ * `text` (H — the editor is the source of truth over whatever header the
+ * model wrote). Shared by every résumé-producing generation path —
+ * `generateResume` AND `synthesizeResume` (the Resume Builder), which has no
+ * base résumé to derive a header from — its prompt
+ * (`packages/prompts/src/builder/builder-prompt.ts`) has the model write an
+ * ordinary name + contact line, same as any other résumé prompt, and this
+ * call overwrites it with the profile's own values regardless of what the
+ * model wrote, exactly like the base-résumé path.
+ *
+ * Both IPC calls are guarded (`.catch(() => undefined)`): header seeding is
+ * cosmetic post-processing on an already-finished, already-paid-for AI
+ * generation — a transient IPC failure here must degrade to "seed nothing"
+ * (the model's own header stands, same as before H shipped), never throw and
+ * discard the whole result the caller is about to persist.
+ *
+ * `signal` (LOW, security re-review): the generation `AbortSignal` — this
+ * step runs AFTER the model stream finishes, so it can't cancel an in-flight
+ * generation, but it must still honor a cancellation the user issued WHILE
+ * these two post-stream IPC calls were in flight (or already true when this
+ * runs). Tauri's `invoke()` has no native abort wiring, so this can't cancel
+ * the underlying calls themselves — it short-circuits to "seed nothing"
+ * before starting AND after they resolve, so a cancelled generation's
+ * discarded result is never silently patched by a seeding call the caller
+ * no longer wants applied.
+ */
+async function seedHeaderFromContactProfile(
+  text: string,
+  meta: GenerationMeta,
+  locale: string,
+  signal?: AbortSignal
+): Promise<string> {
+  if (signal?.aborted) return text;
+  const api = getClient();
+  const headerLang = toLanguageCode(meta.targetLanguage || locale);
+  // Fired concurrently, not sequentially — headerLine's input (headerLang)
+  // doesn't depend on the fetched profile, so there is nothing to gain by
+  // awaiting `get` first; Promise.all saves a round-trip on the common
+  // (both-succeed) path. Each call keeps its own independent guard: a
+  // rejection on either one still degrades to "seed nothing," never throws.
+  const [contact, contactLine] = await Promise.all([
+    api.contactProfile.get().catch((err: unknown) => {
+      console.warn(
+        'seedHeaderFromContactProfile: contactProfile.get failed, header not seeded',
+        err
+      );
+      return undefined;
+    }),
+    api.contactProfile.headerLine(headerLang).catch((err: unknown) => {
+      console.warn(
+        'seedHeaderFromContactProfile: contactProfile.headerLine failed, header not seeded',
+        err
+      );
+      return undefined;
+    }),
+  ]);
+  if (signal?.aborted) return text;
+  if (!contact || contactLine === undefined) return text;
+  return seedHeaderFromProfile(text, contact, contactLine);
+}
+
 export async function generateResume(
   resume: string,
   jobAd: string,
@@ -259,11 +541,17 @@ export async function generateResume(
   );
   // Contact links go on the header line; body links (projects/publications, #18)
   // are re-attached to their own items anywhere in the body.
-  return injectLinksIntoGeneratedText(
+  const injected = injectLinksIntoGeneratedText(
     extractPlainText(raw),
     getLinkMap(resume),
     getBodyLinkMap(resume)
   );
+
+  // H: seed the profile's own header (name + contact line) into the text now,
+  // AFTER link injection, so it wins over whatever contact-line links that step
+  // wrote — leaving that step's contact-line pass in place is harmless, its
+  // output is simply overwritten here.
+  return seedHeaderFromContactProfile(injected, meta, locale, signal);
 }
 
 /**
@@ -273,7 +561,10 @@ export async function generateResume(
  * every provider with zero per-provider code and adds NO new IPC) — but uses the
  * builder prompts grounded on `<interview_answers>` instead of a base résumé + job
  * ad. Provided links are kept inline by the prompt, so no link-map injection is
- * needed (there is no source résumé to parse). Returns plain text.
+ * needed (there is no source résumé to parse). Header-seeded exactly like
+ * {@link generateResume} (H) — the builder prompt has the model write an
+ * ordinary name + contact line, and {@link seedHeaderFromContactProfile}
+ * overwrites it with the profile's own values regardless.
  */
 export async function synthesizeResume(
   answers: InterviewAnswers,
@@ -298,7 +589,7 @@ export async function synthesizeResume(
     signal,
     onThinking
   );
-  return extractPlainText(raw);
+  return seedHeaderFromContactProfile(extractPlainText(raw), meta, locale, signal);
 }
 
 /**

@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { ContactProfile } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, Image, Input, LocationInput } from '@ajh/ui';
+import { Button, Image, Input, LocationInput, useNotification } from '@ajh/ui';
 
 import { PhotoProcessingError, processPhotoFile } from '@/lib/photo';
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -99,8 +99,19 @@ function toFormValues(profile: ContactProfile): ContactFormValues {
 export function ContactProfileForm() {
   const { t } = useTranslation();
   const api = useAppClient();
+  const notify = useNotification();
   const { data: profile } = useContactProfile();
-  const { mutate: save } = useSaveContactProfile();
+  const { mutate: saveMutate } = useSaveContactProfile();
+  // CodeRabbit (security re-review, round 7): `contact_profile_set` now
+  // rejects the invoke promise on failure (a real Result, not an in-band
+  // `{error}` shape) — this form must actually surface that to the user,
+  // not just avoid crashing. Scoped to THIS hook instance's call-site
+  // options (not baked into the shared `useSaveContactProfile` hook itself),
+  // so `ContactConflictModal`'s own try/catch + toast handling is unaffected.
+  const save = (next: ContactProfile) =>
+    saveMutate(next, {
+      onError: () => notify.error({ message: t('settings.contactProfile.saveFailed') }),
+    });
 
   const {
     control,

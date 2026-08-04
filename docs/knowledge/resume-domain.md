@@ -1,12 +1,12 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-07-16
+Last updated: 2026-08-04
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
 ## Résumé structure
 
-`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. Header/contact links come from `contact_profile/` (single source of truth — don't duplicate in templates).
+`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. **Header contact line is editor-owned at export time** ([ADR 0021](../adr/0021-editor-owns-resume-header.md)) — two distinct moments, don't conflate them; read source for the exact rules, this is a pointer not a spec. **Generation** (`generateResume` AND `synthesizeResume` → `seedHeaderFromProfile` in `apps/desktop/src/renderer/lib/generate/generation/generation.ts`) seeds the profile's name + contact line into the model-written text, so re-generating a document discards header edits by design; the function's own doc comments carry the replace-vs-insert invariants (never delete a line). **Export** (`ContactProfile::apply_to_header` in `apps/desktop/src-tauri/src/contact_profile/mod.rs`, `meta.candidate_name` in `export/pdf/mod.rs` / `export/model_docx.rs`) fills from the profile only when the parsed header is blank — whatever the text says wins for PDF/DOCX/TXT. Export validation (`validate/mod.rs`'s `pdf_render_issues`) gates on which side is the header's source of truth; a job-board/ATS host in the header band always warns, independent of whether a profile is present.
 
 ## Templates
 
@@ -53,7 +53,7 @@ blocks in page backgrounds — see [`docs/EXPORT_TEMPLATES.md` § Accessibility]
 
 ## Review heuristics
 
-- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (links must come from `contact_profile/`); a photo path that accepts file URIs.
+- HIGH: a template/layout change that breaks ATS parseability; a scoring change that violates the documented model without an ADR; an untested export error path; a header-link regression (validation must parse the same text as the renderer — `validate/` must run `extract_section` exactly as `prepare_resume_render` does, or the gate is dead for marker-wrapped text; links come from the document's extracted header, with a non-blocking `header_url_job_board` warning when a job-board host appears there); a photo path that accepts file URIs.
 - MEDIUM: missing golden/edge-case test, non-deterministic snapshot, avoidable re-shaping in the render loop (perf → `performance-profiler`).
 
 [docx-rs]: https://github.com/bokuweb/docx-rs

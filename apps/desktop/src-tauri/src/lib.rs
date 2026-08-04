@@ -930,6 +930,7 @@ pub fn run() {
             // contact profile (header source of truth)
             commands::contact_profile::contact_profile_get,
             commands::contact_profile::contact_profile_set,
+            commands::contact_profile::contact_profile_header_line,
             // scrape
             commands::scrape::scrape_boards,
             commands::scrape::scrape_url,
