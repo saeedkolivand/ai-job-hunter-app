@@ -5,6 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { ModelSelector } from '@/components/ui/ModelSelector';
+import { useNeedsResearchKey } from '@/hooks/use-needs-research-key';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 
@@ -18,6 +19,10 @@ interface StepModelProps {
 export function StepModel({ canUse, reason }: StepModelProps) {
   const { t } = useTranslation();
   const { control } = useFormContext<TailorWizardState>();
+  // Ollama-family provider missing the free account key — research (when the
+  // toggle below is on) silently returns nothing without it. Non-blocking:
+  // shown regardless of the toggle's state, never disables it.
+  const needsResearchKey = useNeedsResearchKey();
 
   return (
     <div className="space-y-4">
@@ -91,6 +96,16 @@ export function StepModel({ canUse, reason }: StepModelProps) {
           </Button>
         )}
       />
+
+      {/* Announced: the provider picker above is in this same step, so switching to an
+          Ollama-family provider makes this hint appear in response to the user's own
+          action — and TailorWizard has no ambient aria-live step container the way
+          GenerateWizard/BuilderWizard do. Mirrors ModelSelector's own warning. */}
+      {needsResearchKey && (
+        <p role="status" aria-live="polite" className="text-[11px] text-amber-300/70">
+          {t('aiGenerate.research.ollamaKeyHint')}
+        </p>
+      )}
     </div>
   );
 }
