@@ -42,6 +42,7 @@ import {
   getBodyLinkMap,
   getLinkMap,
   injectLinksIntoGeneratedText,
+  isAllCapsSectionHeading,
   isFirstLineContactShaped,
   isHeaderContactLine,
   isKnownSectionName,
@@ -255,31 +256,28 @@ export async function extractMetadata(
 /**
  * True once we're past the header block. Mirrors the Rust parser's
  * `seen_section` flag: only an actual section heading ends the header zone —
- * a BLANK line does not (Rust's parser leaves `seen_section` false across
- * one), so the scan below must keep looking past it, not stop there. A
- * markdown ATX heading (`#…`) is always a boundary (Rust's `strip_atx_heading`
- * check runs unconditionally, before any contact classification); otherwise a
- * line is a boundary only when it's a known section name
- * (`isKnownSectionName`) — the check that actually flips `seen_section` in the
- * common case.
+ * a BLANK line does not on its own (Rust's parser leaves `seen_section` false
+ * across one), so the scan below must keep looking past it, not stop there.
+ * A markdown ATX heading (`#…`) is always a boundary (Rust's
+ * `strip_atx_heading` check runs unconditionally, before any contact
+ * classification); otherwise a line is a boundary when it's a known section
+ * name (`isKnownSectionName` — covers every locale
+ * `../../locale/index.ts`'s `CONVENTIONS` ships résumé headers for) OR has
+ * the shape of an ALL-CAPS section title (`isAllCapsSectionHeading` — the
+ * résumé prompt mandates ALL-CAPS headers, and this is what catches one not
+ * literally in the known-name list: a locale's own wording, or an English
+ * heading like "PROFESSIONAL EXPERIENCE" that isn't a verbatim match).
  *
- * Deliberately NOT a mirror of Rust's separate ALL-CAPS `SectionHeader` rule
- * (`export/parser/mod.rs`): that rule carries its own `len >= 4` floor, an
- * `is_likely_company_or_role` keyword exclusion (ENGINEER/MANAGER/CEO/…), and
- * date/repeated-digit exclusions — a hand-mirrored copy of it here previously
- * dropped all three and false-triggered on exactly the ALL-CAPS job-title line
- * the prompt mandates ("Line 2: Job title"), stopping the scan before it ever
- * reached the real contact line below. Rather than mirror that whole
- * multi-guard predicate (and need a second shared-fixture gate for it), the
- * boundary here is narrowed to what `SECTION_NAMES` + the ATX check alone
- * already catch in the realistic case — removing a hand-mirrored heuristic
- * beats keeping two in sync.
+ * This predicate is a best-effort recognizer, not a safety mechanism — see
+ * `seedHeaderFromProfile`'s separate STRUCTURAL bound (the first
+ * blank-line-delimited block) for what actually prevents an unrecognized
+ * heading from turning the seeding scan destructive.
  */
 function looksLikeHeaderBoundary(line: string): boolean {
   const t = line.trim();
   if (!t) return false;
   if (/^#{1,6}\s/.test(t)) return true;
-  return isKnownSectionName(t);
+  return isKnownSectionName(t) || isAllCapsSectionHeading(t);
 }
 
 /** True when the profile has no contact info to contribute — mirrors Rust's
@@ -323,7 +321,33 @@ function isContactProfileEffectivelyEmpty(profile: ContactProfile): boolean {
  * out of this scan, it would neither get replaced nor count toward
  * `matches`, so the seeder inserts a second, duplicate contact line right
  * after it instead of recognizing it as the one to replace.
+ *
+ * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
+ * is best-effort recognition, not this): the scan/splice below never looks
+ * past the first blank-line-delimited block from the top of the text — the
+ * header, by definition. `looksLikeHeaderBoundary` firing on a real heading
+ * stops the scan earlier, inside that block, which is what makes ordinary
+ * multi-line headers (name / title / contact, still one block) work; but a
+ * heading-recognition MISS (an unfixtured locale, a creative heading) can now
+ * only degrade to "didn't seed" or "inserted a duplicate line" — it can never
+ * again scan into the document body and delete real résumé content (a job
+ * entry, a skills line, a project) the way an unbounded scan once did.
  */
+/**
+ * Strip control characters (a `\n` above all) and cap length — mirrors the
+ * Rust `sanitize_header_part` treatment `contactLine` already went through
+ * (it's built by `ContactProfile::header_markdown`). `fullName` reaches this
+ * function as a separate, un-sanitized string (the profile's `fullName`
+ * field, not part of `header_markdown`'s output), so without this it would
+ * be the one field spliced into the seeded text unsanitized: a raw `\n`
+ * would inject an arbitrary extra physical line, including — if it happened
+ * to read as a known section name — a fabricated section Rust's parser
+ * would treat as real.
+ */
+function sanitizeHeaderName(name: string): string {
+  return name.replace(/\p{Cc}/gu, '').slice(0, 200);
+}
+
 export function seedHeaderFromProfile(
   text: string,
   profile: ContactProfile,
@@ -335,12 +359,23 @@ export function seedHeaderFromProfile(
   if (!lines.length) return text;
 
   const fullName = profile.fullName?.trim();
-  if (fullName) lines[0] = fullName;
+  if (fullName) lines[0] = sanitizeHeaderName(fullName);
 
   if (contactLine.trim()) {
+    // The header block: line 0 up to (not including) the first blank line,
+    // or the whole text if there is none. Hard ceiling for both the scan and
+    // the splice below — see the STRUCTURAL bound note above.
+    let blockEnd = lines.length;
+    for (let i = 1; i < lines.length; i++) {
+      if ((lines[i] ?? '').trim() === '') {
+        blockEnd = i;
+        break;
+      }
+    }
+
     const matches: number[] = [];
     if (!fullName && isFirstLineContactShaped(lines[0] ?? '')) matches.push(0);
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = 1; i < blockEnd; i++) {
       const line = lines[i] ?? '';
       if (looksLikeHeaderBoundary(line)) break;
       if (isHeaderContactLine(line)) matches.push(i);

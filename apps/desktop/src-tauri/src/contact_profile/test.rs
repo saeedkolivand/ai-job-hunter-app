@@ -178,6 +178,69 @@ fn header_urls_allows_mailto_scheme_for_a_named_link() {
     assert_eq!(p.header_urls(), vec!["mailto:alex@example.com".to_string()]);
 }
 
+/// A URL long enough that the 200-char sanitization cap engages must be
+/// capped IDENTICALLY by both methods. Capping the FORMATTED `[Label](url)`
+/// string (rather than the bare URL, before formatting) truncates away the
+/// closing `)` for a long-but-legitimate URL (tracking params, a long slug),
+/// producing a malformed link `header_urls`'s bare-URL cap would never
+/// reproduce — the genuinely-rendered (truncated) link then fails set
+/// membership against `header_urls`' differently-capped entry, firing
+/// `header_url_mismatch` (CRITICAL, blocking) on an unmodified profile.
+#[test]
+fn header_urls_and_header_markdown_cap_a_long_url_identically() {
+    let long_url = format!("https://example.dev/profile?tracking={}", "a".repeat(250));
+    assert!(long_url.len() > 200, "test setup: URL must exceed the cap");
+    let p = ContactProfile {
+        website: Some(long_url),
+        ..Default::default()
+    };
+
+    let md = p.header_markdown("en");
+    assert!(
+        md.ends_with(')'),
+        "the formatted link must not be truncated mid-URL, losing the closing \
+         paren: {md:?}"
+    );
+    let rendered_url = md
+        .strip_prefix("[Website](")
+        .and_then(|s| s.strip_suffix(')'))
+        .expect("well-formed [Website](url) part");
+    assert!(rendered_url.len() <= 200);
+
+    assert_eq!(
+        p.header_urls(),
+        vec![rendered_url.to_string()],
+        "header_urls() must report the exact same (capped) URL header_markdown renders"
+    );
+}
+
+/// Same lockstep guarantee for the email → `mailto:` link specifically (a
+/// distinct code path: `header_urls` wraps `mailto:` around the bare email,
+/// `header_markdown` never adds a scheme prefix at all — the renderer's own
+/// `tokenize_rich`/`split_urls` auto-detects the bare email and links it).
+#[test]
+fn header_urls_and_header_markdown_cap_a_long_email_identically() {
+    let long_email = format!("{}@example.com", "a".repeat(250));
+    assert!(long_email.len() > 200, "test setup: email must exceed the cap");
+    let p = ContactProfile {
+        email: Some(long_email),
+        ..Default::default()
+    };
+
+    let md = p.header_markdown("en");
+    let urls = p.header_urls();
+    assert_eq!(urls.len(), 1);
+    let capped_email = urls[0]
+        .strip_prefix("mailto:")
+        .expect("mailto: prefix on the email entry");
+
+    assert_eq!(
+        md, capped_email,
+        "header_markdown's rendered (capped) email must be byte-identical to \
+         the email header_urls() reports under mailto:"
+    );
+}
+
 #[test]
 fn header_rich_makes_each_named_link_clickable_with_the_right_url() {
     let p = ContactProfile {

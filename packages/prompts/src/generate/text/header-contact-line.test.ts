@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import allCapsHeadings from '../../fixtures/all-caps-headings.json';
 import fixture from '../../fixtures/header-contact-line.json';
 import sectionNames from '../../fixtures/section-names.json';
 import {
+  isAllCapsSectionHeading,
   isFirstLineContactShaped,
   isHeaderContactLine,
   isKnownSectionName,
@@ -37,10 +39,49 @@ describe('isKnownSectionName', () => {
     expect(isKnownSectionName('**Skills**')).toBe(true);
   });
 
-  it('does NOT recognize a job-title line — the ALL-CAPS heuristic this replaces used to', () => {
-    // The exact repro from the security review: the prompt mandates "Line 2:
-    // Job title", and an ALL-CAPS title must never end the header-seeding scan.
+  it("does NOT recognize a job-title line — that is isAllCapsSectionHeading's job, with its own exclusion", () => {
     expect(isKnownSectionName('SENIOR SOFTWARE ENGINEER')).toBe(false);
     expect(isKnownSectionName('Jane Doe')).toBe(false);
+  });
+});
+
+describe('isAllCapsSectionHeading ↔ Rust parity', () => {
+  // Shared source of truth with `cargo test export::parser` — both suites read
+  // fixtures/all-caps-headings.json. A previous version of this predicate was
+  // deleted from the TS mirror without a fixture gate, which silently broke
+  // header-seeding for es/it/nl/pt résumés and any en résumé whose first
+  // heading wasn't literally in SECTION_NAMES — this fixture is the guard
+  // against that mistake recurring.
+  it('matches the shared fixture for every line', () => {
+    const cases = allCapsHeadings as { line: string; heading: boolean }[];
+    expect(cases.length).toBeGreaterThan(0);
+    for (const { line, heading } of cases) {
+      expect(isAllCapsSectionHeading(line)).toBe(heading);
+    }
+  });
+
+  it('recognizes every locale header CONVENTIONS ships, uppercased (the exact CRITICAL repro)', () => {
+    // packages/prompts/src/locale/index.ts CONVENTIONS — es/it/nl/pt headers,
+    // as the résumé prompt actually emits them (`.toUpperCase()`).
+    const localeHeaders = [
+      'PERFIL', // es/pt summary
+      'EXPERIENCIA PROFESIONAL', // es experience
+      'FORMACIÓN', // es education
+      'HABILIDADES', // es skills
+      'PROFILO', // it summary
+      'ESPERIENZA PROFESSIONALE', // it experience
+      'FORMAZIONE', // it education
+      'COMPETENZE', // it skills
+      'PROFIEL', // nl summary
+      'WERKERVARING', // nl experience
+      'OPLEIDING', // nl education
+      'VAARDIGHEDEN', // nl skills
+      'EXPERIÊNCIA PROFISSIONAL', // pt experience
+      'FORMAÇÃO', // pt education
+      'COMPETÊNCIAS', // pt skills
+    ];
+    for (const header of localeHeaders) {
+      expect(isAllCapsSectionHeading(header)).toBe(true);
+    }
   });
 });

@@ -1,0 +1,48 @@
+[
+  { "line": "EXPERIENCE", "heading": true, "note": "baseline en, also in SECTION_NAMES" },
+  {
+    "line": "PROFESSIONAL EXPERIENCE",
+    "heading": true,
+    "note": "en — NOT literally in SECTION_NAMES (which has 'work experience'), needs the shape rule"
+  },
+  {
+    "line": "KEY ACHIEVEMENTS",
+    "heading": true,
+    "note": "en — NOT literally in SECTION_NAMES ('achievements' alone is), needs the shape rule"
+  },
+  { "line": "PERFIL", "heading": true, "note": "es/pt summary" },
+  { "line": "EXPERIENCIA PROFESIONAL", "heading": true, "note": "es experience" },
+  { "line": "PROFILO", "heading": true, "note": "it summary" },
+  { "line": "COMPETENZE", "heading": true, "note": "it skills" },
+  { "line": "PROFIEL", "heading": true, "note": "nl summary" },
+  { "line": "WERKERVARING", "heading": true, "note": "nl experience" },
+  { "line": "EXPERIÊNCIA PROFISSIONAL", "heading": true, "note": "pt experience" },
+  { "line": "COMPETÊNCIAS", "heading": true, "note": "pt skills" },
+  {
+    "line": "SENIOR SOFTWARE ENGINEER",
+    "heading": false,
+    "note": "job title — SENIOR is a COMPANY_KEYWORDS exclusion (the HIGH-1 repro)"
+  },
+  {
+    "line": "PROJECT MANAGER",
+    "heading": false,
+    "note": "role — MANAGER is a COMPANY_KEYWORDS exclusion"
+  },
+  { "line": "JANE@EXAMPLE.COM", "heading": false, "note": "contains @" },
+  {
+    "line": "PROJECT 1111",
+    "heading": false,
+    "note": "an ASCII digit ('1') repeated exactly 4 times"
+  },
+  {
+    "line": "JANUARY 2021 - PRESENT",
+    "heading": false,
+    "note": "a date-range shape (DATE_RE) — a job-entry period, not a section title"
+  },
+  { "line": "AB", "heading": false, "note": "under the 4-char floor" },
+  {
+    "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "heading": false,
+    "note": "61 chars — over the 60-char ceiling"
+  }
+]

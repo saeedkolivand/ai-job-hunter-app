@@ -296,11 +296,21 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
   });
 
-  it('finds the contact line past a blank line — a blank line is not a header boundary', () => {
+  // Security re-review (CRITICAL): the header is, by definition, the first
+  // blank-line-delimited block — the scan/splice never looks past it, so a
+  // contact line separated from the name by its OWN blank line falls outside
+  // that block and is neither found nor removed. The seeder still inserts
+  // the profile's line right after the name, so the profile's contact info
+  // does get seeded; the model's own (now out-of-block) line survives
+  // untouched alongside it. A duplicate line is the accepted, non-destructive
+  // trade-off for the structural safety bound below — it can never delete
+  // real content the way an unbounded scan could.
+  it('does not remove a contact line separated from the name by its own blank line — inserts instead', () => {
     const text = 'Model Name\n\nmodel@old.example.com\n\nSUMMARY\nSome text.';
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
-    expect(out).toBe('Jordan Lee\n\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
-    expect(out).not.toContain('model@old.example.com');
+    expect(out).toBe(
+      'Jordan Lee\nBerlin | jordan@profile.example.com\n\nmodel@old.example.com\n\nSUMMARY\nSome text.'
+    );
   });
 
   it('collapses a second pre-section contact line (phone on its own line) instead of leaving a duplicate', () => {
@@ -364,6 +374,122 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const out = seedHeaderFromProfile(text, profile, contactLine);
     expect(out).toBe('+49 30 0000000\n\nEXPERIENCE\nAcme Corp');
     expect(out).not.toContain('jane@old.example.com');
+  });
+
+  // Security re-review (CRITICAL): `packages/prompts/src/locale/index.ts`'s
+  // `CONVENTIONS` ships résumé headers for es/it/nl/pt too, and the résumé
+  // prompt mandates them ALL-CAPS. Before the ALL-CAPS shape rule was
+  // restored (fixture-gated this time), none of these headings stopped the
+  // scan, which then matched body prose ("portfolio de productos SaaS") and a
+  // job-entry date range ("(2021 - 2023)", phone-shaped) as false contact
+  // lines and DELETED them. No blank line before the heading here — that's
+  // what actually exercises heading recognition rather than the separate
+  // structural (first-blank-line) bound.
+  it('does not delete Spanish résumé body content — the exact CRITICAL repro', () => {
+    const text = [
+      'Jane Doe',
+      'jane@example.com | +34 600 000 000',
+      'EXPERIENCIA PROFESIONAL',
+      'Ingeniero con experiencia en portfolio de productos SaaS.',
+      'Ingeniero Senior, Acme Corp (2021 - 2023)',
+      '',
+      'HABILIDADES',
+      'Lenguajes | Frameworks | Herramientas',
+      '',
+      'PROYECTOS',
+      'Mi Proyecto — [Repo](https://github.com/jane/proj)',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      [
+        'Jordan Lee',
+        'Berlin | jordan@profile.example.com',
+        'EXPERIENCIA PROFESIONAL',
+        'Ingeniero con experiencia en portfolio de productos SaaS.',
+        'Ingeniero Senior, Acme Corp (2021 - 2023)',
+        '',
+        'HABILIDADES',
+        'Lenguajes | Frameworks | Herramientas',
+        '',
+        'PROYECTOS',
+        'Mi Proyecto — [Repo](https://github.com/jane/proj)',
+      ].join('\n')
+    );
+  });
+
+  it.each([
+    ['it', 'ESPERIENZA PROFESSIONALE', 'Ingegnere con esperienza in portfolio di prodotti SaaS.'],
+    ['nl', 'WERKERVARING', 'Ingenieur met ervaring in portfolio van SaaS-producten.'],
+    ['pt', 'EXPERIÊNCIA PROFISSIONAL', 'Engenheiro com experiência em portfolio de produtos SaaS.'],
+  ])('does not delete %s résumé body content (heading %s)', (_locale, heading, bodyLine) => {
+    const text = [
+      'Jane Doe',
+      'jane@example.com | +1 555 0000',
+      heading,
+      bodyLine,
+      'Senior Engineer, Acme Corp (2021 - 2023)',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toContain(bodyLine);
+    expect(out).toContain('Senior Engineer, Acme Corp (2021 - 2023)');
+  });
+
+  // An English heading that's a real, common résumé section title but not a
+  // VERBATIM match in SECTION_NAMES (which has "work experience", not
+  // "professional experience") — the ALL-CAPS shape rule, not the known-name
+  // list, is what has to catch this one.
+  it('recognizes "PROFESSIONAL EXPERIENCE" via the ALL-CAPS shape rule, not literally in SECTION_NAMES', () => {
+    const text = [
+      'Jane Doe',
+      'jane@example.com | +1 555 0000',
+      'PROFESSIONAL EXPERIENCE',
+      'Senior Engineer, Acme Corp (2021 - 2023)',
+      '- Led a team of five engineers',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      [
+        'Jordan Lee',
+        'Berlin | jordan@profile.example.com',
+        'PROFESSIONAL EXPERIENCE',
+        'Senior Engineer, Acme Corp (2021 - 2023)',
+        '- Led a team of five engineers',
+      ].join('\n')
+    );
+  });
+
+  // The structural backstop itself: even a heading `looksLikeHeaderBoundary`
+  // can't recognize at all must never cause data loss — the scan is bounded
+  // to the first blank-line-delimited block regardless.
+  it('never deletes content past the first blank line, even for a wholly unrecognized heading', () => {
+    const text = [
+      'Jane Doe',
+      'jane@example.com | +1 555 0000',
+      '',
+      '★ A CREATIVE HEADING NO PREDICATE RECOGNIZES ★',
+      'A job entry with a phone-shaped date (2021 - 2023) that must survive.',
+      'Skills | Frameworks | Tools',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toContain('A job entry with a phone-shaped date (2021 - 2023) that must survive.');
+    expect(out).toContain('Skills | Frameworks | Tools');
+    expect(out).toContain('★ A CREATIVE HEADING NO PREDICATE RECOGNIZES ★');
+  });
+
+  // Security re-review (MEDIUM): `fullName` is spliced into the seeded text
+  // directly, not via `contactLine` (which is already sanitized — it's built
+  // by Rust's `header_markdown`). A raw newline in `fullName` must not
+  // fabricate physical lines Rust's parser could reclassify as a section.
+  it('sanitizes a fullName containing control characters before splicing it into line 0', () => {
+    const profile = {
+      fullName: 'Jordan Lee\nAWARDS\nNobel Prize in Physics, 2024',
+      email: 'jordan@profile.example.com',
+    };
+    const text = 'Model Name\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, profile, CONTACT_LINE);
+    const lines = out.split('\n');
+    expect(lines[0]).toBe('Jordan LeeAWARDSNobel Prize in Physics, 2024');
+    expect(out).not.toContain('\nAWARDS\n');
   });
 });
 

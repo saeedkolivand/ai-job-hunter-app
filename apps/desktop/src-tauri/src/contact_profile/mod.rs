@@ -149,38 +149,51 @@ impl ContactProfile {
     /// stripped, length capped) before joining — this string is spliced verbatim
     /// into plain, `\n`-split document text (H's header-seeding path), so an
     /// embedded newline would otherwise inject an arbitrary extra line.
+    ///
+    /// Sanitization/capping runs on each BARE value (url/label/text) BEFORE a
+    /// link field is formatted into `[Label](url)`, not on the formatted
+    /// string afterward — capping the formatted string instead can truncate
+    /// away the closing `)` for a long-but-legitimate URL, producing a
+    /// malformed link that [`Self::header_urls`] (bare-URL-only) would never
+    /// reproduce, so the genuinely-rendered link fails set membership there
+    /// and false-fires `header_url_mismatch`. Capping the bare URL first, the
+    /// same way in both methods, is what keeps them recording the identical
+    /// post-cap string by construction.
     pub fn header_markdown(&self, lang: &str) -> String {
         let mut parts: Vec<String> = Vec::new();
         if let Some(loc) = &self.location {
             let v = loc.resolve(lang);
             if !v.trim().is_empty() {
-                parts.push(v.to_string());
+                parts.push(sanitize_header_part(v));
             }
         }
         if let Some(email) = non_empty(&self.email) {
-            parts.push(email.to_string());
+            parts.push(sanitize_header_part(email));
         }
         if let Some(phone) = non_empty(&self.phone) {
-            parts.push(phone.to_string());
+            parts.push(sanitize_header_part(phone));
         }
         if let Some(url) = non_empty(&self.linkedin).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[LinkedIn]({url})"));
+            parts.push(format!("[LinkedIn]({})", sanitize_header_part(url)));
         }
         if let Some(url) = non_empty(&self.github).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[GitHub]({url})"));
+            parts.push(format!("[GitHub]({})", sanitize_header_part(url)));
         }
         if let Some(url) = non_empty(&self.website).filter(|u| is_safe_header_url(u)) {
-            parts.push(format!("[Website]({url})"));
+            parts.push(format!("[Website]({})", sanitize_header_part(url)));
         }
         for link in &self.extra_links {
             let (label, url) = (link.label.trim(), link.url.trim());
             if !label.is_empty() && !url.is_empty() && is_safe_header_url(url) {
-                parts.push(format!("[{label}]({url})"));
+                parts.push(format!(
+                    "[{}]({})",
+                    sanitize_header_part(label),
+                    sanitize_header_part(url)
+                ));
             }
         }
         parts
             .into_iter()
-            .map(|p| sanitize_header_part(&p))
             .filter(|p| !p.is_empty())
             .collect::<Vec<_>>()
             .join(" | ")
@@ -210,9 +223,14 @@ impl ContactProfile {
     /// a profile-edited name is never silently dropped in the rendered output.
     pub fn apply_to_header(&self, header: &mut crate::model::document::HeaderBlock, lang: &str) {
         // Fill the name from the profile when the header carries no name yet.
+        // Sanitized like every other field `header_markdown` renders — a
+        // control character in `full_name` is otherwise the one field that
+        // reaches the header unsanitized (`contact_profile_set` accepts
+        // arbitrary JSON behind a bare `z.string()`, so this is not merely a
+        // browser-input-behaviour guarantee).
         if header.name.trim().is_empty() {
             if let Some(name) = non_empty(&self.full_name) {
-                header.name = name.to_string();
+                header.name = sanitize_header_part(name);
             }
         }
 
@@ -233,19 +251,22 @@ impl ContactProfile {
     /// `mailto:` link.
     ///
     /// Routed through the SAME `is_safe_header_url` filter and
-    /// `sanitize_header_part` sanitization [`Self::header_markdown`] applies,
-    /// so the two can never fall out of lockstep: an unsafe-scheme URL
-    /// `header_markdown` drops must never appear here as "the profile's own
-    /// link" (a phantom entry that would otherwise cause a spurious, non-
-    /// blocking `header_url_missing`), and a URL carrying a control character
-    /// must be compared here in the SAME sanitized form it actually renders in
-    /// — otherwise the genuinely-rendered, sanitized link fails set
-    /// membership and `header_url_mismatch` (CRITICAL, blocking) fires on an
-    /// unmodified, legitimate profile.
+    /// `sanitize_header_part` sanitization [`Self::header_markdown`] applies —
+    /// to the bare url/email, exactly as there, BEFORE any `mailto:`/`[Label](…)`
+    /// wrapping — so the two can never fall out of lockstep: an unsafe-scheme
+    /// URL `header_markdown` drops must never appear here as "the profile's
+    /// own link" (a phantom entry that would otherwise cause a spurious,
+    /// non-blocking `header_url_missing`), and a URL/email carrying a control
+    /// character or exceeding the length cap must be compared here in the
+    /// SAME post-cap form it actually renders in — capping the WRAPPED string
+    /// instead (`mailto:{email}`, `[Label](url)`) can cap at a different
+    /// point than the bare-value cap `header_markdown` applies, so the
+    /// genuinely-rendered link fails set membership and `header_url_mismatch`
+    /// (CRITICAL, blocking) fires on an unmodified, legitimate profile.
     pub fn header_urls(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(email) = non_empty(&self.email) {
-            out.push(sanitize_header_part(&format!("mailto:{email}")));
+            out.push(format!("mailto:{}", sanitize_header_part(email)));
         }
         for url in [
             non_empty(&self.linkedin),

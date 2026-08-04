@@ -109,15 +109,18 @@ fn is_contact_shaped_matches_ts_is_header_contact_line_fixture() {
 #[test]
 fn section_names_exactly_matches_ts_known_section_names_fixture() {
     // Cross-language parity guard, same shape as the contact-line fixture
-    // above, but for the OTHER predicate that gates the renderer's
+    // above, but for one of the TWO predicates that gate the renderer's
     // header-seeding scan boundary (`isKnownSectionName` in
-    // packages/prompts/src/generate/text/header-contact-line.ts). Asserted
-    // both ways (fixture ⊆ SECTION_NAMES and SECTION_NAMES ⊆ fixture) so
-    // extending either list without the other fails immediately, rather than
-    // silently reintroducing the "hand-mirrored heuristic drifts" defect this
-    // replaces the ALL-CAPS heuristic to avoid. TS doesn't hold a second copy
-    // of this list at all — it imports the fixture directly as its runtime
-    // data — so only this direction can ever drift.
+    // packages/prompts/src/generate/text/header-contact-line.ts — the other
+    // is `isAllCapsSectionHeading`, tested below). Asserted both ways
+    // (fixture ⊆ SECTION_NAMES and SECTION_NAMES ⊆ fixture) so extending
+    // either list without the other fails immediately. Covers all 7 locales
+    // `packages/prompts/src/locale/index.ts`'s `CONVENTIONS` ships résumé
+    // headers for (en/de/fr/es/it/nl/pt) — a résumé generated for any of them
+    // whose model wrote a Title-Case (not ALL-CAPS) heading still stops the
+    // scan here. TS doesn't hold a second copy of this list at all — it
+    // imports the fixture directly as its runtime data — so only this
+    // direction can ever drift.
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../packages/prompts/src/fixtures/section-names.json");
     let raw = std::fs::read_to_string(&path).expect(
@@ -137,6 +140,47 @@ fn section_names_exactly_matches_ts_known_section_names_fixture() {
         fixture_set, rust_set,
         "SECTION_NAMES and the shared fixture must contain exactly the same names"
     );
+}
+
+#[test]
+fn is_all_caps_section_heading_matches_ts_fixture() {
+    // Cross-language parity guard for the shape-based (not list-based)
+    // heading predicate — this is what recognizes a locale's own ALL-CAPS
+    // heading (the résumé prompt mandates ALL-CAPS section titles) without a
+    // per-locale word list, and what an unfixtured/unrecognised locale falls
+    // back to when it isn't literally in SECTION_NAMES. A previous version of
+    // this predicate was deleted from the TS mirror without a fixture gate,
+    // which silently broke header-seeding for es/it/nl/pt résumés (and any
+    // en résumé whose first heading — "PROFESSIONAL EXPERIENCE", "KEY
+    // ACHIEVEMENTS" — isn't literally in SECTION_NAMES either); restoring it
+    // WITHOUT this gate would be the same mistake again.
+    #[derive(serde::Deserialize)]
+    struct Case {
+        line: String,
+        heading: bool,
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../packages/prompts/src/fixtures/all-caps-headings.json");
+    let raw = std::fs::read_to_string(&path).expect(
+        "read all-caps-headings parity fixture \
+         (packages/prompts/src/fixtures/all-caps-headings.json)",
+    );
+    let cases: Vec<Case> =
+        serde_json::from_str(&raw).expect("parse all-caps-headings parity fixture");
+
+    assert!(
+        !cases.is_empty(),
+        "all-caps-headings parity fixture must not be empty"
+    );
+    for c in &cases {
+        assert_eq!(
+            is_all_caps_section_heading(&c.line),
+            c.heading,
+            "is_all_caps_section_heading drift for {:?}",
+            c.line
+        );
+    }
 }
 
 #[test]

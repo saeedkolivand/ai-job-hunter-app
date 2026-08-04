@@ -273,6 +273,25 @@ const SECTION_NAMES: &[&str] = &[
     "expérience professionnelle",
     "formation",
     "compétences",
+    // Spanish (shares "perfil" with Portuguese below)
+    "perfil",
+    "experiencia profesional",
+    "formación",
+    "habilidades",
+    // Italian
+    "profilo",
+    "esperienza professionale",
+    "formazione",
+    "competenze",
+    // Dutch
+    "profiel",
+    "werkervaring",
+    "opleiding",
+    "vaardigheden",
+    // Portuguese
+    "experiência profissional",
+    "formação",
+    "competências",
 ];
 
 // Company/role keywords (should NOT be treated as section headers)
@@ -372,6 +391,30 @@ pub fn strip_md(text: &str) -> String {
 fn is_likely_company_or_role(text: &str) -> bool {
     let words: Vec<&str> = text.split_whitespace().collect();
     words.iter().any(|word| COMPANY_KEYWORDS.contains(word))
+}
+
+/// The ALL-CAPS `SectionHeader` shape rule: fully uppercase, 4–60 chars, at
+/// least 2 alphabetic characters, no ASCII digit repeated exactly 4 times (a
+/// crude "no years" guard), not a likely company/role/acronym token
+/// (`is_likely_company_or_role`), no date-range shape (`DATE_RE`), and no
+/// `@`. This is what recognizes a locale's own ALL-CAPS heading
+/// (`PERFIL`/`PROFILO`/`WERKERVARING`/…, or an English heading not literally
+/// in [`SECTION_NAMES`] such as "PROFESSIONAL EXPERIENCE") without a
+/// per-locale word list. `pub(crate)` — mirrored in TS by
+/// `isAllCapsSectionHeading`
+/// (`packages/prompts/src/generate/text/header-contact-line.ts`) and kept in
+/// parity by the shared fixture `fixtures/all-caps-headings.json`.
+pub(crate) fn is_all_caps_section_heading(clean: &str) -> bool {
+    clean == clean.to_uppercase()
+        && clean.len() >= 4
+        && clean.len() <= 60
+        && clean.chars().filter(|c| c.is_alphabetic()).count() >= 2
+        && !clean
+            .chars()
+            .any(|c| c.is_ascii_digit() && clean.matches(c).count() == 4) // No years
+        && !is_likely_company_or_role(clean)
+        && !DATE_RE.is_match(clean)
+        && !clean.contains('@')
 }
 
 /// A Markdown thematic break: 3+ identical `-`, `*`, or `_` markers (optionally
@@ -525,15 +568,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     }
 
     // All-caps detection (but exclude company names and roles)
-    if clean == clean.to_uppercase()
-        && clean.len() >= 4
-        && clean.len() <= 60
-        && clean.chars().filter(|c| c.is_alphabetic()).count() >= 2
-        && !clean.chars().any(|c| c.is_ascii_digit() && clean.matches(c).count() == 4) // No years
-        && !is_likely_company_or_role(&clean)
-        && !DATE_RE.is_match(&clean)
-        && !clean.contains('@')
-    {
+    if is_all_caps_section_heading(&clean) {
         return ParsedLine {
             kind: LineKind::SectionHeader,
             raw: trimmed.to_string(),
