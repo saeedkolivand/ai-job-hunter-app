@@ -52,7 +52,7 @@ BULLET POINTS:
 
 SKILLS: group ATS-style (e.g. Languages / Frameworks / Tools / Platforms) when the entries support it; otherwise a single clean line.
 
-OUTPUT: plain text only. Start with the candidate's name, then a contact line (these are replaced by the saved contact profile on export). Standard localized section headers, "•" for bullets, **double asterisks** for emphasis, no other markdown, no commentary, no XML tags. Output ONLY the résumé.`;
+OUTPUT: plain text only. Start with the candidate's name, then a contact line. Standard localized section headers, "•" for bullets, **double asterisks** for emphasis, no other markdown, no commentary, no XML tags. Output ONLY the résumé.`;
 }
 
 function buildBuilderSystemBrief(): string {
@@ -68,7 +68,7 @@ DATE FORMAT: one consistent format (the task gives an example); en-dash for rang
 
 Every bullet: strong action verb + what + technology + a measurable result only if the candidate gave one. Wrap key terms in **double asterisks** (max 2–3 per bullet).
 
-OUTPUT: plain text. Start with the name + a contact line (replaced by the saved profile on export). Standard headers, "•" bullets, only **bold** markdown. Output ONLY the résumé.`;
+OUTPUT: plain text. Start with the name + a contact line. Standard headers, "•" bullets, only **bold** markdown. Output ONLY the résumé.`;
 }
 
 function buildBuilderSystemTask(): string {
@@ -86,7 +86,7 @@ ACCEPTANCE CHECKS — verify and revise until all pass:
 - Every provided link is preserved inline on its item.
 - Optional sections appear only when the answers contain them.
 
-OUTPUT: the finished résumé (plain text; name + contact line first — replaced by the saved profile on export; "•" bullets; only **bold** markdown).`;
+OUTPUT: the finished résumé (plain text; name + contact line first; "•" bullets; only **bold** markdown).`;
 }
 
 export function buildBuilderSystemPrompt(target: PromptTarget = 'large'): string {
@@ -234,5 +234,5 @@ Build a complete, single-column, ATS-ready résumé from the answers above.
 - Add Projects / Publications / Certifications / Awards / Volunteering / Languages sections ONLY when the answers include them, using the market's standard header names.
 - Keep every provided link inline on its item as [label](url).
 
-Output ONLY the résumé as plain text — name + contact line first (replaced by the saved contact profile on export), standard localized section headers, "•" bullets, **double asterisks** for emphasis only.`;
+Output ONLY the résumé as plain text — name + contact line first, standard localized section headers, "•" bullets, **double asterisks** for emphasis only.`;
 }

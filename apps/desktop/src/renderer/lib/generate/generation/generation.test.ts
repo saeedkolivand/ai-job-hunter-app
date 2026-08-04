@@ -19,6 +19,7 @@ import {
   researchAnswer,
   researchCompany,
   seedHeaderFromProfile,
+  synthesizeResume,
 } from './generation';
 
 let streamHandler: ((chunk: unknown) => void) | null = null;
@@ -278,6 +279,92 @@ describe('generateResume', () => {
     expect(lines[1]).toBe('[Website](https://jordan.example.com)');
     expect(out).not.toContain('real.example.com');
   });
+
+  // Security re-review (HIGH, round 4): header seeding is cosmetic
+  // post-processing on an already-finished, already-paid-for AI generation —
+  // a transient IPC failure here must degrade to "seed nothing," never throw
+  // and discard the whole result the caller is about to persist.
+  it('does not throw when the contactProfile IPC calls reject — returns the unseeded text', async () => {
+    registerWithContactProfile({
+      get: vi.fn().mockRejectedValue(new Error('IPC unavailable')),
+      headerLine: vi.fn().mockRejectedValue(new Error('IPC unavailable')),
+    });
+    const p = generateResume(
+      'My resume',
+      'Job ad',
+      RESUME_META,
+      'ats',
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Model Name\nmodel@example.com | +1 555 0100');
+    done();
+    const out = await p;
+    expect(out).toBe('Model Name\nmodel@example.com | +1 555 0100');
+  });
+});
+
+describe('synthesizeResume', () => {
+  const BUILDER_META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+  const ANSWERS = { fullName: 'Jordan Lee', experience: [], education: [], skills: [] };
+
+  const registerWithContactProfile = (
+    contactProfile: NonNullable<Parameters<typeof createMockClient>[0]>['contactProfile']
+  ) => {
+    const client = createMockClient({
+      ai: {
+        generatePipeline: vi.fn().mockResolvedValue({ jobId: 'gen-1' }),
+        onStream: vi.fn((h: (chunk: unknown) => void) => {
+          streamHandler = h;
+          return () => {};
+        }),
+      },
+      jobs: { get: vi.fn().mockResolvedValue(null), cancel: vi.fn() },
+      contactProfile,
+    });
+    _registerClient(client);
+    return client;
+  };
+
+  // Security re-review (CRITICAL): synthesizeResume (the Resume Builder) had
+  // NO seeding call at all — `seedHeaderFromProfile` had exactly one
+  // production caller (`generateResume`). The builder prompt tells the model
+  // its contact line is provisional; only this call makes that true.
+  it('seeds the header from the contact profile — the CRITICAL repro (the Resume Builder path was never seeded)', async () => {
+    registerWithContactProfile({
+      get: vi.fn().mockResolvedValue({ fullName: 'Jordan Lee', email: 'jordan@example.com' }),
+      headerLine: vi.fn().mockResolvedValue('Berlin | jordan@example.com'),
+    });
+    const p = synthesizeResume(
+      ANSWERS,
+      BUILDER_META,
+      'llama3',
+      vi.fn(),
+      'en',
+      undefined,
+      undefined
+    );
+    await flushUntilStreaming();
+    emit('Some AI Written Name\nmodel@example.com | +1 555 0100\n\nSUMMARY\nBody.');
+    done();
+    const out = await p;
+    expect(out).toContain('Jordan Lee');
+    expect(out).toContain('Berlin | jordan@example.com');
+    expect(out).not.toContain('model@example.com');
+  });
 });
 
 // `isHeaderContactLine`'s cross-language parity fixture test now lives with
@@ -371,14 +458,16 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
   // Security re-review (MEDIUM): a combined name+contact line 0 with a
   // fullName-less profile — Rust's idx==0 rule classifies that line as
   // Contact, not Name, so it must be in scope for the scan too, not silently
-  // skipped (which would insert a duplicate right after it).
-  it('recognizes a combined name+contact line 0 when the profile has no fullName to write over it', () => {
+  // skipped. But (round 4) index 0 is never itself the replacement target —
+  // overwriting it here would erase "Jane Doe" (there is no separate name
+  // line to preserve it) even though the profile has nothing to offer for
+  // the name. Insert instead: both survive.
+  it('preserves the name when line 0 combines name+contact and the profile has no fullName to write over it', () => {
     const profile = { phone: '+49 30 0000000' };
     const contactLine = '+49 30 0000000';
     const text = 'Jane Doe | jane@old.example.com\n\nEXPERIENCE\nAcme Corp';
     const out = seedHeaderFromProfile(text, profile, contactLine);
-    expect(out).toBe('+49 30 0000000\n\nEXPERIENCE\nAcme Corp');
-    expect(out).not.toContain('jane@old.example.com');
+    expect(out).toBe('Jane Doe | jane@old.example.com\n+49 30 0000000\n\nEXPERIENCE\nAcme Corp');
   });
 
   // Security re-review (HIGH, round 2) — the actual required regression: the
@@ -548,6 +637,49 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const lines = out.split('\n');
     expect(lines[0]).toBe('Jordan LeeAWARDSNobel Prize in Physics, 2024');
     expect(out).not.toContain('\nAWARDS\n');
+  });
+
+  // Security re-review (HIGH, round 4): `isContactProfileEffectivelyEmpty`
+  // correctly excludes `fullName` when deciding whether there's a CONTACT
+  // LINE to build, but it used to also gate the whole function's early
+  // return — making the independent `if (fullName) …` branch below
+  // unreachable for a fullName-only profile. There's no early return at all
+  // now; the two guards (name / contact) are each self-sufficient.
+  it('seeds the name from a fullName-only profile with no other contact fields', () => {
+    const out = seedHeaderFromProfile(
+      'Some AI Written Name\n\nSUMMARY\nBody.',
+      { fullName: 'Jordan Lee' },
+      ''
+    );
+    expect(out).toBe('Jordan Lee\n\nSUMMARY\nBody.');
+  });
+
+  // Security re-review (MEDIUM, round 4): a bare `@` (a job title like
+  // "Software Engineer @ Acme") must not outrank a genuine email — that
+  // inverts intent, overwriting the title and leaving the real, stale
+  // contact line untouched.
+  it('prefers a genuine email over a bare "@" when picking the replacement target', () => {
+    const text = [
+      'Jane Doe',
+      'Software Engineer @ Acme',
+      'Madrid | jane@example.com | +34 600 000 000',
+    ].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      ['Jordan Lee', 'Software Engineer @ Acme', 'Berlin | jordan@profile.example.com'].join('\n')
+    );
+  });
+
+  // Security re-review (MEDIUM, round 4): with no email/phone signal
+  // anywhere, the no-signal fallback must pick the FIRST match, not the
+  // last — the last is the one closest to the body, most likely to actually
+  // BE body content a boundary-recognition miss let through.
+  it('picks the FIRST no-signal match, not the last — a link-only header must not overwrite real body content', () => {
+    const text = ['Jane Doe', 'Website | GitHub', 'AWS | GCP | Kubernetes'].join('\n');
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      ['Jordan Lee', 'Berlin | jordan@profile.example.com', 'AWS | GCP | Kubernetes'].join('\n')
+    );
   });
 });
 

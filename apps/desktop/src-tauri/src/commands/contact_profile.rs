@@ -7,13 +7,21 @@ use crate::contact_profile::{ContactProfile, ContactProfileStore};
 
 #[tauri::command]
 pub async fn contact_profile_get(app: AppHandle) -> Value {
-    let store = app.state::<ContactProfileStore>();
+    // `try_state`, not `state` — `lib.rs` logs a failed `ContactProfileStore::open`
+    // as "non-fatal" and leaves the store unmanaged in that case; `Manager::state`
+    // panics on an unmanaged type, and `panic = "abort"` (Cargo.toml) turns that
+    // into a hard process exit on what should degrade to an empty profile.
+    let Some(store) = app.try_state::<ContactProfileStore>() else {
+        return json!(ContactProfile::default());
+    };
     json!(store.get())
 }
 
 #[tauri::command]
 pub async fn contact_profile_set(app: AppHandle, profile: Value) -> Value {
-    let store = app.state::<ContactProfileStore>();
+    let Some(store) = app.try_state::<ContactProfileStore>() else {
+        return json!({ "error": "contact profile store unavailable" });
+    };
     let parsed: ContactProfile = match serde_json::from_value(profile) {
         Ok(p) => p,
         Err(e) => return json!({ "error": format!("invalid contact profile: {e}") }),
@@ -38,7 +46,12 @@ fn clamp_lang(lang: &str) -> String {
 /// re-implementing the ordering rules in TypeScript.
 #[tauri::command]
 pub async fn contact_profile_header_line(app: AppHandle, lang: String) -> String {
-    let store = app.state::<ContactProfileStore>();
+    // `try_state` — this now runs on every résumé generation (H's header
+    // seeding), not just the settings page, so an unmanaged store here must
+    // degrade to "nothing to seed," not abort the process.
+    let Some(store) = app.try_state::<ContactProfileStore>() else {
+        return String::new();
+    };
     store.get().header_markdown(&clamp_lang(&lang))
 }
 

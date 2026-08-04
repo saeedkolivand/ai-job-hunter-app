@@ -39,7 +39,12 @@
     "heading": false,
     "note": "a date-range shape (DATE_RE) — a job-entry period, not a section title"
   },
-  { "line": "AB", "heading": false, "note": "under the 4-char floor" },
+  { "line": "AB", "heading": false, "note": "2 bytes — under the 4-byte floor" },
+  {
+    "line": "ABC",
+    "heading": false,
+    "note": "exactly 3 bytes — pins the floor at 4, not 3 (otherwise indistinguishable from AB under mutation)"
+  },
   {
     "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "heading": false,

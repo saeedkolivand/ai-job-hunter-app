@@ -399,6 +399,36 @@ fn job_board_host_in_a_text_derived_header_is_warned_not_blocked() {
     );
 }
 
+/// Security re-review: the job-board warning must not depend on a contact
+/// profile being present — the people most likely to export a raw imported
+/// header untouched are exactly the ones who never filled one in
+/// (`request.contact` absent here, the common shape for them, not `Some(...)`
+/// as the sibling test above uses).
+#[test]
+fn job_board_host_is_warned_even_with_no_contact_profile_at_all() {
+    let mut request = req(ExportFormat::Pdf, TemplateId::SwissMinimal, false);
+    request.text = "Jane Doe\njane@example.com | https://www.indeed.com/cmp/acme\n\n\
+                     EXPERIENCE\nAcme Corp  2020 - Present\nSenior Engineer\n\
+                     - Led a team of five engineers delivering the core platform\n"
+        .to_string();
+    request.contact = None;
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("pdf export");
+    assert!(
+        report.ok,
+        "a job-board link in a text-derived header must warn, not block: {:?}",
+        report.issues
+    );
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_job_board" && i.severity == Severity::Warning),
+        "a job-board host must surface as a warning even with no contact profile at all: {:?}",
+        report.issues
+    );
+}
+
 #[test]
 fn txt_is_returned_unvalidated() {
     let (bytes, report) = validate_and_fix(

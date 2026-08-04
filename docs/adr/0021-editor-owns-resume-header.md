@@ -18,7 +18,7 @@ This meant user edits to a generated document's header were accepted at generati
 
 Invert the ownership model at export time:
 
-1. **Generation:** `generateResume()` calls `seedHeaderFromProfile()` which replaces line-0 (name) and all detected contact lines with the profile's values via the `contact_profile_header_line` IPC call. This happens on every generation, seeding the initial content.
+1. **Generation:** `generateResume()` and `synthesizeResume()` (Resume Builder) both call `seedHeaderFromProfile()`, which replaces line-0 (name, when the profile has a `fullName`) and **exactly one** contact-shaped line in the header block with the profile's values via the `contact_profile_header_line` IPC call — chosen by a positive signal (an email shape first, then a phone shape, then position), never by removal. A second contact-shaped line in the block (a stale duplicate, a separator-heavy job title the seeder mis-scanned) is left in place, not deleted — replacing it too risked destroying real content (a job title, a skills line) the seeder mistook for a contact line. This happens on every generation, seeding the initial content.
 
 2. **Editing:** Users can edit the generated header in the rich-text editor. These edits are part of the document text.
 
@@ -27,11 +27,9 @@ Invert the ownership model at export time:
    - If `header.contact` (extracted from text) is empty, fill it from the profile's `header_markdown()`
    - If both already have content, the text wins — the profile doesn't overwrite
 
-4. **Export validation:** The gate now validates the **extracted text**, not the profile:
-   - Parses the document via the same `extract_section(text, start_marker, end_marker)` call as the renderer uses (plain string slicing, not a Markdown AST)
-   - Validates extracted header URLs are `http(s)` or `mailto:` only
-   - Fires a non-blocking `header_url_job_board` warning when a job-board/ATS host (e.g., Indeed, Greenhouse) appears in the header (these belong in the document body, not personal contact info)
-   - Removed profile-parity validation gate entirely
+4. **Export validation:** The gate branches on `profile_is_header_source` (does the text-derived header already carry its own contact line — computed via the same `extract_section` + `model_from_resume_text` the renderer uses):
+   - When the profile IS the header's source (the text had none), the pre-existing profile-parity check still runs: a header-band PDF link that isn't one of `profile.header_urls()` blocks (`header_url_mismatch`, critical); a profile link missing from the header band warns (`header_url_missing`) — this gate is **retained**, not removed.
+   - When the text won (the common case once seeding is in effect), profile-parity is skipped — comparing an unmodified, user-edited header against an unrelated profile would false-block a legitimate export — but a job-board/ATS host in the header band still warns (`header_url_job_board`), **unconditionally**, whether or not a contact profile was even supplied (the people most likely to export a raw, unedited header are exactly the ones who never filled one in).
 
 ## Rationale
 
@@ -55,12 +53,12 @@ Invert the ownership model at export time:
 
 ## Consequences
 
-- `contact_profile_header_line()` IPC method is called once per `generateResume()` to fetch the profile's header line for seeding
-- `seedHeaderFromProfile()` replaces name and contact lines on every generation (by design — re-generation is intentional)
+- `contact_profile_header_line()` IPC method is called once per `generateResume()` / `synthesizeResume()` to fetch the profile's header line for seeding
+- `seedHeaderFromProfile()` replaces the name and (at most) ONE contact line on every generation (by design — re-generation is intentional); it never removes a line, so a second contact-shaped line in the block survives as a visible, user-correctable duplicate rather than being deleted or silently overwritten
 - `apply_to_header()` now explicitly checks for empty fields before applying profile fallbacks
 - Export validation calls `extract_section(text, "### CANDIDATE RESUME ###", Some("### JOB ADVERTISEMENT ###"))` to parse header, matching the renderer's extraction
-- `header_url_job_board` warning fires when `is_job_board(&url)` detects job-board/ATS hosts (Indeed, Greenhouse, etc.), not LinkedIn/GitHub (which are expected contact links)
-- `ContactProfile::header_markdown()` (Rust) is now the single implementation of header construction; shared JSON fixtures (`header-contact-line.json`, `section-names.json`) prevent TS implementation drift
+- `header_url_job_board` warning fires when `is_job_board(&url)` detects job-board/ATS hosts (Indeed, Greenhouse, etc.), not LinkedIn/GitHub (which are expected contact links) — checked unconditionally when the text is the header's source, independent of whether a contact profile was supplied
+- `ContactProfile::header_markdown()` (Rust) is now the single implementation of header construction; shared JSON fixtures (`header-contact-line.json`, `section-names.json`, `all-caps-headings.json`) prevent TS implementation drift
 - Tests verify `apply_to_header()` preserves text-derived headers when they exist and only fills blanks
 
 ## Alternatives Considered
@@ -75,9 +73,9 @@ Invert the ownership model at export time:
 
 - `apps/desktop/src-tauri/src/commands/contact_profile.rs` — `contact_profile_header_line()` IPC command
 - `apps/desktop/src-tauri/src/contact_profile/mod.rs` — `header_markdown()` and `apply_to_header()` implementation
-- `apps/desktop/src/renderer/lib/generate/generation/generation.ts:365-408` — `generateResume()` calls `seedHeaderFromProfile()`
-- `apps/desktop/src-tauri/src/export/pdf/mod.rs:19-23` — `extract_section(text, start_marker, end_marker)` signature
-- `apps/desktop/src-tauri/src/validate/mod.rs:454-463` — `header_url_job_board` warning on `is_job_board()` match
+- `apps/desktop/src/renderer/lib/generate/generation/generation.ts` — `seedHeaderFromContactProfile()` (the shared, IPC-guarded caller), invoked from both `generateResume()` and `synthesizeResume()`; `seedHeaderFromProfile()` and `pickReplacementIndex()` implement the seeding/selection logic itself
+- `apps/desktop/src-tauri/src/export/pdf/mod.rs` — `extract_section(text, start_marker, end_marker)` signature
+- `apps/desktop/src-tauri/src/validate/mod.rs` — `pdf_render_issues()`: the `profile_is_header_source` branch (retained profile-parity check) and the `header_url_job_board` warning on `is_job_board()` match
 - `packages/prompts/src/generate/text/header-contact-line.ts` — `isHeaderContactLine()` fixture-based parity with Rust
 - `packages/prompts/src/fixtures/header-contact-line.json` + `section-names.json` — shared fixtures asserted from both TS and Rust tests
 - `docs/knowledge/resume-domain.md` — updated with new header ownership model

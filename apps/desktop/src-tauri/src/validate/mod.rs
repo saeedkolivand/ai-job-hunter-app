@@ -390,19 +390,23 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
         // Cover letters: unaffected by H, so the checks below still run as before.
         .unwrap_or(true);
 
-    if let Some(profile) = request
-        .contact
-        .as_ref()
-        .filter(|p| !p.is_effectively_empty())
-    {
-        // Header region: the top ~2 inches (144 pt) of the first page.
-        let header_band_bottom = page_h_pt - 144.0;
-        let header_links: Vec<&PdfLink> = links
-            .iter()
-            .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
-            .collect();
+    // Header region: the top ~2 inches (144 pt) of the first page. Computed
+    // unconditionally — the job-board check below needs it regardless of
+    // whether a (non-empty) contact profile was supplied.
+    let header_band_bottom = page_h_pt - 144.0;
+    let header_links: Vec<&PdfLink> = links
+        .iter()
+        .filter(|l| l.page == 0 && l.rect[1].max(l.rect[3]) >= header_band_bottom)
+        .collect();
 
-        if profile_is_header_source {
+    if profile_is_header_source {
+        // The strict parity checks genuinely need a profile to compare
+        // against — no profile (or an empty one) means nothing to check.
+        if let Some(profile) = request
+            .contact
+            .as_ref()
+            .filter(|p| !p.is_effectively_empty())
+        {
             let allowed: std::collections::BTreeSet<String> =
                 profile.header_urls().into_iter().collect();
             // Canonicalise URLs before comparing so trivial differences (trailing
@@ -444,24 +448,28 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
                     ));
                 }
             }
-        } else {
-            // The profile is only a fallback here — the text-derived header won,
-            // so its own parity against the profile is meaningless (it was never
-            // applied). A job-board/ATS host in the header band is still never a
-            // legitimate personal contact link, whatever the now-authoritative
-            // text says, so it's worth a warning — advisory, not blocking, since
-            // the header is user-owned and visible in the editor.
-            for link in &header_links {
-                if crate::contact_profile::is_job_board(&link.url) {
-                    issues.push(ExportIssue::warning(
-                        "header_url_job_board",
-                        format!(
-                            "Header link {} looks like a job board/ATS URL, not a personal \
-                             contact link.",
-                            link.url
-                        ),
-                    ));
-                }
+        }
+    } else {
+        // The profile (if any) is only a fallback here — the text-derived
+        // header won, so its own parity against the profile is meaningless
+        // (it was never applied). A job-board/ATS host in the header band is
+        // still never a legitimate personal contact link, whatever the
+        // now-authoritative text says — checked UNCONDITIONALLY, not gated on
+        // a profile being present, because the people most likely to export a
+        // raw imported header untouched are exactly the ones who never filled
+        // in a contact profile at all (`request.contact` absent/empty here is
+        // the common case for them, not the exception). Advisory, not
+        // blocking, since the header is user-owned and visible in the editor.
+        for link in &header_links {
+            if crate::contact_profile::is_job_board(&link.url) {
+                issues.push(ExportIssue::warning(
+                    "header_url_job_board",
+                    format!(
+                        "Header link {} looks like a job board/ATS URL, not a personal \
+                         contact link.",
+                        link.url
+                    ),
+                ));
             }
         }
     }
