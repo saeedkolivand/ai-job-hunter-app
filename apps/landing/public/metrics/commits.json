@@ -1,5 +1,101 @@
 [
   {
+    "sha": "4960eba288a785a2d8000375a402c6332117151c",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-03T06:33:42Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "1ff031ad2c5aecbddf8aa66f3212acde188e2a18",
+    "commit": {
+      "message": "fix: upload only our own debug files to sentry (#930)\n\n* fix: upload only our own debug files to sentry\n\nThe first real release run uploaded 474 debug files per matrix leg, ~1900 per\nrelease: dependency build scripts, proc-macro .so files, ring/aws-lc-sys\nobject files, and every third-party system library bundled into the AppImage —\nall to symbolicate one binary. Cause was pointing sentry-cli at the whole\ntarget/ tree.\n\nScope it to the ajh_tauri* artifacts under release/deps. The paths come from\nthat run's logs rather than inference, which mattered: on every platform the\ndebug artifacts use the LIBRARY name (ajh_tauri, underscore) and live in\ndeps/, not the bin name at release/ajh-tauri. A guessed\nrelease/ajh-tauri.dSYM would have missed the macOS debug companion entirely\nand uploaded a binary with no symbols.\n\nGuard the per-triple directory behind a non-empty check — with no triple the\npath collapses to the same dir and enumerates everything twice. Verified by\nsimulating all three layouts: 2 files each, debug companion included, and an\nempty match still fails loudly.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: assert the debug companion is present, not just some artifact\n\nReview noted the empty-check proves some ajh_tauri* file was found, not that\nthe file needed to symbolicate the shipped binary is there. Finding\najh_tauri.exe while its .pdb is missing would pass and still ship\nunresolvable stack traces — the same looks-fine-reports-nothing shape this\nfeature keeps producing.\n\nAssert the companion each platform actually emits, taken from the release\nrun's uploaded-file list rather than assumed: .pdb on Windows, .dSYM on\nmacOS, and nothing on Linux where DWARF stays inside the binary. Verified the\npositive and negative case for each.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-02T10:22:12Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "169fab819780fa574c196dc0e840eb33321bac5c",
+    "commit": {
+      "message": "chore: sync landing download version to v0.132.0",
+      "author": {
+        "date": "2026-08-02T09:54:20Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "9265c559e237c6c553c5312239a6bbc3e1424e1d",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.132.0 [skip ci]",
+      "author": {
+        "date": "2026-08-02T09:53:42Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "540803df36b415422cdabbc6db0c3aa7b3aba62b",
+    "commit": {
+      "message": "chore(release): 0.132.0 [skip ci]",
+      "author": {
+        "date": "2026-08-02T09:14:32Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "f9713f3b986011332d6f2b8983421e0eddb6982a",
+    "commit": {
+      "message": "fix: fail the release when a configured sentry symbol upload breaks (#929)\n\n* fix: fail the release when a configured sentry symbol upload breaks\n\nThe symbol upload was continue-on-error, so a wrong token or a rejected\nupload would skip silently and the first anyone would know is a crash report\nfull of bare addresses. That is the same silent-failure mode this feature was\nreviewed for three times.\n\nDrop continue-on-error and add set -euo pipefail so a failure past the guard\nturns the run red. Move the step after Upload Release Assets so the installers\nare already published — a Sentry outage should not cost a release, but it\nshould still be visible.\n\nAbsent secrets stay a legitimate skip for forks and pre-provisioning releases,\nnow surfaced as a warning annotation instead of a plain log line, so \"not\nconfigured\" stays distinguishable from \"configured wrong\".\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: make the symbol upload loud without breaking the updater\n\nThe review gate caught that hard-failing the step cascades. It sits in a\n4-leg matrix, and generate-update-manifest, update-cask and\nupdate-download-page all hang off a bare needs: build — so a Sentry hiccup on\none leg flips the aggregate result and skips all three. latest.json is never\nwritten and auto-update breaks for every existing user, while the installers\nsit attached to the release. That is a far worse failure than unresolved\nstack traces, and the opposite of the stated intent.\n\nRestore continue-on-error and surface failure through an ::error:: annotation\nplus a step-summary entry instead. Loud, unmissable, and non-gating.\n\nNot taking the gate's other suggestion of loosening the downstream jobs to\nif: always(): that would publish an updater manifest even when a platform's\nbuild genuinely failed, pointing users at artifacts that do not exist.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* docs: keep adr-0020 to the decision and point at the workflow\n\nCodeRabbit flagged the symbol-upload bullet for duplicating the workflow's\nexecution contract, which docs/** is supposed to point at rather than copy.\n\nCut the mechanics — ordering, continue-on-error, the annotation plumbing —\nand keep only what an ADR is for: why a failed upload is loud rather than\nfatal, and why making the downstream jobs tolerant was rejected instead. That\nrationale is the part that stops the next person undoing it, which is exactly\nwhat I did to my own change an hour ago.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-02T09:09:49Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "cfaeaffc584bde37449ef6e519ac27d366419593",
+    "commit": {
+      "message": "fix: bump the privacy policy last-updated date and centralize it (#928)\n\nThe crash-reporting rewrite changed what /privacy says the app collects but\nleft \"Last updated: 30 June 2026\" in place. That page is the privacy-policy\nURL filed with both the Chrome Web Store and Firefox AMO, so the stale date\nclaimed a review that predated the change it was describing.\n\nMove the date into one exported LAST_UPDATED constant next to the \"we'll bump\nthe date\" promise it backs, mirroring the accessibility page which already\ndoes this, and add a test pinning that the page renders that constant in the\nexpected form so a hardcoded date cannot creep back.\n\nThe page's actual promise — policy changes imply a date bump — is not\nmechanically checkable, and the test says so rather than implying coverage it\ndoes not have.\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-02T08:30:49Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "df9f9e203ab0ef2f0651d0d38b13a12f22f78926",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-02T06:11:54Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "2da1f2e1268d7c08fc1f1da6b9e8ee9463bd6515",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1097,102 +1193,6 @@
       "message": "chore: bump apple-native-keyring-store in /apps/desktop/src-tauri (#870)\n\nBumps [apple-native-keyring-store](https://github.com/open-source-cooperative/apple-native-keyring-store) from 1.0.0 to 1.0.1.\n- [Release notes](https://github.com/open-source-cooperative/apple-native-keyring-store/releases)\n- [Commits](https://github.com/open-source-cooperative/apple-native-keyring-store/compare/v1.0.0...v1.0.1)\n\n---\nupdated-dependencies:\n- dependency-name: apple-native-keyring-store\n  dependency-version: 1.0.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
       "author": {
         "date": "2026-07-22T21:07:46Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "496942e078be7071a39d0f30302f677dc30cfd1c",
-    "commit": {
-      "message": "chore: bump anyhow from 1.0.103 to 1.0.104 in /apps/desktop/src-tauri (#869)\n\nBumps [anyhow](https://github.com/dtolnay/anyhow) from 1.0.103 to 1.0.104.\n- [Release notes](https://github.com/dtolnay/anyhow/releases)\n- [Commits](https://github.com/dtolnay/anyhow/compare/1.0.103...1.0.104)\n\n---\nupdated-dependencies:\n- dependency-name: anyhow\n  dependency-version: 1.0.104\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T21:07:22Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "e33b97d42e0c3bea3ed6ecbdaa6cf4eb94415676",
-    "commit": {
-      "message": "chore: bump serde_json in /apps/desktop/src-tauri (#868)\n\nBumps [serde_json](https://github.com/serde-rs/json) from 1.0.150 to 1.0.151.\n- [Release notes](https://github.com/serde-rs/json/releases)\n- [Commits](https://github.com/serde-rs/json/compare/v1.0.150...v1.0.151)\n\n---\nupdated-dependencies:\n- dependency-name: serde_json\n  dependency-version: 1.0.151\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T21:06:59Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "f4c149f666005dfd91934c4d912eff747e323da9",
-    "commit": {
-      "message": "chore: bump regex from 1.13.0 to 1.13.1 in /apps/desktop/src-tauri (#867)\n\nBumps [regex](https://github.com/rust-lang/regex) from 1.13.0 to 1.13.1.\n- [Release notes](https://github.com/rust-lang/regex/releases)\n- [Changelog](https://github.com/rust-lang/regex/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/rust-lang/regex/compare/1.13.0...1.13.1)\n\n---\nupdated-dependencies:\n- dependency-name: regex\n  dependency-version: 1.13.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T21:06:46Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "ed962df488e2dea9cbcd14051750fad12e358ace",
-    "commit": {
-      "message": "chore: bump @testing-library/jest-dom from 6.9.1 to 7.0.0 (#864)\n\nBumps [@testing-library/jest-dom](https://github.com/testing-library/jest-dom) from 6.9.1 to 7.0.0.\n- [Release notes](https://github.com/testing-library/jest-dom/releases)\n- [Changelog](https://github.com/testing-library/jest-dom/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/testing-library/jest-dom/compare/v6.9.1...v7.0.0)\n\n---\nupdated-dependencies:\n- dependency-name: \"@testing-library/jest-dom\"\n  dependency-version: 7.0.0\n  dependency-type: direct:development\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T21:06:29Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "9867ba2653cc8b1b0f2a648096a347213107efca",
-    "commit": {
-      "message": "ci: group typst family bumps in dependabot (#866)\n\nThe typst crates are exact-pinned and must move in lockstep; separate\ndependabot prs split the pins (see the typst-layout-only bump). Same\npattern as the codeql-action group.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T21:04:01Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "071cc6aa81910320cd887b9498d690361b14df74",
-    "commit": {
-      "message": "fix(export): bump typst family to 0.15.1 in lockstep (#865)\n\n#851 bumped only typst-layout to =0.15.1, leaving typst, typst-pdf,\ntypst-svg and typst-render at =0.15.0 — against the file's lockstep\npin comment and the repo's typst-family-bumps-together rule. Align the\nwhole family at =0.15.1 and regenerate Cargo.lock.\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-22T20:58:38Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "25302585150843899d04a481531a6ed5a7bc340c",
-    "commit": {
-      "message": "chore: bump docx-rs from 0.4.20 to 0.4.21 in /apps/desktop/src-tauri (#859)\n\nBumps [docx-rs](https://github.com/bokuweb/docx-rs) from 0.4.20 to 0.4.21.\n- [Release notes](https://github.com/bokuweb/docx-rs/releases)\n- [Changelog](https://github.com/bokuweb/docx-rs/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bokuweb/docx-rs/commits/0.4.21)\n\n---\nupdated-dependencies:\n- dependency-name: docx-rs\n  dependency-version: 0.4.21\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T20:45:09Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "c8a867cf786e282390d51771c3ad7853ebc715d4",
-    "commit": {
-      "message": "chore: bump typescript-eslint in the minor-and-patch group (#863)\n\nBumps the minor-and-patch group with 1 update: [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint).\n\n\nUpdates `typescript-eslint` from 8.64.0 to 8.65.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.65.0/packages/typescript-eslint)\n\n---\nupdated-dependencies:\n- dependency-name: typescript-eslint\n  dependency-version: 8.65.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: minor-and-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-22T20:44:09Z"
       }
     },
     "author": {

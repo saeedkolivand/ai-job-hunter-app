@@ -1,0 +1,106 @@
+[
+  { "line": "EXPERIENCE", "heading": true, "note": "baseline en, also in SECTION_NAMES" },
+  {
+    "line": "PROFESSIONAL EXPERIENCE",
+    "heading": true,
+    "note": "en — NOT literally in SECTION_NAMES (which has 'work experience'), needs the shape rule"
+  },
+  {
+    "line": "KEY ACHIEVEMENTS",
+    "heading": true,
+    "note": "en — NOT literally in SECTION_NAMES ('achievements' alone is), needs the shape rule"
+  },
+  { "line": "PERFIL", "heading": true, "note": "es/pt summary" },
+  { "line": "EXPERIENCIA PROFESIONAL", "heading": true, "note": "es experience" },
+  { "line": "HABILIDADES", "heading": true, "note": "es skills" },
+  { "line": "PROFILO", "heading": true, "note": "it summary" },
+  { "line": "COMPETENZE", "heading": true, "note": "it skills" },
+  { "line": "PROFIEL", "heading": true, "note": "nl summary" },
+  { "line": "WERKERVARING", "heading": true, "note": "nl experience" },
+  { "line": "EXPERIÊNCIA PROFISSIONAL", "heading": true, "note": "pt experience" },
+  { "line": "COMPETÊNCIAS", "heading": true, "note": "pt skills" },
+  { "line": "FORMACIÓN", "heading": true, "note": "es education" },
+  { "line": "ESPERIENZA PROFESSIONALE", "heading": true, "note": "it experience" },
+  { "line": "FORMAZIONE", "heading": true, "note": "it education" },
+  { "line": "OPLEIDING", "heading": true, "note": "nl education" },
+  { "line": "VAARDIGHEDEN", "heading": true, "note": "nl skills" },
+  { "line": "FORMAÇÃO", "heading": true, "note": "pt education" },
+  {
+    "line": "SENIOR SOFTWARE ENGINEER",
+    "heading": false,
+    "note": "job title — SENIOR is a COMPANY_KEYWORDS exclusion (the HIGH-1 repro)"
+  },
+  {
+    "line": "PROJECT MANAGER",
+    "heading": false,
+    "note": "role — MANAGER is a COMPANY_KEYWORDS exclusion"
+  },
+  { "line": "JANE@EXAMPLE.COM", "heading": false, "note": "contains @" },
+  {
+    "line": "PROJECT 1111",
+    "heading": false,
+    "note": "a run of 4 consecutive digits — the 'no years' guard"
+  },
+  {
+    "line": "PROJECT 2021",
+    "heading": false,
+    "note": "a genuine bare year, no second date to trip DATE_RE's range shape — a prior 'some digit repeated 4x anywhere' guard missed this entirely (no digit in '2021' repeats), letting it through misclassified as a heading; the correct guard is a run of 4+ CONSECUTIVE digits"
+  },
+  {
+    "line": "JANUARY 2021 - PRESENT",
+    "heading": false,
+    "note": "a date-range shape (DATE_RE) — a job-entry period, not a section title"
+  },
+  { "line": "AB", "heading": false, "note": "2 bytes — under the 4-byte floor" },
+  {
+    "line": "ABC",
+    "heading": false,
+    "note": "exactly 3 bytes — pins the floor at 4, not 3 (otherwise indistinguishable from AB under mutation)"
+  },
+  {
+    "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "heading": false,
+    "note": "61 chars — over the 60-char ceiling"
+  },
+  {
+    "line": "Experience",
+    "heading": false,
+    "note": "Title Case, not ALL-CAPS — fails line === line.toUpperCase()"
+  },
+  { "line": "1234", "heading": false, "note": "no letters — fails the alphabetic >= 2 floor" },
+  {
+    "line": "- - -",
+    "heading": false,
+    "note": "no letters — fails the alphabetic >= 2 floor (dashes/spaces only)"
+  },
+  {
+    "line": "LEADERSHIP",
+    "heading": true,
+    "note": "whole word 'LEADERSHIP' is NOT in COMPANY_KEYWORDS — 'LEAD' matching it as a SUBSTRING would be a bug"
+  },
+  {
+    "line": "IT SKILLS",
+    "heading": false,
+    "note": "whole word 'IT' IS in COMPANY_KEYWORDS — not literally in SECTION_NAMES either, so this must be excluded by the keyword veto, not the known-name list"
+  },
+  {
+    "line": "ÉÉ",
+    "heading": true,
+    "note": "4 UTF-8 bytes (2 chars x 2 bytes) but only 2 JS UTF-16 units — must pass the >=4 floor on BYTE length, matching Rust's str::len()"
+  },
+  {
+    "line": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAÉ",
+    "heading": false,
+    "note": "59 ASCII 'A' + 1 accented char = 60 JS units but 61 UTF-8 bytes — must fail the <=60 ceiling on BYTE length"
+  },
+  {
+    "line": "**AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA**",
+    "heading": true,
+    "note": "57 'A' wrapped in ** = 61 bytes RAW (over the 60-byte ceiling) but 57 bytes once strip_md removes the ** — proves the predicate must run on stripped input, not raw"
+  },
+  {
+    "line": "# PROFESSIONAL EXPERIENCE",
+    "heading": true,
+    "note": "MEDIUM: an ATX (#-prefixed) heading line was never exercised here before — toClean strips the leading '# ' the same way it strips '**', leaving the same 'PROFESSIONAL EXPERIENCE' the un-prefixed case above already proves true"
+  }
+]

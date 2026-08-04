@@ -105,10 +105,12 @@ export async function exportDOCX(
 
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
-    // The stored contact profile is the source of truth for the header contact
-    // line — passing it lets the backend build the header from named fields
-    // (never the résumé's company-link pool). Missing profile → undefined (the
-    // backend falls back to the text-derived header).
+    // The stored contact profile is a FALLBACK for the header contact line
+    // (ADR 0021 — the editor's text wins whenever it already has a header;
+    // seeding at generation time is what usually puts one there). Passing it
+    // lets the backend fill a genuinely blank header from named fields
+    // (never the résumé's company-link pool). Missing profile → undefined
+    // (same fallback-only behavior, just nothing to fall back to).
     const contact = await api.contactProfile.get().catch(() => undefined);
     const _filePath = await api.documents.exportAndSave({
       text: exportText,
@@ -170,7 +172,7 @@ export async function exportPDF(
 
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
-    // See exportDOCX: the contact profile is the header source of truth.
+    // See exportDOCX: the contact profile is a header fallback, not the source of truth.
     const contact = await api.contactProfile.get().catch(() => undefined);
     const _filePath = await api.documents.exportAndSave({
       text: exportText,
@@ -229,7 +231,7 @@ export async function renderDocumentPreview(
 
   const api = getClient();
   const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
-  // Same header source of truth as the real export (see exportPDF/exportDOCX).
+  // Same header fallback behavior as the real export (see exportPDF/exportDOCX).
   const contact = await api.contactProfile.get().catch(() => undefined);
   const result = await api.documents.renderPreviewImages({
     text: exportText,

@@ -179,6 +179,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
     contactProfile: {
       get: async () => ({}),
       set: async () => ({ success: true }),
+      headerLine: async () => '',
     },
 
     github: {
