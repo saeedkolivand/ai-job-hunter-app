@@ -185,6 +185,35 @@ SKILLS
 Rust, Python, TypeScript, PostgreSQL, Kubernetes, AWS
 ";
 
+/// Accented-Latin résumé fixture — grave-accented lowercase (à, ò, ì) PLUS
+/// capital grave accents (È, À), the less-tested shape flagged by the
+/// `no_extractable_text` incident audit (a macOS user could not download
+/// either PDF; the leading hypothesis is a broken ToUnicode CMap on a subset
+/// font — glyphs render fine on screen but `pdf_extract` gets nothing back).
+/// The incident involved Italian text; German (ü) is already covered by the
+/// DE letter fixtures and the Portrait/Saffron "Über Ödegaard" grapheme pins.
+/// Same section-heading shape as [`FIXTURE_RESUME`] so section classification
+/// is unaffected — only the header name and body prose carry accents.
+const ACCENTED_RESUME_FIXTURE: &str = "\
+Àlvaro Èsposito
+alvaro.esposito@example.it | https://linkedin.com/in/alvaroesposito
+
+SUMMARY
+Ingegnere del software cresciuto vicino a Città di Torino, però orientato ai \
+sistemi distribuiti costruiti così da scalare senza sforzo.
+
+EXPERIENCE
+Senior Engineer | Acme Corp | 2021 – Present
+- Migrated the payments service to a microservices architecture, cutting latency by 40 percent
+- Guidato il team attraverso la migrazione, mantenendo però sempre alta la qualità
+
+EDUCATION
+Laurea in Informatica | Università degli Studi di Torino | 2014 – 2018
+
+SKILLS
+Rust, Python, TypeScript, PostgreSQL, Kubernetes, AWS
+";
+
 // ── Model-based render tests ──────────────────────────────────────────────────
 
 fn opts_a4() -> RenderOpts {
@@ -355,11 +384,12 @@ fn two_column_resume_embeds_contact_link_annotations() {
     );
 }
 
-#[test]
-fn every_template_renders_a_valid_pdf() {
-    // Canonical user-facing set — must match the `TemplateId` enum (pinned by the
-    // serde round-trip test in types.rs and the TS sync guard).
-    let ids = [
+/// Canonical user-facing template set — must match the `TemplateId` enum
+/// (pinned by the serde round-trip test in types.rs and the TS sync guard).
+/// Shared by every test that iterates "all templates" so a newly added
+/// template is covered automatically rather than needing a remembered edit.
+fn canonical_template_ids() -> [TemplateId; 12] {
+    [
         TemplateId::Classic,
         TemplateId::SwissMinimal,
         TemplateId::Academic,
@@ -372,7 +402,34 @@ fn every_template_renders_a_valid_pdf() {
         TemplateId::Regent,
         TemplateId::Aria,
         TemplateId::Saffron,
-    ];
+    ]
+}
+
+/// Mirrors `validate::mod::normalize` (validate/mod.rs:874-882): lowercased,
+/// whitespace-collapsed, alphanumeric-only text used for tolerant `contains`
+/// checks. Duplicated here (rather than exposed as `pub(crate)`) because this
+/// test file owns no production code — see [`NO_EXTRACTABLE_TEXT_THRESHOLD`].
+fn normalize_like_validator(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// The exact threshold `validate::mod::evaluate` uses (validate/mod.rs:796) to
+/// raise the CRITICAL `no_extractable_text` issue that blocks an export: fewer
+/// than this many [`normalize_like_validator`]-normalized characters means the
+/// document has (almost) no extractable text. Asserting against this constant
+/// — not just "some text extracted" — means a passing test proves the real
+/// validator would not have blocked the export.
+const NO_EXTRACTABLE_TEXT_THRESHOLD: usize = 20;
+
+#[test]
+fn every_template_renders_a_valid_pdf() {
+    let ids = canonical_template_ids();
     assert_eq!(ids.len(), 12, "expected the twelve canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
@@ -393,6 +450,54 @@ fn every_template_renders_a_valid_pdf() {
         assert!(
             count_pdf_pages(&bytes) >= 1,
             "{id:?}: must emit at least one page"
+        );
+    }
+}
+
+// Every canonical template must round-trip accented-Latin content — grave
+// lowercase + capital È/À, the shape the `no_extractable_text` incident audit
+// flagged as under-tested — through `pdf_extract`, not just emit a %PDF
+// header. `every_template_renders_a_valid_pdf` above never calls
+// `pdf_extract` at all, so a broken/missing ToUnicode CMap on a subset font
+// (renders fine on screen, extracts to nothing) would pass it silently; this
+// is the regression test for exactly that class of bug.
+#[test]
+fn every_template_extracts_accented_latin_content() {
+    let model = model_from_resume_text(ACCENTED_RESUME_FIXTURE);
+    for id in canonical_template_ids() {
+        let template = Template::get(id);
+        let bytes = render_pdf(
+            &model,
+            TypstTemplate::from_template(&template),
+            &opts_a4(),
+            Some(&template),
+        )
+        .unwrap_or_else(|e| panic!("render_pdf({id:?}) should succeed: {e:?}"));
+
+        let extracted = pdf_extract::extract_text_from_mem(&bytes).unwrap_or_else(|e| {
+            panic!("{id:?}: pdf-extract must succeed on rendered output: {e:?}")
+        });
+        let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+        let lower = normalised.to_lowercase();
+
+        assert!(
+            lower.contains("àlvaro") && lower.contains("èsposito"),
+            "{id:?}: accented name missing — capitals È/À did not survive extraction\n---\n{extracted:?}"
+        );
+        assert!(
+            lower.contains("così") || lower.contains("però") || lower.contains("città"),
+            "{id:?}: grave-accented-lowercase body word missing\n---\n{extracted:?}"
+        );
+
+        // Same gate `validate::mod::evaluate` uses to raise the CRITICAL
+        // `no_extractable_text` issue — a passing assertion here means the
+        // real validator would NOT have blocked this export.
+        let normalized_len = normalize_like_validator(&extracted).len();
+        assert!(
+            normalized_len >= NO_EXTRACTABLE_TEXT_THRESHOLD,
+            "{id:?}: only {normalized_len} normalized chars extracted — the real \
+             validator's no_extractable_text gate (< {NO_EXTRACTABLE_TEXT_THRESHOLD}) \
+             would block this export; got {extracted:?}"
         );
     }
 }
@@ -1515,6 +1620,39 @@ Mit freundlichen Grüßen,
 Max Müller
 ";
 
+/// Accented-Latin cover-letter fixture — grave-accented lowercase (à, ò, ì)
+/// PLUS capital grave accents (È, À), the shape the `no_extractable_text`
+/// incident audit flagged as under-tested (see [`ACCENTED_RESUME_FIXTURE`]
+/// for the full rationale). US-market shape (reuses [`LETTER_FIXTURE_US`]'s
+/// structure) so DIN-specific parsing isn't a confound here.
+const LETTER_FIXTURE_IT: &str = "\
+Àlvaro Èsposito
+alvaro.esposito@example.it | https://linkedin.com/in/alvaroesposito
+
+June 2, 2025
+
+Hiring Manager
+Acme Corp
+123 Main Street
+New York, NY 10001
+
+Dear Hiring Manager,
+
+I am writing to express my strong interest in the Software Engineer position at \
+Acme Corp. Growing up near Città di Torino and studying at the Università degli \
+Studi, I built a solid foundation in distributed systems — però my passion has \
+always been building things that scale così well they disappear into the \
+background.
+
+During my five years at Beta Inc, I led the migration of our payments service to \
+a microservices architecture, reducing end-to-end latency by 40 percent.
+
+Sincerely,
+
+Àlvaro Èsposito
+Software Engineer
+";
+
 // (1) US letter renders to a valid PDF and contains expected text.
 #[test]
 fn letter_us_renders_valid_pdf_with_expected_content() {
@@ -1987,6 +2125,12 @@ fn letter_refined_de_honors_din_conventions() {
         lower.contains("freundlichen"),
         "German sign-off missing:\n{lower}"
     );
+    // Signature name — previously unasserted here, leaving the Refined layout
+    // with zero extraction coverage of the candidate's own name.
+    assert!(
+        lower.contains("max") && lower.contains("müller"),
+        "refined DE: signature name missing\n---\n{lower}"
+    );
 
     // DIN date-top-right → the date reads near the top, before the salutation.
     let pos_date = lower.find("2025").expect("date present");
@@ -1994,6 +2138,49 @@ fn letter_refined_de_honors_din_conventions() {
     assert!(
         pos_date < pos_sal,
         "DE DIN date should precede the salutation — date={pos_date} sal={pos_sal}"
+    );
+}
+
+// (R2b) Refined round-trips accented-Latin content — grave lowercase + capital
+// È/À (see `ACCENTED_RESUME_FIXTURE`/`LETTER_FIXTURE_IT` doc comments for
+// rationale). Complements (R2) above, which only exercises German ü/ß.
+#[test]
+fn letter_refined_extracts_accented_latin_content() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_IT,
+        &t,
+        None,
+        Some("Àlvaro Èsposito"),
+        "us",
+        "en",
+        LetterLayout::Refined,
+    )
+    .expect("refined accented-Latin render should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "refined accented-Latin must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on refined accented-Latin output");
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    assert!(
+        lower.contains("àlvaro") && lower.contains("èsposito"),
+        "refined: accented signature name missing — capitals È/À did not survive extraction\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("così") || lower.contains("però") || lower.contains("città"),
+        "refined: grave-accented-lowercase body word missing\n---\n{extracted}"
+    );
+
+    let normalized_len = normalize_like_validator(&extracted).len();
+    assert!(
+        normalized_len >= NO_EXTRACTABLE_TEXT_THRESHOLD,
+        "refined accented-Latin: only {normalized_len} normalized chars extracted — \
+         the real validator's no_extractable_text gate would block this export"
     );
 }
 
@@ -2123,6 +2310,53 @@ fn letter_banded_de_honors_din_subject() {
     assert!(
         lower.contains("freundlichen"),
         "German sign-off missing:\n{lower}"
+    );
+    assert!(
+        lower.contains("max") && lower.contains("müller"),
+        "banded DE: signature name missing\n---\n{lower}"
+    );
+}
+
+// (B2b) Banded round-trips accented-Latin content — grave lowercase + capital
+// È/À (see `ACCENTED_RESUME_FIXTURE`/`LETTER_FIXTURE_IT` doc comments for
+// rationale). Complements (B2) above, which only exercises German ü/ß.
+#[test]
+fn letter_banded_extracts_accented_latin_content() {
+    let t = Template::get(TemplateId::SwissMinimal);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_IT,
+        &t,
+        None,
+        Some("Àlvaro Èsposito"),
+        "us",
+        "en",
+        LetterLayout::Banded,
+    )
+    .expect("banded accented-Latin render should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "banded accented-Latin must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on banded accented-Latin output");
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    assert!(
+        lower.contains("àlvaro") && lower.contains("èsposito"),
+        "banded: accented signature name missing — capitals È/À did not survive extraction\n---\n{extracted}"
+    );
+    assert!(
+        lower.contains("così") || lower.contains("però") || lower.contains("città"),
+        "banded: grave-accented-lowercase body word missing\n---\n{extracted}"
+    );
+
+    let normalized_len = normalize_like_validator(&extracted).len();
+    assert!(
+        normalized_len >= NO_EXTRACTABLE_TEXT_THRESHOLD,
+        "banded accented-Latin: only {normalized_len} normalized chars extracted — \
+         the real validator's no_extractable_text gate would block this export"
     );
 }
 
