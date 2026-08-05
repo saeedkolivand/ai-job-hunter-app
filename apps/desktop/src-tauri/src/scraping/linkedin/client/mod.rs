@@ -126,7 +126,9 @@ impl LinkedInHttpClient {
             return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
-        let bytes = response.bytes().await?;
+        let bytes =
+            crate::net::http::read_bytes_capped(response, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await?;
         let body = if bytes.starts_with(&[0x1f, 0x8b]) {
             // Gzip magic number
             let mut decoder = GzDecoder::new(&bytes[..]);
@@ -137,7 +139,7 @@ impl LinkedInHttpClient {
             String::from_utf8(decompressed)
                 .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         } else {
-            String::from_utf8(bytes.to_vec())
+            String::from_utf8(bytes)
                 .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         };
 
@@ -171,7 +173,9 @@ impl LinkedInHttpClient {
             return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
-        let bytes = response.bytes().await?;
+        let bytes =
+            crate::net::http::read_bytes_capped(response, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await?;
         let body = if bytes.starts_with(&[0x1f, 0x8b]) {
             // Gzip magic number
             let mut decoder = GzDecoder::new(&bytes[..]);
@@ -182,7 +186,7 @@ impl LinkedInHttpClient {
             String::from_utf8(decompressed)
                 .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         } else {
-            String::from_utf8(bytes.to_vec())
+            String::from_utf8(bytes)
                 .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
         };
 
