@@ -99,12 +99,15 @@ describe('HowItWorksBody', () => {
     );
   });
 
-  it('renders the footer with all links (no "current" page to omit)', () => {
+  it('wires the footer with "how it works" as plain text and the other items as links', () => {
     const { container } = render(<HowItWorksBody />);
     const footLinks = container.querySelector('.foot-links');
+    expect(footLinks?.textContent).toContain('how it works');
+
     const hrefs = Array.from(footLinks?.querySelectorAll('a') ?? []).map((a) =>
       a.getAttribute('href')
     );
+    expect(hrefs).not.toContain('/how-it-works');
     expect(hrefs).toContain('/');
     expect(hrefs).toContain('/download');
     expect(hrefs).toContain('/privacy');

@@ -16,9 +16,17 @@ export const metadata: Metadata = {
       'Interactive architecture map of the local-first Tauri 2 monorepo — every node maps to a real file.',
     url: 'https://aijobhunter.app/architecture-map',
     type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — an interactive architecture map of the local-first Tauri 2 monorepo.',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Architecture Map',
     description: 'Interactive architecture map — every node maps to a real file.',
   },

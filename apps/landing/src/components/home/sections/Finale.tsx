@@ -162,8 +162,9 @@ export function Finale() {
         />
       </svg>
       <p className="foot-nav">
-        home · <a href="/download">download</a> · <a href="/privacy">privacy</a> ·{' '}
-        <a href="/accessibility">accessibility</a> · <a href="/creature">▶ the short film</a> ·{' '}
+        home · <a href="/how-it-works">how it works</a> · <a href="/download">download</a> ·{' '}
+        <a href="/privacy">privacy</a> · <a href="/accessibility">accessibility</a> ·{' '}
+        <a href="/creature">▶ the short film</a> ·{' '}
         <a href={GITHUB_REPO} target="_blank" rel="noopener noreferrer">
           GitHub
         </a>{' '}
