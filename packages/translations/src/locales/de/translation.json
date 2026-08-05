@@ -226,7 +226,12 @@
       }
     },
     "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen.",
-    "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten."
+    "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten.",
+    "cloud": {
+      "addKeyToLoad": "Füge einen API-Schlüssel hinzu, um die Modelle dieses Anbieters zu laden.",
+      "fetchFailed": "Modelle konnten nicht geladen werden: {{message}}",
+      "cachedList": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen."
+    }
   },
   "shortcuts": {
     "title": "Tastenkürzel",
@@ -650,7 +655,11 @@
       "refresh": "Aktualisieren",
       "description": "Wählen Sie das lokale KI-Modell zur Generierung von Antworten.",
       "loading": "Modelle werden geladen...",
-      "noModels": "Keine Modelle verfügbar. Stellen Sie sicher, dass Ollama läuft."
+      "noModels": "Keine Modelle verfügbar. Stellen Sie sicher, dass Ollama läuft.",
+      "fetchFailedTitle": "Modelle konnten nicht geladen werden",
+      "cachedNotice": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen.",
+      "emptyTitle": "Keine Modelle für diesen Anbieter verfügbar",
+      "emptyDescription": "Der Katalog dieses Anbieters ist derzeit leer."
     },
     "cliInstall": {
       "notDetected": "{{label}} CLI nicht erkannt. Installieren und einmal anmelden, dann erneut prüfen.",
@@ -2310,7 +2319,9 @@
       "cliNotDetected": "{{agent}} CLI nicht erkannt. Installieren Sie es und melden Sie sich einmal an, dann weiter.",
       "installAgent": "{{agent}} installieren",
       "testKey": "Testen",
-      "testingKey": "Schlüssel wird getestet…"
+      "testingKey": "Schlüssel wird getestet…",
+      "selectModelPlaceholder": "Modell auswählen…",
+      "pickModelHint": "Wähle oben ein Modell, oder überspringe vorerst."
     },
     "research": {
       "title": "Bessere Anschreiben",

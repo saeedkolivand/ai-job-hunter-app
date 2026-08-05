@@ -200,6 +200,75 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
   });
 });
 
+describe('CloudProviderConfig — model list states (live-model-lists PR)', () => {
+  it('shows the real failure message when the fetch failed and there is no cache/stored selection', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        expandedModels={[]}
+        expandedModelsError="invalid or unauthorized API key"
+      />
+    );
+    expect(screen.getByText('settings.aiModel.fetchFailedTitle')).toBeInTheDocument();
+    expect(screen.getByText('invalid or unauthorized API key')).toBeInTheDocument();
+    // `ErrorState` carries role="alert" itself — a screen-reader user gets the
+    // failure announced without needing to be focused inside the panel.
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /select a model/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a neutral empty state when the fetch succeeded but the catalogue is empty', () => {
+    render(<CloudProviderConfig {...baseProps} expandedModels={[]} />);
+    expect(screen.getByText('settings.aiModel.emptyTitle')).toBeInTheDocument();
+    // `EmptyState` carries role="status" — announced politely, not as an alert.
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('shows a labelled loading indicator while the model list is still loading — not the empty state and not a bare empty dropdown', () => {
+    render(<CloudProviderConfig {...baseProps} expandedModels={[]} expandedModelsLoading />);
+
+    // Positive assertion — regression guard for the loading state falling
+    // through to an unlabelled `<Dropdown options={[]} />` (indistinguishable
+    // from "zero models"), not just the absence of the wrong state.
+    const loading = screen.getByRole('status');
+    expect(loading).toHaveTextContent('settings.aiModel.loading');
+    expect(screen.queryByText('settings.aiModel.emptyTitle')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /select a model/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the dropdown plus a cached-list note when models were served from the cache', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        expandedModels={[{ name: 'gpt-4o' }]}
+        expandedModelsCached
+        providerModel="gpt-4o"
+      />
+    );
+    expect(screen.getByText('settings.aiModel.cachedNotice')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /gpt-4o/ })).toBeInTheDocument();
+  });
+
+  it('preserves an unlisted stored selection even when the live/cached list is empty (no false empty state)', () => {
+    render(
+      <CloudProviderConfig {...baseProps} expandedModels={[]} providerModel="claude-sonnet-4-6" />
+    );
+    expect(screen.queryByText('settings.aiModel.emptyTitle')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /claude-sonnet-4-6/ })).toBeInTheDocument();
+  });
+
+  it('labels a model option with displayName over name when the provider returns one', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        expandedModels={[{ name: 'gpt-4o', displayName: 'GPT-4o (Omni)' }]}
+        providerModel="gpt-4o"
+      />
+    );
+    expect(screen.getByRole('button', { name: /GPT-4o \(Omni\)/ })).toBeInTheDocument();
+  });
+});
+
 describe('CloudProviderConfig — reasoning-effort picker is capability-driven', () => {
   it('appears once the backend reports levels for the selected model', () => {
     modelCapsState.data = { effortLevels: ['low', 'medium', 'high'] };

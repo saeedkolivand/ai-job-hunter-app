@@ -104,12 +104,25 @@ export function useProviderKeys() {
   // which "list" their aliases through the same IPC path). Ollama uses its own
   // local model list, so it's excluded.
   const expandedFetchesModels = expanded !== null && PROVIDERS[expanded].kind !== 'local-server';
-  const { data: expandedModelsRaw = [] } = useListProviderModels(
+  const {
+    data: expandedModelsResult,
+    isLoading: expandedModelsLoading,
+    isError: expandedModelsErrored,
+    error: expandedModelsErrorObj,
+  } = useListProviderModels(
     expanded ?? 'openai',
     expandedFetchesModels && (keyStatus[expanded ?? 'openai'] ?? false),
     baseUrlFor(expanded ?? 'openai')
   );
-  const expandedModels = expandedModelsRaw as Array<{ name: string }>;
+  const expandedModels = expandedModelsResult?.models ?? [];
+  const expandedModelsCached = expandedModelsResult?.cached ?? false;
+  // A rejected invoke can reject with a plain string rather than an `Error`
+  // (Tauri serializes `AppError` as its message string) — guard both shapes.
+  const expandedModelsError = expandedModelsErrored
+    ? expandedModelsErrorObj instanceof Error
+      ? expandedModelsErrorObj.message
+      : String(expandedModelsErrorObj)
+    : undefined;
 
   const handleSelectModel = (provider: AiProvider, model: string) => {
     // Edits the provider's model without flipping the active provider (the
@@ -223,6 +236,9 @@ export function useProviderKeys() {
     loadingOllama,
     expanded,
     expandedModels,
+    expandedModelsLoading,
+    expandedModelsCached,
+    expandedModelsError,
     apiKeyInput,
     showKey,
     savingKey,
