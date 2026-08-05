@@ -26,6 +26,15 @@ const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 /** Interval between job-status poll ticks (ms). */
 const JOB_POLL_INTERVAL_MS = 3_000;
 
+/**
+ * Rejection message for a completion that resolved with no usable content
+ * (whitespace-only counts as empty). Worded to match the export path's own
+ * empty-document rejection (`apps/desktop/src-tauri/src/export/commands/mod.rs`)
+ * — the user needs to know generation produced nothing, and that retrying is
+ * the fix, not that something crashed.
+ */
+const EMPTY_GENERATION_MESSAGE = 'Generation produced no content. Please try again.';
+
 export interface AwaitAiStreamOptions {
   /** Called with each answer token (after think-splitting). */
   onToken?: (tok: string) => void;
@@ -37,6 +46,11 @@ export interface AwaitAiStreamOptions {
   pollIntervalMs?: number;
   /** Override the stream timeout (ms). Defaults to `STREAM_TIMEOUT_MS`. */
   timeoutMs?: number;
+  /** Active provider — diagnostic only, logged (never generated content) if the
+   *  completion resolves empty. */
+  provider?: string;
+  /** Active model — diagnostic only, same as `provider`. */
+  model?: string;
 }
 
 /**
@@ -64,6 +78,8 @@ export function awaitAiStream(
     signal,
     pollIntervalMs = JOB_POLL_INTERVAL_MS,
     timeoutMs = STREAM_TIMEOUT_MS,
+    provider,
+    model,
   } = opts;
 
   // ── Abort-before-register guard ──────────────────────────────────────────
@@ -130,6 +146,14 @@ export function awaitAiStream(
         splitter.flush();
         off();
         cleanup();
+        // A `done` chunk with no usable content (empty, or whitespace-only) is
+        // NOT a successful generation — resolving it as one is what let an
+        // empty document sail through persist/export with no error shown.
+        if (!buffer.trim()) {
+          console.warn('[awaitAiStream] empty completion', { jobId, provider, model });
+          reject(new Error(EMPTY_GENERATION_MESSAGE));
+          return;
+        }
         resolve(buffer);
       }
     });
@@ -184,7 +208,16 @@ export function awaitAiStream(
           // never win over the authoritative persisted result (and a missing
           // `result.text` still falls back to whatever did stream).
           const persisted = job.result?.text ?? '';
-          resolve(persisted.length > buffer.length ? persisted : buffer);
+          const finalText = persisted.length > buffer.length ? persisted : buffer;
+          // Same empty guard as the `done`-chunk path: neither the streamed
+          // buffer nor the persisted job result has content — fail instead of
+          // resolving '' as a finished document.
+          if (!finalText.trim()) {
+            console.warn('[awaitAiStream] empty completion (poll)', { jobId, provider, model });
+            reject(new Error(EMPTY_GENERATION_MESSAGE));
+            return;
+          }
+          resolve(finalText);
         }
       })().finally(() => {
         pollInFlight = false;
