@@ -16,6 +16,7 @@
 - [Accessibility Statement](https://aijobhunter.app/accessibility): WCAG 2.2 AA conformance status for the site, desktop app and extension — partially conformant, with known barriers listed.
 - [Architecture Map](https://aijobhunter.app/architecture-map): Interactive map of the codebase — renderer, service hooks, prompts, IPC contracts, Rust commands, scraper and provider registries. Every node points at real source; a drift checker fails CI if it lies.
 - [The Agent Fleet](https://aijobhunter.app/agent-system): How the repo's `.claude/` agent system works — paired author and critic per domain, routed by area, reviewed independently.
+- [Technology Radar](https://aijobhunter.app/tech-radar): Adopt/Trial/Assess/Hold radar of the real stack, with the reasoning behind each choice and links to the ADR where one exists. A CI check fails the build if an entry names a dependency that no longer exists.
 
 ## Optional
 
