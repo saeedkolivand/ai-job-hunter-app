@@ -12,14 +12,16 @@
 
 use super::{
     build_chat_stream_body, is_gpt5_or_later_reasoning_family, is_reasoning_model,
-    join_responses_text, parse_openai_delta, parse_openai_embed_usage, parse_openai_frames,
-    parse_openai_turn, parse_openai_usage, should_list_model, OpenAiClient,
+    join_responses_text, parse_model_list, parse_openai_delta, parse_openai_embed_usage,
+    parse_openai_frames, parse_openai_turn, parse_openai_usage, resolve_openai_key,
+    scrub_url_secret, should_list_model, OpenAiClient,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
 };
+use crate::error::AppError;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-use serde_json::json;
+use serde_json::{json, Value};
 
 fn base_request() -> AiGenerateRequest {
     AiGenerateRequest {
@@ -334,7 +336,7 @@ fn parse_turn_malformed_arguments_degrade_to_empty_object() {
 // ── web_search_transport (wiremock against `crate::net::http::shared()`,
 // mirroring the pattern in `retry.rs`'s `retry_loop_tests`) ────────────────
 
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -395,6 +397,307 @@ async fn web_search_transport_extracts_text_from_a_realistic_responses_payload()
         .await
         .expect("ok");
     assert_eq!(text, "Acme is a widget maker.");
+}
+
+// ── list_models_transport (same wiremock pattern as web_search_transport) ──────
+
+#[tokio::test]
+async fn list_models_transport_errors_on_http_500() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a non-success status must reject, never silently degrade to empty");
+    // Routed through `friendly_api_error`, not a bare `AppError::Provider` —
+    // 500 classifies as `Network` (retriable), distinct from a 401 (`Config`,
+    // bad key) or a 429 (`Network`, rate limit). This IS the PR's premise:
+    // once the curated fallback is gone, this classification is the user's
+    // only explanation.
+    assert!(matches!(err, AppError::Network(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_classifies_401_as_a_config_error_not_a_bare_provider_error() {
+    // `test_key`'s status branch (not independently testable here — it needs
+    // a live `AppHandle` this crate has no mock harness for) constructs its
+    // error via the identical `friendly_api_error(self.id, status,
+    // &body_text)` call on the same `list_models_request` transport, so this
+    // covers both by construction.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a 401 must reject");
+    assert!(matches!(err, AppError::Config(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_ok_with_the_native_openai_filter_applied() {
+    let server = MockServer::start().await;
+    let payload = json!({
+        "data": [{ "id": "gpt-4o" }, { "id": "text-embedding-3-small" }]
+    });
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(payload))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let models = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect("ok");
+    assert_eq!(models, vec![json!({ "name": "gpt-4o" })]);
+}
+
+#[tokio::test]
+async fn list_models_transport_ok_empty_on_a_genuinely_empty_catalogue() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": [] })))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let models = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect("ok");
+    assert_eq!(models, Vec::<Value>::new());
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_on_a_non_json_200_body() {
+    // The captive-portal case: a 200 whose body is HTML, not JSON — a
+    // self-hosted gateway behind a broken proxy/auth wall can return this.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("<html>captive portal</html>"))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a non-JSON 200 body must reject, never silently degrade to empty");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_on_a_bare_array_200_body() {
+    // Well-formed JSON, but not the `{ "data": [...] }` envelope — a deployment
+    // that returns the array directly rather than wrapping it.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": "gpt-4o" }])))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a bare-array body must reject, not silently return an empty list");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_succeeds_with_no_key_for_a_keyless_deployment() {
+    // A keyless `OpenAiCompatible` deployment (LM Studio, vLLM, …) must still
+    // be able to list — and must never send an empty `Authorization: Bearer`
+    // header (some gateways reject a malformed header rather than ignoring it).
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(|req: &wiremock::Request| !req.headers.contains_key("authorization"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": [{ "id": "local-model" }] })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAiCompatible, Some(server.uri()));
+    let models = client
+        .list_models_transport(None)
+        .await
+        .expect("a keyless request must still reach the mock (no Authorization header required)");
+    assert_eq!(models, vec![json!({ "name": "local-model" })]);
+}
+
+#[tokio::test]
+async fn list_models_transport_sends_the_bearer_header_when_a_key_is_present() {
+    // The `Some(key)` sibling of the keyless test above — every other
+    // `list_models_transport` mock in this file never REQUIRES an
+    // `authorization` header, so a regression that dropped `bearer_auth`
+    // entirely (e.g. accidentally hardcoding `None`) would keep every one of
+    // them green. This one requires the header to be present with the exact
+    // value, closing that gap.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(header("authorization", "Bearer dummy-key"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": [{ "id": "gpt-4o" }] })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let models = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect("a keyed request must send the bearer header the mock requires");
+    assert_eq!(models, vec![json!({ "name": "gpt-4o" })]);
+}
+
+// ── endpoint_url / scrub_url_secret (query-string-auth gateway safety) ─────────
+//
+// Some OpenAI-compatible gateways (Cloudflare AI Gateway, several self-hosted
+// proxies) authenticate via the base URL's own query string, e.g.
+// `https://gw.example.com/v1?api-key=SECRET`. Plain string concatenation
+// (`format!("{base}/{path}")`) sends that case to the WRONG path (the query
+// value gets `/path` appended to it) and, because reqwest's own error
+// `Display` embeds the request URL verbatim, echoes the secret into any
+// error text built from it.
+
+#[test]
+fn endpoint_url_preserves_a_query_carrying_base_url() {
+    let client = OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("https://gw.example.com/v1?api-key=SECRET123".to_string()),
+    );
+    let url = client.endpoint_url("models").unwrap();
+    assert_eq!(
+        url.as_str(),
+        "https://gw.example.com/v1/models?api-key=SECRET123"
+    );
+}
+
+#[test]
+fn endpoint_url_resolves_the_same_path_regardless_of_a_trailing_slash_on_the_base() {
+    let no_slash = OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("https://gw.example.com/v1?api-key=SECRET123".to_string()),
+    )
+    .endpoint_url("models")
+    .unwrap();
+    let with_slash = OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("https://gw.example.com/v1/?api-key=SECRET123".to_string()),
+    )
+    .endpoint_url("models")
+    .unwrap();
+    assert_eq!(no_slash, with_slash);
+}
+
+#[test]
+fn endpoint_url_joins_a_multi_segment_path() {
+    let client = OpenAiClient::new(ProviderId::OpenAi, None);
+    let url = client.endpoint_url("chat/completions").unwrap();
+    assert_eq!(url.as_str(), "https://api.openai.com/v1/chat/completions");
+}
+
+#[test]
+fn endpoint_url_preserves_a_fragment() {
+    let client = OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("https://gw.example.com/v1#frag".to_string()),
+    );
+    let url = client.endpoint_url("models").unwrap();
+    assert_eq!(url.as_str(), "https://gw.example.com/v1/models#frag");
+}
+
+#[test]
+fn endpoint_url_errors_on_an_unparseable_base_url() {
+    let client = OpenAiClient::new(ProviderId::OpenAiCompatible, Some("not a url".to_string()));
+    assert!(matches!(
+        client.endpoint_url("models"),
+        Err(AppError::Config(_))
+    ));
+}
+
+#[tokio::test]
+async fn scrub_url_secret_removes_the_query_but_keeps_scheme_host_path() {
+    // A genuine transport failure (not a synthetic error — `reqwest::Error`
+    // has no public constructor) against an unreachable loopback port, so the
+    // resulting error carries a real, reqwest-attached URL.
+    // Built through `net::http::shared()`, not `reqwest::Client::new()` — R5
+    // confines client construction to `net/http.rs`, and this test is more
+    // faithful for it: the error being scrubbed comes from the same client
+    // the production path uses.
+    let url = reqwest::Url::parse("http://127.0.0.1:1/v1/models?api-key=SECRET123").unwrap();
+    let err = crate::net::http::shared()
+        .get(url)
+        .timeout(std::time::Duration::from_millis(500))
+        .send()
+        .await
+        .expect_err("port 1 must be unreachable");
+    let text = scrub_url_secret(err).to_string();
+    assert!(
+        !text.contains("SECRET123"),
+        "query secret must not survive scrubbing: {text}"
+    );
+    assert!(
+        text.contains("127.0.0.1:1/v1/models"),
+        "scheme/host/path must stay visible for diagnosing a wrong-path bug: {text}"
+    );
+}
+
+#[tokio::test]
+async fn list_models_transport_reaches_the_correct_path_with_a_query_carrying_base_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(query_param("api-key", "SECRET123"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": [{ "id": "gw-model" }] })),
+        )
+        .mount(&server)
+        .await;
+
+    let base = format!("{}/v1?api-key=SECRET123", server.uri());
+    let client = OpenAiClient::new(ProviderId::OpenAiCompatible, Some(base));
+    let models = client
+        .list_models_transport(None)
+        .await
+        .expect("a query-carrying base URL must resolve to the correct path with the query intact");
+    assert_eq!(models, vec![json!({ "name": "gw-model" })]);
+}
+
+#[tokio::test]
+async fn list_models_transport_never_leaks_the_query_secret_on_a_network_failure() {
+    let client = OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("http://127.0.0.1:1/v1?api-key=SECRET123".to_string()),
+    );
+    let err = client
+        .list_models_transport(None)
+        .await
+        .expect_err("port 1 must be unreachable");
+    let text = err.to_string();
+    assert!(
+        !text.contains("SECRET123"),
+        "the resolved-but-unreachable query-carrying URL must not leak its secret: {text}"
+    );
 }
 
 #[test]
@@ -598,4 +901,158 @@ fn effort_levels_returns_the_verified_universal_set_for_every_reasoning_model() 
     assert!(OpenAiClient::new(ProviderId::OpenAi, None)
         .effort_levels("gpt-4o")
         .is_empty());
+}
+
+// ── list_models ──────────────────────────────────────────────────────────────
+
+#[test]
+fn resolve_openai_key_errors_on_missing_or_blank_key_for_native_openai() {
+    assert!(matches!(
+        resolve_openai_key(ProviderId::OpenAi, None),
+        Err(AppError::Config(_))
+    ));
+    assert!(matches!(
+        resolve_openai_key(ProviderId::OpenAi, Some("  ".to_string())),
+        Err(AppError::Config(_))
+    ));
+}
+
+#[test]
+fn resolve_openai_key_errors_on_missing_key_for_ollama_cloud() {
+    // Only `OpenAiCompatible` gets the keyless exemption — Ollama Cloud is a
+    // hosted cloud service (via the same composed client) and still requires
+    // its account key.
+    assert!(matches!(
+        resolve_openai_key(ProviderId::OllamaCloud, None),
+        Err(AppError::Config(_))
+    ));
+}
+
+#[test]
+fn resolve_openai_key_accepts_a_real_key() {
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAi, Some("sk-real".to_string()))
+            .unwrap()
+            .as_deref(),
+        Some("sk-real")
+    );
+}
+
+#[test]
+fn resolve_openai_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach `bearer_auth`
+    // TRIMMED — checking `k.trim().is_empty()` but returning the padded `k`
+    // is the exact bug: a trailing space just 401s, an embedded `\n` makes
+    // the header value invalid and the request never builds at all.
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAi, Some(" sk-real \n".to_string()))
+            .unwrap()
+            .as_deref(),
+        Some("sk-real")
+    );
+}
+
+#[test]
+fn resolve_openai_key_allows_a_missing_or_blank_key_for_openai_compatible() {
+    // A keyless self-hosted deployment (LM Studio, vLLM, …) is explicitly
+    // supported — generation already works with no key
+    // (`chat_stream`/`chat_with_tools` default a missing key to `""`), so
+    // listing/testing must not hard-error just because no key is stored.
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAiCompatible, None).unwrap(),
+        None
+    );
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAiCompatible, Some("   ".to_string())).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn resolve_openai_key_still_prefers_a_real_key_for_openai_compatible_when_present() {
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAiCompatible, Some("real-key".to_string()))
+            .unwrap()
+            .as_deref(),
+        Some("real-key")
+    );
+}
+
+#[test]
+fn parse_model_list_applies_the_native_openai_chat_filter() {
+    let body = json!({
+        "data": [{ "id": "gpt-4o" }, { "id": "text-embedding-3-small" }]
+    });
+    let names: Vec<String> = parse_model_list(ProviderId::OpenAi, &body)
+        .unwrap()
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["gpt-4o"]);
+}
+
+#[test]
+fn parse_model_list_passes_through_unfiltered_for_openai_compatible() {
+    let body = json!({ "data": [{ "id": "gpt-oss:120b" }] });
+    let names: Vec<String> = parse_model_list(ProviderId::OpenAiCompatible, &body)
+        .unwrap()
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["gpt-oss:120b"]);
+}
+
+#[test]
+fn parse_model_list_normalizes_created_epoch_seconds_to_millis() {
+    // OpenAI's `created` is unix-epoch SECONDS — 1704067200 is the well-known
+    // 2024-01-01T00:00:00Z reference point; the normalized `createdAt` must
+    // be that value in MILLISECONDS, this codebase's `createdAt` convention.
+    let body = json!({
+        "data": [{ "id": "gpt-4o", "created": 1_704_067_200i64 }]
+    });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({ "name": "gpt-4o", "createdAt": 1_704_067_200_000i64 })]
+    );
+}
+
+#[test]
+fn parse_model_list_omits_created_at_rather_than_overflow_on_a_pathological_value() {
+    // `created` is provider-controlled — a bare `secs * 1000` can overflow
+    // `i64` (panics in debug, silently wraps in release). Must degrade to
+    // "omit the field", never fabricate a wrapped/garbage timestamp.
+    let body = json!({
+        "data": [{ "id": "gpt-4o", "created": i64::MAX }]
+    });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gpt-4o" })]);
+}
+
+#[test]
+fn parse_model_list_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it. OpenAI's `/v1/models` never
+    // returns `displayName`/`contextLength` at all.
+    let body = json!({ "data": [{ "id": "gpt-4o" }] });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gpt-4o" })]);
+}
+
+#[test]
+fn parse_model_list_ok_empty_on_genuinely_empty_catalogue() {
+    let body = json!({ "data": [] });
+    assert_eq!(
+        parse_model_list(ProviderId::OpenAi, &body).unwrap(),
+        Vec::<Value>::new()
+    );
+}
+
+#[test]
+fn parse_model_list_errors_when_data_field_is_missing() {
+    let body = json!({ "unexpected": "shape" });
+    assert!(matches!(
+        parse_model_list(ProviderId::OpenAi, &body),
+        Err(AppError::Provider(_))
+    ));
 }

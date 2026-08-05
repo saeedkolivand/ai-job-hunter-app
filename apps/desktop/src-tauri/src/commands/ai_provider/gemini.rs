@@ -13,12 +13,17 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    bounded, friendly_api_error, model_entry, pagination_step, single_shot_turn, split_system,
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, PaginationStep,
+    ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
+
+/// Safety bound on `list_models` pagination — real catalogues are a few dozen
+/// models; this just prevents an unbounded loop if the API ever returns a
+/// `nextPageToken` forever.
+const MAX_LIST_MODELS_PAGES: usize = 50;
 
 /// Requested embedding output size. `gemini-embedding-2`'s default (unspecified)
 /// dimensionality is 3072 — 4x the retired text-embedding-004's 768. One of
@@ -26,7 +31,12 @@ const BASE: &str = "https://generativelanguage.googleapis.com";
 /// (see `embed_impl`'s call site for the full rationale).
 const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
 
-/// Validate the key the keychain returned, rejecting a missing/blank one early.
+/// Validate the key the keychain returned, rejecting a missing/blank one
+/// early and TRIMMING the value it returns — not just checking the trimmed
+/// form is non-empty and handing back the original padded string. A pasted
+/// key with a trailing space/newline would otherwise reach the
+/// `x-goog-api-key` header as-is: a trailing space just 401s; an embedded
+/// `\n` makes the header value invalid and the request never builds at all.
 ///
 /// Pure (no `AppHandle`) so it's unit-testable. Several call paths previously
 /// defaulted a missing key to `""` and still issued the request, sending an empty
@@ -34,9 +44,9 @@ const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
 /// same unauthorized error `friendly_api_error` maps a real 401/403 to, so the
 /// message stays consistent.
 fn validate_gemini_key(stored: Option<String>) -> AppResult<String> {
-    match stored {
-        Some(k) if !k.trim().is_empty() => Ok(k),
-        _ => Err(AppError::Config(format!(
+    match stored.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+        Some(k) => Ok(k.to_string()),
+        None => Err(AppError::Config(format!(
             "{}: invalid or unauthorized API key.",
             ProviderId::Gemini.as_str()
         ))),
@@ -46,6 +56,44 @@ fn validate_gemini_key(stored: Option<String>) -> AppResult<String> {
 /// Resolve the stored Gemini key, rejecting a missing/blank one before any request.
 fn require_gemini_key(app: &AppHandle) -> AppResult<String> {
     validate_gemini_key(get_provider_key(app, ProviderId::Gemini.credential_key()))
+}
+
+/// Parse ONE page of the `/v1beta/models` response body into `{name,
+/// displayName?, contextLength?}` entries, stripping the `models/` prefix
+/// Gemini's wire format uses, plus the `nextPageToken` for the next page, if
+/// any. `-preview`/experimental ids are NOT filtered out here — `/v1beta`
+/// (unlike `/v1`) lists them, and they're valid, selectable models (e.g. the
+/// curated Pro-tier default in `provider-meta.ts` is a `-preview` id). Pure
+/// so it's unit-testable without a network mock.
+///
+/// Gemini's `/v1beta/models` returns `displayName` (string) and
+/// `inputTokenLimit` (integer) — verified against the live docs. It does
+/// **not** return a creation timestamp at all, so no `createdAt` field is
+/// ever populated for this provider — never a fabricated one.
+fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
+    let models = body
+        .get("models")
+        .and_then(|d| d.as_array())
+        .ok_or_else(|| AppError::Provider("Gemini: response missing `models` array".to_string()))?;
+    let names = models
+        .iter()
+        .filter_map(|m| {
+            let raw_name = m.get("name").and_then(|v| v.as_str())?;
+            if !raw_name.starts_with("models/") {
+                return None;
+            }
+            let name = raw_name.strip_prefix("models/").unwrap_or(raw_name);
+            let display_name = m.get("displayName").and_then(|v| v.as_str());
+            let context_length = m.get("inputTokenLimit").and_then(|v| v.as_i64());
+            Some(model_entry(name, display_name, None, context_length))
+        })
+        .collect();
+    let next_page_token = body
+        .get("nextPageToken")
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(String::from);
+    Ok((names, next_page_token))
 }
 
 /// Concatenate every `parts[].text` of the first candidate (non-streaming
@@ -744,6 +792,76 @@ impl GeminiClient {
         trace.end(Some(status.as_u16()), true);
         Ok(join_parts_text(&data))
     }
+
+    /// The full paginated `/v1beta/models` transport — no `AppHandle`, so
+    /// it's directly testable against a `wiremock::MockServer` by passing
+    /// its `uri()` as `base` (production always calls this with `BASE`).
+    /// Mirrors [`OpenAiClient::list_models_transport`](super::openai::OpenAiClient::list_models_transport).
+    ///
+    /// Loops through `pageToken` pages up to `MAX_LIST_MODELS_PAGES`,
+    /// bounded by a SINGLE cumulative `total_deadline` across every page
+    /// (not a fresh timeout per request) — also a parameter (production
+    /// always passes `timeouts::LIST_MODELS_TOTAL`) so a test can force it
+    /// to expire in milliseconds instead of 30 real seconds.
+    async fn list_models_transport(
+        &self,
+        base: &str,
+        api_key: &str,
+        total_deadline: std::time::Duration,
+    ) -> AppResult<Vec<Value>> {
+        let client = crate::net::http::shared();
+        let mut all = Vec::new();
+        let mut page_token: Option<String> = None;
+        let deadline = tokio::time::Instant::now() + total_deadline;
+        for page_index in 0..MAX_LIST_MODELS_PAGES {
+            let mut req = client
+                .get(format!("{base}/v1beta/models"))
+                .header("x-goog-api-key", api_key)
+                // No explicit `pageSize` — see the matching note in
+                // `anthropic.rs`: the `pageToken` loop already yields every
+                // page, so an unverified page-size ceiling would risk 400-ing
+                // the whole listing to save one cached round-trip.
+                .timeout(timeouts::LIST_MODELS);
+            if let Some(token) = &page_token {
+                req = req.query(&[("pageToken", token.as_str())]);
+            }
+            let name = self.id().as_str();
+            // Every I/O step below races the SAME cumulative `deadline` via
+            // `bounded` — not just the send. A stalled body would otherwise
+            // blow straight through `total_deadline` even though the send
+            // itself resolved (headers arrived) well within budget.
+            let resp = bounded(deadline, name, req.send())
+                .await?
+                .map_err(|e| AppError::Network(format!("{name}: request failed: {e}")))?;
+            let status = resp.status();
+            if !status.is_success() {
+                let body_text = bounded(deadline, name, resp.text())
+                    .await?
+                    .unwrap_or_default();
+                return Err(friendly_api_error(self.id(), status, &body_text));
+            }
+            let body: Value = bounded(deadline, name, resp.json())
+                .await?
+                .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
+            let (mut page, next) = parse_model_page(&body)?;
+            all.append(&mut page);
+            match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &page_token, next) {
+                PaginationStep::Continue(token) => page_token = Some(token),
+                PaginationStep::Done => break,
+                PaginationStep::Stalled => {
+                    return Err(AppError::Provider(format!(
+                        "{name}: a nextPageToken is present but didn't advance — the provider claims another page exists but gave no way to reach it"
+                    )))
+                }
+                PaginationStep::Incomplete => {
+                    return Err(AppError::Provider(format!(
+                        "{name}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list"
+                    )))
+                }
+            }
+        }
+        Ok(all)
+    }
 }
 
 #[async_trait]
@@ -955,53 +1073,33 @@ impl AiProvider for GeminiClient {
         8_000
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
-        // Returns `Vec` (no `AppResult`), so a blank key can't surface the
-        // unauthorized error — short-circuit to the empty "no models" result
-        // instead of wasting a 401 round-trip with an empty header.
-        let api_key = match get_provider_key(app, self.id().credential_key()) {
-            Some(k) if !k.trim().is_empty() => k,
-            _ => return vec![],
-        };
-        let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{BASE}/v1/models"))
-            .header("x-goog-api-key", &api_key)
-            .timeout(timeouts::LIST_MODELS)
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.json::<Value>().await {
-                if let Some(models) = body.get("models").and_then(|d| d.as_array()) {
-                    return models
-                        .iter()
-                        .filter_map(|m| m.get("name").and_then(|id| id.as_str()))
-                        .filter(|id| id.starts_with("models/"))
-                        .map(|id| json!({ "name": id.strip_prefix("models/").unwrap_or(id) }))
-                        .collect();
-                }
-            }
-        }
-        vec![]
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
+        // `/v1beta`, not `/v1` — every generation path here already uses
+        // `/v1beta` (see the `endpoint_label`s elsewhere in this file), and
+        // `/v1` omits `-preview`/experimental models (e.g. the curated
+        // Pro-tier default in `provider-meta.ts` is a `-preview` id, which
+        // would silently vanish from the picker on `/v1`).
+        let api_key = require_gemini_key(app)?;
+        self.list_models_transport(BASE, &api_key, timeouts::LIST_MODELS_TOTAL)
+            .await
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
         let api_key = require_gemini_key(app)?;
         let client = crate::net::http::shared();
         let resp = client
-            .get(format!("{BASE}/v1/models"))
+            .get(format!("{BASE}/v1beta/models"))
             .header("x-goog-api-key", &api_key)
             .timeout(timeouts::LIST_MODELS)
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;
-        if resp.status().is_success() {
+        let status = resp.status();
+        if status.is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )))
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(friendly_api_error(self.id(), status, &body_text))
         }
     }
 
