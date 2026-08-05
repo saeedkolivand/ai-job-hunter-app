@@ -11,15 +11,36 @@ use crate::error::{AppError, AppResult};
 /// as a fallback for experience, education, and skills.
 pub async fn import(url: &str) -> AppResult<ProfileData> {
     let html = fetch_page(url).await?;
-    let document = Html::parse_document(&html);
+    parse_profile(&html)
+}
 
-    // Try JSON-LD first for name/headline/summary
+/// Parse a fetched LinkedIn page into [`ProfileData`]. Pure (no network), so
+/// the parse-strictness gate below is unit-testable without a fetch mock.
+fn parse_profile(html: &str) -> AppResult<ProfileData> {
+    let document = Html::parse_document(html);
+
     let ld = extract_ld_json(&document);
-    let name = ld
+
+    // The `ld+json` Person block is LinkedIn's own signal that this response is
+    // a real, logged-out-visible profile page. An authwall / login redirect /
+    // authenticated SPA shell never carries one — but it DOES still carry a
+    // `<title>`/`og:title` tag (e.g. "LinkedIn Login, Sign in..."), which is why
+    // falling back to `og:title` for `name` used to make an authwall parse as a
+    // "successful" import of an almost-empty resume. Gate on the JSON-LD name
+    // before trusting anything else on the page.
+    let ld_name = ld
         .as_ref()
         .and_then(|v| v.get("name"))
         .and_then(|v| v.as_str())
-        .map(clean);
+        .map(clean)
+        .filter(|n| !n.is_empty());
+    let Some(name) = ld_name else {
+        log::warn!("[profile_import] linkedin parse failed: no ld+json Person block");
+        return Err(AppError::Parse(
+            "linkedin did not return public profile data for this url — it may be private, unavailable, or the request was blocked".to_string(),
+        ));
+    };
+
     let headline = ld
         .as_ref()
         .and_then(|v| v.get("jobTitle"))
@@ -43,19 +64,8 @@ pub async fn import(url: &str) -> AppResult<ProfileData> {
     let education = extract_list_section(&document, "education");
     let skills = extract_skills(&document, &ld);
 
-    // If JSON-LD name is missing, try og:title
-    let name =
-        name.or_else(|| extract_meta(&document, "og:title").map(|t| strip_linkedin_suffix(&t)));
-
-    if name.is_none() && experience.is_empty() && skills.is_empty() {
-        return Err(AppError::Parse(
-            "could not extract profile data — the profile may be private; log in to import it"
-                .to_string(),
-        ));
-    }
-
     Ok(ProfileData {
-        name,
+        name: Some(name),
         headline,
         summary,
         experience,
@@ -69,12 +79,16 @@ pub async fn import(url: &str) -> AppResult<ProfileData> {
 // ── HTTP ─────────────────────────────────────────────────────────────────────
 
 async fn fetch_page(url: &str) -> AppResult<String> {
-    // Use the connected LinkedIn session when available so a private profile
-    // becomes importable after the user logs in. With no session the cookie jar
-    // is empty, so public profiles still import with no login required.
-    let data_dir = crate::platform::config::data_dir();
-    let client = crate::scraping::board_login::build_authed_client(&data_dir, "linkedin")
-        .unwrap_or_else(|_| crate::net::http::shared());
+    // Deliberately anonymous — this is NOT an oversight. LinkedIn only embeds
+    // the `ld+json` Person block this parser depends on in the response served
+    // to logged-out/crawler requests. Once the user connects LinkedIn (Settings
+    // → Accounts) and `li_at` would be attached, the same URL instead returns
+    // the authenticated SPA shell / authwall, which has no `ld+json` to parse —
+    // attaching the session cookie jar here would break the only case that
+    // currently works. Board scraping and the login flow still use
+    // `board_login::build_authed_client` elsewhere; this file just never does.
+    let has_session = has_linkedin_session();
+    let client = crate::net::http::shared();
 
     let resp = client
         .get(url)
@@ -82,18 +96,56 @@ async fn fetch_page(url: &str) -> AppResult<String> {
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
-        .map_err(|e| format!("fetch profile: {e}"))?;
+        .map_err(|e| {
+            // `.without_url()` strips the request URL (which carries the profile
+            // slug — PII) from the error before it reaches the log or the UI.
+            log::warn!(
+                "[profile_import] linkedin fetch failed: has_session={has_session} error={}",
+                e.without_url()
+            );
+            AppError::Network("could not reach linkedin".to_string())
+        })?;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        return Err(AppError::Provider(format!(
-            "linkedin returned {status} — the profile may be private; log in first"
-        )));
+    let status = resp.status();
+    if !status.is_success() {
+        log::warn!(
+            "[profile_import] linkedin fetch non-2xx: status={} has_session={has_session}",
+            status.as_u16()
+        );
+        return Err(map_status(status.as_u16()));
     }
 
-    resp.text()
-        .await
-        .map_err(|e| AppError::Network(format!("read body: {e}")))
+    resp.text().await.map_err(|e| {
+        log::warn!(
+            "[profile_import] linkedin body read failed: {}",
+            e.without_url()
+        );
+        AppError::Network("could not read the linkedin response".to_string())
+    })
+}
+
+/// Map a non-2xx LinkedIn response status to the appropriate [`AppError`]. Pure
+/// helper so the honest error-mapping that comes with fetching anonymously (no
+/// more "log in first" advice — see [`fetch_page`]) is unit-testable without a
+/// network call.
+fn map_status(status: u16) -> AppError {
+    if status == 429 {
+        AppError::RateLimited(
+            "linkedin rate-limited this request — wait a few minutes and try again".to_string(),
+        )
+    } else {
+        AppError::Provider(
+            "linkedin did not return this profile — it may be unavailable, or the request was blocked".to_string(),
+        )
+    }
+}
+
+/// Whether a LinkedIn session cookie jar is present on disk — diagnostic only.
+/// [`fetch_page`] never attaches it; this just lets the log confirm/refute a
+/// correlation between "connected" and a failed import.
+fn has_linkedin_session() -> bool {
+    let data_dir = crate::platform::config::data_dir();
+    !crate::scraping::board_login::load_cookies(&data_dir, "linkedin").is_empty()
 }
 
 // ── JSON-LD ───────────────────────────────────────────────────────────────────
@@ -185,4 +237,109 @@ fn strip_linkedin_suffix(s: &str) -> String {
         .unwrap_or(s)
         .trim()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_profile: the strictness gate ────────────────────────────────────
+
+    fn public_profile_html(name: &str) -> String {
+        format!(
+            r#"<html><head>
+                <script type="application/ld+json">
+                {{
+                    "@type": "Person",
+                    "name": "{name}",
+                    "jobTitle": "Senior Engineer at Acme",
+                    "description": "Building great software.",
+                    "address": {{ "addressLocality": "Berlin, Germany" }},
+                    "knowsAbout": ["Rust", "TypeScript"]
+                }}
+                </script>
+            </head><body></body></html>"#
+        )
+    }
+
+    #[test]
+    fn parses_a_real_public_profile() {
+        let profile = parse_profile(&public_profile_html("Jane Doe")).unwrap();
+        assert_eq!(profile.name.as_deref(), Some("Jane Doe"));
+        assert_eq!(profile.headline.as_deref(), Some("Senior Engineer at Acme"));
+        assert_eq!(profile.location.as_deref(), Some("Berlin, Germany"));
+        assert_eq!(profile.skills, vec!["Rust", "TypeScript"]);
+    }
+
+    #[test]
+    fn rejects_authwall_page_with_no_ld_json() {
+        // No `ld+json` Person block at all — only an og:title, the way LinkedIn's
+        // login/authwall page looks. Must NOT fall back to og:title for `name`
+        // (that was the "successful import of nothing" regression).
+        let html = r#"<html><head>
+            <meta property="og:title" content="LinkedIn Login, Sign in | LinkedIn">
+        </head><body></body></html>"#;
+        let err = parse_profile(html).unwrap_err();
+        assert!(
+            matches!(err, AppError::Parse(_)),
+            "expected Parse, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_ld_json_with_empty_name() {
+        // Person block present but `name` is an empty string — must not pass the
+        // gate just because the field exists.
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            { "@type": "Person", "name": "" }
+            </script>
+        </head><body></body></html>"#;
+        let err = parse_profile(html).unwrap_err();
+        assert!(
+            matches!(err, AppError::Parse(_)),
+            "expected Parse, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_og_title_for_headline_only() {
+        // Headline fallback to og:title is still fine — only `name` is gated on
+        // ld+json.
+        let html = r#"<html><head>
+            <script type="application/ld+json">
+            { "@type": "Person", "name": "Jane Doe" }
+            </script>
+            <meta property="og:title" content="Jane Doe - Senior Engineer | LinkedIn">
+        </head><body></body></html>"#;
+        let profile = parse_profile(html).unwrap();
+        assert_eq!(profile.name.as_deref(), Some("Jane Doe"));
+        assert_eq!(profile.headline.as_deref(), Some("Jane Doe"));
+    }
+
+    // ── map_status: the honest-error-mapping that comes with fetching anon ────
+
+    #[test]
+    fn map_status_429_is_rate_limited() {
+        assert!(matches!(map_status(429), AppError::RateLimited(_)));
+    }
+
+    #[test]
+    fn map_status_other_non_2xx_is_provider_not_auth_advice() {
+        for status in [403, 404, 500, 999] {
+            let err = map_status(status);
+            assert!(
+                matches!(err, AppError::Provider(_)),
+                "status {status} should map to Provider, got {err:?}"
+            );
+            // Regression guard: the message must never tell the user to log in —
+            // we fetch anonymously on purpose, so that advice would be actively
+            // wrong (see `fetch_page`).
+            let msg = err.to_string().to_lowercase();
+            assert!(
+                !msg.contains("log in") && !msg.contains("sign in"),
+                "status {status} message must not suggest logging in: {msg:?}"
+            );
+        }
+    }
 }
