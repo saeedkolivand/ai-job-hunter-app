@@ -65,6 +65,26 @@ describe('WelcomeStep — clicking Continue persists the name', () => {
 });
 
 describe('WelcomeStep — Enter with focus moved OUT of the input takes the identical path as clicking Continue', () => {
+  it('persists the typed name and calls onNext exactly once when Enter fires WITHOUT tabbing out — the most common path', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    // No `user.tab()` here: this is the input's own `handleKeyDown` ->
+    // `stopPropagation()` -> `handleNext()` path, guarded separately from
+    // OnboardingStepWrapper's window listener. Asserting the exact call
+    // count (not just "was called") is what locks the double-fire guard in:
+    // if `stopPropagation()` is ever removed, the wrapper's own focused-input
+    // exclusion is the only thing left standing between this and a
+    // double-advance.
+    await user.type(
+      screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'),
+      'Grace Hopper{Enter}'
+    );
+
+    expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
   it('still persists the typed name when Enter fires after focus moves to a language tile', async () => {
     const user = userEvent.setup();
     const { onNext } = renderStep();
@@ -74,12 +94,18 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
       'Grace Hopper'
     );
 
-    // Tab OUT of the name input onto a language tile — the input's own
-    // keydown handler no longer intercepts Enter once focus has moved, so
+    // Tab OUT of the name input onto the first language tile — the input's
+    // own keydown handler no longer intercepts Enter once focus has moved, so
     // this reaches OnboardingStepWrapper's global window listener instead.
+    // Pinned to the actual tile (not just "not an input") so this test still
+    // fails if the tiles ever stop being focusable.
     await user.tab();
-    expect(document.activeElement).not.toBeInstanceOf(HTMLInputElement);
+    expect(screen.getByRole('button', { name: /English/ })).toHaveFocus();
 
+    // Note: OnboardingStepWrapper's listener preventDefault()s this Enter, so
+    // the browser's synthesized click on the focused tile (which would fire
+    // `selectLanguage('en')`, independent of onNext) never dispatches — see
+    // the wrapper's own double-fire guard.
     await user.keyboard('{Enter}');
 
     expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
@@ -96,5 +122,30 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
 
     expect(usePreferencesStore.getState().userName).toBe('');
     expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('calls onNext exactly once when Enter fires with the Continue button itself focused', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    await user.type(
+      screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'),
+      'Grace Hopper'
+    );
+
+    // Focus the Continue button directly. Enter here would otherwise trigger
+    // BOTH OnboardingStepWrapper's window keydown listener AND the browser's
+    // native Enter-on-a-focused-button synthesized click, which fires the
+    // button's own onClick={handleNext} — double-firing onNext and skipping a
+    // step. The wrapper's preventDefault() on the keydown cancels that
+    // synthesized click, so only the wrapper's own call goes through.
+    const continueButton = screen.getByRole('button', { name: /onboarding\.welcome\.next/ });
+    continueButton.focus();
+    expect(continueButton).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+
+    expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
+    expect(onNext).toHaveBeenCalledTimes(1);
   });
 });

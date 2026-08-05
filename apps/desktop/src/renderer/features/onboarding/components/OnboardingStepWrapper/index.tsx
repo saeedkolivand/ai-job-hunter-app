@@ -36,6 +36,15 @@ export function OnboardingStepWrapper({
         activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
 
       if (e.key === 'Enter' && canAdvance && onNext && !isInputFocused) {
+        // A focused <button> (Continue, a language tile, a dropdown
+        // trigger, ...) also gets a browser-synthesized `click` on Enter,
+        // dispatched right after this handler returns. Some of those
+        // buttons' onClick is wired to this exact `onNext`, which would
+        // otherwise double-fire it (advancing two steps instead of one —
+        // see #939). preventDefault() cancels that synthesized click
+        // universally, so this listener stays the single source of truth
+        // for "Enter advances" no matter which button (if any) has focus.
+        e.preventDefault();
         onNext();
       } else if (e.key === 'Escape' && onBack) {
         onBack();
