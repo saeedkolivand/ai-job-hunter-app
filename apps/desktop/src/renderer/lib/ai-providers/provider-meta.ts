@@ -149,3 +149,22 @@ export const PROVIDER_ORDER: AiProvider[] = [
 export function isOllamaFamily(provider: AiProvider): boolean {
   return provider === 'ollama' || provider === 'ollama-cloud';
 }
+
+/**
+ * Whether a provider is configured to be reached at all — the single gate every
+ * "can we fetch/pick a model for this provider" call site must share. Every
+ * provider needs a stored key (`connected`), EXCEPT `openai-compatible`, whose
+ * backend (LM Studio / vLLM, etc.) is keyless — but ONLY once it's actually
+ * pointed somewhere. Without this second condition, an unconfigured
+ * `openai-compatible` (no key, no base URL) silently falls back to
+ * `api.openai.com` server-side and leaks a request to it on every page that
+ * mounts a model picker — a privacy regression the keyless carve-out must not
+ * reintroduce.
+ */
+export function isProviderConfigured(
+  provider: AiProvider,
+  connected: boolean,
+  baseUrl?: string
+): boolean {
+  return connected || (provider === 'openai-compatible' && Boolean(baseUrl?.trim()));
+}

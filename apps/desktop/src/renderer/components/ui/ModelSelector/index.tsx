@@ -5,7 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
 
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
-import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   fetchProviderModelsWithCache,
@@ -63,10 +63,11 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     cloudProviders.map((p, i) => [p, keyQueries[i]?.data?.has ?? false])
   );
   // `openai-compatible` is the one cloud provider the backend lists models for
-  // without a bearer header (LM Studio / vLLM are keyless) — every other
-  // provider still needs a stored key before it can fetch.
+  // without a bearer header (LM Studio / vLLM are keyless) — but only once
+  // it's actually configured (a stored base URL or key); every other provider
+  // still needs a stored key before it can fetch.
   const canFetchModels = (p: AiProvider): boolean =>
-    (connected.get(p) ?? false) || p === 'openai-compatible';
+    isProviderConfigured(p, connected.get(p) ?? false, baseUrlFor(p));
 
   const modelQueries = useQueries({
     queries: cloudProviders.map((p) => ({

@@ -3,7 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 
 import { useNotification } from '@ajh/ui';
 
-import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useActiveConfig,
@@ -106,11 +106,17 @@ export function useProviderKeys() {
   // provider the backend lists models for without a bearer header (LM Studio /
   // vLLM are keyless) — gating it on `keyStatus` like every other cloud
   // provider left keyless setups unable to discover a model in Settings at
-  // all, even though `ModelSelector` already unblocked the same case.
+  // all, even though `ModelSelector` already unblocked the same case. But it
+  // must still be configured (a stored/in-progress base URL, or a key) —
+  // otherwise it silently falls back to `api.openai.com` server-side.
   const expandedFetchesModels = expanded !== null && PROVIDERS[expanded].kind !== 'local-server';
   const expandedCanFetchModels =
     expandedFetchesModels &&
-    ((keyStatus[expanded ?? 'openai'] ?? false) || expanded === 'openai-compatible');
+    isProviderConfigured(
+      expanded ?? 'openai',
+      keyStatus[expanded ?? 'openai'] ?? false,
+      baseUrlFor(expanded ?? 'openai')
+    );
   const {
     data: expandedModelsResult,
     isLoading: expandedModelsLoading,

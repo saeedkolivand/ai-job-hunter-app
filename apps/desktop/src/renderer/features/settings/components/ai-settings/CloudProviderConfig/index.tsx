@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, EmptyState, ErrorState, Input, useNotification } from '@ajh/ui';
 
 import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
+import { isProviderConfigured } from '@/lib/ai-providers/provider-meta';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
@@ -79,8 +80,10 @@ export function CloudProviderConfig({
 
   // `openai-compatible` is keyless-capable (LM Studio / vLLM) — it can list
   // and pick a model without a stored key, so the model section can't be
-  // gated on `connected` the same way the key-input section above is.
-  const canPickModel = connected || provider === 'openai-compatible';
+  // gated on `connected` the same way the key-input section above is. It
+  // still needs to be configured (a stored/in-progress base URL), though —
+  // otherwise it silently falls back to `api.openai.com` server-side.
+  const canPickModel = isProviderConfigured(provider, connected, baseUrlInput);
 
   const modelOptions = sortModelsNewestFirst(expandedModels).map((m) => ({
     value: m.name,

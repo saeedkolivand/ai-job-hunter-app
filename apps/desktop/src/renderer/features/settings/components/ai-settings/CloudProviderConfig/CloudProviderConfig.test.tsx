@@ -280,13 +280,16 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
   // keyless), and ModelSelector was unblocked to match — but the Settings
   // model-selector block was still gated on `connected` (has a stored key),
   // so a keyless setup could never discover or pick a model here even though
-  // nothing about it actually requires a key.
-  it('shows the model selector for a keyless openai-compatible provider (connected: false)', () => {
+  // nothing about it actually requires a key. It still needs a base URL —
+  // this is the "actually configured" case (see the no-baseUrl regression
+  // test below for the case it must NOT unblock).
+  it('shows the model selector for a keyless openai-compatible provider with a base URL set (connected: false)', () => {
     render(
       <CloudProviderConfig
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
         expandedModels={[{ name: 'local-model' }]}
         providerModel="local-model"
       />
@@ -295,12 +298,13 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
     expect(screen.getByRole('button', { name: /local-model/ })).toBeInTheDocument();
   });
 
-  it('shows the loading/error/empty states for a keyless openai-compatible provider too', () => {
+  it('shows the loading/error/empty states for a keyless-but-configured openai-compatible provider too', () => {
     const { rerender } = render(
       <CloudProviderConfig
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
         expandedModels={[]}
         expandedModelsLoading
       />
@@ -312,6 +316,7 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
         expandedModels={[]}
         expandedModelsError="connection refused"
       />
@@ -321,6 +326,23 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
 
   it('still hides the model selector for a key-required provider with no key (unchanged behavior)', () => {
     render(<CloudProviderConfig {...baseProps} provider="openai" connected={false} />);
+    expect(screen.queryByText('settings.aiModel.title')).not.toBeInTheDocument();
+  });
+
+  // Privacy regression (fix/no-unconfigured-openai-probe): an openai-compatible
+  // row with neither a stored key NOR a base URL — the state #936's carve-out
+  // (`connected || provider === 'openai-compatible'`) left unguarded, letting
+  // the backend silently fall back to `api.openai.com`. Must stay hidden, same
+  // as any other never-configured cloud provider.
+  it('hides the model selector for an unconfigured openai-compatible provider (no key, no base URL)', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        baseUrlInput=""
+      />
+    );
     expect(screen.queryByText('settings.aiModel.title')).not.toBeInTheDocument();
   });
 });

@@ -68,6 +68,10 @@ let stubbedHealth: {
   data: { cliAgents?: Record<string, { detected: boolean }> } | undefined;
   isLoading: boolean;
 } = { data: undefined, isLoading: false };
+// `openai-compatible`'s stored base URL — the second half of `canFetchModels`'s
+// "actually configured" check (a stored key alone isn't enough for it; see
+// `isProviderConfigured`). Undefined by default so a test opts in explicitly.
+let stubbedOpenAiCompatibleBaseUrl: string | undefined;
 
 // ── Service stubs — prevent QueryClient dependency ────────────────────────────
 
@@ -76,7 +80,10 @@ vi.mock('@/services', () => ({
     data: {
       activeProvider: stubbedActiveProvider,
       model: stubbedActiveProviderModel,
-      providers: { [stubbedActiveProvider]: { model: stubbedActiveProviderModel } },
+      providers: {
+        [stubbedActiveProvider]: { model: stubbedActiveProviderModel },
+        'openai-compatible': { baseUrl: stubbedOpenAiCompatibleBaseUrl },
+      },
     },
     isPending: false,
   }),
@@ -159,6 +166,7 @@ beforeEach(() => {
   stubbedHealth = { data: undefined, isLoading: false };
   stubbedCloudKeyQueries = {};
   stubbedCloudModelQueries = {};
+  stubbedOpenAiCompatibleBaseUrl = undefined;
 });
 
 describe('ModelSelector — no model selected (Ollama, model absent)', () => {
@@ -404,10 +412,13 @@ describe('ModelSelector — key-required cloud provider, key query still loading
   });
 });
 
-describe('ModelSelector — openai-compatible, key query loading (irrelevant to a keyless provider)', () => {
+describe('ModelSelector — openai-compatible, key query loading (irrelevant to a keyless-but-configured provider)', () => {
   it('ignores the key query entirely — model-query state alone decides readiness', () => {
     stubbedActiveProvider = 'openai-compatible';
     stubbedActiveProviderModel = '';
+    // Configured via a stored base URL (not a key) — the case #936 exists
+    // for. Without it, "needs configuration" would correctly win instead.
+    stubbedOpenAiCompatibleBaseUrl = 'http://localhost:1234/v1';
     // The key query is still loading, but openai-compatible doesn't need a
     // key at all — this must not gate anything for it.
     stubbedCloudKeyQueries = { 'openai-compatible': { data: undefined, isLoading: true } };
