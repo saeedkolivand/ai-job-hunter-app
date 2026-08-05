@@ -816,6 +816,18 @@ fn require_anthropic_key_accepts_a_real_key() {
 }
 
 #[test]
+fn require_anthropic_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach the `x-api-key`
+    // header TRIMMED — checking `k.trim().is_empty()` but returning the
+    // padded `k` is the exact bug: a trailing space just 401s, an embedded
+    // `\n` makes the header value invalid and the request never builds at all.
+    assert_eq!(
+        require_anthropic_key(Some(" sk-ant-real \n".to_string())).unwrap(),
+        "sk-ant-real"
+    );
+}
+
+#[test]
 fn parse_model_page_keeps_only_claude_ids() {
     let body = json!({
         "data": [
@@ -908,6 +920,34 @@ fn parse_model_page_omits_the_cursor_when_has_more_is_false_even_with_a_last_id(
 }
 
 #[test]
+fn parse_model_page_errors_when_has_more_is_true_but_last_id_is_missing() {
+    // `has_more: true` with no cursor to continue from is a malformed
+    // response, not a clean end-of-pages — silently stopping would return a
+    // truncated catalogue as `Ok`, exactly the bug pagination exists to fix.
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+    });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
+fn parse_model_page_errors_when_has_more_is_true_but_last_id_is_blank() {
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "   ",
+    });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
 fn advance_cursor_stops_when_there_is_no_next_page() {
     assert_eq!(advance_cursor(&None, None), None);
     assert_eq!(advance_cursor(&Some("id1".to_string()), None), None);
@@ -933,5 +973,62 @@ fn advance_cursor_continues_on_a_genuinely_new_cursor() {
     assert_eq!(
         advance_cursor(&Some("id1".to_string()), Some("id2".to_string())),
         Some("id2".to_string())
+    );
+}
+
+#[test]
+fn pagination_step_errors_incomplete_at_the_final_page_with_an_advancing_cursor() {
+    // The exact boundary this finding is about: page index
+    // `MAX_LIST_MODELS_PAGES - 1` is the LAST iteration the `for` loop runs —
+    // a genuinely new cursor there means there's more catalogue the fetch
+    // won't cover, and that must reject, not silently return `Ok`.
+    assert_eq!(
+        pagination_step(
+            MAX_LIST_MODELS_PAGES - 1,
+            &Some("id48".to_string()),
+            Some("id49".to_string())
+        ),
+        PaginationStep::Incomplete
+    );
+}
+
+#[test]
+fn pagination_step_continues_before_the_final_page() {
+    assert_eq!(
+        pagination_step(0, &None, Some("id1".to_string())),
+        PaginationStep::Continue("id1".to_string())
+    );
+    assert_eq!(
+        pagination_step(
+            MAX_LIST_MODELS_PAGES - 2,
+            &Some("id47".to_string()),
+            Some("id48".to_string())
+        ),
+        PaginationStep::Continue("id48".to_string())
+    );
+}
+
+#[test]
+fn pagination_step_is_done_when_there_is_no_next_page_even_at_the_final_index() {
+    // A clean end-of-catalogue on the LAST allowed page is not incomplete —
+    // only a still-advancing cursor at that boundary is.
+    assert_eq!(
+        pagination_step(MAX_LIST_MODELS_PAGES - 1, &Some("id48".to_string()), None),
+        PaginationStep::Done
+    );
+}
+
+#[test]
+fn pagination_step_is_done_on_a_non_advancing_cursor_even_at_the_final_index() {
+    // The progress guard (a stuck/non-advancing cursor) is a legitimate
+    // stopping point, not an incomplete-catalogue error — even at the page
+    // budget's boundary.
+    assert_eq!(
+        pagination_step(
+            MAX_LIST_MODELS_PAGES - 1,
+            &Some("id48".to_string()),
+            Some("id48".to_string())
+        ),
+        PaginationStep::Done
     );
 }

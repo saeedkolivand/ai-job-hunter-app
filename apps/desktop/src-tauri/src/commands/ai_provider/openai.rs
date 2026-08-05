@@ -136,22 +136,32 @@ fn should_list_model(provider: ProviderId, id: &str) -> bool {
         || id.starts_with("chatgpt")
 }
 
-/// Resolve the stored key for `list_models`/`test_key`. Missing/blank errors
-/// for every provider EXCEPT `OpenAiCompatible`: its keyless self-hosted
-/// deployments (LM Studio, vLLM, …) are an explicitly supported
-/// configuration (`mod.rs`'s `ProviderId::OpenAiCompatible` doc) that already
-/// generates fine with no key — `chat_stream`/`chat_with_tools` default a
-/// missing key to `""` and send it regardless — so hard-requiring one here
-/// would cement "generates fine, listing/testing always errors" for a
-/// working setup. `Ok(None)` means "build the request with no bearer header"
-/// (never an empty `Authorization: Bearer` value — some gateways reject a
-/// malformed header rather than ignoring it). Shared by `list_models` and
-/// `test_key` so the two structurally agree on what counts as "no key"
-/// (previously `test_key` alone accepted a whitespace-only key and burned a
-/// round-trip on it). Pure (no `AppHandle`) so it's unit-testable without a
-/// mock-app harness.
+/// Resolve the stored key for `list_models`/`test_key`, TRIMMING the value it
+/// returns — not just checking the trimmed form is non-empty and handing back
+/// the original padded string. A pasted key with a trailing space/newline
+/// would otherwise reach `bearer_auth` as-is: a trailing space just 401s; an
+/// embedded `\n` makes the header value invalid and the request never builds
+/// at all.
+///
+/// Missing/blank errors for every provider EXCEPT `OpenAiCompatible`: its
+/// keyless self-hosted deployments (LM Studio, vLLM, …) are an explicitly
+/// supported configuration (`mod.rs`'s `ProviderId::OpenAiCompatible` doc)
+/// that already generates fine with no key — `chat_stream`/`chat_with_tools`
+/// default a missing key to `""` and send it regardless — so hard-requiring
+/// one here would cement "generates fine, listing/testing always errors" for
+/// a working setup. `Ok(None)` means "build the request with no bearer
+/// header" (never an empty `Authorization: Bearer` value — some gateways
+/// reject a malformed header rather than ignoring it). Shared by
+/// `list_models` and `test_key` so the two structurally agree on what counts
+/// as "no key" (previously `test_key` alone accepted a whitespace-only key
+/// and burned a round-trip on it). Pure (no `AppHandle`) so it's
+/// unit-testable without a mock-app harness.
 fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult<Option<String>> {
-    let trimmed = stored.filter(|k| !k.trim().is_empty());
+    let trimmed = stored
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_string);
     if trimmed.is_some() || provider == ProviderId::OpenAiCompatible {
         Ok(trimmed)
     } else {
@@ -166,10 +176,12 @@ fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult
 /// OpenAI's `/v1/models` (and every OpenAI-compatible gateway that mirrors
 /// its schema — Ollama Cloud included) reports `created` as unix epoch
 /// SECONDS — verified against the live docs, normalized to epoch millis (the
-/// convention every `createdAt` field in this codebase uses) via a plain
-/// `* 1000`, lossless for a whole-second value. Neither `displayName` nor
-/// `contextLength` is ever populated: OpenAI's catalogue endpoint doesn't
-/// return either.
+/// convention every `createdAt` field in this codebase uses) via a
+/// `checked_mul`, never a bare `* 1000`: `created` is provider-controlled, so
+/// an unchecked multiply can overflow `i64` (panics in debug, silently wraps
+/// in release). Omit `createdAt` entirely on overflow — never a fabricated
+/// timestamp. Neither `displayName` nor `contextLength` is ever populated:
+/// OpenAI's catalogue endpoint doesn't return either.
 fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>> {
     let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
         AppError::Provider(format!(
@@ -187,7 +199,7 @@ fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>>
             let created_at_ms = m
                 .get("created")
                 .and_then(|v| v.as_i64())
-                .map(|secs| secs * 1000);
+                .and_then(|secs| secs.checked_mul(1000));
             Some(model_entry(id, None, created_at_ms, None))
         })
         .collect())
@@ -582,10 +594,13 @@ impl OpenAiClient {
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("parse: {}", scrub_url_secret(e)))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         let text = data
             .get("choices")
@@ -621,18 +636,31 @@ impl OpenAiClient {
                 .bearer_auth(&api_key)
                 .json(&body)
         })
-        .await
-        .map_err(|e| format!("{} unreachable: {}", self.id.as_str(), scrub_url_secret(e)))?;
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Message(format!(
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
+                )));
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("parse: {}", scrub_url_secret(e)))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         let vector: Vec<f64> = data
             .get("data")
@@ -768,11 +796,10 @@ impl OpenAiClient {
                     scrub_url_secret(e)
                 ))
             })?;
-        if !resp.status().is_success() {
-            return Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )));
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(friendly_api_error(self.id, status, &body_text));
         }
         let body: Value = resp.json().await.map_err(|e| {
             AppError::Provider(format!(
@@ -1015,13 +1042,12 @@ impl AiProvider for OpenAiClient {
                     scrub_url_secret(e)
                 ))
             })?;
-        if resp.status().is_success() {
+        let status = resp.status();
+        if status.is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )))
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(friendly_api_error(self.id, status, &body_text))
         }
     }
 
@@ -1103,10 +1129,13 @@ impl AiProvider for OpenAiClient {
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("parse: {}", scrub_url_secret(e)))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         Ok(parse_openai_turn(&data))
     }

@@ -13,9 +13,10 @@
 use super::{
     advance_cursor, build_chat_stream_body, build_embed_body, gemini_effective_temperature,
     gemini_effort_levels, gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text,
-    parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
-    parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider, GeminiClient,
-    GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
+    pagination_step, parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts,
+    parse_gemini_turn, parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider,
+    GeminiClient, GeminiScanner, PaginationStep, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
+    MAX_LIST_MODELS_PAGES,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -143,11 +144,22 @@ fn blank_or_missing_key_is_rejected_with_unauthorized() {
 }
 
 #[test]
-fn present_key_passes_through_untrimmed() {
-    // A real key is returned verbatim (surrounding content preserved, only blank
-    // rejected) so the request uses exactly what the user stored.
+fn present_key_is_returned_unchanged_when_already_clean() {
     assert_eq!(
         validate_gemini_key(Some("AIza-secret".to_string())).unwrap(),
+        "AIza-secret"
+    );
+}
+
+#[test]
+fn validate_gemini_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach the
+    // `x-goog-api-key` header TRIMMED — checking `k.trim().is_empty()` but
+    // returning the padded `k` is the exact bug: a trailing space just
+    // 401s, an embedded `\n` makes the header value invalid and the request
+    // never builds at all.
+    assert_eq!(
+        validate_gemini_key(Some(" AIza-secret \n".to_string())).unwrap(),
         "AIza-secret"
     );
 }
@@ -733,5 +745,54 @@ fn advance_cursor_continues_on_a_genuinely_new_token() {
     assert_eq!(
         advance_cursor(&Some("t1".to_string()), Some("t2".to_string())),
         Some("t2".to_string())
+    );
+}
+
+#[test]
+fn pagination_step_errors_incomplete_at_the_final_page_with_an_advancing_token() {
+    // The exact boundary this finding is about: page index
+    // `MAX_LIST_MODELS_PAGES - 1` is the LAST iteration the `for` loop runs —
+    // a genuinely new token there means there's more catalogue the fetch
+    // won't cover, and that must reject, not silently return `Ok`.
+    assert_eq!(
+        pagination_step(
+            MAX_LIST_MODELS_PAGES - 1,
+            &Some("t48".to_string()),
+            Some("t49".to_string())
+        ),
+        PaginationStep::Incomplete
+    );
+}
+
+#[test]
+fn pagination_step_continues_before_the_final_page() {
+    assert_eq!(
+        pagination_step(0, &None, Some("t1".to_string())),
+        PaginationStep::Continue("t1".to_string())
+    );
+}
+
+#[test]
+fn pagination_step_is_done_when_there_is_no_next_page_even_at_the_final_index() {
+    // A clean end-of-catalogue on the LAST allowed page is not incomplete —
+    // only a still-advancing token at that boundary is.
+    assert_eq!(
+        pagination_step(MAX_LIST_MODELS_PAGES - 1, &Some("t48".to_string()), None),
+        PaginationStep::Done
+    );
+}
+
+#[test]
+fn pagination_step_is_done_on_a_non_advancing_token_even_at_the_final_index() {
+    // The progress guard (a stuck/non-advancing token) is a legitimate
+    // stopping point, not an incomplete-catalogue error — even at the page
+    // budget's boundary.
+    assert_eq!(
+        pagination_step(
+            MAX_LIST_MODELS_PAGES - 1,
+            &Some("t48".to_string()),
+            Some("t48".to_string())
+        ),
+        PaginationStep::Done
     );
 }

@@ -336,7 +336,7 @@ fn parse_turn_malformed_arguments_degrade_to_empty_object() {
 // ── web_search_transport (wiremock against `crate::net::http::shared()`,
 // mirroring the pattern in `retry.rs`'s `retry_loop_tests`) ────────────────
 
-use wiremock::matchers::{method, path, query_param};
+use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
@@ -415,7 +415,34 @@ async fn list_models_transport_errors_on_http_500() {
         .list_models_transport(Some("dummy-key"))
         .await
         .expect_err("a non-success status must reject, never silently degrade to empty");
-    assert!(matches!(err, AppError::Provider(_)));
+    // Routed through `friendly_api_error`, not a bare `AppError::Provider` —
+    // 500 classifies as `Network` (retriable), distinct from a 401 (`Config`,
+    // bad key) or a 429 (`Network`, rate limit). This IS the PR's premise:
+    // once the curated fallback is gone, this classification is the user's
+    // only explanation.
+    assert!(matches!(err, AppError::Network(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_classifies_401_as_a_config_error_not_a_bare_provider_error() {
+    // `test_key`'s status branch (not independently testable here — it needs
+    // a live `AppHandle` this crate has no mock harness for) constructs its
+    // error via the identical `friendly_api_error(self.id, status,
+    // &body_text)` call on the same `list_models_request` transport, so this
+    // covers both by construction.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a 401 must reject");
+    assert!(matches!(err, AppError::Config(_)));
 }
 
 #[tokio::test]
@@ -514,6 +541,32 @@ async fn list_models_transport_succeeds_with_no_key_for_a_keyless_deployment() {
         .await
         .expect("a keyless request must still reach the mock (no Authorization header required)");
     assert_eq!(models, vec![json!({ "name": "local-model" })]);
+}
+
+#[tokio::test]
+async fn list_models_transport_sends_the_bearer_header_when_a_key_is_present() {
+    // The `Some(key)` sibling of the keyless test above — every other
+    // `list_models_transport` mock in this file never REQUIRES an
+    // `authorization` header, so a regression that dropped `bearer_auth`
+    // entirely (e.g. accidentally hardcoding `None`) would keep every one of
+    // them green. This one requires the header to be present with the exact
+    // value, closing that gap.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(header("authorization", "Bearer dummy-key"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": [{ "id": "gpt-4o" }] })),
+        )
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let models = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect("a keyed request must send the bearer header the mock requires");
+    assert_eq!(models, vec![json!({ "name": "gpt-4o" })]);
 }
 
 // ── endpoint_url / scrub_url_secret (query-string-auth gateway safety) ─────────
@@ -886,6 +939,20 @@ fn resolve_openai_key_accepts_a_real_key() {
 }
 
 #[test]
+fn resolve_openai_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach `bearer_auth`
+    // TRIMMED — checking `k.trim().is_empty()` but returning the padded `k`
+    // is the exact bug: a trailing space just 401s, an embedded `\n` makes
+    // the header value invalid and the request never builds at all.
+    assert_eq!(
+        resolve_openai_key(ProviderId::OpenAi, Some(" sk-real \n".to_string()))
+            .unwrap()
+            .as_deref(),
+        Some("sk-real")
+    );
+}
+
+#[test]
 fn resolve_openai_key_allows_a_missing_or_blank_key_for_openai_compatible() {
     // A keyless self-hosted deployment (LM Studio, vLLM, …) is explicitly
     // supported — generation already works with no key
@@ -948,6 +1015,18 @@ fn parse_model_list_normalizes_created_epoch_seconds_to_millis() {
         page,
         vec![json!({ "name": "gpt-4o", "createdAt": 1_704_067_200_000i64 })]
     );
+}
+
+#[test]
+fn parse_model_list_omits_created_at_rather_than_overflow_on_a_pathological_value() {
+    // `created` is provider-controlled — a bare `secs * 1000` can overflow
+    // `i64` (panics in debug, silently wraps in release). Must degrade to
+    // "omit the field", never fabricate a wrapped/garbage timestamp.
+    let body = json!({
+        "data": [{ "id": "gpt-4o", "created": i64::MAX }]
+    });
+    let page = parse_model_list(ProviderId::OpenAi, &body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gpt-4o" })]);
 }
 
 #[test]

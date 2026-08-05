@@ -26,14 +26,22 @@ const VERSION: &str = "2023-06-01";
 /// `has_more` forever.
 const MAX_LIST_MODELS_PAGES: usize = 50;
 
-/// Resolve the stored Anthropic key, erroring on a missing/blank one. Shared
-/// by `list_models` and `test_key` so the two structurally agree on what
-/// counts as "no key" (previously `test_key` alone accepted a whitespace-only
-/// key and burned a 401 round-trip on it). Pure (no `AppHandle`) so it's
-/// unit-testable without a mock-app harness.
+/// Resolve the stored Anthropic key, erroring on a missing/blank one and
+/// TRIMMING the value it returns — not just checking the trimmed form is
+/// non-empty and handing back the original padded string. A pasted key with
+/// a trailing space/newline would otherwise reach the `x-api-key` header
+/// as-is: a trailing space just 401s; an embedded `\n` makes the header value
+/// invalid and the request never builds at all. Shared by `list_models` and
+/// `test_key` so the two structurally agree on what counts as "no key"
+/// (previously `test_key` alone accepted a whitespace-only key and burned a
+/// 401 round-trip on it). Pure (no `AppHandle`) so it's unit-testable without
+/// a mock-app harness.
 fn require_anthropic_key(stored: Option<String>) -> AppResult<String> {
     stored
-        .filter(|k| !k.trim().is_empty())
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_string)
         .ok_or_else(|| AppError::Config("No API key found".to_string()))
 }
 
@@ -71,9 +79,23 @@ fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
     let cursor = if has_more {
-        body.get("last_id")
+        let last_id = body
+            .get("last_id")
             .and_then(|v| v.as_str())
-            .map(String::from)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        match last_id {
+            Some(id) => Some(id.to_string()),
+            // `has_more: true` with no usable `last_id` is a malformed
+            // response, not a clean end-of-pages — silently stopping here
+            // would return a truncated catalogue as `Ok`, exactly the
+            // silent-truncation bug pagination exists to prevent.
+            None => {
+                return Err(AppError::Provider(
+                    "Anthropic: has_more is true but last_id is missing or blank".to_string(),
+                ))
+            }
+        }
     } else {
         None
     };
@@ -90,6 +112,39 @@ fn advance_cursor(current: &Option<String>, next: Option<String>) -> Option<Stri
         None
     } else {
         next
+    }
+}
+
+/// Outcome of one `list_models` pagination iteration — see [`pagination_step`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PaginationStep {
+    /// Fetch another page with this cursor.
+    Continue(String),
+    /// A genuine stopping point: no next page, or [`advance_cursor`]'s
+    /// progress guard caught a stuck cursor. `Ok(all)`.
+    Done,
+    /// Ran out of `MAX_LIST_MODELS_PAGES` while the cursor was STILL
+    /// genuinely advancing — there IS more catalogue this fetch didn't
+    /// cover. Must reject rather than silently return an incomplete list.
+    Incomplete,
+}
+
+/// One step of the `MAX_LIST_MODELS_PAGES`-bounded pagination loop's control
+/// flow: given the 0-based index of the page JUST fetched and the raw `next`
+/// cursor it reported, decide whether to continue, stop cleanly, or stop
+/// incomplete. Pure (no I/O) so the exact `MAX_LIST_MODELS_PAGES` boundary is
+/// unit-testable without 50 live HTTP round-trips — `list_models`'s loop
+/// calls this once per page and dispatches on the result, so this function
+/// (not a hand-duplicated copy) is what actually runs in production.
+fn pagination_step(
+    page_index: usize,
+    current: &Option<String>,
+    next: Option<String>,
+) -> PaginationStep {
+    match advance_cursor(current, next) {
+        Some(id) if page_index + 1 < MAX_LIST_MODELS_PAGES => PaginationStep::Continue(id),
+        Some(_) => PaginationStep::Incomplete,
+        None => PaginationStep::Done,
     }
 }
 
@@ -1030,7 +1085,7 @@ impl AiProvider for AnthropicClient {
         // per-request-only timeout lets up to `MAX_LIST_MODELS_PAGES` individual
         // `LIST_MODELS` timeouts chain into one very long invoke.
         let deadline = tokio::time::Instant::now() + timeouts::LIST_MODELS_TOTAL;
-        for _ in 0..MAX_LIST_MODELS_PAGES {
+        for page_index in 0..MAX_LIST_MODELS_PAGES {
             let mut req = client
                 .get(format!("{BASE}/models"))
                 .header("x-api-key", &api_key)
@@ -1061,11 +1116,10 @@ impl AiProvider for AnthropicClient {
                     )))
                 }
             };
-            if !resp.status().is_success() {
-                return Err(AppError::Provider(format!(
-                    "API returned status: {}",
-                    resp.status()
-                )));
+            let status = resp.status();
+            if !status.is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                return Err(friendly_api_error(self.id(), status, &body_text));
             }
             let body: Value = resp
                 .json()
@@ -1073,9 +1127,15 @@ impl AiProvider for AnthropicClient {
                 .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
             let (mut page, cursor) = parse_model_page(&body)?;
             all.append(&mut page);
-            match advance_cursor(&after_id, cursor) {
-                Some(id) => after_id = Some(id),
-                None => break,
+            match pagination_step(page_index, &after_id, cursor) {
+                PaginationStep::Continue(id) => after_id = Some(id),
+                PaginationStep::Done => break,
+                PaginationStep::Incomplete => {
+                    return Err(AppError::Provider(format!(
+                        "{}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list",
+                        self.id().as_str()
+                    )))
+                }
             }
         }
         Ok(all)
@@ -1096,13 +1156,12 @@ impl AiProvider for AnthropicClient {
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;
-        if resp.status().is_success() {
+        let status = resp.status();
+        if status.is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )))
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(friendly_api_error(self.id(), status, &body_text))
         }
     }
 

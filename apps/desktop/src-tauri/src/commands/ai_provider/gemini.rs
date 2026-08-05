@@ -31,7 +31,12 @@ const MAX_LIST_MODELS_PAGES: usize = 50;
 /// (see `embed_impl`'s call site for the full rationale).
 const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
 
-/// Validate the key the keychain returned, rejecting a missing/blank one early.
+/// Validate the key the keychain returned, rejecting a missing/blank one
+/// early and TRIMMING the value it returns — not just checking the trimmed
+/// form is non-empty and handing back the original padded string. A pasted
+/// key with a trailing space/newline would otherwise reach the
+/// `x-goog-api-key` header as-is: a trailing space just 401s; an embedded
+/// `\n` makes the header value invalid and the request never builds at all.
 ///
 /// Pure (no `AppHandle`) so it's unit-testable. Several call paths previously
 /// defaulted a missing key to `""` and still issued the request, sending an empty
@@ -39,9 +44,9 @@ const EMBED_OUTPUT_DIMENSIONALITY: i64 = 768;
 /// same unauthorized error `friendly_api_error` maps a real 401/403 to, so the
 /// message stays consistent.
 fn validate_gemini_key(stored: Option<String>) -> AppResult<String> {
-    match stored {
-        Some(k) if !k.trim().is_empty() => Ok(k),
-        _ => Err(AppError::Config(format!(
+    match stored.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+        Some(k) => Ok(k.to_string()),
+        None => Err(AppError::Config(format!(
             "{}: invalid or unauthorized API key.",
             ProviderId::Gemini.as_str()
         ))),
@@ -101,6 +106,39 @@ fn advance_cursor(current: &Option<String>, next: Option<String>) -> Option<Stri
         None
     } else {
         next
+    }
+}
+
+/// Outcome of one `list_models` pagination iteration — see [`pagination_step`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PaginationStep {
+    /// Fetch another page with this token.
+    Continue(String),
+    /// A genuine stopping point: no next page, or [`advance_cursor`]'s
+    /// progress guard caught a stuck token. `Ok(all)`.
+    Done,
+    /// Ran out of `MAX_LIST_MODELS_PAGES` while the token was STILL
+    /// genuinely advancing — there IS more catalogue this fetch didn't
+    /// cover. Must reject rather than silently return an incomplete list.
+    Incomplete,
+}
+
+/// One step of the `MAX_LIST_MODELS_PAGES`-bounded pagination loop's control
+/// flow: given the 0-based index of the page JUST fetched and the raw `next`
+/// token it reported, decide whether to continue, stop cleanly, or stop
+/// incomplete. Pure (no I/O) so the exact `MAX_LIST_MODELS_PAGES` boundary is
+/// unit-testable without 50 live HTTP round-trips — `list_models`'s loop
+/// calls this once per page and dispatches on the result, so this function
+/// (not a hand-duplicated copy) is what actually runs in production.
+fn pagination_step(
+    page_index: usize,
+    current: &Option<String>,
+    next: Option<String>,
+) -> PaginationStep {
+    match advance_cursor(current, next) {
+        Some(id) if page_index + 1 < MAX_LIST_MODELS_PAGES => PaginationStep::Continue(id),
+        Some(_) => PaginationStep::Incomplete,
+        None => PaginationStep::Done,
     }
 }
 
@@ -1025,7 +1063,7 @@ impl AiProvider for GeminiClient {
         // per-request-only timeout lets up to `MAX_LIST_MODELS_PAGES` individual
         // `LIST_MODELS` timeouts chain into one very long invoke.
         let deadline = tokio::time::Instant::now() + timeouts::LIST_MODELS_TOTAL;
-        for _ in 0..MAX_LIST_MODELS_PAGES {
+        for page_index in 0..MAX_LIST_MODELS_PAGES {
             let mut req = client
                 .get(format!("{BASE}/v1beta/models"))
                 .header("x-goog-api-key", &api_key)
@@ -1052,11 +1090,10 @@ impl AiProvider for GeminiClient {
                     )))
                 }
             };
-            if !resp.status().is_success() {
-                return Err(AppError::Provider(format!(
-                    "API returned status: {}",
-                    resp.status()
-                )));
+            let status = resp.status();
+            if !status.is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                return Err(friendly_api_error(self.id(), status, &body_text));
             }
             let body: Value = resp
                 .json()
@@ -1064,9 +1101,15 @@ impl AiProvider for GeminiClient {
                 .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
             let (mut page, next) = parse_model_page(&body)?;
             all.append(&mut page);
-            match advance_cursor(&page_token, next) {
-                Some(token) => page_token = Some(token),
-                None => break,
+            match pagination_step(page_index, &page_token, next) {
+                PaginationStep::Continue(token) => page_token = Some(token),
+                PaginationStep::Done => break,
+                PaginationStep::Incomplete => {
+                    return Err(AppError::Provider(format!(
+                        "{}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list",
+                        self.id().as_str()
+                    )))
+                }
             }
         }
         Ok(all)
@@ -1082,13 +1125,12 @@ impl AiProvider for GeminiClient {
             .send()
             .await
             .map_err(|e| format!("Request failed: {e}"))?;
-        if resp.status().is_success() {
+        let status = resp.status();
+        if status.is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )))
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(friendly_api_error(self.id(), status, &body_text))
         }
     }
 
