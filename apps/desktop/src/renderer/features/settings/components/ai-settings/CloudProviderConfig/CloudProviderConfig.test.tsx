@@ -280,13 +280,17 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
   // keyless), and ModelSelector was unblocked to match — but the Settings
   // model-selector block was still gated on `connected` (has a stored key),
   // so a keyless setup could never discover or pick a model here even though
-  // nothing about it actually requires a key.
-  it('shows the model selector for a keyless openai-compatible provider (connected: false)', () => {
+  // nothing about it actually requires a key. It still needs a base URL —
+  // this is the "actually configured" case (see the no-baseUrl regression
+  // test below for the case it must NOT unblock).
+  it('shows the model selector for a keyless openai-compatible provider with a base URL set (connected: false)', () => {
     render(
       <CloudProviderConfig
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
+        configuredBaseUrl="http://localhost:1234/v1"
         expandedModels={[{ name: 'local-model' }]}
         providerModel="local-model"
       />
@@ -295,12 +299,14 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
     expect(screen.getByRole('button', { name: /local-model/ })).toBeInTheDocument();
   });
 
-  it('shows the loading/error/empty states for a keyless openai-compatible provider too', () => {
+  it('shows the loading/error/empty states for a keyless-but-configured openai-compatible provider too', () => {
     const { rerender } = render(
       <CloudProviderConfig
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
+        configuredBaseUrl="http://localhost:1234/v1"
         expandedModels={[]}
         expandedModelsLoading
       />
@@ -312,6 +318,8 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
         {...baseProps}
         provider="openai-compatible"
         connected={false}
+        baseUrlInput="http://localhost:1234/v1"
+        configuredBaseUrl="http://localhost:1234/v1"
         expandedModels={[]}
         expandedModelsError="connection refused"
       />
@@ -319,8 +327,50 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
     expect(screen.getByRole('alert')).toHaveTextContent('connection refused');
   });
 
+  // Finding 3 (PR #937 review): the parent used to compute two DIFFERENT
+  // values for "the openai-compatible base URL" — the raw `baseUrlInput` fed
+  // straight into this component's own check, vs. a trimmed-or-saved value
+  // used everywhere else (the actual model fetch). A user who selects-all and
+  // clears the input WITHOUT saving would then lose the picker (and their
+  // selected model) while the fetch, reading the other value, kept using the
+  // still-saved URL underneath. `configuredBaseUrl` is now the ONLY value fed
+  // to `canPickModel` — this pins that `baseUrlInput` (the raw keystroke) no
+  // longer has any say in it.
+  it('keeps the model selector visible when the input is cleared but the resolved base URL is still saved', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        baseUrlInput=""
+        configuredBaseUrl="http://localhost:1234/v1"
+        expandedModels={[{ name: 'local-model' }]}
+        providerModel="local-model"
+      />
+    );
+    expect(screen.getByText('settings.aiModel.title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /local-model/ })).toBeInTheDocument();
+  });
+
   it('still hides the model selector for a key-required provider with no key (unchanged behavior)', () => {
     render(<CloudProviderConfig {...baseProps} provider="openai" connected={false} />);
+    expect(screen.queryByText('settings.aiModel.title')).not.toBeInTheDocument();
+  });
+
+  // Privacy regression (fix/no-unconfigured-openai-probe): an openai-compatible
+  // row with neither a stored key NOR a base URL — the state #936's carve-out
+  // (`connected || provider === 'openai-compatible'`) left unguarded, letting
+  // the backend silently fall back to `api.openai.com`. Must stay hidden, same
+  // as any other never-configured cloud provider.
+  it('hides the model selector for an unconfigured openai-compatible provider (no key, no base URL)', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        baseUrlInput=""
+      />
+    );
     expect(screen.queryByText('settings.aiModel.title')).not.toBeInTheDocument();
   });
 });

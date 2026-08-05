@@ -33,6 +33,10 @@ interface Props {
   apiKeyInput: string;
   showKey: boolean;
   baseUrlInput: string;
+  /** The resolved openai-compatible base URL (in-progress edit, else saved) —
+   *  computed once in `useProviderKeys`, so the "is this provider configured"
+   *  check downstream never disagrees with the model-fetch it gates. */
+  configuredBaseUrl?: string;
   onToggleExpand: () => void;
   onTestKey?: () => void;
   onRemoveKey: () => void;
@@ -67,6 +71,7 @@ export function ProviderRow({
   apiKeyInput,
   showKey,
   baseUrlInput,
+  configuredBaseUrl,
   onToggleExpand,
   onTestKey,
   onRemoveKey,
@@ -180,6 +185,7 @@ export function ProviderRow({
               apiKeyInput={apiKeyInput}
               showKey={showKey}
               baseUrlInput={baseUrlInput}
+              configuredBaseUrl={configuredBaseUrl}
               onApiKeyChange={onApiKeyChange}
               onToggleShowKey={onToggleShowKey}
               onBaseUrlChange={onBaseUrlChange}

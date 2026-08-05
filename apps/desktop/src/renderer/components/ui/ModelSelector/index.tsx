@@ -5,7 +5,7 @@ import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
 
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
-import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   fetchProviderModelsWithCache,
@@ -63,10 +63,11 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     cloudProviders.map((p, i) => [p, keyQueries[i]?.data?.has ?? false])
   );
   // `openai-compatible` is the one cloud provider the backend lists models for
-  // without a bearer header (LM Studio / vLLM are keyless) — every other
-  // provider still needs a stored key before it can fetch.
+  // without a bearer header (LM Studio / vLLM are keyless) — but only once
+  // it's actually configured (a stored base URL or key); every other provider
+  // still needs a stored key before it can fetch.
   const canFetchModels = (p: AiProvider): boolean =>
-    (connected.get(p) ?? false) || p === 'openai-compatible';
+    isProviderConfigured(p, connected.get(p) ?? false, baseUrlFor(p));
 
   const modelQueries = useQueries({
     queries: cloudProviders.map((p) => ({
@@ -117,13 +118,19 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const selectedModelVisible = options.some((o) => o.value === selectedValue);
   const activeCloudIndex = cloudProviders.indexOf(activeProvider);
   const activeIsCloud = PROVIDERS[activeProvider]?.kind === 'cloud';
-  // `openai-compatible` can fetch keylessly, so its readiness never depends
-  // on the key-status query at all — waiting on it would wait on data it
-  // doesn't need. For every OTHER cloud provider, the key query IS relevant,
-  // so its own loading state must be tracked separately from "no key" (below):
-  // while it's still resolving, `canFetchModels` reads the not-yet-loaded
-  // `false` default, which is NOT the same as "we checked — there's no key".
-  const activeKeyRequired = activeIsCloud && activeProvider !== 'openai-compatible';
+  // `openai-compatible` can fetch keylessly ONLY once it has a stored base
+  // URL — in that case its readiness never depends on the key-status query at
+  // all (waiting on it would wait on data it doesn't need). But a user who
+  // authenticated it with a stored KEY instead (no base URL) DOES depend on
+  // that query settling, same as every other cloud provider — so the key
+  // query is irrelevant to `openai-compatible` only when a base URL is
+  // already configured; `isProviderConfigured` mirrors this exact condition.
+  // For every provider where the key query IS relevant, its own loading state
+  // must be tracked separately from "no key" (below): while it's still
+  // resolving, `canFetchModels` reads the not-yet-loaded `false` default,
+  // which is NOT the same as "we checked — there's no key".
+  const activeKeyRequired =
+    activeIsCloud && (activeProvider !== 'openai-compatible' || !baseUrlFor(activeProvider));
   const activeKeyLoading = activeKeyRequired && Boolean(keyQueries[activeCloudIndex]?.isLoading);
   const modelsLoading = (() => {
     switch (PROVIDERS[activeProvider]?.kind) {
@@ -220,7 +227,15 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       </div>
       {activeCloudStatus === 'needsKey' && (
         <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
-          {t('models.cloud.addKeyToLoad')}
+          {/* `openai-compatible` needs a base URL, not a key — this is the
+              DEFAULT state for anyone who has never configured it (the
+              population the keyless carve-out exists for), so telling them
+              to add a key instead points at the one thing that won't help. */}
+          {t(
+            activeProvider === 'openai-compatible'
+              ? 'models.cloud.addUrlToLoad'
+              : 'models.cloud.addKeyToLoad'
+          )}
         </p>
       )}
       {activeCloudStatus === 'loading' && (
