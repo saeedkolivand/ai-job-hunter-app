@@ -12,10 +12,10 @@
 
 use super::{
     build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
-    gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage,
-    parse_gemini_frames, parse_gemini_parts, parse_gemini_turn, parse_gemini_usage,
-    parse_model_page, validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
-    EMBED_OUTPUT_DIMENSIONALITY,
+    gemini_is_v3_or_later, gemini_omits_sampling_params, gemini_supports_thinking, join_parts_text,
+    parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
+    parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider, GeminiClient,
+    GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -163,6 +163,46 @@ fn chat_stream_body_keeps_the_default_temperature_for_a_pre_v3_model_with_no_exp
     assert_eq!(
         body["generationConfig"]["temperature"],
         json!(0.7),
+        "unchanged behavior for pre-v3 models"
+    );
+}
+
+#[test]
+fn gemini_omits_sampling_params_matches_the_v3_gate() {
+    // ONE predicate decides temperature AND topP (and topK, if this file
+    // ever wires one up) — pinned directly so the two parameters can't
+    // drift apart the way `topP` silently did before this fix.
+    assert!(gemini_omits_sampling_params("gemini-3.6-flash"));
+    assert!(gemini_omits_sampling_params("gemini-3-pro-preview"));
+    assert!(!gemini_omits_sampling_params("gemini-1.5-flash"));
+    assert!(!gemini_omits_sampling_params("gemini-2.5-pro"));
+}
+
+#[test]
+fn chat_stream_body_omits_top_p_for_a_v3_model_even_when_explicit() {
+    // Unlike `temperature`, `topP` has no "deliberate user intent" to
+    // preserve — it's the renderer's own anti-detection knob (useless on a
+    // model that ignores it), so a v3+ model omits it unconditionally, even
+    // when the caller set one.
+    let mut req = base_request();
+    req.model = "gemini-3.6-flash".to_string();
+    req.top_p = Some(0.95);
+    let body = build_chat_stream_body(&req);
+    assert!(
+        body["generationConfig"].get("topP").is_none(),
+        "topP must never reach a v3+ model, even when explicitly set"
+    );
+}
+
+#[test]
+fn chat_stream_body_sends_top_p_for_a_pre_v3_model_when_explicit() {
+    let mut req = base_request();
+    req.model = "gemini-1.5-flash".to_string();
+    req.top_p = Some(0.95);
+    let body = build_chat_stream_body(&req);
+    assert_eq!(
+        body["generationConfig"]["topP"],
+        json!(0.95),
         "unchanged behavior for pre-v3 models"
     );
 }
