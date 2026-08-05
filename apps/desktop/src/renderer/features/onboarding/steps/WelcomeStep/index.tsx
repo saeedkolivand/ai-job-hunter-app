@@ -56,7 +56,7 @@ export function WelcomeStep({ onNext, direction, stepIndex, totalSteps }: Props)
       direction={direction}
       stepIndex={stepIndex}
       totalSteps={totalSteps}
-      onNext={onNext}
+      onNext={handleNext}
       canAdvance={name.trim().length > 0}
       className="max-w-md"
     >

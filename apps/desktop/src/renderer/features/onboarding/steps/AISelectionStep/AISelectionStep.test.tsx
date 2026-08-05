@@ -187,12 +187,15 @@ describe('AISelectionStep — cloud mode, model picked from the live list', () =
   });
 });
 
-describe('AISelectionStep — Enter key takes the identical path as clicking Continue', () => {
-  // `OnboardingStepWrapper`'s Enter-key handler calls the `onNext` prop
-  // directly, bypassing whatever configures the provider — it must receive
-  // `handleContinue`, not the raw `onNext` prop, or Enter silently discards a
-  // model the user just deliberately picked from a live catalogue.
-  it('pressing Enter with a model picked configures the provider with the PICKED model', async () => {
+describe('AISelectionStep — Enter on a focused control activates THAT control, not the wizard', () => {
+  // `OnboardingStepWrapper`'s Enter-key listener is the shared "advance the
+  // step" shortcut for all onboarding steps — but a focused control that
+  // owns its own Enter/click activation (here: the model dropdown's trigger
+  // button) must get to handle it alone. If the wrapper ALSO fired onNext
+  // whenever focus happened to be on a button, Enter on the dropdown trigger
+  // would silently discard the live-catalogue model the user just picked and
+  // skip straight past this step instead of re-opening the dropdown.
+  it('pressing Enter on the closed model-dropdown trigger re-opens it and does NOT advance', async () => {
     stubHasKey = true;
     stubModelsQuery = {
       data: { models: [{ name: 'gpt-4o' }, { name: 'o1' }], cached: false },
@@ -206,10 +209,19 @@ describe('AISelectionStep — Enter key takes the identical path as clicking Con
     await user.click(screen.getByRole('button', { name: 'onboarding.ai.selectModelPlaceholder' }));
     await user.click(screen.getByRole('option', { name: 'o1' }));
 
+    // Selecting an option closes the dropdown and returns focus to its
+    // trigger, now labeled with the picked model.
+    const trigger = screen.getByRole('button', { name: 'o1' });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
     await user.keyboard('{Enter}');
 
-    expect(configureMutateSpy).toHaveBeenCalledWith({ provider: 'openai', model: 'o1' });
-    expect(onNext).toHaveBeenCalledOnce();
+    // Enter activated the FOCUSED trigger (re-opened the dropdown) instead of
+    // being stolen by the wrapper's global "advance" shortcut.
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(configureMutateSpy).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
   });
 
   it('pressing Enter with no model picked does neither — canAdvance still gates the keyboard path', async () => {
