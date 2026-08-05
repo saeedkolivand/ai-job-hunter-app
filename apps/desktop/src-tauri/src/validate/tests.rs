@@ -841,6 +841,56 @@ fn typst_cover_letter_pdf_passes_validation() {
     );
 }
 
+/// Regression for the production incident (a macOS user's PDF export blocked
+/// with no way out): a cover letter's opening paragraph can legitimately
+/// contain a markdown link (e.g. a company-research URL the AI echoes in its
+/// first sentence). With a short letterhead — no date, no recipient block —
+/// that link can land inside the same 144pt header band the letterhead's own
+/// link renders in. It must never be mistaken for a header link and block the
+/// export: a cover letter is never two-column, so `can_linearize` is always
+/// false and a false block here has no remediation at all.
+#[test]
+fn cover_letter_body_link_in_a_short_letterhead_band_does_not_false_block() {
+    let request = ExportRequest {
+        text: "\
+Jane Doe
+
+Dear Hiring Manager,
+
+I first learned about your team through [Acme Research](https://acme.example.com/about) \
+and knew immediately I wanted to apply.
+
+Sincerely,
+Jane Doe
+"
+        .to_string(),
+        format: ExportFormat::Pdf,
+        document_type: DocumentType::CoverLetter,
+        template_id: TemplateId::SwissMinimal,
+        meta: None,
+        ats_mode: false,
+        locale: None,
+        contact: Some(profile_with("https://example.dev/portfolio")),
+        accent: None,
+        letter_layout: LetterLayout::Classic,
+    };
+    let (_bytes, report) =
+        validate_and_fix(request, crate::export::pdf::generate_pdf).expect("cover letter export");
+    assert!(
+        report.ok,
+        "a genuine body link inside a short cover letter's header band must not false-block: {:?}",
+        report.issues
+    );
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.code == "header_url_mismatch"),
+        "the body link must never be flagged as a header mismatch: {:?}",
+        report.issues
+    );
+}
+
 // ─── canonicalize_url ─────────────────────────────────────────────────────────
 
 /// Query-string case (including values like `Token=ABC`) must be preserved.
