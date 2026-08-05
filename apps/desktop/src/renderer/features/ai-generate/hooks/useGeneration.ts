@@ -9,6 +9,7 @@ import {
   type GenerationMeta,
   type GenerationMode,
 } from '@/lib/generate';
+import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
 type AIGenerateStage = 'idle' | 'extracting' | 'configuring' | 'generating' | 'done';
 
@@ -97,6 +98,10 @@ export function useGeneration(
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    const provider = resolveActiveProvider(selectedModel).activeProvider;
+    const startedAt = Date.now();
+    console.warn('[handleGenerate] start', { provider, model: selectedModel, target });
 
     let finalResume = '';
     let finalCover = '';
@@ -200,6 +205,13 @@ export function useGeneration(
         setCoverOut(finalCover);
       }
 
+      console.warn('[handleGenerate] done', {
+        target,
+        resumeLength: finalResume.length,
+        coverLength: finalCover.length,
+        durationMs: Date.now() - startedAt,
+      });
+
       stopStageRotation();
       setStreamBuffer('');
       setGenStep(null);
@@ -220,9 +232,13 @@ export function useGeneration(
       setStreamBuffer('');
       setGenStep(null);
       if (controller.signal.aborted) {
+        console.warn('[handleGenerate] cancelled', { target });
         // User cancelled — keep any finished document on screen, no error toast.
         setStage(finalResume || finalCover ? 'done' : 'configuring');
       } else if (target === 'both' && finalResume && !finalCover) {
+        console.warn('[handleGenerate] cover failed, resume kept', {
+          error: err instanceof Error ? err.message : String(err),
+        });
         // The résumé finished but the cover letter failed — keep the résumé
         // visible (#23: never discard a finished document) and flag the cover.
         setStage('done');
@@ -230,6 +246,10 @@ export function useGeneration(
         persist(finalResume, '', '');
         notify.error({ message: t('aiGenerate.toast.coverFailed') });
       } else {
+        console.error('[handleGenerate] failed', {
+          target,
+          error: err instanceof Error ? err.message : String(err),
+        });
         setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
         setStage('configuring');
         notify.error({ message: t('aiGenerate.toast.failed') });

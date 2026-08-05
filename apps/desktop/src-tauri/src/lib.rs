@@ -493,9 +493,32 @@ pub fn run() {
                 .max_file_size(5_000_000)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
                 .level(log::LevelFilter::Warn)
-                // Surface the company-research brief (logged at info) in the
-                // terminal/logs without lowering the global level (which would
-                // flood with per-request RequestTrace info lines).
+                // Global stays Warn (every ad-hoc `log::warn!`/`log::error!` across
+                // the ~80 modules that call them directly is already visible and
+                // would drown a diagnostics bundle if the whole crate went to
+                // Info). Instead, raise only the app's own operational-tracing
+                // targets to Info:
+                //
+                // `observability` is where EVERY `Span`/`RequestTrace`/`StageTrace`
+                // begin/end line actually logs from — `log::info!`'s implicit
+                // target is the module the macro is *written* in, not the
+                // caller's module, so this single entry covers every current and
+                // future `Span::begin("ai"|"scrape"|"apply"|"autopilot"|
+                // "applications"|"pipeline:*"|"export", ..)` call site project-wide
+                // without a per-domain entry. The one bulk operation that runs
+                // this at volume (`ai_reembed_all`, one `[ai]` span pair per
+                // job) still stays well under the 5 MB/file budget below.
+                .level_for("ajh_tauri::observability", log::LevelFilter::Info)
+                // `commands::ai_provider::stream`'s "[ai] stream start/end" lines
+                // are plain `log::info!`, not routed through `Span`, so they need
+                // their own entry to reach the file for a failed generation.
+                .level_for(
+                    "ajh_tauri::commands::ai_provider::stream",
+                    log::LevelFilter::Info,
+                )
+                // Surface the company-research brief (logged via `tracing::info!`,
+                // bridged to `log` by the `tracing` crate's `log` feature) in the
+                // terminal/logs.
                 .level_for("ajh_tauri::cover_letter::research", log::LevelFilter::Info)
                 .build(),
         )

@@ -7,6 +7,7 @@ import {
   type GenerationMeta,
   type GenerationMode,
 } from '@/lib/generate';
+import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
 /** Which document(s) a run produces. */
 export type TailorTarget = 'resume' | 'cover' | 'both';
@@ -196,6 +197,10 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       const controller = new AbortController();
       controllers.set(id, controller);
 
+      const provider = resolveActiveProvider(model).activeProvider;
+      const startedAt = Date.now();
+      console.warn('[runTailor] start', { provider, model, target });
+
       // Fresh session for this run.
       patch(id, {
         ...EMPTY_SESSION,
@@ -255,12 +260,21 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         // last, leaving activeOut on 'cover'); the user expects résumé first.
         if (target === 'both') patch(id, { activeOut: 'resume' });
 
+        console.warn('[runTailor] done', {
+          target,
+          resumeLength: resumeText.length,
+          coverLength: coverLetterText.length,
+          durationMs: Date.now() - startedAt,
+        });
+
         // Persist after a clean run only — a cancel/error throws and skips this.
         onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
         if (!controller.signal.aborted) {
-          patch(id, { error: err instanceof Error ? err.message : t('autopilot.apply.failed') });
+          const message = err instanceof Error ? err.message : t('autopilot.apply.failed');
+          console.error('[runTailor] failed', { target, error: message });
+          patch(id, { error: message });
         }
       } finally {
         controllers.delete(id);
