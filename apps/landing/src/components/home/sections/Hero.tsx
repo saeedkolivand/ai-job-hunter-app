@@ -154,6 +154,9 @@ export function Hero() {
         <a className="filmhint reveal" href="/creature">
           ▶ or don't scroll — watch THE CREATURE. he summons a tiny recruiter. it grows. (2:40)
         </a>
+        <a className="filmhint reveal" href="/how-it-works">
+          skeptical? → see how it works, end to end
+        </a>
         <a className="filmhint reveal" href="/download">
           already sold? → just take the app
         </a>

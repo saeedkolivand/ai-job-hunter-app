@@ -7,12 +7,18 @@ import { CHROME_EXT, FIREFOX_EXT, GITHUB_REPO, SPONSOR } from '@/lib/site-links'
 // Separators are explicit `{' · '}` strings — JSX drops whitespace-only text
 // between elements, so relying on newlines here would silently lose the ` · `
 // that scripts/check-parity.mjs checks for.
-export function SiteFooter({ current }: { current?: 'download' | 'privacy' | 'accessibility' }) {
+export function SiteFooter({
+  current,
+}: {
+  current?: 'download' | 'privacy' | 'accessibility' | 'how-it-works';
+}) {
   return (
     <footer>
       <p className="byline">made by Saeed, between rejections.</p>
       <p className="foot-links">
         <a href="/">home</a>
+        {' · '}
+        {current === 'how-it-works' ? 'how it works' : <a href="/how-it-works">how it works</a>}
         {' · '}
         {current === 'download' ? 'download' : <a href="/download">download</a>}
         {' · '}
@@ -21,6 +27,10 @@ export function SiteFooter({ current }: { current?: 'download' | 'privacy' | 'ac
         {current === 'accessibility' ? 'accessibility' : <a href="/accessibility">accessibility</a>}
         {' · '}
         <a href="/creature">▶ the short film</a>
+        {' · '}
+        <a href="/agent-system">the agent fleet</a>
+        {' · '}
+        <a href="/architecture-map">architecture</a>
         {' · '}
         <a href="/storybook/">design system</a>
         {' · '}

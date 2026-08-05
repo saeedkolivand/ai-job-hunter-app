@@ -17,9 +17,17 @@ export const metadata: Metadata = {
       'How the AI Job Hunter desktop app and browser extension handle your data. No accounts, no behavioural analytics. Local-first, with opt-out crash reporting.',
     url: 'https://aijobhunter.app/privacy',
     type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — privacy policy: no accounts, local-first, opt-out crash reporting.',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Privacy Policy',
     description:
       'No accounts, no behavioural analytics. Local-first, with opt-out crash reporting. How your data is handled.',
