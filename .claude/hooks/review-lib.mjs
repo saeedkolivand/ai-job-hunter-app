@@ -234,6 +234,27 @@ export const blockingFindings = (findings, minConfidence) =>
       f.introduced_by_diff !== false
   );
 
+/**
+ * Findings worth pinning to a line in the PR diff.
+ *
+ * LOW is deliberately excluded: it is advisory by definition, and the sticky
+ * comment already lists every finding, so pinning nits to the diff costs
+ * attention without adding information.
+ *
+ * A finding with no `file`/`line` cannot be anchored at all — GitHub rejects a
+ * review comment without a position, so those stay sticky-only rather than
+ * failing the post.
+ */
+export const inlineFindings = (findings) =>
+  (findings || []).filter(
+    (f) =>
+      (f.severity === 'CRITICAL' || f.severity === 'HIGH' || f.severity === 'MEDIUM') &&
+      f.introduced_by_diff !== false &&
+      f.file &&
+      Number.isInteger(f.line) &&
+      f.line > 0
+  );
+
 export const formatFinding = (f) =>
   `${f.severity} · ${f.file}${f.line ? ':' + f.line : ''} · ${f.summary}${f.fix ? ' · ' + f.fix : ''}`;
 
