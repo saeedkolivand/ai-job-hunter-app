@@ -386,15 +386,26 @@ pub fn load_cookies(app_data_dir: &Path, board_id: &str) -> Vec<StoredCookie> {
         .unwrap_or_default()
 }
 
-/// Build an authenticated reqwest::Client for `board_id`. The returned client
-/// has a cookie jar pre-populated with the cookies captured during login.
+/// Rebuild a `reqwest` cookie jar from persisted `cookies`, honouring each
+/// cookie's own `Domain` scope instead of collapsing everything to host-only.
 ///
-/// Returns an empty-jar client if no cookies are stored — callers can decide
-/// whether to fall through to a guest flow or surface a "not connected" error.
-pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwest::Client> {
+/// RFC 6265 §5.2.3: a cookie added with no `Domain` attribute is host-only —
+/// bound to the exact host of the URL it's added against. Chromium's exported
+/// `domain` field carries a leading dot when the cookie was captured *with* a
+/// `Domain` attribute (subdomain-scoped) and no dot when it was host-only. We
+/// mirror that distinction back into the rebuilt cookie string so a
+/// `.example.com` cookie still reaches `www.example.com`, and a host-only
+/// cookie stays bound to exactly the host it was issued for.
+///
+/// Deliberately narrow, not wide: we only ever set `Domain` to the value the
+/// site itself set (`host`, derived from the stored domain), and the jar's
+/// own domain-match check against `url` (also derived from `host`) still
+/// rejects anything that doesn't match — this can't send a cookie to a host
+/// it wasn't issued for.
+pub(crate) fn build_cookie_jar(cookies: &[StoredCookie]) -> std::sync::Arc<reqwest::cookie::Jar> {
     let jar = std::sync::Arc::new(reqwest::cookie::Jar::default());
 
-    for c in load_cookies(app_data_dir, board_id) {
+    for c in cookies {
         // Domains starting with '.' are valid in netscape format but need a
         // concrete host for the URL. Use https://<domain-no-leading-dot>/.
         let host = c.domain.trim_start_matches('.');
@@ -406,6 +417,15 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
             Err(_) => continue,
         };
         let mut cookie_str = format!("{}={}; Path={}", c.name, c.value, c.path);
+        // A leading dot on the stored domain means the cookie was captured with
+        // an explicit Domain attribute (subdomain-scoped). Add that Domain
+        // attribute back so the jar treats it as a domain cookie (sent to
+        // `host` and its subdomains) instead of silently downgrading it to
+        // host-only. No leading dot means it was already host-only when
+        // captured — omit Domain so it stays bound to exactly `host`.
+        if c.domain.starts_with('.') {
+            cookie_str.push_str(&format!("; Domain={host}"));
+        }
         if c.secure {
             cookie_str.push_str("; Secure");
         }
@@ -414,6 +434,17 @@ pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwes
         }
         jar.add_cookie_str(&cookie_str, &url);
     }
+
+    jar
+}
+
+/// Build an authenticated reqwest::Client for `board_id`. The returned client
+/// has a cookie jar pre-populated with the cookies captured during login.
+///
+/// Returns an empty-jar client if no cookies are stored — callers can decide
+/// whether to fall through to a guest flow or surface a "not connected" error.
+pub fn build_authed_client(app_data_dir: &Path, board_id: &str) -> Result<reqwest::Client> {
+    let jar = build_cookie_jar(&load_cookies(app_data_dir, board_id));
 
     crate::net::http::build_client(crate::net::http::ClientConfig {
         timeout: Some(std::time::Duration::from_secs(30)),

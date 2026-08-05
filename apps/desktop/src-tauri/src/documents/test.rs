@@ -799,8 +799,8 @@ fn alias_retired_gemini_text_embedding_004_evicts_posting_and_match_caches_only_
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', 'job-1', 'gemini', 'text-embedding-004', 1, 1, ?1, '{\"score\":1}', ?2)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', 'job-1', 'gemini', 'text-embedding-004', 1, 1, 1, ?1, '{\"score\":1}', ?2)",
             params![sha256_hex("job text"), ts_to_db(now_ms())],
         )
         .unwrap();
@@ -942,6 +942,7 @@ fn match_key<'a>(
         model: "nomic-embed-text",
         semantic_enabled,
         formula_version,
+        vector_version: 1,
         job_text_hash,
     }
 }
@@ -964,8 +965,55 @@ fn match_key_in_space<'a>(
         model,
         semantic_enabled,
         formula_version,
+        vector_version: 1,
         job_text_hash,
     }
+}
+
+// Real end-to-end path: seed a `match_scores` row under the OLD (7-column, no
+// `vector_version`) schema on a DB with every migration except this one
+// applied, then open for real. Proves the migration is actually registered in
+// `MIGRATIONS` and recreates the table with `vector_version` as a real PK
+// column backing it at the SQL layer — not just a field that compiles into
+// the Rust struct with nothing enforcing it underneath (SQLite can't `ALTER
+// TABLE` a column into an existing `PRIMARY KEY`, hence the drop+recreate).
+#[test]
+#[serial]
+fn add_vector_version_to_match_scores_key_heals_a_pre_seeded_row_through_a_real_open() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let vv_idx = all
+        .iter()
+        .position(|m| m.name == "add_vector_version_to_match_scores_key")
+        .expect("add_vector_version_to_match_scores_key must still be registered");
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..vv_idx]).unwrap();
+        // Old schema: no `vector_version` column yet.
+        conn.execute(
+            "INSERT INTO match_scores
+                (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+                 job_text_hash, score_json, created_at)
+             VALUES ('r', 'j', 'ollama', 'nomic-embed-text', 1, 1, 'hash', '{}', 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    let store = DocumentStore::open(&dir).unwrap();
+    // The recreated table starts empty — a pure result cache, so losing a
+    // pre-migration row is safe (it just forces one recompute).
+    assert_eq!(count_table(&store, "match_scores"), 0);
+
+    // The new column is real and part of the PK: writes/reads round-trip
+    // through the ordinary store API on the recreated schema.
+    let key = match_key("r", "j", 1, 1, "hash");
+    store.upsert_match_score(&key, "{\"combined\":1}").unwrap();
+    assert!(store.get_match_score(&key).is_some());
 }
 
 #[test]
@@ -996,6 +1044,14 @@ fn test_match_score_round_trip_and_key_sensitivity() {
     // Changing semantic_enabled → miss.
     let key_s0 = match_key("resume-1", "job-1", 0, 1, &hash);
     assert!(store.get_match_score(&key_s0).is_none());
+
+    // Changing vector_version (with everything else, including
+    // formula_version, held identical) → miss. A semantic score is derived
+    // from embedding vectors, so a vector-format bump must invalidate on its
+    // own, not just piggyback on a coincidental formula_version bump.
+    let mut key_vv2 = match_key("resume-1", "job-1", 1, 1, &hash);
+    key_vv2.vector_version = 2;
+    assert!(store.get_match_score(&key_vv2).is_none());
 }
 
 // Invalidation matrix — the embedding-space axis of the PK. A score cached in the
@@ -1202,8 +1258,8 @@ fn prune_caches_row_cap_keeps_newest_match_scores() {
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, ?3, ?4)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, 1, ?2, ?3, ?4)",
             params![
                 format!("job-{i}"),
                 hash,
@@ -1340,8 +1396,8 @@ fn prune_caches_ttl_removes_old_match_scores() {
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, '{\"s\":1}', ?3)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, 1, ?2, '{\"s\":1}', ?3)",
             params![job_id, hash, ts_to_db(ts)],
         )
         .unwrap();
@@ -1391,6 +1447,7 @@ fn get_match_score_returns_none_for_expired_row_via_live_ttl() {
         model: "nomic-embed-text",
         semantic_enabled: 1,
         formula_version: 1,
+        vector_version: 1,
         job_text_hash: &hash,
     };
     // Insert with generous limits to avoid per-write eviction interfering.
@@ -1473,6 +1530,7 @@ fn prune_caches_generous_leaves_all_rows_intact() {
             model: "nomic-embed-text",
             semantic_enabled: 1,
             formula_version: 1,
+            vector_version: 1,
             job_text_hash: &hash,
         };
         store.upsert_match_score(&key, "{\"s\":1}").unwrap();
@@ -1529,8 +1587,8 @@ fn prune_caches_cap_zero_keeps_exactly_the_single_newest_row() {
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, ?3, ?4)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, 1, ?2, ?3, ?4)",
             params![
                 format!("cap0-job-{i}"),
                 hash,
@@ -1633,8 +1691,8 @@ fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, ?2, '{\"s\":1}', ?3)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', ?1, 'ollama', 'nomic-embed-text', 1, 1, 1, ?2, '{\"s\":1}', ?3)",
             params![format!("tie-old-{i}"), hash, ts_to_db(old_ts)],
         )
         .unwrap();
@@ -1645,8 +1703,8 @@ fn prune_caches_cap_with_tied_timestamps_retains_newest_and_at_least_bound() {
         conn.execute(
             "INSERT OR REPLACE INTO match_scores
              (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-              job_text_hash, score_json, created_at)
-             VALUES ('r', 'tie-new', 'ollama', 'nomic-embed-text', 1, 1, ?1, '{\"s\":2}', ?2)",
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', 'tie-new', 'ollama', 'nomic-embed-text', 1, 1, 1, ?1, '{\"s\":2}', ?2)",
             params![hash, ts_to_db(new_ts)],
         )
         .unwrap();

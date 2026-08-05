@@ -443,27 +443,53 @@ fn parse_gemini_frames(buf: &mut String, state: &mut GeminiScanner) -> Vec<Strea
     out
 }
 
+/// Whether Gemini's deprecated sampling knobs — `temperature`, `topP`, and
+/// `topK` (never wired up in this file — `AiGenerateRequest` has no `top_k`
+/// field, so there is nothing to gate for it) — should be withheld for
+/// `model`. ONE predicate decides all of them so a future model can't end up
+/// gated for one and not another: that exact drift is how `topP` shipped
+/// ungated in the first place while `temperature` already had this check.
+///
+/// Verified against two live Google references (fetched 2026-08-05), which
+/// group all three identically rather than singling out `temperature`:
+/// - `ai.google.dev/gemini-api/docs/whats-new-gemini-3.5`, "Parameter updates
+///   and best practices in Gemini 3.x" — explicitly scoped to "all Gemini
+///   3.x models", not just the newest releases: "`temperature`, `top_p`,
+///   `top_k`: we strongly recommend not changing the default values."
+/// - `ai.google.dev/gemini-api/docs/latest-model#sampling-parameter-deprecation`
+///   (scoped to Gemini 3.6 Flash / 3.5 Flash-Lite "and all future Gemini
+///   model releases"): "`temperature`, `top_p`, and `top_k` are deprecated
+///   and ignored. In future model generations, supplying these parameters
+///   returns an HTTP 400 error."
+///
+/// Reuses [`gemini_is_v3_or_later`] — the SAME boundary `thinkingLevel`
+/// gates on — rather than an enumerated model list, so a future Gemini
+/// 4/5/… release inherits the gate with no code change.
+fn gemini_omits_sampling_params(model: &str) -> bool {
+    gemini_is_v3_or_later(model)
+}
+
 /// Effective `temperature` to send, or `None` to omit the field entirely.
 /// `explicit` (the user's own choice, if any) ALWAYS wins, on every model —
-/// this never overrides a deliberate value. Absent that, every call site in
-/// this file used to fall back to its own hardcoded default (`0.7` for chat/
-/// complete, `0.2` for research) regardless of model. Google's live docs
+/// this never overrides a deliberate value; only the app's OWN hardcoded
+/// `fallback` default is gated (see [`gemini_omits_sampling_params`]).
+/// Absent an explicit value, every call site in this file used to fall back
+/// to its own hardcoded default (`0.7` for chat/complete, `0.2` for
+/// research) regardless of model. Google's live docs
 /// (`ai.google.dev/gemini-api/docs/gemini-3`, fetched 2026-08-04): "For all
 /// Gemini 3 models, we strongly recommend keeping the temperature parameter
 /// at its default value of `1.0`... Changing the temperature (setting it
 /// below 1.0) may lead to unexpected behavior, such as looping or degraded
 /// performance, particularly in complex mathematical or reasoning tasks."
-/// This is NOT a 400 — Gemini 3 accepts the field — it is a SILENT quality
-/// regression: injecting either hardcoded default put every Gemini 3+ call
-/// (chat, complete, AND research/synthesis, which is exactly the "complex
+/// Injecting either hardcoded default put every Gemini 3+ call (chat,
+/// complete, AND research/synthesis, which is exactly the "complex
 /// reasoning task" case) into the documented degradation case, including
 /// every new user via the onboarding default (`gemini-3.6-flash`, itself
-/// Gemini 3+). So on a v3+ model ([`gemini_is_v3_or_later`]) with no
-/// explicit value, this omits the field so the API applies its OWN 1.0
-/// default, instead of `fallback`; a pre-v3 model keeps `fallback`
-/// unchanged (Google's guidance is scoped to the 3.x family).
+/// Gemini 3+). So on a gated model with no explicit value, this omits the
+/// field so the API applies its OWN 1.0 default, instead of `fallback`; an
+/// ungated model keeps `fallback` unchanged.
 fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f64) -> Option<f64> {
-    explicit.or_else(|| (!gemini_is_v3_or_later(model)).then_some(fallback))
+    explicit.or_else(|| (!gemini_omits_sampling_params(model)).then_some(fallback))
 }
 
 /// Build the `streamGenerateContent` request body for a given
@@ -471,7 +497,13 @@ fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f6
 /// `presencePenalty` are the detector-resistance sampling knobs (RAID, ACL
 /// 2024) the renderer sets only for prose generation surfaces — the v1beta API
 /// supports all three on `generationConfig`, each added only when `Some`
-/// (never sent as `null`).
+/// (never sent as `null`). `topP` additionally never reaches a gated model
+/// (see [`gemini_omits_sampling_params`]) — unlike `temperature`, it has no
+/// app-side fallback to protect and no "explicit user intent" to preserve
+/// (it's a renderer-set anti-detection knob, not a user dial), so a gated
+/// model omits it unconditionally rather than only when unset.
+/// `frequencyPenalty`/`presencePenalty` are NOT covered by Google's
+/// deprecation and stay ungated.
 fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     let temperature = gemini_effective_temperature(&req.model, req.temperature, 0.7);
     let system_text: String = req
@@ -499,8 +531,10 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     if let Some(t) = temperature {
         generation_config["temperature"] = json!(t);
     }
-    if let Some(top_p) = req.top_p {
-        generation_config["topP"] = json!(top_p);
+    if !gemini_omits_sampling_params(&req.model) {
+        if let Some(top_p) = req.top_p {
+            generation_config["topP"] = json!(top_p);
+        }
     }
     if let Some(fp) = req.frequency_penalty {
         generation_config["frequencyPenalty"] = json!(fp);

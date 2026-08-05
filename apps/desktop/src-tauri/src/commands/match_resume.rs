@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
 use crate::documents::keywords::{
     apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, make_stemmer,
     readable_gaps,
@@ -23,13 +24,15 @@ use crate::postings::PostingsCache;
 /// weighted `combined` score, the missing keywords (`gaps`), and short
 /// recommendations. Degrades gracefully to keyword-only when Ollama is offline.
 /// Cache-busting version for the match_scores result cache. Bump whenever the
-/// 0.6/0.4 weighting, the combined-score formula, the keyword/stemmer logic,
-/// or how the underlying VECTORS themselves are produced changes — any of
-/// which would make a previously-cached score stale. Bumped to 2 when
-/// embeddings moved from a naive single truncation to chunk-and-mean-pool
-/// (`EMBEDDING_VECTOR_VERSION`): a cached score computed against the OLD
-/// (truncated-prefix) vector must not be served once the vector itself can
-/// now be a full-document mean-pooled one under the identical space tag.
+/// 0.6/0.4 weighting, the combined-score formula, or the keyword/stemmer logic
+/// changes — any of which would make a previously-cached score stale. Was
+/// bumped to 2 alongside the v1->v2 `EMBEDDING_VECTOR_VERSION` bump (naive
+/// single truncation → chunk-and-mean-pool). A vector-FORMAT change no longer
+/// needs a coincidental bump here to invalidate: [`MatchScoreKey::vector_version`]
+/// carries `EMBEDDING_VECTOR_VERSION` directly, so that axis self-invalidates
+/// on its own (a cached score computed against an OLD-format vector is a miss
+/// once the vector itself can be a new-format one under the identical space
+/// tag) — this constant is now purely about the scoring FORMULA.
 const MATCH_FORMULA_VERSION: i64 = 2;
 
 /// Map the `semantic_scoring_enabled` request flag to the `semantic_enabled`
@@ -103,9 +106,9 @@ async fn score_one(
 
     // Self-invalidating result cache: the key captures every input that can
     // change the score (ids, embedding space, semantic on/off, formula version,
-    // and a hash of the final job text). A hit skips embedding + cosine +
-    // keyword work entirely. The job-not-found error above is returned before
-    // this point and is never cached.
+    // embedding vector version, and a hash of the final job text). A hit skips
+    // embedding + cosine + keyword work entirely. The job-not-found error above
+    // is returned before this point and is never cached.
     let job_text_hash = sha256_hex(&job_text);
     let cache_key = MatchScoreKey {
         resume_id: &resume.id,
@@ -114,6 +117,7 @@ async fn score_one(
         model: &active.model,
         semantic_enabled,
         formula_version: MATCH_FORMULA_VERSION,
+        vector_version: EMBEDDING_VECTOR_VERSION,
         job_text_hash: &job_text_hash,
     };
     if let Some(cached) = store.get_match_score_async(cache_key.to_owned_key()).await {
@@ -574,6 +578,7 @@ mod test {
             model: "nomic-embed-text",
             semantic_enabled: 1,
             formula_version: fv,
+            vector_version: EMBEDDING_VECTOR_VERSION,
             job_text_hash: &hash,
         };
 
@@ -586,6 +591,50 @@ mod test {
         // The next formula version is a different key → miss (stale on bump).
         assert!(store
             .get_match_score(&key(MATCH_FORMULA_VERSION + 1))
+            .is_none());
+    }
+
+    // The defect this pins: a semantic score is derived from embedding vectors,
+    // so a vector-FORMAT bump (`EMBEDDING_VECTOR_VERSION`) changes what a cached
+    // score means even when `formula_version` and the job text are unchanged.
+    // Before `vector_version` joined the key, this bump only self-invalidated
+    // by accident (a coincidental MATCH_FORMULA_VERSION bump, e.g. #933) — a
+    // future vector-format bump with no coincidental formula bump would have
+    // silently served a stale semantic score forever. Two otherwise-identical
+    // keys differing ONLY in `vector_version` must not collide.
+    #[test]
+    fn vector_version_bump_invalidates_cached_score() {
+        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+        let hash = sha256_hex("job text");
+        let key = |vv: i64| MatchScoreKey {
+            resume_id: "r",
+            job_id: "j",
+            provider: "ollama",
+            model: "nomic-embed-text",
+            semantic_enabled: 1,
+            formula_version: MATCH_FORMULA_VERSION,
+            vector_version: vv,
+            job_text_hash: &hash,
+        };
+
+        // Cache a score under the current vector version → hit.
+        store
+            .upsert_match_score(&key(EMBEDDING_VECTOR_VERSION), "{\"combined\":50}")
+            .unwrap();
+        assert!(store
+            .get_match_score(&key(EMBEDDING_VECTOR_VERSION))
+            .is_some());
+
+        // The next vector version is a different key → miss (stale on bump),
+        // with formula_version and every other field held identical — proves
+        // vector_version alone, not some other field, drives the invalidation.
+        assert!(store
+            .get_match_score(&key(EMBEDDING_VECTOR_VERSION + 1))
             .is_none());
     }
 
@@ -813,6 +862,7 @@ mod test {
             model: "nomic-embed-text",
             semantic_enabled: 1,
             formula_version: MATCH_FORMULA_VERSION,
+            vector_version: EMBEDDING_VECTOR_VERSION,
             job_text_hash: &hash,
         };
 

@@ -244,3 +244,78 @@ fn test_board_login_config_copy() {
     assert_eq!(copied.id, "linkedin");
     assert_eq!(copied.display_name, "LinkedIn");
 }
+
+// ── build_cookie_jar: Domain-attribute fidelity ────────────────────────────
+//
+// RFC 6265 §5.3: a cookie added with no Domain attribute is host-only, bound
+// to the exact host it was added against. These assert the rebuilt jar
+// honours each stored cookie's own scope (leading-dot domain vs host-only)
+// instead of collapsing every cookie to host-only.
+
+fn stored_cookie(name: &str, domain: &str) -> StoredCookie {
+    StoredCookie {
+        name: name.to_string(),
+        value: "tok".to_string(),
+        domain: domain.to_string(),
+        path: "/".to_string(),
+        expires: None,
+        http_only: true,
+        secure: true,
+    }
+}
+
+/// `.linkedin.com` (leading dot = captured with an explicit Domain attribute)
+/// must reach both the apex and any subdomain — this is the bug being fixed.
+#[test]
+fn domain_cookie_reaches_apex_and_subdomain() {
+    use reqwest::cookie::CookieStore;
+    let jar = build_cookie_jar(&[stored_cookie("li_at", ".linkedin.com")]);
+
+    let apex = reqwest::Url::parse("https://linkedin.com/").unwrap();
+    let sub = reqwest::Url::parse("https://www.linkedin.com/").unwrap();
+
+    let apex_header = jar.cookies(&apex).expect("must be sent to the apex domain");
+    assert!(apex_header.to_str().unwrap().contains("li_at=tok"));
+    let sub_header = jar
+        .cookies(&sub)
+        .expect("must be sent to a subdomain (the bug this fixes)");
+    assert!(sub_header.to_str().unwrap().contains("li_at=tok"));
+}
+
+/// `linkedin.com` (no leading dot = host-only when captured) must stay bound
+/// to exactly that host and NOT leak to a sibling subdomain.
+#[test]
+fn host_only_cookie_stays_host_only() {
+    use reqwest::cookie::CookieStore;
+    let jar = build_cookie_jar(&[stored_cookie("sess", "linkedin.com")]);
+
+    let exact = reqwest::Url::parse("https://linkedin.com/").unwrap();
+    let sub = reqwest::Url::parse("https://www.linkedin.com/").unwrap();
+
+    assert!(
+        jar.cookies(&exact).is_some(),
+        "must still be sent to its exact host"
+    );
+    assert!(
+        jar.cookies(&sub).is_none(),
+        "must NOT widen to a subdomain it wasn't issued for"
+    );
+}
+
+/// Safety property: regardless of stored scope, the cookie must never reach
+/// an unrelated host. Regression guard — fails if scope is ever widened
+/// beyond what the stored cookie's own Domain says.
+#[test]
+fn cookie_never_sent_to_unrelated_host() {
+    use reqwest::cookie::CookieStore;
+    let jar = build_cookie_jar(&[
+        stored_cookie("li_at", ".linkedin.com"),
+        stored_cookie("sess", "linkedin.com"),
+    ]);
+
+    let unrelated = reqwest::Url::parse("https://evil.example/").unwrap();
+    assert!(
+        jar.cookies(&unrelated).is_none(),
+        "cookie must never reach a host it wasn't issued for"
+    );
+}
