@@ -125,7 +125,7 @@ fn alias_retired_gemini_text_embedding_004(conn: &Connection) -> rusqlite::Resul
 
 /// Full cache key for the `match_scores` result cache (the table PK). Borrowed
 /// fields keep it allocation-free at the call site; passed by reference to the
-/// store methods. Grouped into a struct because 7 positional args read poorly.
+/// store methods. Grouped into a struct because 8 positional args read poorly.
 pub struct MatchScoreKey<'a> {
     pub resume_id: &'a str,
     pub job_id: &'a str,
@@ -134,6 +134,15 @@ pub struct MatchScoreKey<'a> {
     /// 1 when semantic scoring ran, 0 when it was skipped.
     pub semantic_enabled: i64,
     pub formula_version: i64,
+    /// [`EMBEDDING_VECTOR_VERSION`] at score-compute time. A semantic score is
+    /// derived from embedding vectors, so a vector-format bump changes what the
+    /// cached score MEANS even when neither `formula_version` nor the job text
+    /// changes — without this field a bump could only self-invalidate by
+    /// accident (a coincidental `formula_version` bump, or a maintainer
+    /// remembering to add a `DELETE FROM match_scores` to that release's
+    /// migration). Carrying it in the key makes invalidation structural: a new
+    /// `EMBEDDING_VECTOR_VERSION` is a new key, so it's a miss by construction.
+    pub vector_version: i64,
     /// SHA-256 of the post-translation job text (see [`sha256_hex`]).
     pub job_text_hash: &'a str,
 }
@@ -149,6 +158,7 @@ impl MatchScoreKey<'_> {
             model: self.model.to_string(),
             semantic_enabled: self.semantic_enabled,
             formula_version: self.formula_version,
+            vector_version: self.vector_version,
             job_text_hash: self.job_text_hash.to_string(),
         }
     }
@@ -165,6 +175,7 @@ pub struct OwnedMatchScoreKey {
     pub model: String,
     pub semantic_enabled: i64,
     pub formula_version: i64,
+    pub vector_version: i64,
     pub job_text_hash: String,
 }
 
@@ -179,6 +190,7 @@ impl OwnedMatchScoreKey {
             model: &self.model,
             semantic_enabled: self.semantic_enabled,
             formula_version: self.formula_version,
+            vector_version: self.vector_version,
             job_text_hash: &self.job_text_hash,
         }
     }
@@ -413,6 +425,41 @@ impl DocumentStore {
             // every provider's embeddings, not just Gemini's.
             name: "evict_posting_vectors_for_embedding_format_v2",
             up: |conn| conn.execute_batch("DELETE FROM posting_vectors;"),
+        },
+        Migration {
+            // `match_scores`' PK didn't carry the embedding vector version, only
+            // `formula_version` — so a semantic score computed from an old-format
+            // vector stayed a valid cache hit against new-format vectors unless a
+            // `MATCH_FORMULA_VERSION` bump happened to coincide with the
+            // `EMBEDDING_VECTOR_VERSION` bump (true of the v1->v2 migration above
+            // only by accident — CodeRabbit #933 follow-up). Adds `vector_version`
+            // to the PK so a future format bump invalidates by construction
+            // instead of relying on someone remembering to evict this table too.
+            // Recreated rather than `ALTER TABLE ADD COLUMN` because SQLite can't
+            // add a column to an existing PRIMARY KEY; `match_scores` is a pure
+            // result cache, so dropping its rows only forces a recompute, not a
+            // real data loss.
+            name: "add_vector_version_to_match_scores_key",
+            up: |conn| {
+                conn.execute_batch(
+                    "DROP TABLE IF EXISTS match_scores;
+                     CREATE TABLE match_scores (
+                        resume_id        TEXT NOT NULL,
+                        job_id           TEXT NOT NULL,
+                        provider         TEXT NOT NULL,
+                        model            TEXT NOT NULL,
+                        semantic_enabled INTEGER NOT NULL,
+                        formula_version  INTEGER NOT NULL,
+                        vector_version   INTEGER NOT NULL,
+                        job_text_hash    TEXT NOT NULL,
+                        score_json       TEXT NOT NULL,
+                        created_at       INTEGER NOT NULL,
+                        PRIMARY KEY (resume_id, job_id, provider, model, semantic_enabled,
+                                     formula_version, vector_version, job_text_hash)
+                     );
+                     CREATE INDEX IF NOT EXISTS idx_match_scores_created_at ON match_scores(created_at);",
+                )
+            },
         },
     ];
 
@@ -771,9 +818,10 @@ impl DocumentStore {
     //
     // Caches the full `match_resume` JSON result. The cache key (the table PK)
     // captures every input that can change the score: the resume/job ids, the
-    // embedding space, whether semantic scoring ran, the formula version, and a
-    // hash of the post-translation job text. A change to any of those is a new
-    // key — so the cache self-invalidates without explicit eviction.
+    // embedding space, whether semantic scoring ran, the formula version, the
+    // embedding vector version, and a hash of the post-translation job text. A
+    // change to any of those is a new key — so the cache self-invalidates
+    // without explicit eviction.
 
     /// Fetch a cached match-score JSON result for the given key, if present.
     pub fn get_match_score(&self, key: &MatchScoreKey) -> Option<serde_json::Value> {
@@ -1075,8 +1123,9 @@ fn get_match_score_with_conn(conn: &Connection, key: &MatchScoreKey) -> Option<s
     conn.query_row(
         "SELECT score_json FROM match_scores
          WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
-           AND semantic_enabled = ?5 AND formula_version = ?6 AND job_text_hash = ?7
-           AND created_at >= ?8",
+           AND semantic_enabled = ?5 AND formula_version = ?6 AND vector_version = ?7
+           AND job_text_hash = ?8
+           AND created_at >= ?9",
         params![
             key.resume_id,
             key.job_id,
@@ -1084,6 +1133,7 @@ fn get_match_score_with_conn(conn: &Connection, key: &MatchScoreKey) -> Option<s
             key.model,
             key.semantic_enabled,
             key.formula_version,
+            key.vector_version,
             key.job_text_hash,
             cutoff,
         ],
@@ -1101,9 +1151,10 @@ fn upsert_match_score_with_conn(
     conn.execute(
         "INSERT INTO match_scores
             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-             job_text_hash, score_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-         ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version, job_text_hash)
+             vector_version, job_text_hash, score_json, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version,
+                     vector_version, job_text_hash)
          DO UPDATE SET score_json = excluded.score_json, created_at = excluded.created_at",
         params![
             key.resume_id,
@@ -1112,6 +1163,7 @@ fn upsert_match_score_with_conn(
             key.model,
             key.semantic_enabled,
             key.formula_version,
+            key.vector_version,
             key.job_text_hash,
             score_json,
             ts_to_db(now_ms()),
