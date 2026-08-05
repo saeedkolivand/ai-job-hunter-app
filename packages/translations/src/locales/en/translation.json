@@ -229,6 +229,7 @@
     "modelUnavailable": "Your selected model isn't available — pick one from the list below.",
     "cloud": {
       "addKeyToLoad": "Add an API key to load this provider's models.",
+      "addUrlToLoad": "Add a base URL to load this provider's models.",
       "fetchFailed": "Couldn't load models: {{message}}",
       "cachedList": "Showing the last saved list — live refresh failed."
     }

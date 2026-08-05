@@ -229,6 +229,7 @@
     "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten.",
     "cloud": {
       "addKeyToLoad": "Fügen Sie einen API-Schlüssel hinzu, um die Modelle dieses Anbieters zu laden.",
+      "addUrlToLoad": "Fügen Sie eine Basis-URL hinzu, um die Modelle dieses Anbieters zu laden.",
       "fetchFailed": "Modelle konnten nicht geladen werden: {{message}}",
       "cachedList": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen."
     }
