@@ -79,3 +79,34 @@ fn test_get_default_headers_with_session() {
     assert!(headers.contains_key(reqwest::header::COOKIE));
     assert!(headers.contains_key("X-CSRF-Token"));
 }
+
+/// `read_bytes_capped` (called before `decode_body`) bounds only the
+/// COMPRESSED wire size — DEFLATE can expand up to ~1032:1, so a small
+/// compressed payload can still decompress past the cap. `decode_body` must
+/// catch that on the DECOMPRESSED side too (`Read::take(cap)`), not just
+/// trust the compressed-size bound already enforced upstream.
+#[test]
+fn decode_body_rejects_a_gzip_payload_that_decompresses_past_the_cap() {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    // 500 zero bytes compress to well under 100 bytes on the wire (DEFLATE
+    // eats long runs of the same byte almost for free) — a pass here can only
+    // happen if the DECOMPRESSED side is bounded, since the compressed size
+    // is nowhere near the 100-byte cap under test.
+    encoder.write_all(&[0u8; 500]).unwrap();
+    let gzipped = encoder.finish().unwrap();
+    assert!(
+        gzipped.len() < 100,
+        "test setup: the compressed payload must stay under the cap on its own"
+    );
+
+    let err = decode_body(gzipped, 100)
+        .expect_err("a body that decompresses past the cap must be rejected");
+    assert!(
+        matches!(err, AppError::Validation(_)),
+        "expected a size Validation error, got: {err:?}"
+    );
+}

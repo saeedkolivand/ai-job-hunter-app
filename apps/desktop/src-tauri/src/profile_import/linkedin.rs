@@ -115,13 +115,18 @@ async fn fetch_page(url: &str) -> AppResult<String> {
         return Err(map_status(status.as_u16()));
     }
 
-    resp.text().await.map_err(|e| {
-        log::warn!(
-            "[profile_import] linkedin body read failed: {}",
-            e.without_url()
-        );
-        AppError::Network("could not read the linkedin response".to_string())
-    })
+    // Bounded read: an anonymous fetch of an attacker-influenced profile URL
+    // must not let a hostile/misconfigured host buffer an unbounded body into
+    // memory. `read_text_capped`'s own network-error branch already strips the
+    // URL (`.without_url()`), so the profile slug never reaches this log line.
+    crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+        .await
+        .map_err(|e| {
+            log::warn!(
+                "[profile_import] linkedin body read failed: has_session={has_session} error={e}"
+            );
+            AppError::Network("could not read the linkedin response".to_string())
+        })
 }
 
 /// Map a non-2xx LinkedIn response status to the appropriate [`AppError`]. Pure
