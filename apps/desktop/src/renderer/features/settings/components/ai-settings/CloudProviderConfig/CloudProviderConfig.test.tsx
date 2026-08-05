@@ -201,12 +201,15 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
 });
 
 describe('CloudProviderConfig — model list states (live-model-lists PR)', () => {
-  it('shows the real failure message when the fetch failed and there is no cache/stored selection', () => {
+  it('shows the real failure message when the fetch failed and there is no cache/stored selection', async () => {
+    const onRecheck = vi.fn();
+    const user = userEvent.setup();
     render(
       <CloudProviderConfig
         {...baseProps}
         expandedModels={[]}
         expandedModelsError="invalid or unauthorized API key"
+        onRecheck={onRecheck}
       />
     );
     expect(screen.getByText('settings.aiModel.fetchFailedTitle')).toBeInTheDocument();
@@ -215,6 +218,10 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
     // failure announced without needing to be focused inside the panel.
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /select a model/i })).not.toBeInTheDocument();
+
+    // The presentation alone doesn't prove the retry action is wired up.
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+    expect(onRecheck).toHaveBeenCalledOnce();
   });
 
   it('shows a neutral empty state when the fetch succeeded but the catalogue is empty', () => {
@@ -266,6 +273,55 @@ describe('CloudProviderConfig — model list states (live-model-lists PR)', () =
       />
     );
     expect(screen.getByRole('button', { name: /GPT-4o \(Omni\)/ })).toBeInTheDocument();
+  });
+
+  // CodeRabbit #936, Major 2: #935 made the backend list models for
+  // `openai-compatible` without a bearer header (LM Studio / vLLM are
+  // keyless), and ModelSelector was unblocked to match — but the Settings
+  // model-selector block was still gated on `connected` (has a stored key),
+  // so a keyless setup could never discover or pick a model here even though
+  // nothing about it actually requires a key.
+  it('shows the model selector for a keyless openai-compatible provider (connected: false)', () => {
+    render(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        expandedModels={[{ name: 'local-model' }]}
+        providerModel="local-model"
+      />
+    );
+    expect(screen.getByText('settings.aiModel.title')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /local-model/ })).toBeInTheDocument();
+  });
+
+  it('shows the loading/error/empty states for a keyless openai-compatible provider too', () => {
+    const { rerender } = render(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        expandedModels={[]}
+        expandedModelsLoading
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('settings.aiModel.loading');
+
+    rerender(
+      <CloudProviderConfig
+        {...baseProps}
+        provider="openai-compatible"
+        connected={false}
+        expandedModels={[]}
+        expandedModelsError="connection refused"
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('connection refused');
+  });
+
+  it('still hides the model selector for a key-required provider with no key (unchanged behavior)', () => {
+    render(<CloudProviderConfig {...baseProps} provider="openai" connected={false} />);
+    expect(screen.queryByText('settings.aiModel.title')).not.toBeInTheDocument();
   });
 });
 

@@ -110,14 +110,17 @@ export function CloudProviderPanel({
     wasHasKey.current = hasKey;
   }, [hasKey]);
 
-  // Model choice is deferred until the key is entered and verified — the live
-  // list IS the verification (a successful fetch means the key works); no
-  // model is ever preselected. `useListProviderModels` is the same
-  // cache-aware fetch the model picker and Settings use (last-good local
-  // cache on a transient failure, real failure message otherwise) — reusing
-  // it here means saving the key (which invalidates this exact query) is the
-  // only fetch, not a second one.
-  const modelsQuery = useListProviderModels(selectedProvider, hasKey);
+  // Model choice is deferred until the key is entered and VERIFIED — the live
+  // list IS the verification (a successful fetch means the key works). This
+  // is a VERIFY call (`purpose: 'verify'`), not a display one: the local
+  // cache is keyed by provider + base URL with NO credential identity, so a
+  // cache hit from a PRIOR key would let a newly-entered wrong/revoked key
+  // pass verification on a list that proves nothing about it — Continue is
+  // supposed to mean the provider works. `useListProviderModels` is still the
+  // same hook the model picker and Settings use (so saving the key, which
+  // invalidates its query, is the only fetch — not a second one); only the
+  // cache-fallback behavior differs by `purpose`.
+  const modelsQuery = useListProviderModels(selectedProvider, hasKey, undefined, 'verify');
   const models = modelsQuery.data?.models ?? [];
   const modelsErrorMessage = modelsQuery.isError
     ? modelsQuery.error instanceof Error

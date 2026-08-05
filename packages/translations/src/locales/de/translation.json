@@ -228,7 +228,7 @@
     "noModelSelected": "Kein KI-Modell ausgewählt – wähle eines, um KI-Funktionen zu nutzen.",
     "modelUnavailable": "Dein ausgewähltes Modell ist nicht verfügbar – wähle eines aus der Liste unten.",
     "cloud": {
-      "addKeyToLoad": "Füge einen API-Schlüssel hinzu, um die Modelle dieses Anbieters zu laden.",
+      "addKeyToLoad": "Fügen Sie einen API-Schlüssel hinzu, um die Modelle dieses Anbieters zu laden.",
       "fetchFailed": "Modelle konnten nicht geladen werden: {{message}}",
       "cachedList": "Zeigt die zuletzt gespeicherte Liste – die Live-Aktualisierung ist fehlgeschlagen."
     }
@@ -2321,7 +2321,7 @@
       "testKey": "Testen",
       "testingKey": "Schlüssel wird getestet…",
       "selectModelPlaceholder": "Modell auswählen…",
-      "pickModelHint": "Wähle oben ein Modell, oder überspringe vorerst."
+      "pickModelHint": "Wählen Sie oben ein Modell aus, oder überspringen Sie vorerst."
     },
     "research": {
       "title": "Bessere Anschreiben",

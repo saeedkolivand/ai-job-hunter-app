@@ -102,10 +102,17 @@ describe('CloudProviderPanel — no key stored', () => {
     expect(screen.queryByText('onboarding.ai.chooseModel')).not.toBeInTheDocument();
   });
 
-  it('saving a key does NOT pre-select or configure a model (no hardcoded default)', async () => {
+  it('saving a key does NOT pre-select or configure a model on the hasKey transition (no hardcoded default)', async () => {
     stubHasKey = false;
+    // A non-empty list, so a default-selection effect firing on the
+    // false→true transition would have something to (wrongly) pick.
+    stubModelsQuery = {
+      data: { models: [{ name: 'gpt-4o' }], cached: false },
+      isLoading: false,
+      isError: false,
+    };
     const user = userEvent.setup();
-    const { onModelSelect } = renderPanel();
+    const { onModelSelect, rerender } = renderPanel();
 
     await user.type(screen.getByPlaceholderText('sk-...'), 'sk-test-key');
     await user.click(screen.getByRole('button', { name: 'onboarding.ai.saveKey' }));
@@ -114,7 +121,23 @@ describe('CloudProviderPanel — no key stored', () => {
       provider: 'openai',
       apiKey: 'sk-test-key',
     });
+
+    // Exercise the ACTUAL false→true transition — leaving `stubHasKey` false
+    // throughout (the earlier version of this test) means the component
+    // never reaches the model-picker tree at all, so it could not have
+    // caught a default-selection effect firing on that transition.
+    stubHasKey = true;
+    rerender(
+      <CloudProviderPanel
+        selectedProvider="openai"
+        onProviderChange={vi.fn()}
+        selectedModel=""
+        onModelSelect={onModelSelect}
+      />
+    );
+
     expect(onModelSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: SELECT_PLACEHOLDER })).toBeInTheDocument();
   });
 });
 

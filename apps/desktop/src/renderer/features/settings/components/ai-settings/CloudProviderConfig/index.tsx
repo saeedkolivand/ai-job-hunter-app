@@ -77,6 +77,11 @@ export function CloudProviderConfig({
   const setProviderSettings = useSetProviderSettings();
   const [changing, setChanging] = useState(false);
 
+  // `openai-compatible` is keyless-capable (LM Studio / vLLM) — it can list
+  // and pick a model without a stored key, so the model section can't be
+  // gated on `connected` the same way the key-input section above is.
+  const canPickModel = connected || provider === 'openai-compatible';
+
   const modelOptions = sortModelsNewestFirst(expandedModels).map((m) => ({
     value: m.name,
     label: m.displayName ?? m.name,
@@ -269,8 +274,11 @@ export function CloudProviderConfig({
           cached, or a preserved unlisted selection) → the dropdown, with a
           small note when the list is cached. Loading is checked FIRST — it's
           the only state where none of the other three guards fire, so it used
-          to fall through to an unlabelled empty `<Dropdown>`. */}
-      {connected && (
+          to fall through to an unlabelled empty `<Dropdown>`. Gated on
+          `canPickModel`, not `connected` — a keyless `openai-compatible`
+          setup (LM Studio / vLLM) has no key to be "connected" with but can
+          still list and pick a model. */}
+      {canPickModel && (
         <div className="space-y-1.5">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.aiModel.title')}

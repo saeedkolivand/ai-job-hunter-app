@@ -71,7 +71,12 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const modelQueries = useQueries({
     queries: cloudProviders.map((p) => ({
       queryKey: [...keys.ai.models, 'provider-models', p, baseUrlFor(p) ?? ''],
-      queryFn: () => fetchProviderModelsWithCache(api, p, baseUrlFor(p)),
+      // DISPLAY purpose, explicitly — the picker may show a cache-served list
+      // (with a "cached" note, below) since a stale-but-disclosed list beats
+      // an empty one here; onboarding's verification gate is the one call
+      // site that must NOT allow this (see CloudProviderPanel).
+      queryFn: () =>
+        fetchProviderModelsWithCache(api, p, baseUrlFor(p), { allowCacheFallback: true }),
       enabled: canFetchModels(p),
       staleTime: 300_000,
       // A rejection now means the live fetch failed AND no cached list was
@@ -111,6 +116,15 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   // loading, to avoid a false warning on first paint.
   const selectedModelVisible = options.some((o) => o.value === selectedValue);
   const activeCloudIndex = cloudProviders.indexOf(activeProvider);
+  const activeIsCloud = PROVIDERS[activeProvider]?.kind === 'cloud';
+  // `openai-compatible` can fetch keylessly, so its readiness never depends
+  // on the key-status query at all — waiting on it would wait on data it
+  // doesn't need. For every OTHER cloud provider, the key query IS relevant,
+  // so its own loading state must be tracked separately from "no key" (below):
+  // while it's still resolving, `canFetchModels` reads the not-yet-loaded
+  // `false` default, which is NOT the same as "we checked — there's no key".
+  const activeKeyRequired = activeIsCloud && activeProvider !== 'openai-compatible';
+  const activeKeyLoading = activeKeyRequired && Boolean(keyQueries[activeCloudIndex]?.isLoading);
   const modelsLoading = (() => {
     switch (PROVIDERS[activeProvider]?.kind) {
       case 'local-server':
@@ -119,8 +133,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         return healthLoading;
       case 'cloud':
         return activeCloudIndex >= 0
-          ? Boolean(keyQueries[activeCloudIndex]?.isLoading) ||
-              Boolean(modelQueries[activeCloudIndex]?.isLoading)
+          ? activeKeyLoading || Boolean(modelQueries[activeCloudIndex]?.isLoading)
           : false;
       default:
         return false;
@@ -133,10 +146,11 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   // `showModelWarning` above (that's about the current *selection*; this is
   // about whether the *list itself* loaded, and from where). Not connected
   // (and not the keyless-exempt `openai-compatible`) is deliberately NOT an
-  // error — just a prompt to add a key.
+  // error — just a prompt to add a key. Gated on `!activeKeyLoading` too: a
+  // still-loading key query must not be misread as "checked — no key", or
+  // the "add a key" notice flashes for a user who may have already added one.
   const activeCloudQuery = activeCloudIndex >= 0 ? modelQueries[activeCloudIndex] : undefined;
-  const activeIsCloud = PROVIDERS[activeProvider]?.kind === 'cloud';
-  const activeCloudNeedsKey = activeIsCloud && !canFetchModels(activeProvider);
+  const activeCloudNeedsKey = activeIsCloud && !activeKeyLoading && !canFetchModels(activeProvider);
   // Loading has its own hint (below) — without it, this was the one state
   // none of the other three guards matched, so it fell through to nothing
   // rendering at all while the list that gates Continue was still in flight.

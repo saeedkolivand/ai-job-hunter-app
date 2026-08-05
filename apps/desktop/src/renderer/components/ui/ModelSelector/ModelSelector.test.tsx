@@ -352,6 +352,48 @@ describe('ModelSelector — connected cloud provider, live fetch failed, cache a
   });
 });
 
+describe('ModelSelector — key-required cloud provider, key query still loading (CodeRabbit #936 Minor)', () => {
+  it('shows the loading hint, not "add a key" — the key query has not settled yet', () => {
+    // `cloudProviderId` is the first cloud provider in registry order
+    // (key-required, not the keyless-exempt openai-compatible).
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    // The key query itself is still in flight — `data` is not yet known.
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: undefined, isLoading: true } };
+
+    renderSelector();
+
+    // Before the fix, `canFetchModels` read the not-yet-loaded `false`
+    // default and concluded "no key" immediately, telling a user who may
+    // already have a key to add one.
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+    const loading = screen.getByText('settings.aiModel.loading');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+  });
+});
+
+describe('ModelSelector — openai-compatible, key query loading (irrelevant to a keyless provider)', () => {
+  it('ignores the key query entirely — model-query state alone decides readiness', () => {
+    stubbedActiveProvider = 'openai-compatible';
+    stubbedActiveProviderModel = '';
+    // The key query is still loading, but openai-compatible doesn't need a
+    // key at all — this must not gate anything for it.
+    stubbedCloudKeyQueries = { 'openai-compatible': { data: undefined, isLoading: true } };
+    stubbedCloudModelQueries = {
+      'openai-compatible': {
+        data: { models: [{ name: 'local-model' }], cached: false },
+        isLoading: false,
+        isError: false,
+      },
+    };
+
+    renderSelector();
+
+    expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+  });
+});
+
 describe('ModelSelector — connected cloud provider, live fetch failed, no cache', () => {
   it('shows the real failure message as role="alert"', () => {
     stubbedActiveProvider = cloudProviderId;
