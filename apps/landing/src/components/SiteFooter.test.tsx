@@ -15,7 +15,7 @@ afterEach(() => {
 // is identical across variants since only the tag (a vs. plain text) differs
 // for the "current" item, never the word itself.
 const FOOT_LINKS_TEXT =
-  'home · download · privacy · accessibility · ▶ the short film · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
+  'home · how it works · download · privacy · accessibility · ▶ the short film · the agent fleet · architecture · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
 
 describe('SiteFooter', () => {
   it('renders the byline', () => {
@@ -35,10 +35,13 @@ describe('SiteFooter', () => {
     const links = Array.from(container.querySelectorAll('.foot-links a'));
     expect(links.map((a) => [a.getAttribute('href'), a.textContent])).toEqual([
       ['/', 'home'],
+      ['/how-it-works', 'how it works'],
       ['/download', 'download'],
       ['/privacy', 'privacy'],
       ['/accessibility', 'accessibility'],
       ['/creature', '▶ the short film'],
+      ['/agent-system', 'the agent fleet'],
+      ['/architecture-map', 'architecture'],
       ['/storybook/', 'design system'],
       [GITHUB_REPO, 'GitHub'],
       [CHROME_EXT, 'Chrome extension'],
@@ -56,9 +59,12 @@ describe('SiteFooter', () => {
     expect(hrefs).not.toContain('/privacy');
     expect(hrefs).toEqual([
       '/',
+      '/how-it-works',
       '/download',
       '/accessibility',
       '/creature',
+      '/agent-system',
+      '/architecture-map',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -76,9 +82,12 @@ describe('SiteFooter', () => {
     expect(hrefs).not.toContain('/download');
     expect(hrefs).toEqual([
       '/',
+      '/how-it-works',
       '/privacy',
       '/accessibility',
       '/creature',
+      '/agent-system',
+      '/architecture-map',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -96,9 +105,35 @@ describe('SiteFooter', () => {
     expect(hrefs).not.toContain('/accessibility');
     expect(hrefs).toEqual([
       '/',
+      '/how-it-works',
       '/download',
       '/privacy',
       '/creature',
+      '/agent-system',
+      '/architecture-map',
+      '/storybook/',
+      GITHUB_REPO,
+      CHROME_EXT,
+      FIREFOX_EXT,
+      SPONSOR,
+    ]);
+  });
+
+  it('renders "how it works" as plain text (not a link) when current="how-it-works"', () => {
+    const { container } = render(<SiteFooter current="how-it-works" />);
+    expect(container.querySelector('.foot-links')?.textContent).toBe(FOOT_LINKS_TEXT);
+    const hrefs = Array.from(container.querySelectorAll('.foot-links a')).map((a) =>
+      a.getAttribute('href')
+    );
+    expect(hrefs).not.toContain('/how-it-works');
+    expect(hrefs).toEqual([
+      '/',
+      '/download',
+      '/privacy',
+      '/accessibility',
+      '/creature',
+      '/agent-system',
+      '/architecture-map',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -121,10 +156,13 @@ describe('SiteFooter', () => {
     const { container } = render(<SiteFooter />);
     for (const href of [
       '/',
+      '/how-it-works',
       '/download',
       '/privacy',
       '/accessibility',
       '/creature',
+      '/agent-system',
+      '/architecture-map',
       '/storybook/',
     ]) {
       const a = container.querySelector(`.foot-links a[href="${href}"]`);

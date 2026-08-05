@@ -16,9 +16,17 @@ export const metadata: Metadata = {
       'The WCAG 2.2 AA conformance status of the AI Job Hunter landing site, desktop app and browser extension, known barriers, and how to report one.',
     url: 'https://aijobhunter.app/accessibility',
     type: 'website',
+    images: [
+      {
+        url: '/og-card.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'AI Job Hunter — WCAG 2.2 AA accessibility statement and known barriers.',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Accessibility Statement',
     description: 'WCAG 2.2 AA conformance status, known barriers, and how to report one.',
   },

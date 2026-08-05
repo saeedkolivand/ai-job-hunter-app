@@ -3,10 +3,26 @@ import type { Metadata } from 'next';
 import { ClientScripts } from '@/components/ClientScripts';
 import { HomeBody } from '@/components/home/HomeBody';
 import { PageStyle } from '@/components/PageStyle';
+import { GITHUB_REPO } from '@/lib/site-links';
 import { readStyle } from '@/lib/styles';
 
+// Structured data for the homepage only — a SoftwareApplication card for search
+// results. No aggregateRating: there are no real reviews, and fabricating one
+// is a Google penalty as well as a lie.
+const SOFTWARE_APPLICATION_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'AI Job Hunter',
+  description:
+    'A local-first, AI-native job-hunting desktop app: scrapes 24 job boards, writes cover letters and résumés, and drafts every application — you just press send.',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'macOS, Windows, Linux',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  sameAs: GITHUB_REPO,
+};
+
 export const metadata: Metadata = {
-  title: 'AI Job Hunter — please hire him',
+  title: 'AI Job Hunter — Job Search, Résumé & Cover Letters',
   description:
     'Covers 24 job boards (direct scrapers + Adzuna/JSearch aggregator), writes your cover letters, does everything but hit submit. A real desktop app. Also a cry for help.',
   alternates: { canonical: 'https://aijobhunter.app/' },
@@ -40,6 +56,10 @@ export default function HomePage() {
     <>
       <PageStyle css={readStyle('marketing-tokens.css')} />
       <PageStyle css={readStyle('home.css')} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
+      />
       <HomeBody />
       <ClientScripts srcs={['/scripts/home-0.js']} />
     </>
