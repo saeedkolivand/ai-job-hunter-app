@@ -12,6 +12,9 @@ type ImportResult = {
   id?: string;
   success?: boolean;
   error?: string;
+  /** Human-readable detail for `error` (e.g. the `scanned_pdf` prompt). Prefer
+   *  this over `error` when surfacing a failure to the user. */
+  message?: string;
   review?: StructuredResume;
   contactConflicts?: ContactFieldConflict[];
   suggestedContact?: ContactProfile;
@@ -40,6 +43,12 @@ export function useImportWithOcr() {
         title: file.name,
       })) as ImportResult;
 
+      // Backend errors resolve in-band (never reject); a non-`scanned_pdf`
+      // error must reject here or every call site's success path lies.
+      if (result?.error && result.error !== 'scanned_pdf') {
+        throw new Error(result.message ?? result.error);
+      }
+
       if (result?.error !== 'scanned_pdf') {
         setReview(result?.review ?? null);
         return result;
@@ -61,6 +70,9 @@ export function useImportWithOcr() {
         bytes: new Uint8Array(ocrBytes),
         title: file.name,
       })) as ImportResult;
+      if (retried?.error) {
+        throw new Error(retried.message ?? retried.error);
+      }
       setReview(retried?.review ?? null);
       return retried;
     } finally {

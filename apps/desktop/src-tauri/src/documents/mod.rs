@@ -461,6 +461,41 @@ impl DocumentStore {
                 )
             },
         },
+        Migration {
+            // `posting_vectors` had no persisted `version` column — every read
+            // synthesized the CURRENT `EMBEDDING_VECTOR_VERSION` on the fly
+            // (see `get_posting_vector`), so `EmbeddingConfig::matches` could
+            // structurally never reject a row here on format version. Appended
+            // at the END of the array (not inserted earlier) — migrations are
+            // position-indexed via `PRAGMA user_version`, so an insertion
+            // mid-array would make an already-migrated install skip it
+            // entirely.
+            //
+            // `DEFAULT 2`, not 0 and not a live `EMBEDDING_VECTOR_VERSION`
+            // reference: this migration runs strictly AFTER
+            // `evict_posting_vectors_for_embedding_format_v2` above
+            // (migrations are position-indexed, so the ordering is fixed),
+            // which unconditionally wipes the table. So by the time this ADD
+            // COLUMN runs, every surviving row was necessarily written
+            // afterward, under the format that was current at that point —
+            // `EMBEDDING_VECTOR_VERSION == 2` when this migration was
+            // authored. `DEFAULT 0` would mislabel every one of those
+            // provably-current rows as stale, forcing a real (billed)
+            // re-embed of the entire cache for zero correctness gain. The
+            // literal must stay `2` even after a future
+            // `EMBEDDING_VECTOR_VERSION` bump — it records a historical fact
+            // about rows as of migration time, not the live constant.
+            name: "add_version_to_posting_vectors",
+            up: |conn| {
+                if !column_exists(conn, "posting_vectors", "version") {
+                    conn.execute(
+                        "ALTER TABLE posting_vectors ADD COLUMN version INTEGER NOT NULL DEFAULT 2",
+                        [],
+                    )?;
+                }
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -662,7 +697,7 @@ impl DocumentStore {
         // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
         let cutoff = ttl_cutoff_ms();
         conn.query_row(
-            "SELECT vector, provider, model, dim, text_hash FROM posting_vectors WHERE job_id = ?1 AND created_at >= ?2",
+            "SELECT vector, provider, model, dim, version, text_hash FROM posting_vectors WHERE job_id = ?1 AND created_at >= ?2",
             params![job_id, cutoff],
             |row| {
                 Ok((
@@ -670,12 +705,13 @@ impl DocumentStore {
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, i64>(3)?,
-                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         )
         .ok()
-        .and_then(|(json, provider, model, dim, text_hash)| {
+        .and_then(|(json, provider, model, dim, version, text_hash)| {
             let values: Vec<f64> = serde_json::from_str(&json).ok()?;
             Some((
                 EmbeddingVector {
@@ -684,25 +720,12 @@ impl DocumentStore {
                         provider,
                         model,
                         dim: dim as usize,
-                        // `posting_vectors` has no persisted `version` column
-                        // (unlike `vectors`) — this ALWAYS synthesizes the
-                        // CURRENT `EMBEDDING_VECTOR_VERSION`, so
-                        // `EmbeddingConfig::matches` can never reject a row
-                        // here on format version; freshness is governed
-                        // purely by the `text_hash` guard. No current defect
-                        // — the `evict_posting_vectors_for_embedding_format_v2`
-                        // migration already covers the v1->v2 bump by wiping
-                        // the table outright — but this is a HAND-MAINTAINED
-                        // invariant, not a self-detecting one: every FUTURE
-                        // `EMBEDDING_VECTOR_VERSION` bump MUST ship its own
-                        // eviction migration for this table too, because this
-                        // read has no way to notice a mismatch on its own. A
-                        // missed one would silently mix formats under an
-                        // identical space tag. Add a real `version` column
-                        // (backfilled from the row's `created_at` relative to
-                        // the bump, or just evicted like today) if this
-                        // invariant ever proves easy to forget in practice.
-                        version: EMBEDDING_VECTOR_VERSION,
+                        // Persisted at write time (`upsert_posting_vector`), not
+                        // re-derived here — `EmbeddingConfig::matches` compares
+                        // it against `EMBEDDING_VECTOR_VERSION`, so a stale-format
+                        // row (including a pre-migration row, defaulted to 0) is
+                        // a real cache miss instead of a hand-maintained invariant.
+                        version,
                     },
                 },
                 text_hash,
@@ -721,12 +744,12 @@ impl DocumentStore {
         let json = serde_json::to_string(&v.values).map_err(|e| e.to_string())?;
         let conn = self.conn.lock();
         conn.execute(
-            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, version, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(job_id) DO UPDATE SET
                 text_hash = excluded.text_hash, vector = excluded.vector,
                 provider = excluded.provider, model = excluded.model,
-                dim = excluded.dim, created_at = excluded.created_at",
+                dim = excluded.dim, version = excluded.version, created_at = excluded.created_at",
             params![
                 job_id,
                 text_hash,
@@ -734,6 +757,7 @@ impl DocumentStore {
                 v.space.provider,
                 v.space.model,
                 v.space.dim as i64,
+                v.space.version,
                 ts_to_db(now_ms()),
             ],
         )

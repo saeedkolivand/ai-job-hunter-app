@@ -126,20 +126,9 @@ impl LinkedInHttpClient {
             return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
-        let bytes = response.bytes().await?;
-        let body = if bytes.starts_with(&[0x1f, 0x8b]) {
-            // Gzip magic number
-            let mut decoder = GzDecoder::new(&bytes[..]);
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|e| AppError::Parse(format!("gzip decode failed: {e}")))?;
-            String::from_utf8(decompressed)
-                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
-        } else {
-            String::from_utf8(bytes.to_vec())
-                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
-        };
+        let cap = crate::net::http::DEFAULT_MAX_BODY_BYTES;
+        let bytes = crate::net::http::read_bytes_capped(response, cap).await?;
+        let body = decode_body(bytes, cap)?;
 
         self.rate_limiter.record_request().await;
         Ok(serde_json::from_str(&body)?)
@@ -164,27 +153,12 @@ impl LinkedInHttpClient {
         let status = response.status();
 
         if !status.is_success() {
-            let _error_body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| String::from("<no body>"));
             return Err(AppError::Network(format!("HTTP {status}: Request failed")));
         }
 
-        let bytes = response.bytes().await?;
-        let body = if bytes.starts_with(&[0x1f, 0x8b]) {
-            // Gzip magic number
-            let mut decoder = GzDecoder::new(&bytes[..]);
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|e| AppError::Parse(format!("gzip decode failed: {e}")))?;
-            String::from_utf8(decompressed)
-                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
-        } else {
-            String::from_utf8(bytes.to_vec())
-                .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))?
-        };
+        let cap = crate::net::http::DEFAULT_MAX_BODY_BYTES;
+        let bytes = crate::net::http::read_bytes_capped(response, cap).await?;
+        let body = decode_body(bytes, cap)?;
 
         self.rate_limiter.record_request().await;
         Ok(body)
@@ -192,6 +166,40 @@ impl LinkedInHttpClient {
 
     pub fn has_session(&self) -> bool {
         self.session_data.is_some()
+    }
+}
+
+/// Decode a raw response body: gzip-decompress it first if the gzip magic
+/// prefix (`1f 8b`) is present (this client disables `reqwest`'s built-in
+/// decompression and requests `gzip` itself — see the `Accept-Encoding`
+/// comment in [`LinkedInHttpClient::get_default_headers`] — so it must decode
+/// gzip by hand), then UTF-8 decode.
+///
+/// `bytes` already went through [`crate::net::http::read_bytes_capped`],
+/// which bounds only the COMPRESSED wire size at `cap`. DEFLATE can expand up
+/// to ~1032:1, so an 8 MB compressed cap could still inflate to gigabytes
+/// resident if the decompressed side were left unbounded — `Read::take(cap)`
+/// bounds that side too. A decompressed read that lands EXACTLY on `cap` is
+/// treated as truncation (rejected) rather than a legitimately cap-sized
+/// body, since the two are indistinguishable without decoding further.
+fn decode_body(bytes: Vec<u8>, cap: usize) -> AppResult<String> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut decoder = GzDecoder::new(&bytes[..]);
+        let mut decompressed = Vec::new();
+        let read = (&mut decoder)
+            .take(cap as u64)
+            .read_to_end(&mut decompressed)
+            .map_err(|e| AppError::Parse(format!("gzip decode failed: {e}")))?;
+        if read == cap {
+            return Err(AppError::Validation(
+                "decompressed response too large".to_string(),
+            ));
+        }
+        String::from_utf8(decompressed)
+            .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))
+    } else {
+        String::from_utf8(bytes)
+            .map_err(|e| AppError::Parse(format!("response was not valid UTF-8: {e}")))
     }
 }
 

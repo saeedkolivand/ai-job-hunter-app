@@ -112,7 +112,7 @@ async fn resolve_uncached(url: &str) -> Result<Option<JobPosting>> {
     // arbitrarily large one and drive us into OOM. The 20s timeout bounds how
     // LONG we read, not how MUCH. Going through `fetch_text` instead is not an
     // option here: it uses the shared client and would drop the SSRF guard.
-    let html = match crate::scraping::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
+    let html = match crate::net::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
         Ok(h) => h,
         Err(_) => return Ok(None),
     };
@@ -219,7 +219,8 @@ async fn try_greenhouse(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let v: serde_json::Value = res.json().await?;
+    let v: serde_json::Value =
+        crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
     let title = v
         .get("title")
         .and_then(|s| s.as_str())
@@ -302,7 +303,8 @@ async fn try_lever(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let v: serde_json::Value = res.json().await?;
+    let v: serde_json::Value =
+        crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
     let title = v
         .get("text")
         .and_then(|s| s.as_str())
@@ -398,7 +400,8 @@ async fn try_ashby(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let v: serde_json::Value = res.json().await?;
+    let v: serde_json::Value =
+        crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
     let p = v.get("data").and_then(|d| d.get("jobPosting"));
     let p = match p {
         Some(v) if !v.is_null() => v,
@@ -1020,7 +1023,7 @@ async fn try_linkedin(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let html = res.text().await?;
+    let html = crate::net::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await?;
 
     let doc = Html::parse_document(&html);
     let title_sel = Selector::parse("h1, .top-card-layout__title").unwrap();
@@ -1150,7 +1153,8 @@ async fn try_workday(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let v: serde_json::Value = res.json().await?;
+    let v: serde_json::Value =
+        crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
 
     let title = v
         .get("title")
@@ -1219,7 +1223,8 @@ async fn try_smartrecruiters(url: &str) -> Result<Option<JobPosting>> {
     if !res.status().is_success() {
         return Ok(None);
     }
-    let v: serde_json::Value = res.json().await?;
+    let v: serde_json::Value =
+        crate::net::http::read_json_capped(res, SCRAPE_URL_MAX_BYTES).await?;
 
     let title = v
         .get("name")
@@ -1340,7 +1345,7 @@ async fn try_personio(url: &str) -> Result<Option<JobPosting>> {
     // Same unbounded-body risk as the generic-HTML fallback above: this host is
     // attacker-influenced, and `Response::text()` buffers the whole body with no
     // limit. Read it through the shared cap instead.
-    let xml = match crate::scraping::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
+    let xml = match crate::net::http::read_text_capped(res, SCRAPE_URL_MAX_BYTES).await {
         Ok(x) => x,
         Err(_) => return Ok(None),
     };
