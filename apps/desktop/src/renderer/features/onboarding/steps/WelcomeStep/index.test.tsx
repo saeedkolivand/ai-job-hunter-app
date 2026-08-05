@@ -1,16 +1,25 @@
 /**
- * WelcomeStep — Enter-key / Continue-click parity (same defect class fixed in
- * AISelectionStep, #936).
+ * WelcomeStep — Enter-key behaviour across every focus target in the step
+ * (same defect class first fixed in AISelectionStep, #936; hardened in #939).
  *
- * The regression this guards: `OnboardingStepWrapper`'s global Enter-key
- * listener calls whatever `onNext` prop it's handed directly — bypassing
- * `handleNext`'s `setUserName(trimmed)` write. The name `<Input>`'s own
- * keydown handler `stopPropagation()`s Enter while focus is INSIDE it, so the
- * click path always worked and masked the bug; but move focus OUT of the
- * input (e.g. Tab to a language tile) and press Enter, and the wrapper's
- * listener fires directly — advancing without ever saving the typed name.
- * `WelcomeStep` must wire `onNext={handleNext}`, not the raw `onNext` prop,
- * so both paths persist the name identically.
+ * `OnboardingStepWrapper`'s global Enter-key listener is the shared
+ * "advance the step" shortcut for all ten onboarding steps. Two things can go
+ * wrong with a single global listener like that, and this file guards both:
+ *
+ *  1. Enter reaching the input must still save the name before advancing
+ *     (`handleNext`'s `setUserName(trimmed)` write) — the ORIGINAL regression.
+ *  2. Enter reaching a DIFFERENT focused control (a language tile, or the
+ *     Continue button itself) must not be stolen by the wrapper's global
+ *     shortcut: a focused control that owns its own Enter/click activation
+ *     (button, link, select, role="button") gets to handle it alone. The
+ *     wrapper only advances when canAdvance is set AND focus isn't on such a
+ *     control. Getting this wrong two different ways: (a) letting the
+ *     wrapper ALSO fire onNext when Continue is focused double-advances,
+ *     skipping a step (Continue's own click already calls onNext); (b)
+ *     excluding Continue but blanket-excluding EVERY button instead of just
+ *     honouring each control's own activation would (if done via
+ *     preventDefault) silently swallow a language tile's own click and
+ *     prevent it from ever picking a language via keyboard.
  *
  * `usePreferencesStore` is the REAL zustand store (localStorage-persisted, no
  * IPC) — reset via `resetPreferences()` in beforeEach and asserted via
@@ -64,7 +73,7 @@ describe('WelcomeStep — clicking Continue persists the name', () => {
   });
 });
 
-describe('WelcomeStep — Enter with focus moved OUT of the input takes the identical path as clicking Continue', () => {
+describe('WelcomeStep — Enter while typing in the name input takes the identical path as clicking Continue', () => {
   it('persists the typed name and calls onNext exactly once when Enter fires WITHOUT tabbing out — the most common path', async () => {
     const user = userEvent.setup();
     const { onNext } = renderStep();
@@ -85,33 +94,6 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
     expect(onNext).toHaveBeenCalledTimes(1);
   });
 
-  it('still persists the typed name when Enter fires after focus moves to a language tile', async () => {
-    const user = userEvent.setup();
-    const { onNext } = renderStep();
-
-    await user.type(
-      screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'),
-      'Grace Hopper'
-    );
-
-    // Tab OUT of the name input onto the first language tile — the input's
-    // own keydown handler no longer intercepts Enter once focus has moved, so
-    // this reaches OnboardingStepWrapper's global window listener instead.
-    // Pinned to the actual tile (not just "not an input") so this test still
-    // fails if the tiles ever stop being focusable.
-    await user.tab();
-    expect(screen.getByRole('button', { name: /English/ })).toHaveFocus();
-
-    // Note: OnboardingStepWrapper's listener preventDefault()s this Enter, so
-    // the browser's synthesized click on the focused tile (which would fire
-    // `selectLanguage('en')`, independent of onNext) never dispatches — see
-    // the wrapper's own double-fire guard.
-    await user.keyboard('{Enter}');
-
-    expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
-    expect(onNext).toHaveBeenCalledTimes(1);
-  });
-
   it('does nothing when Enter fires with no name typed — canAdvance still gates the keyboard path', async () => {
     const user = userEvent.setup();
     const { onNext } = renderStep();
@@ -124,7 +106,7 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
     expect(onNext).not.toHaveBeenCalled();
   });
 
-  it('calls onNext exactly once when Enter fires with the Continue button itself focused', async () => {
+  it('calls onNext exactly once when Enter fires with the Continue button itself focused (#939 double-fire)', async () => {
     const user = userEvent.setup();
     const { onNext } = renderStep();
 
@@ -133,12 +115,12 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
       'Grace Hopper'
     );
 
-    // Focus the Continue button directly. Enter here would otherwise trigger
-    // BOTH OnboardingStepWrapper's window keydown listener AND the browser's
+    // Focus the Continue button directly. Enter here triggers BOTH
+    // OnboardingStepWrapper's window keydown listener AND the browser's
     // native Enter-on-a-focused-button synthesized click, which fires the
-    // button's own onClick={handleNext} — double-firing onNext and skipping a
-    // step. The wrapper's preventDefault() on the keydown cancels that
-    // synthesized click, so only the wrapper's own call goes through.
+    // button's own onClick={handleNext}. The wrapper recognizes a focused
+    // <button> as owning its own activation and skips its OWN onNext call,
+    // so only the button's native click goes through — exactly once.
     const continueButton = screen.getByRole('button', { name: /onboarding\.welcome\.next/ });
     continueButton.focus();
     expect(continueButton).toHaveFocus();
@@ -147,5 +129,35 @@ describe('WelcomeStep — Enter with focus moved OUT of the input takes the iden
 
     expect(usePreferencesStore.getState().userName).toBe('Grace Hopper');
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WelcomeStep — Enter on a different focused control activates THAT control, not the wizard', () => {
+  it('picks the focused language tile on Enter and does NOT advance the step', async () => {
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    await user.type(
+      screen.getByPlaceholderText('onboarding.welcome.namePlaceholder'),
+      'Grace Hopper'
+    );
+
+    // Tab past the input onto the language tiles, landing on Deutsch. Enter
+    // here must activate THAT tile (select German) the same way a click on
+    // it would — not fall through to the wrapper's global "advance"
+    // shortcut, which would silently discard the user's keyboard selection.
+    await user.tab(); // -> English tile
+    await user.tab(); // -> Deutsch tile
+    expect(screen.getByRole('button', { name: /Deutsch/ })).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+
+    // The tile's own click fired (language changed via the real store)...
+    expect(usePreferencesStore.getState().language).toBe('de');
+    // ...and the wrapper's global shortcut did NOT also fire: the typed name
+    // was never saved (that only happens via handleNext) and onNext was
+    // never called.
+    expect(usePreferencesStore.getState().userName).toBe('');
+    expect(onNext).not.toHaveBeenCalled();
   });
 });
