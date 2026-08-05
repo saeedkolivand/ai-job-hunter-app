@@ -28,7 +28,9 @@ function writeBaseRepo() {
   );
   writeFileSync(
     join(repoDir, 'apps', 'desktop', 'package.json'),
-    JSON.stringify({ dependencies: { react: '^19.0.0' } })
+    JSON.stringify({
+      dependencies: { react: '^19.2.8', '@ajh/shared': 'workspace:*' },
+    })
   );
   writeFileSync(
     join(repoDir, 'packages', 'shared', 'package.json'),
@@ -72,10 +74,11 @@ function run(entriesSource) {
     '  subjectKind: RadarSubjectKind;',
     '  dependencyName?: string;',
     '  adrSlug?: string;',
+    '  lastReviewed: string;',
     '}',
     "export const QUADRANTS = [{ id: 'renderer-ui', label: 'Renderer & UI' }];",
     "export const RINGS = [{ id: 'adopt', label: 'Adopt', blurb: 'x' }];",
-    'export const RADAR = [',
+    'export const RADAR: readonly TechRadarEntry[] = [',
     entriesSource,
     '];',
   ].join('\n');
@@ -101,6 +104,7 @@ describe('check-tech-radar', () => {
         quadrant: 'renderer-ui',
         subjectKind: 'dependency',
         dependencyName: 'tauri',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(0);
@@ -116,6 +120,7 @@ describe('check-tech-radar', () => {
         quadrant: 'backend-data',
         subjectKind: 'dependency',
         dependencyName: 'windows',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(0);
@@ -130,6 +135,7 @@ describe('check-tech-radar', () => {
         quadrant: 'backend-data',
         subjectKind: 'dependency',
         dependencyName: 'zod',
+        lastReviewed: '2026-08-05',
       },
       {
         id: 'mockall',
@@ -138,6 +144,7 @@ describe('check-tech-radar', () => {
         quadrant: 'backend-data',
         subjectKind: 'dependency',
         dependencyName: 'mockall',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(0);
@@ -152,6 +159,7 @@ describe('check-tech-radar', () => {
         quadrant: 'renderer-ui',
         subjectKind: 'dependency',
         dependencyName: 'this-package-does-not-exist',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(1);
@@ -168,6 +176,7 @@ describe('check-tech-radar', () => {
         ring: 'hold',
         quadrant: 'renderer-ui',
         subjectKind: 'not-adopted',
+        lastReviewed: '2026-08-05',
       },
       {
         id: 'ollama',
@@ -175,6 +184,7 @@ describe('check-tech-radar', () => {
         ring: 'adopt',
         quadrant: 'backend-data',
         subjectKind: 'service',
+        lastReviewed: '2026-08-05',
       },
       {
         id: 'a-pattern',
@@ -182,6 +192,7 @@ describe('check-tech-radar', () => {
         ring: 'adopt',
         quadrant: 'renderer-ui',
         subjectKind: 'technique',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(0);
@@ -197,6 +208,7 @@ describe('check-tech-radar', () => {
         subjectKind: 'dependency',
         dependencyName: 'react',
         rationale: 'ESLint blocks an inline { duration, ease } object anywhere in feature code.',
+        lastReviewed: '2026-08-05',
       },
       {
         id: 'next-entry',
@@ -205,10 +217,94 @@ describe('check-tech-radar', () => {
         quadrant: 'renderer-ui',
         subjectKind: 'dependency',
         dependencyName: 'zod',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(exitCode).toBe(0);
     expect(output).toContain('2 entries checked');
+  });
+
+  it('does not let an apostrophe inside a backtick-quoted field swallow the next entry', () => {
+    // The exact failure mode from review: a template literal's apostrophe
+    // opens a bogus '-string if backticks aren't tracked as their own quote
+    // type, which then runs past this entry's real closing brace and eats
+    // the entry that follows.
+    const { exitCode, output } = run(`
+      {
+        id: 'backtick-entry',
+        name: 'Backtick Entry',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'react',
+        rationale: \`it's fine, and also { has a brace }\`,
+        lastReviewed: '2026-08-05',
+      },
+      {
+        id: 'swallowed-entry',
+        name: 'Should Not Be Swallowed',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'this-package-does-not-exist',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(1);
+    // If the backtick swallowed entry 2, this would report "parsed zero
+    // entries" / a count mismatch instead of entry 2's OWN dependency
+    // failure by name — that's what proves it wasn't swallowed.
+    expect(output).not.toMatch(/silently skipped|couldn't locate/i);
+    expect(output).toContain(
+      '"Should Not Be Swallowed" names dependency "this-package-does-not-exist"'
+    );
+  });
+
+  it('does not let an apostrophe inside a // comment swallow the next entry', () => {
+    const { exitCode, output } = run(`
+      {
+        id: 'commented-entry',
+        name: 'Commented Entry',
+        // don't treat this apostrophe as opening a string
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'react',
+        lastReviewed: '2026-08-05',
+      },
+      {
+        id: 'after-comment',
+        name: 'After Comment',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'this-package-does-not-exist',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(1);
+    expect(output).not.toMatch(/silently skipped|couldn't locate/i);
+    expect(output).toContain('"After Comment" names dependency "this-package-does-not-exist"');
+  });
+
+  it('fails loudly (not silently OK) when an entry whose first key is not id gets skipped by the parser', () => {
+    // name-before-id means extractObjectBlocks's startRe never matches this
+    // entry's opening brace — exactly the partial-drift scenario the raw
+    // id-line count exists to catch. Must NOT report a clean "1 entries
+    // checked" as if this entry didn't exist.
+    const { exitCode, output } = run(`
+      {
+        name: 'Id Is Not First',
+        id: 'id-not-first',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'technique',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(1);
+    expect(output).toMatch(/silently skipped/i);
+    expect(output).toContain("has 1 'id:' line(s) but the parser only extracted 0 entrie(s)");
   });
 
   it('passes on a real adrSlug and fails on a broken one', () => {
@@ -220,6 +316,7 @@ describe('check-tech-radar', () => {
         quadrant: 'renderer-ui',
         subjectKind: 'technique',
         adrSlug: '0001-real-adr',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(ok.exitCode).toBe(0);
@@ -232,9 +329,131 @@ describe('check-tech-radar', () => {
         quadrant: 'renderer-ui',
         subjectKind: 'technique',
         adrSlug: '9999-does-not-exist',
+        lastReviewed: '2026-08-05',
       },
     `);
     expect(broken.exitCode).toBe(1);
     expect(broken.output).toContain('9999-does-not-exist');
+  });
+
+  it('fails on a duplicate id', () => {
+    const { exitCode, output } = run(`
+      {
+        id: 'dupe',
+        name: 'First',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'technique',
+        lastReviewed: '2026-08-05',
+      },
+      {
+        id: 'dupe',
+        name: 'Second',
+        ring: 'adopt',
+        quadrant: 'backend-data',
+        subjectKind: 'technique',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(1);
+    expect(output).toContain('duplicate id "dupe"');
+    expect(output).toContain('First');
+    expect(output).toContain('Second');
+  });
+
+  it('fails on a malformed lastReviewed and on a missing one', () => {
+    const malformed = run(`
+      {
+        id: 'a',
+        name: 'A',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'technique',
+        lastReviewed: '08/05/2026',
+      },
+    `);
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.output).toContain('lastReviewed');
+
+    const missing = run(`
+      {
+        id: 'a',
+        name: 'A',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'technique',
+      },
+    `);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.output).toContain('lastReviewed');
+  });
+
+  it('passes when a claimed major version in name matches the manifest', () => {
+    // fixture package.json declares react at ^19.2.8 (major 19)
+    const { exitCode } = run(`
+      {
+        id: 'react',
+        name: 'React 19',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'react',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(0);
+  });
+
+  it('fails when a claimed major version in name does not match the manifest', () => {
+    const { exitCode, output } = run(`
+      {
+        id: 'react',
+        name: 'React 20',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'react',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(1);
+    expect(output).toContain('React 20');
+    expect(output).toContain('claims major version 20');
+    expect(output).toContain('major 19');
+  });
+
+  it('does not check a version for a name with no trailing major (finer detail belongs in rationale)', () => {
+    const { exitCode } = run(`
+      {
+        id: 'react',
+        name: 'React (concurrent rendering)',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: 'react',
+        rationale: 'Pinned to 19.2.8 today — see lastReviewed for when that was last true.',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(0);
+  });
+
+  it('does not fail on an unparseable manifest range (workspace:*) — falls back to skipping the version check', () => {
+    // @ajh/shared is declared as "workspace:*" in the fixture repo — the
+    // package DOES exist (so the existence check passes), but its range has
+    // no leading digit, so parseMajor must return null and the version
+    // comparison must be skipped rather than crash or false-fail.
+    const { exitCode } = run(`
+      {
+        id: 'internal',
+        name: 'Internal Package 3',
+        ring: 'adopt',
+        quadrant: 'renderer-ui',
+        subjectKind: 'dependency',
+        dependencyName: '@ajh/shared',
+        lastReviewed: '2026-08-05',
+      },
+    `);
+    expect(exitCode).toBe(0);
   });
 });

@@ -64,8 +64,13 @@
   display: flex;
   justify-content: center;
 }
+/* 680px = SVG_MIN_SHOWN_WIDTH_PX in lib/tech-radar/geometry.ts — KEEP IN SYNC
+   BY HAND with the hide breakpoint below (CSS can't import a TS constant).
+   Capping the width here at the SAME number as the hide breakpoint means the
+   canvas, whenever shown, always renders at >= that width — the floor the
+   blip-spacing math in geometry.ts (and its test) is computed against. */
 .tr-svg {
-  width: min(100%, 620px);
+  width: min(100%, 680px);
   height: auto;
 }
 
@@ -149,12 +154,14 @@
   fill: var(--tr-hold);
 }
 
-/* A circular layout stops being legibly tappable well before phone width —
-   dozens of sub-24px targets packed into a shrinking viewBox. Below this
-   breakpoint the canvas (and its legend, which only explains the canvas)
-   drop out; .tr-list is unconditionally rendered above and below it, so
-   nothing is lost — see TechRadar.tsx. */
-@media (max-width: 560px) {
+/* 679px — one below SVG_MIN_SHOWN_WIDTH_PX (geometry.ts), KEEP IN SYNC BY
+   HAND. Below it, a shrinking viewBox packs the densest ring+quadrant cell's
+   blips closer than the layout's tuned minimum spacing can survive; above
+   it, geometry.test.ts verifies every blip stays independently tappable AND
+   distinguishable from its neighbors. The canvas (and its legend, which only
+   explains the canvas) drop out here; .tr-list is unconditionally rendered
+   above and below it either way, so nothing is lost — see TechRadar.tsx. */
+@media (max-width: 679px) {
   .tr-legend,
   .tr-canvas {
     display: none;

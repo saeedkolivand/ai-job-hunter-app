@@ -58,7 +58,11 @@ export function RadarList() {
   const indexById = new Map(RADAR.map((e, i) => [e.id, i]));
 
   return (
-    <div className="tr-list" aria-label="Full technology radar, listed as text">
+    // <section>, not <div>: a <div>'s implicit role is "generic", which
+    // PROHIBITS an accessible name — the aria-label this element carries
+    // would be silently dropped (and this element announced as nothing) by
+    // any AT. <section> maps to role="region" and joins the landmark list.
+    <section className="tr-list" aria-label="Full technology radar, listed as text">
       {QUADRANTS.map((quadrant) => {
         const entries = RADAR.filter((e) => e.quadrant === quadrant.id);
         return (
@@ -88,6 +92,6 @@ export function RadarList() {
           </section>
         );
       })}
-    </div>
+    </section>
   );
 }

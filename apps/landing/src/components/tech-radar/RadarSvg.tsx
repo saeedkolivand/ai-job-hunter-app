@@ -1,5 +1,5 @@
 import { QUADRANTS, RADAR, RINGS } from '@/data/tech-radar';
-import { layoutBlips, RING_BANDS, VIEW_SIZE } from '@/lib/tech-radar/geometry';
+import { HIT_RADIUS, layoutBlips, RING_BANDS, VIEW_SIZE } from '@/lib/tech-radar/geometry';
 
 import { RadarGlyph } from './RadarGlyph';
 
@@ -12,10 +12,18 @@ import { RadarGlyph } from './RadarGlyph';
 const CENTER = VIEW_SIZE / 2;
 
 const SHAPE_SIZE = 15; // ~half-width of each blip's visible marker
-// The actual focusable/hit target is larger than the visible marker so every
-// blip clears the WCAG 2.5.8 24x24px minimum target size even though the
-// drawn glyph reads smaller.
-const HIT_RADIUS = 14;
+// HIT_RADIUS (from geometry.ts, shared with the layout tuning) makes the
+// actual focusable/hit target bigger than the drawn marker. Two guarantees,
+// both verified by geometry.test.ts against SVG_MIN_SHOWN_WIDTH_PX (the
+// narrowest width tech-radar.css ever shows this canvas at):
+//  1. Every blip's own hit-circle independently clears the WCAG 2.5.8
+//     24x24px floor — true regardless of density (it only depends on
+//     HIT_RADIUS and the render scale, never on neighboring blips).
+//  2. In the densest ring+quadrant cell this data has today, adjacent
+//     blips' hit-circles stay far enough apart to stay individually
+//     tappable too — that ONE is density-dependent (RADIUS_FRACTIONS in
+//     geometry.ts is tuned against it), so it degrades gracefully rather
+//     than silently if a cell ever gets crowded enough to break it.
 
 export function RadarSvg() {
   const positions = layoutBlips(RADAR);

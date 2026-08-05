@@ -29,11 +29,35 @@ export interface BlipPosition {
   y: number;
 }
 
-const WEDGE_PAD_DEG = 9;
+// Every blip's SVG <a> carries an invisible hit-circle this wide (see
+// RadarSvg.tsx's .tr-blip__hit) — the ACTUAL clickable/focusable target,
+// bigger than the drawn marker. Owned here, not RadarSvg.tsx, because the
+// layout below is tuned against it (see minPairwiseDistance and its test).
+export const HIT_RADIUS = 14;
+
+// tech-radar.css hides <RadarSvg> below this width (`@media (max-width:
+// 679px)`) and caps `.tr-svg`'s CSS width at exactly this value — so
+// whenever the canvas IS shown, its rendered width is >= this number,
+// giving a worst-case viewBox-unit -> CSS-px scale of
+// SVG_MIN_SHOWN_WIDTH_PX / VIEW_SIZE. Below this width the full data is
+// still reachable via the always-rendered <RadarList>, so nothing is lost.
+// KEEP IN SYNC with tech-radar.css by hand (CSS can't import a TS
+// constant) — the geometry test asserts what this buys us in real px.
+export const SVG_MIN_SHOWN_WIDTH_PX = 680;
+
+// 14deg, not a smaller value: the FIRST failure numeric search turned up
+// here wasn't a crowded single cell, it was two ADJACENT quadrants at the
+// SAME ring (e.g. renderer-ui/adopt's last blip and backend-data/adopt's
+// first) landing close enough across the quadrant boundary to collide —
+// same-cell spacing alone doesn't prevent that; only the padding does. Both
+// this and RADIUS_FRACTIONS below were chosen together, numerically, against
+// this file's REAL data (every quadrant+ring cell, both boundary and
+// within-cell pairs) — not tuned in isolation. See geometry.test.ts.
+const WEDGE_PAD_DEG = 14;
 const WEDGE_SPAN_DEG = 90 - WEDGE_PAD_DEG * 2;
-// Alternates each blip's radius within its ring band (inner/mid/outer third)
-// so that a crowded ring+quadrant cell doesn't draw every dot on one arc.
-const RADIUS_FRACTIONS = [0.28, 0.72, 0.5];
+// Four radius "lanes" a crowded ring+quadrant cell's blips cycle through, so
+// they don't all draw on one arc.
+const RADIUS_FRACTIONS = [0.18, 0.45, 0.71, 0.98];
 
 /**
  * Deterministic (id-ordered, no randomness) blip position for every entry,
@@ -67,4 +91,20 @@ export function layoutBlips(entries: readonly TechRadarEntry[]): ReadonlyMap<str
     });
   }
   return positions;
+}
+
+/** Smallest center-to-center distance between any two positions, in viewBox units. */
+export function minPairwiseDistance(positions: ReadonlyMap<string, BlipPosition>): number {
+  const pts = [...positions.values()];
+  let min = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const a = pts[i];
+      const b = pts[j];
+      if (!a || !b) continue;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (d < min) min = d;
+    }
+  }
+  return min;
 }
