@@ -13,6 +13,55 @@
 
 use super::*;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A minimal raw-socket HTTP/1.1 server that writes each response's status
+/// line + headers immediately, then sleeps `body_delay` BEFORE writing that
+/// response's body. `wiremock::ResponseTemplate::set_delay` cannot build
+/// this: its delay elapses entirely BEFORE any bytes (headers included)
+/// reach the socket, so it only ever exercises `req.send()`'s own timeout —
+/// never a `resp.text()`/`resp.json()` blocked on a body that's slow to
+/// arrive AFTER `send()` already resolved, which is the actual gap a
+/// cumulative deadline has to cover. Serves `bodies` in order, one per
+/// accepted connection (`Connection: close`, so each page fetch opens a new
+/// one) — `bodies[i].1` is that page's body-write delay.
+async fn slow_body_server(bodies: Vec<(String, Duration)>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        for (body, body_delay) in bodies {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            // Drain the request up to the blank line ending its headers —
+            // contents don't matter, only connection ORDER distinguishes pages.
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => break,
+                    Ok(_) => continue,
+                }
+            }
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(headers.as_bytes()).await;
+            let _ = socket.flush().await;
+            if !body_delay.is_zero() {
+                tokio::time::sleep(body_delay).await;
+            }
+            let _ = socket.write_all(body.as_bytes()).await;
+            let _ = socket.flush().await;
+        }
+    });
+    format!("http://{addr}")
+}
 
 fn base_request(model: &str) -> AiGenerateRequest {
     AiGenerateRequest {
@@ -791,4 +840,338 @@ fn chat_stream_body_sends_xhigh_only_on_a_model_that_supports_it() {
     req.effort = Some("xhigh".to_string());
     let body = build_chat_stream_body(&req);
     assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
+}
+
+// ── list_models ──────────────────────────────────────────────────────────────
+
+#[test]
+fn require_anthropic_key_errors_on_missing_or_blank_key() {
+    assert!(matches!(
+        require_anthropic_key(None),
+        Err(AppError::Config(_))
+    ));
+    assert!(matches!(
+        require_anthropic_key(Some("   ".to_string())),
+        Err(AppError::Config(_))
+    ));
+}
+
+#[test]
+fn require_anthropic_key_accepts_a_real_key() {
+    assert_eq!(
+        require_anthropic_key(Some("sk-ant-real".to_string())).unwrap(),
+        "sk-ant-real"
+    );
+}
+
+#[test]
+fn require_anthropic_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach the `x-api-key`
+    // header TRIMMED — checking `k.trim().is_empty()` but returning the
+    // padded `k` is the exact bug: a trailing space just 401s, an embedded
+    // `\n` makes the header value invalid and the request never builds at all.
+    assert_eq!(
+        require_anthropic_key(Some(" sk-ant-real \n".to_string())).unwrap(),
+        "sk-ant-real"
+    );
+}
+
+#[test]
+fn parse_model_page_keeps_only_claude_ids() {
+    let body = json!({
+        "data": [
+            { "id": "claude-sonnet-5" },
+            { "id": "claude-opus-4-5" },
+            { "id": "some-other-model" },
+        ]
+    });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    let names: Vec<String> = page
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["claude-sonnet-5", "claude-opus-4-5"]);
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_populates_display_name_created_at_and_context_length_when_present() {
+    let body = json!({
+        "data": [{
+            "type": "model",
+            "id": "claude-sonnet-5-20251101",
+            "display_name": "Claude Sonnet 5",
+            "created_at": "2024-01-01T00:00:00Z",
+            "max_input_tokens": 200_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({
+            "name": "claude-sonnet-5-20251101",
+            "displayName": "Claude Sonnet 5",
+            "createdAt": 1_704_067_200_000i64,
+            "contextLength": 200_000,
+        })]
+    );
+}
+
+#[test]
+fn parse_model_page_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it.
+    let body = json!({ "data": [{ "id": "claude-sonnet-5" }] });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "claude-sonnet-5" })]);
+}
+
+#[test]
+fn parse_model_page_ok_empty_on_genuinely_empty_catalogue() {
+    let body = json!({ "data": [] });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(page, Vec::<Value>::new());
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_errors_when_data_field_is_missing() {
+    let body = json!({ "unexpected": "shape" });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
+fn parse_model_page_carries_the_cursor_only_when_has_more_is_true() {
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "claude-sonnet-5",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, Some("claude-sonnet-5".to_string()));
+}
+
+#[test]
+fn parse_model_page_omits_the_cursor_when_has_more_is_false_even_with_a_last_id() {
+    // A `last_id` can still be present on the final page — the cursor must be
+    // driven by `has_more`, never by `last_id`'s mere presence, or pagination
+    // would loop forever re-requesting the same last page.
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": false,
+        "last_id": "claude-sonnet-5",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_errors_when_has_more_is_true_but_last_id_is_missing() {
+    // `has_more: true` with no cursor to continue from is a malformed
+    // response, not a clean end-of-pages — silently stopping would return a
+    // truncated catalogue as `Ok`, exactly the bug pagination exists to fix.
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+    });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
+fn parse_model_page_errors_when_has_more_is_true_but_last_id_is_blank() {
+    let body = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "   ",
+    });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+// `advance_cursor`/`PaginationStep`/`pagination_step` are shared, generic
+// helpers now — see `ai_provider::mod`'s test module for their coverage.
+// Duplicating them here per-adapter is exactly the "a rule implemented
+// twice that silently stops agreeing" defect class this codebase keeps
+// paying for; one copy, one set of tests.
+
+// ── list_models_transport (wiremock — the pagination HTTP loop itself,
+// not just pagination_step's pure decision) ─────────────────────────────────
+
+#[tokio::test]
+async fn list_models_transport_propagates_the_cursor_into_the_next_requests_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    // Only matches when `after_id` carries EXACTLY page 1's `last_id` —
+    // proves the cursor is wired from the parsed response into the next
+    // request's query, not just decided in the abstract by `pagination_step`.
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-opus-5" }],
+            "has_more": false,
+        })))
+        .mount(&server)
+        .await;
+
+    let models = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect("both pages must be fetched, the cursor propagated between them");
+    assert_eq!(
+        models,
+        vec![
+            json!({ "name": "claude-sonnet-5" }),
+            json!({ "name": "claude-opus-5" }),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn list_models_transport_propagates_a_mid_pagination_status_error_instead_of_the_pages_already_collected(
+) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err(
+            "a failure on page 2 must reject the whole fetch, never return page 1's models alone",
+        );
+    // 500 classifies as Network via `friendly_api_error` — not the point of
+    // this test (see the classification tests), but asserted so a future
+    // change that silently swallows page 2's error can't slip through.
+    assert!(matches!(err, AppError::Network(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_page_two_is_malformed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "unexpected": "shape" })))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a malformed page 2 body must reject the whole fetch");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_provider_reports_a_stalled_cursor() {
+    // `has_more: true` with the SAME `last_id` twice: the provider claims
+    // more data exists but gives no way to reach it. The exact regression
+    // this whole finding is about — silently treating this as `Done` and
+    // returning the one page collected as `Ok` — must not happen at the
+    // transport level either, not just in the pure `pagination_step` unit
+    // tests.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-stuck",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-stuck"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-stuck",
+        })))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a stalled cursor must reject, never silently return the partial catalogue");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
+    // Page 1 responds instantly (well within budget) and reports a cursor.
+    // Page 2 writes its HEADERS instantly too — `send()` resolves fast — but
+    // stalls its BODY well past the REMAINING budget. A deadline that only
+    // wraps `send()` (the pre-fix bug) would let this succeed late instead
+    // of erroring; only wrapping the body reads too catches it. Verified
+    // (before applying that fix) that this test genuinely fails against the
+    // unfixed transport — it doesn't error at all, it just returns `Ok`
+    // after the full body delay, which is the exact silent-non-enforcement
+    // bug this test exists to catch.
+    let page1 = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "claude-page1-last",
+    })
+    .to_string();
+    let page2 = json!({
+        "data": [{ "id": "claude-opus-5" }],
+        "has_more": false,
+    })
+    .to_string();
+    let base = slow_body_server(vec![
+        (page1, Duration::ZERO),
+        (page2, Duration::from_millis(100)),
+    ])
+    .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&base, "dummy-key", Duration::from_millis(40))
+        .await
+        .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
+    assert!(matches!(err, AppError::Network(_)));
 }

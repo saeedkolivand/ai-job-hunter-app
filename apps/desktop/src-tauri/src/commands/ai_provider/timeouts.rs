@@ -50,8 +50,16 @@ pub const OLLAMA_WEB_SEARCH: Duration = Duration::from_secs(15);
 // ── Model discovery & health ────────────────────────────────────────────────────
 
 /// Listing models / validating a key (`list_models`, `test_key`): a quick GET to
-/// the provider's model catalog or tags endpoint.
+/// the provider's model catalog or tags endpoint. Applied PER REQUEST.
 pub const LIST_MODELS: Duration = Duration::from_secs(10);
+
+/// Cumulative deadline across a PAGINATED `list_models` fetch (Anthropic's
+/// `after_id`/Gemini's `pageToken` cursor loop, capped at
+/// `MAX_LIST_MODELS_PAGES`) — bounds the WHOLE fetch, not any single request,
+/// so a misbehaving/slow provider can't chain up to `MAX_LIST_MODELS_PAGES`
+/// individual [`LIST_MODELS`] timeouts into one very long invoke (50 × 10s =
+/// 500s, worst case, without this).
+pub const LIST_MODELS_TOTAL: Duration = Duration::from_secs(30);
 
 /// Local Ollama reachability probe (`reachable_model`): the fast health check
 /// behind the system-health panel, kept short so an unreachable daemon fails fast.

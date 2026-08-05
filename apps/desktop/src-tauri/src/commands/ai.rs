@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::credentials::CredentialStore;
 use crate::db::new_job_id;
 use crate::documents::{embedding_space_changed, DocumentStore, EmbeddingConfig};
+use crate::error::AppResult;
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 use crate::ipc_contracts::ai::AiEmbedRequest;
 use crate::jobs::{JobStatus, JobTracker};
@@ -143,12 +144,9 @@ pub async fn ai_list_provider_models(
     app: AppHandle,
     provider: String,
     base_url: Option<String>,
-) -> Value {
-    let provider_client = match resolve_by_name(&provider, base_url) {
-        Ok(p) => p,
-        Err(_) => return json!([]),
-    };
-    json!(provider_client.list_models(&app).await)
+) -> AppResult<Value> {
+    let provider_client = resolve_by_name(&provider, base_url)?;
+    Ok(json!(provider_client.list_models(&app).await?))
 }
 
 /// Static, network-free capability probe for a provider/model — whether it can

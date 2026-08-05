@@ -165,7 +165,7 @@ impl AiProvider for OllamaCloudClient {
         self.inner.default_embedding_model()
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
         self.inner.list_models(app).await
     }
 

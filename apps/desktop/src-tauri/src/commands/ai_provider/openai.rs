@@ -15,8 +15,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
-    ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    friendly_api_error, model_entry, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
+    ToolSpec, Usage,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -98,6 +99,27 @@ fn parse_openai_turn(data: &Value) -> AgentTurn {
     }
 }
 
+/// Strip the query string / fragment from a failed request's URL before it
+/// reaches an error message or log line. Some OpenAI-compatible gateways put
+/// the API key in the base URL's own query string (see
+/// [`OpenAiClient::endpoint_url`]'s doc comment) — `reqwest::Error`'s own
+/// `Display` embeds the request URL verbatim and only ever strips userinfo,
+/// never query or fragment; confirmed via `reqwest::Error::without_url`'s own
+/// doc: "If the URL contains sensitive information (e.g. an API key as a
+/// query parameter), be sure to remove it." Verified empirically (see
+/// `openai_tests.rs`) that even a CORRECTLY built [`OpenAiClient::endpoint_url`]
+/// still carries the secret into a genuine transport-failure `Display` —
+/// fixing the URL construction alone does not stop the leak. Clears only the
+/// query/fragment (via `url_mut`), not the whole URL, so scheme/host/path
+/// stay visible for diagnosing a wrong-path bug.
+fn scrub_url_secret(mut e: reqwest::Error) -> reqwest::Error {
+    if let Some(url) = e.url_mut() {
+        url.set_query(None);
+        url.set_fragment(None);
+    }
+    e
+}
+
 /// Whether a model id returned by `/v1/models` should be offered in the picker.
 /// Native OpenAI exposes a large non-chat catalog (embeddings, audio, image,
 /// moderation…), so restrict it to chat-capable families. Every *other*
@@ -112,6 +134,75 @@ fn should_list_model(provider: ProviderId, id: &str) -> bool {
         || id.starts_with("o3")
         || id.starts_with("o4")
         || id.starts_with("chatgpt")
+}
+
+/// Resolve the stored key for `list_models`/`test_key`, TRIMMING the value it
+/// returns — not just checking the trimmed form is non-empty and handing back
+/// the original padded string. A pasted key with a trailing space/newline
+/// would otherwise reach `bearer_auth` as-is: a trailing space just 401s; an
+/// embedded `\n` makes the header value invalid and the request never builds
+/// at all.
+///
+/// Missing/blank errors for every provider EXCEPT `OpenAiCompatible`: its
+/// keyless self-hosted deployments (LM Studio, vLLM, …) are an explicitly
+/// supported configuration (`mod.rs`'s `ProviderId::OpenAiCompatible` doc)
+/// that already generates fine with no key — `chat_stream`/`chat_with_tools`
+/// default a missing key to `""` and send it regardless — so hard-requiring
+/// one here would cement "generates fine, listing/testing always errors" for
+/// a working setup. `Ok(None)` means "build the request with no bearer
+/// header" (never an empty `Authorization: Bearer` value — some gateways
+/// reject a malformed header rather than ignoring it). Shared by
+/// `list_models` and `test_key` so the two structurally agree on what counts
+/// as "no key" (previously `test_key` alone accepted a whitespace-only key
+/// and burned a round-trip on it). Pure (no `AppHandle`) so it's
+/// unit-testable without a mock-app harness.
+fn resolve_openai_key(provider: ProviderId, stored: Option<String>) -> AppResult<Option<String>> {
+    let trimmed = stored
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(str::to_string);
+    if trimmed.is_some() || provider == ProviderId::OpenAiCompatible {
+        Ok(trimmed)
+    } else {
+        Err(AppError::Config("No API key found".to_string()))
+    }
+}
+
+/// Parse the `/models` response body into `{name, createdAt?}` entries,
+/// applying [`should_list_model`]'s per-provider filter. Pure so it's
+/// unit-testable without a network mock.
+///
+/// OpenAI's `/v1/models` (and every OpenAI-compatible gateway that mirrors
+/// its schema — Ollama Cloud included) reports `created` as unix epoch
+/// SECONDS — verified against the live docs, normalized to epoch millis (the
+/// convention every `createdAt` field in this codebase uses) via a
+/// `checked_mul`, never a bare `* 1000`: `created` is provider-controlled, so
+/// an unchecked multiply can overflow `i64` (panics in debug, silently wraps
+/// in release). Omit `createdAt` entirely on overflow — never a fabricated
+/// timestamp. Neither `displayName` nor `contextLength` is ever populated:
+/// OpenAI's catalogue endpoint doesn't return either.
+fn parse_model_list(provider: ProviderId, body: &Value) -> AppResult<Vec<Value>> {
+    let data = body.get("data").and_then(|d| d.as_array()).ok_or_else(|| {
+        AppError::Provider(format!(
+            "{}: response missing `data` array",
+            provider.as_str()
+        ))
+    })?;
+    Ok(data
+        .iter()
+        .filter_map(|m| {
+            let id = m.get("id").and_then(|v| v.as_str())?;
+            if !should_list_model(provider, id) {
+                return None;
+            }
+            let created_at_ms = m
+                .get("created")
+                .and_then(|v| v.as_i64())
+                .and_then(|secs| secs.checked_mul(1000));
+            Some(model_entry(id, None, created_at_ms, None))
+        })
+        .collect())
 }
 
 /// OpenAI reasoning families (the `o`-series: o1, o3, o4, … and future `o`N)
@@ -375,6 +466,40 @@ impl OpenAiClient {
         }
     }
 
+    /// Build a URL for `path` (a `/`-separated relative endpoint, e.g.
+    /// `"models"` or `"chat/completions"`) on `self.base_url`, preserving any
+    /// existing query string / fragment the base carries untouched. Some
+    /// OpenAI-compatible gateways (Cloudflare AI Gateway, several self-hosted
+    /// proxies) authenticate via the base URL's own query string — e.g.
+    /// `https://gw.example.com/v1?api-key=SECRET`. Plain
+    /// `format!("{base}/{path}")` string concatenation sends THAT case to the
+    /// wrong path (the string reparses as path `/v1`, query
+    /// `api-key=SECRET/path`) and corrupts the key. `Url::join` is not a safe
+    /// drop-in either — verified empirically (see `openai_tests.rs`): a plain
+    /// relative reference like `"models"` carries no query of its own, and
+    /// WHATWG relative-URL resolution defines that as "clear the query" on
+    /// join, so it would silently DROP a working gateway's auth query string
+    /// rather than construct a malformed URL. `path_segments_mut` (with
+    /// `pop_if_empty` so a base with OR without a trailing slash both resolve
+    /// correctly, never a double slash) only appends path segments and
+    /// leaves scheme/host/query/fragment untouched — the correct primitive
+    /// for "hit a sibling endpoint on the same base".
+    fn endpoint_url(&self, path: &str) -> AppResult<reqwest::Url> {
+        let mut url = reqwest::Url::parse(&self.base_url).map_err(|e| {
+            AppError::Config(format!("{}: invalid base URL: {e}", self.id.as_str()))
+        })?;
+        url.path_segments_mut()
+            .map_err(|()| {
+                AppError::Config(format!(
+                    "{}: base URL has no host to build an endpoint on",
+                    self.id.as_str()
+                ))
+            })?
+            .pop_if_empty()
+            .extend(path.split('/'));
+        Ok(url)
+    }
+
     /// Whether this client's provider id exposes OpenAI's native `web_search`
     /// tool — only native OpenAI does; every OpenAI-compatible gateway can't be
     /// assumed to support it, and Ollama Cloud overrides `research()`/
@@ -429,7 +554,7 @@ impl OpenAiClient {
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(model);
-        let endpoint = format!("{}/chat/completions", self.base_url);
+        let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
 
         let mut body = json!({
@@ -446,7 +571,7 @@ impl OpenAiClient {
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
-                .post(&endpoint)
+                .post(endpoint.clone())
                 .timeout(timeouts::COMPLETION)
                 .bearer_auth(&api_key)
                 .json(&body)
@@ -457,8 +582,9 @@ impl OpenAiClient {
             Err(e) => {
                 trace.end(None, false);
                 return Err(AppError::Network(format!(
-                    "{} unreachable: {e}",
-                    self.id.as_str()
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
                 )));
             }
         };
@@ -468,7 +594,13 @@ impl OpenAiClient {
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         let text = data
             .get("choices")
@@ -494,25 +626,41 @@ impl OpenAiClient {
         text: &str,
     ) -> AppResult<(Vec<f64>, Usage)> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let endpoint = format!("{}/embeddings", self.base_url);
+        let endpoint = self.endpoint_url("embeddings")?;
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
         let body = json!({ "model": model, "input": text });
         let resp = send_with_retry(|| {
             crate::net::http::shared()
-                .post(&endpoint)
+                .post(endpoint.clone())
                 .timeout(timeouts::EMBED)
                 .bearer_auth(&api_key)
                 .json(&body)
         })
-        .await
-        .map_err(|e| format!("{} unreachable: {e}", self.id.as_str()))?;
+        .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => {
+                trace.end(None, false);
+                return Err(AppError::Message(format!(
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
+                )));
+            }
+        };
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         let vector: Vec<f64> = data
             .get("data")
@@ -563,7 +711,13 @@ impl OpenAiClient {
         system: &str,
         user: &str,
     ) -> AppResult<String> {
-        let endpoint = format!("{}/responses", self.base_url);
+        let endpoint = match self.endpoint_url("responses") {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::warn!("openai research: {e}");
+                return Ok(String::new());
+            }
+        };
         let trace = RequestTrace::begin(
             self.id,
             model,
@@ -579,7 +733,7 @@ impl OpenAiClient {
             "tools": [{ "type": "web_search" }],
         });
         let resp = crate::net::http::shared()
-            .post(&endpoint)
+            .post(endpoint)
             .timeout(timeouts::WEB_SEARCH)
             .bearer_auth(api_key)
             .json(&body)
@@ -589,7 +743,7 @@ impl OpenAiClient {
             Ok(r) => r,
             Err(e) => {
                 trace.end(None, false);
-                tracing::warn!("openai research unreachable: {e}");
+                tracing::warn!("openai research unreachable: {}", scrub_url_secret(e));
                 return Ok(String::new());
             }
         };
@@ -609,6 +763,55 @@ impl OpenAiClient {
         };
         trace.end(Some(status.as_u16()), true);
         Ok(join_responses_text(&data))
+    }
+
+    /// Build the `GET {base_url}/models` request, attaching the bearer header
+    /// only when a key is present — never an empty `Authorization: Bearer`
+    /// value for a keyless `OpenAiCompatible` deployment (some gateways
+    /// reject a malformed/empty header rather than ignoring it). Shared by
+    /// `list_models_transport` and `test_key`.
+    fn list_models_request(&self, api_key: Option<&str>) -> AppResult<reqwest::RequestBuilder> {
+        let url = self.endpoint_url("models")?;
+        let req = crate::net::http::shared()
+            .get(url)
+            .timeout(timeouts::LIST_MODELS);
+        Ok(match api_key {
+            Some(key) => req.bearer_auth(key),
+            None => req,
+        })
+    }
+
+    /// The `/models` HTTP transport itself — no `AppHandle`/keychain, so it's
+    /// directly testable against a `wiremock::MockServer` (see the tests below),
+    /// mirroring [`web_search_transport`](Self::web_search_transport).
+    async fn list_models_transport(&self, api_key: Option<&str>) -> AppResult<Vec<Value>> {
+        let resp = self
+            .list_models_request(api_key)?
+            .send()
+            .await
+            .map_err(|e| {
+                AppError::Network(format!(
+                    "{}: request failed: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
+                ))
+            })?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body_text = resp.text().await.unwrap_or_default();
+            return Err(friendly_api_error(self.id, status, &body_text));
+        }
+        let body: Value = resp.json().await.map_err(|e| {
+            AppError::Provider(format!(
+                "{}: parse: {}",
+                self.id.as_str(),
+                scrub_url_secret(e)
+            ))
+        })?;
+        // OpenAI proper: only chat-capable families. Every other OpenAI-compatible
+        // backend (incl. Ollama Cloud) lists its own curated catalog, so pass those
+        // through unfiltered — see `should_list_model`.
+        parse_model_list(self.id, &body)
     }
 }
 
@@ -660,7 +863,7 @@ impl AiProvider for OpenAiClient {
     ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(&req.model);
-        let endpoint = format!("{}/chat/completions", self.base_url);
+        let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(
             self.id,
             &req.model,
@@ -672,7 +875,7 @@ impl AiProvider for OpenAiClient {
         let body = build_chat_stream_body(req, caps);
 
         let response = crate::net::http::shared()
-            .post(&endpoint)
+            .post(endpoint)
             .timeout(timeouts::STREAM)
             .bearer_auth(&api_key)
             .json(&body)
@@ -684,8 +887,9 @@ impl AiProvider for OpenAiClient {
             Err(e) => {
                 trace.end(None, false);
                 return Err(AppError::Network(format!(
-                    "{} unreachable: {e}",
-                    self.id.as_str()
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
                 )));
             }
         };
@@ -820,54 +1024,30 @@ impl AiProvider for OpenAiClient {
         8_000
     }
 
-    async fn list_models(&self, app: &AppHandle) -> Vec<Value> {
-        let api_key = match get_provider_key(app, self.id.credential_key()) {
-            Some(k) => k,
-            None => return vec![],
-        };
-        let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{}/models", self.base_url))
-            .bearer_auth(&api_key)
-            .timeout(timeouts::LIST_MODELS)
-            .send()
-            .await;
-        if let Ok(r) = resp {
-            if let Ok(body) = r.json::<Value>().await {
-                if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
-                    return data
-                        .iter()
-                        .filter_map(|m| m.get("id").and_then(|id| id.as_str()))
-                        // OpenAI proper: only chat-capable families. Every other
-                        // OpenAI-compatible backend (incl. Ollama Cloud) lists its
-                        // own curated catalog, so pass those through unfiltered.
-                        .filter(|id| should_list_model(self.id, id))
-                        .map(|id| json!({ "name": id }))
-                        .collect();
-                }
-            }
-        }
-        vec![]
+    async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
+        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
+        self.list_models_transport(api_key.as_deref()).await
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {
-        let api_key = get_provider_key(app, self.id.credential_key())
-            .ok_or_else(|| AppError::Config("No API key found".to_string()))?;
-        let client = crate::net::http::shared();
-        let resp = client
-            .get(format!("{}/models", self.base_url))
-            .bearer_auth(&api_key)
-            .timeout(timeouts::LIST_MODELS)
+        let api_key = resolve_openai_key(self.id, get_provider_key(app, self.id.credential_key()))?;
+        let resp = self
+            .list_models_request(api_key.as_deref())?
             .send()
             .await
-            .map_err(|e| format!("Request failed: {e}"))?;
-        if resp.status().is_success() {
+            .map_err(|e| {
+                AppError::Network(format!(
+                    "{}: request failed: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
+                ))
+            })?;
+        let status = resp.status();
+        if status.is_success() {
             Ok(())
         } else {
-            Err(AppError::Provider(format!(
-                "API returned status: {}",
-                resp.status()
-            )))
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(friendly_api_error(self.id, status, &body_text))
         }
     }
 
@@ -884,7 +1064,7 @@ impl AiProvider for OpenAiClient {
             return single_shot_turn(self, app, model, messages, temperature).await;
         }
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
-        let endpoint = format!("{}/chat/completions", self.base_url);
+        let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(
             self.id,
             model,
@@ -926,7 +1106,7 @@ impl AiProvider for OpenAiClient {
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
-                .post(&endpoint)
+                .post(endpoint.clone())
                 .timeout(timeouts::COMPLETION)
                 .bearer_auth(&api_key)
                 .json(&body)
@@ -937,8 +1117,9 @@ impl AiProvider for OpenAiClient {
             Err(e) => {
                 trace.end(None, false);
                 return Err(AppError::Network(format!(
-                    "{} unreachable: {e}",
-                    self.id.as_str()
+                    "{} unreachable: {}",
+                    self.id.as_str(),
+                    scrub_url_secret(e)
                 )));
             }
         };
@@ -948,7 +1129,13 @@ impl AiProvider for OpenAiClient {
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                trace.end(Some(status.as_u16()), false);
+                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+            }
+        };
         trace.end(Some(status.as_u16()), true);
         Ok(parse_openai_turn(&data))
     }
