@@ -465,22 +465,31 @@ impl DocumentStore {
             // `posting_vectors` had no persisted `version` column — every read
             // synthesized the CURRENT `EMBEDDING_VECTOR_VERSION` on the fly
             // (see `get_posting_vector`), so `EmbeddingConfig::matches` could
-            // structurally never reject a row here on format version; the ONLY
-            // guard against a future `EMBEDDING_VECTOR_VERSION` bump was a
-            // human remembering to ship its own eviction migration for this
-            // table (see `evict_posting_vectors_for_embedding_format_v2`
-            // above). `DEFAULT 0` deliberately makes every pre-existing row a
-            // natural `matches` MISS against the current version — it gets
-            // re-embedded on next use via the ordinary cache-miss path, no
-            // separate DELETE needed. Appended at the END of the array (not
-            // inserted earlier) — migrations are position-indexed via
-            // `PRAGMA user_version`, so an insertion mid-array would make an
-            // already-migrated install skip it entirely.
+            // structurally never reject a row here on format version. Appended
+            // at the END of the array (not inserted earlier) — migrations are
+            // position-indexed via `PRAGMA user_version`, so an insertion
+            // mid-array would make an already-migrated install skip it
+            // entirely.
+            //
+            // `DEFAULT 2`, not 0 and not a live `EMBEDDING_VECTOR_VERSION`
+            // reference: this migration runs strictly AFTER
+            // `evict_posting_vectors_for_embedding_format_v2` above
+            // (migrations are position-indexed, so the ordering is fixed),
+            // which unconditionally wipes the table. So by the time this ADD
+            // COLUMN runs, every surviving row was necessarily written
+            // afterward, under the format that was current at that point —
+            // `EMBEDDING_VECTOR_VERSION == 2` when this migration was
+            // authored. `DEFAULT 0` would mislabel every one of those
+            // provably-current rows as stale, forcing a real (billed)
+            // re-embed of the entire cache for zero correctness gain. The
+            // literal must stay `2` even after a future
+            // `EMBEDDING_VECTOR_VERSION` bump — it records a historical fact
+            // about rows as of migration time, not the live constant.
             name: "add_version_to_posting_vectors",
             up: |conn| {
                 if !column_exists(conn, "posting_vectors", "version") {
                     conn.execute(
-                        "ALTER TABLE posting_vectors ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
+                        "ALTER TABLE posting_vectors ADD COLUMN version INTEGER NOT NULL DEFAULT 2",
                         [],
                     )?;
                 }

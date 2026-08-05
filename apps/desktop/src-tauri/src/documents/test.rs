@@ -997,9 +997,12 @@ fn add_version_to_posting_vectors_heals_a_pre_seeded_row_through_a_real_open() {
     // Bring a fresh DB up to JUST BEFORE the version-column migration
     // (simulating an install created before this fix shipped), seed a row
     // through the OLD (no `version` column) schema, then open it for REAL —
-    // proving the `Migration { .. }` entry is actually registered and reached,
-    // and that a pre-existing row defaults to version 0 (`DEFAULT 0`) rather
-    // than silently reading as the current format.
+    // proving the `Migration { .. }` entry is actually registered and reached.
+    // The slice below already includes `evict_posting_vectors_for_embedding_
+    // format_v2` (it runs earlier in the array), so the row inserted below is
+    // exactly the shape a real pre-existing row would be: written AFTER the
+    // v1->v2 wipe, hence genuinely v2-native — `DEFAULT 2` must recognize
+    // that instead of mislabeling it as stale and forcing a wasted re-embed.
     let temp_dir = TempDir::new().unwrap();
     let dir = temp_dir.path().to_path_buf();
     std::fs::create_dir_all(&dir).unwrap();
@@ -1033,21 +1036,28 @@ fn add_version_to_posting_vectors_heals_a_pre_seeded_row_through_a_real_open() {
         .expect("a pre-migration row must still round-trip after the column is added");
     assert_eq!(hash, "hash");
     assert_eq!(
-        v.space.version, 0,
-        "a pre-existing row must default to version 0 (DEFAULT 0), not silently read as current"
+        v.space.version, 2,
+        "a pre-existing row must default to version 2 (DEFAULT 2) — it necessarily \
+         post-dates the earlier v1->v2 wipe migration, so it is provably v2-native"
     );
     assert!(
-        !cfg_ollama().matches(&v.space),
-        "a migrated pre-existing row must be a MATCHES miss against the active (current) config"
+        cfg_ollama().matches(&v.space),
+        "a provably-current pre-existing row must HIT the cache, not be forced through \
+         a wasted (billed) re-embed"
     );
 }
 
 #[test]
 #[serial]
 fn add_version_to_posting_vectors_migration_is_idempotent_on_reopen() {
-    // Opening an already-migrated DB a second time must not error (the
-    // `column_exists` guard makes a repeated ALTER TABLE a no-op) and must not
-    // disturb an existing current-version row.
+    // `db::run_migrations` skips any migration whose index is <= the stored
+    // `PRAGMA user_version` (see `db.rs`), so a PLAIN reopen never actually
+    // re-invokes this migration's `up` — its `column_exists` guard would go
+    // completely unexercised a second time. Roll `user_version` back by one
+    // after the first open so THIS migration is the one pending migration a
+    // reopen runs, genuinely re-executing the guard against a schema where
+    // the `version` column already exists — proving the repeated `ALTER
+    // TABLE` really is a no-op, not just that a reopen is safe.
     let temp_dir = TempDir::new().unwrap();
     let dir = temp_dir.path().to_path_buf();
     let store = DocumentStore::open(&dir).unwrap();
@@ -1057,14 +1067,30 @@ fn add_version_to_posting_vectors_migration_is_idempotent_on_reopen() {
         .unwrap();
     drop(store);
 
-    // Re-open the same directory — every migration (including this one) runs
-    // its `column_exists` check again against an already-migrated schema.
+    {
+        let conn = crate::db::open(&dir.join("documents.db")).unwrap();
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {}",
+            DocumentStore::MIGRATIONS.len() - 1
+        ))
+        .unwrap();
+    }
+
     let reopened = DocumentStore::open(&dir).unwrap();
     let (v, got_hash) = reopened
         .get_posting_vector("job-1")
-        .expect("row must survive a reopen");
+        .expect("row must survive a reopen that re-runs this migration's guard");
     assert_eq!(got_hash, hash);
     assert_eq!(v.space.version, EMBEDDING_VECTOR_VERSION);
+
+    // The re-run must be a true no-op on `user_version` too — it should land
+    // back at exactly the full migration count, not double-advance or stall.
+    let final_version: i64 = reopened
+        .conn
+        .lock()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(final_version, DocumentStore::MIGRATIONS.len() as i64);
 }
 
 // ── Match-result cache ────────────────────────────────────────────────────────

@@ -136,33 +136,73 @@ pub fn build_client(cfg: ClientConfig) -> reqwest::Result<reqwest::Client> {
 /// override on top).
 pub(crate) const DEFAULT_MAX_BODY_BYTES: usize = 8 * 1024 * 1024; // 8 MB
 
-/// Read a response body as text, refusing to buffer more than `cap` bytes.
-///
-/// Two guards: a cheap `Content-Length` pre-check for honest servers, then a
-/// streamed accumulation that aborts the moment the running total exceeds `cap`
-/// — so a server that lies about or omits `Content-Length` still can't drive us
-/// into OOM. The charset comes from `Content-Type`, mirroring what
-/// `reqwest::Response::text()` does internally, so German umlauts / € decode
-/// correctly regardless of the cap.
-///
-/// The fleet-wide chokepoint for bounded body reads — `pub(crate)` so every
-/// subsystem holding a `reqwest::Response` (scrapers via
-/// [`fetch_text`](crate::scraping::http::fetch_text), the SSRF-guarded
-/// [`get_guarded`]/[`get_guarded_following_redirects`] for attacker-influenced
-/// URLs, geocoding, profile import, the LinkedIn client, …) can bound its read
-/// without buffering the whole thing first.
-pub(crate) async fn read_text_capped(
-    response: reqwest::Response,
+/// Shared accumulation guard behind [`read_bytes_capped`] (and therefore
+/// [`read_text_capped`]/[`read_json_capped`], both built on it): a cheap
+/// `Content-Length` pre-check for honest servers, then a streamed
+/// accumulation that aborts the moment the RUNNING TOTAL exceeds `cap` — not
+/// merely a single chunk's length — so a server that lies about or omits
+/// `Content-Length`, or that simply dribbles an oversized body out in chunks
+/// each individually under `cap`, still can't drive us into OOM. Generic over
+/// the chunk type (`B: AsRef<[u8]>`) so it is unit-testable against a
+/// synthetic `futures::stream::iter` of plain `Vec<u8>` chunks without
+/// constructing a real `reqwest::Response`.
+async fn accumulate_capped<S, B>(
+    mut stream: S,
+    content_length: Option<u64>,
     cap: usize,
-) -> crate::error::AppResult<String> {
+) -> crate::error::AppResult<Vec<u8>>
+where
+    S: futures::Stream<Item = reqwest::Result<B>> + Unpin,
+    B: AsRef<[u8]>,
+{
     use crate::error::AppError;
 
-    if let Some(content_length) = response.content_length() {
+    if let Some(content_length) = content_length {
         if content_length > cap as u64 {
             return Err(AppError::Validation("Response too large".to_string()));
         }
     }
 
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        // .without_url() — reqwest::Error's Display embeds the full request URL
+        // (incl. query string), which can carry secrets like an API token/key;
+        // strip it before it reaches an AppError that may cross IPC → renderer.
+        let chunk = chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
+        let chunk = chunk.as_ref();
+        if buf.len().saturating_add(chunk.len()) > cap {
+            return Err(AppError::Validation("Response too large".to_string()));
+        }
+        buf.extend_from_slice(chunk);
+    }
+
+    Ok(buf)
+}
+
+/// Read a response body as raw bytes, refusing to buffer more than `cap`
+/// bytes. The fleet-wide chokepoint for bounded body reads — `pub(crate)` so
+/// every subsystem holding a `reqwest::Response` (scrapers via
+/// [`fetch_text`](crate::scraping::http::fetch_text), the SSRF-guarded
+/// [`get_guarded`]/[`get_guarded_following_redirects`] for attacker-influenced
+/// URLs, geocoding, profile import, the LinkedIn client's manual gzip decode,
+/// …) can bound its read without buffering the whole thing first. See
+/// [`accumulate_capped`] for the guard itself.
+pub(crate) async fn read_bytes_capped(
+    response: reqwest::Response,
+    cap: usize,
+) -> crate::error::AppResult<Vec<u8>> {
+    let content_length = response.content_length();
+    accumulate_capped(response.bytes_stream(), content_length, cap).await
+}
+
+/// Read a response body as text, refusing to buffer more than `cap` bytes
+/// (via [`read_bytes_capped`]). The charset comes from `Content-Type`,
+/// mirroring what `reqwest::Response::text()` does internally, so German
+/// umlauts / € decode correctly regardless of the cap.
+pub(crate) async fn read_text_capped(
+    response: reqwest::Response,
+    cap: usize,
+) -> crate::error::AppResult<String> {
     let encoding = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -183,57 +223,23 @@ pub(crate) async fn read_text_capped(
         .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
         .unwrap_or(encoding_rs::UTF_8);
 
-    let mut stream = response.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        // .without_url() — reqwest::Error's Display embeds the full request URL
-        // (incl. query string), which can carry secrets like an API token/key;
-        // strip it before it reaches an AppError that may cross IPC → renderer.
-        let chunk = chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
-        if buf.len().saturating_add(chunk.len()) > cap {
-            return Err(AppError::Validation("Response too large".to_string()));
-        }
-        buf.extend_from_slice(&chunk);
-    }
-
+    let buf = read_bytes_capped(response, cap).await?;
     let (cow, _enc, _had_errors) = encoding.decode(&buf);
     Ok(cow.into_owned())
 }
 
-/// Read a response body as raw bytes, refusing to buffer more than `cap` bytes.
-/// Same two guards as [`read_text_capped`] (a `Content-Length` pre-check plus a
-/// streamed accumulation that aborts past `cap`) but skips charset decoding —
-/// for callers that decode the body themselves (e.g. a manual gzip-then-UTF-8
-/// decode, which is not the `Content-Type`-driven text decode `read_text_capped`
-/// performs).
-pub(crate) async fn read_bytes_capped(
-    response: reqwest::Response,
-    cap: usize,
-) -> crate::error::AppResult<Vec<u8>> {
-    use crate::error::AppError;
-
-    if let Some(content_length) = response.content_length() {
-        if content_length > cap as u64 {
-            return Err(AppError::Validation("Response too large".to_string()));
-        }
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
-        if buf.len().saturating_add(chunk.len()) > cap {
-            return Err(AppError::Validation("Response too large".to_string()));
-        }
-        buf.extend_from_slice(&chunk);
-    }
-
-    Ok(buf)
-}
-
-/// Read + parse a JSON body via [`read_text_capped`]. On a schema/parse
-/// failure, the serde detail — and the body itself — never reach the returned
-/// error, only a generic message does; the detail is logged instead. Mirrors
+/// Read + parse a JSON body via [`read_bytes_capped`] + `serde_json::from_slice`
+/// — matching `reqwest::Response::json()`'s own UTF-8-only semantics (RFC 8259
+/// §8.1 requires JSON-for-interchange to be UTF-8) instead of sniffing
+/// `Content-Type`'s charset the way [`read_text_capped`] does for HTML/text.
+/// A gateway mislabelling a UTF-8 JSON body's charset must not corrupt it via
+/// the wrong decode, and a charset `encoding_rs` maps to the replacement
+/// encoding (`iso-2022-jp`, `hz-gb-2312`, …) must not blank an otherwise-valid
+/// body out to a single U+FFFD.
+///
+/// On a schema/parse failure, the serde detail — and the body itself — never
+/// reach the returned error, only a generic message does; the detail (line,
+/// column, kind — never the body content) is logged instead. Mirrors
 /// `scraping::http::fetch_json`'s schema-drift handling, generalized to any
 /// caller holding a `reqwest::Response` (not just the scraper `fetch_text`
 /// path).
@@ -243,11 +249,15 @@ pub(crate) async fn read_json_capped<T: serde::de::DeserializeOwned>(
 ) -> crate::error::AppResult<T> {
     use crate::error::AppError;
 
-    let text = read_text_capped(response, cap).await?;
-    serde_json::from_str::<T>(&text).map_err(|e| {
+    let bytes = read_bytes_capped(response, cap).await?;
+    serde_json::from_slice::<T>(&bytes).map_err(|e| {
         log::warn!(
-            "[net::http] read_json_capped: response did not match the expected schema ({e}); body_len={}",
-            text.len()
+            "[net::http] read_json_capped: response did not match the expected schema \
+             (line={}, column={}, kind={:?}); body_len={}",
+            e.line(),
+            e.column(),
+            e.classify(),
+            bytes.len()
         );
         AppError::Parse("response body did not match the expected schema".to_string())
     })
@@ -674,47 +684,6 @@ mod tests {
         );
     }
 
-    /// Proves the STREAMING guard (not just the cheap `Content-Length`
-    /// pre-check) actually fires: this response carries no `Content-Length`
-    /// (asserted below), so the only thing that can catch an oversized body is
-    /// the streamed accumulation inside `read_text_capped` aborting once the
-    /// running total exceeds `cap`.
-    #[tokio::test]
-    async fn read_text_capped_rejects_a_body_over_the_cap_without_content_length() {
-        use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let mock_server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                // A manually-set `Transfer-Encoding: chunked` header stops hyper's
-                // H1 encoder from auto-computing `Content-Length` (the two are
-                // mutually exclusive per RFC 9112) — the response arrives with NO
-                // declared length, forcing reqwest's `content_length()` to `None`
-                // and putting the entire burden of catching an oversized body on
-                // the streamed accumulation below, not the cheap pre-check.
-                ResponseTemplate::new(200)
-                    .insert_header("transfer-encoding", "chunked")
-                    .set_body_string("x".repeat(4096)),
-            )
-            .mount(&mock_server)
-            .await;
-
-        let response = reqwest::get(mock_server.uri()).await.unwrap();
-        assert!(
-            response.content_length().is_none(),
-            "this test only proves the streaming guard if wiremock sent no \
-             Content-Length — otherwise the cheap pre-check would catch it first"
-        );
-        let err = read_text_capped(response, 64)
-            .await
-            .expect_err("a body over the cap must not be buffered");
-        assert!(
-            format!("{err}").contains("too large"),
-            "expected a size error, got: {err}"
-        );
-    }
-
     #[tokio::test]
     async fn read_bytes_capped_returns_the_body_under_the_cap() {
         use wiremock::matchers::method;
@@ -731,38 +700,35 @@ mod tests {
         assert_eq!(bytes, vec![1, 2, 3, 4]);
     }
 
-    /// Same streaming-guard proof as `read_text_capped_rejects_a_body_over_the_
-    /// cap_without_content_length`, for the bytes variant used by the LinkedIn
-    /// client's manual gzip decode path.
+    /// The former `read_text_capped`/`read_bytes_capped` "rejects over the cap"
+    /// tests each fed a SINGLE 4096-byte chunk against a 64-byte cap — the
+    /// first (and only) chunk already exceeded the cap on its own, so the
+    /// assertion passed identically against a wrong `if chunk.len() > cap`
+    /// guard and never actually exercised the running-total accumulation
+    /// (`buf.len().saturating_add(chunk.len()) > cap`). `read_text_capped` and
+    /// `read_bytes_capped` now both delegate their entire size guard to
+    /// [`accumulate_capped`], so testing it once here covers both — driven
+    /// directly with a synthetic multi-chunk stream (no network, no
+    /// `reqwest::Response` construction needed) so the chunk boundaries are
+    /// deterministic rather than at the mercy of OS/TCP fragmentation.
     #[tokio::test]
-    async fn read_bytes_capped_rejects_a_body_over_the_cap_without_content_length() {
-        use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+    async fn accumulate_capped_rejects_when_running_total_exceeds_cap_across_multiple_chunks() {
+        // Three 40-byte chunks: no SINGLE chunk exceeds the 100-byte cap, so a
+        // guard changed to a per-chunk check (`chunk.len() > cap`) would let
+        // all 120 bytes through untouched. Only the running-total guard
+        // (`buf.len().saturating_add(chunk.len()) > cap`) rejects this — it
+        // fires while accumulating the 3rd chunk (40 + 40 + 40 = 120 > 100).
+        let chunks: Vec<reqwest::Result<Vec<u8>>> =
+            vec![Ok(vec![0u8; 40]), Ok(vec![0u8; 40]), Ok(vec![0u8; 40])];
+        let stream = futures::stream::iter(chunks);
 
-        let mock_server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .respond_with(
-                // See the identical `read_text_capped` variant of this test for why
-                // `Transfer-Encoding: chunked` is required to actually suppress
-                // `Content-Length` here.
-                ResponseTemplate::new(200)
-                    .insert_header("transfer-encoding", "chunked")
-                    .set_body_bytes(vec![0u8; 4096]),
-            )
-            .mount(&mock_server)
-            .await;
-
-        let response = reqwest::get(mock_server.uri()).await.unwrap();
-        assert!(
-            response.content_length().is_none(),
-            "this test only proves the streaming guard if wiremock sent no Content-Length"
+        let err = accumulate_capped(stream, None, 100).await.expect_err(
+            "120 bytes across 3 chunks of 40 must be rejected even though no single \
+             chunk exceeds the 100-byte cap",
         );
-        let err = read_bytes_capped(response, 64)
-            .await
-            .expect_err("a body over the cap must not be buffered");
         assert!(
-            format!("{err}").contains("too large"),
-            "expected a size error, got: {err}"
+            matches!(&err, AppError::Validation(msg) if msg.contains("too large")),
+            "expected a size Validation error, got: {err:?}"
         );
     }
 
@@ -787,10 +753,6 @@ mod tests {
         match err {
             AppError::Parse(msg) => {
                 assert_eq!(msg, "response body did not match the expected schema");
-                assert!(
-                    !msg.contains("not json"),
-                    "Parse message must not contain the mock response body: {msg:?}"
-                );
             }
             other => panic!("expected a Parse error on schema drift, got {other:?}"),
         }
