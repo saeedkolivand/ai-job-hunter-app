@@ -2036,6 +2036,48 @@ describe('extractPlainText', () => {
     expect(out).toBe('Use the npm install command.');
     expect(out).not.toContain('`');
   });
+
+  describe('whole-response code fence (HIGH — a local model that wraps its ENTIRE answer in one fence must not have the whole document deleted, the same Ollama tell already fixed in parseGitHubProjects)', () => {
+    it('unwraps a bare-fenced whole résumé instead of deleting it', () => {
+      const raw =
+        '```\nJohn Doe\nSenior Engineer\n\nPROFESSIONAL SUMMARY\nBuilt lots of things.\n```';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('John Doe');
+      expect(out).toContain('PROFESSIONAL SUMMARY');
+    });
+
+    it('unwraps a language-tagged (```markdown) whole résumé instead of deleting it', () => {
+      const raw = '```markdown\nJohn Doe\nSenior Engineer\n\nBuilt lots of things.\n```';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('John Doe');
+    });
+
+    it('unwraps a whole-fenced cover letter with a trailing newline instead of deleting it', () => {
+      const raw = '```\nDear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane\n```\n';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('Dear Hiring Manager,');
+      expect(out).toContain('Sincerely,');
+    });
+
+    it('still deletes a genuine fenced code block embedded mid-answer (not the whole response)', () => {
+      // This is the differential the fix must preserve: only a fence spanning
+      // the ENTIRE trimmed response is unwrapped. A fence that is part of a
+      // larger answer is still noise to strip, per the existing behaviour
+      // pinned by the two tests above this describe block.
+      const raw = 'Here is an example:\n\n```js\nconst x = 1;\n```\n\nThat is how you would do it.';
+      const out = extractPlainText(raw);
+      expect(out).not.toContain('```');
+      expect(out).not.toContain('const x = 1;');
+      expect(out).toContain('Here is an example:');
+      expect(out).toContain('That is how you would do it.');
+    });
+  });
 });
 
 describe('validateMetadata', () => {

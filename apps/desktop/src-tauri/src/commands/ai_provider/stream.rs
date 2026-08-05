@@ -21,7 +21,7 @@ use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AiStreamChunk, AI_STREAM};
 use crate::jobs::JobTracker;
 
-use super::{ProviderId, RequestTrace, Usage};
+use super::{ProviderId, RequestTrace, StopReason, Usage};
 
 /// One emittable piece pulled from a provider's stream by its `parse` closure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +42,16 @@ pub struct StreamPiece {
     /// LATEST non-`None` value it sees across the whole stream and records it
     /// at completion — never estimated, never fabricated when absent.
     pub usage: Option<Usage>,
+    /// The provider's own end-of-turn reason, when this piece happens to carry
+    /// it (OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk — see
+    /// `openai::parse_openai_finish_reason`). `None` for a provider with no
+    /// streamed equivalent (Anthropic/Gemini/local Ollama today) or before one
+    /// has been reported. Mirrors `usage`'s "latest non-`None` wins" handling.
+    /// What this exists for: telling a `finish_reason: length` empty answer
+    /// (the model ran out of budget mid-reasoning, never reached its final
+    /// channel) apart from a provider that just silently returned nothing —
+    /// see `finish`'s empty-answer branch.
+    pub stop_reason: Option<StopReason>,
 }
 
 impl StreamPiece {
@@ -52,6 +62,7 @@ impl StreamPiece {
             thinking: false,
             done: false,
             usage: None,
+            stop_reason: None,
         }
     }
 
@@ -62,6 +73,7 @@ impl StreamPiece {
             thinking: true,
             done: false,
             usage: None,
+            stop_reason: None,
         }
     }
 
@@ -72,6 +84,7 @@ impl StreamPiece {
             thinking: false,
             done: true,
             usage: None,
+            stop_reason: None,
         }
     }
 
@@ -85,6 +98,21 @@ impl StreamPiece {
             thinking: false,
             done: false,
             usage: Some(usage),
+            stop_reason: None,
+        }
+    }
+
+    /// A stop-reason-only piece: no visible text, not a completion sentinel —
+    /// OpenAI/Ollama Cloud report `finish_reason` on a regular content chunk
+    /// (typically the one right before the `[DONE]` sentinel line), not on the
+    /// sentinel itself.
+    pub fn stop_reason(reason: StopReason) -> Self {
+        Self {
+            delta: String::new(),
+            thinking: false,
+            done: false,
+            usage: None,
+            stop_reason: Some(reason),
         }
     }
 }
@@ -104,27 +132,79 @@ fn emit_delta(app: &AppHandle, job_id: &str, delta: &str, thinking: bool) {
     );
 }
 
-/// Emit the terminal `ai:stream` event, mark the job complete, close the
-/// trace, and record the stream's REAL token usage (zero when the provider
-/// never reported any) against today's AI spend. `base_url` is passed through
-/// to the free/paid cost gate — only meaningful for `openai-compatible`
-/// (LM Studio/vLLM/OpenRouter/…), ignored for every other provider.
+/// Generic empty-completion message — the stream ended with no usable answer
+/// text and no `finish_reason: length` signal to explain why (or the provider
+/// never reports one). See [`EMPTY_ANSWER_LENGTH_MESSAGE`] for the distinct,
+/// more actionable case.
+pub(super) const EMPTY_ANSWER_MESSAGE: &str = "The model produced no answer content.";
+
+/// Empty-completion message for the specific, diagnosable case: the provider's
+/// own `finish_reason` was `length` (OpenAI/Ollama Cloud) — the model ran out
+/// of its output-token budget, most often while a reasoning model was still
+/// inside its thinking channel and never reached a final answer. Distinct from
+/// [`EMPTY_ANSWER_MESSAGE`] so a diagnostics bundle can tell "the provider
+/// truncated us before any answer" apart from "the provider silently returned
+/// nothing" — this is exactly the ambiguity that took two investigations to
+/// pin down for a real report (Ollama Cloud `gpt-oss:120b`).
+pub(super) const EMPTY_ANSWER_LENGTH_MESSAGE: &str = "The model ran out of output budget \
+    before producing any answer text (finish_reason: length). Try again, or raise the \
+    model's max output tokens in Settings → AI.";
+
+/// Pick the right empty-completion message for `stop_reason` — see the two
+/// constants' docs for what each one means.
+pub(super) fn empty_answer_message(stop_reason: Option<StopReason>) -> &'static str {
+    if stop_reason == Some(StopReason::Length) {
+        EMPTY_ANSWER_LENGTH_MESSAGE
+    } else {
+        EMPTY_ANSWER_MESSAGE
+    }
+}
+
+/// On a normal (non-empty) completion: emit the terminal `ai:stream` event,
+/// mark the job complete, close the trace, and record the stream's REAL token
+/// usage (zero when the provider never reported any) against today's AI
+/// spend. `base_url` is passed through to the free/paid cost gate — only
+/// meaningful for `openai-compatible` (LM Studio/vLLM/OpenRouter/…), ignored
+/// for every other provider.
+///
+/// On an EMPTY completion (the accumulated answer is whitespace-only once
+/// think-stripped — see `stream_response`'s loop, which only accumulates
+/// non-thinking deltas) this does the opposite on purpose: no `job_complete`,
+/// no plain `done` event — persisting a job as "completed" with `text: ""`
+/// let an empty document sail silently through export/notifications with no
+/// error anywhere (the bug this closes). Instead it returns `Err`, which every
+/// caller of `chat_stream`/`Completer::stream`/`stream_complete` already
+/// turns into `job_fail` + `emit_stream_error` on its own generic error path
+/// (`ai_generate`, `generate_pipeline`, `answer.assist`'s `compose_draft_stream`)
+/// — so this needs no caller-specific wiring, the same way a transport or HTTP
+/// error already doesn't. `record_usage`/`trace.end` still run: the provider
+/// may have spent real (billable) output tokens reasoning before giving up,
+/// and that spend must never go unrecorded just because nothing usable came
+/// of it.
 ///
 /// `answer` is the full completed text accumulated from this stream's
 /// **non-thinking** deltas (see `stream_response`'s loop) — exactly what the
-/// renderer feeds its `<think>` splitter. It is persisted into the job result
-/// as `result.text` so a renderer that missed stream frames (or the terminal
-/// `done` event) can recover the finished document by polling `jobs_get`
-/// instead of resolving a truncated stream buffer. This is provider-agnostic:
-/// every provider routes through here, so a new adapter inherits the behavior
-/// for free. Before persisting, inline `<think>…</think>` reasoning is stripped
-/// via [`strip_think_blocks`] so the persisted text is the SAME think-stripped
-/// shape the renderer assembles — critical because the renderer's poll fallback
-/// prefers the LONGER of {persisted, streamed buffer}, and its streamed buffer
-/// is already think-stripped. Persisting raw `<think>` markup would make the
-/// persisted side spuriously longer AND leak reasoning markup into the final
-/// document; stripping here keeps both sides of that length comparison in the
-/// same shape.
+/// renderer feeds its `<think>` splitter. On success it is persisted into the
+/// job result as `result.text` so a renderer that missed stream frames (or the
+/// terminal `done` event) can recover the finished document by polling
+/// `jobs_get` instead of resolving a truncated stream buffer. This is
+/// provider-agnostic: every provider routes through here, so a new adapter
+/// inherits the behavior for free. Before persisting, inline
+/// `<think>…</think>` reasoning is stripped via [`strip_think_blocks`] so the
+/// persisted text is the SAME think-stripped shape the renderer assembles —
+/// critical because the renderer's poll fallback prefers the LONGER of
+/// {persisted, streamed buffer}, and its streamed buffer is already
+/// think-stripped. Persisting raw `<think>` markup would make the persisted
+/// side spuriously longer AND leak reasoning markup into the final document;
+/// stripping here keeps both sides of that length comparison in the same
+/// shape.
+///
+/// `thinking_len` (char count of every thinking-flagged delta seen, never the
+/// text itself) and `stop_reason` (the provider's own `finish_reason`, see
+/// [`StreamPiece::stop_reason`]) are diagnostic-only — logged here so a
+/// support bundle can tell an empty-because-truncated stream apart from an
+/// empty-because-the-provider-said-nothing one without ever needing the
+/// actual generated content.
 #[allow(clippy::too_many_arguments)]
 fn finish(
     app: &AppHandle,
@@ -136,7 +216,46 @@ fn finish(
     base_url: &str,
     usage: Usage,
     answer: &str,
-) {
+    stop_reason: Option<StopReason>,
+    thinking_len: usize,
+) -> AppResult<()> {
+    let stripped = strip_think_blocks(answer);
+    let is_empty = stripped.trim().is_empty();
+    log::info!(
+        "[ai] stream end provider={} model={} answerLen={} thinkingLen={} finishReason={:?} \
+         usageIn={} usageOut={} empty={}",
+        provider.as_str(),
+        model,
+        stripped.chars().count(),
+        thinking_len,
+        stop_reason,
+        usage.input_tokens,
+        usage.output_tokens,
+        is_empty,
+    );
+
+    if is_empty {
+        let message = empty_answer_message(stop_reason);
+        log::warn!(
+            "[ai] stream produced no answer content provider={} model={} thinkingLen={} \
+             finishReason={:?}",
+            provider.as_str(),
+            model,
+            thinking_len,
+            stop_reason,
+        );
+        trace.end(Some(status), false);
+        super::record_usage(
+            app,
+            provider.as_str(),
+            model,
+            usage.input_tokens,
+            usage.output_tokens,
+            Some(base_url),
+        );
+        return Err(AppError::Provider(message.to_string()));
+    }
+
     emit_event(
         app,
         AI_STREAM,
@@ -148,11 +267,7 @@ fn finish(
             thinking: None,
         },
     );
-    crate::commands::jobs::job_complete(
-        app,
-        job_id,
-        json!({ "done": true, "text": strip_think_blocks(answer) }),
-    );
+    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true, "text": stripped }));
     trace.end(Some(status), true);
     super::record_usage(
         app,
@@ -162,6 +277,7 @@ fn finish(
         usage.output_tokens,
         Some(base_url),
     );
+    Ok(())
 }
 
 /// Remove inline `<think>…</think>` reasoning blocks, mirroring the renderer's
@@ -417,10 +533,18 @@ pub async fn stream_response<F>(
 where
     F: FnMut(&mut String) -> Vec<StreamPiece> + Send,
 {
+    log::info!(
+        "[ai] stream start provider={} model={}",
+        provider.as_str(),
+        model
+    );
     let mut buf = String::new();
     // Bytes from a read that ended mid-UTF-8-sequence — see `push_utf8`.
     let mut carry: Vec<u8> = Vec::new();
     let mut usage = Usage::default();
+    // The latest `finish_reason` seen (last write wins, mirroring `usage`) —
+    // see `StreamPiece::stop_reason` and `finish`'s empty-answer branch.
+    let mut stop_reason: Option<StopReason> = None;
     // The full completed answer, accumulated from non-thinking deltas only —
     // the same shape the renderer buffers — persisted by `finish` so a dropped
     // frame or missed `done` event can be recovered by polling. A cancel/error
@@ -428,6 +552,11 @@ where
     // on those paths (the renderer fails the run rather than persisting a
     // truncated result).
     let mut answer = String::new();
+    // Char count of every thinking-flagged delta seen — diagnostic only (never
+    // the text itself), logged by `finish` so a support bundle can see a
+    // reasoning model was actively thinking even when it never reached an
+    // answer.
+    let mut thinking_len: usize = 0;
     loop {
         if is_cancelled(app, job_id) {
             drop(response);
@@ -469,17 +598,31 @@ where
                     if let Some(u) = piece.usage {
                         usage = u;
                     }
+                    if let Some(r) = piece.stop_reason {
+                        stop_reason = Some(r);
+                    }
                     if !piece.delta.is_empty() {
-                        if !piece.thinking {
+                        if piece.thinking {
+                            thinking_len += piece.delta.chars().count();
+                        } else {
                             answer.push_str(&piece.delta);
                         }
                         emit_delta(app, job_id, &piece.delta, piece.thinking);
                     }
                     if piece.done {
-                        finish(
-                            app, job_id, trace, status, provider, model, base_url, usage, &answer,
+                        return finish(
+                            app,
+                            job_id,
+                            trace,
+                            status,
+                            provider,
+                            model,
+                            base_url,
+                            usage,
+                            &answer,
+                            stop_reason,
+                            thinking_len,
                         );
-                        return Ok(());
                     }
                 }
             }
@@ -506,9 +649,18 @@ where
     }
 
     finish(
-        app, job_id, trace, status, provider, model, base_url, usage, &answer,
-    );
-    Ok(())
+        app,
+        job_id,
+        trace,
+        status,
+        provider,
+        model,
+        base_url,
+        usage,
+        &answer,
+        stop_reason,
+        thinking_len,
+    )
 }
 
 #[cfg(test)]
@@ -970,6 +1122,48 @@ mod tests {
     }
 
     #[test]
+    fn a_stream_that_only_ever_emits_thinking_leaves_the_accumulated_answer_empty() {
+        // HIGH (empty-completion job.completed bug): a reasoning model that runs
+        // out of budget WHILE reasoning — or one whose provider never surfaces a
+        // final channel at all — can legitimately reach the sentinel having
+        // streamed real content, ALL of it thinking-flagged. `answer` (what
+        // `finish` persists as `result.text`, see the tests above) must stay
+        // empty in that case — this is the exact precondition `finish`'s
+        // empty-answer branch exists to catch (see `stream.rs`'s `finish` doc):
+        // a stream that "succeeded" at the transport level but produced nothing
+        // usable must not be persisted as a completed job with `text: ""`.
+        let parser = |buf: &mut String| -> Vec<StreamPiece> {
+            let mut out = Vec::new();
+            while let Some(nl) = buf.find('\n') {
+                let line = buf[..nl].trim().to_string();
+                *buf = buf[nl + 1..].to_string();
+                if line == "END" {
+                    out.push(StreamPiece::done(""));
+                } else if let Some(reason) = line.strip_prefix("T:") {
+                    out.push(StreamPiece::thinking(reason.to_string()));
+                }
+            }
+            out
+        };
+        let acts = run(
+            vec![Ok(Some(
+                b"T:pondering the request at length\nEND\n".to_vec(),
+            ))],
+            None,
+            parser,
+        );
+        assert_eq!(
+            acts,
+            vec![
+                Act::Emit("pondering the request at length".to_string(), true),
+                Act::Complete(Usage::default(), String::new()),
+            ],
+            "an all-thinking stream must complete with an EMPTY accumulated answer, \
+             never a fabricated fallback"
+        );
+    }
+
+    #[test]
     fn persisted_answer_strips_inline_think_markup_it_never_leaks() {
         // A local reasoning model embeds <think>…</think> inline in a single
         // answer delta (thinking:false — the renderer's splitter, not the
@@ -1073,6 +1267,32 @@ mod tests {
                 !out.contains("<think>") && !out.contains("</think>"),
                 "{s:?} leaked markup"
             );
+        }
+    }
+
+    // ── empty_answer_message (MEDIUM — finish_reason threading) ────────────────
+    //
+    // `finish` and `cli_agent::emit_done` both route their empty-answer `Err`
+    // message through this one pure decision, so it is directly testable
+    // without the `AppHandle` this crate has no test harness for (see e.g.
+    // `openai_tests.rs`'s note on the same limitation).
+
+    #[test]
+    fn empty_answer_message_reports_the_length_truncation_distinctly() {
+        assert_eq!(
+            empty_answer_message(Some(StopReason::Length)),
+            EMPTY_ANSWER_LENGTH_MESSAGE,
+            "finish_reason: length must get its own, more actionable message"
+        );
+    }
+
+    #[test]
+    fn empty_answer_message_falls_back_to_the_generic_message_otherwise() {
+        // No signal at all (most providers/CLI agents) and a non-`Length`
+        // signal both fall back to the SAME generic message — only `Length`
+        // is distinct, per the report this closes.
+        for reason in [None, Some(StopReason::End), Some(StopReason::Other)] {
+            assert_eq!(empty_answer_message(reason), EMPTY_ANSWER_MESSAGE);
         }
     }
 }

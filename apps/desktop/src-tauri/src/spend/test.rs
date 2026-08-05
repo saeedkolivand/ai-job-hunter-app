@@ -248,6 +248,42 @@ fn rate_for_gives_gemini_3_5_flash_and_lite_their_own_rows_not_the_default_fallb
 }
 
 #[test]
+fn rate_for_gives_ollama_cloud_gpt_oss_ids_their_own_rows_not_default_rate() {
+    // The exact defect this closes: Ollama Cloud's `gpt-oss:120b` (colon-tag
+    // form — NOT dash-form) previously fell straight through to DEFAULT_RATE
+    // ($3/$15), massively overbilling a cheap open-weight model.
+    assert_eq!(
+        rate_for("gpt-oss:120b").map(|(p, _, _)| *p),
+        Some("gpt-oss:120b")
+    );
+    let cost_120b = estimate_cost("gpt-oss:120b", 1_000_000, 1_000_000);
+    assert!((cost_120b - (0.037 + 0.17)).abs() < 1e-9, "got {cost_120b}");
+    assert!(
+        cost_120b < DEFAULT_RATE.0 + DEFAULT_RATE.1,
+        "gpt-oss:120b must be far cheaper than the DEFAULT_RATE it used to fall through to"
+    );
+
+    assert_eq!(
+        rate_for("gpt-oss:20b").map(|(p, _, _)| *p),
+        Some("gpt-oss:20b")
+    );
+    let cost_20b = estimate_cost("gpt-oss:20b", 1_000_000, 1_000_000);
+    assert!((cost_20b - (0.03 + 0.13)).abs() < 1e-9, "got {cost_20b}");
+}
+
+#[test]
+fn rate_for_falls_back_to_the_bare_gpt_oss_row_for_an_unlisted_spelling() {
+    // A dash-form id (another gateway hosting the same open model) or any
+    // other unlisted size must still hit the family catch-all, not DEFAULT_RATE.
+    assert_eq!(
+        rate_for("gpt-oss-120b").map(|(p, _, _)| *p),
+        Some("gpt-oss")
+    );
+    let cost = estimate_cost("gpt-oss-safeguard-20b", 1_000_000, 1_000_000);
+    assert!((cost - (0.037 + 0.17)).abs() < 1e-9, "got {cost}");
+}
+
+#[test]
 fn estimate_cost_strips_a_vendor_prefix_before_matching() {
     // An id seen through an OpenRouter-style gateway (`anthropic/claude-fable-5`)
     // must hit the bare model's row, not silently fall through to DEFAULT_RATE.

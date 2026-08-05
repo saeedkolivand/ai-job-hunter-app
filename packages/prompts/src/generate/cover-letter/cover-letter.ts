@@ -388,6 +388,6 @@ Before finishing, reread the letter once and cut any claim the résumé cannot b
 
 ### COMPLETE COVER LETTER ###
 
-Output ONLY the cover letter. Do NOT wrap it in XML tags. Do NOT add any commentary before or after.
+Output ONLY the cover letter. Do NOT wrap it in XML tags or a code fence (\`\`\`). Do NOT add any commentary before or after.
 Start immediately with the candidate header:`;
 }

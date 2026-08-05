@@ -77,7 +77,7 @@ MODE: ${MODES[mode].label}
 ${modeInstr}
 ${toneBlock}
 
-OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume.
+OUTPUT: Plain text. Standard section headers. Bullets start with •. No markdown except **bold**. Output ONLY the resume. Do NOT wrap it in a code fence (\`\`\`).
 
 FINAL CHECK — read your output and confirm:
 ✓ No skill appears that is not in the original resume
@@ -256,7 +256,7 @@ ${toneBlock}
 OUTPUT FORMAT:
 Plain text with **double asterisks** for keyword emphasis (renderer converts to real bold).
 Standard section headers, "•" for bullets.
-No markdown other than **bold**. No explanations. Output ONLY the resume. Do NOT wrap it in XML tags.`;
+No markdown other than **bold**. No explanations. Output ONLY the resume. Do NOT wrap it in XML tags or a code fence (\`\`\`).`;
 }
 
 export function buildResumePrompt(

@@ -688,9 +688,12 @@ async fn run_stream(
     // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
     // zero usage for any provider (like this one) that doesn't override it.
     super::record_usage(app, backend.id().as_str(), model, 0, 0, None);
-    emit_done(app, job_id, &answer);
-    trace.end(status.and_then(|s| s.code()).map(|c| c as u16), true);
-    Ok(())
+    let result = emit_done(app, job_id, label, model, &answer);
+    trace.end(
+        status.and_then(|s| s.code()).map(|c| c as u16),
+        result.is_ok(),
+    );
+    result
 }
 
 // ── One-shot engine (pipeline `complete`) ────────────────────────────────────────
@@ -876,12 +879,40 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Emit the terminal `ai:stream` event and mark the job complete, persisting the
-/// completed `answer` as `result.text` (think-stripped via the shared
-/// [`super::stream::strip_think_blocks`]) so a CLI-agent generation's poll
-/// fallback recovers the finished document just like the cloud `stream::finish`
-/// path — the poll contract is provider-agnostic.
-fn emit_done(app: &AppHandle, job_id: &str, answer: &str) {
+/// On a normal (non-empty) completion: emit the terminal `ai:stream` event and
+/// mark the job complete, persisting the completed `answer` as `result.text`
+/// (think-stripped via the shared [`super::stream::strip_think_blocks`]) so a
+/// CLI-agent generation's poll fallback recovers the finished document just
+/// like the cloud `stream::finish` path — the poll contract is
+/// provider-agnostic.
+///
+/// On an EMPTY completion (a CLI agent that streamed only `Thinking` events —
+/// or none at all — before a clean exit/`Done` sentinel, so `run_stream`'s own
+/// `!emitted_done && !success && !any_delta` guard above never fired) this
+/// does the opposite on purpose: no `job_complete`, no plain `done` event —
+/// returns `Err` instead, exactly like `super::stream::finish`'s same branch.
+/// `run_stream`'s caller (`chat_stream`, then
+/// `Completer::stream`/`stream_complete`) already turns that into `job_fail` +
+/// `emit_stream_error` on its generic error path, so this needs no
+/// caller-specific wiring. CLI agents have no `finish_reason` signal of their
+/// own (no HTTP response to carry one), so this always reports the generic
+/// empty message.
+fn emit_done(
+    app: &AppHandle,
+    job_id: &str,
+    provider: &str,
+    model: &str,
+    answer: &str,
+) -> AppResult<()> {
+    let stripped = super::stream::strip_think_blocks(answer);
+    if stripped.trim().is_empty() {
+        log::warn!(
+            "[ai] cli-agent stream produced no answer content provider={provider} model={model}"
+        );
+        return Err(AppError::Provider(
+            super::stream::empty_answer_message(None).to_string(),
+        ));
+    }
     emit_event(
         app,
         AI_STREAM,
@@ -893,11 +924,8 @@ fn emit_done(app: &AppHandle, job_id: &str, answer: &str) {
             thinking: None,
         },
     );
-    crate::commands::jobs::job_complete(
-        app,
-        job_id,
-        json!({ "done": true, "text": super::stream::strip_think_blocks(answer) }),
-    );
+    crate::commands::jobs::job_complete(app, job_id, json!({ "done": true, "text": stripped }));
+    Ok(())
 }
 
 /// All `system` message content, joined — passed to the agent as its system prompt.

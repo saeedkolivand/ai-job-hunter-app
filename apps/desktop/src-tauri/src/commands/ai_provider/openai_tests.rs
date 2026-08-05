@@ -13,8 +13,8 @@
 use super::{
     build_chat_stream_body, is_gpt5_or_later_reasoning_family, is_reasoning_model,
     join_responses_text, parse_model_list, parse_openai_delta, parse_openai_embed_usage,
-    parse_openai_frames, parse_openai_turn, parse_openai_usage, resolve_openai_key,
-    scrub_url_secret, should_list_model, OpenAiClient,
+    parse_openai_finish_reason, parse_openai_frames, parse_openai_turn, parse_openai_usage,
+    resolve_openai_key, scrub_url_secret, should_list_model, OpenAiClient,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -277,6 +277,62 @@ fn parse_frames_skips_non_data_and_unparseable_lines() {
     // Comment/keepalive lines and malformed JSON are ignored, not errors.
     let mut buf = String::from(": keepalive\ndata: not-json\n\n");
     assert!(parse_openai_frames(&mut buf).is_empty());
+}
+
+// ── finish_reason (streaming) — HIGH: distinguishes a truncated-mid-reasoning
+// empty answer (finish_reason: length) from a provider that silently returned
+// nothing, so `finish`'s empty-answer branch can report the right one. ───────
+
+#[test]
+fn parse_finish_reason_maps_every_known_value_like_the_non_streaming_turn_parser() {
+    let ev = |reason: &str| json!({ "choices": [{ "delta": {}, "finish_reason": reason }] });
+    assert_eq!(
+        parse_openai_finish_reason(&ev("length")),
+        Some(StopReason::Length)
+    );
+    assert_eq!(
+        parse_openai_finish_reason(&ev("stop")),
+        Some(StopReason::End)
+    );
+    assert_eq!(
+        parse_openai_finish_reason(&ev("tool_calls")),
+        Some(StopReason::ToolUse)
+    );
+    assert_eq!(
+        parse_openai_finish_reason(&ev("content_filter")),
+        Some(StopReason::Other)
+    );
+}
+
+#[test]
+fn parse_finish_reason_is_none_for_a_null_or_absent_value() {
+    // The common case: every streamed chunk except (usually) the last one.
+    assert_eq!(
+        parse_openai_finish_reason(&json!({ "choices": [{ "delta": {}, "finish_reason": null }] })),
+        None
+    );
+    assert_eq!(
+        parse_openai_finish_reason(&json!({ "choices": [{ "delta": {} }] })),
+        None
+    );
+    assert_eq!(parse_openai_finish_reason(&json!({})), None);
+}
+
+#[test]
+fn parse_frames_emits_a_stop_reason_piece_when_a_chunk_carries_finish_reason() {
+    use super::StreamPiece;
+    let mut buf = String::from(
+        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\
+         data: [DONE]\n",
+    );
+    let pieces = parse_openai_frames(&mut buf);
+    assert_eq!(
+        pieces,
+        vec![
+            StreamPiece::stop_reason(StopReason::Length),
+            StreamPiece::done(""),
+        ]
+    );
 }
 
 #[test]
