@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, EmptyState, ErrorState, Input, useNotification } from '@ajh/ui';
 
 import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
+import { isProviderConfigured } from '@/lib/ai-providers/provider-meta';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
@@ -35,6 +36,12 @@ interface Props {
   apiKeyInput: string;
   showKey: boolean;
   baseUrlInput: string;
+  /** The resolved openai-compatible base URL (in-progress edit, else saved) —
+   *  computed once by `useProviderKeys.baseUrlFor`, so this component's
+   *  "is it configured" check can't disagree with the model-fetch it gates.
+   *  `baseUrlInput` above is the raw, un-trimmed value for the `<Input>`
+   *  itself only — never fed into that check directly. */
+  configuredBaseUrl?: string;
   onApiKeyChange: (value: string) => void;
   onToggleShowKey: () => void;
   onBaseUrlChange: (value: string) => void;
@@ -61,6 +68,7 @@ export function CloudProviderConfig({
   apiKeyInput,
   showKey,
   baseUrlInput,
+  configuredBaseUrl,
   onApiKeyChange,
   onToggleShowKey,
   onBaseUrlChange,
@@ -79,8 +87,14 @@ export function CloudProviderConfig({
 
   // `openai-compatible` is keyless-capable (LM Studio / vLLM) — it can list
   // and pick a model without a stored key, so the model section can't be
-  // gated on `connected` the same way the key-input section above is.
-  const canPickModel = connected || provider === 'openai-compatible';
+  // gated on `connected` the same way the key-input section above is. It
+  // still needs to be configured (a stored/in-progress base URL), though —
+  // otherwise it silently falls back to `api.openai.com` server-side. Checked
+  // against `configuredBaseUrl` (the parent-resolved value the model fetch
+  // itself uses), NOT the raw `baseUrlInput` — those two can disagree (e.g.
+  // the input cleared but not yet saved) and this must track the fetch, not
+  // the keystroke.
+  const canPickModel = isProviderConfigured(provider, connected, configuredBaseUrl);
 
   const modelOptions = sortModelsNewestFirst(expandedModels).map((m) => ({
     value: m.name,

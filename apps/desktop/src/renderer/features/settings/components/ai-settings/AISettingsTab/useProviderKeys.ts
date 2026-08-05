@@ -3,7 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 
 import { useNotification } from '@ajh/ui';
 
-import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
   useActiveConfig,
@@ -92,13 +92,24 @@ export function useProviderKeys() {
   );
 
   // Custom base URL only applies to the OpenAI-compatible provider. Prefer the
-  // in-progress edit, fall back to what's saved in config.
+  // in-progress edit, fall back to what's saved in config. Resolved ONCE here
+  // and reused by every consumer below (including the one handed to
+  // `CloudProviderConfig` as `configuredBaseUrl`) — passing the raw
+  // `baseUrlInput` to one call site and this resolved value to another is
+  // exactly the divergence a single predicate was meant to prevent (they can
+  // disagree on whether the provider is "configured" while both claim to
+  // share the same check). Also immune to `baseUrlInput`'s `useState`
+  // initializer being stale on a cold boot (seeded once from `providerConfig`
+  // before it may have loaded): this function re-reads `providerConfig` live
+  // on every call, so it self-corrects once the query resolves even if the
+  // input's seed never does.
   const baseUrlFor = (p: AiProvider): string | undefined =>
     p === 'openai-compatible'
       ? baseUrlInput.trim() ||
         providerConfig?.providers?.['openai-compatible']?.baseUrl ||
         undefined
       : undefined;
+  const configuredBaseUrl = baseUrlFor('openai-compatible');
 
   // Models for the expanded non-local provider (cloud key-based, or CLI agents
   // which "list" their aliases through the same IPC path). Ollama uses its own
@@ -106,21 +117,22 @@ export function useProviderKeys() {
   // provider the backend lists models for without a bearer header (LM Studio /
   // vLLM are keyless) — gating it on `keyStatus` like every other cloud
   // provider left keyless setups unable to discover a model in Settings at
-  // all, even though `ModelSelector` already unblocked the same case.
+  // all, even though `ModelSelector` already unblocked the same case. But it
+  // must still be configured (a stored/in-progress base URL, or a key) —
+  // otherwise it silently falls back to `api.openai.com` server-side.
   const expandedFetchesModels = expanded !== null && PROVIDERS[expanded].kind !== 'local-server';
+  // `expandedFetchesModels` already proves `expanded !== null` — one fallback,
+  // reused below, instead of five copies that could drift from each other.
+  const target = expanded ?? 'openai';
   const expandedCanFetchModels =
     expandedFetchesModels &&
-    ((keyStatus[expanded ?? 'openai'] ?? false) || expanded === 'openai-compatible');
+    isProviderConfigured(target, keyStatus[target] ?? false, baseUrlFor(target));
   const {
     data: expandedModelsResult,
     isLoading: expandedModelsLoading,
     isError: expandedModelsErrored,
     error: expandedModelsErrorObj,
-  } = useListProviderModels(
-    expanded ?? 'openai',
-    expandedCanFetchModels,
-    baseUrlFor(expanded ?? 'openai')
-  );
+  } = useListProviderModels(target, expandedCanFetchModels, baseUrlFor(target));
   const expandedModels = expandedModelsResult?.models ?? [];
   const expandedModelsCached = expandedModelsResult?.cached ?? false;
   // A rejected invoke can reject with a plain string rather than an `Error`
@@ -251,6 +263,7 @@ export function useProviderKeys() {
     savingKey,
     testingKey,
     baseUrlInput,
+    configuredBaseUrl,
     pulling,
     handleSelectModel,
     handleSaveKey,

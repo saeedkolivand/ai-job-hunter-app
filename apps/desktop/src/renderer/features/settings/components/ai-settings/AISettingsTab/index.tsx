@@ -40,6 +40,7 @@ export function AISettingsTab() {
     savingKey,
     testingKey,
     baseUrlInput,
+    configuredBaseUrl,
     pulling,
     handleSelectModel,
     handleSaveKey,
@@ -104,6 +105,7 @@ export function AISettingsTab() {
                 apiKeyInput={apiKeyInput}
                 showKey={showKey}
                 baseUrlInput={baseUrlInput}
+                configuredBaseUrl={configuredBaseUrl}
                 onToggleExpand={() => toggleExpand(p)}
                 onTestKey={() => void handleTestKey(p)}
                 onRemoveKey={() => void handleRemoveKey(p)}
