@@ -24,6 +24,7 @@ export function ErrorState({
 }: ErrorStateProps) {
   return (
     <div
+      role="alert"
       className={cn('flex flex-col items-center justify-center gap-4 py-16 text-center', className)}
     >
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 ring-1 ring-red-500/20">

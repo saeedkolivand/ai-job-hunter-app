@@ -1,4 +1,4 @@
-import { AlertTriangle, Cpu } from 'lucide-react';
+import { AlertTriangle, Cpu, Loader2 } from 'lucide-react';
 import { useQueries } from '@tanstack/react-query';
 
 import { useTranslation } from '@ajh/translations';
@@ -8,6 +8,7 @@ import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
 import {
+  fetchProviderModelsWithCache,
   useActiveConfig,
   useAIModels,
   useConfigureActiveProvider,
@@ -61,20 +62,31 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const connected = new Map<AiProvider, boolean>(
     cloudProviders.map((p, i) => [p, keyQueries[i]?.data?.has ?? false])
   );
+  // `openai-compatible` is the one cloud provider the backend lists models for
+  // without a bearer header (LM Studio / vLLM are keyless) — every other
+  // provider still needs a stored key before it can fetch.
+  const canFetchModels = (p: AiProvider): boolean =>
+    (connected.get(p) ?? false) || p === 'openai-compatible';
 
   const modelQueries = useQueries({
     queries: cloudProviders.map((p) => ({
       queryKey: [...keys.ai.models, 'provider-models', p, baseUrlFor(p) ?? ''],
-      queryFn: () => api.ai.listProviderModels({ provider: p, baseUrl: baseUrlFor(p) }),
-      enabled: connected.get(p) ?? false,
+      // DISPLAY purpose, explicitly — the picker may show a cache-served list
+      // (with a "cached" note, below) since a stale-but-disclosed list beats
+      // an empty one here; onboarding's verification gate is the one call
+      // site that must NOT allow this (see CloudProviderPanel).
+      queryFn: () =>
+        fetchProviderModelsWithCache(api, p, baseUrlFor(p), { allowCacheFallback: true }),
+      enabled: canFetchModels(p),
       staleTime: 300_000,
-      // A rejection (no key / network error / bad response) isn't transient —
-      // don't re-pay the backend's own timeout on every retry, on every mount.
+      // A rejection now means the live fetch failed AND no cached list was
+      // available — not transient, so don't re-pay the backend's own timeout
+      // on every retry, on every mount.
       retry: false,
     })),
   });
-  const cloudModelNames = new Map<AiProvider, string[]>(
-    cloudProviders.map((p, i) => [p, (modelQueries[i]?.data ?? []).map((m) => m.name)])
+  const cloudModelEntries = new Map(
+    cloudProviders.map((p, i) => [p, modelQueries[i]?.data?.models ?? []])
   );
 
   // CLI-agent availability (binary detected) from the system health probe.
@@ -87,8 +99,8 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const options = buildModelOptions(PROVIDER_ORDER, PROVIDERS, {
     ollamaModels: ollamaModels.map((m) => m.name),
     cliDetected,
-    cloudConnected: (p) => connected.get(p) ?? false,
-    cloudModels: (p) => cloudModelNames.get(p) ?? [],
+    cloudConnected: canFetchModels,
+    cloudModels: (p) => cloudModelEntries.get(p) ?? [],
   });
 
   // Current selection as "provider||model" — every provider (Ollama included) now
@@ -104,6 +116,15 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   // loading, to avoid a false warning on first paint.
   const selectedModelVisible = options.some((o) => o.value === selectedValue);
   const activeCloudIndex = cloudProviders.indexOf(activeProvider);
+  const activeIsCloud = PROVIDERS[activeProvider]?.kind === 'cloud';
+  // `openai-compatible` can fetch keylessly, so its readiness never depends
+  // on the key-status query at all — waiting on it would wait on data it
+  // doesn't need. For every OTHER cloud provider, the key query IS relevant,
+  // so its own loading state must be tracked separately from "no key" (below):
+  // while it's still resolving, `canFetchModels` reads the not-yet-loaded
+  // `false` default, which is NOT the same as "we checked — there's no key".
+  const activeKeyRequired = activeIsCloud && activeProvider !== 'openai-compatible';
+  const activeKeyLoading = activeKeyRequired && Boolean(keyQueries[activeCloudIndex]?.isLoading);
   const modelsLoading = (() => {
     switch (PROVIDERS[activeProvider]?.kind) {
       case 'local-server':
@@ -112,8 +133,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         return healthLoading;
       case 'cloud':
         return activeCloudIndex >= 0
-          ? Boolean(keyQueries[activeCloudIndex]?.isLoading) ||
-              Boolean(modelQueries[activeCloudIndex]?.isLoading)
+          ? activeKeyLoading || Boolean(modelQueries[activeCloudIndex]?.isLoading)
           : false;
       default:
         return false;
@@ -121,6 +141,37 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   })();
   const showModelWarning = !modelsLoading && !selectedModelVisible;
   const warningKey = selectedValue === '' ? 'models.noModelSelected' : 'models.modelUnavailable';
+
+  // Cloud model-list health for the ACTIVE provider — a distinct concern from
+  // `showModelWarning` above (that's about the current *selection*; this is
+  // about whether the *list itself* loaded, and from where). ONE status,
+  // computed by a single ordered if/else chain rather than four independent
+  // booleans each gating its own JSX block — that shape is how "cached" and
+  // "needs key" rendered simultaneously last round (a stale `cached: true`
+  // result survived a key being removed, and only three of the four booleans
+  // were gated on `activeCloudNeedsKey`). A single chain makes every state
+  // mutually exclusive BY CONSTRUCTION: a future fifth state is just another
+  // branch, and it structurally cannot co-render with an earlier one.
+  const activeCloudQuery = activeCloudIndex >= 0 ? modelQueries[activeCloudIndex] : undefined;
+  const activeCloudStatus: 'idle' | 'needsKey' | 'loading' | 'error' | 'cached' = !activeIsCloud
+    ? 'idle'
+    : activeKeyLoading
+      ? 'loading' // key query itself unsettled — NOT "checked, no key"
+      : !canFetchModels(activeProvider)
+        ? 'needsKey'
+        : modelsLoading
+          ? 'loading'
+          : activeCloudQuery?.isError
+            ? 'error'
+            : (activeCloudQuery?.data?.cached ?? false)
+              ? 'cached'
+              : 'idle';
+  const activeCloudErrorMessage =
+    activeCloudStatus === 'error'
+      ? activeCloudQuery?.error instanceof Error
+        ? activeCloudQuery.error.message
+        : String(activeCloudQuery?.error)
+      : undefined;
 
   // "Which model for what" hint (#6) for the current selection — derived from the
   // model name + provider kind, so new models are covered with no code change.
@@ -167,6 +218,32 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           )}
         </div>
       </div>
+      {activeCloudStatus === 'needsKey' && (
+        <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
+          {t('models.cloud.addKeyToLoad')}
+        </p>
+      )}
+      {activeCloudStatus === 'loading' && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-1.5 flex items-center gap-1 text-[10px] text-foreground/40"
+        >
+          <Loader2 size={11} className="shrink-0 animate-spin" />
+          {t('settings.aiModel.loading')}
+        </p>
+      )}
+      {activeCloudStatus === 'error' && activeCloudErrorMessage && (
+        <p role="alert" className="mt-1.5 flex items-start gap-1 text-[10px] text-red-400/80">
+          <AlertTriangle size={11} className="mt-px shrink-0" />
+          {t('models.cloud.fetchFailed', { message: activeCloudErrorMessage })}
+        </p>
+      )}
+      {activeCloudStatus === 'cached' && (
+        <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
+          {t('models.cloud.cachedList')}
+        </p>
+      )}
       {guidance && (
         <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-relaxed text-foreground/40">
           <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground/55">

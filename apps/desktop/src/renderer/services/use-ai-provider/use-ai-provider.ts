@@ -8,11 +8,61 @@ import {
 
 import type { ProviderModelInfo } from '@ajh/shared';
 
+import { readModelListCache, writeModelListCache } from '@/lib/ai-providers/model-list-cache';
+import type { AppClient } from '@/lib/app-client';
 import { useAppClient } from '@/providers/AppClientProvider';
 import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
 import { keys, QUERY_TIMES } from '../query-client';
+
+/** A cloud provider's model catalogue, plus whether it was served from the
+ *  last-good local cache (a live fetch failed) rather than a fresh fetch. */
+export interface ProviderModelListResult {
+  models: ProviderModelInfo[];
+  cached: boolean;
+}
+
+/**
+ * Fetch a provider's live model catalogue. Two distinct purposes, made
+ * explicit at the call site rather than left for a reader to infer:
+ *
+ * - `allowCacheFallback: true` (DISPLAY, the default) — on failure, fall
+ *   back to the last successful list cached locally for that provider + base
+ *   URL. Only rejects when BOTH the live fetch fails AND no cache exists —
+ *   the picker/settings row can then tell "showing a cached list" apart from
+ *   "nothing to show".
+ * - `allowCacheFallback: false` (VERIFY) — never falls back. The cache is
+ *   keyed by provider + base URL with NO credential identity, so it cannot
+ *   prove a *newly entered* key works: a stale list from a previously-saved
+ *   (possibly now-revoked or simply different) key would otherwise let a
+ *   verification gate — onboarding's Continue, or anything run right after a
+ *   key is saved — pass on a request that actually failed. A failed
+ *   verification must surface loudly.
+ */
+export async function fetchProviderModelsWithCache(
+  api: AppClient,
+  provider: string,
+  baseUrl?: string,
+  { allowCacheFallback = true }: { allowCacheFallback?: boolean } = {}
+): Promise<ProviderModelListResult> {
+  try {
+    const models = await api.ai.listProviderModels({ provider, baseUrl });
+    writeModelListCache(provider, baseUrl, models);
+    return { models, cached: false };
+  } catch (err) {
+    if (!allowCacheFallback) throw err;
+    const cached = readModelListCache(provider, baseUrl);
+    // `[]` is a valid cached VALUE (a genuinely empty catalogue is a real,
+    // once-successful fetch result) but it is not a usable FALLBACK — an
+    // array is truthy regardless of length, so `if (cached)` alone would
+    // treat "last time this provider had zero models" as license to swallow
+    // *this* failure (revoked key / network down / 500) and report it as a
+    // cache hit. Require real content before it counts as a fallback.
+    if (cached && cached.length > 0) return { models: cached, cached: true };
+    throw err;
+  }
+}
 
 export const useHasProviderKey = (provider: string, enabled = true) => {
   const api = useAppClient();
@@ -54,21 +104,41 @@ export const useRemoveProviderKey = () => {
  * requirement, TS2883) once the query result carries `ProviderModelInfo`
  * (added when `listProviderModels` widened past `{name}`) — annotation-only,
  * no behavior change.
+ *
+ * `purpose` makes DISPLAY-vs-VERIFY a property of the call, not something a
+ * reader has to infer from context:
+ * - `'display'` (default) — a stale cache is an honest, disclosed fallback
+ *   (the model picker, the Settings row).
+ * - `'verify'` — anything gating forward progress on "this key/config
+ *   works" (onboarding's Continue). Never serves cache on failure — see
+ *   `fetchProviderModelsWithCache`. Also gets its OWN query key (a suffix,
+ *   still matched by the existing `['ai','models','provider-models',
+ *   provider]` invalidation prefix used elsewhere) so a `'verify'` mount can
+ *   never inherit a `'display'` mount's cache-served result for the same
+ *   provider + base URL via React Query's own (unrelated) staleTime cache.
  */
 export const useListProviderModels = (
   provider: string,
   enabled = true,
-  baseUrl?: string
-): UseQueryResult<ProviderModelInfo[], Error> => {
+  baseUrl?: string,
+  purpose: 'display' | 'verify' = 'display'
+): UseQueryResult<ProviderModelListResult, Error> => {
   const api = useAppClient();
   return useQuery({
-    queryKey: [...keys.ai.models, 'provider-models', provider, baseUrl ?? ''],
-    queryFn: () => api.ai.listProviderModels({ provider, baseUrl }),
+    queryKey:
+      purpose === 'verify'
+        ? [...keys.ai.models, 'provider-models', provider, baseUrl ?? '', 'verify']
+        : [...keys.ai.models, 'provider-models', provider, baseUrl ?? ''],
+    queryFn: () =>
+      fetchProviderModelsWithCache(api, provider, baseUrl, {
+        allowCacheFallback: purpose === 'display',
+      }),
     enabled: enabled && provider !== 'ollama',
     staleTime: QUERY_TIMES.VERY_LONG,
-    // A rejection now means "no key / network error / bad response" — not
-    // transient, so retrying just re-pays the backend's own timeout for no
-    // gain (see ModelSelector's `modelQueries` for the matching rationale).
+    // A rejection now means "no key / network error / bad response" AND (for
+    // `'display'`) no cached list to fall back to either — not transient, so
+    // retrying just re-pays the backend's own timeout for no gain (see
+    // ModelSelector's `modelQueries` for the matching rationale).
     retry: false,
   });
 };
@@ -76,7 +146,10 @@ export const useListProviderModels = (
 /**
  * One-shot provider-model fetch (e.g. to verify a key right after saving it),
  * routed through the service layer rather than calling `api.ai.*` directly.
- * Primes the matching `useListProviderModels` cache on success.
+ * Primes the matching `useListProviderModels` cache on success. Deliberately
+ * NOT cache-fallback-aware like `useListProviderModels` — this verifies a
+ * freshly saved key, so a failure must surface loudly rather than silently
+ * serve a possibly-stale list left over from a different key.
  *
  * Explicit return type for the same TS2883 reason as `useListProviderModels`
  * above — annotation-only, no behavior change.
@@ -92,7 +165,11 @@ export const useListProviderModelsLazy = (): UseMutationResult<
     mutationFn: ({ provider, baseUrl }: { provider: string; baseUrl?: string }) =>
       api.ai.listProviderModels({ provider, baseUrl }),
     onSuccess: (models, { provider, baseUrl }) => {
-      qc.setQueryData([...keys.ai.models, 'provider-models', provider, baseUrl ?? ''], models);
+      writeModelListCache(provider, baseUrl, models);
+      qc.setQueryData([...keys.ai.models, 'provider-models', provider, baseUrl ?? ''], {
+        models,
+        cached: false,
+      } satisfies ProviderModelListResult);
     },
   });
 };

@@ -1,5 +1,6 @@
 import { Bot, CheckCircle2, Key, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 
+import type { ProviderModelInfo } from '@ajh/shared';
 import { Button } from '@ajh/ui';
 
 import type { ProviderMeta } from '@/lib/ai-providers/provider-meta';
@@ -20,7 +21,13 @@ interface Props {
   isTesting?: boolean;
   providerModel: string;
   ollamaModels: Model[];
-  expandedModels: Array<{ name: string }>;
+  expandedModels: ProviderModelInfo[];
+  /** Cloud/CLI model list still loading for the expanded row. */
+  expandedModelsLoading: boolean;
+  /** `expandedModels` was served from the local last-good cache (live fetch failed). */
+  expandedModelsCached: boolean;
+  /** Live fetch failed AND no cache was available — the real failure message. */
+  expandedModelsError?: string;
   loadingOllama: boolean;
   pulling: string | null;
   apiKeyInput: string;
@@ -52,6 +59,9 @@ export function ProviderRow({
   providerModel,
   ollamaModels,
   expandedModels,
+  expandedModelsLoading,
+  expandedModelsCached,
+  expandedModelsError,
   loadingOllama,
   pulling,
   apiKeyInput,
@@ -164,6 +174,9 @@ export function ProviderRow({
               isSaving={isSaving}
               providerModel={providerModel}
               expandedModels={expandedModels}
+              expandedModelsLoading={expandedModelsLoading}
+              expandedModelsCached={expandedModelsCached}
+              expandedModelsError={expandedModelsError}
               apiKeyInput={apiKeyInput}
               showKey={showKey}
               baseUrlInput={baseUrlInput}
@@ -176,6 +189,7 @@ export function ProviderRow({
               onSetActive={onSetActive}
               isActive={isActive}
               onOpenDocs={onOpenDocs}
+              onRecheck={onRecheck}
             />
           )}
         </div>
