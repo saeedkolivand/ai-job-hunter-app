@@ -255,7 +255,12 @@ async fn photon_at(endpoint: &str, query: &str, timeout: Duration) -> Vec<Value>
         return vec![];
     }
 
-    match response.json::<Value>().await {
+    match crate::net::http::read_json_capped::<Value>(
+        response,
+        crate::net::http::DEFAULT_MAX_BODY_BYTES,
+    )
+    .await
+    {
         Ok(body) => photon_suggestions(&body),
         Err(e) => {
             tracing::debug!("geocode: photon body was not valid json: {e}");

@@ -37,8 +37,9 @@ export function DownloadCards({
           </a>
         </div>
         <p className="dl-note">
-          macOS says it&apos;s &quot;damaged&quot;? It isn&apos;t — just unsigned. Clear the
-          quarantine flag once:
+          macOS says it&apos;s &quot;damaged&quot;? It isn&apos;t — just unsigned. Open the{' '}
+          <b>Terminal</b> app (press ⌘-Space, type &quot;Terminal&quot;, hit Enter) and run this
+          once to clear the quarantine flag:
           <br />
           <code
             className="copy-cmd"

@@ -1105,6 +1105,44 @@ async fn list_models_transport_errors_when_page_two_is_malformed() {
 }
 
 #[tokio::test]
+async fn list_models_transport_preserves_provider_context_on_a_non_json_page_two_body() {
+    // Regression pin: the `.await??` rewrite in 70738c63 dropped the
+    // "{name}: parse: " context and flipped this from `Provider` to `Parse`
+    // (`error.rs`'s `From<serde_json::Error>`) — a change to the renderer-
+    // visible error the sweep never intended. Unlike the "malformed shape"
+    // test above (valid JSON, wrong fields — caught by `parse_model_page`),
+    // this body isn't JSON at all, so it fails inside `read_json_capped`
+    // itself, exercising the exact line that regressed.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json at all"))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a non-JSON page 2 body must reject the whole fetch");
+    assert!(matches!(err, AppError::Provider(_)));
+    assert_eq!(
+        err.to_string(),
+        "anthropic: parse: response body did not match the expected schema"
+    );
+}
+
+#[tokio::test]
 async fn list_models_transport_errors_when_the_provider_reports_a_stalled_cursor() {
     // `has_more: true` with the SAME `last_id` twice: the provider claims
     // more data exists but gives no way to reach it. The exact regression

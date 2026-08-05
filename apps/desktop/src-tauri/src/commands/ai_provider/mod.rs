@@ -850,9 +850,33 @@ pub fn resolve(id: ProviderId, base_url: Option<String>) -> Box<dyn AiProvider> 
     }
 }
 
-/// Parse + resolve in one step (used by the settings commands).
+/// Parse + resolve in one step — the single entry point for the
+/// renderer-facing probe commands (`ai_test_provider_key`/
+/// `ai_list_provider_models`/`ai_model_capabilities`), each of which hands it
+/// a `base_url` straight off the wire. Applies the same two `base_url` rules
+/// [`crate::ai_config::AiConfigStore::validate_settings`] applies to a
+/// *persisted* value, so a probe gets the identical floor: `base_url` is
+/// inert for egress on every provider except `OpenAiCompatible` —
+/// [`resolve`] itself ignores it elsewhere — so it is dropped to `None`
+/// rather than validated (mirrors `validate_settings`' scrub) before a
+/// surviving value is checked with
+/// [`crate::net::ssrf::validate_provider_base_url`] (rejects a non-`http(s)`
+/// scheme, a missing host, or the cloud-metadata IP literal). Without this
+/// the probe path — unlike the setter — sent an unvalidated renderer string
+/// straight to `resolve`'s network call.
 pub fn resolve_by_name(name: &str, base_url: Option<String>) -> AppResult<Box<dyn AiProvider>> {
-    Ok(resolve(ProviderId::parse(name)?, base_url))
+    let provider_id = ProviderId::parse(name)?;
+    let base_url = if matches!(provider_id, ProviderId::OpenAiCompatible) {
+        base_url
+            .map(|u| u.trim().to_string())
+            .filter(|u| !u.is_empty())
+    } else {
+        None
+    };
+    if let Some(ref u) = base_url {
+        crate::net::ssrf::validate_provider_base_url(u)?;
+    }
+    Ok(resolve(provider_id, base_url))
 }
 
 /// Discover a reachable local chat model for `provider_id`.

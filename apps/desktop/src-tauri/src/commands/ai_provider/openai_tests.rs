@@ -501,6 +501,37 @@ async fn list_models_transport_errors_on_a_non_json_200_body() {
     assert!(matches!(err, AppError::Provider(_)));
 }
 
+/// Proves `list_models_transport` actually routes its 200-body read through
+/// `crate::net::http::read_json_capped` (fix for the "44 unbounded reads in
+/// the AI adapters" hardening pass) rather than a bare `resp.json()`: a body
+/// over `DEFAULT_MAX_BODY_BYTES` (8 MB) must reject, not buffer unbounded
+/// into memory. wiremock auto-computes a real `Content-Length` for
+/// `set_body_string`, so this exercises the cheap pre-check the same way
+/// `net::http`'s own `read_text_capped_returns_the_body_under_the_cap`
+/// sibling test proves the streaming guard — see that module for the
+/// `Transfer-Encoding: chunked` variant that forces the streaming path
+/// instead.
+#[tokio::test]
+async fn list_models_transport_rejects_a_response_over_the_body_cap() {
+    let server = MockServer::start().await;
+    let oversized = "x".repeat(crate::net::http::DEFAULT_MAX_BODY_BYTES + 1);
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(oversized))
+        .mount(&server)
+        .await;
+
+    let client = OpenAiClient::new(ProviderId::OpenAi, Some(server.uri()));
+    let err = client
+        .list_models_transport(Some("dummy-key"))
+        .await
+        .expect_err("a body over the cap must reject, never buffer unbounded");
+    assert!(
+        format!("{err}").to_lowercase().contains("too large"),
+        "expected a size-cap error, got: {err}"
+    );
+}
+
 #[tokio::test]
 async fn list_models_transport_errors_on_a_bare_array_200_body() {
     // Well-formed JSON, but not the `{ "data": [...] }` envelope — a deployment

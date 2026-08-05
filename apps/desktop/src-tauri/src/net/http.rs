@@ -15,9 +15,14 @@
 //!   network behavior to reason about.
 //! * [`build_client`] for the one stateful case: a per-session cookie jar
 //!   (board login). Same rustls/pool/UA base.
+//! * [`read_text_capped`]/[`read_bytes_capped`]/[`read_json_capped`] bound every
+//!   response read in the fleet — a hostile/misconfigured endpoint can't drive
+//!   the process into OOM by streaming an unbounded body.
 
 use std::sync::Arc;
 use std::time::Duration;
+
+use futures::StreamExt as _;
 
 /// Default desktop user-agent. Individual requests may override the `User-Agent`
 /// header (e.g. geocoding identifies itself to Photon).
@@ -122,6 +127,140 @@ pub fn build_client(cfg: ClientConfig) -> reqwest::Result<reqwest::Client> {
         builder = builder.cookie_provider(jar);
     }
     builder.build()
+}
+
+/// Default byte cap for [`read_text_capped`]/[`read_bytes_capped`]/
+/// [`read_json_capped`] when a caller has no budget of its own. Matches
+/// `scraping::http::MAX_BYTES` (kept separately there — that module predates
+/// this helper and layers its own per-request `FetchOptions::max_bytes`
+/// override on top).
+pub(crate) const DEFAULT_MAX_BODY_BYTES: usize = 8 * 1024 * 1024; // 8 MB
+
+/// Shared accumulation guard behind [`read_bytes_capped`] (and therefore
+/// [`read_text_capped`]/[`read_json_capped`], both built on it): a cheap
+/// `Content-Length` pre-check for honest servers, then a streamed
+/// accumulation that aborts the moment the RUNNING TOTAL exceeds `cap` — not
+/// merely a single chunk's length — so a server that lies about or omits
+/// `Content-Length`, or that simply dribbles an oversized body out in chunks
+/// each individually under `cap`, still can't drive us into OOM. Generic over
+/// the chunk type (`B: AsRef<[u8]>`) so it is unit-testable against a
+/// synthetic `futures::stream::iter` of plain `Vec<u8>` chunks without
+/// constructing a real `reqwest::Response`.
+async fn accumulate_capped<S, B>(
+    mut stream: S,
+    content_length: Option<u64>,
+    cap: usize,
+) -> crate::error::AppResult<Vec<u8>>
+where
+    S: futures::Stream<Item = reqwest::Result<B>> + Unpin,
+    B: AsRef<[u8]>,
+{
+    use crate::error::AppError;
+
+    if let Some(content_length) = content_length {
+        if content_length > cap as u64 {
+            return Err(AppError::Validation("Response too large".to_string()));
+        }
+    }
+
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        // .without_url() — reqwest::Error's Display embeds the full request URL
+        // (incl. query string), which can carry secrets like an API token/key;
+        // strip it before it reaches an AppError that may cross IPC → renderer.
+        let chunk = chunk.map_err(|e| AppError::Network(e.without_url().to_string()))?;
+        let chunk = chunk.as_ref();
+        if buf.len().saturating_add(chunk.len()) > cap {
+            return Err(AppError::Validation("Response too large".to_string()));
+        }
+        buf.extend_from_slice(chunk);
+    }
+
+    Ok(buf)
+}
+
+/// Read a response body as raw bytes, refusing to buffer more than `cap`
+/// bytes. The fleet-wide chokepoint for bounded body reads — `pub(crate)` so
+/// every subsystem holding a `reqwest::Response` (scrapers via
+/// [`fetch_text`](crate::scraping::http::fetch_text), the SSRF-guarded
+/// [`get_guarded`]/[`get_guarded_following_redirects`] for attacker-influenced
+/// URLs, geocoding, profile import, the LinkedIn client's manual gzip decode,
+/// …) can bound its read without buffering the whole thing first. See
+/// [`accumulate_capped`] for the guard itself.
+pub(crate) async fn read_bytes_capped(
+    response: reqwest::Response,
+    cap: usize,
+) -> crate::error::AppResult<Vec<u8>> {
+    let content_length = response.content_length();
+    accumulate_capped(response.bytes_stream(), content_length, cap).await
+}
+
+/// Read a response body as text, refusing to buffer more than `cap` bytes
+/// (via [`read_bytes_capped`]). The charset comes from `Content-Type`,
+/// mirroring what `reqwest::Response::text()` does internally, so German
+/// umlauts / € decode correctly regardless of the cap.
+pub(crate) async fn read_text_capped(
+    response: reqwest::Response,
+    cap: usize,
+) -> crate::error::AppResult<String> {
+    let encoding = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|ct| ct.to_str().ok())
+        .and_then(|ct| {
+            // Extract charset=... from e.g. "text/html; Charset="ISO-8859-1""
+            // Key match is case-insensitive; strip surrounding quotes from value.
+            ct.split(';').find_map(|part| {
+                let p = part.trim();
+                let eq = p.find('=')?;
+                if !p[..eq].trim().eq_ignore_ascii_case("charset") {
+                    return None;
+                }
+                let cs = p[eq + 1..].trim().trim_matches(|c| c == '"' || c == '\'');
+                Some(cs.to_ascii_lowercase())
+            })
+        })
+        .and_then(|cs| encoding_rs::Encoding::for_label(cs.as_bytes()))
+        .unwrap_or(encoding_rs::UTF_8);
+
+    let buf = read_bytes_capped(response, cap).await?;
+    let (cow, _enc, _had_errors) = encoding.decode(&buf);
+    Ok(cow.into_owned())
+}
+
+/// Read + parse a JSON body via [`read_bytes_capped`] + `serde_json::from_slice`
+/// — matching `reqwest::Response::json()`'s own UTF-8-only semantics (RFC 8259
+/// §8.1 requires JSON-for-interchange to be UTF-8) instead of sniffing
+/// `Content-Type`'s charset the way [`read_text_capped`] does for HTML/text.
+/// A gateway mislabelling a UTF-8 JSON body's charset must not corrupt it via
+/// the wrong decode, and a charset `encoding_rs` maps to the replacement
+/// encoding (`iso-2022-jp`, `hz-gb-2312`, …) must not blank an otherwise-valid
+/// body out to a single U+FFFD.
+///
+/// On a schema/parse failure, the serde detail — and the body itself — never
+/// reach the returned error, only a generic message does; the detail (line,
+/// column, kind — never the body content) is logged instead. Mirrors
+/// `scraping::http::fetch_json`'s schema-drift handling, generalized to any
+/// caller holding a `reqwest::Response` (not just the scraper `fetch_text`
+/// path).
+pub(crate) async fn read_json_capped<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+    cap: usize,
+) -> crate::error::AppResult<T> {
+    use crate::error::AppError;
+
+    let bytes = read_bytes_capped(response, cap).await?;
+    serde_json::from_slice::<T>(&bytes).map_err(|e| {
+        log::warn!(
+            "[net::http] read_json_capped: response did not match the expected schema \
+             (line={}, column={}, kind={:?}); body_len={}",
+            e.line(),
+            e.column(),
+            e.classify(),
+            bytes.len()
+        );
+        AppError::Parse("response body did not match the expected schema".to_string())
+    })
 }
 
 /// Build a one-off client for [`get_guarded`]: same rustls/pool/UA base as
@@ -522,5 +661,100 @@ mod tests {
             debug_msg.contains("blocked redirect"),
             "error must reflect the redirect-policy block specifically, got: {debug_msg}"
         );
+    }
+
+    // ── read_text_capped / read_bytes_capped / read_json_capped ────────────────
+    // Moved here from `scraping::http` (this is now the fleet-wide chokepoint).
+
+    #[tokio::test]
+    async fn read_text_capped_returns_the_body_under_the_cap() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("Hello World"))
+            .mount(&mock_server)
+            .await;
+
+        let response = reqwest::get(mock_server.uri()).await.unwrap();
+        assert_eq!(
+            read_text_capped(response, 1024).await.unwrap(),
+            "Hello World"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_bytes_capped_returns_the_body_under_the_cap() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![1, 2, 3, 4]))
+            .mount(&mock_server)
+            .await;
+
+        let response = reqwest::get(mock_server.uri()).await.unwrap();
+        let bytes = read_bytes_capped(response, 64).await.unwrap();
+        assert_eq!(bytes, vec![1, 2, 3, 4]);
+    }
+
+    /// The former `read_text_capped`/`read_bytes_capped` "rejects over the cap"
+    /// tests each fed a SINGLE 4096-byte chunk against a 64-byte cap — the
+    /// first (and only) chunk already exceeded the cap on its own, so the
+    /// assertion passed identically against a wrong `if chunk.len() > cap`
+    /// guard and never actually exercised the running-total accumulation
+    /// (`buf.len().saturating_add(chunk.len()) > cap`). `read_text_capped` and
+    /// `read_bytes_capped` now both delegate their entire size guard to
+    /// [`accumulate_capped`], so testing it once here covers both — driven
+    /// directly with a synthetic multi-chunk stream (no network, no
+    /// `reqwest::Response` construction needed) so the chunk boundaries are
+    /// deterministic rather than at the mercy of OS/TCP fragmentation.
+    #[tokio::test]
+    async fn accumulate_capped_rejects_when_running_total_exceeds_cap_across_multiple_chunks() {
+        // Three 40-byte chunks: no SINGLE chunk exceeds the 100-byte cap, so a
+        // guard changed to a per-chunk check (`chunk.len() > cap`) would let
+        // all 120 bytes through untouched. Only the running-total guard
+        // (`buf.len().saturating_add(chunk.len()) > cap`) rejects this — it
+        // fires while accumulating the 3rd chunk (40 + 40 + 40 = 120 > 100).
+        let chunks: Vec<reqwest::Result<Vec<u8>>> =
+            vec![Ok(vec![0u8; 40]), Ok(vec![0u8; 40]), Ok(vec![0u8; 40])];
+        let stream = futures::stream::iter(chunks);
+
+        let err = accumulate_capped(stream, None, 100).await.expect_err(
+            "120 bytes across 3 chunks of 40 must be rejected even though no single \
+             chunk exceeds the 100-byte cap",
+        );
+        assert!(
+            matches!(&err, AppError::Validation(msg) if msg.contains("too large")),
+            "expected a size Validation error, got: {err:?}"
+        );
+    }
+
+    /// Mirrors `scraping::http::test::test_fetch_json_invalid` — a body that
+    /// doesn't deserialize into the target type returns the static no-leak
+    /// `AppError::Parse` message, never the serde detail or the body itself.
+    #[tokio::test]
+    async fn read_json_capped_returns_generic_error_on_parse_failure() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .mount(&mock_server)
+            .await;
+
+        let response = reqwest::get(mock_server.uri()).await.unwrap();
+        let err = read_json_capped::<serde_json::Value>(response, DEFAULT_MAX_BODY_BYTES)
+            .await
+            .expect_err("invalid json must fail to parse");
+        match err {
+            AppError::Parse(msg) => {
+                assert_eq!(msg, "response body did not match the expected schema");
+            }
+            other => panic!("expected a Parse error on schema drift, got {other:?}"),
+        }
     }
 }

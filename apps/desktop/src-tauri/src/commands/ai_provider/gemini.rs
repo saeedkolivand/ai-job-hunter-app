@@ -679,11 +679,17 @@ impl GeminiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
         let text = join_parts_text(&data);
         if text.is_empty() {
@@ -721,11 +727,17 @@ impl GeminiClient {
         .map_err(|e| format!("Gemini unreachable: {e}"))?;
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
         let vector: Vec<f64> = data
             .get("embedding")
@@ -811,12 +823,20 @@ impl GeminiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             tracing::warn!("gemini research {status}: {body_text}");
             return Ok(String::new());
         }
-        let data: Value = match resp.json().await {
+        let data: Value = match crate::net::http::read_json_capped(
+            resp,
+            crate::net::http::DEFAULT_MAX_BODY_BYTES,
+        )
+        .await
+        {
             Ok(v) => v,
             Err(_) => {
                 trace.end(Some(status.as_u16()), false);
@@ -869,14 +889,28 @@ impl GeminiClient {
                 .map_err(|e| AppError::Network(format!("{name}: request failed: {e}")))?;
             let status = resp.status();
             if !status.is_success() {
-                let body_text = bounded(deadline, name, resp.text())
-                    .await?
-                    .unwrap_or_default();
+                let body_text = bounded(
+                    deadline,
+                    name,
+                    crate::net::http::read_text_capped(
+                        resp,
+                        crate::net::http::DEFAULT_MAX_BODY_BYTES,
+                    ),
+                )
+                .await?
+                .unwrap_or_default();
                 return Err(friendly_api_error(self.id(), status, &body_text));
             }
-            let body: Value = bounded(deadline, name, resp.json())
-                .await?
-                .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
+            let body: Value = bounded(
+                deadline,
+                name,
+                crate::net::http::read_json_capped::<Value>(
+                    resp,
+                    crate::net::http::DEFAULT_MAX_BODY_BYTES,
+                ),
+            )
+            .await?
+            .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
             let (mut page, next) = parse_model_page(&body)?;
             all.append(&mut page);
             match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &page_token, next) {
@@ -970,7 +1004,12 @@ impl AiProvider for GeminiClient {
 
         let status = response.status();
         if !status.is_success() {
-            let body_text = response.text().await.unwrap_or_default();
+            let body_text = crate::net::http::read_text_capped(
+                response,
+                crate::net::http::DEFAULT_MAX_BODY_BYTES,
+            )
+            .await
+            .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
         }
@@ -1132,7 +1171,10 @@ impl AiProvider for GeminiClient {
         if status.is_success() {
             Ok(())
         } else {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             Err(friendly_api_error(self.id(), status, &body_text))
         }
     }
@@ -1205,11 +1247,17 @@ impl AiProvider for GeminiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(ProviderId::Gemini, status, &body_text));
         }
-        let data: Value = resp.json().await.map_err(|e| format!("parse: {e}"))?;
+        let data: Value =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| format!("parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
         let turn = parse_gemini_turn(&data);
         // Mirror `complete()`'s empty-response guard: a missing/blocked candidate

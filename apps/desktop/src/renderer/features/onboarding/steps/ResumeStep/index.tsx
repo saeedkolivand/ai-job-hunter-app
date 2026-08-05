@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, FileText, Loader2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useRef, useState } from 'react';
 
-import type { ContactFieldConflict, DocumentRecord } from '@ajh/shared';
+import type { ContactFieldConflict } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn, FloatingIcon, useNotification, withDelay } from '@ajh/ui';
 
@@ -44,9 +44,7 @@ export function ResumeStep({ onBack, onNext, direction, stepIndex, totalSteps }:
   const handleFileUpload = async (file: File) => {
     try {
       const result = await importFile(file);
-      const first = (documentsRaw as (DocumentRecord & { _id?: string })[]).find(Boolean);
-      const id = first?._id ?? first?.id;
-      if (id) setResume({ defaultId: String(id), autoIndex: true, autoParse: true });
+      if (result.id) setResume({ defaultId: result.id, autoIndex: true, autoParse: true });
       notify.success({ message: t('onboarding.resume.uploaded') });
       if (result.contactConflicts?.length) {
         setConflicts(result.contactConflicts);
