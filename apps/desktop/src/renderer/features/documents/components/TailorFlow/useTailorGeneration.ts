@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { useTranslation } from '@ajh/translations';
+import { useNotification } from '@ajh/ui';
 
 import {
   buildFilename,
@@ -84,6 +85,7 @@ export function useTailorGeneration({
   letterLayoutId,
 }: Params) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const api = useAppClient();
   const qc = useQueryClient();
   const updateAiGeneration = useUpdateAiGeneration();
@@ -235,31 +237,42 @@ export function useTailorGeneration({
       topRequirements: [],
     };
     const name = buildFilename(fileMeta, docType, fmt);
-    if (fmt === 'pdf')
-      await exportPDF(
-        output,
-        name,
+    try {
+      if (fmt === 'pdf')
+        await exportPDF(
+          output,
+          name,
+          docType,
+          meta ?? undefined,
+          templateId,
+          atsMode,
+          undefined,
+          accent,
+          letterLayoutId
+        );
+      else if (fmt === 'docx')
+        await exportDOCX(
+          output,
+          name,
+          docType,
+          meta ?? undefined,
+          templateId,
+          atsMode,
+          undefined,
+          accent,
+          letterLayoutId
+        );
+      else exportTXT(output, name);
+    } catch (err) {
+      console.error('[export] failed', {
+        format: fmt,
         docType,
-        meta ?? undefined,
-        templateId,
-        atsMode,
-        undefined,
-        accent,
-        letterLayoutId
-      );
-    else if (fmt === 'docx')
-      await exportDOCX(
-        output,
-        name,
-        docType,
-        meta ?? undefined,
-        templateId,
-        atsMode,
-        undefined,
-        accent,
-        letterLayoutId
-      );
-    else exportTXT(output, name);
+        message: err instanceof Error ? err.message : String(err),
+      });
+      notify.error({
+        message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),
+      });
+    }
   };
 
   return {

@@ -2,7 +2,7 @@ import { Download, FileText, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Button, ModalShell } from '@ajh/ui';
+import { Button, ModalShell, useNotification } from '@ajh/ui';
 
 import { buildFilename, type GenerationMeta } from '@/lib/generate';
 
@@ -24,6 +24,7 @@ const FORMATS: { id: Fmt; descKey: string }[] = [
 
 export function ExportModal({ open, onClose, meta, docType, onExport }: Props) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const [loading, setLoading] = useState<Fmt | null>(null);
 
   const handle = async (fmt: Fmt) => {
@@ -32,6 +33,15 @@ export function ExportModal({ open, onClose, meta, docType, onExport }: Props) {
     try {
       await onExport(fmt);
       onClose();
+    } catch (err) {
+      console.error('[export] failed', {
+        format: fmt,
+        docType,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      notify.error({
+        message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),
+      });
     } finally {
       setLoading(null);
     }

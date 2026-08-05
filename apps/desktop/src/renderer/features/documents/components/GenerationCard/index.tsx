@@ -209,6 +209,15 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
       } else {
         exportTXT(text, filename.replace('.txt', ''));
       }
+    } catch (err) {
+      console.error('[export] failed', {
+        format: exportFormat,
+        docType,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      notify.error({
+        message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),
+      });
     } finally {
       setExporting(null);
     }
