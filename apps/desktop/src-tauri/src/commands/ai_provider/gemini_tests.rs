@@ -14,13 +14,62 @@ use super::{
     build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
     gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage,
     parse_gemini_frames, parse_gemini_parts, parse_gemini_turn, parse_gemini_usage,
-    validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
+    parse_model_page, validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
     EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
-use serde_json::json;
+use serde_json::{json, Value};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A minimal raw-socket HTTP/1.1 server that writes each response's status
+/// line + headers immediately, then sleeps `body_delay` BEFORE writing that
+/// response's body. `wiremock::ResponseTemplate::set_delay` cannot build
+/// this: its delay elapses entirely BEFORE any bytes (headers included)
+/// reach the socket, so it only ever exercises `req.send()`'s own timeout —
+/// never a `resp.text()`/`resp.json()` blocked on a body that's slow to
+/// arrive AFTER `send()` already resolved, which is the actual gap a
+/// cumulative deadline has to cover. Serves `bodies` in order, one per
+/// accepted connection (`Connection: close`, so each page fetch opens a new
+/// one) — `bodies[i].1` is that page's body-write delay.
+async fn slow_body_server(bodies: Vec<(String, Duration)>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        for (body, body_delay) in bodies {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            // Drain the request up to the blank line ending its headers —
+            // contents don't matter, only connection ORDER distinguishes pages.
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => break,
+                    Ok(_) => continue,
+                }
+            }
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(headers.as_bytes()).await;
+            let _ = socket.flush().await;
+            if !body_delay.is_zero() {
+                tokio::time::sleep(body_delay).await;
+            }
+            let _ = socket.write_all(body.as_bytes()).await;
+            let _ = socket.flush().await;
+        }
+    });
+    format!("http://{addr}")
+}
 
 fn base_request() -> AiGenerateRequest {
     AiGenerateRequest {
@@ -143,11 +192,22 @@ fn blank_or_missing_key_is_rejected_with_unauthorized() {
 }
 
 #[test]
-fn present_key_passes_through_untrimmed() {
-    // A real key is returned verbatim (surrounding content preserved, only blank
-    // rejected) so the request uses exactly what the user stored.
+fn present_key_is_returned_unchanged_when_already_clean() {
     assert_eq!(
         validate_gemini_key(Some("AIza-secret".to_string())).unwrap(),
+        "AIza-secret"
+    );
+}
+
+#[test]
+fn validate_gemini_key_trims_the_returned_key_not_just_the_checked_one() {
+    // A pasted key with a trailing space/newline must reach the
+    // `x-goog-api-key` header TRIMMED — checking `k.trim().is_empty()` but
+    // returning the padded `k` is the exact bug: a trailing space just
+    // 401s, an embedded `\n` makes the header value invalid and the request
+    // never builds at all.
+    assert_eq!(
+        validate_gemini_key(Some(" AIza-secret \n".to_string())).unwrap(),
         "AIza-secret"
     );
 }
@@ -590,4 +650,289 @@ fn capabilities_effort_levels_matches_the_free_function() {
         GeminiClient.effort_levels("gemini-3-pro-preview"),
         gemini_effort_levels("gemini-3-pro-preview")
     );
+}
+
+// ── list_models ──────────────────────────────────────────────────────────────
+
+#[test]
+fn parse_model_page_strips_the_models_prefix() {
+    let body = json!({
+        "models": [
+            { "name": "models/gemini-3-pro" },
+            { "name": "models/gemini-2.5-flash" },
+            { "name": "tunedModels/not-a-real-model" },
+        ]
+    });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    let names: Vec<String> = page
+        .into_iter()
+        .map(|v| v["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, vec!["gemini-3-pro", "gemini-2.5-flash"]);
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_does_not_filter_out_preview_ids() {
+    // Regression guard for the `/v1` -> `/v1beta` switch: `/v1beta` is the ONLY
+    // version that lists `-preview`/experimental models (e.g. the curated
+    // Pro-tier default in `provider-meta.ts` is a `-preview` id) — the parser
+    // must never re-introduce a filter that drops them.
+    let body = json!({
+        "models": [{ "name": "models/gemini-3.1-pro-preview" }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gemini-3.1-pro-preview" })]);
+}
+
+#[test]
+fn parse_model_page_populates_display_name_and_context_length_when_present() {
+    let body = json!({
+        "models": [{
+            "name": "models/gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "inputTokenLimit": 1_000_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(
+        page,
+        vec![json!({
+            "name": "gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "contextLength": 1_000_000,
+        })]
+    );
+}
+
+#[test]
+fn parse_model_page_never_populates_created_at_gemini_does_not_return_one() {
+    // Gemini's `/v1beta/models` reports no creation timestamp at all —
+    // `createdAt` must be ABSENT from the entry, never defaulted to some
+    // sentinel, even when every other optional field IS present.
+    let body = json!({
+        "models": [{
+            "name": "models/gemini-3-pro",
+            "displayName": "Gemini 3 Pro",
+            "inputTokenLimit": 1_000_000,
+        }]
+    });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert!(page[0].get("createdAt").is_none());
+}
+
+#[test]
+fn parse_model_page_omits_optional_fields_the_provider_does_not_return_and_keeps_name_unchanged() {
+    // `name` must stay byte-identical to the pre-widening shape — a stored
+    // model preference matches against it.
+    let body = json!({ "models": [{ "name": "models/gemini-2.5-flash" }] });
+    let (page, _) = parse_model_page(&body).unwrap();
+    assert_eq!(page, vec![json!({ "name": "gemini-2.5-flash" })]);
+}
+
+#[test]
+fn parse_model_page_ok_empty_on_genuinely_empty_catalogue() {
+    let body = json!({ "models": [] });
+    let (page, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(page, Vec::<Value>::new());
+    assert_eq!(cursor, None);
+}
+
+#[test]
+fn parse_model_page_errors_when_models_field_is_missing() {
+    let body = json!({ "unexpected": "shape" });
+    assert!(matches!(
+        parse_model_page(&body),
+        Err(AppError::Provider(_))
+    ));
+}
+
+#[test]
+fn parse_model_page_carries_a_non_empty_next_page_token() {
+    let body = json!({
+        "models": [{ "name": "models/gemini-2.5-flash" }],
+        "nextPageToken": "page-2-token",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, Some("page-2-token".to_string()));
+}
+
+#[test]
+fn parse_model_page_treats_an_empty_next_page_token_as_the_last_page() {
+    let body = json!({
+        "models": [{ "name": "models/gemini-2.5-flash" }],
+        "nextPageToken": "",
+    });
+    let (_, cursor) = parse_model_page(&body).unwrap();
+    assert_eq!(cursor, None);
+}
+
+// `advance_cursor`/`PaginationStep`/`pagination_step` are shared, generic
+// helpers now — see `ai_provider::mod`'s test module for their coverage.
+// Duplicating them here per-adapter is exactly the "a rule implemented
+// twice that silently stops agreeing" defect class this codebase keeps
+// paying for; one copy, one set of tests.
+
+// ── list_models_transport (wiremock — the pagination HTTP loop itself,
+// not just pagination_step's pure decision) ─────────────────────────────────
+
+#[tokio::test]
+async fn list_models_transport_propagates_the_cursor_into_the_next_requests_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    // Only matches when `pageToken` carries EXACTLY page 1's
+    // `nextPageToken` — proves the token is wired from the parsed response
+    // into the next request's query, not just decided in the abstract by
+    // `pagination_step`.
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-2.5-flash" }],
+        })))
+        .mount(&server)
+        .await;
+
+    let models = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect("both pages must be fetched, the token propagated between them");
+    assert_eq!(
+        models,
+        vec![
+            json!({ "name": "gemini-3-pro" }),
+            json!({ "name": "gemini-2.5-flash" }),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn list_models_transport_propagates_a_mid_pagination_status_error_instead_of_the_pages_already_collected(
+) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err(
+            "a failure on page 2 must reject the whole fetch, never return page 1's models alone",
+        );
+    // 500 classifies as Network via `friendly_api_error` — not the point of
+    // this test, but asserted so a future change that silently swallows
+    // page 2's error can't slip through.
+    assert!(matches!(err, AppError::Network(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_page_two_is_malformed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "unexpected": "shape" })))
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a malformed page 2 body must reject the whole fetch");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_provider_reports_a_stalled_token() {
+    // A `nextPageToken` present but identical across two pages: the
+    // provider claims more data exists but gives no way to reach it. The
+    // exact regression this whole finding is about — silently treating this
+    // as `Done` and returning the one page collected as `Ok` — must not
+    // happen at the transport level either, not just in the pure
+    // `pagination_step` unit tests.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-stuck",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-stuck"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-stuck",
+        })))
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a stalled token must reject, never silently return the partial catalogue");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
+    // Page 1 responds instantly (well within budget) and reports a token.
+    // Page 2 writes its HEADERS instantly too — `send()` resolves fast — but
+    // stalls its BODY well past the REMAINING budget. A deadline that only
+    // wraps `send()` (the pre-fix bug) would let this succeed late instead
+    // of erroring; only wrapping the body reads too catches it. Verified
+    // (before applying that fix) that this test genuinely fails against the
+    // unfixed transport — it doesn't error at all, it just returns `Ok`
+    // after the full body delay, which is the exact silent-non-enforcement
+    // bug this test exists to catch.
+    let page1 = json!({
+        "models": [{ "name": "models/gemini-3-pro" }],
+        "nextPageToken": "gemini-page1-token",
+    })
+    .to_string();
+    let page2 = json!({ "models": [{ "name": "models/gemini-2.5-flash" }] }).to_string();
+    let base = slow_body_server(vec![
+        (page1, Duration::ZERO),
+        (page2, Duration::from_millis(100)),
+    ])
+    .await;
+
+    let err = GeminiClient
+        .list_models_transport(&base, "dummy-key", Duration::from_millis(40))
+        .await
+        .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
+    assert!(matches!(err, AppError::Network(_)));
 }

@@ -68,6 +68,9 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       queryFn: () => api.ai.listProviderModels({ provider: p, baseUrl: baseUrlFor(p) }),
       enabled: connected.get(p) ?? false,
       staleTime: 300_000,
+      // A rejection (no key / network error / bad response) isn't transient —
+      // don't re-pay the backend's own timeout on every retry, on every mount.
+      retry: false,
     })),
   });
   const cloudModelNames = new Map<AiProvider, string[]>(

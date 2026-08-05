@@ -345,12 +345,15 @@ impl AiProvider for CliAgentClient {
         None
     }
 
-    async fn list_models(&self, _app: &AppHandle) -> Vec<Value> {
-        self.backend
+    async fn list_models(&self, _app: &AppHandle) -> AppResult<Vec<Value>> {
+        // A local CLI agent exposes no network catalogue to fail against — this
+        // is genuinely infallible, unlike every HTTP-backed provider.
+        Ok(self
+            .backend
             .models()
             .iter()
             .map(|m| json!({ "name": m }))
-            .collect()
+            .collect())
     }
 
     async fn test_key(&self, _app: &AppHandle) -> AppResult<()> {

@@ -1,4 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  type UseMutationResult,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+
+import type { ProviderModelInfo } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import type { AiProvider } from '@/store/preferences-schema';
@@ -40,13 +48,28 @@ export const useRemoveProviderKey = () => {
   });
 };
 
-export const useListProviderModels = (provider: string, enabled = true, baseUrl?: string) => {
+/**
+ * Explicit return type: TS can't portably "name" the inferred type across the
+ * `@ajh/shared` workspace-package boundary (an `isolatedDeclarations`-style
+ * requirement, TS2883) once the query result carries `ProviderModelInfo`
+ * (added when `listProviderModels` widened past `{name}`) — annotation-only,
+ * no behavior change.
+ */
+export const useListProviderModels = (
+  provider: string,
+  enabled = true,
+  baseUrl?: string
+): UseQueryResult<ProviderModelInfo[], Error> => {
   const api = useAppClient();
   return useQuery({
     queryKey: [...keys.ai.models, 'provider-models', provider, baseUrl ?? ''],
     queryFn: () => api.ai.listProviderModels({ provider, baseUrl }),
     enabled: enabled && provider !== 'ollama',
     staleTime: QUERY_TIMES.VERY_LONG,
+    // A rejection now means "no key / network error / bad response" — not
+    // transient, so retrying just re-pays the backend's own timeout for no
+    // gain (see ModelSelector's `modelQueries` for the matching rationale).
+    retry: false,
   });
 };
 
@@ -54,8 +77,15 @@ export const useListProviderModels = (provider: string, enabled = true, baseUrl?
  * One-shot provider-model fetch (e.g. to verify a key right after saving it),
  * routed through the service layer rather than calling `api.ai.*` directly.
  * Primes the matching `useListProviderModels` cache on success.
+ *
+ * Explicit return type for the same TS2883 reason as `useListProviderModels`
+ * above — annotation-only, no behavior change.
  */
-export const useListProviderModelsLazy = () => {
+export const useListProviderModelsLazy = (): UseMutationResult<
+  ProviderModelInfo[],
+  Error,
+  { provider: string; baseUrl?: string }
+> => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
