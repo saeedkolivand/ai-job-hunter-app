@@ -284,3 +284,33 @@ describe('AppearanceStep — navigation', () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AppearanceStep — Enter on a focused theme swatch activates THAT swatch, not the wizard', () => {
+  // The scheme/accent controls are `<Button role="radio">` — real
+  // `HTMLButtonElement`s under a radiogroup. OnboardingStepWrapper's global
+  // Enter-key listener is the shared "advance the step" shortcut for every
+  // onboarding step; a keyboard user who tabs to the dark-scheme swatch and
+  // presses Enter is picking a theme, not asking to leave the step. If the
+  // wrapper's listener fired onNext whenever canAdvance is true (which it
+  // always is here — `canAdvance` on this step), Enter would silently skip
+  // straight past this step instead of applying the swatch.
+  it('applies the focused dark-scheme swatch on Enter and does NOT advance', async () => {
+    applyThemeAnimatedSpy.mockClear();
+    const user = userEvent.setup();
+    const { onNext } = renderStep();
+
+    const darkBtn = screen.getByRole('radio', { name: 'settings.appearance.dark' });
+    darkBtn.focus();
+    expect(darkBtn).toHaveFocus();
+
+    await user.keyboard('{Enter}');
+
+    // The swatch's own click fired (theme applied via the real prop)...
+    expect(applyThemeAnimatedSpy).toHaveBeenCalledTimes(1);
+    const call = applyThemeAnimatedSpy.mock.calls.at(0);
+    if (!call) throw new Error('expected applyThemeAnimated call');
+    expect(call[0].scheme).toBe('dark');
+    // ...and the wrapper's global "advance" shortcut did NOT also fire.
+    expect(onNext).not.toHaveBeenCalled();
+  });
+});
