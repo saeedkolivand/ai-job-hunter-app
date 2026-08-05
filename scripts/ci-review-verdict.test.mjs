@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { inlineFindings, ledgerKey } from '../.claude/hooks/review-lib.mjs';
+
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const scriptPath = join(__dirname, 'ci-review-verdict.mjs');
 
@@ -77,5 +79,51 @@ describe('ci-review-verdict sticky comment rendering', () => {
     expect(comment).not.toContain('### 🔴 Critical');
     expect(comment).not.toContain('### 🟠 High');
     expect(comment).not.toContain('### 🟡 Medium');
+  });
+});
+
+// The "📌 Inline findings on the diff" step decides what to pin from these two
+// helpers, so the rules live here rather than in unrunnable workflow YAML.
+describe('inline finding selection', () => {
+  it('pins CRITICAL, HIGH and MEDIUM but leaves LOW to the sticky comment', () => {
+    const picked = inlineFindings([
+      finding({ severity: 'CRITICAL' }),
+      finding({ severity: 'HIGH' }),
+      finding({ severity: 'MEDIUM' }),
+      finding({ severity: 'LOW' }),
+    ]);
+    expect(picked.map((f) => f.severity)).toEqual(['CRITICAL', 'HIGH', 'MEDIUM']);
+  });
+
+  it('skips a pre-existing finding — inline comments are for what the diff introduced', () => {
+    expect(inlineFindings([finding({ severity: 'HIGH', introduced_by_diff: false })])).toEqual([]);
+  });
+
+  it('skips a finding that cannot be anchored, rather than letting the API reject it', () => {
+    // GitHub requires a path AND a line in the diff; a finding missing either
+    // must stay sticky-only instead of 422-ing the post.
+    expect(inlineFindings([finding({ severity: 'HIGH', line: 0 })])).toEqual([]);
+    expect(inlineFindings([finding({ severity: 'HIGH', line: undefined })])).toEqual([]);
+    expect(inlineFindings([finding({ severity: 'HIGH', file: '' })])).toEqual([]);
+  });
+
+  it('keeps a finding whose confidence is below the BLOCKING bar', () => {
+    // Inline is not gated on confidence — that bar decides the merge verdict.
+    // A MEDIUM at 0.5 is still worth showing next to the code it concerns.
+    expect(inlineFindings([finding({ severity: 'MEDIUM', confidence: 0.5 })])).toHaveLength(1);
+  });
+
+  it('gives the same finding a stable key across runs even when its line moves', () => {
+    // This is what stops every push re-posting the same comment: an edit above
+    // a finding shifts its line, and a line-keyed identity would look new.
+    const a = finding({ severity: 'HIGH', file: 'x.ts', line: 42 });
+    const b = finding({ severity: 'HIGH', file: 'x.ts', line: 108 });
+    expect(ledgerKey(a)).toBe(ledgerKey(b));
+  });
+
+  it('gives a different key to a different finding in the same file', () => {
+    const a = finding({ severity: 'HIGH', file: 'x.ts', summary: 'unbounded read' });
+    const b = finding({ severity: 'HIGH', file: 'x.ts', summary: 'missing null check' });
+    expect(ledgerKey(a)).not.toBe(ledgerKey(b));
   });
 });
