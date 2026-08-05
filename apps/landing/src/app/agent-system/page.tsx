@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — The Agent Fleet',
     description:
       'Paired author + critic per domain. The .claude/ system that builds and reviews this repo.',

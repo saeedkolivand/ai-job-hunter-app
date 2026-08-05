@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Privacy Policy',
     description:
       'No accounts, no behavioural analytics. Local-first, with opt-out crash reporting. How your data is handled.',

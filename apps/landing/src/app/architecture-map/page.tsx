@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Architecture Map',
     description: 'Interactive architecture map — every node maps to a real file.',
   },

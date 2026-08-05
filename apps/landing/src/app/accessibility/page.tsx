@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'AI Job Hunter — Accessibility Statement',
     description: 'WCAG 2.2 AA conformance status, known barriers, and how to report one.',
   },

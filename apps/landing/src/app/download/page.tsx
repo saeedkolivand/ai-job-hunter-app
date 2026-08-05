@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'TAKE THE APP.',
     description: 'Get the desktop app for macOS, Windows, and Linux. Plus the browser extension.',
   },

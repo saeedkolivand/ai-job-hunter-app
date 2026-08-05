@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'SEE THE WHOLE PIPELINE.',
     description: 'Click through every layer, from job board to finished application.',
   },
