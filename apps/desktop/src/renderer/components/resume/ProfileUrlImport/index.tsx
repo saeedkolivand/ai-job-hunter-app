@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, useNotification } from '@ajh/ui';
 
-import { isProfileAuthError, isSupportedProfileUrl } from '@/components/resume/profile-url';
+import { isSupportedProfileUrl } from '@/components/resume/profile-url';
 import { ProfileUrlInput } from '@/components/resume/ProfileUrlInput';
 import { useImportDocument, useProfileImport } from '@/services';
 
@@ -16,8 +16,10 @@ interface Props {
 /**
  * Import a resume from a public LinkedIn profile URL and save it to the document
  * library. Used in onboarding and Settings (contexts that need a saved document,
- * unlike ResumeInputCard which loads the text into the editor). No login is
- * required for public profiles; private ones surface a "log in" hint.
+ * unlike ResumeInputCard which loads the text into the editor). The fetch is
+ * always anonymous (LinkedIn only serves the parsable profile markup to
+ * signed-out requests), so backend failures are shown verbatim — they're
+ * already user-readable strings, not raw exception text.
  */
 export function ProfileUrlImport({ onImported }: Props) {
   const { t } = useTranslation();
@@ -40,11 +42,7 @@ export function ProfileUrlImport({ onImported }: Props) {
     try {
       const result = await profileImport.mutateAsync(url.trim());
       if ('error' in result) {
-        notify.error({
-          message: isProfileAuthError(result.error)
-            ? t('resumeInput.profileLoginRequired')
-            : result.error,
-        });
+        notify.error({ message: result.error });
         return;
       }
       const title = result.name?.trim() || t('resumeInput.linkedinProfileTitle');
@@ -52,9 +50,16 @@ export function ProfileUrlImport({ onImported }: Props) {
         name: `${title}.txt`,
         bytes: new TextEncoder().encode(result.text),
         title,
-      })) as { id?: string };
+      })) as { id?: string; error?: string; message?: string };
+      // `documents_import` resolves (never rejects) on a save failure — it's an
+      // in-band `{ error }` payload, not a thrown mutation error. `scanned_pdf`
+      // carries a human `message`; other failures use `error` itself.
+      if (saved.error) {
+        notify.error({ message: saved.message ?? saved.error });
+        return;
+      }
       notify.success({ message: t('resumeInput.profileImported') });
-      onImported?.({ id: saved?.id, name: result.name });
+      onImported?.({ id: saved.id, name: result.name });
       reset();
     } catch (err) {
       notify.error({
