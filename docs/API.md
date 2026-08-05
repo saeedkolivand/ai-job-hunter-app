@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -125,6 +125,31 @@ Network-free capability probe for a provider/model combination. Returns:
 - `effortLevels` — the exact set of reasoning-effort values the app can actually SEND for this model (e.g., `["low", "medium", "high"]`). Can be empty even when `supportsReasoning` is true — either the provider/model genuinely doesn't accept the parameter (most CLI agents besides Codex), reasoning is unsupported, or the provider/model is unknown. **Per-model**: several providers' accepted level SET genuinely varies by model tier (Gemini's `thinkingLevel`, Anthropic's `output_config.effort`) — callers should not assume all models of a provider share the same levels.
 
 Degrades gracefully for unknown providers to `{ supportsWebSearch: false, supportsReasoning: false, effortLevels: [] }`. Used by the Settings → AI effort picker to render exactly which effort levels are valid for the chosen model.
+
+#### `ai.listProviderModels(req: { provider: string; baseUrl?: string }): Promise<ProviderModelInfo[]>`
+
+Fetches the live model catalogue from a cloud provider using its stored API key. Raises an error if:
+
+- The provider key is not stored or has been revoked (401/403)
+- The provider is unreachable (network error, 5xx)
+- The response is malformed or missing the models array
+
+`baseUrl` is forwarded for OpenAI-compatible servers (LM Studio, vLLM, etc.). Never falls back to a cached list when verifying a newly-entered key in onboarding; display surfaces cached by model-pickers if the network fails.
+
+```typescript
+interface ProviderModelInfo {
+  /** Canonical model ID; always present. */
+  name: string;
+  /** Human-readable label, when the provider distinguishes it from `name`. */
+  displayName?: string;
+  /** Unix epoch milliseconds. Normalized across providers' native formats. */
+  createdAt?: number;
+  /** Max input tokens (context window). */
+  contextLength?: number;
+}
+```
+
+**Important:** No field is guaranteed from every provider. Gemini provides no `createdAt`; OpenAI-compatible servers may omit `contextLength`. Treat missing fields as absent, never as a default value.
 
 ### Events
 
