@@ -590,15 +590,23 @@ impl OpenAiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = match resp.json().await {
+        let data: Value = match crate::net::http::read_json_capped(
+            resp,
+            crate::net::http::DEFAULT_MAX_BODY_BYTES,
+        )
+        .await
+        {
             Ok(v) => v,
             Err(e) => {
                 trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+                return Err(AppError::Message(format!("parse: {e}")));
             }
         };
         trace.end(Some(status.as_u16()), true);
@@ -650,15 +658,23 @@ impl OpenAiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = match resp.json().await {
+        let data: Value = match crate::net::http::read_json_capped(
+            resp,
+            crate::net::http::DEFAULT_MAX_BODY_BYTES,
+        )
+        .await
+        {
             Ok(v) => v,
             Err(e) => {
                 trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+                return Err(AppError::Message(format!("parse: {e}")));
             }
         };
         trace.end(Some(status.as_u16()), true);
@@ -749,12 +765,20 @@ impl OpenAiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             tracing::warn!("openai research {status}: {body_text}");
             return Ok(String::new());
         }
-        let data: Value = match resp.json().await {
+        let data: Value = match crate::net::http::read_json_capped(
+            resp,
+            crate::net::http::DEFAULT_MAX_BODY_BYTES,
+        )
+        .await
+        {
             Ok(v) => v,
             Err(_) => {
                 trace.end(Some(status.as_u16()), false);
@@ -798,16 +822,16 @@ impl OpenAiClient {
             })?;
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let body: Value = resp.json().await.map_err(|e| {
-            AppError::Provider(format!(
-                "{}: parse: {}",
-                self.id.as_str(),
-                scrub_url_secret(e)
-            ))
-        })?;
+        let body: Value =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| AppError::Provider(format!("{}: parse: {}", self.id.as_str(), e)))?;
         // OpenAI proper: only chat-capable families. Every other OpenAI-compatible
         // backend (incl. Ollama Cloud) lists its own curated catalog, so pass those
         // through unfiltered — see `should_list_model`.
@@ -896,7 +920,12 @@ impl AiProvider for OpenAiClient {
 
         let status = response.status();
         if !status.is_success() {
-            let body_text = response.text().await.unwrap_or_default();
+            let body_text = crate::net::http::read_text_capped(
+                response,
+                crate::net::http::DEFAULT_MAX_BODY_BYTES,
+            )
+            .await
+            .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
@@ -1046,7 +1075,10 @@ impl AiProvider for OpenAiClient {
         if status.is_success() {
             Ok(())
         } else {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             Err(friendly_api_error(self.id, status, &body_text))
         }
     }
@@ -1125,15 +1157,23 @@ impl AiProvider for OpenAiClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(friendly_api_error(self.id, status, &body_text));
         }
-        let data: Value = match resp.json().await {
+        let data: Value = match crate::net::http::read_json_capped(
+            resp,
+            crate::net::http::DEFAULT_MAX_BODY_BYTES,
+        )
+        .await
+        {
             Ok(v) => v,
             Err(e) => {
                 trace.end(Some(status.as_u16()), false);
-                return Err(AppError::Message(format!("parse: {}", scrub_url_secret(e))));
+                return Err(AppError::Message(format!("parse: {e}")));
             }
         };
         trace.end(Some(status.as_u16()), true);

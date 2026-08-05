@@ -362,14 +362,17 @@ impl AiProvider for OllamaClient {
         };
         let status = resp.status();
         if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
+            let body_text =
+                crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             trace.end(Some(status.as_u16()), false);
             return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
         }
-        let data: Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("Ollama parse: {e}"))?;
+        let data: Value =
+            crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .map_err(|e| format!("Ollama parse: {e}"))?;
         trace.end(Some(status.as_u16()), true);
         Ok(parse_ollama_turn(&data))
     }
@@ -420,10 +423,10 @@ async fn fetch_tag_models() -> AppResult<Vec<Value>> {
             resp.status()
         )));
     }
-    let body: Value = resp
-        .json()
-        .await
-        .map_err(|e| AppError::Provider(format!("Ollama parse: {e}")))?;
+    let body: Value =
+        crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+            .await
+            .map_err(|e| AppError::Provider(format!("Ollama parse: {e}")))?;
     parse_model_list(&body)
 }
 
@@ -444,7 +447,10 @@ pub async fn reachable_model() -> (bool, Option<String>) {
         .await
     {
         Ok(r) if r.status().is_success() => {
-            let body: Value = r.json().await.unwrap_or_default();
+            let body: Value =
+                crate::net::http::read_json_capped(r, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                    .await
+                    .unwrap_or_default();
             let model = body
                 .get("models")
                 .and_then(|m| m.as_array())
@@ -501,13 +507,16 @@ pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     .map_err(|e| format!("Ollama unreachable: {e}"))?;
     let status = resp.status();
     if !status.is_success() {
-        let body_text = resp.text().await.unwrap_or_default();
+        let body_text =
+            crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .unwrap_or_default();
         return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
-    let data: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Ollama parse: {e}"))?;
+    let data: Value =
+        crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+            .await
+            .map_err(|e| format!("Ollama parse: {e}"))?;
     let arr = data
         .get("embedding")
         .and_then(|e| e.as_array())
@@ -536,15 +545,18 @@ pub async fn ollama_web_search(
         .map_err(|e| format!("ollama web_search request: {e}"))?;
     let status = resp.status();
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body =
+            crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .unwrap_or_default();
         return Err(AppError::Network(format!(
             "ollama web_search {status}: {body}"
         )));
     }
-    let body: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("ollama web_search parse: {e}"))?;
+    let body: Value =
+        crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+            .await
+            .map_err(|e| format!("ollama web_search parse: {e}"))?;
     Ok(parse_web_search(&body, limit))
 }
 
@@ -705,7 +717,12 @@ pub async fn show_model(model: &str) -> Value {
     if !resp.status().is_success() {
         return Value::Null;
     }
-    match resp.json::<Value>().await {
+    match crate::net::http::read_json_capped::<Value>(
+        resp,
+        crate::net::http::DEFAULT_MAX_BODY_BYTES,
+    )
+    .await
+    {
         Ok(data) => normalize_show(&data),
         Err(_) => Value::Null,
     }
@@ -768,7 +785,10 @@ pub async fn pull(app: &AppHandle, job_id: &str, model: &str) -> AppResult<()> {
 
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body =
+            crate::net::http::read_text_capped(response, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .unwrap_or_default();
         return Err(AppError::Provider(format!("Ollama {status}: {body}")));
     }
 
@@ -958,7 +978,10 @@ async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> 
 
     let status = response.status();
     if !status.is_success() {
-        let body_text = response.text().await.unwrap_or_default();
+        let body_text =
+            crate::net::http::read_text_capped(response, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .unwrap_or_default();
         trace.end(Some(status.as_u16()), false);
         return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
@@ -1027,14 +1050,17 @@ async fn complete_impl(
     };
     let status = resp.status();
     if !status.is_success() {
-        let body_text = resp.text().await.unwrap_or_default();
+        let body_text =
+            crate::net::http::read_text_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+                .await
+                .unwrap_or_default();
         trace.end(Some(status.as_u16()), false);
         return Err(AppError::Provider(format!("Ollama {status}: {body_text}")));
     }
-    let data: Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Ollama parse: {e}"))?;
+    let data: Value =
+        crate::net::http::read_json_capped(resp, crate::net::http::DEFAULT_MAX_BODY_BYTES)
+            .await
+            .map_err(|e| format!("Ollama parse: {e}"))?;
     trace.end(Some(status.as_u16()), true);
     let text = data
         .get("message")

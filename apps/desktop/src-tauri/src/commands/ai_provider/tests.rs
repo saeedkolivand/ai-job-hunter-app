@@ -253,6 +253,63 @@ fn provider_id_round_trips() {
     assert!(ProviderId::parse("nope").is_err());
 }
 
+// ── resolve_by_name: base_url validation (mirrors AiConfigStore::validate_settings) ──
+//
+// The renderer-facing probe commands (`ai_test_provider_key`/
+// `ai_list_provider_models`/`ai_model_capabilities`) hand `resolve_by_name` a
+// `base_url` straight off the wire, unlike the settings writer which runs it
+// through `AiConfigStore::validate_settings` first. These tests pin the two
+// rules `resolve_by_name` now applies itself so the probe path can't regress
+// to the unvalidated pre-fix behavior.
+
+#[test]
+fn resolve_by_name_rejects_the_cloud_metadata_ip_on_openai_compatible() {
+    // `.err().unwrap()`, not `.expect_err(..)`: the `Ok` payload is
+    // `Box<dyn AiProvider>`, which is not `Debug` (`expect_err`/`unwrap_err`
+    // both require it).
+    let err = resolve_by_name(
+        "openai-compatible",
+        Some("http://169.254.169.254/latest/meta-data".to_string()),
+    )
+    .err()
+    .expect("the cloud-metadata IP literal must be rejected");
+    assert!(matches!(err, AppError::Validation(_)));
+}
+
+#[test]
+fn resolve_by_name_rejects_a_non_http_scheme_on_openai_compatible() {
+    let err = resolve_by_name("openai-compatible", Some("file:///etc/passwd".to_string()))
+        .err()
+        .expect("a non-http(s) scheme must be rejected");
+    assert!(matches!(err, AppError::Validation(_)));
+}
+
+#[test]
+fn resolve_by_name_accepts_a_normal_openai_compatible_base_url() {
+    // Sanity: the validation floor must not reject the ordinary case (a local
+    // LM Studio / vLLM endpoint) it exists to protect around.
+    assert!(resolve_by_name(
+        "openai-compatible",
+        Some("http://localhost:1234/v1".to_string())
+    )
+    .is_ok());
+}
+
+#[test]
+fn resolve_by_name_drops_base_url_for_a_non_openai_compatible_provider_instead_of_erroring() {
+    // Mirrors `AiConfigStore::validate_settings`'s scrub: `base_url` is inert
+    // for egress on every provider except `OpenAiCompatible`, so a bogus value
+    // (here, one that WOULD fail `validate_provider_base_url` if it were
+    // checked) must be silently dropped, not surfaced as an error — the same
+    // way the persisted-settings path already behaves.
+    assert!(resolve_by_name(
+        "anthropic",
+        Some("http://169.254.169.254/latest/meta-data".to_string())
+    )
+    .is_ok());
+    assert!(resolve_by_name("gemini", Some("not a url at all".to_string())).is_ok());
+}
+
 #[test]
 fn flatten_messages_isolates_the_trusted_system_prompt() {
     // SECURITY: system content stays in the system slot; untrusted user/tool
