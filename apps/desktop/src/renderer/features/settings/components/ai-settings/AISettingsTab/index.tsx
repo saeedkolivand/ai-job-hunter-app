@@ -32,6 +32,9 @@ export function AISettingsTab() {
     loadingOllama,
     expanded,
     expandedModels,
+    expandedModelsLoading,
+    expandedModelsCached,
+    expandedModelsError,
     apiKeyInput,
     showKey,
     savingKey,
@@ -93,6 +96,9 @@ export function AISettingsTab() {
                 providerModel={providerConfig?.providers?.[p]?.model ?? ''}
                 ollamaModels={ollamaModels}
                 expandedModels={expandedModels}
+                expandedModelsLoading={expandedModelsLoading}
+                expandedModelsCached={expandedModelsCached}
+                expandedModelsError={expandedModelsError}
                 loadingOllama={loadingOllama}
                 pulling={pulling}
                 apiKeyInput={apiKeyInput}

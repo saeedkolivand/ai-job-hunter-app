@@ -1,0 +1,1 @@
+{"ts":"2026-08-05T08:34:58.940Z","kind":"stop-gate","branch":"feat/live-model-lists","model":"none","files":6,"reemits":0,"findings":{"critical":0,"high":0,"medium":0,"low":0},"duration_ms":1385,"outcome":"tier0-only","blocked":false}

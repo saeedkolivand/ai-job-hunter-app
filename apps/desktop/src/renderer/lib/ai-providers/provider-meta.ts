@@ -16,6 +16,18 @@ export interface ProviderMeta {
   description: string;
   docsUrl: string;
   color: string;
+  /**
+   * `cli-agent` — curated aliases (the CLI exposes no catalogue endpoint, so
+   * this IS the source of truth).
+   * `cloud` — always `[]`. Cloud catalogues are fetched live via
+   * `listProviderModels` (with a last-good local-storage fallback, see
+   * `lib/ai-providers/model-list-cache.ts`) rather than hand-curated — a
+   * curated cloud list goes stale (four such defects shipped from this file
+   * in one session, including a shut-down model as the Gemini onboarding
+   * default).
+   * `local-server` — always `[]`. Ollama's installed models come from its
+   * own local API.
+   */
   models: string[];
 }
 
@@ -27,17 +39,6 @@ export interface ProviderMeta {
 // duplicating the Rust one. `EffortPicker` instead reads `effortLevels`
 // straight from `ai_model_capabilities` (backed by `AiProvider::effort_levels`,
 // computed per model) — zero TS change for a new provider or model.
-//
-// The `models` arrays below are hand-curated, not fetched — each list that
-// names a specific model id should say which live authority page + date it
-// was checked against, since a curated id CAN go stale (`gemini-3-pro-preview`
-// did — see the Gemini entry). When re-checking, verify EVERY entry in the
-// array, not just the one being changed: a prior round replaced only the one
-// dead id it already knew about and left its three neighbours unchecked —
-// all three had also gone stale, including the array's first entry, which is
-// the onboarding default (`CLOUD_DEFAULT_MODELS`). A genuinely self-updating
-// curated list (deriving it from `listProviderModels` at runtime) is
-// feasible but is its own piece of work, not folded into this fix.
 
 export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
   ollama: {
@@ -55,7 +56,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
       'Run large hosted Ollama models with a free Ollama key — also powers company research.',
     docsUrl: 'https://ollama.com/settings/keys',
     color: 'text-emerald-400',
-    models: ['gpt-oss:120b', 'gpt-oss:20b', 'deepseek-v3.1:671b', 'qwen3-coder:480b'],
+    models: [],
   },
   openai: {
     kind: 'cloud',
@@ -63,7 +64,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'GPT-4o, GPT-4 Turbo, and more via the OpenAI API.',
     docsUrl: 'https://platform.openai.com/api-keys',
     color: 'text-green-400',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo', 'o1', 'o1-mini'],
+    models: [],
   },
   anthropic: {
     kind: 'cloud',
@@ -71,7 +72,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Claude models via the Anthropic API.',
     docsUrl: 'https://console.anthropic.com/settings/keys',
     color: 'text-orange-400',
-    models: ['claude-fable-5', 'claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001'],
+    models: [],
   },
   gemini: {
     kind: 'cloud',
@@ -79,26 +80,7 @@ export const PROVIDERS: Record<AiProvider, ProviderMeta> = {
     description: 'Gemini 3.6 Flash and Gemini 3.1 Pro via the Gemini API.',
     docsUrl: 'https://aistudio.google.com/app/apikey',
     color: 'text-blue-400',
-    // ALL FOUR entries verified LIVE against `ai.google.dev/gemini-api/docs/models`,
-    // checked 2026-08-04 (the page's own "Last updated" footer matches) — not
-    // just the one being changed this time. The previous round only re-checked
-    // the single entry it touched (`gemini-3-pro-preview` -> `gemini-3.6-flash`)
-    // and left its three neighbours unverified; all three turned out to be dead
-    // (`gemini-2.0-flash` is now "Previous models — Shut down"; `gemini-1.5-pro`
-    // and `gemini-1.5-flash` aren't on the page at all anymore) — including
-    // `gemini-2.0-flash`, which was the FIRST entry and therefore the onboarding
-    // default (`CLOUD_DEFAULT_MODELS` in both `AISelectionStep` and
-    // `CloudProviderPanel` — updated alongside this to `gemini-3.6-flash`, the
-    // new first entry). Replacements, all Stable except where noted:
-    // `gemini-3.6-flash` (Stable, general default), `gemini-3.1-pro-preview`
-    // (Preview — the "Pro" tier; no Stable Pro-class 3.x model exists yet),
-    // `gemini-3.5-flash`, `gemini-3.5-flash-lite` (Stable).
-    models: [
-      'gemini-3.6-flash',
-      'gemini-3.1-pro-preview',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-    ],
+    models: [],
   },
   'openai-compatible': {
     kind: 'cloud',

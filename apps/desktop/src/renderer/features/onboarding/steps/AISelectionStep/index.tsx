@@ -24,17 +24,6 @@ import { OllamaCheckingState } from '../ollama/OllamaCheckingState';
 import { OllamaNotInstalled } from '../ollama/OllamaNotInstalled';
 import { type TabMode, TabSwitcher } from '../ollama/TabSwitcher';
 
-export const CLOUD_DEFAULT_MODELS: Record<string, string> = {
-  'ollama-cloud': 'gpt-oss:120b',
-  openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-5',
-  // `gemini-2.0-flash` (the prior default) was retired — `ai.google.dev/gemini-api/docs/models`
-  // now lists it under "Previous models (Shut down)". Moved to `gemini-3.6-flash`,
-  // the curated list's new first (live, Stable) entry — see `provider-meta.ts`.
-  gemini: 'gemini-3.6-flash',
-  'openai-compatible': 'gpt-4o',
-};
-
 interface Props {
   onBack: () => void;
   onNext: () => void;
@@ -54,6 +43,14 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
   const [cloudProvider, setCloudProvider] = useState<AiProvider>('openai');
   const [cliProvider, setCliProvider] = useState<AiProvider>('claude-code');
   const [skipping, setSkipping] = useState(false);
+  // No cloud model is ever pre-selected — chosen from the live list once a key
+  // is entered (see CloudProviderPanel). Reset on provider change: a model id
+  // from a different provider's catalogue doesn't carry over.
+  const [selectedCloudModel, setSelectedCloudModel] = useState('');
+  const handleCloudProviderChange = (provider: AiProvider) => {
+    setCloudProvider(provider);
+    setSelectedCloudModel('');
+  };
 
   const { data: health, isLoading: healthLoading } = useSystemHealth();
   const { data: modelsRaw } = useAIModels();
@@ -93,10 +90,8 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
   const handleContinue = () => {
     if (mode === 'cloud') {
-      configureProvider.mutate({
-        provider: cloudProvider,
-        model: CLOUD_DEFAULT_MODELS[cloudProvider] ?? '',
-      });
+      if (!selectedCloudModel) return; // guarded by canContinue; defensive
+      configureProvider.mutate({ provider: cloudProvider, model: selectedCloudModel });
     } else if (mode === 'cli') {
       // CLI agents are keyless; model selection is deferred to Settings, so an
       // empty model here uses the tool's own default until the user picks one.
@@ -119,7 +114,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
 
   const canContinue =
     mode === 'cloud'
-      ? true
+      ? Boolean(selectedCloudModel)
       : mode === 'cli'
         ? cliDetected
         : ollamaReady && selectedInstalled && !tooHeavy;
@@ -130,7 +125,7 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
       stepIndex={stepIndex}
       totalSteps={totalSteps}
       onBack={onBack}
-      onNext={onNext}
+      onNext={handleContinue}
       canAdvance={canContinue}
     >
       {/* Icon */}
@@ -167,7 +162,9 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
             <CloudProviderPanel
               key="cloud-panel"
               selectedProvider={cloudProvider}
-              onProviderChange={setCloudProvider}
+              onProviderChange={handleCloudProviderChange}
+              selectedModel={selectedCloudModel}
+              onModelSelect={setSelectedCloudModel}
             />
           )}
 
@@ -239,10 +236,31 @@ export function AISelectionStep({ onBack, onNext, direction, stepIndex, totalSte
           </motion.div>
         )}
 
+        {/* Continue is now conditionally disabled in cloud mode for the first
+            time (it used to be unconditional, backed by a hardcoded default
+            model) — tie the reason to the button via aria-describedby so a
+            screen-reader user tabbing to it hears WHY, not just "disabled".
+            The panel's own loading/error/cached hints cover the finer detail
+            for a user focused inside it; this is the always-available
+            fallback. Visually hidden — Skip stays the visible affordance. */}
+        {mode === 'cloud' && !canContinue && (
+          <p
+            id="ai-selection-cloud-continue-hint"
+            role="status"
+            aria-live="polite"
+            className="sr-only"
+          >
+            {t('onboarding.ai.pickModelHint')}
+          </p>
+        )}
+
         <Button
           variant="primary"
           onClick={handleContinue}
           disabled={!canContinue}
+          aria-describedby={
+            mode === 'cloud' && !canContinue ? 'ai-selection-cloud-continue-hint' : undefined
+          }
           className="flex items-center gap-1.5"
         >
           {t('onboarding.ai.next')}
