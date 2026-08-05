@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785941611279,
+  "lastUpdate": 1785950547347,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6041,6 +6041,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 285691,
             "range": "± 2962",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9557b1f0e72cc9201b0c2b78162916bfba33abc5",
+          "message": "chore: bump aes from 0.9.1 to 0.9.2 in /apps/desktop/src-tauri (#943)\n\nBumps [aes](https://github.com/RustCrypto/block-ciphers) from 0.9.1 to 0.9.2.\n- [Commits](https://github.com/RustCrypto/block-ciphers/compare/aes-v0.9.1...aes-v0.9.2)\n\n---\nupdated-dependencies:\n- dependency-name: aes\n  dependency-version: 0.9.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-08-05T18:58:44+02:00",
+          "tree_id": "c74e3d178ac94857496f3da61cff85fa427d15b9",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/9557b1f0e72cc9201b0c2b78162916bfba33abc5"
+        },
+        "date": 1785950546021,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2154401,
+            "range": "± 54057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2597384,
+            "range": "± 44559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 293313,
+            "range": "± 7326",
             "unit": "ns/iter"
           }
         ]
