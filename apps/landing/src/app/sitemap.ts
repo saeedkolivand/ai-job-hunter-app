@@ -18,6 +18,7 @@ const ROUTES = [
   '/creature',
   '/architecture-map',
   '/agent-system',
+  '/tech-radar',
 ];
 
 // Required by Next 16 (see robots.ts).

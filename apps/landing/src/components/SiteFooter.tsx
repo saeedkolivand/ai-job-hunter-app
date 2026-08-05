@@ -32,6 +32,8 @@ export function SiteFooter({
         {' · '}
         <a href="/architecture-map">architecture</a>
         {' · '}
+        <a href="/tech-radar">tech radar</a>
+        {' · '}
         <a href="/storybook/">design system</a>
         {' · '}
         <a href={GITHUB_REPO} target="_blank" rel="noopener noreferrer">

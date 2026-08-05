@@ -35,6 +35,7 @@
     "scan:rules": "ast-grep scan",
     "check:landing-drift": "node scripts/check-landing-drift.mjs",
     "check:agent-system": "node scripts/check-agent-system.mjs",
+    "check:tech-radar": "node scripts/check-tech-radar.mjs",
     "clean": "pnpm -r exec rimraf dist out .turbo node_modules/.cache",
     "clean:turbo": "pnpm -r exec rimraf .turbo node_modules/.cache/turbo",
     "storybook": "pnpm --filter @ajh/ui storybook",

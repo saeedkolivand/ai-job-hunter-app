@@ -1,0 +1,307 @@
+/* ── /tech-radar ──────────────────────────────────────────────────────────────
+   Docs-tier page (rendered inside <DocShell>, consuming --doc-* tokens from
+   docs-tokens.css). Two coexisting views of the same data:
+     1. .tr-canvas — the visual SVG radar (RadarSvg.tsx). Decorative chrome is
+        aria-hidden; every blip is a real, keyboard-focusable SVG <a>.
+     2. .tr-list — the full text list (RadarList.tsx), ALWAYS rendered. This is
+        the authoritative accessible content, not a fallback.
+   Ring color is a hint on top of shape (RadarGlyph draws circle/square/
+   triangle/diamond) — never the only signal, per frontend-standards a11y. */
+
+.tr-root {
+  --tr-adopt: var(--doc-green);
+  --tr-adopt-soft: var(--doc-green-soft);
+  --tr-trial: var(--doc-series-1);
+  --tr-trial-soft: var(--doc-series-1-soft);
+  --tr-assess: var(--doc-amber);
+  --tr-assess-soft: var(--doc-amber-soft);
+  --tr-hold: var(--doc-pink);
+  --tr-hold-soft: var(--doc-pink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ── Legend ───────────────────────────────────────────────────────────────── */
+.tr-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--doc-font-mono);
+  font-size: 13px;
+  color: var(--doc-muted);
+}
+.tr-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tr-legend__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.tr-legend__item--adopt .tr-legend__mark {
+  fill: var(--tr-adopt);
+}
+.tr-legend__item--trial .tr-legend__mark {
+  fill: var(--tr-trial);
+}
+.tr-legend__item--assess .tr-legend__mark {
+  fill: var(--tr-assess);
+}
+.tr-legend__item--hold .tr-legend__mark {
+  fill: none;
+  stroke: var(--tr-hold);
+  stroke-width: 2;
+}
+
+/* ── Visual radar ─────────────────────────────────────────────────────────── */
+.tr-canvas {
+  display: flex;
+  justify-content: center;
+}
+.tr-svg {
+  width: min(100%, 620px);
+  height: auto;
+}
+
+.tr-ring {
+  fill: none;
+  stroke: var(--doc-border);
+  stroke-width: 1;
+}
+.tr-ring--adopt {
+  fill: var(--doc-surface);
+}
+.tr-divider {
+  stroke: var(--doc-border);
+  stroke-width: 1;
+}
+.tr-ring-label {
+  font-family: var(--doc-font-mono);
+  font-size: 11px;
+  fill: var(--doc-muted);
+  dominant-baseline: middle;
+}
+.tr-quadrant-label {
+  font-family: var(--doc-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--doc-chalk);
+}
+
+.tr-blip {
+  cursor: pointer;
+}
+/* Anchors inherit the .doc-shell chrome's underline/color rules — irrelevant
+   (and visually wrong) for a small SVG marker, so reset both. Visible focus
+   still comes from .doc-shell :focus-visible (doc-shell.css); reinforced
+   below with a matching outline sized for the blip's actual hit area. */
+.tr-blip,
+.tr-blip:hover {
+  border: none;
+}
+.tr-blip:focus-visible {
+  outline: 2px solid var(--doc-paper);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+.tr-blip__hit {
+  fill: transparent;
+  pointer-events: all;
+}
+.tr-blip__mark {
+  pointer-events: none;
+  stroke: var(--doc-ink);
+  stroke-width: 1;
+  transition: transform 0.15s;
+}
+.tr-blip--adopt .tr-blip__mark {
+  fill: var(--tr-adopt);
+}
+.tr-blip--trial .tr-blip__mark {
+  fill: var(--tr-trial);
+}
+.tr-blip--assess .tr-blip__mark {
+  fill: var(--tr-assess);
+}
+.tr-blip--hold .tr-blip__mark {
+  fill: var(--doc-ink);
+  stroke: var(--tr-hold);
+  stroke-width: 2;
+}
+.tr-blip:hover .tr-blip__mark,
+.tr-blip:focus-visible .tr-blip__mark {
+  transform: scale(1.35);
+}
+.tr-blip__num {
+  pointer-events: none;
+  font-family: var(--doc-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  fill: var(--doc-ink);
+}
+.tr-blip--hold .tr-blip__num {
+  fill: var(--tr-hold);
+}
+
+/* A circular layout stops being legibly tappable well before phone width —
+   dozens of sub-24px targets packed into a shrinking viewBox. Below this
+   breakpoint the canvas (and its legend, which only explains the canvas)
+   drop out; .tr-list is unconditionally rendered above and below it, so
+   nothing is lost — see TechRadar.tsx. */
+@media (max-width: 560px) {
+  .tr-legend,
+  .tr-canvas {
+    display: none;
+  }
+}
+
+/* ── Text list (always rendered) ─────────────────────────────────────────── */
+.tr-quadrant-group {
+  margin-top: 8px;
+}
+.tr-quadrant-group__title {
+  font-family: var(--doc-font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--doc-paper);
+  border-bottom: 1px solid var(--doc-border-strong);
+  padding-bottom: 8px;
+  margin: 0 0 16px;
+}
+.tr-ring-group {
+  margin: 0 0 22px;
+}
+.tr-ring-group__title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--doc-font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--doc-muted);
+  margin: 0 0 10px;
+}
+.tr-ring-group__blurb {
+  font-style: italic;
+}
+
+.tr-badge {
+  display: inline-block;
+  font-family: var(--doc-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: var(--doc-pill);
+  border: 1px solid transparent;
+}
+.tr-badge--adopt {
+  color: var(--tr-adopt);
+  background: var(--tr-adopt-soft);
+  border-color: var(--tr-adopt);
+}
+.tr-badge--trial {
+  color: var(--tr-trial);
+  background: var(--tr-trial-soft);
+  border-color: var(--tr-trial);
+}
+.tr-badge--assess {
+  color: var(--tr-assess);
+  background: var(--tr-assess-soft);
+  border-color: var(--tr-assess);
+}
+.tr-badge--hold {
+  color: var(--tr-hold);
+  background: var(--tr-hold-soft);
+  border-color: var(--tr-hold);
+}
+
+.tr-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.tr-entry {
+  background: var(--doc-surface);
+  border: 1px solid var(--doc-border);
+  border-radius: var(--doc-radius);
+  padding: 14px 16px;
+  scroll-margin-top: 24px;
+}
+/* :target — the entry a blip (or any #tr-entry-<id> link) just jumped to.
+   Pure CSS, no JS: a visible, non-color-only landing cue (border + shadow). */
+.tr-entry:target {
+  border-color: var(--doc-paper);
+  box-shadow: var(--doc-elev);
+}
+.tr-entry__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 0 6px;
+}
+.tr-entry__num {
+  font-family: var(--doc-font-mono);
+  font-size: 12px;
+  color: var(--doc-muted);
+}
+.tr-entry__name {
+  font-family: var(--doc-font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--doc-paper);
+  margin: 0;
+  flex: 1 1 auto;
+}
+.tr-entry__summary {
+  font-family: var(--doc-font-display);
+  font-size: 14px;
+  color: var(--doc-paper);
+  margin: 0 0 8px;
+}
+.tr-entry__rationale {
+  font-family: var(--doc-font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--doc-chalk);
+  margin: 0 0 8px;
+}
+.tr-entry__meta {
+  font-family: var(--doc-font-mono);
+  font-size: 12px;
+  color: var(--doc-muted);
+  margin: 0;
+}
+/* .doc-shell a (doc-shell.css) sets color: var(--doc-accent) at equal
+   specificity and loads AFTER this stylesheet in the DOM (DocShell renders
+   its own <PageStyle> after this page's), so it wins ties on source order —
+   ".doc-shell" is added here purely to out-specificity it, not for scoping.
+   Color itself is deliberate, not a copy of --doc-accent: axe measured
+   --doc-accent (#e24b4a) at 4.46:1 on this card's --doc-surface background,
+   just under the 4.5:1 AA floor — --doc-accent-text is the token file's own
+   pre-vetted "lighter red for small text/badges" (documented 5.7:1 on the
+   even-lighter --doc-surface-2), so it clears AA here with margin. */
+.doc-shell .tr-entry__meta a {
+  color: var(--doc-accent-text);
+  border-bottom-color: var(--doc-accent-text);
+}
+.doc-shell .tr-entry__meta a:hover {
+  color: var(--doc-paper);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-blip__mark {
+    transition: none;
+  }
+}

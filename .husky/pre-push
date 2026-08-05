@@ -213,6 +213,15 @@ if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
   pnpm check:landing-drift
 fi
 
+# ── Tech-radar drift ─────────────────────────────────────────────────────────
+# /tech-radar's dependency entries are checked against every package.json /
+# Cargo.toml, so drift is triggered by a dependency being added/removed
+# (NODE/RUST) OR by editing the radar data itself (LANDING).
+if [ -n "$NODE" ] || [ -n "$RUST" ] || [ -n "$LANDING" ]; then
+  echo "▶ Checking tech-radar drift..."
+  pnpm check:tech-radar
+fi
+
 # ── Landing copy/link parity ────────────────────────────────────────────────────
 # The Next landing port must not silently drop a legacy link or signature joke.
 # Build the static export and assert parity against out/. Only when the landing
