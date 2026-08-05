@@ -144,27 +144,34 @@ export function ModelSelector({ className }: ModelSelectorProps) {
 
   // Cloud model-list health for the ACTIVE provider — a distinct concern from
   // `showModelWarning` above (that's about the current *selection*; this is
-  // about whether the *list itself* loaded, and from where). Not connected
-  // (and not the keyless-exempt `openai-compatible`) is deliberately NOT an
-  // error — just a prompt to add a key. Gated on `!activeKeyLoading` too: a
-  // still-loading key query must not be misread as "checked — no key", or
-  // the "add a key" notice flashes for a user who may have already added one.
+  // about whether the *list itself* loaded, and from where). ONE status,
+  // computed by a single ordered if/else chain rather than four independent
+  // booleans each gating its own JSX block — that shape is how "cached" and
+  // "needs key" rendered simultaneously last round (a stale `cached: true`
+  // result survived a key being removed, and only three of the four booleans
+  // were gated on `activeCloudNeedsKey`). A single chain makes every state
+  // mutually exclusive BY CONSTRUCTION: a future fifth state is just another
+  // branch, and it structurally cannot co-render with an earlier one.
   const activeCloudQuery = activeCloudIndex >= 0 ? modelQueries[activeCloudIndex] : undefined;
-  const activeCloudNeedsKey = activeIsCloud && !activeKeyLoading && !canFetchModels(activeProvider);
-  // Loading has its own hint (below) — without it, this was the one state
-  // none of the other three guards matched, so it fell through to nothing
-  // rendering at all while the list that gates Continue was still in flight.
-  const activeCloudLoading = activeIsCloud && !activeCloudNeedsKey && modelsLoading;
+  const activeCloudStatus: 'idle' | 'needsKey' | 'loading' | 'error' | 'cached' = !activeIsCloud
+    ? 'idle'
+    : activeKeyLoading
+      ? 'loading' // key query itself unsettled — NOT "checked, no key"
+      : !canFetchModels(activeProvider)
+        ? 'needsKey'
+        : modelsLoading
+          ? 'loading'
+          : activeCloudQuery?.isError
+            ? 'error'
+            : (activeCloudQuery?.data?.cached ?? false)
+              ? 'cached'
+              : 'idle';
   const activeCloudErrorMessage =
-    activeIsCloud && !activeCloudNeedsKey && !modelsLoading && activeCloudQuery?.isError
-      ? activeCloudQuery.error instanceof Error
+    activeCloudStatus === 'error'
+      ? activeCloudQuery?.error instanceof Error
         ? activeCloudQuery.error.message
-        : String(activeCloudQuery.error)
+        : String(activeCloudQuery?.error)
       : undefined;
-  const activeCloudCached =
-    activeIsCloud && !modelsLoading && !activeCloudErrorMessage
-      ? (activeCloudQuery?.data?.cached ?? false)
-      : false;
 
   // "Which model for what" hint (#6) for the current selection — derived from the
   // model name + provider kind, so new models are covered with no code change.
@@ -211,12 +218,12 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           )}
         </div>
       </div>
-      {activeCloudNeedsKey && (
+      {activeCloudStatus === 'needsKey' && (
         <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
           {t('models.cloud.addKeyToLoad')}
         </p>
       )}
-      {activeCloudLoading && (
+      {activeCloudStatus === 'loading' && (
         <p
           role="status"
           aria-live="polite"
@@ -226,13 +233,13 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           {t('settings.aiModel.loading')}
         </p>
       )}
-      {activeCloudErrorMessage && (
+      {activeCloudStatus === 'error' && activeCloudErrorMessage && (
         <p role="alert" className="mt-1.5 flex items-start gap-1 text-[10px] text-red-400/80">
           <AlertTriangle size={11} className="mt-px shrink-0" />
           {t('models.cloud.fetchFailed', { message: activeCloudErrorMessage })}
         </p>
       )}
-      {activeCloudCached && (
+      {activeCloudStatus === 'cached' && (
         <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
           {t('models.cloud.cachedList')}
         </p>

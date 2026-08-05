@@ -303,6 +303,38 @@ describe('ModelSelector — active cloud provider, no key stored', () => {
   });
 });
 
+describe('ModelSelector — no key stored, but a stale cache-served result lingers (CodeRabbit #936 MEDIUM)', () => {
+  it('shows ONLY "add a key" — never alongside the cached-list note', () => {
+    // The exact reported bug: the key was removed (or never granted) AFTER a
+    // prior successful cache-served fetch, so the model query's `data` can
+    // still carry `cached: true` even though `activeCloudNeedsKey` is now
+    // true. `activeCloudCached` used to check only `!modelsLoading &&
+    // !activeCloudErrorMessage` — not `!activeCloudNeedsKey` — so both notes
+    // rendered together.
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: false }, isLoading: false } };
+    stubbedCloudModelQueries = {
+      [cloudProviderId]: {
+        data: { models: [{ name: 'stale-model' }], cached: true },
+        isLoading: false,
+        isError: false,
+      },
+    };
+
+    renderSelector();
+
+    expect(screen.getByText('models.cloud.addKeyToLoad')).toBeInTheDocument();
+    // None of the other three cloud-status hints — a single ordered chain
+    // (`activeCloudStatus`) makes them structurally exclusive, not just this
+    // one pairing: a future fifth state can't co-render with an earlier one
+    // either.
+    expect(screen.queryByText('models.cloud.cachedList')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.fetchFailed')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
+  });
+});
+
 describe('ModelSelector — connected cloud provider, model list still loading', () => {
   it('shows a polite loading status — the state none of the other three hints cover', () => {
     stubbedActiveProvider = cloudProviderId;

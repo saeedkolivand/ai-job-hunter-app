@@ -68,14 +68,25 @@ describe('useProviderKeys — expanded-row model fetch gating', () => {
       'ai.listModels': vi.fn().mockResolvedValue([]),
       'system.health': vi.fn().mockResolvedValue({ ai: { ready: false }, cliAgents: {} }),
     });
-    const { result } = renderHookWithClient(() => useProviderKeys(), { client });
+    const { result, queryClient } = renderHookWithClient(() => useProviderKeys(), { client });
 
     act(() => {
       result.current.toggleExpand('openai');
     });
 
-    // Give any wrongly-enabled query a chance to fire before asserting absence.
-    await new Promise((r) => setTimeout(r, 20));
+    // A fixed sleep before a negative assertion is a flake waiting for a slow
+    // runner — it fails in the direction that looks like success. Wait for
+    // the key-status query itself to genuinely settle instead: once its
+    // network round trip resolves, `expandedCanFetchModels` has reached its
+    // final value for the "no key, key-required provider" case (nothing else
+    // in the chain is still in flight), so it's a real steady state to
+    // assert against, not a guessed one.
+    await waitFor(() =>
+      expect(queryClient.getQueryState(['ai', 'models', 'provider-key', 'openai'])?.status).toBe(
+        'success'
+      )
+    );
+
     expect(listProviderModels).not.toHaveBeenCalled();
   });
 });

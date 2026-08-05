@@ -4,14 +4,18 @@
  * Model choice is deferred until a key is stored: no id is ever pre-selected
  * (the defect class this step now avoids — a shut-down `gemini-2.0-flash`
  * shipped as the hardcoded Gemini onboarding default). Once a key is stored,
- * `useListProviderModels` (the SAME cache-aware hook the picker and Settings
- * use) drives the model section through the states it already defines:
- * loading, the real failure message (no cache), a cached-list note, and a
- * genuinely-empty catalogue — plus the live/fresh list rendered as a real
- * `Dropdown`. Every state asserts its OWN positive affordance (element +
- * role), not just the absence of a wrong one — a loading state that renders
- * nothing (falling through to a bare empty `<Dropdown>`) would otherwise pass
- * an absence-only assertion silently.
+ * `useListProviderModels(..., 'verify')` drives the model section through
+ * the states it defines for VERIFY purpose: loading, the real failure
+ * message, or a genuinely-empty catalogue — plus the live/fresh list
+ * rendered as a real `Dropdown`. NO cache-served state: `'verify'` never
+ * falls back to the local cache on failure (a cache hit from a DIFFERENT,
+ * possibly-revoked key would let a wrong new key pass verification on a list
+ * that proves nothing about it), so there is deliberately no test for it
+ * here — see `CloudProviderPanel.verify.test.tsx` for that guarantee proven
+ * through the real hook. Every state asserts its OWN positive affordance
+ * (element + role), not just the absence of a wrong one — a loading state
+ * that renders nothing (falling through to a bare empty `<Dropdown>`) would
+ * otherwise pass an absence-only assertion silently.
  *
  * Also covers: focus moves to the "Choose a model" heading on the actual
  * false→true `hasKey` transition (never on mount with a key already stored —
@@ -188,26 +192,6 @@ describe('CloudProviderPanel — key stored, fetch succeeded but the catalogue i
     // (role="alert" regardless of type — a separate, pre-existing concern)
     // means a document-wide alert query isn't the right assertion here.
     expect(title.closest('[role="alert"]')).toBeNull();
-  });
-});
-
-describe('CloudProviderPanel — key stored, live fetch failed, cache available', () => {
-  it('lists the cached models and shows the cached-list note as a polite status (not an error)', async () => {
-    stubHasKey = true;
-    stubModelsQuery = {
-      data: { models: [{ name: 'cached-model' }], cached: true },
-      isLoading: false,
-      isError: false,
-    };
-    const user = userEvent.setup();
-    renderPanel();
-
-    const note = screen.getByText('models.cloud.cachedList');
-    expect(note.closest('[role="status"]')).not.toBeNull();
-    expect(note.closest('[role="alert"]')).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: SELECT_PLACEHOLDER }));
-    expect(screen.getByRole('option', { name: 'cached-model' })).toBeInTheDocument();
   });
 });
 

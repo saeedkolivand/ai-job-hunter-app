@@ -226,12 +226,18 @@ export function CloudProviderPanel({
           {/* Model picker — deferred until the key is verified via the live
               fetch itself (the same fetch invalidated by saving the key, so
               this is the ONE round trip, not a second verification call).
-              Reuses the picker's own three-state vocabulary rather than
-              inventing new copy: no key (n/a here — key is already stored),
-              cache served, or the real failure message. Cached/empty are the
-              quiet inline treatment (matches ModelSelector/Settings) — an
-              amber `Alert` was too loud for "usually completely fine" facts;
-              only a real failure gets the assertive `Alert type="error"`. */}
+              Reuses the picker's own vocabulary rather than inventing new
+              copy: no key (n/a here — key is already stored), a genuinely
+              empty catalogue, or the real failure message. NO "cache served"
+              state — `useListProviderModels(..., 'verify')` never falls back
+              to cache on failure (that's the entire point of `purpose:
+              'verify'`: a cache hit from a DIFFERENT, possibly-revoked key
+              would let a wrong new key pass verification on a list that
+              proves nothing about it), so `modelsQuery.data?.cached` can
+              never be `true` here. Empty is the quiet inline treatment
+              (matches ModelSelector/Settings) — an amber `Alert` was too
+              loud for "usually completely fine" facts; only a real failure
+              gets the assertive `Alert type="error"`. */}
           <div className="space-y-2">
             <p
               ref={chooseModelHeadingRef}
@@ -261,22 +267,15 @@ export function CloudProviderPanel({
                 <p className="mt-0.5">{t('settings.aiModel.emptyDescription')}</p>
               </div>
             ) : (
-              <>
-                {modelsQuery.data?.cached && (
-                  <p role="status" aria-live="polite" className="text-[10px] text-foreground/40">
-                    {t('models.cloud.cachedList')}
-                  </p>
-                )}
-                <Dropdown
-                  options={sortModelsNewestFirst(models).map((m) => ({
-                    value: m.name,
-                    label: m.displayName ?? m.name,
-                  }))}
-                  value={selectedModel}
-                  onChange={onModelSelect}
-                  placeholder={t('onboarding.ai.selectModelPlaceholder')}
-                />
-              </>
+              <Dropdown
+                options={sortModelsNewestFirst(models).map((m) => ({
+                  value: m.name,
+                  label: m.displayName ?? m.name,
+                }))}
+                value={selectedModel}
+                onChange={onModelSelect}
+                placeholder={t('onboarding.ai.selectModelPlaceholder')}
+              />
             )}
           </div>
         </>
