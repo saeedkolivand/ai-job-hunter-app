@@ -115,7 +115,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(name_text)
-                            .size(pt_to_dxa(template.name_pt))
+                            .size(pt_to_half_points(template.name_pt))
                             .bold()
                             .color(&colors.name)
                             .fonts(docx_run_fonts(name_family)),
@@ -150,7 +150,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(9.0))
+                            .size(pt_to_half_points(9.0))
                             .color(&colors.date)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -168,7 +168,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -184,7 +184,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -200,7 +200,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .bold()
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
@@ -217,7 +217,7 @@ fn generate_cover_letter_docx_classic(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .color(&colors.date)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -362,7 +362,7 @@ fn generate_cover_letter_docx_layout(
                 .add_run(
                     Run::new()
                         .add_text(&display_name)
-                        .size(pt_to_dxa(name_pt))
+                        .size(pt_to_half_points(name_pt))
                         .bold()
                         .color(&colors.name)
                         .fonts(docx_run_fonts(name_family)),
@@ -388,7 +388,7 @@ fn generate_cover_letter_docx_layout(
                             .add_run(
                                 Run::new()
                                     .add_text(job_title.to_uppercase())
-                                    .size(pt_to_dxa(template.body_pt))
+                                    .size(pt_to_half_points(template.body_pt))
                                     .color(&accent_hex)
                                     .character_spacing(24)
                                     .fonts(docx_run_fonts(body_family)),
@@ -426,7 +426,7 @@ fn generate_cover_letter_docx_layout(
             }
             let mut run = Run::new()
                 .add_text(&clean)
-                .size(pt_to_dxa(9.0))
+                .size(pt_to_half_points(9.0))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
             if !is_refined {
@@ -455,7 +455,7 @@ fn generate_cover_letter_docx_layout(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -471,7 +471,7 @@ fn generate_cover_letter_docx_layout(
                     .add_run(
                         Run::new()
                             .add_text(&clean)
-                            .size(pt_to_dxa(template.body_pt))
+                            .size(pt_to_half_points(template.body_pt))
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
                     )
@@ -488,8 +488,11 @@ fn generate_cover_letter_docx_layout(
                 // paragraph spacing/empty paragraphs).
                 for _ in 0..2 {
                     docx = docx.add_paragraph(
-                        Paragraph::new()
-                            .add_run(Run::new().add_text("").size(pt_to_dxa(template.body_pt))),
+                        Paragraph::new().add_run(
+                            Run::new()
+                                .add_text("")
+                                .size(pt_to_half_points(template.body_pt)),
+                        ),
                     );
                 }
             }
@@ -520,7 +523,7 @@ fn generate_cover_letter_docx_layout(
                             .add_run(
                                 Run::new()
                                     .add_text(caption.to_uppercase())
-                                    .size(pt_to_dxa((template.body_pt - 1.5).max(6.0)))
+                                    .size(pt_to_half_points((template.body_pt - 1.5).max(6.0)))
                                     .bold()
                                     .color(&accent_hex)
                                     .character_spacing(24)
@@ -534,7 +537,7 @@ fn generate_cover_letter_docx_layout(
                         .add_run(
                             Run::new()
                                 .add_text(&subj_body)
-                                .size(pt_to_dxa(template.body_pt))
+                                .size(pt_to_half_points(template.body_pt))
                                 .bold()
                                 .color(&colors.body)
                                 .fonts(docx_run_fonts(body_family)),
@@ -549,7 +552,7 @@ fn generate_cover_letter_docx_layout(
                         .add_run(
                             Run::new()
                                 .add_text(&clean)
-                                .size(pt_to_dxa(template.body_pt))
+                                .size(pt_to_half_points(template.body_pt))
                                 .bold()
                                 .color(&accent_hex)
                                 .fonts(docx_run_fonts(body_family)),
@@ -564,7 +567,7 @@ fn generate_cover_letter_docx_layout(
         if !in_body {
             let mut run = Run::new()
                 .add_text(&clean)
-                .size(pt_to_dxa(template.body_pt))
+                .size(pt_to_half_points(template.body_pt))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
             if !is_refined {
@@ -588,7 +591,11 @@ fn generate_cover_letter_docx_layout(
     if !is_refined {
         // Banded's short rule footer — see approximation note above.
         let mut footer = Paragraph::new()
-            .add_run(Run::new().add_text("").size(pt_to_dxa(template.body_pt)))
+            .add_run(
+                Run::new()
+                    .add_text("")
+                    .size(pt_to_half_points(template.body_pt)),
+            )
             .line_spacing(LineSpacing::new().before(160));
         footer.property = footer.property.set_borders(bottom_rule(&accent_hex, 18));
         docx = docx.add_paragraph(footer);

@@ -16,8 +16,8 @@ use crate::error::AppResult;
 use docx_rs::*;
 
 use crate::export::docx_renderer::{
-    create_bullet_numbering, docx_run_fonts, inch_to_dxa, mm_to_dxa, pt_to_dxa, rgb_to_hex,
-    setup_colors, DocxColors,
+    create_bullet_numbering, docx_run_fonts, inch_to_dxa, mm_to_dxa, pt_to_dxa, pt_to_half_points,
+    rgb_to_hex, setup_colors, DocxColors,
 };
 use crate::export::templates::Template;
 use crate::export::types::{FontFamily, GenerationMeta};
@@ -158,7 +158,7 @@ fn add_header(mut docx: Docx, header: &HeaderBlock, t: &Template, colors: &DocxC
         let mut p = Paragraph::new().add_run(
             Run::new()
                 .add_text(&header.name)
-                .size(pt_to_dxa(t.name_pt))
+                .size(pt_to_half_points(t.name_pt))
                 .bold()
                 .color(colors.name.as_str())
                 .fonts(docx_run_fonts(t.fonts.name_family)),
@@ -173,7 +173,7 @@ fn add_header(mut docx: Docx, header: &HeaderBlock, t: &Template, colors: &DocxC
         let mut p = Paragraph::new().add_run(
             Run::new()
                 .add_text(title)
-                .size(pt_to_dxa(t.body_pt))
+                .size(pt_to_half_points(t.body_pt))
                 .color(colors.date.as_str())
                 .fonts(docx_run_fonts(t.fonts.body_family)),
         );
@@ -317,7 +317,7 @@ fn heading_paragraph(heading: &str, ctx: &Ctx) -> Option<Paragraph> {
             .add_run(
                 Run::new()
                     .add_text(&text)
-                    .size(pt_to_dxa(pt))
+                    .size(pt_to_half_points(pt))
                     .bold()
                     .color(ctx.colors.section.as_str())
                     .fonts(docx_run_fonts(t.fonts.heading_family))
@@ -373,7 +373,7 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
                 .add_run(
                     Run::new()
                         .add_text(date)
-                        .size(pt_to_dxa(9.5))
+                        .size(pt_to_half_points(9.5))
                         .color(ctx.colors.date.as_str())
                         .fonts(docx_run_fonts(t.fonts.body_family)),
                 )
@@ -382,7 +382,7 @@ fn entry_paragraphs(e: &EntryBlock, ctx: &Ctx) -> Vec<Paragraph> {
             title = title.add_run(
                 Run::new()
                     .add_text(format!("  ·  {date}"))
-                    .size(pt_to_dxa(9.5))
+                    .size(pt_to_half_points(9.5))
                     .color(ctx.colors.date.as_str())
                     .fonts(docx_run_fonts(t.fonts.body_family)),
             );
@@ -435,7 +435,7 @@ impl RunOpts {
     fn contact(t: &Template, colors: &DocxColors) -> Self {
         let link = theme::link_style(t.id);
         Self {
-            size: pt_to_dxa(9.0),
+            size: pt_to_half_points(9.0),
             color: colors.date.clone(),
             link_color: Self::link_color(colors, link),
             underline: link.underline,
@@ -447,7 +447,7 @@ impl RunOpts {
 
     fn body(t: &Template, colors: &DocxColors, link: LinkStyle) -> Self {
         Self {
-            size: pt_to_dxa(t.body_pt),
+            size: pt_to_half_points(t.body_pt),
             color: colors.body.clone(),
             link_color: Self::link_color(colors, link),
             underline: link.underline,
@@ -460,7 +460,7 @@ impl RunOpts {
     fn entry_title(t: &Template, colors: &DocxColors) -> Self {
         let link = theme::link_style(t.id);
         Self {
-            size: pt_to_dxa(t.body_pt),
+            size: pt_to_half_points(t.body_pt),
             color: colors.body.clone(),
             link_color: Self::link_color(colors, link),
             underline: link.underline,
@@ -473,7 +473,7 @@ impl RunOpts {
     fn subtitle(t: &Template, colors: &DocxColors) -> Self {
         let link = theme::link_style(t.id);
         Self {
-            size: pt_to_dxa(t.body_pt - 0.5),
+            size: pt_to_half_points(t.body_pt - 0.5),
             color: colors.date.clone(),
             link_color: Self::link_color(colors, link),
             underline: link.underline,
