@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785916858351,
+  "lastUpdate": 1785941611279,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -5999,6 +5999,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287097,
             "range": "± 2667",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7715a2be6a93ef802c1b8cf0ef0ff32275c0fc61",
+          "message": "fix: import linkedin profiles anonymously, because signing in is what breaks it (#940)\n\n* fix: import linkedin profiles anonymously, because signing in is what breaks it\n\nReported as \"onboarding imports the resume, settings returns an error\" — same\ncomponent, same command, no code-level divergence. The difference was runtime\nstate, and the direction is backwards from what it looks like.\n\nThe parser needs the ld+json Person block LinkedIn serves to anonymous\ncrawlers. The fetch was built from the stored cookie jar whenever one existed,\nand onboarding has no LinkedIn-connect step — so a fresh install fetched as a\nguest and parsed fine. Connect LinkedIn, and the same URL returns the\nauthenticated SPA shell with no ld+json. The credentials were the defect.\n\nSo this path now always fetches anonymously, deliberately, with the reason in\na comment because \"don't send the user's credentials\" reads as an oversight.\nScoped to the profile-import GET; board scraping and login keep their jar, and\n`build_authed_client`'s other caller is untouched.\n\nIt had been failing invisibly rather than loudly. Success required only that\nname OR experience OR skills be non-empty, and name fell back to og:title — so\nan authwall page with a title produced a successful import of an empty résumé.\nSuccess now requires a real ld+json name, which is precisely the field\nLinkedIn withholds from an authenticated fetch. og:title survives as a\nheadline fallback only, where it cannot fake a result.\n\nThe path also had no logging at all — the reporter's diagnostics bundle\ncontained nothing about their own bug. It now records platform, status,\nwhether a session was attached, and the error, but never the URL or slug:\nbundles get shared, and a profile URL identifies a person.\n\nThe old errors advised connecting a LinkedIn account, which is now exactly\nbackwards. They name what actually failed instead — unreachable, rate-limited,\nblocked, or no public data — and a test asserts none of them ever say \"log in\"\nagain.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: stop claiming a linkedin profile was imported when the save failed\n\nThe import result was error-checked; the save that follows was not. It was\ncast to `{ id?: string }` and the success toast fired unconditionally — but\n`documents_import` returns `{ error }` in-band rather than rejecting, so a\nscanned PDF or a failed text extraction resolved, \"Profile imported\"\nappeared, and `onImported` ran with an undefined id, which silently skipped\nthe résumé write in onboarding.\n\nSo the bug report's own premise — that onboarding imported the résumé — may\nnever have been true. The failure had no way to reach the user.\n\nThe auth classifier is deleted rather than rewritten. It matched \"log in\" and\nfriends and replaced the backend message with advice to connect a LinkedIn\naccount — advice that is now exactly backwards, since connecting an account is\nwhat breaks this import. No backend string matches it any more either, so it\nwas dead as well as wrong. Keeping a substring classifier over messages the\nbackend owns would have recreated the two-places-encode-one-rule drift this\nrepo keeps paying for; the messages were rewritten to be shown, so they are\nshown, and `resumeInput.profileLoginRequired` is gone from en and de.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-05T16:30:33+02:00",
+          "tree_id": "18220bb51901d9c39dbd02104a75ac0a2eafc080",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7715a2be6a93ef802c1b8cf0ef0ff32275c0fc61"
+        },
+        "date": 1785941610230,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2140180,
+            "range": "± 62526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2518048,
+            "range": "± 19257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 285691,
+            "range": "± 2962",
             "unit": "ns/iter"
           }
         ]
