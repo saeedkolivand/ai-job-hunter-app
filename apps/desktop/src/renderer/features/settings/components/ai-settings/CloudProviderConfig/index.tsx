@@ -1,9 +1,11 @@
-import { Eye, EyeOff, Key, Loader2, PenLine, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Inbox, Key, Loader2, PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import type { ProviderModelInfo } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
-import { Button, Dropdown, Input, useNotification } from '@ajh/ui';
+import { Button, Dropdown, EmptyState, ErrorState, Input, useNotification } from '@ajh/ui';
 
+import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
@@ -14,7 +16,6 @@ interface ProviderMeta {
   description: string;
   docsUrl: string;
   color: string;
-  models: string[];
 }
 
 interface Props {
@@ -24,7 +25,13 @@ interface Props {
   isSaving: boolean;
   isTesting?: boolean;
   providerModel: string;
-  expandedModels: Array<{ name: string }>;
+  expandedModels: ProviderModelInfo[];
+  /** Still fetching the expanded row's model list. */
+  expandedModelsLoading?: boolean;
+  /** `expandedModels` came from the last-good local cache (live fetch failed). */
+  expandedModelsCached?: boolean;
+  /** Live fetch failed AND no cache was available — the real failure message. */
+  expandedModelsError?: string;
   apiKeyInput: string;
   showKey: boolean;
   baseUrlInput: string;
@@ -38,6 +45,7 @@ interface Props {
   onSetActive: () => void;
   isActive: boolean;
   onOpenDocs: () => void;
+  onRecheck?: () => void;
 }
 
 export function CloudProviderConfig({
@@ -47,6 +55,9 @@ export function CloudProviderConfig({
   isSaving,
   providerModel,
   expandedModels,
+  expandedModelsLoading = false,
+  expandedModelsCached = false,
+  expandedModelsError,
   apiKeyInput,
   showKey,
   baseUrlInput,
@@ -59,18 +70,24 @@ export function CloudProviderConfig({
   onSetActive,
   isActive,
   onOpenDocs,
+  onRecheck,
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
   const setProviderSettings = useSetProviderSettings();
   const [changing, setChanging] = useState(false);
 
-  const modelOptions =
-    expandedModels.length > 0
-      ? expandedModels.map((m) => ({ value: m.name, label: m.name }))
-      : (meta.models ?? []).map((n) => ({ value: n, label: n }));
+  // `openai-compatible` is keyless-capable (LM Studio / vLLM) — it can list
+  // and pick a model without a stored key, so the model section can't be
+  // gated on `connected` the same way the key-input section above is.
+  const canPickModel = connected || provider === 'openai-compatible';
 
-  // Keep a stored selection that fell out of the curated/live list selectable
+  const modelOptions = sortModelsNewestFirst(expandedModels).map((m) => ({
+    value: m.name,
+    label: m.displayName ?? m.name,
+  }));
+
+  // Keep a stored selection that fell out of the live/cached list selectable
   // — otherwise the trigger falls back to the placeholder and reads as a
   // reset config, when it's really just an unlisted model id (self-heals
   // once the live list includes it again).
@@ -248,18 +265,62 @@ export function CloudProviderConfig({
         </div>
       )}
 
-      {/* Model selector */}
-      {connected && (
+      {/* Model selector — four distinct states beyond the normal dropdown:
+          (1) still loading with nothing to show yet → a labelled spinner (not
+          a bare empty dropdown, which reads as "zero models"), (2) live fetch
+          failed with no cache and no stored selection to fall back to → the
+          real failure, (3) fetch succeeded but the catalogue is genuinely
+          empty → a neutral empty state, (4) options.length > 0 (fresh,
+          cached, or a preserved unlisted selection) → the dropdown, with a
+          small note when the list is cached. Loading is checked FIRST — it's
+          the only state where none of the other three guards fire, so it used
+          to fall through to an unlabelled empty `<Dropdown>`. Gated on
+          `canPickModel`, not `connected` — a keyless `openai-compatible`
+          setup (LM Studio / vLLM) has no key to be "connected" with but can
+          still list and pick a model. */}
+      {canPickModel && (
         <div className="space-y-1.5">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/55">
             {t('settings.aiModel.title')}
           </div>
-          <Dropdown
-            options={options}
-            value={providerModel}
-            onChange={onSelectModel}
-            placeholder="Select a model…"
-          />
+          {options.length === 0 && expandedModelsLoading ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-2 text-xs text-foreground/40"
+            >
+              <Loader2 size={13} className="animate-spin" />
+              {t('settings.aiModel.loading')}
+            </div>
+          ) : options.length === 0 && expandedModelsError ? (
+            <ErrorState
+              title={t('settings.aiModel.fetchFailedTitle')}
+              description={expandedModelsError}
+              onRetry={onRecheck}
+              className="py-6"
+            />
+          ) : options.length === 0 ? (
+            <EmptyState
+              icon={Inbox}
+              title={t('settings.aiModel.emptyTitle')}
+              description={t('settings.aiModel.emptyDescription')}
+              className="py-6"
+            />
+          ) : (
+            <>
+              <Dropdown
+                options={options}
+                value={providerModel}
+                onChange={onSelectModel}
+                placeholder="Select a model…"
+              />
+              {expandedModelsCached && (
+                <p role="status" aria-live="polite" className="text-[10px] text-foreground/40">
+                  {t('settings.aiModel.cachedNotice')}
+                </p>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -226,7 +226,12 @@
       }
     },
     "noModelSelected": "No AI model selected — choose one to use AI features.",
-    "modelUnavailable": "Your selected model isn't available — pick one from the list below."
+    "modelUnavailable": "Your selected model isn't available — pick one from the list below.",
+    "cloud": {
+      "addKeyToLoad": "Add an API key to load this provider's models.",
+      "fetchFailed": "Couldn't load models: {{message}}",
+      "cachedList": "Showing the last saved list — live refresh failed."
+    }
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -650,7 +655,11 @@
       "refresh": "Refresh",
       "description": "Select the local AI model to use for generating responses.",
       "loading": "Loading models...",
-      "noModels": "No models available. Make sure Ollama is running."
+      "noModels": "No models available. Make sure Ollama is running.",
+      "fetchFailedTitle": "Couldn't load models",
+      "cachedNotice": "Showing the last saved list — live refresh failed.",
+      "emptyTitle": "No models available for this provider",
+      "emptyDescription": "This provider's catalogue is empty right now."
     },
     "cliInstall": {
       "notDetected": "{{label}} CLI not detected. Install it and sign in once, then re-check.",
@@ -2306,7 +2315,9 @@
       "cliNotDetected": "{{agent}} CLI not detected. Install it and sign in once, then continue.",
       "installAgent": "Install {{agent}}",
       "testKey": "Test",
-      "testingKey": "Testing key…"
+      "testingKey": "Testing key…",
+      "selectModelPlaceholder": "Select a model…",
+      "pickModelHint": "Pick a model above, or Skip for now."
     },
     "research": {
       "title": "Smarter cover letters",

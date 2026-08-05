@@ -11,8 +11,8 @@ function meta(kind: ProviderMeta['kind'], label: string, models: string[]): Prov
 
 const META = {
   ollama: meta('local-server', 'Ollama (Local)', []),
-  'ollama-cloud': meta('cloud', 'Ollama Cloud', ['gpt-oss:120b', 'gpt-oss:20b']),
-  openai: meta('cloud', 'OpenAI', ['gpt-4o']),
+  'ollama-cloud': meta('cloud', 'Ollama Cloud', []),
+  openai: meta('cloud', 'OpenAI', []),
   'claude-code': meta('cli-agent', 'Claude Code', ['sonnet', 'opus']),
 } as unknown as Record<AiProvider, ProviderMeta>;
 
@@ -24,11 +24,11 @@ const baseSources: ModelSources = {
 };
 
 describe('buildModelOptions', () => {
-  it('includes Ollama Cloud when connected — falling back to curated models when the live list is empty', () => {
+  it('lists a connected cloud provider from its live/cached model entries', () => {
     const options = buildModelOptions(['ollama-cloud'], META, {
       ...baseSources,
       cloudConnected: (p) => p === 'ollama-cloud',
-      cloudModels: () => [], // live /v1/models returned nothing yet
+      cloudModels: () => [{ name: 'gpt-oss:120b' }, { name: 'gpt-oss:20b' }],
     });
     expect(options.map((o) => o.value)).toEqual([
       'ollama-cloud||gpt-oss:120b',
@@ -37,13 +37,29 @@ describe('buildModelOptions', () => {
     expect(options[0]?.section).toBe('Ollama Cloud');
   });
 
-  it('prefers the live cloud model list over the curated fallback', () => {
-    const options = buildModelOptions(['ollama-cloud'], META, {
+  it('labels a cloud option with displayName when the provider returns one, else name', () => {
+    const options = buildModelOptions(['openai'], META, {
       ...baseSources,
       cloudConnected: () => true,
-      cloudModels: () => ['deepseek-v3.1:671b'],
+      cloudModels: () => [{ name: 'gpt-4o', displayName: 'GPT-4o' }, { name: 'o1' }],
     });
-    expect(options.map((o) => o.label)).toEqual(['deepseek-v3.1:671b']);
+    expect(options).toEqual([
+      { value: 'openai||gpt-4o', label: 'GPT-4o', section: 'OpenAI' },
+      { value: 'openai||o1', label: 'o1', section: 'OpenAI' },
+    ]);
+  });
+
+  it('sorts cloud options newest-first by createdAt', () => {
+    const options = buildModelOptions(['openai'], META, {
+      ...baseSources,
+      cloudConnected: () => true,
+      cloudModels: () => [
+        { name: 'old', createdAt: 1_000 },
+        { name: 'new', createdAt: 3_000 },
+        { name: 'mid', createdAt: 2_000 },
+      ],
+    });
+    expect(options.map((o) => o.value)).toEqual(['openai||new', 'openai||mid', 'openai||old']);
   });
 
   it('omits a cloud provider entirely when it is not connected', () => {

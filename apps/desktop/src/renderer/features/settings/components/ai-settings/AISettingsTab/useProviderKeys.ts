@@ -102,14 +102,34 @@ export function useProviderKeys() {
 
   // Models for the expanded non-local provider (cloud key-based, or CLI agents
   // which "list" their aliases through the same IPC path). Ollama uses its own
-  // local model list, so it's excluded.
+  // local model list, so it's excluded. `openai-compatible` is the one cloud
+  // provider the backend lists models for without a bearer header (LM Studio /
+  // vLLM are keyless) — gating it on `keyStatus` like every other cloud
+  // provider left keyless setups unable to discover a model in Settings at
+  // all, even though `ModelSelector` already unblocked the same case.
   const expandedFetchesModels = expanded !== null && PROVIDERS[expanded].kind !== 'local-server';
-  const { data: expandedModelsRaw = [] } = useListProviderModels(
+  const expandedCanFetchModels =
+    expandedFetchesModels &&
+    ((keyStatus[expanded ?? 'openai'] ?? false) || expanded === 'openai-compatible');
+  const {
+    data: expandedModelsResult,
+    isLoading: expandedModelsLoading,
+    isError: expandedModelsErrored,
+    error: expandedModelsErrorObj,
+  } = useListProviderModels(
     expanded ?? 'openai',
-    expandedFetchesModels && (keyStatus[expanded ?? 'openai'] ?? false),
+    expandedCanFetchModels,
     baseUrlFor(expanded ?? 'openai')
   );
-  const expandedModels = expandedModelsRaw as Array<{ name: string }>;
+  const expandedModels = expandedModelsResult?.models ?? [];
+  const expandedModelsCached = expandedModelsResult?.cached ?? false;
+  // A rejected invoke can reject with a plain string rather than an `Error`
+  // (Tauri serializes `AppError` as its message string) — guard both shapes.
+  const expandedModelsError = expandedModelsErrored
+    ? expandedModelsErrorObj instanceof Error
+      ? expandedModelsErrorObj.message
+      : String(expandedModelsErrorObj)
+    : undefined;
 
   const handleSelectModel = (provider: AiProvider, model: string) => {
     // Edits the provider's model without flipping the active provider (the
@@ -223,6 +243,9 @@ export function useProviderKeys() {
     loadingOllama,
     expanded,
     expandedModels,
+    expandedModelsLoading,
+    expandedModelsCached,
+    expandedModelsError,
     apiKeyInput,
     showKey,
     savingKey,

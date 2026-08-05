@@ -1,3 +1,6 @@
+import type { ProviderModelInfo } from '@ajh/shared';
+
+import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
 import type { ProviderMeta } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 
@@ -14,19 +17,18 @@ export interface ModelSources {
   ollamaModels: string[];
   /** Whether a CLI agent's binary is detected. */
   cliDetected: (p: AiProvider) => boolean;
-  /** Whether a cloud provider has a stored key. */
+  /** Whether a cloud provider can be fetched — a stored key, or (for the one
+   *  keyless-capable provider, `openai-compatible`) always. */
   cloudConnected: (p: AiProvider) => boolean;
-  /** Live cloud model names fetched from the provider (may be empty). */
-  cloudModels: (p: AiProvider) => string[];
+  /** Live (or last-known-good cached) cloud model entries — metadata-aware,
+   *  since the backend catalogue carries `displayName`/`createdAt`. */
+  cloudModels: (p: AiProvider) => ProviderModelInfo[];
 }
 
 /**
  * Build the grouped `provider||model` options for the model picker — purely from
  * the registry + the supplied sources, so adding a provider needs **no change
- * here** (this is what keeps the picker registry-driven). A connected cloud
- * provider falls back to its curated `meta.models` when its live model list is
- * empty (e.g. Ollama Cloud before `/v1/models` is reachable), so it always
- * offers something to pick.
+ * here** (this is what keeps the picker registry-driven).
  */
 export function buildModelOptions(
   order: AiProvider[],
@@ -35,17 +37,23 @@ export function buildModelOptions(
 ): ModelOption[] {
   return order.flatMap((p) => {
     const m = meta[p];
-    let names: string[];
     if (m.kind === 'local-server') {
-      names = sources.ollamaModels;
-    } else if (m.kind === 'cli-agent') {
-      names = sources.cliDetected(p) ? m.models : [];
-    } else if (!sources.cloudConnected(p)) {
-      names = [];
-    } else {
-      const live = sources.cloudModels(p);
-      names = live.length > 0 ? live : m.models;
+      return sources.ollamaModels.map((name) => ({
+        value: `${p}||${name}`,
+        label: name,
+        section: m.label,
+      }));
     }
-    return names.map((name) => ({ value: `${p}||${name}`, label: name, section: m.label }));
+    if (m.kind === 'cli-agent') {
+      const names = sources.cliDetected(p) ? m.models : [];
+      return names.map((name) => ({ value: `${p}||${name}`, label: name, section: m.label }));
+    }
+    // cloud
+    if (!sources.cloudConnected(p)) return [];
+    return sortModelsNewestFirst(sources.cloudModels(p)).map((model) => ({
+      value: `${p}||${model.name}`,
+      label: model.displayName ?? model.name,
+      section: m.label,
+    }));
   });
 }

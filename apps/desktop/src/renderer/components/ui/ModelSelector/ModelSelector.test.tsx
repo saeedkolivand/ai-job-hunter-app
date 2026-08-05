@@ -13,12 +13,13 @@
  *  - A detected CLI agent with no model picked → warning RENDERS (CLI is no longer
  *    exempt — a model must always be visibly selected).
  *  - A detected CLI agent with one of its curated models selected → warning absent.
- *  - A connected cloud provider whose `provider-models` query is in an error state
- *    (PR 1: the query now rejects instead of resolving `[]`) still falls back to
- *    the provider's curated `meta.models` and renders no error UI — the
- *    behaviour-neutrality claim `buildModelOptions` relies on (`live.length > 0 ?
- *    live : m.models`), exercised through the real component instead of asserted
- *    from reading the source.
+ *  - Cloud model-list health for the ACTIVE provider (live-model-lists PR — the
+ *    curated cloud fallback is gone; catalogues are fetched live with a
+ *    last-good local cache):
+ *      - Not connected (no stored key) → a neutral "add a key" note, not an error.
+ *      - Live fetch failed with a cached list available → the dropdown still
+ *        lists the cached models, plus a "showing cached list" note.
+ *      - Live fetch failed with NO cache → the real failure message.
  *
  * All hooks that reach IPC / QueryClient / store persistence are stubbed so
  * the component renders without a full provider tree. The real ModelSelector
@@ -91,10 +92,10 @@ vi.mock('@/services', () => ({
 // keyed `[...keys.ai.models, 'provider-key' | 'provider-models', provider, ...]`
 // — a per-test fixture keyed by that same `[kind, provider]` pair lets a test
 // express a cloud provider as connected (`provider-key`) while its
-// `provider-models` query is in an error state (PR 1's rejection-on-failure),
-// so `buildModelOptions`'s live-empty → curated-fallback path is exercised
-// through the real component rather than stubbed away.
-type CloudQueryState = { data?: unknown; isLoading?: boolean; isError?: boolean };
+// `provider-models` query is settled in a particular state (fresh / cached /
+// errored), so the picker's cache/error handling (live-model-lists PR) is
+// exercised through the real component rather than stubbed away.
+type CloudQueryState = { data?: unknown; isLoading?: boolean; isError?: boolean; error?: unknown };
 let stubbedCloudKeyQueries: Record<string, CloudQueryState> = {};
 let stubbedCloudModelQueries: Record<string, CloudQueryState> = {};
 
@@ -112,7 +113,7 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
         const table = kind === 'provider-key' ? stubbedCloudKeyQueries : stubbedCloudModelQueries;
         return (
           table[provider] ?? {
-            data: kind === 'provider-key' ? { has: false } : [],
+            data: kind === 'provider-key' ? { has: false } : { models: [], cached: false },
             isLoading: false,
           }
         );
@@ -133,13 +134,12 @@ if (!cliAgentId) throw new Error('expected at least one cli-agent provider in th
 const cliAgentModel = PROVIDERS[cliAgentId].models[0];
 if (!cliAgentModel) throw new Error(`expected ${cliAgentId} to expose a curated model`);
 
-// A real cloud provider id + its curated model list, likewise derived from the
-// registry rather than hardcoded.
+// A real cloud provider id, likewise derived from the registry rather than
+// hardcoded. Cloud providers carry no curated `models` list any more
+// (live-model-lists PR) — every model in these tests comes from a stubbed
+// `provider-models` query result, never from the registry.
 const cloudProviderId = PROVIDER_ORDER.find((p) => PROVIDERS[p].kind === 'cloud');
 if (!cloudProviderId) throw new Error('expected at least one cloud provider in the registry');
-const cloudProviderModels = PROVIDERS[cloudProviderId].models;
-const cloudProviderModel = cloudProviderModels[0];
-if (!cloudProviderModel) throw new Error(`expected ${cloudProviderId} to expose curated models`);
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -282,35 +282,173 @@ describe('ModelSelector — CLI agent detected, model selected and visible', () 
   });
 });
 
-describe('ModelSelector — connected cloud provider, provider-models query rejected', () => {
-  it('falls back to the curated model list and renders no error UI', async () => {
-    // PR 1: `ai.listProviderModels` now REJECTS on a real failure instead of
-    // resolving `[]` — model this as `modelQueries[i]` settled in an error
-    // state (data undefined, isLoading false). `buildModelOptions` sees an
-    // empty live list either way (`sources.cloudModels` reads only `.data`)
-    // and falls back to `meta.models`, so the picker must render exactly as it
-    // did before the rejecting-command change: the curated options are all
-    // present and selectable, and there is no error text anywhere.
+describe('ModelSelector — active cloud provider, no key stored', () => {
+  it('shows the neutral "add a key" note as a polite status region, not an error', () => {
+    // No curated fallback exists any more (live-model-lists PR removed it) —
+    // an un-keyed cloud provider must read as "add a key", never as a failure.
     stubbedActiveProvider = cloudProviderId;
-    stubbedActiveProviderModel = cloudProviderModel;
-    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: true }, isLoading: false } };
+    stubbedActiveProviderModel = '';
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: false }, isLoading: false } };
+
+    renderSelector();
+
+    const note = screen.getByText('models.cloud.addKeyToLoad');
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveAttribute('role', 'status');
+    expect(note).toHaveAttribute('aria-live', 'polite');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.fetchFailed')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.cachedList')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — no key stored, but a stale cache-served result lingers (CodeRabbit #936 MEDIUM)', () => {
+  it('shows ONLY "add a key" — never alongside the cached-list note', () => {
+    // The exact reported bug: the key was removed (or never granted) AFTER a
+    // prior successful cache-served fetch, so the model query's `data` can
+    // still carry `cached: true` even though `activeCloudNeedsKey` is now
+    // true. `activeCloudCached` used to check only `!modelsLoading &&
+    // !activeCloudErrorMessage` — not `!activeCloudNeedsKey` — so both notes
+    // rendered together.
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: false }, isLoading: false } };
     stubbedCloudModelQueries = {
-      [cloudProviderId]: { data: undefined, isLoading: false, isError: true },
+      [cloudProviderId]: {
+        data: { models: [{ name: 'stale-model' }], cached: true },
+        isLoading: false,
+        isError: false,
+      },
     };
 
     renderSelector();
 
-    // The stored selection is visible (a curated model), so no warning fires.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.queryByText('models.noModelSelected')).not.toBeInTheDocument();
-    expect(screen.queryByText('models.modelUnavailable')).not.toBeInTheDocument();
+    expect(screen.getByText('models.cloud.addKeyToLoad')).toBeInTheDocument();
+    // None of the other three cloud-status hints — a single ordered chain
+    // (`activeCloudStatus`) makes them structurally exclusive, not just this
+    // one pairing: a future fifth state can't co-render with an earlier one
+    // either.
+    expect(screen.queryByText('models.cloud.cachedList')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.fetchFailed')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — connected cloud provider, model list still loading', () => {
+  it('shows a polite loading status — the state none of the other three hints cover', () => {
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: true }, isLoading: false } };
+    stubbedCloudModelQueries = {
+      [cloudProviderId]: { data: undefined, isLoading: true, isError: false },
+    };
+
+    renderSelector();
+
+    const loading = screen.getByText('settings.aiModel.loading');
+    expect(loading).toBeInTheDocument();
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.fetchFailed')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.cachedList')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — connected cloud provider, live fetch failed, cache available', () => {
+  it('lists the cached models and notes the list is cached, as a polite status (not an error)', async () => {
+    const cachedModel = 'cached-model-x';
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = cachedModel;
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: true }, isLoading: false } };
+    // The fetch-with-cache wrapper RESOLVES (not an error) when a cached list
+    // is available — only rejects when both the live fetch AND the cache miss.
+    stubbedCloudModelQueries = {
+      [cloudProviderId]: {
+        data: { models: [{ name: cachedModel }], cached: true },
+        isLoading: false,
+        isError: false,
+      },
+    };
+
+    renderSelector();
+
+    const note = screen.getByText('models.cloud.cachedList');
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveAttribute('role', 'status');
+    expect(screen.queryByText('models.cloud.fetchFailed')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 
-    // Opening the picker lists every one of the provider's curated models —
-    // proof the curated fallback, not an empty list, reached the dropdown.
     await userEvent.click(screen.getByRole('button'));
-    for (const name of cloudProviderModels) {
-      expect(screen.getByRole('option', { name })).toBeInTheDocument();
-    }
+    expect(screen.getByRole('option', { name: cachedModel })).toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — key-required cloud provider, key query still loading (CodeRabbit #936 Minor)', () => {
+  it('shows the loading hint, not "add a key" — the key query has not settled yet', () => {
+    // `cloudProviderId` is the first cloud provider in registry order
+    // (key-required, not the keyless-exempt openai-compatible).
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    // The key query itself is still in flight — `data` is not yet known.
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: undefined, isLoading: true } };
+
+    renderSelector();
+
+    // Before the fix, `canFetchModels` read the not-yet-loaded `false`
+    // default and concluded "no key" immediately, telling a user who may
+    // already have a key to add one.
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+    const loading = screen.getByText('settings.aiModel.loading');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+  });
+});
+
+describe('ModelSelector — openai-compatible, key query loading (irrelevant to a keyless provider)', () => {
+  it('ignores the key query entirely — model-query state alone decides readiness', () => {
+    stubbedActiveProvider = 'openai-compatible';
+    stubbedActiveProviderModel = '';
+    // The key query is still loading, but openai-compatible doesn't need a
+    // key at all — this must not gate anything for it.
+    stubbedCloudKeyQueries = { 'openai-compatible': { data: undefined, isLoading: true } };
+    stubbedCloudModelQueries = {
+      'openai-compatible': {
+        data: { models: [{ name: 'local-model' }], cached: false },
+        isLoading: false,
+        isError: false,
+      },
+    };
+
+    renderSelector();
+
+    expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — connected cloud provider, live fetch failed, no cache', () => {
+  it('shows the real failure message as role="alert"', () => {
+    stubbedActiveProvider = cloudProviderId;
+    stubbedActiveProviderModel = '';
+    stubbedCloudKeyQueries = { [cloudProviderId]: { data: { has: true }, isLoading: false } };
+    stubbedCloudModelQueries = {
+      [cloudProviderId]: {
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        error: new Error('invalid or unauthorized API key'),
+      },
+    };
+
+    renderSelector();
+
+    // `t` is stubbed to the identity function and drops interpolation params,
+    // so the key itself is what renders — the real message reaches the DOM
+    // via the component's own `t(key, { message })` call, which is the
+    // behaviour under test (PR 1's classified error finally has a reader).
+    const failure = screen.getByText('models.cloud.fetchFailed');
+    expect(failure).toBeInTheDocument();
+    expect(failure.closest('[role="alert"]')).not.toBeNull();
+    expect(screen.queryByText('models.cloud.cachedList')).not.toBeInTheDocument();
   });
 });

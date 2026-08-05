@@ -10,9 +10,10 @@
  * 3. `useConfigureActiveProvider` must STOP before `setActiveProvider` when the
  *    `setProviderSettings` half of the combined flow rejects.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
+import type { AppClient } from '@/lib/app-client';
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
 import * as mod from './use-ai-provider';
@@ -20,6 +21,63 @@ import * as mod from './use-ai-provider';
 describe('use-ai-provider services', () => {
   it('renders every exported hook without crashing', async () => {
     await exerciseServiceHooks(mod);
+  });
+});
+
+describe('fetchProviderModelsWithCache', () => {
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  function fakeClient(listProviderModels: AppClient['ai']['listProviderModels']): AppClient {
+    return { ai: { listProviderModels } } as unknown as AppClient;
+  }
+
+  it('caches the list on a successful live fetch and returns it as fresh (not cached)', async () => {
+    const models = [{ name: 'gpt-4o' }];
+    const client = fakeClient(vi.fn().mockResolvedValue(models));
+
+    const result = await mod.fetchProviderModelsWithCache(client, 'openai');
+
+    expect(result).toEqual({ models, cached: false });
+    expect(localStorage.getItem('ajh:model-list-cache:openai:')).toBe(JSON.stringify(models));
+  });
+
+  it('falls back to the last-good cache when the live fetch fails', async () => {
+    // Seed the cache the way a prior successful fetch would have.
+    await mod.fetchProviderModelsWithCache(
+      fakeClient(vi.fn().mockResolvedValue([{ name: 'cached-model' }])),
+      'anthropic'
+    );
+
+    const failing = fakeClient(
+      vi.fn().mockRejectedValue(new Error('invalid or unauthorized API key'))
+    );
+    const result = await mod.fetchProviderModelsWithCache(failing, 'anthropic');
+
+    expect(result).toEqual({ models: [{ name: 'cached-model' }], cached: true });
+  });
+
+  it('rejects — does NOT swallow the failure as a cache hit — when the cache holds only an empty list', async () => {
+    // Seed the cache with a genuinely empty catalogue (PR 1's `Ok([])` case,
+    // e.g. LM Studio with nothing loaded) — a real, once-successful result,
+    // but not a usable fallback for THIS failure.
+    await mod.fetchProviderModelsWithCache(fakeClient(vi.fn().mockResolvedValue([])), 'openai');
+    expect(localStorage.getItem('ajh:model-list-cache:openai:')).toBe('[]');
+
+    const failing = fakeClient(vi.fn().mockRejectedValue(new Error('revoked key')));
+
+    await expect(mod.fetchProviderModelsWithCache(failing, 'openai')).rejects.toThrow(
+      'revoked key'
+    );
+  });
+
+  it('rejects with the original error when the live fetch fails and there is no cache', async () => {
+    const client = fakeClient(vi.fn().mockRejectedValue(new Error('network error')));
+
+    await expect(mod.fetchProviderModelsWithCache(client, 'gemini')).rejects.toThrow(
+      'network error'
+    );
   });
 });
 
