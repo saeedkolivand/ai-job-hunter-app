@@ -8,10 +8,18 @@ name: 🤖 Claude Review (required gate + advisory deep dive)
 # blocks merge; fails open on infra (no action outage freeze). Findings
 # are posted as a STICKY PR comment (edited in place per push; only when
 # findings exist; flipped to "resolved" when a later run is clean), and
-# the blocking ones ALSO as inline comments on their changed lines. The
-# check status stays the blocking signal. See ADR-0008 for the 6-PR
-# review-hardening program; the gate is the final surface (join: Stop
-# gate, /review, pre-push, ci-ok, this check).
+# CRITICAL/HIGH/MEDIUM ones ALSO as inline comments on their changed lines.
+#
+# Inline posting is done by a deterministic step from the findings JSON, not
+# by the model: the action's inline tool does not deduplicate across runs, so
+# a model posting directly re-stacked every finding on each push — which is
+# why inline used to be capped to the blocking tier and almost never fired.
+# Keying each comment by `ledgerKey` (file + category + hash of summary, and
+# deliberately NO line number) lets a re-run recognise what it already said,
+# which is what makes widening past the blocking tier safe. The check status
+# stays the blocking signal. See ADR-0008 for the 6-PR review-hardening
+# program; the gate is the final surface (join: Stop gate, /review, pre-push,
+# ci-ok, this check).
 #
 # Permissions trade: pull-requests: write is re-added to post the sticky
 # comment, accepting this over strict least-privilege for in-PR findings
@@ -157,29 +165,92 @@ jobs:
             Report only defects introduced by the diff; pre-existing issues get
             introduced_by_diff: false. Give every finding a calibrated confidence (0-1);
             anything you cannot substantiate gets <= 0.5.
-            Additionally post each BLOCKING finding — HIGH or CRITICAL at confidence
-            >= 0.8 with introduced_by_diff true — as an inline comment on its changed
-            line. Do not post the others inline; they belong in the JSON only.
+            Set `line` to the line in the CHANGED file the finding sits on — it is what
+            anchors the inline comment, so a wrong line silently drops the finding off
+            the diff. Do NOT post any comment yourself; the JSON is the whole contract.
             Write the findings as schema-1 JSON to review-findings.json in the workspace
             root — the JSON object only, no fences: { "schema": 1, "findings": [ {
             "severity": "CRITICAL|HIGH|MEDIUM|LOW", "category": "security|correctness|data-loss|arch|test-coverage|i18n|perf|style",
             "file": "...", "line": 0, "summary": "...", "evidence": "...", "fix": "...",
             "confidence": 0.0, "introduced_by_diff": true } ] }
             No findings -> { "schema": 1, "findings": [] }. Write the file even when empty.
-          # Agent mode gates the inline-comment MCP server on the same
-          # `mcp__github_inline_comment__` prefix check as tag mode — it passes
-          # parseAllowedTools(claude_args) straight to prepareMcpConfig
-          # (src/modes/agent/index.ts), and `pull_request` is an entity event with
-          # isPR true (src/github/context.ts:191-201), so the server starts and
-          # targets this PR. Inline is capped to the blocking tier by the prompt
-          # above: this lane re-runs on every synchronize and inline comments are
-          # not deduplicated across runs, so an unbounded instruction would stack a
-          # fresh copy of every nit on each push. The sticky comment stays the
-          # full-finding-list surface; the check stays the blocking signal.
-          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write,mcp__github_inline_comment__create_inline_comment"'
+          # NO inline-comment MCP tool here, deliberately. This lane re-runs on
+          # every synchronize and the action's inline tool does not deduplicate
+          # across runs, so letting the model post directly stacked a fresh copy
+          # of every finding on each push — which is why inline used to be capped
+          # to the blocking tier and, in practice, almost never fired.
+          #
+          # Posting now happens in the deterministic step below, from the same
+          # findings JSON the verdict uses: it dedupes against comments already on
+          # the PR, so the tier can safely widen to MEDIUM. Model writes findings,
+          # code decides what gets posted — the same split the verdict already
+          # uses to keep prose out of the merge decision.
+          #
+          # Lane A1 above keeps its inline tool: it is owner-triggered and runs
+          # once on demand, so there is nothing to deduplicate.
+          claude_args: '--model claude-sonnet-5 --allowedTools "Read,Grep,Glob,Write"'
 
       - name: Deterministic verdict
         run: node scripts/ci-review-verdict.mjs review-findings.json
+
+      - name: 📌 Inline findings on the diff
+        if: ${{ !cancelled() }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const { pathToFileURL } = require('node:url');
+            const { inlineFindings, ledgerKey } = await import(
+              pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.claude/hooks/review-lib.mjs`).href
+            );
+
+            let findings = [];
+            try {
+              findings = JSON.parse(fs.readFileSync('review-findings.json', 'utf8')).findings || [];
+            } catch {
+              return; // fail-open: no findings file means nothing to post
+            }
+            const wanted = inlineFindings(findings);
+            if (!wanted.length) return;
+
+            // Dedup across runs. `ledgerKey` is file+category+hash(summary) and
+            // deliberately carries NO line number: an edit above a finding shifts
+            // its line, and keying on that would repost the same finding as new on
+            // every push — the exact stacking this step exists to prevent.
+            const existing = await github.paginate(github.rest.pulls.listReviewComments, {
+              ...context.repo, pull_number: context.issue.number, per_page: 100,
+            });
+            const seen = new Set(
+              existing.flatMap((c) =>
+                [...String(c.body || '').matchAll(/<!-- ai-finding:(.+?) -->/g)].map((m) => m[1])
+              )
+            );
+
+            const sha = context.payload.pull_request.head.sha;
+            let posted = 0;
+            for (const f of wanted) {
+              const id = ledgerKey(f);
+              if (seen.has(id)) continue;
+              seen.add(id); // guard against duplicates within one findings file too
+              try {
+                await github.rest.pulls.createReviewComment({
+                  ...context.repo,
+                  pull_number: context.issue.number,
+                  commit_id: sha,
+                  path: f.file,
+                  line: f.line,
+                  side: 'RIGHT',
+                  body: `<!-- ai-finding:${id} -->\n**${f.severity}** — ${f.summary}\n\n**Fix:** ${f.fix}`,
+                });
+                posted++;
+              } catch (e) {
+                // GitHub 422s when the line is not part of this PR's diff (a stale
+                // or mis-numbered `line`). Never fatal: the sticky comment below
+                // carries every finding regardless, and the check is the gate.
+                core.warning(`inline skipped ${f.file}:${f.line} — ${e.status || ''} ${e.message}`);
+              }
+            }
+            core.info(`inline findings: ${posted} posted, ${wanted.length - posted} already present or unanchorable`);
 
       - name: 💬 Sticky findings comment
         if: ${{ !cancelled() }}
