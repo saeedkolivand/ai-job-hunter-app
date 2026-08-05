@@ -918,7 +918,8 @@ impl AnthropicClient {
                     crate::net::http::DEFAULT_MAX_BODY_BYTES,
                 ),
             )
-            .await??;
+            .await?
+            .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
             let (mut page, cursor) = parse_model_page(&body)?;
             all.append(&mut page);
             match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &after_id, cursor) {

@@ -909,7 +909,8 @@ impl GeminiClient {
                     crate::net::http::DEFAULT_MAX_BODY_BYTES,
                 ),
             )
-            .await??;
+            .await?
+            .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
             let (mut page, next) = parse_model_page(&body)?;
             all.append(&mut page);
             match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &page_token, next) {
