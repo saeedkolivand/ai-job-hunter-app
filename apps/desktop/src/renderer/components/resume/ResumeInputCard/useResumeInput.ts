@@ -17,7 +17,7 @@ import {
   useSetDefaultDocument,
 } from '@/services';
 
-import { isProfileAuthError, isSupportedProfileUrl } from '../profile-url';
+import { isSupportedProfileUrl } from '../profile-url';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 
@@ -195,11 +195,7 @@ export function useResumeInput({ value, onChange }: Params) {
     try {
       const result = await profileImport.mutateAsync(url);
       if ('error' in result) {
-        notify.error({
-          message: isProfileAuthError(result.error)
-            ? t('resumeInput.profileLoginRequired')
-            : result.error,
-        });
+        notify.error({ message: result.error });
         return;
       }
       onChange(result.text);
