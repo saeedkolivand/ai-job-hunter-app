@@ -26,16 +26,32 @@ export function OnboardingStepWrapper({
   showStepDots = true,
   className = '',
 }: OnboardingStepWrapperProps) {
-  // Global keyboard nav for the onboarding flow: Enter advances (unless typing
-  // in an input/textarea), Escape goes back. A window listener keeps the
-  // interaction off the non-interactive step container (jsx-a11y).
+  // Global keyboard nav for the onboarding flow: Enter advances, Escape goes
+  // back — but only when focus isn't on something that already owns Enter
+  // itself. A window listener keeps the interaction off the non-interactive
+  // step container (jsx-a11y).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const activeElement = document.activeElement;
-      const isInputFocused =
-        activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+      // Typing surfaces, and anything that gets its own browser-synthesized
+      // `click` on Enter (button incl. role="button", link, select) — Enter
+      // there means "activate what I'm focused on" (pick this language tile,
+      // toggle this theme swatch, open this dropdown), not "advance the
+      // step". Letting the global shortcut ALSO fire in that case either
+      // double-advances when the focused button's own click already calls
+      // onNext (Continue — #939), or silently steals Enter from a control
+      // whose click does something else entirely. The global "advance"
+      // shortcut is reserved for focus that isn't on an interactive control
+      // at all (e.g. the step container itself).
+      const activeElementHandlesOwnActivation =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLButtonElement ||
+        activeElement instanceof HTMLAnchorElement ||
+        activeElement instanceof HTMLSelectElement ||
+        (activeElement instanceof HTMLElement && activeElement.getAttribute('role') === 'button');
 
-      if (e.key === 'Enter' && canAdvance && onNext && !isInputFocused) {
+      if (e.key === 'Enter' && canAdvance && onNext && !activeElementHandlesOwnActivation) {
         onNext();
       } else if (e.key === 'Escape' && onBack) {
         onBack();
