@@ -42,16 +42,48 @@ describe('ModelSelector — openai-compatible model-fetch gating', () => {
 
     render(<ModelSelector />, { wrapper: withProviders(client, queryClient) });
 
-    // Wait for the openai-compatible key-status query to genuinely settle
-    // (a real steady state) rather than a fixed sleep before the negative
-    // assertion, which fails in the direction that looks like success.
-    await waitFor(() =>
+    // Wait for BOTH inputs `canFetchModels` reads to genuinely settle — the
+    // key-status query AND the active-config query (the source of the base
+    // URL half of the check, via `baseUrlFor`). Gating on the key query
+    // alone would pass vacuously for a future variant that stubs a `baseUrl`
+    // while still expecting no fetch: `activeConfig` could still be
+    // in-flight at that point, so `baseUrlFor` would read `undefined` and the
+    // assertion would pass for the wrong reason.
+    await waitFor(() => {
       expect(
         queryClient.getQueryState(['ai', 'models', 'provider-key', 'openai-compatible'])?.status
-      ).toBe('success')
-    );
+      ).toBe('success');
+      expect(queryClient.getQueryState(['ai', 'activeConfig'])?.status).toBe('success');
+    });
 
     expect(listProviderModels).not.toHaveBeenCalled();
+  });
+
+  it('calls listProviderModels for openai-compatible when a key is stored, even with no base URL (PR #937 finding 2)', async () => {
+    // The other half of "configured" — authenticated by a stored KEY instead
+    // of a base URL. Must fetch same as any other cloud provider with a key;
+    // this is the network-level twin of the message-level regression test in
+    // ModelSelector.test.tsx (finding 2: the key query being irrelevant to
+    // openai-compatible was hardcoded, not conditional on actually having a
+    // base URL to fall back on).
+    const listProviderModels = vi.fn().mockResolvedValue([]);
+    const client = createMockClient({
+      'ai.listProviderModels': listProviderModels,
+      'ai.activeConfig': vi.fn().mockResolvedValue({ activeProvider: 'ollama', providers: {} }),
+      'ai.hasProviderKey': vi.fn().mockResolvedValue({ has: true }),
+      'ai.listModels': vi.fn().mockResolvedValue([]),
+      'system.health': vi.fn().mockResolvedValue({ ai: { ready: true }, cliAgents: {} }),
+    });
+    const queryClient = makeQueryClient();
+
+    render(<ModelSelector />, { wrapper: withProviders(client, queryClient) });
+
+    await waitFor(() =>
+      expect(listProviderModels).toHaveBeenCalledWith({
+        provider: 'openai-compatible',
+        baseUrl: undefined,
+      })
+    );
   });
 
   it('calls listProviderModels for openai-compatible once a base URL is configured, with no key', async () => {

@@ -68,25 +68,39 @@ let stubbedHealth: {
   data: { cliAgents?: Record<string, { detected: boolean }> } | undefined;
   isLoading: boolean;
 } = { data: undefined, isLoading: false };
-// `openai-compatible`'s stored base URL — the second half of `canFetchModels`'s
-// "actually configured" check (a stored key alone isn't enough for it; see
-// `isProviderConfigured`). Undefined by default so a test opts in explicitly.
+// `openai-compatible`'s stored base URL — an ALTERNATIVE to a stored key for
+// `canFetchModels`'s "actually configured" check (either satisfies it; see
+// `isProviderConfigured`), not a second requirement on top of one. Undefined
+// by default so a test opts in explicitly.
 let stubbedOpenAiCompatibleBaseUrl: string | undefined;
 
 // ── Service stubs — prevent QueryClient dependency ────────────────────────────
 
 vi.mock('@/services', () => ({
-  useActiveConfig: () => ({
-    data: {
-      activeProvider: stubbedActiveProvider,
-      model: stubbedActiveProviderModel,
-      providers: {
-        [stubbedActiveProvider]: { model: stubbedActiveProviderModel },
-        'openai-compatible': { baseUrl: stubbedOpenAiCompatibleBaseUrl },
+  useActiveConfig: () => {
+    // Built via two statements, not one object literal with both
+    // `[stubbedActiveProvider]: {...}` and a literal `'openai-compatible':
+    // {...}` key — when `stubbedActiveProvider === 'openai-compatible'`
+    // those are the SAME key, and the second entry would silently win,
+    // dropping `model` and leaving `activeProviderModel` `''` regardless of
+    // `stubbedActiveProviderModel`. Assigning `baseUrl` onto the existing
+    // entry (spreading whatever's already there) merges instead of overwrites.
+    const providers: Record<string, { model?: string; baseUrl?: string }> = {
+      [stubbedActiveProvider]: { model: stubbedActiveProviderModel },
+    };
+    providers['openai-compatible'] = {
+      ...providers['openai-compatible'],
+      baseUrl: stubbedOpenAiCompatibleBaseUrl,
+    };
+    return {
+      data: {
+        activeProvider: stubbedActiveProvider,
+        model: stubbedActiveProviderModel,
+        providers,
       },
-    },
-    isPending: false,
-  }),
+      isPending: false,
+    };
+  },
   useConfigureActiveProvider: () => ({ mutate: vi.fn() }),
   useAIModels: () => ({ data: stubbedOllamaModels, isLoading: false }),
   useHasProviderKey: () => ({ data: { has: false } }),
@@ -434,6 +448,50 @@ describe('ModelSelector — openai-compatible, key query loading (irrelevant to 
 
     expect(screen.queryByText('settings.aiModel.loading')).not.toBeInTheDocument();
     expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelSelector — openai-compatible never configured (PR #937 finding 1)', () => {
+  it('tells the user to add a base URL, not an API key — this is the default state for the population #936 exists for', () => {
+    stubbedActiveProvider = 'openai-compatible';
+    stubbedActiveProviderModel = '';
+    // Neither a base URL nor a key — the default state for a user who has
+    // never touched this provider (e.g. a fully-local Ollama user).
+    stubbedOpenAiCompatibleBaseUrl = undefined;
+    stubbedCloudKeyQueries = { 'openai-compatible': { data: { has: false }, isLoading: false } };
+
+    renderSelector();
+
+    // "Add an API key" is the one instruction that can never help here — the
+    // provider only ever needs a base URL, or a key it doesn't have shown.
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+    const note = screen.getByText('models.cloud.addUrlToLoad');
+    expect(note).toBeInTheDocument();
+    expect(note).toHaveAttribute('role', 'status');
+  });
+});
+
+describe('ModelSelector — openai-compatible authenticated by a KEY (no base URL), key query loading (PR #937 finding 2)', () => {
+  it('shows the loading hint, not "add a key/URL" — a stored key makes the key query relevant again', () => {
+    stubbedActiveProvider = 'openai-compatible';
+    stubbedActiveProviderModel = '';
+    // No base URL configured — this user authenticates with a stored KEY
+    // instead, so (unlike the keyless-via-base-URL case above) its readiness
+    // DOES depend on the key query settling.
+    stubbedOpenAiCompatibleBaseUrl = undefined;
+    stubbedCloudKeyQueries = { 'openai-compatible': { data: undefined, isLoading: true } };
+
+    renderSelector();
+
+    // Before the fix, `activeKeyRequired` excluded openai-compatible
+    // unconditionally, so `activeKeyLoading` stayed `false` while this query
+    // was still in flight — `canFetchModels` read the not-yet-loaded `false`
+    // default and told a user who has a key to add one (or, after finding 1's
+    // fix, to add a base URL — equally wrong for someone authenticated by key).
+    expect(screen.queryByText('models.cloud.addKeyToLoad')).not.toBeInTheDocument();
+    expect(screen.queryByText('models.cloud.addUrlToLoad')).not.toBeInTheDocument();
+    const loading = screen.getByText('settings.aiModel.loading');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
   });
 });
 

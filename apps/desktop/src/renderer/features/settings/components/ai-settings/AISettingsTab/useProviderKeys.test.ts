@@ -134,3 +134,70 @@ describe('useProviderKeys — expanded-row model fetch gating', () => {
     expect(listProviderModels).not.toHaveBeenCalled();
   });
 });
+
+describe('useProviderKeys — configuredBaseUrl (PR #937 finding 3)', () => {
+  // `CloudProviderConfig.canPickModel` and `expandedCanFetchModels` used to
+  // compute "the openai-compatible base URL" independently (raw `baseUrlInput`
+  // vs. trimmed-or-saved) — a divergence that could show/hide the picker out
+  // of step with what was actually being fetched. `configuredBaseUrl` is now
+  // resolved once here and handed to both.
+  it('resolves to the saved base URL even though baseUrlInput seeds empty on a cold-boot render', async () => {
+    // On mount, `useState(providerConfig?.providers?.[...]?.baseUrl ?? '')`
+    // reads whatever `useActiveConfig` had at that instant — `undefined`
+    // until the query resolves, so the seed is `''` here regardless of what
+    // ends up saved. `configuredBaseUrl` must self-correct once `providerConfig`
+    // loads (it re-reads the live query every render, not the stale seed).
+    const client = createMockClient({
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { 'openai-compatible': { baseUrl: 'http://localhost:1234/v1' } },
+      }),
+      'ai.hasProviderKey': vi.fn().mockResolvedValue({ has: false }),
+      'ai.listModels': vi.fn().mockResolvedValue([]),
+      'system.health': vi.fn().mockResolvedValue({ ai: { ready: false }, cliAgents: {} }),
+    });
+    const { result } = renderHookWithClient(() => useProviderKeys(), { client });
+
+    expect(result.current.baseUrlInput).toBe('');
+
+    await waitFor(() => expect(result.current.configuredBaseUrl).toBe('http://localhost:1234/v1'));
+  });
+
+  it('prefers an in-progress edit over the saved value', async () => {
+    const client = createMockClient({
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { 'openai-compatible': { baseUrl: 'http://localhost:1234/v1' } },
+      }),
+      'ai.hasProviderKey': vi.fn().mockResolvedValue({ has: false }),
+      'ai.listModels': vi.fn().mockResolvedValue([]),
+      'system.health': vi.fn().mockResolvedValue({ ai: { ready: false }, cliAgents: {} }),
+    });
+    const { result } = renderHookWithClient(() => useProviderKeys(), { client });
+
+    act(() => result.current.setBaseUrlInput('http://localhost:9999/v1'));
+
+    expect(result.current.configuredBaseUrl).toBe('http://localhost:9999/v1');
+  });
+
+  it('falls back to the saved value when the in-progress edit is cleared without saving', async () => {
+    // The exact divergence the finding reported: select-all + delete in the
+    // input must NOT read as "unconfigured" while a save is still saved.
+    const client = createMockClient({
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { 'openai-compatible': { baseUrl: 'http://localhost:1234/v1' } },
+      }),
+      'ai.hasProviderKey': vi.fn().mockResolvedValue({ has: false }),
+      'ai.listModels': vi.fn().mockResolvedValue([]),
+      'system.health': vi.fn().mockResolvedValue({ ai: { ready: false }, cliAgents: {} }),
+    });
+    const { result } = renderHookWithClient(() => useProviderKeys(), { client });
+
+    await waitFor(() => expect(result.current.configuredBaseUrl).toBe('http://localhost:1234/v1'));
+
+    act(() => result.current.setBaseUrlInput(''));
+
+    expect(result.current.configuredBaseUrl).toBe('http://localhost:1234/v1');
+  });
+});
