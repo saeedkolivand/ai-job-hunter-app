@@ -15,7 +15,7 @@ afterEach(() => {
 // is identical across variants since only the tag (a vs. plain text) differs
 // for the "current" item, never the word itself.
 const FOOT_LINKS_TEXT =
-  'home · how it works · download · privacy · accessibility · ▶ the short film · the agent fleet · architecture · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
+  'home · how it works · download · privacy · accessibility · ▶ the short film · the agent fleet · architecture · tech radar · design system · GitHub · Chrome extension · Firefox extension · ♥ sponsor';
 
 describe('SiteFooter', () => {
   it('renders the byline', () => {
@@ -42,6 +42,7 @@ describe('SiteFooter', () => {
       ['/creature', '▶ the short film'],
       ['/agent-system', 'the agent fleet'],
       ['/architecture-map', 'architecture'],
+      ['/tech-radar', 'tech radar'],
       ['/storybook/', 'design system'],
       [GITHUB_REPO, 'GitHub'],
       [CHROME_EXT, 'Chrome extension'],
@@ -65,6 +66,7 @@ describe('SiteFooter', () => {
       '/creature',
       '/agent-system',
       '/architecture-map',
+      '/tech-radar',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -88,6 +90,7 @@ describe('SiteFooter', () => {
       '/creature',
       '/agent-system',
       '/architecture-map',
+      '/tech-radar',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -111,6 +114,7 @@ describe('SiteFooter', () => {
       '/creature',
       '/agent-system',
       '/architecture-map',
+      '/tech-radar',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -134,6 +138,7 @@ describe('SiteFooter', () => {
       '/creature',
       '/agent-system',
       '/architecture-map',
+      '/tech-radar',
       '/storybook/',
       GITHUB_REPO,
       CHROME_EXT,
@@ -163,6 +168,7 @@ describe('SiteFooter', () => {
       '/creature',
       '/agent-system',
       '/architecture-map',
+      '/tech-radar',
       '/storybook/',
     ]) {
       const a = container.querySelector(`.foot-links a[href="${href}"]`);

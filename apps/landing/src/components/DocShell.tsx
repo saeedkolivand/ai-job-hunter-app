@@ -51,7 +51,7 @@ export function DocShell({
           <p className="doc-foot-links">
             <a href="/">home</a> · <a href="/download">download</a> ·{' '}
             <a href="/agent-system">the agent fleet</a> ·{' '}
-            <a href="/architecture-map">architecture</a> ·{' '}
+            <a href="/architecture-map">architecture</a> · <a href="/tech-radar">tech radar</a> ·{' '}
             <a href="/accessibility">accessibility</a> ·{' '}
             <a
               href="https://github.com/saeedkolivand/ai-job-hunter-app"
