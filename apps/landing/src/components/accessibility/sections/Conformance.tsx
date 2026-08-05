@@ -61,14 +61,14 @@ export function Conformance() {
       <div className="card">
         <span className="label">Landing site</span>
         <p style={{ marginTop: '0' }}>
-          0 violations across the <b>12 routes</b> the permanent gate covers (<code>/</code>,{' '}
+          0 violations across the <b>13 routes</b> the permanent gate covers (<code>/</code>,{' '}
           <code>/download</code>, <code>/how-it-works</code>, <code>/privacy</code>,{' '}
           <code>/accessibility</code>, <code>/creature</code>, <code>/world</code>,{' '}
-          <code>/architecture-map</code>, <code>/agent-system</code>, <code>/404</code>,{' '}
-          <code>/_not-found</code>, <code>/mission-control</code>). One more public page,{' '}
-          <code>/benchmarks/</code>, is deliberately excluded from the gate — see the card below,
-          not folded into this "0 violations" figure. Four barriers found across the manual passes
-          and the gate's own first run have since been fixed:
+          <code>/architecture-map</code>, <code>/agent-system</code>, <code>/tech-radar</code>,{' '}
+          <code>/404</code>, <code>/_not-found</code>, <code>/mission-control</code>). One more
+          public page, <code>/benchmarks/</code>, is deliberately excluded from the gate — see the
+          card below, not folded into this "0 violations" figure. Four barriers found across the
+          manual passes and the gate's own first run have since been fixed:
         </p>
         <ul>
           <li>

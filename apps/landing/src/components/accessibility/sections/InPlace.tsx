@@ -45,7 +45,7 @@ export function InPlace() {
           <code>apps/landing/scripts/check-a11y.mjs</code> re-runs the same axe-core WCAG A/AA scan
           on every landing pull request in CI and <b>fails the build</b> on any violation — unlike
           the three desktop checks below, which stay advisory. It auto-discovers every built route
-          instead of scanning a hand-maintained list, currently covering 12 routes (all clean) plus
+          instead of scanning a hand-maintained list, currently covering 13 routes (all clean) plus
           one page it deliberately excludes with a stated reason (see Known barriers above).
         </li>
       </ul>
