@@ -624,3 +624,149 @@ fn r8_no_oversized_modules() {
         &over_hard,
     );
 }
+
+// ── R15: no `.display()` inside a `log::*!`/`tracing::*!` call ───────────────────────
+// `.display()` (and equivalent path formatting) renders the OS-native absolute path —
+// under the user's home directory on every platform — directly into a log line. Those
+// lines land in `crashes.log` and the diagnostics bundle a user might send us, so this is
+// a privacy leak, not a style nit (AGENTS.md: never output an absolute path anywhere,
+// logs explicitly included).
+//
+// A `.display()` OUTSIDE a log/tracing macro — e.g. building an `AppError` message the
+// renderer shows the user about their OWN file — is a different, legitimate case and is
+// deliberately not scanned here; only the log-macro argument span is in scope.
+const R15_ALLOW: &[&str] = &[];
+
+const LOG_MACRO_MARKERS: &[&str] = &[
+    "log::error!(",
+    "log::warn!(",
+    "log::info!(",
+    "log::debug!(",
+    "log::trace!(",
+    "tracing::error!(",
+    "tracing::warn!(",
+    "tracing::info!(",
+    "tracing::debug!(",
+    "tracing::trace!(",
+];
+
+/// The lines spanning one macro call starting at `lines[start]`, up to and including its
+/// closing `);`. Bounded so a malformed/unusually long call can't scan the rest of the
+/// file. Relies on this codebase's consistent `rustfmt` output: inside a multi-line macro
+/// call, a nested call closes with a bare `)` (it isn't its own statement), so the first
+/// line ending in `);` is the outer call's own close — a single-line call's own opening
+/// line already ends in `);` and is returned alone.
+fn macro_call_span<'a>(lines: &'a [&'a str], start: usize) -> &'a [&'a str] {
+    const MAX_SPAN: usize = 20;
+    let last = start + MAX_SPAN.min(lines.len() - start) - 1;
+    let end = (start..=last)
+        .find(|&i| lines[i].trim_end().ends_with(");"))
+        .unwrap_or(start);
+    &lines[start..=end]
+}
+
+/// `(1-indexed line, matched line text)` for every `.display()` found inside a
+/// `log::*!`/`tracing::*!` call's argument span in `content`. Pure text-scan, no `sources()`
+/// dependency, so it is directly unit-testable against synthetic snippets below.
+fn find_display_leaks(content: &str) -> Vec<(usize, String)> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut hits = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if !is_comment_line(lines[i]) && LOG_MACRO_MARKERS.iter().any(|m| lines[i].contains(m)) {
+            let span = macro_call_span(&lines, i);
+            if let Some(offset) = span
+                .iter()
+                .position(|l| !is_comment_line(l) && l.contains(".display()"))
+            {
+                hits.push((i + 1 + offset, span[offset].to_string()));
+            }
+            i += span.len();
+            continue;
+        }
+        i += 1;
+    }
+    hits
+}
+
+#[test]
+fn r15_no_display_in_log_macros() {
+    let mut v = Vec::new();
+    for f in sources()
+        .iter()
+        .filter(|f| !f.is_test && !R15_ALLOW.contains(&f.rel.as_str()))
+    {
+        for (line, text) in find_display_leaks(&f.content) {
+            v.push((f.rel.clone(), line, text));
+        }
+    }
+    fail_if_any(
+        "R15",
+        "`.display()` must not appear inside a log::*!/tracing::*! call — it leaks an \
+         absolute, username-bearing path into logs and diagnostics bundles; log a file \
+         name (`.file_name()`) or a stable caller-supplied label instead",
+        &v,
+    );
+}
+
+#[cfg(test)]
+mod r15_detection_logic {
+    use super::find_display_leaks;
+
+    /// True positive: the exact multi-line shape both real violations this rule guards
+    /// against had (the `.display()` argument on a line separate from the macro-opening
+    /// line) — a same-line-only scan would have missed both.
+    #[test]
+    fn flags_display_on_a_later_line_of_a_multiline_log_call() {
+        let src = r#"
+fn f() {
+    log::error!(
+        "[postings] failed to write {}: {e}",
+        tmp.display()
+    );
+}
+"#;
+        let hits = find_display_leaks(src);
+        assert_eq!(hits.len(), 1, "must flag exactly one leak; got {hits:?}");
+        assert!(hits[0].1.contains(".display()"));
+    }
+
+    /// True positive: a single-line call is also covered (opening line == closing line).
+    #[test]
+    fn flags_display_on_a_single_line_log_call() {
+        let src = r#"log::warn!("mkdir {} failed: {e}", parent.display());"#;
+        let hits = find_display_leaks(src);
+        assert_eq!(hits.len(), 1, "single-line call must still be flagged");
+    }
+
+    /// True negative: a `.display()` used to build a user-facing `AppError` — never
+    /// wrapped in a log/tracing macro — is the documented legitimate case and must not
+    /// be flagged.
+    #[test]
+    fn does_not_flag_display_outside_a_log_macro() {
+        let src = r#"
+fn f() -> AppResult<()> {
+    Err(AppError::Storage(format!("could not read {}", path.display())))
+}
+"#;
+        assert!(
+            find_display_leaks(src).is_empty(),
+            "a user-facing AppError is not a log call and must not be flagged"
+        );
+    }
+
+    /// True negative: a `.display()` mentioned only in a comment (e.g. explaining why it
+    /// was removed) must not trip the rule.
+    #[test]
+    fn does_not_flag_display_inside_a_comment() {
+        let src = r#"
+fn f() {
+    log::error!(
+        // a `.display()` here would leak the path
+        "[postings] save skipped"
+    );
+}
+"#;
+        assert!(find_display_leaks(src).is_empty());
+    }
+}
