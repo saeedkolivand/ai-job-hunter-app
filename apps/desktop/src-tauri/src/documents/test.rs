@@ -634,6 +634,71 @@ fn test_posting_vector_upsert_replaces() {
     assert!(store.get_posting_vector("job-1").is_none());
 }
 
+// ── posting_vectors.version (self-detecting staleness, not hand-maintained) ────
+//
+// `get_posting_vector` used to ALWAYS synthesize the current
+// `EMBEDDING_VECTOR_VERSION` because the table had no persisted `version`
+// column — `EmbeddingConfig::matches` was structurally incapable of ever
+// rejecting a row here on format version (see the `add_version_to_posting_vectors`
+// migration doc comment). `upsert_posting_vector` now persists `v.space.version`
+// and `get_posting_vector` reads it back, so a stale-format row is a REAL cache
+// miss instead of a hand-maintained invariant.
+
+#[test]
+#[serial]
+fn posting_vector_stored_at_an_older_version_is_a_cache_miss() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let hash = sha256_hex("job text");
+    let mut stale = ev(vec![0.1, 0.2]);
+    stale.space.version = 0; // pre-migration / pre-bump format
+    store.upsert_posting_vector("job-1", &hash, &stale).unwrap();
+
+    let (got, got_hash) = store
+        .get_posting_vector("job-1")
+        .expect("row still round-trips — staleness is a MATCHES miss, not a read failure");
+    assert_eq!(
+        got.space.version, 0,
+        "the persisted version must survive the write, or the row silently reads as fresh"
+    );
+    assert_eq!(got_hash, hash);
+
+    // Same provider/model/hash, but the active config must reject the space on
+    // version alone.
+    assert!(
+        !cfg_ollama().matches(&got.space),
+        "a version-0 row must not match the active (current-version) space"
+    );
+    assert!(
+        !posting_vector_is_fresh(&cfg_ollama(), &hash, Some(&(got, got_hash))),
+        "a version-0 row must be an overall cache MISS even with a matching provider/model/hash"
+    );
+}
+
+#[test]
+#[serial]
+fn posting_vector_at_the_current_version_with_matching_hash_is_a_cache_hit() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let hash = sha256_hex("job text");
+    store
+        .upsert_posting_vector("job-1", &hash, &ev(vec![0.1, 0.2]))
+        .unwrap();
+
+    let cached = store.get_posting_vector("job-1");
+    assert_eq!(
+        cached.as_ref().map(|(v, _)| v.space.version),
+        Some(EMBEDDING_VECTOR_VERSION),
+        "a freshly-written row must persist the CURRENT version, not a placeholder"
+    );
+    assert!(
+        posting_vector_is_fresh(&cfg_ollama(), &hash, cached.as_ref()),
+        "a current-version row with a matching space + hash must be a HIT"
+    );
+}
+
 // ── embedding_space_changed (ai_set_embedding_config eviction gate) ───────────
 //
 // Pins the decision `ai_set_embedding_config` uses to decide whether to evict
@@ -924,6 +989,82 @@ fn evict_posting_vectors_for_embedding_format_v2_heals_a_pre_seeded_row_through_
 
     let store = DocumentStore::open(&dir).unwrap();
     assert_eq!(count_table(&store, "posting_vectors"), 0);
+}
+
+#[test]
+#[serial]
+fn add_version_to_posting_vectors_heals_a_pre_seeded_row_through_a_real_open() {
+    // Bring a fresh DB up to JUST BEFORE the version-column migration
+    // (simulating an install created before this fix shipped), seed a row
+    // through the OLD (no `version` column) schema, then open it for REAL —
+    // proving the `Migration { .. }` entry is actually registered and reached,
+    // and that a pre-existing row defaults to version 0 (`DEFAULT 0`) rather
+    // than silently reading as the current format.
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let version_idx = all
+        .iter()
+        .position(|m| m.name == "add_version_to_posting_vectors")
+        .expect("add_version_to_posting_vectors must still be registered");
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..version_idx]).unwrap();
+        // Old (pre-migration) schema has no `version` column yet. `created_at`
+        // is "now" (not epoch 0) so the row survives the read-side TTL filter
+        // in `get_posting_vector` below — this test is about the version
+        // column, not TTL expiry.
+        conn.execute(
+            "INSERT INTO posting_vectors (job_id, text_hash, vector, provider, model, dim, created_at) \
+             VALUES ('job-1', 'hash', '[0.1,0.2]', 'ollama', 'nomic-embed-text', 2, ?1)",
+            params![ts_to_db(now_ms())],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, including the
+    // version-column one, without erroring on the pre-existing row.
+    let store = DocumentStore::open(&dir).unwrap();
+    let (v, hash) = store
+        .get_posting_vector("job-1")
+        .expect("a pre-migration row must still round-trip after the column is added");
+    assert_eq!(hash, "hash");
+    assert_eq!(
+        v.space.version, 0,
+        "a pre-existing row must default to version 0 (DEFAULT 0), not silently read as current"
+    );
+    assert!(
+        !cfg_ollama().matches(&v.space),
+        "a migrated pre-existing row must be a MATCHES miss against the active (current) config"
+    );
+}
+
+#[test]
+#[serial]
+fn add_version_to_posting_vectors_migration_is_idempotent_on_reopen() {
+    // Opening an already-migrated DB a second time must not error (the
+    // `column_exists` guard makes a repeated ALTER TABLE a no-op) and must not
+    // disturb an existing current-version row.
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    let store = DocumentStore::open(&dir).unwrap();
+    let hash = sha256_hex("job text");
+    store
+        .upsert_posting_vector("job-1", &hash, &ev(vec![0.1, 0.2]))
+        .unwrap();
+    drop(store);
+
+    // Re-open the same directory — every migration (including this one) runs
+    // its `column_exists` check again against an already-migrated schema.
+    let reopened = DocumentStore::open(&dir).unwrap();
+    let (v, got_hash) = reopened
+        .get_posting_vector("job-1")
+        .expect("row must survive a reopen");
+    assert_eq!(got_hash, hash);
+    assert_eq!(v.space.version, EMBEDDING_VECTOR_VERSION);
 }
 
 // ── Match-result cache ────────────────────────────────────────────────────────
