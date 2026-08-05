@@ -11,17 +11,19 @@
 //! non-test scans.
 
 use super::{
-    advance_cursor, build_chat_stream_body, build_embed_body, gemini_effective_temperature,
-    gemini_effort_levels, gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text,
-    pagination_step, parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts,
-    parse_gemini_turn, parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider,
-    GeminiClient, GeminiScanner, PaginationStep, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
-    MAX_LIST_MODELS_PAGES,
+    build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
+    gemini_is_v3_or_later, gemini_supports_thinking, join_parts_text, parse_gemini_embed_usage,
+    parse_gemini_frames, parse_gemini_parts, parse_gemini_turn, parse_gemini_usage,
+    parse_model_page, validate_gemini_key, AiProvider, GeminiClient, GeminiScanner, StreamPiece,
+    EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
 use serde_json::{json, Value};
+use std::time::Duration;
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn base_request() -> AiGenerateRequest {
     AiGenerateRequest {
@@ -719,80 +721,132 @@ fn parse_model_page_treats_an_empty_next_page_token_as_the_last_page() {
     assert_eq!(cursor, None);
 }
 
-#[test]
-fn advance_cursor_stops_when_there_is_no_next_page() {
-    assert_eq!(advance_cursor(&None, None), None);
-    assert_eq!(advance_cursor(&Some("t1".to_string()), None), None);
-}
+// `advance_cursor`/`PaginationStep`/`pagination_step` are shared, generic
+// helpers now — see `ai_provider::mod`'s test module for their coverage.
+// Duplicating them here per-adapter is exactly the "a rule implemented
+// twice that silently stops agreeing" defect class this codebase keeps
+// paying for; one copy, one set of tests.
 
-#[test]
-fn advance_cursor_stops_on_a_non_advancing_token() {
-    // The exact bug this guards against: a provider returning the same
-    // `nextPageToken` forever must not loop `MAX_LIST_MODELS_PAGES` times
-    // re-fetching the same page.
-    assert_eq!(
-        advance_cursor(&Some("t1".to_string()), Some("t1".to_string())),
-        None
-    );
-}
+// ── list_models_transport (wiremock — the pagination HTTP loop itself,
+// not just pagination_step's pure decision) ─────────────────────────────────
 
-#[test]
-fn advance_cursor_continues_on_a_genuinely_new_token() {
-    assert_eq!(
-        advance_cursor(&None, Some("t1".to_string())),
-        Some("t1".to_string())
-    );
-    assert_eq!(
-        advance_cursor(&Some("t1".to_string()), Some("t2".to_string())),
-        Some("t2".to_string())
-    );
-}
+#[tokio::test]
+async fn list_models_transport_propagates_the_cursor_into_the_next_requests_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    // Only matches when `pageToken` carries EXACTLY page 1's
+    // `nextPageToken` — proves the token is wired from the parsed response
+    // into the next request's query, not just decided in the abstract by
+    // `pagination_step`.
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-2.5-flash" }],
+        })))
+        .mount(&server)
+        .await;
 
-#[test]
-fn pagination_step_errors_incomplete_at_the_final_page_with_an_advancing_token() {
-    // The exact boundary this finding is about: page index
-    // `MAX_LIST_MODELS_PAGES - 1` is the LAST iteration the `for` loop runs —
-    // a genuinely new token there means there's more catalogue the fetch
-    // won't cover, and that must reject, not silently return `Ok`.
+    let models = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect("both pages must be fetched, the token propagated between them");
     assert_eq!(
-        pagination_step(
-            MAX_LIST_MODELS_PAGES - 1,
-            &Some("t48".to_string()),
-            Some("t49".to_string())
-        ),
-        PaginationStep::Incomplete
-    );
-}
-
-#[test]
-fn pagination_step_continues_before_the_final_page() {
-    assert_eq!(
-        pagination_step(0, &None, Some("t1".to_string())),
-        PaginationStep::Continue("t1".to_string())
+        models,
+        vec![
+            json!({ "name": "gemini-3-pro" }),
+            json!({ "name": "gemini-2.5-flash" }),
+        ]
     );
 }
 
-#[test]
-fn pagination_step_is_done_when_there_is_no_next_page_even_at_the_final_index() {
-    // A clean end-of-catalogue on the LAST allowed page is not incomplete —
-    // only a still-advancing token at that boundary is.
-    assert_eq!(
-        pagination_step(MAX_LIST_MODELS_PAGES - 1, &Some("t48".to_string()), None),
-        PaginationStep::Done
-    );
+#[tokio::test]
+async fn list_models_transport_propagates_a_mid_pagination_status_error_instead_of_the_pages_already_collected(
+) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err(
+            "a failure on page 2 must reject the whole fetch, never return page 1's models alone",
+        );
+    // 500 classifies as Network via `friendly_api_error` — not the point of
+    // this test, but asserted so a future change that silently swallows
+    // page 2's error can't slip through.
+    assert!(matches!(err, AppError::Network(_)));
 }
 
-#[test]
-fn pagination_step_is_done_on_a_non_advancing_token_even_at_the_final_index() {
-    // The progress guard (a stuck/non-advancing token) is a legitimate
-    // stopping point, not an incomplete-catalogue error — even at the page
-    // budget's boundary.
-    assert_eq!(
-        pagination_step(
-            MAX_LIST_MODELS_PAGES - 1,
-            &Some("t48".to_string()),
-            Some("t48".to_string())
-        ),
-        PaginationStep::Done
-    );
+#[tokio::test]
+async fn list_models_transport_errors_when_page_two_is_malformed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param_is_missing("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "models": [{ "name": "models/gemini-3-pro" }],
+            "nextPageToken": "gemini-page1-token",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .and(query_param("pageToken", "gemini-page1-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "unexpected": "shape" })))
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a malformed page 2 body must reject the whole fetch");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
+    // A cumulative deadline shorter than a single (delayed) response must
+    // still fire — proving `total_deadline` genuinely bounds the WHOLE
+    // paginated fetch, not a per-request ceiling that never actually
+    // triggers in practice (the exact guarantee this PR kept discovering
+    // was never true elsewhere in this loop).
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1beta/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "models": [{ "name": "models/gemini-3-pro" }] }))
+                .set_delay(Duration::from_millis(150)),
+        )
+        .mount(&server)
+        .await;
+
+    let err = GeminiClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_millis(30))
+        .await
+        .expect_err("a cumulative deadline shorter than the response delay must fire");
+    assert!(matches!(err, AppError::Network(_)));
 }

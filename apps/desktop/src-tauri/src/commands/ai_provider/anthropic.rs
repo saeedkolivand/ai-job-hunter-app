@@ -13,9 +13,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, model_entry, parse_rfc3339_millis, single_shot_turn, split_system,
-    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, RequestTrace,
-    StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    friendly_api_error, model_entry, pagination_step, parse_rfc3339_millis, single_shot_turn,
+    split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities,
+    PaginationStep, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -100,52 +100,6 @@ fn parse_model_page(body: &Value) -> AppResult<(Vec<Value>, Option<String>)> {
         None
     };
     Ok((names, cursor))
-}
-
-/// Whether pagination should continue to `next` — `None` when there's no next
-/// page OR when `next` doesn't differ from `current` (a provider returning a
-/// non-advancing cursor must stop the loop, not re-fetch the same page up to
-/// `MAX_LIST_MODELS_PAGES` times, duplicating entries). Pure so the
-/// progress-guard is unit-testable without a network mock.
-fn advance_cursor(current: &Option<String>, next: Option<String>) -> Option<String> {
-    if next.is_none() || &next == current {
-        None
-    } else {
-        next
-    }
-}
-
-/// Outcome of one `list_models` pagination iteration — see [`pagination_step`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PaginationStep {
-    /// Fetch another page with this cursor.
-    Continue(String),
-    /// A genuine stopping point: no next page, or [`advance_cursor`]'s
-    /// progress guard caught a stuck cursor. `Ok(all)`.
-    Done,
-    /// Ran out of `MAX_LIST_MODELS_PAGES` while the cursor was STILL
-    /// genuinely advancing — there IS more catalogue this fetch didn't
-    /// cover. Must reject rather than silently return an incomplete list.
-    Incomplete,
-}
-
-/// One step of the `MAX_LIST_MODELS_PAGES`-bounded pagination loop's control
-/// flow: given the 0-based index of the page JUST fetched and the raw `next`
-/// cursor it reported, decide whether to continue, stop cleanly, or stop
-/// incomplete. Pure (no I/O) so the exact `MAX_LIST_MODELS_PAGES` boundary is
-/// unit-testable without 50 live HTTP round-trips — `list_models`'s loop
-/// calls this once per page and dispatches on the result, so this function
-/// (not a hand-duplicated copy) is what actually runs in production.
-fn pagination_step(
-    page_index: usize,
-    current: &Option<String>,
-    next: Option<String>,
-) -> PaginationStep {
-    match advance_cursor(current, next) {
-        Some(id) if page_index + 1 < MAX_LIST_MODELS_PAGES => PaginationStep::Continue(id),
-        Some(_) => PaginationStep::Incomplete,
-        None => PaginationStep::Done,
-    }
 }
 
 /// Whether a model should be sent the classic `thinking: {type:"enabled",
@@ -882,6 +836,82 @@ impl AnthropicClient {
         trace.end(Some(status.as_u16()), true);
         Ok(join_text_blocks(&data))
     }
+
+    /// The full paginated `/v1/models` transport — no `AppHandle`, so it's
+    /// directly testable against a `wiremock::MockServer` by passing its
+    /// `uri()` as `base` (production always calls this with `BASE`).
+    /// Mirrors [`OpenAiClient::list_models_transport`](super::openai::OpenAiClient::list_models_transport).
+    ///
+    /// Loops through `after_id` pages up to `MAX_LIST_MODELS_PAGES`, bounded
+    /// by a SINGLE cumulative `total_deadline` across every page (not a
+    /// fresh timeout per request) — also a parameter (production always
+    /// passes `timeouts::LIST_MODELS_TOTAL`) so a test can force it to
+    /// expire in milliseconds instead of 30 real seconds.
+    async fn list_models_transport(
+        &self,
+        base: &str,
+        api_key: &str,
+        total_deadline: std::time::Duration,
+    ) -> AppResult<Vec<Value>> {
+        let client = crate::net::http::shared();
+        let mut all = Vec::new();
+        let mut after_id: Option<String> = None;
+        let deadline = tokio::time::Instant::now() + total_deadline;
+        for page_index in 0..MAX_LIST_MODELS_PAGES {
+            let mut req = client
+                .get(format!("{base}/models"))
+                .header("x-api-key", api_key)
+                .header("anthropic-version", VERSION)
+                // No explicit `limit`: the `after_id` cursor loop below already
+                // guarantees the full catalogue, so a page-size override would
+                // only save a round-trip on a 300s-cached query — in exchange
+                // for a hardcoded maximum we cannot verify, which would 400 the
+                // WHOLE listing if it were ever wrong. Verified fields are
+                // `has_more`/`last_id` (Anthropic SDK `SyncPage`); the accepted
+                // `limit` ceiling is not, so we don't assert one.
+                .timeout(timeouts::LIST_MODELS);
+            if let Some(id) = &after_id {
+                req = req.query(&[("after_id", id.as_str())]);
+            }
+            let resp = match tokio::time::timeout_at(deadline, req.send()).await {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => {
+                    return Err(AppError::Network(format!(
+                        "{}: request failed: {e}",
+                        self.id().as_str()
+                    )))
+                }
+                Err(_elapsed) => {
+                    return Err(AppError::Network(format!(
+                        "{}: timed out listing models across multiple pages",
+                        self.id().as_str()
+                    )))
+                }
+            };
+            let status = resp.status();
+            if !status.is_success() {
+                let body_text = resp.text().await.unwrap_or_default();
+                return Err(friendly_api_error(self.id(), status, &body_text));
+            }
+            let body: Value = resp
+                .json()
+                .await
+                .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
+            let (mut page, cursor) = parse_model_page(&body)?;
+            all.append(&mut page);
+            match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &after_id, cursor) {
+                PaginationStep::Continue(id) => after_id = Some(id),
+                PaginationStep::Done => break,
+                PaginationStep::Incomplete => {
+                    return Err(AppError::Provider(format!(
+                        "{}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list",
+                        self.id().as_str()
+                    )))
+                }
+            }
+        }
+        Ok(all)
+    }
 }
 
 #[async_trait]
@@ -1078,67 +1108,8 @@ impl AiProvider for AnthropicClient {
 
     async fn list_models(&self, app: &AppHandle) -> AppResult<Vec<Value>> {
         let api_key = require_anthropic_key(get_provider_key(app, self.id().credential_key()))?;
-        let client = crate::net::http::shared();
-        let mut all = Vec::new();
-        let mut after_id: Option<String> = None;
-        // One deadline for the WHOLE paginated fetch, not per-request — a
-        // per-request-only timeout lets up to `MAX_LIST_MODELS_PAGES` individual
-        // `LIST_MODELS` timeouts chain into one very long invoke.
-        let deadline = tokio::time::Instant::now() + timeouts::LIST_MODELS_TOTAL;
-        for page_index in 0..MAX_LIST_MODELS_PAGES {
-            let mut req = client
-                .get(format!("{BASE}/models"))
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", VERSION)
-                // No explicit `limit`: the `after_id` cursor loop below already
-                // guarantees the full catalogue, so a page-size override would
-                // only save a round-trip on a 300s-cached query — in exchange
-                // for a hardcoded maximum we cannot verify, which would 400 the
-                // WHOLE listing if it were ever wrong. Verified fields are
-                // `has_more`/`last_id` (Anthropic SDK `SyncPage`); the accepted
-                // `limit` ceiling is not, so we don't assert one.
-                .timeout(timeouts::LIST_MODELS);
-            if let Some(id) = &after_id {
-                req = req.query(&[("after_id", id.as_str())]);
-            }
-            let resp = match tokio::time::timeout_at(deadline, req.send()).await {
-                Ok(Ok(r)) => r,
-                Ok(Err(e)) => {
-                    return Err(AppError::Network(format!(
-                        "{}: request failed: {e}",
-                        self.id().as_str()
-                    )))
-                }
-                Err(_elapsed) => {
-                    return Err(AppError::Network(format!(
-                        "{}: timed out listing models across multiple pages",
-                        self.id().as_str()
-                    )))
-                }
-            };
-            let status = resp.status();
-            if !status.is_success() {
-                let body_text = resp.text().await.unwrap_or_default();
-                return Err(friendly_api_error(self.id(), status, &body_text));
-            }
-            let body: Value = resp
-                .json()
-                .await
-                .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
-            let (mut page, cursor) = parse_model_page(&body)?;
-            all.append(&mut page);
-            match pagination_step(page_index, &after_id, cursor) {
-                PaginationStep::Continue(id) => after_id = Some(id),
-                PaginationStep::Done => break,
-                PaginationStep::Incomplete => {
-                    return Err(AppError::Provider(format!(
-                        "{}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list",
-                        self.id().as_str()
-                    )))
-                }
-            }
-        }
-        Ok(all)
+        self.list_models_transport(BASE, &api_key, timeouts::LIST_MODELS_TOTAL)
+            .await
     }
 
     async fn test_key(&self, app: &AppHandle) -> AppResult<()> {

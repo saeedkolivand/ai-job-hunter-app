@@ -13,6 +13,9 @@
 
 use super::*;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
+use std::time::Duration;
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn base_request(model: &str) -> AiGenerateRequest {
     AiGenerateRequest {
@@ -947,88 +950,138 @@ fn parse_model_page_errors_when_has_more_is_true_but_last_id_is_blank() {
     ));
 }
 
-#[test]
-fn advance_cursor_stops_when_there_is_no_next_page() {
-    assert_eq!(advance_cursor(&None, None), None);
-    assert_eq!(advance_cursor(&Some("id1".to_string()), None), None);
-}
+// `advance_cursor`/`PaginationStep`/`pagination_step` are shared, generic
+// helpers now — see `ai_provider::mod`'s test module for their coverage.
+// Duplicating them here per-adapter is exactly the "a rule implemented
+// twice that silently stops agreeing" defect class this codebase keeps
+// paying for; one copy, one set of tests.
 
-#[test]
-fn advance_cursor_stops_on_a_non_advancing_cursor() {
-    // The exact bug this guards against: a provider returning the same
-    // `last_id` forever must not loop `MAX_LIST_MODELS_PAGES` times
-    // re-fetching the same page.
-    assert_eq!(
-        advance_cursor(&Some("id1".to_string()), Some("id1".to_string())),
-        None
-    );
-}
+// ── list_models_transport (wiremock — the pagination HTTP loop itself,
+// not just pagination_step's pure decision) ─────────────────────────────────
 
-#[test]
-fn advance_cursor_continues_on_a_genuinely_new_cursor() {
-    assert_eq!(
-        advance_cursor(&None, Some("id1".to_string())),
-        Some("id1".to_string())
-    );
-    assert_eq!(
-        advance_cursor(&Some("id1".to_string()), Some("id2".to_string())),
-        Some("id2".to_string())
-    );
-}
+#[tokio::test]
+async fn list_models_transport_propagates_the_cursor_into_the_next_requests_query() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    // Only matches when `after_id` carries EXACTLY page 1's `last_id` —
+    // proves the cursor is wired from the parsed response into the next
+    // request's query, not just decided in the abstract by `pagination_step`.
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-opus-5" }],
+            "has_more": false,
+        })))
+        .mount(&server)
+        .await;
 
-#[test]
-fn pagination_step_errors_incomplete_at_the_final_page_with_an_advancing_cursor() {
-    // The exact boundary this finding is about: page index
-    // `MAX_LIST_MODELS_PAGES - 1` is the LAST iteration the `for` loop runs —
-    // a genuinely new cursor there means there's more catalogue the fetch
-    // won't cover, and that must reject, not silently return `Ok`.
+    let models = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect("both pages must be fetched, the cursor propagated between them");
     assert_eq!(
-        pagination_step(
-            MAX_LIST_MODELS_PAGES - 1,
-            &Some("id48".to_string()),
-            Some("id49".to_string())
-        ),
-        PaginationStep::Incomplete
-    );
-}
-
-#[test]
-fn pagination_step_continues_before_the_final_page() {
-    assert_eq!(
-        pagination_step(0, &None, Some("id1".to_string())),
-        PaginationStep::Continue("id1".to_string())
-    );
-    assert_eq!(
-        pagination_step(
-            MAX_LIST_MODELS_PAGES - 2,
-            &Some("id47".to_string()),
-            Some("id48".to_string())
-        ),
-        PaginationStep::Continue("id48".to_string())
+        models,
+        vec![
+            json!({ "name": "claude-sonnet-5" }),
+            json!({ "name": "claude-opus-5" }),
+        ]
     );
 }
 
-#[test]
-fn pagination_step_is_done_when_there_is_no_next_page_even_at_the_final_index() {
-    // A clean end-of-catalogue on the LAST allowed page is not incomplete —
-    // only a still-advancing cursor at that boundary is.
-    assert_eq!(
-        pagination_step(MAX_LIST_MODELS_PAGES - 1, &Some("id48".to_string()), None),
-        PaginationStep::Done
-    );
+#[tokio::test]
+async fn list_models_transport_propagates_a_mid_pagination_status_error_instead_of_the_pages_already_collected(
+) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err(
+            "a failure on page 2 must reject the whole fetch, never return page 1's models alone",
+        );
+    // 500 classifies as Network via `friendly_api_error` — not the point of
+    // this test (see the classification tests), but asserted so a future
+    // change that silently swallows page 2's error can't slip through.
+    assert!(matches!(err, AppError::Network(_)));
 }
 
-#[test]
-fn pagination_step_is_done_on_a_non_advancing_cursor_even_at_the_final_index() {
-    // The progress guard (a stuck/non-advancing cursor) is a legitimate
-    // stopping point, not an incomplete-catalogue error — even at the page
-    // budget's boundary.
-    assert_eq!(
-        pagination_step(
-            MAX_LIST_MODELS_PAGES - 1,
-            &Some("id48".to_string()),
-            Some("id48".to_string())
-        ),
-        PaginationStep::Done
-    );
+#[tokio::test]
+async fn list_models_transport_errors_when_page_two_is_malformed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-page1-last",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-page1-last"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "unexpected": "shape" })))
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
+        .await
+        .expect_err("a malformed page 2 body must reject the whole fetch");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
+    // A cumulative deadline shorter than a single (delayed) response must
+    // still fire — proving `total_deadline` genuinely bounds the WHOLE
+    // paginated fetch, not a per-request ceiling that never actually
+    // triggers in practice (the exact guarantee this PR kept discovering
+    // was never true elsewhere in this loop).
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "data": [{ "id": "claude-sonnet-5" }],
+                    "has_more": false,
+                }))
+                .set_delay(Duration::from_millis(150)),
+        )
+        .mount(&server)
+        .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_millis(30))
+        .await
+        .expect_err("a cumulative deadline shorter than the response delay must fire");
+    assert!(matches!(err, AppError::Network(_)));
 }
