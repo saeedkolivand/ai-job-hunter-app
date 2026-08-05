@@ -13,9 +13,10 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, model_entry, pagination_step, parse_rfc3339_millis, single_shot_turn,
-    split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities,
-    PaginationStep, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    bounded, friendly_api_error, model_entry, pagination_step, parse_rfc3339_millis,
+    single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
+    ModelCapabilities, PaginationStep, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
+    ToolSpec, Usage,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -873,39 +874,37 @@ impl AnthropicClient {
             if let Some(id) = &after_id {
                 req = req.query(&[("after_id", id.as_str())]);
             }
-            let resp = match tokio::time::timeout_at(deadline, req.send()).await {
-                Ok(Ok(r)) => r,
-                Ok(Err(e)) => {
-                    return Err(AppError::Network(format!(
-                        "{}: request failed: {e}",
-                        self.id().as_str()
-                    )))
-                }
-                Err(_elapsed) => {
-                    return Err(AppError::Network(format!(
-                        "{}: timed out listing models across multiple pages",
-                        self.id().as_str()
-                    )))
-                }
-            };
+            let name = self.id().as_str();
+            // Every I/O step below races the SAME cumulative `deadline` via
+            // `bounded` — not just the send. A stalled body would otherwise
+            // blow straight through `total_deadline` even though the send
+            // itself resolved (headers arrived) well within budget.
+            let resp = bounded(deadline, name, req.send())
+                .await?
+                .map_err(|e| AppError::Network(format!("{name}: request failed: {e}")))?;
             let status = resp.status();
             if !status.is_success() {
-                let body_text = resp.text().await.unwrap_or_default();
+                let body_text = bounded(deadline, name, resp.text())
+                    .await?
+                    .unwrap_or_default();
                 return Err(friendly_api_error(self.id(), status, &body_text));
             }
-            let body: Value = resp
-                .json()
-                .await
-                .map_err(|e| AppError::Provider(format!("{}: parse: {e}", self.id().as_str())))?;
+            let body: Value = bounded(deadline, name, resp.json())
+                .await?
+                .map_err(|e| AppError::Provider(format!("{name}: parse: {e}")))?;
             let (mut page, cursor) = parse_model_page(&body)?;
             all.append(&mut page);
             match pagination_step(page_index, MAX_LIST_MODELS_PAGES, &after_id, cursor) {
                 PaginationStep::Continue(id) => after_id = Some(id),
                 PaginationStep::Done => break,
+                PaginationStep::Stalled => {
+                    return Err(AppError::Provider(format!(
+                        "{name}: has_more is true but last_id didn't advance — the provider claims another page exists but gave no way to reach it"
+                    )))
+                }
                 PaginationStep::Incomplete => {
                     return Err(AppError::Provider(format!(
-                        "{}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list",
-                        self.id().as_str()
+                        "{name}: model catalogue has more than {MAX_LIST_MODELS_PAGES} pages — stopped early rather than return an incomplete list"
                     )))
                 }
             }

@@ -14,8 +14,54 @@
 use super::*;
 use crate::ipc_contracts::ai::AiGenerateRequestMessage;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A minimal raw-socket HTTP/1.1 server that writes each response's status
+/// line + headers immediately, then sleeps `body_delay` BEFORE writing that
+/// response's body. `wiremock::ResponseTemplate::set_delay` cannot build
+/// this: its delay elapses entirely BEFORE any bytes (headers included)
+/// reach the socket, so it only ever exercises `req.send()`'s own timeout —
+/// never a `resp.text()`/`resp.json()` blocked on a body that's slow to
+/// arrive AFTER `send()` already resolved, which is the actual gap a
+/// cumulative deadline has to cover. Serves `bodies` in order, one per
+/// accepted connection (`Connection: close`, so each page fetch opens a new
+/// one) — `bodies[i].1` is that page's body-write delay.
+async fn slow_body_server(bodies: Vec<(String, Duration)>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        for (body, body_delay) in bodies {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            // Drain the request up to the blank line ending its headers —
+            // contents don't matter, only connection ORDER distinguishes pages.
+            let mut buf = [0u8; 4096];
+            loop {
+                match socket.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") => break,
+                    Ok(_) => continue,
+                }
+            }
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(headers.as_bytes()).await;
+            let _ = socket.flush().await;
+            if !body_delay.is_zero() {
+                tokio::time::sleep(body_delay).await;
+            }
+            let _ = socket.write_all(body.as_bytes()).await;
+            let _ = socket.flush().await;
+        }
+    });
+    format!("http://{addr}")
+}
 
 fn base_request(model: &str) -> AiGenerateRequest {
     AiGenerateRequest {
@@ -1059,29 +1105,73 @@ async fn list_models_transport_errors_when_page_two_is_malformed() {
 }
 
 #[tokio::test]
-async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
-    // A cumulative deadline shorter than a single (delayed) response must
-    // still fire — proving `total_deadline` genuinely bounds the WHOLE
-    // paginated fetch, not a per-request ceiling that never actually
-    // triggers in practice (the exact guarantee this PR kept discovering
-    // was never true elsewhere in this loop).
+async fn list_models_transport_errors_when_the_provider_reports_a_stalled_cursor() {
+    // `has_more: true` with the SAME `last_id` twice: the provider claims
+    // more data exists but gives no way to reach it. The exact regression
+    // this whole finding is about — silently treating this as `Done` and
+    // returning the one page collected as `Ok` — must not happen at the
+    // transport level either, not just in the pure `pagination_step` unit
+    // tests.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/models"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({
-                    "data": [{ "id": "claude-sonnet-5" }],
-                    "has_more": false,
-                }))
-                .set_delay(Duration::from_millis(150)),
-        )
+        .and(query_param_is_missing("after_id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-stuck",
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .and(query_param("after_id", "claude-stuck"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{ "id": "claude-sonnet-5" }],
+            "has_more": true,
+            "last_id": "claude-stuck",
+        })))
         .mount(&server)
         .await;
 
     let err = AnthropicClient
-        .list_models_transport(&server.uri(), "dummy-key", Duration::from_millis(30))
+        .list_models_transport(&server.uri(), "dummy-key", Duration::from_secs(30))
         .await
-        .expect_err("a cumulative deadline shorter than the response delay must fire");
+        .expect_err("a stalled cursor must reject, never silently return the partial catalogue");
+    assert!(matches!(err, AppError::Provider(_)));
+}
+
+#[tokio::test]
+async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_multiple_pages() {
+    // Page 1 responds instantly (well within budget) and reports a cursor.
+    // Page 2 writes its HEADERS instantly too — `send()` resolves fast — but
+    // stalls its BODY well past the REMAINING budget. A deadline that only
+    // wraps `send()` (the pre-fix bug) would let this succeed late instead
+    // of erroring; only wrapping the body reads too catches it. Verified
+    // (before applying that fix) that this test genuinely fails against the
+    // unfixed transport — it doesn't error at all, it just returns `Ok`
+    // after the full body delay, which is the exact silent-non-enforcement
+    // bug this test exists to catch.
+    let page1 = json!({
+        "data": [{ "id": "claude-sonnet-5" }],
+        "has_more": true,
+        "last_id": "claude-page1-last",
+    })
+    .to_string();
+    let page2 = json!({
+        "data": [{ "id": "claude-opus-5" }],
+        "has_more": false,
+    })
+    .to_string();
+    let base = slow_body_server(vec![
+        (page1, Duration::ZERO),
+        (page2, Duration::from_millis(100)),
+    ])
+    .await;
+
+    let err = AnthropicClient
+        .list_models_transport(&base, "dummy-key", Duration::from_millis(40))
+        .await
+        .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
     assert!(matches!(err, AppError::Network(_)));
 }

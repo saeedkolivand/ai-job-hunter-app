@@ -70,19 +70,24 @@ fn parse_rfc3339_millis_is_none_on_a_malformed_timestamp() {
 // ── advance_cursor / pagination_step (shared by every paginated adapter) ───
 
 #[test]
-fn advance_cursor_stops_when_there_is_no_next_page() {
-    assert_eq!(advance_cursor::<String>(&None, None), None);
-    assert_eq!(advance_cursor(&Some("id1".to_string()), None), None);
+fn advance_cursor_is_done_only_when_there_is_no_cursor_at_all() {
+    assert_eq!(advance_cursor::<String>(&None, None), CursorProgress::Done);
+    assert_eq!(
+        advance_cursor(&Some("id1".to_string()), None),
+        CursorProgress::Done
+    );
 }
 
 #[test]
-fn advance_cursor_stops_on_a_non_advancing_cursor() {
-    // The exact bug this guards against: a provider returning the same
-    // cursor forever must not loop the caller's page budget re-fetching
-    // the same page.
+fn advance_cursor_is_stalled_not_done_on_a_non_advancing_cursor() {
+    // The exact regression this guards against: a provider handing back the
+    // SAME cursor it was just called with is NEITHER a clean end-of-pages
+    // (there's a cursor — more data is claimed) NOR safe to loop on forever.
+    // Folding this into `Done` is silent truncation; it must be its own
+    // outcome so the caller can reject instead of returning `Ok`.
     assert_eq!(
         advance_cursor(&Some("id1".to_string()), Some("id1".to_string())),
-        None
+        CursorProgress::Stalled
     );
 }
 
@@ -90,11 +95,11 @@ fn advance_cursor_stops_on_a_non_advancing_cursor() {
 fn advance_cursor_continues_on_a_genuinely_new_cursor() {
     assert_eq!(
         advance_cursor(&None, Some("id1".to_string())),
-        Some("id1".to_string())
+        CursorProgress::Continue("id1".to_string())
     );
     assert_eq!(
         advance_cursor(&Some("id1".to_string()), Some("id2".to_string())),
-        Some("id2".to_string())
+        CursorProgress::Continue("id2".to_string())
     );
 }
 
@@ -133,13 +138,21 @@ fn pagination_step_is_done_when_there_is_no_next_page_even_at_the_final_index() 
 }
 
 #[test]
-fn pagination_step_is_done_on_a_non_advancing_cursor_even_at_the_final_index() {
-    // The progress guard (a stuck/non-advancing cursor) is a legitimate
-    // stopping point, not an incomplete-catalogue error — even at the
-    // page budget's boundary.
+fn pagination_step_is_stalled_not_done_on_a_non_advancing_cursor() {
+    // Reserving `Done` strictly for "no cursor at all" — a repeated cursor
+    // must surface as `Stalled` (an error at the transport layer), never be
+    // silently treated as a clean stop, at ANY page index (not just the
+    // budget boundary — this is the same regression as
+    // `advance_cursor_is_stalled_not_done_on_a_non_advancing_cursor`,
+    // exercised through the full `pagination_step` a transport actually
+    // calls).
+    assert_eq!(
+        pagination_step(0, 50, &Some("id1".to_string()), Some("id1".to_string())),
+        PaginationStep::Stalled
+    );
     assert_eq!(
         pagination_step(49, 50, &Some("id48".to_string()), Some("id48".to_string())),
-        PaginationStep::Done
+        PaginationStep::Stalled
     );
 }
 
