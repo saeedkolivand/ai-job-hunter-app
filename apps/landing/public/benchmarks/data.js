@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785950547347,
+  "lastUpdate": 1785961875629,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6083,6 +6083,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 293313,
             "range": "± 7326",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1335e870dd9d35c0f091aea1f76d5d4d178bd893",
+          "message": "fix: bound every http body read, validate probe base urls, and stop reporting failed imports as success (#947)\n\n* fix: bound every http body read through one capped helper in net/http\n\n`read_text_capped` lived in `scraping/http`, so every other subsystem read\nresponse bodies unbounded — a hostile, compromised or merely misconfigured\nendpoint could drive the process into OOM. Move it to `net/http`, the\ndocumented centralized HTTP layer (ADR-003), and add `read_bytes_capped`\nand `read_json_capped` beside it.\n\nConverted: geocoding, LinkedIn profile import, the six `scrape_url`\nresolvers (which hold `get_guarded*` responses — exactly the case the\nhelper was made `pub(crate)` for), and the LinkedIn client's two binary\nreads. Scraping's own `MAX_BYTES` / `FetchOptions::max_bytes` behaviour is\nbyte-for-byte unchanged; it just calls the moved helper.\n\nThe new cap tests force `Transfer-Encoding: chunked` — hyper auto-adds\n`Content-Length` for a known-size wiremock body, so a plain response never\nexercises the streaming-only guard.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: surface a failed document import instead of toasting success\n\n`documents_import` returns its errors in-band (`{ error, message }`), never\nby rejecting, and `use-import-with-ocr` handed every non-`scanned_pdf`\nerror straight back to the caller. All four consumers got it wrong:\nsettings and onboarding toasted \"Uploaded\" unconditionally, and both\n`ResumeInputCard` paths guarded on `result.id` with no else, so a failure\nproduced no feedback at all.\n\nEvery one of those call sites already wraps `importFile` in a try/catch, so\nthe hook now throws — one change, four sites fixed. The post-OCR re-import\nwas returned unchecked too and gets the same treatment.\n\nSame shape as the LinkedIn import bug in #940: an in-band error nobody\nreads, so the success toast lies.\n\nAlso: `ResumeStep` took the new document id from the pre-import cached\nlist rather than the import result, so it could record the wrong default\ndocument — or none at all on a first-ever import.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: persist the embedding format version on cached posting vectors\n\n`get_posting_vector` synthesised `version: EMBEDDING_VECTOR_VERSION` when\nrebuilding the space, so `EmbeddingConfig::matches` was structurally\nincapable of ever rejecting a row from this table. Freshness rested\nentirely on a hand-maintained invariant: every future format bump had to\nremember to ship its own eviction migration, or old-format vectors would\nread as current under an identical space tag.\n\nPersist the column instead. Existing rows default to 0, so they become a\nnatural miss and re-embed on next use — no wipe needed.\n\nSame lesson `upsert_vector_with_conn` already carries a few lines below: a\nwrite path must persist an identity field, not re-derive it.\n\nThe migration is appended at the END of the array — migrations are\nposition-indexed via `PRAGMA user_version`, so inserting mid-array would\nmake every already-migrated install skip it forever.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: cap adapter body reads and validate probe-path provider base urls\n\nRoutes every non-streaming response read in the four AI adapters through\nthe `net/http` capped helpers added in fc602950 — 26 calls across 21 sites.\nSSE and the Ollama pull-progress loop are left alone (already incremental),\nand every `.unwrap_or_default()` diagnostic-body read keeps that shape so a\ncapped-read failure can never mask the status error it was describing.\n\n`ai_test_provider_key`, `ai_list_provider_models` and `ai_model_capabilities`\ntook a renderer-supplied `base_url` and handed it straight to the network\nwith no checks, while the setter path has always dropped it for non-\nopenai-compatible providers and run it through `ssrf::validate_provider_base_url`.\n`resolve_by_name` is the sole entry point for all three, so both rules now\nlive there.\n\nThe parameter stays on the IPC surface — Settings deliberately tests an\nunsaved base URL so an LM Studio endpoint can be verified before saving.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* ui: tell macos users where to run the xattr command\n\nThe command and its copy button were already on the download page, but\nnothing said the code block goes into the Terminal app — which is the one\nthing a non-technical user needs told.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: bound what happens after the cap, not just the read\n\nSecurity review of this branch found the sweep's own claim was false in one\nplace. The LinkedIn client deliberately disables reqwest decompression and\ngunzips by hand, so capping the read bounded only the compressed bytes —\n8 MB in, up to ~8 GB resident. Both decode sites now bound the decompressed\nside too and reject a payload that lands exactly on the cap.\n\nAlso: a discarded `.text()` read in the same file the sweep converted;\n`read_json_capped` rebuilt on `from_slice` so it stops charset-sniffing\n(JSON is UTF-8 by RFC 8259, and a gateway mislabelling it as iso-8859-1 was\nturning valid bodies into schema errors); its parse-failure log now emits\nposition rather than serde's message, which would embed the offending body\nvalue once a call site deserializes into anything but `Value`.\n\nTwo test fixes: the cap test used one oversized chunk, so it passed\nidentically against a per-chunk guard — it now drives three small chunks\nthrough the shared accumulator, verified by temporarily breaking the guard.\nAnd the migration idempotency test now rolls `user_version` back, because\n`run_migrations` skips on `current >= version`, so the guard it claimed to\nre-exercise never ran twice.\n\nThe new column defaults to 2, not 0. Every surviving row post-dates the\nv1 to v2 eviction wipe, so it is provably current — defaulting to 0 would\nhave re-embedded the whole posting cache for no correctness gain. The\nliteral must not track future bumps; it records what rows were at migration\ntime.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: validate the embedding base url the setter persists\n\nThe previous commit claimed `resolve_by_name` was the single entry point\nfor a renderer-supplied `base_url`. It wasn't: `ai_set_embedding_config`\npersisted one unvalidated, and it reaches egress via `embed_text` carrying\nthe provider key and résumé text. Same scrub-then-validate pair, extracted\nso both callers share it rather than growing a third variant of the rule.\n\nAlso restores what the sweep in 70738c63 broke: the `.await??` rewrite at\nthe two paginated list_models sites dropped the \"{name}: parse: \" context\nand flipped the IPC error code from PROVIDER to PARSE. Both are pinned by a\ntest now.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-05T22:19:54+02:00",
+          "tree_id": "55a5acb8e772e9f027001cd2f98d8303a0aad48b",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1335e870dd9d35c0f091aea1f76d5d4d178bd893"
+        },
+        "date": 1785961874233,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1992363,
+            "range": "± 45770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2419700,
+            "range": "± 24708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 222714,
+            "range": "± 2883",
             "unit": "ns/iter"
           }
         ]
