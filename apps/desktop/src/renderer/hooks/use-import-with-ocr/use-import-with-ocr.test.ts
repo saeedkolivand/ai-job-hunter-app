@@ -63,4 +63,37 @@ describe('useImportWithOcr', () => {
 
     await expect(result.current.importFile(makeFile())).rejects.toThrow(/no text/);
   });
+
+  it('rejects (instead of resolving) on a non-scanned_pdf backend error', async () => {
+    const importDoc = vi.fn().mockResolvedValue({ error: 'text extraction failed: boom' });
+    const client = createMockClient({ 'documents.import': importDoc });
+    const { result } = renderHook(() => useImportWithOcr(), { wrapper: withProviders(client) });
+
+    await expect(result.current.importFile(makeFile())).rejects.toThrow(
+      'text extraction failed: boom'
+    );
+    expect(ocrFile).not.toHaveBeenCalled();
+  });
+
+  it('prefers the backend message field over the raw error code', async () => {
+    const importDoc = vi
+      .fn()
+      .mockResolvedValue({ error: 'disk_full', message: 'Storage is full.' });
+    const client = createMockClient({ 'documents.import': importDoc });
+    const { result } = renderHook(() => useImportWithOcr(), { wrapper: withProviders(client) });
+
+    await expect(result.current.importFile(makeFile())).rejects.toThrow('Storage is full.');
+  });
+
+  it('rejects when the post-OCR re-import itself fails', async () => {
+    const importDoc = vi
+      .fn()
+      .mockResolvedValueOnce({ error: 'scanned_pdf' })
+      .mockResolvedValueOnce({ error: 'save failed' });
+    ocrFile.mockResolvedValue({ text: 'recovered text', confidence: 80 });
+    const client = createMockClient({ 'documents.import': importDoc });
+    const { result } = renderHook(() => useImportWithOcr(), { wrapper: withProviders(client) });
+
+    await expect(result.current.importFile(makeFile())).rejects.toThrow('save failed');
+  });
 });
