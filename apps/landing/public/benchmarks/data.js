@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785999646952,
+  "lastUpdate": 1786009161022,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6251,6 +6251,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 303881,
             "range": "± 5808",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "00881e58672170ff9974b7d172ba36bce5bde198",
+          "message": "feat: index documents automatically, and stop the index strip reading as a chore (#951)\n\n* feat: index documents automatically, and stop the index strip reading as a chore\n\nReported as \"I have to go to AI settings and press the indexing button after\nuploading a résumé\". Tracing it first: that was never true. `match_resume`\nalready embeds lazily when it finds no usable vector and caches the result, so\nthe Settings button is a pre-warm, not a prerequisite. What it actually cost was\na slow first match and a status strip that looked like a task list.\n\nThree parts.\n\n**Say what is true.** The strip said \"N documents need re-indexing for the active\nmodel\" in amber. Nothing needs it — matching indexes on first use. Reworded, and\nno longer styled as a warning, with a separate line for when auto-indexing is on.\n\n**Auto-index, opt in.** New `autoIndexOnUpload` preference. One hook mounted at\nthe root covers all three moments that create stale documents, because they all\nsurface identically as a non-zero `documents.stale`: a fresh import, an embedding\nprovider/model change, and leftovers from a previous session.\n\nBacked by a NEW command rather than the existing one: `ai_reembed_all` re-embeds\nevery document unconditionally, so reusing it would re-bill a cloud embedding\nprovider for already-indexed documents each time a single file is added.\n`ai_index_stale_documents` embeds only what is missing and returns a null job id\nwhen nothing is. Both share one job body so they cannot drift in error handling,\ncancellation or progress.\n\n**Ask during setup.** New onboarding step immediately before the crash-reporting\nconsent — both ask \"may this run on your behalf\", and this one calls a provider\nthat may bill per token, so the two spend/privacy decisions sit together.\n\nDefaults to OFF, and the step's switch is seeded from the stored value rather\nthan forced on: an existing install must never start calling a paid embedding\nprovider because of an update, and stepping back through the wizard must not\nsilently discard a \"no\". Leaving it off costs nothing — matching still indexes\nlazily, which is the whole point of the first part.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: auto-index a second upload that leaves the same stale count\n\nThe AI review found a HIGH in the guard I wrote, and it was right: the dedup key\nwas `provider/model/staleCount` and never reset. Import one résumé (stale 1,\nindexed), import another (stale 1 again) and the second matched the previous key\nand was skipped — auto-indexing silently died after the very first document. A\ncount identifies a situation, not a batch.\n\nTwo things were needed, and each protects against the other's failure mode.\n\nHold the concurrency guard until the JOB ends, not until indexStaleDocuments\nresolves. That returns as soon as the job is spawned, so the status refetch\nstraight after it still reports the pre-run count and would start a second,\nseparately-billed run over the same documents. Now released on the job's\nterminal event, via the same useJobEvents path the manual re-index already uses.\n\nKeep a per-(space, count) attempt key, but CLEAR it once the index goes clean or\nthe space changes. Without the key, a run that fails to reduce the count\nre-triggers the instant it ends — an unbounded loop of paid provider calls.\nWithout the reset, the reported bug.\n\nThe guard also had to become state rather than a ref: the effect must re-run\nwhen a job finishes, and clearing a ref re-renders nothing.\n\nBoth halves are pinned, and the regression test was verified to fail against the\noriginal guard rather than assumed to: removing the reset reproduces exactly the\nreported symptom.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: never run two embedding jobs at once, and stop the strip guessing\n\nThree review findings.\n\nAuto-indexing and the manual \"Re-index now\" button were independent triggers\nwith no knowledge of each other, so a background auto-index and a button press\ncould embed the same documents concurrently — billing a cloud provider twice for\nidentical work. Guarded in the BACKEND rather than by disabling the button:\nthat is the one place every trigger has to pass through, and a UI-only guard\nnarrows the race instead of closing it. A second trigger now returns the running\njob id, so the caller watches that run instead of starting a duplicate. No new\nstate — JobTracker already records kind and status.\n\nThe strip inferred \"indexing them now\" from the auto-index PREFERENCE alone,\nso it claimed work was happening even when the run had already failed, or was\nnever started because nothing had changed. `ai_embedding_status` now reports\nwhether an embedding job is actually running and the strip reads that.\n\nAnd the step's top doc comment still said the switch \"defaults ON\" while the\ncode — and a comment twelve lines below it — did the opposite. Left over from\nthe first draft; the opt-in behaviour is the correct one, so the comment was\nwhat needed fixing.\n\nThe guard's per-record decision is split out as a pure predicate so it can be\ntested without the AppHandle this crate has no harness for. The load-bearing\ncase is the differential: a COMPLETED job must not count as active, or the guard\nlatches after the first run and auto-indexing never fires again.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: make the embed-job claim atomic and the completion listener race-proof\n\nTwo review findings, and closing the second surfaced a harder race than the one\nreported.\n\nThe guard was check-then-act: `running_embed_job` then `job_start` are two\nseparate lock acquisitions, so two commands can both observe \"nothing running\"\nbefore either registers. Scan and insert now share one lock via\n`JobTracker::start_exclusive`.\n\nThat returns `Option`, not `Result`. R6 caught the first attempt for banning\n`Result<_, String>`, and the rule was pointing at a real modelling error: \"a job\nis already running\" is not a failure, it is the job the caller should watch. The\ntype says that now.\n\nThe completion listener compared against the `inFlightJob` STATE.\n`setInFlightJob` only schedules a render, so a job finishing before that render\ncommits hits a closure still holding `null`, drops its own completion, and\nlatches the guard forever — auto-indexing dead until restart. Now compared\nagainst a ref written synchronously alongside the state, the same fix\n`EmbeddingsSettings` already documents for `reindexJobIdRef`.\n\nWriting the regression test for that exposed a second ordering: a job can finish\nbefore the invoke that created it even RESOLVES (an index where every document\nfails returns almost immediately), so the completion arrives before there is any\nclaim to match. The ref alone does not help there. Terminal ids seen without a\nclaim are now remembered briefly, and a claim for one of them releases\nimmediately instead of waiting for an event that already passed.\n\nBoth races are pinned, and both tests were verified to fail against the previous\ncode rather than assumed to.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-06T11:14:54+02:00",
+          "tree_id": "48e0533edc940a3481a8673d5d0e8e5d5c8fcf1a",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/00881e58672170ff9974b7d172ba36bce5bde198"
+        },
+        "date": 1786009159785,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2154270,
+            "range": "± 55642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2537708,
+            "range": "± 21808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 288865,
+            "range": "± 9170",
             "unit": "ns/iter"
           }
         ]
