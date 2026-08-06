@@ -5,8 +5,8 @@ import { isDesignTier, LETTER_LAYOUT_IDS, TEMPLATES } from './templates';
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
 
-  it('exposes the twelve document templates keyed by id', () => {
-    expect(ids).toHaveLength(12);
+  it('exposes the thirteen document templates keyed by id', () => {
+    expect(ids).toHaveLength(13);
     for (const id of ids) {
       expect(TEMPLATES[id as keyof typeof TEMPLATES].id).toBe(id);
     }
@@ -15,13 +15,14 @@ describe('TEMPLATES', () => {
   // Sync guard: this id set MUST equal the Rust `TemplateId` enum (export/types.rs,
   // kebab-case) and the shared contract union (packages/shared/.../documents.ts).
   // The Rust round-trip test pins the other side; if either drifts, a guard fails.
-  it('matches the canonical 12-template id set', () => {
+  it('matches the canonical 13-template id set', () => {
     expect([...ids].sort()).toEqual([
       'academic',
       'aria',
       'atelier',
       'cadence',
       'classic',
+      'cologne-navy',
       'lebenslauf',
       'meridian',
       'portrait',
@@ -66,6 +67,7 @@ describe('TEMPLATES', () => {
       'academic',
       'cadence',
       'classic',
+      'cologne-navy',
       'meridian',
       'regent',
       'swiss-minimal',
@@ -88,7 +90,7 @@ describe('LETTER_LAYOUT_IDS', () => {
   // Sync guard: MUST equal the Rust `LetterLayout` enum (export/types.rs, kebab-case)
   // and the shared contract union (BaseExportRequest.letterLayoutId). `classic` is
   // first (the default the backend renders for an omitted value).
-  it('is the canonical three-layout id set, classic first', () => {
-    expect([...LETTER_LAYOUT_IDS]).toEqual(['classic', 'refined', 'banded']);
+  it('is the canonical four-layout id set, classic first', () => {
+    expect([...LETTER_LAYOUT_IDS]).toEqual(['classic', 'refined', 'banded', 'navy']);
   });
 });

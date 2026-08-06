@@ -117,6 +117,7 @@ fn no_cover_letter_font_size_exceeds_sane_ceiling() {
             LetterLayout::Classic,
             LetterLayout::Refined,
             LetterLayout::Banded,
+            LetterLayout::Navy,
         ] {
             let request = ExportRequest {
                 text: REFINED_US_TEXT.to_string(),
@@ -480,14 +481,132 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
         generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Refined)).expect("refined");
     let banded =
         generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Banded)).expect("banded");
+    let navy = generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Navy)).expect("navy");
 
-    assert!(!classic.is_empty() && !refined.is_empty() && !banded.is_empty());
+    assert!(!classic.is_empty() && !refined.is_empty() && !banded.is_empty() && !navy.is_empty());
     assert_ne!(
         classic, refined,
         "Classic and Refined DOCX bytes must differ"
     );
     assert_ne!(classic, banded, "Classic and Banded DOCX bytes must differ");
     assert_ne!(refined, banded, "Refined and Banded DOCX bytes must differ");
+    // Navy vs Banded is the load-bearing pair: `generate_cover_letter_docx_layout`
+    // branched on a single `is_refined` boolean, so Navy silently inherited
+    // Banded's shaded header band and rule footer — a letter that rendered as
+    // Navy in PDF and as Banded in DOCX from the same export.
+    assert_ne!(
+        navy, banded,
+        "Navy must not render as Banded in DOCX — it has no header band"
+    );
+    assert_ne!(navy, refined, "Navy and Refined DOCX bytes must differ");
+    assert_ne!(navy, classic, "Navy and Classic DOCX bytes must differ");
+}
+
+/// Navy's DOCX must match Navy's PDF, not Banded's.
+///
+/// The renderer branched on a single `is_refined` boolean, so every non-Refined
+/// layout got Banded's treatment. Two review rounds were needed to find them
+/// all, because "differs from Banded" passes as soon as ONE branch is split —
+/// these assert the specific features instead.
+#[test]
+fn navy_docx_follows_the_navy_design_not_banded() {
+    let navy = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Navy)).expect("navy"),
+    );
+    let banded = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Banded)).expect("banded"),
+    );
+
+    // 1. No header band. `letter_navy.typ` has no shaded block; Banded does, and
+    //    Navy silently inherited it.
+    assert!(
+        banded.contains("<w:shd"),
+        "precondition: Banded is expected to carry the shaded band"
+    );
+    assert!(
+        !navy.contains("<w:shd"),
+        "Navy must not render Banded's shaded header band"
+    );
+
+    // 2. Centred letterhead — the NAME AND the contact line, not just one.
+    //    `letter_request` supplies `contact: None`, so these exercise the
+    //    no-profile FALLBACK contact path, which used to right-align Navy while
+    //    the profile-backed path centred it. A single "contains center" check
+    //    passed anyway, because the name alone satisfied it.
+    let centred = |xml: &str| xml.matches(r#"w:val="center""#).count();
+    let right = |xml: &str| xml.matches(r#"w:val="right""#).count();
+    assert!(
+        centred(&navy) >= 2,
+        "Navy must centre the name AND the contact line; found {} centred paragraph(s)",
+        centred(&navy)
+    );
+    assert_eq!(centred(&banded), 0, "precondition: Banded centres nothing");
+    assert!(
+        right(&navy) < right(&banded),
+        "Navy must not right-align the header lines Banded does: navy={} banded={}",
+        right(&navy),
+        right(&banded)
+    );
+
+    // 3. Date and recipient stay REGULAR weight — `letter_navy.typ`'s
+    //    emit-date-block / emit-recipient-block carry no `weight: "bold"`,
+    //    unlike Banded's. Bold-run count is the observable proxy.
+    let bold_runs = |xml: &str| xml.matches("<w:b />").count();
+    assert!(
+        bold_runs(&navy) < bold_runs(&banded),
+        "Navy bolds fewer runs than Banded (it does not bold date/recipient):          navy={} banded={}",
+        bold_runs(&navy),
+        bold_runs(&banded)
+    );
+}
+
+/// Navy's role line and subject caption must use NAVY's styling, not Refined's.
+///
+/// The style struct made each feature's PRESENCE layout-aware but left its
+/// STYLING hardcoded to Refined's, so Navy rendered the role line
+/// accent-coloured, uppercased and letter-spaced while `letter_navy.typ` puts it
+/// in the muted date colour, plain case, untracked — and the subject caption in
+/// the accent colour where the `.typ` uses the name colour. Presence and style
+/// are separate decisions; asserting only presence missed both.
+#[test]
+fn navy_docx_styles_the_title_and_caption_like_its_typ() {
+    let with_title = |layout: LetterLayout| {
+        let mut req = letter_request(REFINED_US_TEXT, layout);
+        req.meta = Some(GenerationMeta {
+            candidate_name: Some("Jane Smith".to_string()),
+            job_title: Some("Platform Engineer".to_string()),
+            company_name: None,
+            target_language: None,
+        });
+        document_xml(&generate_docx(&req).expect("docx"))
+    };
+
+    let navy = with_title(LetterLayout::Navy);
+    let refined = with_title(LetterLayout::Refined);
+
+    // Refined uppercases and tracks its role line; Navy does neither.
+    assert!(
+        refined.contains("PLATFORM ENGINEER"),
+        "precondition: Refined uppercases the role line"
+    );
+    assert!(
+        navy.contains("Platform Engineer"),
+        "Navy must keep the role line in its original case"
+    );
+    assert!(
+        !navy.contains("PLATFORM ENGINEER"),
+        "Navy must not uppercase the role line — letter_navy.typ renders it as written"
+    );
+
+    // Letter-spacing is Refined-only (`character_spacing` ⇒ `<w:spacing w:val=…>`
+    // on the run). Navy's role line carries none.
+    let spaced_runs = |xml: &str| xml.matches("w:spacing w:val=\"24\"").count();
+    assert!(
+        spaced_runs(&refined) > spaced_runs(&navy),
+        "Refined tracks more runs than Navy: refined={} navy={}",
+        spaced_runs(&refined),
+        spaced_runs(&navy)
+    );
 }
 
 /// A cover letter that opens directly at the salutation (no letterhead name/
@@ -497,13 +616,14 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
 /// letterhead-less letter had its salutation consumed as the name (replaced with
 /// `meta.candidate_name`) and, because `in_body` is set only in the salutation
 /// arm, the whole body then rendered in the muted addressee style. Covers BOTH
-/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded).
+/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded/Navy).
 #[test]
 fn letterhead_less_letter_keeps_its_salutation_and_body() {
     for layout in [
         LetterLayout::Classic,
         LetterLayout::Refined,
         LetterLayout::Banded,
+        LetterLayout::Navy,
     ] {
         let request = ExportRequest {
             text: "Dear Hiring Manager,\n\nI am writing to apply for the role.\n\nSincerely,\nJane Smith".to_string(),
@@ -541,13 +661,14 @@ fn letterhead_less_letter_keeps_its_salutation_and_body() {
 /// the subject line was consumed as the name (replaced with
 /// `meta.candidate_name`) instead of rendering as a subject-styled line, and
 /// the salutation/body that follow it must still render normally. Covers BOTH
-/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded).
+/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded/Navy).
 #[test]
 fn letterhead_less_letter_with_subject_line_keeps_subject_and_body() {
     for layout in [
         LetterLayout::Classic,
         LetterLayout::Refined,
         LetterLayout::Banded,
+        LetterLayout::Navy,
     ] {
         let request = ExportRequest {
             text: "Betreff: Bewerbung als Software Engineer\n\nSehr geehrte Frau Dr. Weber,\n\nmit großem Interesse habe ich Ihre Stellenausschreibung gelesen und bewerbe mich hiermit.\n\nMit freundlichen Grüßen,\nMax Müller".to_string(),

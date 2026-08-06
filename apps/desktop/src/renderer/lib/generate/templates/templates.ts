@@ -18,7 +18,8 @@ export type TemplateId =
   | 'cadence'
   | 'regent'
   | 'aria'
-  | 'saffron';
+  | 'saffron'
+  | 'cologne-navy';
 
 /**
  * Cover-letter **layout** (arrangement only). Mirrors the Rust `LetterLayout`
@@ -27,13 +28,14 @@ export type TemplateId =
  * always inherit from the chosen résumé {@link TemplateId}. `classic` is the
  * default — an omitted value renders the pre-layout-picker output.
  */
-export type LetterLayoutId = 'classic' | 'refined' | 'banded';
+export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy';
 
 /** Ordered letter-layout ids — the picker's option order + the exhaustiveness pin. */
 export const LETTER_LAYOUT_IDS = [
   'classic',
   'refined',
   'banded',
+  'navy',
 ] as const satisfies readonly LetterLayoutId[];
 
 interface DocTemplate {
@@ -271,6 +273,33 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     lineSpacingDocx: 264,
     sectionSpacingBefore: 240,
     nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /**
+   * Cologne Navy — centred tracked-caps navy header, rule-underlined uppercase
+   * headings, blue company names, right-aligned italic dates. Carlito (via the
+   * Calibri family, which resolves to the bundled Carlito faces).
+   */
+  'cologne-navy': {
+    id: 'cologne-navy',
+    name: 'Cologne Navy',
+    tier: 'ats',
+    nameColor: '1F3864',
+    sectionColor: '1F3864',
+    accentColor: '1F5C99',
+    bodyColor: '1A1A1A',
+    dateColor: '4A4A4A',
+    emphasisColor: '1F5C99',
+    ruleColor: '1F3864',
+    namePt: 20.8,
+    sectionPt: 9.5,
+    bodyPt: 10,
+    marginIn: 0.55,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 240,
+    nameCentered: true,
     sectionAllCaps: true,
     sectionStyle: 'ruled-bottom',
   },

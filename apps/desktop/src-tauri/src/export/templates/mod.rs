@@ -181,6 +181,7 @@ impl Template {
             TemplateId::Lebenslauf => Self::lebenslauf(),
             TemplateId::Cadence => Self::cadence(),
             TemplateId::Regent => Self::regent(),
+            TemplateId::CologneNavy => Self::cologne_navy(),
             TemplateId::Aria => Self::aria(),
             TemplateId::Saffron => Self::saffron(),
         }
@@ -619,6 +620,61 @@ impl Template {
             rule_thickness: 0.75,
             heading_tracking: 0.08,
             link_underline: true,
+            two_column: None,
+            cover_letter: CoverLetterLayout {
+                paragraph_indent: ParagraphIndent::BlockNoIndent,
+                paragraph_spacing_pt: 8.0,
+            },
+        }
+    }
+
+    /// Cologne Navy — centred tracked-caps navy header, rule-underlined
+    /// uppercase section headings, blue company names, right-aligned italic
+    /// dates. Renders through the bespoke `cologne_navy.typ`.
+    ///
+    /// Carlito throughout — `FontFamily::Calibri` already RESOLVES to the
+    /// bundled Carlito faces in Typst (`letter.rs`'s `font_name`), which is
+    /// exactly the metric-compatible substitution this design calls for, so no
+    /// new font variant or bundling is needed.
+    /// Navy `#1F3864` for the name/headings/rule, a lighter blue `#1F5C99` as
+    /// the accent for company and institution names. Single-column and
+    /// parser-safe, so it is an ATS-tier template.
+    pub(super) fn cologne_navy() -> Self {
+        Self {
+            id: TemplateId::CologneNavy,
+            name: "Cologne Navy",
+            tier: TemplateTier::Ats,
+            name_color: (31, 56, 100),    // #1F3864 navy
+            section_color: (31, 56, 100), // #1F3864 navy
+            accent_color: (31, 92, 153),  // #1F5C99 link blue
+            body_color: (26, 26, 26),     // #1A1A1A ink
+            date_color: (74, 74, 74),     // #4A4A4A
+            emphasis_color: (31, 92, 153),
+            rule_color: (31, 56, 100),
+            // Ratios off body_pt, per the design: name 2.08, heading 0.95.
+            name_pt: 20.8,
+            section_pt: 9.5,
+            body_pt: 10.0,
+            margin_in: 0.55, // 14mm side margins
+            line_spacing: 1.15,
+            section_spacing_before: 12.0,
+            name_centered: true,
+            section_all_caps: true,
+            section_style: SectionStyle::RuledBottom,
+            fonts: TemplateFonts {
+                name_family: FontFamily::Calibri,
+                heading_family: FontFamily::Calibri,
+                body_family: FontFamily::Calibri,
+            },
+            job_title_italic: false,
+            section_small_caps: false,
+            rule_thickness: 0.9, // the design's 0.9pt navy rule
+            // 0.10, NOT the brief's 0.18: wider tracking makes the PDF text
+            // extract letter-by-letter ("S U M M A R Y") and an ATS cannot read
+            // it. See the DEVIATION note in `cologne_navy.typ`. The template
+            // reads this field, so the two cannot drift.
+            heading_tracking: 0.10,
+            link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,

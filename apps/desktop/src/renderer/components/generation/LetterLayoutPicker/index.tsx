@@ -1,4 +1,4 @@
-import { AlignLeft, type LucideIcon, PanelTop, PenLine } from 'lucide-react';
+import { AlignCenter, AlignLeft, type LucideIcon, PanelTop, PenLine } from 'lucide-react';
 import { useRef } from 'react';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -38,6 +38,12 @@ const LAYOUTS = [
     icon: PanelTop,
     labelKey: 'aiGenerate.letterLayoutBanded',
     descKey: 'aiGenerate.letterLayoutBandedDesc',
+  },
+  {
+    id: 'navy',
+    icon: AlignCenter,
+    labelKey: 'aiGenerate.letterLayoutNavy',
+    descKey: 'aiGenerate.letterLayoutNavyDesc',
   },
 ] as const satisfies readonly LayoutOption[];
 
