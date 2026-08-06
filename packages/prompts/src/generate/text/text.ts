@@ -13,7 +13,16 @@
  */
 function unwrapIfWholeFence(text: string): string {
   const trimmed = text.trim();
-  const match = trimmed.match(/^```[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n?```$/);
+  // Two shapes, both "the whole response is one fence": the usual multi-line
+  // form (optional language tag on the opening line), and a ONE-LINE fence
+  // with no interior newline at all (three backticks, "Yes.", three
+  // backticks) — which a short application-answer generation really does
+  // produce, and which the delete pass below would wipe. The one-line form
+  // cannot carry a language tag (a lone tag would leave no answer), so
+  // everything between the markers is the body.
+  const match =
+    trimmed.match(/^```[a-zA-Z0-9_-]*\r?\n([\s\S]*?)\r?\n?```$/) ??
+    trimmed.match(/^```([^\n`][^\n]*?)```$/);
   if (!match) return text;
   const body = match[1] ?? '';
   // A second fence marker inside means this isn't a single whole-answer wrap
