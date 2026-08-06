@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785991174649,
+  "lastUpdate": 1785996784235,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6167,6 +6167,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 287542,
             "range": "± 7951",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "06daf61575e4865c9030a1306cf9afffd88d0c9e",
+          "message": "fix: make clicking an OS notification open the app, on the right screen (#949)\n\n* fix: make clicking an os notification open the app, on the right screen\n\nReported twice: clicking a Windows notification does nothing, and there was no\nway to jump from a notification to the thing it was about.\n\nBoth had one cause. `tauri-plugin-notification`'s desktop `show()` is\nnotify-rust fire-and-forget, and the `onAction` JS helper its docs point at for\nclicks resolves to `plugin:notification|register_listener` — a command the\nplugin registers ONLY on mobile (its desktop invoke_handler is exactly notify,\nrequest_permission, is_permission_granted). So the renderer's subscription\nfailed with \"Command not found\" on every desktop startup and no banner click\never reached the app. `notifications_clicked` — which already does the right\nthing — had no caller other than the tray.\n\nShow the banner natively instead, per platform, since only Windows is\ncallback-based:\n\n- Windows: tauri-winrt-notification's on_activated, non-blocking.\n- macOS/Linux: notify-rust's wait_for_action BLOCKS, so it runs on\n  spawn_blocking. Linux additionally needs a declared `default` action for a\n  body click to be delivered at all.\n\nBoth crates were already in the tree transitively; they are pinned to the\nlocked versions so there is no duplicate copy.\n\nRouting: the click now carries the clicked notification's OWN route, so\n\"Autopilot X found 3 jobs\" opens THAT autopilot rather than a list to search.\nEvery notification source already attached a route (autopilot -> /autopilot with\nits id) and the bell already followed it — only the OS banner didn't. Validated\nthrough the same resolveNotificationRoute the bell uses, so an unknown backend\nroute falls back instead of breaking navigation. A tray click sends no route and\nstill just opens the inbox.\n\nThe dead renderer seam (onOsBannerClick) is removed, which also silences the\nstartup console error it produced.\n\nKnown limit, all platforms: the callback lives in this process, so it fires only\nwhile the app runs. A click after the app exits needs a COM activator on Windows\nand is out of scope.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: bound banner listeners and close the windows ci gap\n\nFour review findings, all real.\n\nThe macOS/Linux path parks a blocking thread in wait_for_action until the user\nclicks or the banner closes — and a notification nobody touches (sitting in\nmacOS Notification Center) parks it indefinitely. OsBanner::Always sources like\nautopilot can emit a burst, so a run of ignored notifications would hold\nblocking workers permanently and starve every other spawn_blocking caller.\n\nBounded to 8 concurrent listeners via an RAII slot (released on Drop, so a panic\ninside the wait cannot leak the budget). Over budget the banner is still\nDELIVERED — on Linux show() already sent it, and macOS's handle Drop sends it —\nit just has no click handler. Losing one banner's click beats starving the pool.\nThe async alternative was checked and rejected: wait_for_action_async exists\nonly on Linux, and behind a feature that swaps the dbus backend.\n\nWindows had the same CI hole this branch opened the macOS job for: no PR job\ncompiles cfg(windows), so the notification code that actually fixes the reported\nbug was built only on the dev machine. Added the counterpart.\n\nAlso corrected the macOS job's own comment, which overstated the gap:\ncfg(not(windows)) IS compiled by the ubuntu jobs — only platform-exclusive\npredicates were uncovered.\n\nAnd the route tests now use the shared NotificationOpen type instead of local\nstructural aliases; they exist to guard that contract, so a local shape could\nnot detect drift in it.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-06T08:01:25+02:00",
+          "tree_id": "3c17c3d25bdf14d980a03b888c8bcac17375e4b4",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/06daf61575e4865c9030a1306cf9afffd88d0c9e"
+        },
+        "date": 1785996784023,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2156066,
+            "range": "± 45970",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2544624,
+            "range": "± 21150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 287111,
+            "range": "± 8742",
             "unit": "ns/iter"
           }
         ]
