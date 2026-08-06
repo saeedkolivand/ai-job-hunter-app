@@ -63,9 +63,26 @@ read the mission-control PAT from `localStorage`.
 
 - ADR 0005 gains an eighth permitted egress class, and its guarantee no longer
   says "no telemetry". README, SECURITY.md, ARCHITECTURE.md, CONTEXT.md and the
-  landing privacy copy were rewritten in the same change — `check-parity.mjs`
-  and `check-landing-drift.mjs` fail the build if code and copy disagree, which
-  is what forces them to move together.
+  landing privacy copy were rewritten in the same change.
+
+  **Corrected later — the rewrite was incomplete and nothing caught it.** Only
+  the _prose_ moved. Three _summary_ claims kept saying "zero telemetry":
+  README's Privacy bullet (~70 lines below the paragraph that correctly names
+  Sentry, in the same file), the landing home page's Privacy-first card, and the
+  marketing asset copy in `branding/marketing/build.mjs` — the last of which
+  pairs it with "run 100% offline", so the two claims compounded. This entry
+  also credited `check-parity.mjs` and `check-landing-drift.mjs` with forcing
+  code and copy to move together; neither mentioned Sentry or telemetry.
+  `check-parity.mjs` is a copy-_preservation_ gate for the Next port — it
+  asserts phrases survive, it cannot tell a surviving phrase from a true one.
+  `check-landing-drift.mjs` now carries the actual guard (check 6): a denylist
+  for `zero/no telemetry` over README, SECURITY.md, `branding/` and the landing
+  source, allowlisting only the extension-scoped claim, which stays true.
+
+  The general lesson is that a reversal has to be swept across every surface
+  that repeats the promise, headline claims included — and that a claim with no
+  mechanical guard will drift back regardless of what an ADR says about it.
+
 - `/privacy` is the privacy-policy URL filed with **both** the Chrome Web Store
   and Firefox AMO. It now has to state desktop collection and extension
   non-collection as clearly separate sections, or a reviewer reads one as the
