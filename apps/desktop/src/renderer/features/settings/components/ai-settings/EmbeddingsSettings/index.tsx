@@ -143,6 +143,11 @@ export function EmbeddingsSettings() {
 
   const semanticScoring = useSemanticScoring();
   const autoIndexOnUpload = useAutoIndexOnUpload();
+  // The BACKEND's own answer, not an inference from the preference: with
+  // auto-index on but the run already finished (or never started, because
+  // nothing changed), "indexing them now" would be claiming work that isn't
+  // happening.
+  const indexingNow = status?.indexing === true;
   const setAutoIndexOnUpload = usePreferencesStore((s) => s.setAutoIndexOnUpload);
   const setSemanticScoring = usePreferencesStore((s) => s.setSemanticScoring);
 
@@ -236,7 +241,7 @@ export function EmbeddingsSettings() {
             // nothing — `match_resume` embeds it the first time it needs a
             // vector. The old amber "needs re-indexing" line read as a chore.
             <div className="mt-1 text-foreground/40">
-              {autoIndexOnUpload
+              {indexingNow
                 ? stale === 1
                   ? t('settings.embeddings.staleAutoOne', { count: stale })
                   : t('settings.embeddings.staleAutoOther', { count: stale })

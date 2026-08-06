@@ -281,6 +281,15 @@ export interface EmbeddingStatus {
   active: EmbeddingConfig;
   spaces: EmbeddingSpaceInfo[];
   documents: { total: number; indexedInActiveSpace: number; stale: number };
+  /**
+   * An embedding job (auto-index or manual re-index) is running right now.
+   *
+   * The backend's own answer, so the UI never has to infer it — deducing
+   * "indexing now" from the auto-index preference claims work is happening even
+   * when the run already failed or was never started. Only one embedding job
+   * runs at a time; a second trigger joins the running one.
+   */
+  indexing: boolean;
 }
 
 /** One provider's real token totals + estimated cost, since the start of the

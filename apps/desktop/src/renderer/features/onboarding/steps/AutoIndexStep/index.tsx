@@ -23,10 +23,9 @@ interface Props {
  *
  * Asked rather than defaulted because indexing calls the embedding provider, and
  * a cloud provider bills per token — the same reason the Embeddings settings
- * panel carries a cost advisory. The stored default is `false`, so an existing
- * install that never sees this screen never starts spending on its own; the
- * switch here defaults ON because a user who reaches this step is being told
- * exactly what it does.
+ * panel carries a cost advisory. Off unless the user turns it on, here and in
+ * the stored default, so an install that never sees this screen never starts
+ * spending on its own.
  *
  * Placed immediately before the crash-reporting consent step: both are
  * "something runs on your behalf, say yes or no", and grouping them keeps the

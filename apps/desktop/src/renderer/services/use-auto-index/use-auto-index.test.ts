@@ -22,6 +22,7 @@ const status = (stale: number, provider = 'ollama', model = 'nomic-embed-text') 
   active: { provider, model, baseUrl: null },
   spaces: [],
   documents: { total: stale, indexedInActiveSpace: 0, stale },
+  indexing: false,
 });
 
 describe('useAutoIndex', () => {

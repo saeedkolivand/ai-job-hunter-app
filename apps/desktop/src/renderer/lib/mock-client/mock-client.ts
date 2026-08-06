@@ -118,6 +118,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
         active: { provider: 'ollama', model: 'nomic-embed-text' },
         spaces: [],
         documents: { total: 0, indexedInActiveSpace: 0, stale: 0 },
+        indexing: false,
       }),
       setEmbeddingConfig: async () => ({ success: true }),
       reembedAll: async () => ({ jobId: 'mock-reembed' }),
