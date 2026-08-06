@@ -263,6 +263,108 @@ fn generate_cover_letter_docx_classic(
 // - Banded's short (~28%-width) rule footer → docx-rs paragraph borders can't
 //   be width-limited without a table, so it's approximated as a full-width
 //   bottom border on the final paragraph.
+/// Per-layout DOCX styling decisions, stated once instead of being re-derived
+/// from `matches!(layout, …)` at each of a dozen call sites.
+///
+/// Why this exists: the renderer used a single `is_refined` boolean and let
+/// everything else fall through to Banded's treatment. Adding `Navy` therefore
+/// silently gave it Banded's shaded band, footer rule and bolding while
+/// stripping Refined's title and subject caption — a letter that rendered as
+/// Navy in PDF and Banded in DOCX. Three review rounds each found a different
+/// surviving branch, including two contact paths that disagreed with each other
+/// depending on whether a `ContactProfile` happened to be attached.
+///
+/// Every field is filled in per layout in [`Self::for_layout`], so a new layout
+/// cannot inherit another's look by omission — it has to say what it does.
+struct LetterDocxStyle {
+    /// Name in caps (Banded, Navy) vs. as written (Refined).
+    uppercase_name: bool,
+    /// Points added to the template's name size.
+    name_pt_bonus: f32,
+    /// Shaded block behind the name (Banded only).
+    header_band: bool,
+    /// Name/title/contact centred (Navy only).
+    centred_letterhead: bool,
+    /// Role line under the name (Refined, Navy).
+    shows_title: bool,
+    /// Small-caps subject caption (Refined, Navy).
+    shows_subject_caption: bool,
+    /// Bold date + recipient blocks (Banded only — see each `.typ`'s emit blocks).
+    bolds_addressing: bool,
+    /// Rule under the header block (Refined, Navy).
+    header_rule: bool,
+    /// Short rule at the foot of the letter (Banded only).
+    footer_rule: bool,
+    /// Empty paragraphs before the signature (Refined only).
+    signature_gap: bool,
+    /// Space after the contact paragraph, in twentieths of a point.
+    contact_space_after: u32,
+    /// Space after the sign-off, in twentieths of a point.
+    signoff_space_after: u32,
+}
+
+impl LetterDocxStyle {
+    fn for_layout(layout: LetterLayout) -> Self {
+        match layout {
+            // Classic never reaches this renderer (see the debug_assert below);
+            // it is listed so the match stays exhaustive and a future layout
+            // fails to compile until someone states its style.
+            LetterLayout::Classic | LetterLayout::Refined => Self {
+                uppercase_name: false,
+                name_pt_bonus: 4.0,
+                header_band: false,
+                centred_letterhead: false,
+                shows_title: true,
+                shows_subject_caption: true,
+                bolds_addressing: false,
+                header_rule: true,
+                footer_rule: false,
+                signature_gap: true,
+                contact_space_after: 80,
+                signoff_space_after: 40,
+            },
+            LetterLayout::Banded => Self {
+                uppercase_name: true,
+                name_pt_bonus: 0.0,
+                header_band: true,
+                centred_letterhead: false,
+                shows_title: false,
+                shows_subject_caption: false,
+                bolds_addressing: true,
+                header_rule: false,
+                footer_rule: true,
+                signature_gap: false,
+                contact_space_after: 40,
+                signoff_space_after: 480,
+            },
+            LetterLayout::Navy => Self {
+                uppercase_name: true,
+                name_pt_bonus: 0.0,
+                header_band: false,
+                centred_letterhead: true,
+                shows_title: true,
+                shows_subject_caption: true,
+                bolds_addressing: false,
+                header_rule: true,
+                footer_rule: false,
+                signature_gap: false,
+                contact_space_after: 40,
+                signoff_space_after: 480,
+            },
+        }
+    }
+
+    /// Contact-line alignment. Both contact paths (profile-backed and the
+    /// no-profile fallback) call this, so they cannot drift apart again.
+    fn contact_align(&self) -> AlignmentType {
+        if self.centred_letterhead {
+            AlignmentType::Center
+        } else {
+            AlignmentType::Right
+        }
+    }
+}
+
 fn generate_cover_letter_docx_layout(
     text: &str,
     meta: Option<&GenerationMeta>,
@@ -276,32 +378,7 @@ fn generate_cover_letter_docx_layout(
         !matches!(layout, LetterLayout::Classic),
         "generate_cover_letter_docx_layout serves Refined, Banded and Navy"
     );
-    let is_refined = matches!(layout, LetterLayout::Refined);
-    // Navy and Banded share the uppercase name and the bolded date/recipient
-    // treatment, so most branches below can stay on `!is_refined`. They differ
-    // in the two places that would otherwise put Banded's DECORATION on a Navy
-    // letter: the shaded header band (Navy has none — it has a rule) and the
-    // short rule footer (Navy's rule sits under the letterhead instead).
-    // Without this split a Navy letter renders as Navy in PDF and as Banded in
-    // DOCX, which is a visible inconsistency in the same export.
-    let is_banded = matches!(layout, LetterLayout::Banded);
-    let is_navy = matches!(layout, LetterLayout::Navy);
-
-    // Per-FEATURE flags, derived from what each `.typ` actually renders, rather
-    // than a single `is_refined` boolean with everything else defaulting to
-    // Banded. The first pass at Navy split only the header band and the footer
-    // rule and left the rest binary, so Navy still inherited Banded's bolding
-    // and lost Refined's title/caption — the same PDF-vs-DOCX divergence this
-    // renderer exists to avoid, just in less obvious places.
-    //
-    //   role/title line   — letter_refined.typ and letter_navy.typ render it;
-    //                       letter_banded.typ does not.
-    //   subject caption   — same two.
-    //   bold date/recipient — letter_banded.typ ONLY (`weight: "bold"` on both
-    //                       emit blocks); letter_navy.typ leaves them regular.
-    let shows_title = is_refined || is_navy;
-    let shows_subject_caption = is_refined || is_navy;
-    let bolds_addressing = is_banded;
+    let sty = LetterDocxStyle::for_layout(layout);
 
     let mut docx = Docx::new();
 
@@ -377,16 +454,12 @@ fn generate_cover_letter_docx_layout(
                 .unwrap_or(&clean);
             // Banded: uppercase name — the same small-caps→uppercase precedent
             // `render_section_header` uses for the résumé DOCX path.
-            let display_name = if is_refined {
+            let display_name = if !sty.uppercase_name {
                 name_text.to_string()
             } else {
                 name_text.to_uppercase()
             };
-            let name_pt = if is_refined {
-                template.name_pt + 4.0
-            } else {
-                template.name_pt
-            };
+            let name_pt = template.name_pt + sty.name_pt_bonus;
 
             let mut name_para = Paragraph::new()
                 .add_run(
@@ -398,14 +471,14 @@ fn generate_cover_letter_docx_layout(
                         .fonts(docx_run_fonts(name_family)),
                 )
                 .line_spacing(LineSpacing::new().after(60));
-            if is_navy {
-                // Centred letterhead — `letter_navy.typ` centres name, title and
-                // contact, then rules UNDER the lot. The rule therefore goes on
-                // the contact paragraph below, not here; drawing it on the name
-                // would put a line between the name and its own contact line.
+            if sty.centred_letterhead {
+                // `letter_navy.typ` centres name, title and contact, then rules
+                // UNDER the lot. The rule therefore goes on the contact
+                // paragraph below, not here; drawing it on the name would put a
+                // line between the name and its own contact line.
                 name_para = name_para.align(AlignmentType::Center);
             }
-            if is_banded {
+            if sty.header_band {
                 // Banded band approximation — see module-level doc comment.
                 // Navy is deliberately excluded: its design has no band.
                 name_para.property = name_para.property.shading(
@@ -420,7 +493,7 @@ fn generate_cover_letter_docx_layout(
             // Role line right after the name (see approximation note above re:
             // `meta.job_title` vs the `.typ`'s `signature_title`). Refined and
             // Navy both render it; Banded does not.
-            if shows_title {
+            if sty.shows_title {
                 if let Some(job_title) = meta.and_then(|m| m.job_title.as_deref()) {
                     let mut title_para = Paragraph::new()
                         .add_run(
@@ -432,7 +505,7 @@ fn generate_cover_letter_docx_layout(
                                 .fonts(docx_run_fonts(body_family)),
                         )
                         .line_spacing(LineSpacing::new().after(40));
-                    if is_navy {
+                    if sty.centred_letterhead {
                         title_para = title_para.align(AlignmentType::Center);
                     }
                     docx = docx.add_paragraph(title_para);
@@ -442,15 +515,9 @@ fn generate_cover_letter_docx_layout(
             if let Some(md) = &profile_contact_md {
                 let mut contact_para =
                     super::docx_renderer::render_contact_line(md, template, &colors)
-                        .align(if is_navy {
-                            // Navy centres its contact under the name; Refined
-                            // and Banded both right-align it.
-                            AlignmentType::Center
-                        } else {
-                            AlignmentType::Right
-                        })
-                        .line_spacing(LineSpacing::new().after(if is_refined { 80 } else { 40 }));
-                if is_refined || is_navy {
+                        .align(sty.contact_align())
+                        .line_spacing(LineSpacing::new().after(sty.contact_space_after));
+                if sty.header_rule {
                     // Full-width rule under the header — see approximation note.
                     // For Navy this is the letterhead rule, which is why it sits
                     // here (after name + title + contact) rather than on the name.
@@ -478,17 +545,22 @@ fn generate_cover_letter_docx_layout(
                 .size(pt_to_half_points(9.0))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
-            if bolds_addressing {
+            if sty.bolds_addressing {
                 // Banded bolds date/address-ish lines, mirroring
                 // `letter_banded.typ`'s bold `emit-date-block`. Navy does not —
                 // its `emit-date-block` is regular weight.
                 run = run.bold();
             }
+            // Same style source as the profile-backed contact path above. These
+            // two used to disagree: this fallback right-aligned Navy with no
+            // rule while the other centred it and ruled it, so the SAME letter
+            // rendered differently depending on whether a ContactProfile
+            // happened to be attached.
             let mut para = Paragraph::new()
                 .add_run(run)
-                .align(AlignmentType::Right)
+                .align(sty.contact_align())
                 .line_spacing(LineSpacing::new().after(40));
-            if is_refined {
+            if sty.header_rule {
                 para.property = para.property.set_borders(bottom_rule(&rule_hex, 6));
             }
             docx = docx.add_paragraph(para);
@@ -525,13 +597,13 @@ fn generate_cover_letter_docx_layout(
                             .color(&colors.body)
                             .fonts(docx_run_fonts(body_family)),
                     )
-                    .line_spacing(LineSpacing::new().before(240).after(if is_refined {
-                        40
-                    } else {
-                        480
-                    })),
+                    .line_spacing(
+                        LineSpacing::new()
+                            .before(240)
+                            .after(sty.signoff_space_after),
+                    ),
             );
-            if is_refined {
+            if sty.signature_gap {
                 // Extra empty paragraphs to leave room for a handwritten
                 // signature — approximates the `.typ`'s `#v(34pt)` gap
                 // (docx-rs has no direct vertical-space primitive outside
@@ -551,7 +623,7 @@ fn generate_cover_letter_docx_layout(
 
         // Subject / reference line (Betreff/Objet/Re/…) — before the salutation.
         if !in_body && is_subject_line {
-            if shows_subject_caption {
+            if sty.shows_subject_caption {
                 // The always-on JOB REFERENCE line: caption suppressed when the
                 // subject already opens with the market's own label or "Re:" —
                 // same content rule as `letter_refined.typ`'s
@@ -620,7 +692,7 @@ fn generate_cover_letter_docx_layout(
                 .size(pt_to_half_points(template.body_pt))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
-            if bolds_addressing {
+            if sty.bolds_addressing {
                 // Banded bolds the recipient block, mirroring
                 // `letter_banded.typ`'s bold `emit-recipient-block`. Navy's is
                 // regular weight.
@@ -639,7 +711,7 @@ fn generate_cover_letter_docx_layout(
         docx = docx.add_paragraph(para);
     }
 
-    if is_banded {
+    if sty.footer_rule {
         // Banded's short rule footer — see approximation note above. Navy's
         // rule is under the letterhead, not at the foot, so it is excluded.
         let mut footer = Paragraph::new()

@@ -528,10 +528,24 @@ fn navy_docx_follows_the_navy_design_not_banded() {
         "Navy must not render Banded's shaded header band"
     );
 
-    // 2. Centred letterhead. Banded/Refined never centre anything in the header.
+    // 2. Centred letterhead — the NAME AND the contact line, not just one.
+    //    `letter_request` supplies `contact: None`, so these exercise the
+    //    no-profile FALLBACK contact path, which used to right-align Navy while
+    //    the profile-backed path centred it. A single "contains center" check
+    //    passed anyway, because the name alone satisfied it.
+    let centred = |xml: &str| xml.matches(r#"w:val="center""#).count();
+    let right = |xml: &str| xml.matches(r#"w:val="right""#).count();
     assert!(
-        navy.contains(r#"<w:jc w:val="center" />"#) || navy.contains(r#"w:val="center""#),
-        "Navy's letterhead must be centred, mirroring letter_navy.typ"
+        centred(&navy) >= 2,
+        "Navy must centre the name AND the contact line; found {} centred paragraph(s)",
+        centred(&navy)
+    );
+    assert_eq!(centred(&banded), 0, "precondition: Banded centres nothing");
+    assert!(
+        right(&navy) < right(&banded),
+        "Navy must not right-align the header lines Banded does: navy={} banded={}",
+        right(&navy),
+        right(&banded)
     );
 
     // 3. Date and recipient stay REGULAR weight — `letter_navy.typ`'s
