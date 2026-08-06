@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { errorDetail } from '@/lib/error-class';
 import {
   extractMetadata,
   generateCoverLetter,
@@ -285,7 +286,9 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           });
         } else {
           const message = err instanceof Error ? err.message : t('autopilot.apply.failed');
-          console.error('[runTailor] failed', { target, error: message });
+          // Capped, not classed — see `errorDetail`: the provider's own error
+          // text is the ONLY record of why a generation died.
+          console.error('[runTailor] failed', { target, error: errorDetail(err) });
           patch(id, { error: message });
         }
       } finally {

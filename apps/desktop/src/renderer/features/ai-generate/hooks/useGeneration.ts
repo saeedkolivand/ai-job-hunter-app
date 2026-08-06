@@ -1,6 +1,7 @@
 import type { AiGenerationSaveRequest } from '@ajh/shared/ipc';
 import type { NotificationApi } from '@ajh/ui';
 
+import { errorDetail } from '@/lib/error-class';
 import {
   type EmphasisId,
   extractMetadata,
@@ -249,10 +250,10 @@ export function useGeneration(
         persist(finalResume, '', '');
         notify.error({ message: t('aiGenerate.toast.coverFailed') });
       } else {
-        console.error('[handleGenerate] failed', {
-          target,
-          error: err instanceof Error ? err.message : String(err),
-        });
+        // Capped, not classed: unlike an export failure (whose reason the Rust
+        // side logs as issue codes) a generation failure has no second record
+        // of WHY. See `errorDetail`.
+        console.error('[handleGenerate] failed', { target, error: errorDetail(err) });
         setError(err instanceof Error ? err.message : t('aiGenerate.errors.generationFailed'));
         setStage('configuring');
         notify.error({ message: t('aiGenerate.toast.failed') });
