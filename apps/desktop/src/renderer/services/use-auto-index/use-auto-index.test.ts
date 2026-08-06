@@ -159,6 +159,57 @@ describe('useAutoIndex', () => {
     await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(2), { timeout: 3000 });
   });
 
+  it('clears the guard even when the job finishes before React re-renders', async () => {
+    // Regression for the review finding on #951: the listener used to compare
+    // against the `inFlightJob` STATE. `setInFlightJob` only schedules a render,
+    // so a job that completes first hits a closure still holding `null`, drops
+    // its own completion event, and latches the guard forever — auto-indexing
+    // dead until the app restarts. The ref is written synchronously, so a
+    // completion that arrives in the same tick as the claim is still matched.
+    usePreferencesStore.setState({ autoIndexOnUpload: true });
+    let jobHandler: ((e: unknown) => void) | null = null;
+    let staleNow = 1;
+    // Fire the completion the instant the job id is handed out — before any
+    // re-render can commit.
+    const indexStaleDocuments = vi.fn().mockImplementation(async () => {
+      queueMicrotask(() => jobHandler?.({ type: 'job.completed', jobId: 'job-1' }));
+      return { jobId: 'job-1' };
+    });
+    const client = createMockClient({
+      'ai.embeddingStatus': vi.fn().mockImplementation(async () => status(staleNow)),
+      'ai.indexStaleDocuments': indexStaleDocuments,
+      'jobs.onEvent': vi.fn((cb: (e: unknown) => void) => {
+        jobHandler = cb;
+        return () => {};
+      }),
+    });
+
+    const queryClient = makeQueryClient();
+    renderHookWithClient(() => useAutoIndex(), { client, queryClient });
+    await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(1));
+
+    // Index goes clean, then a new document arrives. If the completion had been
+    // dropped the guard would still be held and this second run never happens.
+    staleNow = 0;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+    });
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<{ documents: { stale: number } }>(keys.ai.embeddingStatus)
+          ?.documents.stale
+      ).toBe(0)
+    );
+
+    staleNow = 1;
+    indexStaleDocuments.mockResolvedValue({ jobId: 'job-2' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+    });
+
+    await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(2), { timeout: 3000 });
+  });
+
   it('does not retry forever when a run fails to reduce the stale count', async () => {
     // The other half of the same guard. Without a per-(space, count) attempt key
     // a run that indexes nothing re-triggers the instant it ends — an unbounded

@@ -51,6 +51,28 @@ export const useAutoIndex = () => {
   // STATE rather than a ref because the effect must re-run when a job finishes,
   // and clearing a ref re-renders nothing.
   const [inFlightJob, setInFlightJob] = useState<string | null>(null);
+  // Written SYNCHRONOUSLY alongside the state, and the job listener compares
+  // against this — not against `inFlightJob`. `setInFlightJob` only schedules a
+  // render, so a job that finishes before that render commits would hit a
+  // listener closure still holding `null`, drop its own completion event, and
+  // leave the guard latched forever. Same fix, for the same reason, as
+  // `EmbeddingsSettings`'s `reindexJobIdRef`.
+  const inFlightJobRef = useRef<string | null>(null);
+  // Terminal job ids seen while we held no claim. A job can finish BEFORE the
+  // invoke that created it resolves — an index where every document fails
+  // returns almost instantly — so its completion arrives before there is
+  // anything to match it against. Without this the claim that lands afterwards
+  // waits forever for an event that already came and went. Bounded; only the
+  // most recent handful can ever matter, since a claim follows its own invoke.
+  const finishedBeforeClaim = useRef<string[]>([]);
+  const claim = (id: string | null) => {
+    if (id && finishedBeforeClaim.current.includes(id)) {
+      finishedBeforeClaim.current = finishedBeforeClaim.current.filter((j) => j !== id);
+      id = null;
+    }
+    inFlightJobRef.current = id;
+    setInFlightJob(id);
+  };
   const starting = useRef(false);
 
   // One attempt per (space, stale count), CLEARED once the index goes clean or
@@ -66,9 +88,15 @@ export const useAutoIndex = () => {
   // strip so it shows the post-run count.
   useJobEvents((evt: JobEvent) => {
     const e = evt as { type: string; jobId: string };
-    if (e.jobId !== inFlightJob) return;
     if (e.type !== 'job.completed' && e.type !== 'job.failed' && e.type !== 'job.cancelled') return;
-    setInFlightJob(null);
+    if (e.jobId !== inFlightJobRef.current) {
+      // Not ours — or ours, but finishing before the claim was recorded. Keep
+      // the id so `claim` can recognise it rather than latching on a job that
+      // has already ended.
+      finishedBeforeClaim.current = [e.jobId, ...finishedBeforeClaim.current].slice(0, 8);
+      return;
+    }
+    claim(null);
     void qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
   });
 
@@ -85,7 +113,7 @@ export const useAutoIndex = () => {
     // for the user to pick one rather than failing once per refetch. This is the
     // normal first run — the résumé step precedes the AI step in onboarding.
     if (!activeProvider || !activeModel) return;
-    if (inFlightJob || starting.current) return;
+    if (inFlightJobRef.current || starting.current) return;
 
     const attempt = `${space}/${stale}`;
     if (attemptedFor.current === attempt) return;
@@ -98,7 +126,7 @@ export const useAutoIndex = () => {
         // Null means nothing was actually stale by the time the backend looked
         // (a lazy embed during matching got there first) — no job, nothing to
         // wait for, and the next real change is free to trigger a run.
-        if (jobId) setInFlightJob(jobId);
+        if (jobId) claim(jobId);
         else await qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
       } catch {
         // Best-effort by design: matching still embeds lazily when it needs a

@@ -828,7 +828,7 @@ fn reembed_run_failed(done: u32, failed: u32) -> bool {
 /// documents, so only ONE may run at a time.
 const EMBED_JOB_KINDS: [&str; 2] = ["ai.reembed", "ai.indexStale"];
 
-/// The id of an embedding job already running, if any.
+/// Claim the right to run an embedding job, or report the one already running.
 ///
 /// Auto-indexing and the manual "Re-index now" button are independent triggers
 /// with no knowledge of each other, so without this a background auto-index and
@@ -836,6 +836,20 @@ const EMBED_JOB_KINDS: [&str; 2] = ["ai.reembed", "ai.indexStale"];
 /// provider twice for identical work. Enforced in the BACKEND rather than by
 /// disabling the button, because that is the only place every trigger has to
 /// pass through; a UI-only guard narrows the race instead of closing it.
+///
+/// The scan and the registration happen under ONE lock
+/// ([`JobTracker::start_exclusive`]): checking first and starting after is
+/// check-then-act, and two commands can both see "nothing running" before either
+/// registers.
+///
+/// `None` means this caller owns the run; `Some(existing)` is the job to watch
+/// instead — a normal outcome, not a failure, which is why this is not a
+/// `Result` (see R6).
+fn claim_embed_job(app: &AppHandle, job_id: &str, kind: &str) -> Option<String> {
+    crate::commands::jobs::job_start_exclusive(app, job_id, kind, &EMBED_JOB_KINDS)
+}
+
+/// Whether an embedding job is running right now (for the status surface).
 fn running_embed_job(app: &AppHandle) -> Option<String> {
     app.state::<Mutex<JobTracker>>()
         .lock()
@@ -847,10 +861,11 @@ fn running_embed_job(app: &AppHandle) -> Option<String> {
 
 /// Whether a job record is an embedding job that has NOT finished.
 ///
-/// Split out of [`running_embed_job`] purely so it is testable: that needs an
-/// `AppHandle` this crate has no harness for, this needs nothing. The
-/// terminal-status half is the load-bearing part — counting a COMPLETED job as
-/// active would block every future index permanently after the first run.
+/// Split out purely so it is testable: the callers need an `AppHandle` this
+/// crate has no harness for, this needs nothing. The terminal-status half is the
+/// load-bearing part — counting a COMPLETED job as active would block every
+/// future index permanently after the first run. Mirrors the predicate inside
+/// [`JobTracker::start_exclusive`]; a test pins the two agreeing.
 fn is_active_embed_job(kind: &str, status: &JobStatus) -> bool {
     EMBED_JOB_KINDS.contains(&kind)
         && matches!(
@@ -998,13 +1013,12 @@ async fn run_embed_job(
 /// job id. Clears the live posting embedding cache so stale-space entries go too.
 #[tauri::command]
 pub async fn ai_reembed_all(app: AppHandle) -> Value {
+    let job_id = new_job_id();
     // Already embedding (an auto-index run, or a double-click): hand back the
     // running job so the caller watches THAT instead of starting a paid duplicate.
-    if let Some(existing) = running_embed_job(&app) {
+    if let Some(existing) = claim_embed_job(&app, &job_id, "ai.reembed") {
         return json!({ "jobId": existing });
     }
-    let job_id = new_job_id();
-    crate::commands::jobs::job_start(&app, &job_id, "ai.reembed");
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
@@ -1036,17 +1050,16 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
 /// silent instead of showing progress for a no-op run.
 #[tauri::command]
 pub async fn ai_index_stale_documents(app: AppHandle) -> Value {
-    // Same guard as `ai_reembed_all` — a manual re-index already covers every
-    // stale document, so joining it is strictly better than racing it.
-    if let Some(existing) = running_embed_job(&app) {
-        return json!({ "jobId": existing });
-    }
     let docs = stale_documents(&app);
     if docs.is_empty() {
         return json!({ "jobId": Value::Null });
     }
     let job_id = new_job_id();
-    crate::commands::jobs::job_start(&app, &job_id, "ai.indexStale");
+    // Same guard as `ai_reembed_all` — a manual re-index already covers every
+    // stale document, so joining it is strictly better than racing it.
+    if let Some(existing) = claim_embed_job(&app, &job_id, "ai.indexStale") {
+        return json!({ "jobId": existing });
+    }
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
