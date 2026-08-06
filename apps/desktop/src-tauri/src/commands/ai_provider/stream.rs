@@ -44,9 +44,14 @@ pub struct StreamPiece {
     pub usage: Option<Usage>,
     /// The provider's own end-of-turn reason, when this piece happens to carry
     /// it (OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk — see
-    /// `openai::parse_openai_finish_reason`). `None` for a provider with no
-    /// streamed equivalent (Anthropic/Gemini/local Ollama today) or before one
-    /// has been reported. Mirrors `usage`'s "latest non-`None` wins" handling.
+    /// `openai::parse_openai_finish_reason`). `None` before one has been
+    /// reported, and always `None` for Anthropic/Gemini/local Ollama — NOT
+    /// because those have no streamed equivalent (they do: Anthropic's
+    /// `message_delta.stop_reason`, Gemini's `candidates[].finishReason`,
+    /// Ollama's `done_reason`) but because their frame parsers do not map it
+    /// yet. Mapping any of them is additive: parse the field into
+    /// [`StopReason`] and the length diagnosis below starts working there too.
+    /// Mirrors `usage`'s "latest non-`None` wins" handling.
     /// What this exists for: telling a `finish_reason: length` empty answer
     /// (the model ran out of budget mid-reasoning, never reached its final
     /// channel) apart from a provider that just silently returned nothing —
@@ -146,9 +151,14 @@ pub(super) const EMPTY_ANSWER_MESSAGE: &str = "The model produced no answer cont
 /// truncated us before any answer" apart from "the provider silently returned
 /// nothing" — this is exactly the ambiguity that took two investigations to
 /// pin down for a real report (Ollama Cloud `gpt-oss:120b`).
+/// Deliberately does NOT point at a Settings control: the only max-output-tokens
+/// field in the UI is `LocalModelLimits`, rendered solely for the LOCAL `ollama`
+/// provider, and local Ollama is the one provider that never reaches this
+/// branch (no `finish_reason` in its stream). Sending an OpenAI/Ollama Cloud
+/// user to a field they cannot see is worse than no advice.
 pub(super) const EMPTY_ANSWER_LENGTH_MESSAGE: &str = "The model ran out of output budget \
-    before producing any answer text (finish_reason: length). Try again, or raise the \
-    model's max output tokens in Settings → AI.";
+    before producing any answer text (finish_reason: length) — it was most likely still \
+    reasoning when it hit the limit. Try again, or pick a model with a larger output budget.";
 
 /// Pick the right empty-completion message for `stop_reason` — see the two
 /// constants' docs for what each one means.

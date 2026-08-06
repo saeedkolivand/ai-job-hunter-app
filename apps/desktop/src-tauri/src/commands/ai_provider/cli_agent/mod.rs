@@ -688,7 +688,21 @@ async fn run_stream(
     // `AiProvider::complete_with_usage`'s DEFAULT impl, which already reports
     // zero usage for any provider (like this one) that doesn't override it.
     super::record_usage(app, backend.id().as_str(), model, 0, 0, None);
-    let result = emit_done(app, job_id, label, model, &answer);
+    // An agent that emitted a `Done` sentinel (or a whitespace-only delta) and
+    // THEN exited non-zero skips the `!emitted_done && !success` guard above,
+    // so without this it would report the generic "produced no answer content"
+    // and throw away the stderr that says why — the not-logged-in / quota /
+    // bad-flag cases `friendly_cli_error` already recognises. The captured
+    // stderr is strictly more informative than the empty-answer message, so
+    // prefer it whenever the process itself failed.
+    let result = match emit_done(app, job_id, label, model, &answer) {
+        Err(_) if !success => Err(friendly_cli_error(
+            label,
+            status.and_then(|s| s.code()),
+            &stderr_text,
+        )),
+        other => other,
+    };
     trace.end(
         status.and_then(|s| s.code()).map(|c| c as u16),
         result.is_ok(),
@@ -896,7 +910,8 @@ fn is_cancelled(app: &AppHandle, job_id: &str) -> bool {
 /// `emit_stream_error` on its generic error path, so this needs no
 /// caller-specific wiring. CLI agents have no `finish_reason` signal of their
 /// own (no HTTP response to carry one), so this always reports the generic
-/// empty message.
+/// empty message — `run_stream` replaces it with `friendly_cli_error`'s
+/// stderr-derived diagnosis when the process itself also exited non-zero.
 fn emit_done(
     app: &AppHandle,
     job_id: &str,
