@@ -1411,7 +1411,9 @@
       "enclosures": "Enclosures:"
     },
     "genStepCounter": "Step {{current}} of {{total}} — {{label}}",
-    "loadingModel": "Loading model into memory…"
+    "loadingModel": "Loading model into memory…",
+    "letterLayoutNavy": "Navy",
+    "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy."
   },
   "autopilot": {
     "title": "Autopilot",

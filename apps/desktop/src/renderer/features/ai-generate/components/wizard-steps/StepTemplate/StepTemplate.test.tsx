@@ -398,9 +398,9 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.tier.design')).toBeInTheDocument();
   });
 
-  it('shows a tier badge on every card (7 ATS + 5 design)', () => {
+  it('shows a tier badge on every card (8 ATS + 5 design)', () => {
     renderStep();
-    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(7);
+    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(8);
     expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(5);
   });
 

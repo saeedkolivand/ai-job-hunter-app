@@ -39,7 +39,12 @@ fn generate_cover_letter_docx(
         LetterLayout::Classic => {
             generate_cover_letter_docx_classic(text, meta, template, contact, lang)
         }
-        LetterLayout::Refined | LetterLayout::Banded => {
+        // Navy joins the non-Classic path: like Refined/Banded it is an
+        // arrangement over the same model, and DOCX has no way to express the
+        // centred tracked-caps letterhead anyway — the shared layout renderer
+        // already degrades every non-Classic arrangement to the same
+        // parser-safe DOCX structure.
+        LetterLayout::Refined | LetterLayout::Banded | LetterLayout::Navy => {
             generate_cover_letter_docx_layout(text, meta, template, contact, lang, market, layout)
         }
     }
