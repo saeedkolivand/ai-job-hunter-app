@@ -142,6 +142,9 @@ fn show_clickable_banner(
     {
         let handle = app.clone();
         let (title, body) = (title.to_string(), body.to_string());
+        // Reserve BEFORE spawning: no point occupying a blocking worker we then
+        // can't let listen. See [`MAX_BANNER_LISTENERS`].
+        let slot = ListenerSlot::reserve();
         // `wait_for_action` blocks; keep it off the async runtime's workers.
         tauri::async_runtime::spawn_blocking(move || {
             let mut n = notify_rust::Notification::new();
@@ -152,14 +155,70 @@ fn show_clickable_banner(
             #[cfg(target_os = "linux")]
             n.action("default", "default");
             match n.show() {
-                Ok(handle_n) => handle_n.wait_for_action(|action| {
-                    if action == "default" {
-                        open_from_banner(&handle, route);
-                    }
-                }),
+                Ok(shown) => match slot {
+                    Some(_slot) => shown.wait_for_action(|action| {
+                        if action == "default" {
+                            open_from_banner(&handle, route);
+                        }
+                    }),
+                    // Over budget: DROP the handle instead of parking on it. The
+                    // banner is still delivered — on Linux `show()` already sent
+                    // it, and macOS's handle `Drop` sends it — it just
+                    // isn't clickable. Degrading one banner's click beats
+                    // starving the blocking pool for every other caller.
+                    None => log::warn!(
+                        "[notifications] {MAX_BANNER_LISTENERS} banner listeners already parked; \
+                         showing this one without a click handler"
+                    ),
+                },
                 Err(e) => log::warn!("[notifications] os banner failed: {e}"),
             }
         });
+    }
+}
+
+/// Cap on macOS/Linux banner listeners parked at once.
+///
+/// `wait_for_action` blocks its thread until the user clicks or the banner
+/// closes — and a notification the user never touches (sitting in macOS
+/// Notification Center, say) parks that thread indefinitely. `OsBanner::Always`
+/// sources like autopilot can emit a burst, so without a bound a run of ignored
+/// notifications would hold blocking workers permanently and starve every other
+/// `spawn_blocking` caller in the app.
+///
+/// 8 is well above any realistic count of banners a user has on screen and far
+/// below the runtime's blocking-pool size, so the cap only ever engages in the
+/// pathological case it exists for.
+#[cfg(not(windows))]
+const MAX_BANNER_LISTENERS: usize = 8;
+
+#[cfg(not(windows))]
+static BANNER_LISTENERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// RAII permit for one parked banner listener. Releasing on `Drop` (rather than
+/// after `wait_for_action` returns) means a panic inside the wait can't leak the
+/// slot and shrink the budget permanently.
+#[cfg(not(windows))]
+struct ListenerSlot;
+
+#[cfg(not(windows))]
+impl ListenerSlot {
+    /// `Some` when a slot was free, `None` when already at [`MAX_BANNER_LISTENERS`].
+    fn reserve() -> Option<Self> {
+        use std::sync::atomic::Ordering;
+        BANNER_LISTENERS
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < MAX_BANNER_LISTENERS).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for ListenerSlot {
+    fn drop(&mut self) {
+        BANNER_LISTENERS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
     }
 }
 

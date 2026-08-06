@@ -237,18 +237,43 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
-  # ── macOS compile check (PR + manual; never on push-to-main) ────────────────
-  # Every other Rust job runs on ubuntu-latest, and `macos-` appears in no other
-  # workflow than release.yml — so until this job existed, macOS-only code
-  # (`#[cfg(target_os = "macos")]`, or any `cfg(not(windows))` path) compiled
-  # NOWHERE until a release was cut, where a failure is most expensive. The
-  # Cargo.toml already carries a comment about being burned by exactly this.
-  # Check only — no bundling, no tests — so it stays cheap on the 10x-billed
-  # macOS runner.
+  # ── Non-Linux compile checks (PR + manual; never on push-to-main) ───────────
+  # Every other Rust job runs on ubuntu-latest, and before these jobs `macos-`
+  # and `windows-` appeared in no workflow but release.yml. So any code behind a
+  # macOS- or Windows-specific cfg compiled NOWHERE until a release was cut,
+  # which is the most expensive place to find a break. Cargo.toml already
+  # carries a comment about being burned by exactly this.
+  #
+  # Precisely: `cfg(unix)` / `cfg(not(windows))` branches ARE already compiled by
+  # the ubuntu jobs — the gap was only ever `#[cfg(target_os = "macos")]`,
+  # `#[cfg(windows)]` and other platform-exclusive predicates.
+  #
+  # Check only — no bundling, no tests — so these stay cheap (the macOS runner
+  # bills at 10x, Windows at 2x).
   cargo-check-macos:
     name: 🍎 macOS compile check
     if: github.event_name != 'push'
     runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: 🛡️ Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - name: 🦀 Setup Rust (Tauri)
+        uses: ./.github/actions/setup-rust
+      - name: 🦀 cargo check (all targets)
+        working-directory: apps/desktop/src-tauri
+        run: cargo check --all-targets --locked
+
+  cargo-check-windows:
+    name: 🪟 Windows compile check
+    if: github.event_name != 'push'
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - name: 🛡️ Harden Runner

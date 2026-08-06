@@ -14,6 +14,8 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import type { NotificationOpen } from '@ajh/shared';
+
 import {
   createMockClient,
   exerciseServiceHooks,
@@ -307,9 +309,8 @@ describe('useNotificationEvents', () => {
     // payload; a routed open must NOT also pop the inbox drawer, which would be
     // a second, competing destination.
     const { useUiStore } = await import('@/store/ui-store');
-    type Payload = { route?: { to: string; search?: Record<string, unknown> } };
-    let openHandler: ((p: Payload) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: Payload) => void) => {
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
       openHandler = cb;
       return () => {};
     });
@@ -335,9 +336,8 @@ describe('useNotificationEvents', () => {
   it('an unknown backend route is survived, not thrown on', async () => {
     // `resolveNotificationRoute` maps it to the '/' fallback rather than handing
     // TanStack Router a path it does not know.
-    type Payload = { route?: { to: string } };
-    let openHandler: ((p: Payload) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: Payload) => void) => {
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
       openHandler = cb;
       return () => {};
     });
@@ -357,9 +357,8 @@ describe('useNotificationEvents', () => {
 
   it('a payload with no route opens the inbox (the tray-click case)', async () => {
     const { useUiStore } = await import('@/store/ui-store');
-    type Payload = { route?: { to: string } };
-    let openHandler: ((p: Payload) => void) | null = null;
-    const onOpenInbox = vi.fn((cb: (p: Payload) => void) => {
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
       openHandler = cb;
       return () => {};
     });
