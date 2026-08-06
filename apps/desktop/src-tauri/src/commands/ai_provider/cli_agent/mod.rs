@@ -695,14 +695,15 @@ async fn run_stream(
     // bad-flag cases `friendly_cli_error` already recognises. The captured
     // stderr is strictly more informative than the empty-answer message, so
     // prefer it whenever the process itself failed.
-    let result = match emit_done(app, job_id, label, model, &answer) {
-        Err(_) if !success => Err(friendly_cli_error(
+    let result = emit_done(app, job_id, label, model, &answer).map_err(|empty| {
+        terminal_error(
+            empty,
+            success,
             label,
             status.and_then(|s| s.code()),
             &stderr_text,
-        )),
-        other => other,
-    };
+        )
+    });
     trace.end(
         status.and_then(|s| s.code()).map(|c| c as u16),
         result.is_ok(),
@@ -860,6 +861,34 @@ fn spawn_error(agent: &str, binary: &str, e: std::io::Error) -> AppError {
         ))
     } else {
         AppError::Provider(format!("Failed to start {agent}: {e}"))
+    }
+}
+
+/// Which error a finished CLI-agent stream reports when [`emit_done`] rejected an
+/// empty answer.
+///
+/// An agent that emitted a `Done` sentinel (or a whitespace-only delta) and THEN
+/// exited non-zero skips `run_stream`'s earlier `!emitted_done && !success` guard,
+/// so without this it reported the generic "produced no answer content" and threw
+/// away the stderr that says why — the not-logged-in / quota / bad-flag cases
+/// [`friendly_cli_error`] already recognises. The captured stderr is strictly more
+/// informative than the empty-answer message whenever the process itself failed;
+/// on a CLEAN exit there is no stderr diagnosis to prefer, so the empty-answer
+/// message stands.
+///
+/// Split out from `run_stream` purely so it is testable: `run_stream` needs an
+/// `AppHandle` and a real child process, this decision needs neither.
+fn terminal_error(
+    empty_answer: AppError,
+    success: bool,
+    agent: &str,
+    code: Option<i32>,
+    stderr: &str,
+) -> AppError {
+    if success {
+        empty_answer
+    } else {
+        friendly_cli_error(agent, code, stderr)
     }
 }
 
@@ -1041,6 +1070,60 @@ mod tests {
                 id.as_str()
             );
         }
+    }
+
+    /// Regression: an agent that emits `Done` (or a whitespace-only delta) and
+    /// THEN exits non-zero used to report the generic empty-answer message and
+    /// discard the stderr explaining the real cause. That path skips
+    /// `run_stream`'s earlier `!emitted_done && !success` guard entirely.
+    #[test]
+    fn a_nonzero_exit_after_done_prefers_the_stderr_diagnosis() {
+        let empty =
+            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let err = terminal_error(
+            empty,
+            false,
+            "codex",
+            Some(1),
+            "Error: not logged in. Run `codex login`.",
+        );
+        // `friendly_cli_error` recognises the auth shape and upgrades it to the
+        // actionable Config error — the whole point of preferring stderr.
+        assert!(
+            matches!(err, AppError::Config(ref m) if m.contains("not signed in")),
+            "expected the sign-in diagnosis, got {err:?}"
+        );
+    }
+
+    /// Even with unrecognised stderr, a non-zero exit must surface the exit code
+    /// rather than claim the model simply returned nothing.
+    #[test]
+    fn a_nonzero_exit_with_opaque_stderr_still_beats_the_empty_answer_message() {
+        let empty =
+            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let err = terminal_error(empty, false, "codex", Some(3), "segfault at 0x0");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("segfault") || msg.contains("exit 3"),
+            "got {msg}"
+        );
+        assert!(
+            !msg.contains("no answer content"),
+            "the generic empty-answer message must not win over a real failure: {msg}"
+        );
+    }
+
+    /// The differential: a CLEAN exit that produced nothing has no stderr
+    /// diagnosis to prefer, so the empty-answer message must survive untouched.
+    #[test]
+    fn a_clean_exit_keeps_the_empty_answer_message() {
+        let empty =
+            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let err = terminal_error(empty, true, "codex", Some(0), "some harmless warning");
+        assert!(
+            format!("{err}").contains("no answer content"),
+            "a clean exit must keep the empty-answer message, got {err:?}"
+        );
     }
 
     #[test]

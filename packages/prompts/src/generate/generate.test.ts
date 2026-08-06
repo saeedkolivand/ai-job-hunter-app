@@ -2080,7 +2080,10 @@ describe('extractPlainText', () => {
       // Not a single whole-answer wrap — the interior-fence guard must still
       // refuse to guess which of the two blocks is "the" answer.
       const out = extractPlainText('```a``` and ```b```');
-      expect(out).not.toContain('```');
+      // Assert the exact result, not just the absence of backticks: stripping
+      // only the delimiters and leaving `a`/`b` behind would also satisfy a
+      // `not.toContain('```')` check.
+      expect(out).toBe('and');
     });
 
     it('still deletes a genuine fenced code block embedded mid-answer (not the whole response)', () => {

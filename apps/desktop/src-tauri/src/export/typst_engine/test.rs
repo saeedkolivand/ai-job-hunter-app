@@ -2188,7 +2188,7 @@ fn letter_refined_extracts_accented_latin_content() {
     // `contains` above still passes if extraction drops the whole sign-off
     // block. Pin the signature itself by looking only after the sign-off.
     assert!(
-        signature_block(&lower).contains("àlvaro") && signature_block(&lower).contains("èsposito"),
+        signature_block(&lower).contains("àlvaro èsposito"),
         "refined: accented name missing from the SIGNATURE (after the sign-off) — a \
          letterhead-only match would hide a dropped signature\n---\n{extracted}"
     );
@@ -2370,7 +2370,7 @@ fn letter_banded_extracts_accented_latin_content() {
     );
     // Same letterhead-vs-signature distinction as the refined case above.
     assert!(
-        signature_block(&lower).contains("àlvaro") && signature_block(&lower).contains("èsposito"),
+        signature_block(&lower).contains("àlvaro èsposito"),
         "banded: accented name missing from the SIGNATURE (after the sign-off) — a \
          letterhead-only match would hide a dropped signature\n---\n{extracted}"
     );
