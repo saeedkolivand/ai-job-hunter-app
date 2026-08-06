@@ -1063,8 +1063,26 @@ impl AiProvider for OpenAiClient {
         self.embed_impl(app, model, text).await
     }
 
+    /// Only **native OpenAI** hosts `text-embedding-3-small`.
+    ///
+    /// Every other client built on this one speaks the same `/v1` protocol but
+    /// serves a completely different catalog — Ollama Cloud (which delegates
+    /// this method straight through) and `OpenAiCompatible` (LM Studio, vLLM,
+    /// OpenRouter, …). Handing those an OpenAI model id is a guaranteed failure:
+    /// `embed_text` would post `text-embedding-3-small` to `ollama.com/v1` and
+    /// get a model-not-found back, which reads to the user as "embeddings are
+    /// broken" rather than "you haven't chosen an embedding model".
+    ///
+    /// `None` instead, so `embed_text`'s existing default-resolution error fires
+    /// first and says what to actually do. Same `id == OpenAi` gate as
+    /// [`Self::supports_web_search`], and for the same reason.
+    ///
+    /// Deliberately NOT paired with flipping `supports_embeddings` to `false`
+    /// for those providers: the `/v1/embeddings` endpoint may well exist on a
+    /// given gateway, and an explicit model the user knows works must still go
+    /// through. Only the presumed DEFAULT was ever wrong.
     fn default_embedding_model(&self) -> Option<&'static str> {
-        Some("text-embedding-3-small")
+        (self.id == ProviderId::OpenAi).then_some("text-embedding-3-small")
     }
 
     fn max_embedding_input_chars(&self) -> usize {

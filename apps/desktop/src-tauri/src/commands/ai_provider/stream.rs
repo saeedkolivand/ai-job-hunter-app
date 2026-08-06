@@ -43,15 +43,16 @@ pub struct StreamPiece {
     /// at completion — never estimated, never fabricated when absent.
     pub usage: Option<Usage>,
     /// The provider's own end-of-turn reason, when this piece happens to carry
-    /// it (OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk — see
-    /// `openai::parse_openai_finish_reason`). `None` before one has been
-    /// reported, and always `None` for Anthropic/Gemini/local Ollama — NOT
-    /// because those have no streamed equivalent (they do: Anthropic's
-    /// `message_delta.stop_reason`, Gemini's `candidates[].finishReason`,
-    /// Ollama's `done_reason`) but because their frame parsers do not map it
-    /// yet. Mapping any of them is additive: parse the field into
-    /// [`StopReason`] and the length diagnosis below starts working there too.
-    /// Mirrors `usage`'s "latest non-`None` wins" handling.
+    /// it: OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk (see
+    /// `openai::parse_openai_finish_reason`) and local Ollama's `done_reason` on
+    /// its final object (see `ollama::ollama_done_reason`). `None` before one has
+    /// been reported, and always `None` for Anthropic/Gemini — NOT because those
+    /// have no streamed equivalent (they do: Anthropic's
+    /// `message_delta.stop_reason`, Gemini's `candidates[].finishReason`) but
+    /// because their frame parsers do not map it yet. Mapping either is
+    /// additive: parse the field into [`StopReason`] and the length diagnosis
+    /// below starts working there too. Mirrors `usage`'s "latest non-`None`
+    /// wins" handling.
     /// What this exists for: telling a `finish_reason: length` empty answer
     /// (the model ran out of budget mid-reasoning, never reached its final
     /// channel) apart from a provider that just silently returned nothing —

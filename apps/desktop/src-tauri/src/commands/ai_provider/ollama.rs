@@ -95,6 +95,26 @@ pub(super) fn ollama_family_supports_thinking(model: &str) -> bool {
 /// a future model needs a narrower one.
 const OLLAMA_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
+/// Ollama's own `done_reason`, from the final `/api/chat` object of EITHER the
+/// streaming or the non-streaming path, mapped to a [`StopReason`]. `None` when
+/// the field is absent (any frame that isn't the final one).
+///
+/// Shared by [`parse_ollama_turn`] and [`parse_ollama_frames`] on purpose: the
+/// two paths read the same field off the same object shape, and a second
+/// hand-written copy of this mapping is exactly the duplicated-heuristic defect
+/// this codebase keeps re-learning. Callers layer their own precedence on top
+/// (a turn lets `Length` outrank a tool call); this only reports what Ollama
+/// said.
+fn ollama_done_reason(data: &Value) -> Option<StopReason> {
+    match data.get("done_reason").and_then(|r| r.as_str())? {
+        "length" => Some(StopReason::Length),
+        "stop" => Some(StopReason::End),
+        // Open-typed on purpose — a future/unknown reason must not be silently
+        // reported as a clean end.
+        _ => Some(StopReason::Other),
+    }
+}
+
 /// Parse a non-streaming `/api/chat` response into an [`AgentTurn`]:
 /// `message.content` is the text, each `message.tool_calls[]` maps to a
 /// [`ToolCall`] (Ollama returns `function.arguments` as an already-decoded JSON
@@ -129,7 +149,7 @@ fn parse_ollama_turn(data: &Value) -> AgentTurn {
                 .collect()
         })
         .unwrap_or_default();
-    let stop = if data.get("done_reason").and_then(|r| r.as_str()) == Some("length") {
+    let stop = if ollama_done_reason(data) == Some(StopReason::Length) {
         // A length-truncated turn's tool-call arguments may be truncated /
         // half-serialized JSON — length must win over the tool-call signal.
         StopReason::Length
@@ -887,6 +907,13 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
             buf.drain(..consumed);
             let mut sentinel = StreamPiece::done(delta);
             sentinel.usage = parse_ollama_usage(&event);
+            sentinel.stop_reason = ollama_done_reason(&event);
+            // `done_reason` rides on this same final object. Mapping it makes
+            // `stream::finish`'s length diagnosis ("ran out of output budget
+            // before producing any answer") work for LOCAL Ollama too, instead
+            // of only for the openai-compatible providers — a local reasoning
+            // model that burns its whole budget thinking is exactly the case
+            // that produced an unexplained empty generation.
             out.push(sentinel);
             return out;
         }
