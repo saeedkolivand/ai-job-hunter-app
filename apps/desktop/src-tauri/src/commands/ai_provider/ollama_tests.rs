@@ -116,6 +116,45 @@ fn parse_ollama_frames_done_carries_real_token_usage() {
     assert_eq!(usage.output_tokens, 45);
 }
 
+/// The streamed sentinel must carry `done_reason` too, not just usage. Without
+/// it `stream::finish` can't tell "the local model burned its whole budget
+/// reasoning and never answered" from "the provider silently returned nothing" —
+/// the exact ambiguity that made an empty generation unexplainable.
+#[test]
+fn parse_ollama_frames_done_carries_the_stop_reason() {
+    let mut buf = String::from(
+        "{\"message\":{\"content\":\"\"},\"done\":true,\"done_reason\":\"length\"}
+",
+    );
+    let pieces = parse_ollama_frames(&mut buf);
+    assert_eq!(pieces.len(), 1);
+    assert_eq!(pieces[0].stop_reason, Some(StopReason::Length));
+}
+
+#[test]
+fn parse_ollama_frames_done_reports_a_clean_stop_as_end_not_length() {
+    // The differential: a normal completion must NOT be reported as truncated,
+    // or every finished generation would claim it ran out of budget.
+    let mut buf = String::from(
+        "{\"message\":{\"content\":\"hi\"},\"done\":true,\"done_reason\":\"stop\"}
+",
+    );
+    let pieces = parse_ollama_frames(&mut buf);
+    assert_eq!(pieces[0].stop_reason, Some(StopReason::End));
+}
+
+#[test]
+fn parse_ollama_frames_done_without_a_reason_reports_none() {
+    // Older/leaner Ollama builds omit the field; absent must stay `None` rather
+    // than being invented as a clean end.
+    let mut buf = String::from(
+        "{\"message\":{\"content\":\"hi\"},\"done\":true}
+",
+    );
+    let pieces = parse_ollama_frames(&mut buf);
+    assert_eq!(pieces[0].stop_reason, None);
+}
+
 #[test]
 fn parse_usage_reads_prompt_eval_and_eval_counts() {
     let data = json!({ "prompt_eval_count": 10, "eval_count": 20 });
