@@ -359,7 +359,6 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       clicked: noop,
       onChanged: unsub,
       onOpenInbox: unsub,
-      onOsBannerClick: unsub,
       onToast: unsub,
     },
 
