@@ -71,6 +71,7 @@ const defaultPreferences: Preferences = {
   promptQuality: 'auto',
   debugMode: false,
   semanticScoring: false,
+  autoIndexOnUpload: false,
   closeToTray: true,
   recentLocations: [],
   onboardingCompleted: false,
@@ -105,6 +106,7 @@ interface PreferencesActions {
   setPromptQuality: (promptQuality: PromptQuality) => void;
   setDebugMode: (enabled: boolean) => void;
   setSemanticScoring: (enabled: boolean) => void;
+  setAutoIndexOnUpload: (enabled: boolean) => void;
   setCloseToTray: (enabled: boolean) => void;
   /** Record a picked job-search location (dedup + most-recent-first, capped). */
   addRecentLocation: (location: string) => void;
@@ -236,6 +238,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
           lastUpdated: new Date().toISOString(),
         })),
 
+      setAutoIndexOnUpload: (autoIndexOnUpload: boolean) =>
+        set((state) => ({
+          ...state,
+          autoIndexOnUpload,
+          lastUpdated: new Date().toISOString(),
+        })),
+
       setCloseToTray: (closeToTray: boolean) =>
         set((state) => ({
           ...state,
@@ -343,6 +352,8 @@ export const usePromptQuality = () => usePreferencesStore((state) => state.promp
 export const useDebugMode = () => usePreferencesStore((state) => state.debugMode ?? false);
 export const useSemanticScoring = () =>
   usePreferencesStore((state) => state.semanticScoring ?? false);
+export const useAutoIndexOnUpload = () =>
+  usePreferencesStore((state) => state.autoIndexOnUpload ?? false);
 export const useCloseToTray = () => usePreferencesStore((state) => state.closeToTray ?? true);
 export const useRecentLocations = () => usePreferencesStore((state) => state.recentLocations ?? []);
 export const useSidebarCollapsed = () =>

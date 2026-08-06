@@ -220,6 +220,36 @@ impl JobTracker {
         self.jobs.insert(id.to_string(), record);
     }
 
+    /// Register `id` as running UNLESS a job of one of `exclusive_kinds` is
+    /// already active — returning that job's id instead.
+    ///
+    /// The scan and the insert happen under the SAME lock on purpose. Doing them
+    /// as two calls is check-then-act: two commands can both observe "nothing
+    /// running" before either registers, and both proceed. For the embedding
+    /// jobs this guards, that means two concurrent runs embedding the same
+    /// documents — a cloud provider billed twice for identical work.
+    ///
+    /// `None` when this job was started; `Some(existing_id)` when one was already
+    /// running — that is not an error, it is the job the caller should watch.
+    pub fn start_exclusive(
+        &mut self,
+        id: &str,
+        kind: &str,
+        exclusive_kinds: &[&str],
+    ) -> Option<String> {
+        if let Some(existing) = self.jobs.values().find(|j| {
+            exclusive_kinds.contains(&j.kind.as_str())
+                && matches!(
+                    j.status,
+                    JobStatus::Running | JobStatus::Queued | JobStatus::Streaming
+                )
+        }) {
+            return Some(existing.id.clone());
+        }
+        self.start(id, kind);
+        None
+    }
+
     /// Wipe the job-execution log — in-memory records and the `jobs` table.
     /// Used by the factory reset.
     pub fn clear(&mut self) {

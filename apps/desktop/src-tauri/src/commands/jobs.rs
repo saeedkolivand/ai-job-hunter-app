@@ -32,6 +32,30 @@ pub fn job_start(app: &AppHandle, id: &str, kind: &str) {
     emit_job_event(app, "job.started", id, None);
 }
 
+/// Like [`job_start`], but refuses when a job of one of `exclusive_kinds` is
+/// already active — returning that job's id instead of starting a second.
+///
+/// The scan and the insert share one lock (see
+/// [`JobTracker::start_exclusive`]). Checking with a separate call and starting
+/// after is check-then-act: two commands can both observe "nothing running"
+/// before either registers, which for the embedding jobs means two concurrent
+/// runs over the same documents and a cloud provider billed twice.
+pub fn job_start_exclusive(
+    app: &AppHandle,
+    id: &str,
+    kind: &str,
+    exclusive_kinds: &[&str],
+) -> Option<String> {
+    let existing =
+        app.state::<Mutex<JobTracker>>()
+            .lock()
+            .start_exclusive(id, kind, exclusive_kinds);
+    if existing.is_none() {
+        emit_job_event(app, "job.started", id, None);
+    }
+    existing
+}
+
 /// Update a job's progress (0.0–1.0) and emit `job.progress`.
 pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
     app.state::<Mutex<JobTracker>>()

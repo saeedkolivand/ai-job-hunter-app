@@ -17,6 +17,7 @@ export * from './use-agent';
 export * from './use-ai';
 export * from './use-ai-provider';
 export * from './use-applications';
+export * from './use-auto-index/use-auto-index';
 export * from './use-autopilot';
 export * from './use-boards';
 export * from './use-cli-agents';
