@@ -71,6 +71,9 @@ const ARIA_TYP: &str = include_str!("templates/aria.typ");
 /// Saffron — warm design two-column, tinted LEFT sidebar, circular ringed photo (PR4).
 const SAFFRON_TYP: &str = include_str!("templates/saffron.typ");
 
+/// Cologne Navy — centred tracked-caps header, navy ruled headings.
+const COLOGNE_NAVY_TYP: &str = include_str!("templates/cologne_navy.typ");
+
 /// Parametric cover-letter template driven by `data.opts` + `data.style`.
 /// A4 or Letter; themed from the chosen resume template's accent + fonts.
 /// This is the `LetterLayout::Classic` arrangement.
@@ -86,13 +89,19 @@ const LETTER_REFINED_TYP: &str = include_str!("templates/letter_refined.typ");
 /// Same contract as [`LETTER_TYP`].
 const LETTER_BANDED_TYP: &str = include_str!("templates/letter_banded.typ");
 
-/// The embedded letter Typst source for a given [`LetterLayout`]. All three
+/// `LetterLayout::Navy` — centred tracked-caps letterhead over a navy-weight
+/// rule, pairing with Cologne Navy's centred ruled header. Same contract as
+/// [`LETTER_TYP`].
+const LETTER_NAVY_TYP: &str = include_str!("templates/letter_navy.typ");
+
+/// The embedded letter Typst source for a given [`LetterLayout`]. All four
 /// layouts share the same `data.json` contract — only the arrangement differs.
 const fn letter_source(layout: LetterLayout) -> &'static str {
     match layout {
         LetterLayout::Classic => LETTER_TYP,
         LetterLayout::Refined => LETTER_REFINED_TYP,
         LetterLayout::Banded => LETTER_BANDED_TYP,
+        LetterLayout::Navy => LETTER_NAVY_TYP,
     }
 }
 
@@ -137,6 +146,9 @@ pub enum TypstTemplate {
     Aria,
     /// PR4 — warm design two-column, tinted LEFT sidebar, circular ringed photo.
     Saffron,
+    /// Cologne Navy — centred tracked-caps navy header, ruled uppercase headings,
+    /// breakable experience entries.
+    CologneNavy,
 }
 
 impl TypstTemplate {
@@ -152,6 +164,7 @@ impl TypstTemplate {
             TypstTemplate::Lebenslauf => LEBENSLAUF_TYP,
             TypstTemplate::Aria => ARIA_TYP,
             TypstTemplate::Saffron => SAFFRON_TYP,
+            TypstTemplate::CologneNavy => COLOGNE_NAVY_TYP,
         }
     }
 
@@ -167,7 +180,7 @@ impl TypstTemplate {
     }
 
     /// Derive the Typst template from an existing [`Template`] configuration.
-    /// All twelve live template IDs are handled exhaustively; no fallback needed.
+    /// All thirteen live template IDs are handled exhaustively; no fallback needed.
     pub fn from_template(t: &Template) -> Self {
         match t.id {
             TemplateId::Atelier => TypstTemplate::Atelier,
@@ -190,6 +203,7 @@ impl TypstTemplate {
             // PR4: two design photo / two-column templates.
             TemplateId::Aria => TypstTemplate::Aria,
             TemplateId::Saffron => TypstTemplate::Saffron,
+            TemplateId::CologneNavy => TypstTemplate::CologneNavy,
         }
     }
 }

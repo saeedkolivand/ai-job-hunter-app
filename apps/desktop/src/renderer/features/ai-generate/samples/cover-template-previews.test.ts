@@ -21,6 +21,7 @@ vi.mock('./cover-template-previews', () => {
     'regent',
     'aria',
     'saffron',
+    'cologne-navy',
   ] as const;
 
   const COVER_TEMPLATE_PREVIEWS = Object.fromEntries(
