@@ -849,6 +849,14 @@ fn typst_cover_letter_pdf_passes_validation() {
 /// link renders in. It must never be mistaken for a header link and block the
 /// export: a cover letter is never two-column, so `can_linearize` is always
 /// false and a false block here has no remediation at all.
+///
+/// The band precondition is asserted implicitly rather than by measuring the
+/// link's rect: verified by reverting the `topmost_n` narrowing in
+/// `validate/mod.rs` and re-running, which fails here with exactly
+/// `header_url_mismatch` on `acme.example.com`. That failure is only reachable
+/// if the body link IS inside the 144pt band, so the fixture cannot silently
+/// drift into passing for the wrong reason without the narrowing also
+/// becoming untested — at which point this test starts passing on `main` too.
 #[test]
 fn cover_letter_body_link_in_a_short_letterhead_band_does_not_false_block() {
     let request = ExportRequest {

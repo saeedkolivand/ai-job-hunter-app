@@ -405,6 +405,19 @@ fn canonical_template_ids() -> [TemplateId; 12] {
     ]
 }
 
+/// The part of an extracted cover letter AFTER the sign-off, i.e. the signature
+/// block. Both letter fixtures print the candidate's name twice (letterhead and
+/// signature), so a whole-document `contains` cannot tell "the signature
+/// extracted" from "only the letterhead extracted". Returns `""` when the
+/// sign-off itself is missing, which fails the caller's assertion — correct,
+/// since a letter whose "Sincerely" did not extract is already broken.
+fn signature_block(lowercased: &str) -> &str {
+    lowercased
+        .split_once("sincerely")
+        .map(|(_, tail)| tail)
+        .unwrap_or("")
+}
+
 /// Mirrors `validate::mod::normalize` (validate/mod.rs:874-882): lowercased,
 /// whitespace-collapsed, alphanumeric-only text used for tolerant `contains`
 /// checks. Duplicated here (rather than exposed as `pub(crate)`) because this
@@ -2171,6 +2184,14 @@ fn letter_refined_extracts_accented_latin_content() {
         lower.contains("àlvaro") && lower.contains("èsposito"),
         "refined: accented signature name missing — capitals È/À did not survive extraction\n---\n{extracted}"
     );
+    // The name appears TWICE — letterhead and signature — so the global
+    // `contains` above still passes if extraction drops the whole sign-off
+    // block. Pin the signature itself by looking only after the sign-off.
+    assert!(
+        signature_block(&lower).contains("àlvaro") && signature_block(&lower).contains("èsposito"),
+        "refined: accented name missing from the SIGNATURE (after the sign-off) — a \
+         letterhead-only match would hide a dropped signature\n---\n{extracted}"
+    );
     assert!(
         lower.contains("così") || lower.contains("però") || lower.contains("città"),
         "refined: grave-accented-lowercase body word missing\n---\n{extracted}"
@@ -2346,6 +2367,12 @@ fn letter_banded_extracts_accented_latin_content() {
     assert!(
         lower.contains("àlvaro") && lower.contains("èsposito"),
         "banded: accented signature name missing — capitals È/À did not survive extraction\n---\n{extracted}"
+    );
+    // Same letterhead-vs-signature distinction as the refined case above.
+    assert!(
+        signature_block(&lower).contains("àlvaro") && signature_block(&lower).contains("èsposito"),
+        "banded: accented name missing from the SIGNATURE (after the sign-off) — a \
+         letterhead-only match would hide a dropped signature\n---\n{extracted}"
     );
     assert!(
         lower.contains("così") || lower.contains("però") || lower.contains("città"),
