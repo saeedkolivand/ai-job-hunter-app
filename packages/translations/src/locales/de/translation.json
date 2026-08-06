@@ -1415,7 +1415,9 @@
       "enclosures": "Anlagen:"
     },
     "genStepCounter": "Schritt {{current}} von {{total}} — {{label}}",
-    "loadingModel": "Modell wird in den Arbeitsspeicher geladen…"
+    "loadingModel": "Modell wird in den Arbeitsspeicher geladen…",
+    "letterLayoutNavy": "Navy",
+    "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy."
   },
   "autopilot": {
     "title": "Autopilot",

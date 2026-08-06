@@ -388,7 +388,7 @@ fn two_column_resume_embeds_contact_link_annotations() {
 /// (pinned by the serde round-trip test in types.rs and the TS sync guard).
 /// Shared by every test that iterates "all templates" so a newly added
 /// template is covered automatically rather than needing a remembered edit.
-fn canonical_template_ids() -> [TemplateId; 12] {
+fn canonical_template_ids() -> [TemplateId; 13] {
     [
         TemplateId::Classic,
         TemplateId::SwissMinimal,
@@ -402,6 +402,7 @@ fn canonical_template_ids() -> [TemplateId; 12] {
         TemplateId::Regent,
         TemplateId::Aria,
         TemplateId::Saffron,
+        TemplateId::CologneNavy,
     ]
 }
 
@@ -443,7 +444,7 @@ const NO_EXTRACTABLE_TEXT_THRESHOLD: usize = 20;
 #[test]
 fn every_template_renders_a_valid_pdf() {
     let ids = canonical_template_ids();
-    assert_eq!(ids.len(), 12, "expected the twelve canonical templates");
+    assert_eq!(ids.len(), 13, "expected the thirteen canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
     for id in ids {
@@ -2387,6 +2388,59 @@ fn letter_banded_extracts_accented_latin_content() {
     );
 }
 
+/// The Navy letter layout must extract like its siblings. This is the test that
+/// caught Cologne Navy's tracking: at the design brief's 0.14em the NAME came
+/// back as "À LVA R O   È S P O S I T O" — unreadable to an ATS. The letterhead
+/// carries the same tracked-caps treatment, so it needs the same guard.
+#[test]
+fn letter_navy_extracts_accented_latin_content() {
+    let t = Template::get(TemplateId::CologneNavy);
+    let bytes = render_letter_pdf(
+        LETTER_FIXTURE_IT,
+        &t,
+        None,
+        Some("Àlvaro Èsposito"),
+        "us",
+        "en",
+        LetterLayout::Navy,
+    )
+    .expect("navy accented-Latin render should succeed");
+    assert!(
+        bytes.starts_with(b"%PDF"),
+        "navy accented-Latin must start with %PDF"
+    );
+
+    let extracted = pdf_extract::extract_text_from_mem(&bytes)
+        .expect("pdf-extract on navy accented-Latin output");
+    let normalised: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lower = normalised.to_lowercase();
+
+    assert!(
+        lower.contains("àlvaro") && lower.contains("èsposito"),
+        "navy: accented name missing — capitals È/À did not survive extraction
+---
+{extracted}"
+    );
+    assert!(
+        signature_block(&lower).contains("àlvaro èsposito"),
+        "navy: accented name missing from the SIGNATURE (after the sign-off) — a          letterhead-only match would hide a dropped signature
+---
+{extracted}"
+    );
+    assert!(
+        lower.contains("così") || lower.contains("però") || lower.contains("città"),
+        "navy: grave-accented-lowercase body word missing
+---
+{extracted}"
+    );
+
+    let normalized_len = normalize_like_validator(&extracted).len();
+    assert!(
+        normalized_len >= NO_EXTRACTABLE_TEXT_THRESHOLD,
+        "navy accented-Latin: only {normalized_len} normalized chars extracted —          the real validator's no_extractable_text gate would block this export"
+    );
+}
+
 // (B3) The Banded accent band is drawn on page 1 ONLY. On a multi-page letter,
 // Banded's page-1 SVG carries a filled band colour that (a) the no-band Classic
 // layout lacks on its own page 1, and (b) is absent from Banded's later pages.
@@ -4274,12 +4328,16 @@ fn generate_templates_showcase_banner() {
     /// from the original A4 aspect ratio.
     const CELL_W: u32 = 300;
 
-    /// Layout: a single wide row — 12 columns × 1 row (banner proportions).
-    /// Must be >= the template count: `ROWS` is hardcoded to 1, so any template
-    /// landing at row-index >= 1 would write pixels beyond `canvas_h` (an
-    /// out-of-bounds `put_pixel` panic below). One row keeps the grid math trivial
-    /// (`col = idx % COLS`, `row = idx / COLS = 0`) for all twelve templates.
-    const COLS: u32 = 12;
+    // Layout: a single wide row — one column per template × 1 row (banner
+    // proportions). `ROWS` is 1, so every template must fit on that row; a
+    // template landing at row-index >= 1 would write pixels beyond `canvas_h`
+    // (an out-of-bounds `put_pixel` panic below). One row keeps the grid math
+    // trivial (`col = idx % cols`, `row = idx / cols = 0`).
+    //
+    // Derived, not a literal: a hardcoded 12 here made the canvas one cell too
+    // narrow the moment a 13th template landed, and the composition panicked
+    // with an out-of-bounds pixel write rather than saying so.
+    let cols: u32 = canonical_template_ids().len() as u32;
     const ROWS: u32 = 1;
 
     /// Outer border padding (px) and gap between cells (px).
@@ -4326,11 +4384,12 @@ fn generate_templates_showcase_banner() {
         (TemplateId::Regent, "Regent", "regent"),
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
+        (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
     ];
     assert_eq!(
         templates.len(),
-        12,
-        "showcase must cover exactly twelve templates"
+        canonical_template_ids().len(),
+        "showcase must cover every canonical template"
     );
 
     // ── Helper: compile a World to a PagedDocument ────────────────────────────
@@ -4448,7 +4507,11 @@ fn generate_templates_showcase_banner() {
         eprintln!("  → thumbnail {tw_cur}×{th_cur}");
     }
 
-    assert_eq!(thumbnails.len(), 12, "must have exactly 12 thumbnails");
+    assert_eq!(
+        thumbnails.len(),
+        canonical_template_ids().len(),
+        "must have one thumbnail per canonical template"
+    );
 
     // ── Compose single wide row (1×10) ────────────────────────────────────────
 
@@ -4460,7 +4523,7 @@ fn generate_templates_showcase_banner() {
     // Canvas size:
     //   width  = PADDING + COLS*(BORDER + tw + BORDER) + (COLS-1)*GAP + PADDING
     //   height = PADDING + ROWS*(BORDER + th + BORDER) + (ROWS-1)*GAP + PADDING
-    let canvas_w = PADDING + COLS * (2 * BORDER + tw) + (COLS - 1) * GAP + PADDING;
+    let canvas_w = PADDING + cols * (2 * BORDER + tw) + (cols - 1) * GAP + PADDING;
     let canvas_h = PADDING + ROWS * (2 * BORDER + th) + (ROWS - 1) * GAP + PADDING;
 
     let bg_pixel = Rgba([BG_R, BG_G, BG_B, 255u8]);
@@ -4469,8 +4532,8 @@ fn generate_templates_showcase_banner() {
     let mut canvas: RgbaImage = ImageBuffer::from_pixel(canvas_w, canvas_h, bg_pixel);
 
     for (idx, thumb) in thumbnails.iter().enumerate() {
-        let col = (idx as u32) % COLS;
-        let row = (idx as u32) / COLS;
+        let col = (idx as u32) % cols;
+        let row = (idx as u32) / cols;
 
         // Top-left of the border box for this cell.
         let bx = PADDING + col * (2 * BORDER + tw + GAP);
@@ -4560,7 +4623,8 @@ fn generate_templates_showcase_banner() {
         );
     }
     eprintln!(
-        "template previews written: 12 SVG → {}",
+        "template previews written: {} SVG → {}",
+        templates.len(),
         preview_dir.display()
     );
 }
@@ -4612,11 +4676,12 @@ fn generate_cover_template_previews() {
         (TemplateId::Regent, "Regent", "regent"),
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
+        (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
     ];
     assert_eq!(
         templates.len(),
-        12,
-        "cover previews must cover exactly twelve templates"
+        canonical_template_ids().len(),
+        "cover previews must cover every canonical template"
     );
 
     // Embedded letter Typst sources (scale preamble + all three layout sources),
@@ -4695,12 +4760,17 @@ fn generate_cover_template_previews() {
         eprintln!("  → {} ({} bytes)", preview_path.display(), svg.len());
     }
 
+    // Derived, not a literal: this assertion read `written == 10` while the list
+    // already held twelve, so the generator could not be run at all without
+    // editing it first — and being `#[ignore]`d, CI never noticed. Deriving it
+    // means adding a template can never leave it stale again.
     assert_eq!(
-        written, 10,
-        "cover previews: expected exactly 10 SVG files written"
+        written,
+        templates.len(),
+        "cover previews: expected one SVG per template"
     );
 
-    // Verify all ten exist and are non-trivial.
+    // Verify each exists and is non-trivial.
     for (_, label, slug) in templates {
         let p = preview_dir.join(format!("{slug}.svg"));
         let meta = std::fs::metadata(&p)
@@ -4711,7 +4781,8 @@ fn generate_cover_template_previews() {
         );
     }
     eprintln!(
-        "cover-letter template previews written: 10 → {}",
+        "cover-letter template previews written: {} → {}",
+        written,
         preview_dir.display()
     );
 }

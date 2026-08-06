@@ -29,4 +29,5 @@ export const TEMPLATE_CAPTIONS: Record<TemplateId, string> = {
   regent: 'Executive serif with small-caps headings and a deep burgundy accent. Leadership roles.',
   aria: 'Minimalist two-column with an airy untinted sidebar and photo. Collapses to single column for ATS.',
   saffron: 'Warm serif with a tinted sidebar and ringed photo. Collapses to single column for ATS.',
+  'cologne-navy': 'Centred navy header with ruled headings. Formal, single column, parser-safe.',
 };

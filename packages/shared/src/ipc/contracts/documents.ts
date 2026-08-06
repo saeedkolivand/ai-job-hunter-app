@@ -13,6 +13,7 @@ export type TemplateId =
   | 'lebenslauf'
   | 'cadence'
   | 'regent'
+  | 'cologne-navy'
   | 'aria'
   | 'saffron';
 
@@ -24,7 +25,7 @@ export type TemplateId =
  * arrangement, so an omitted value renders the pre-layout-picker output. Ignored
  * for résumé exports.
  */
-export type LetterLayoutId = 'classic' | 'refined' | 'banded';
+export type LetterLayoutId = 'classic' | 'refined' | 'banded' | 'navy';
 
 interface ExportMeta {
   candidateName?: string;

@@ -43,6 +43,10 @@ pub enum TemplateId {
     /// small-caps headings, rose rule, first-line-indent letter). Renders through
     /// the parametric `single_column.typ`.
     Regent,
+    /// Cologne Navy — centred tracked-caps navy header, rule-underlined
+    /// uppercase headings, blue company names, right-aligned italic dates.
+    /// Bespoke `cologne_navy.typ`.
+    CologneNavy,
     /// PR4: Aria — minimalist design two-column with an untinted RIGHT sidebar and
     /// a rectangular top-right photo (Manrope name, Inter body, slate accent,
     /// letter-spaced caps headings). Education reads in the main column. Renders
@@ -72,6 +76,7 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
             "lebenslauf" => TemplateId::Lebenslauf,
             "cadence" => TemplateId::Cadence,
             "regent" => TemplateId::Regent,
+            "cologne-navy" => TemplateId::CologneNavy,
             "aria" => TemplateId::Aria,
             "saffron" => TemplateId::Saffron,
             // Any unknown / removed id (e.g. "two-column", "refined-executive",
@@ -114,6 +119,11 @@ pub enum LetterLayout {
     /// (decorative, behind text), serif small-caps name, stacked right contact,
     /// short rule footer. Source: `letter_banded.typ`.
     Banded,
+    /// Centred letterhead (tracked-caps name over the contact line) with a
+    /// navy-weight rule beneath, pairing with the Cologne Navy résumé's centred
+    /// ruled header. Shared like every layout — it inherits whichever template's
+    /// palette is active. Source: `letter_navy.typ`.
+    Navy,
 }
 
 impl<'de> serde::Deserialize<'de> for LetterLayout {
@@ -123,6 +133,7 @@ impl<'de> serde::Deserialize<'de> for LetterLayout {
             "classic" => LetterLayout::Classic,
             "refined" => LetterLayout::Refined,
             "banded" => LetterLayout::Banded,
+            "navy" => LetterLayout::Navy,
             // Any unknown / removed id falls back to Classic so a stale frontend
             // never breaks cover-letter export.
             _ => {
@@ -340,6 +351,7 @@ mod tests {
             (TemplateId::Lebenslauf, "\"lebenslauf\""),
             (TemplateId::Cadence, "\"cadence\""),
             (TemplateId::Regent, "\"regent\""),
+            (TemplateId::CologneNavy, "\"cologne-navy\""),
             (TemplateId::Aria, "\"aria\""),
             (TemplateId::Saffron, "\"saffron\""),
         ];
@@ -358,6 +370,7 @@ mod tests {
             (LetterLayout::Classic, "\"classic\""),
             (LetterLayout::Refined, "\"refined\""),
             (LetterLayout::Banded, "\"banded\""),
+            (LetterLayout::Navy, "\"navy\""),
         ];
         for (layout, expected_json) in cases {
             let serialized = serde_json::to_string(&layout).expect("serialize");
