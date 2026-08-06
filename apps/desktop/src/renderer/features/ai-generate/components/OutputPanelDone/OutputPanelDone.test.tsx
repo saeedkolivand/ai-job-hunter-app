@@ -3,8 +3,28 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
+import type * as AjhUi from '@ajh/ui';
 
 import { OutputPanelDone } from './index';
+
+// OutputPanelDone always mounts ExportModal (gated by its own `open` prop, not a
+// conditional render), and ExportModal now calls useNotification() to surface a
+// rejected export — stub it so this panel-wiring suite doesn't need a real
+// NotificationProvider tree.
+vi.mock('@ajh/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof AjhUi>();
+  return {
+    ...actual,
+    useNotification: () => ({
+      open: vi.fn(),
+      success: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
+      warning: vi.fn(),
+      destroy: vi.fn(),
+    }),
+  };
+});
 
 // Stub the real-PDF preview (#24) — it renders the export via IPC, out of scope
 // for this panel's preview/edit wiring test (covered in PdfPreview's own suite).

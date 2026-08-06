@@ -92,6 +92,15 @@ describe('awaitAiStream — poll fallback', () => {
     await expect(promise).resolves.toBe('complete answer');
   });
 
+  it('still resolves a short-but-real generation (no invented minimum length)', async () => {
+    const { api, push } = makeApi('ignored — the done path never polls');
+
+    const promise = awaitAiStream(api, 'job-short', { pollIntervalMs: 10_000 });
+    push({ jobId: 'job-short', delta: 'Yes.', done: true });
+
+    await expect(promise).resolves.toBe('Yes.');
+  });
+
   it('recovered persisted text never contains reasoning markup', async () => {
     // The local model reasoned inline (`<think>…</think>`), but the backend's
     // `finish` strips it before persisting `result.text` (see `strip_think_blocks`
@@ -110,5 +119,40 @@ describe('awaitAiStream — poll fallback', () => {
     expect(resolved).toBe(clean);
     expect(resolved).not.toContain('<think>');
     expect(resolved).not.toContain('</think>');
+  });
+});
+
+describe('awaitAiStream — empty completion rejects (both resolve paths)', () => {
+  // The generation pipeline treated ANY resolve as success, including an empty
+  // one — an empty document was then silently persisted and shown with no
+  // error. Both places `awaitAiStream` can settle must instead reject.
+
+  it('rejects on the `done`-chunk path when no content ever streamed', async () => {
+    const { api, push } = makeApi(undefined);
+
+    const promise = awaitAiStream(api, 'job-empty-done', { pollIntervalMs: 10_000 });
+    push({ jobId: 'job-empty-done', delta: '', done: true });
+
+    await expect(promise).rejects.toThrow('Generation produced no content. Please try again.');
+  });
+
+  it('rejects on the `done`-chunk path when the stream emitted only whitespace', async () => {
+    const { api, push } = makeApi(undefined);
+
+    const promise = awaitAiStream(api, 'job-whitespace-done', { pollIntervalMs: 10_000 });
+    push({ jobId: 'job-whitespace-done', delta: '  \n\t', done: false });
+    push({ jobId: 'job-whitespace-done', delta: '', done: true });
+
+    await expect(promise).rejects.toThrow('Generation produced no content. Please try again.');
+  });
+
+  it('rejects on the poll-fallback path when both the buffer and the persisted result are empty', async () => {
+    // `text: ''` — the completed job's persisted result really did carry no
+    // content, and no `done` chunk (nor any delta) ever streamed either.
+    const { api } = makeApi('');
+
+    const promise = awaitAiStream(api, 'job-empty-poll', { pollIntervalMs: 1 });
+
+    await expect(promise).rejects.toThrow('Generation produced no content. Please try again.');
   });
 });

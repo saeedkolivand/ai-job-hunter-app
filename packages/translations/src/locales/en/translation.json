@@ -2,7 +2,8 @@
   "common": {
     "collapse": "Collapse",
     "expand": "Expand",
-    "close": "Close"
+    "close": "Close",
+    "exportFailed": "Export failed. Please try again."
   },
   "app": {
     "title": "AI Job Hunter",

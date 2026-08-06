@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import type * as AjhTranslations from '@ajh/translations';
 import type * as AjhUi from '@ajh/ui';
 
 import type * as Generate from '@/lib/generate';
-import { PERSIST_DEBOUNCE_MS } from '@/lib/generate';
+import { exportPDF, PERSIST_DEBOUNCE_MS } from '@/lib/generate';
 
 import { GenerationCard } from './index';
 
@@ -51,18 +51,21 @@ vi.mock('@/services/use-referrals/use-referrals', () => ({
   useUpsertReferral: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// useNotification: return an API of spies; the export-failure test asserts on it.
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+
 vi.mock('@ajh/ui', async (importOriginal) => {
   const actual = await importOriginal<typeof AjhUi>();
   return {
     ...actual,
-    useNotification: () => ({
-      open: vi.fn(),
-      success: vi.fn(),
-      error: vi.fn(),
-      info: vi.fn(),
-      warning: vi.fn(),
-      destroy: vi.fn(),
-    }),
+    useNotification: () => mockNotify,
   };
 });
 
@@ -334,5 +337,31 @@ describe('GenerationCard — debounced persist', () => {
       id: 'gen-1',
       coverLetterText: 'Edited cover letter text.',
     });
+  });
+});
+
+// ── Export failure surfaces a toast (was a silent unhandled rejection) ────────
+
+describe('GenerationCard — export failure', () => {
+  beforeEach(() => {
+    mockNotify.error.mockClear();
+    vi.mocked(exportPDF).mockReset();
+  });
+
+  it('shows a toast instead of dropping a rejected export on the floor', async () => {
+    vi.mocked(exportPDF).mockRejectedValueOnce(new Error('Export blocked: too many pages.'));
+    render(<GenerationCard gen={GEN} />);
+
+    // Export lives in the 3-dots overflow menu, then the composed ExportPicker's
+    // own "Export Resume" action button (default format is pdf).
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'resumes.generated.export' }));
+    fireEvent.click(screen.getByRole('button', { name: 'resumes.generated.exportResume' }));
+
+    await waitFor(() =>
+      expect(mockNotify.error).toHaveBeenCalledWith({
+        message: 'Export blocked: too many pages.',
+      })
+    );
   });
 });

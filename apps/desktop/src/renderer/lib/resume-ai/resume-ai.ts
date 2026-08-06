@@ -78,7 +78,7 @@ export async function runAnalysis({
   // overwrites `model` before streaming, so nothing is threaded here. `effort` (a
   // CLI reasoning knob, not routing) stays renderer-side per RESOLVED-Q1.
   const api = getClient();
-  const { providerSettings, activeModel } = resolveActiveProvider(model);
+  const { activeProvider, providerSettings, activeModel } = resolveActiveProvider(model);
   const res = await api.ai.generate({
     model: activeModel || model,
     messages: [
@@ -96,7 +96,13 @@ export async function runAnalysis({
   // Collect streamed tokens into the full response.
   // awaitAiStream enforces the abort-before-register guard (was missing here
   // previously) and unifies poll interval to 3 s (was 2 s here before).
-  const full = await awaitAiStream(api, jobId, { onToken, onThinking, signal });
+  const full = await awaitAiStream(api, jobId, {
+    onToken,
+    onThinking,
+    signal,
+    provider: activeProvider,
+    model: activeModel,
+  });
 
   // Validate and repair
   const result = validateAndRepair(full);

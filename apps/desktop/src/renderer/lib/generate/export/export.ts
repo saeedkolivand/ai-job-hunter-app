@@ -4,6 +4,7 @@
 import type { GenerationMeta } from '@ajh/prompts/generate';
 
 import { getClient } from '../../app-client';
+import { errorClass } from '../../error-class';
 import { type LetterLayoutId, type TemplateId, TEMPLATES } from '../templates';
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
@@ -103,6 +104,8 @@ export async function exportDOCX(
       throw new Error(`Unknown export template: "${templateId}".`);
     }
 
+    console.warn('[export] start', { format: 'docx', type, templateId, atsMode });
+
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     // The stored contact profile is a FALLBACK for the header contact line
@@ -135,8 +138,11 @@ export async function exportDOCX(
           }
         : undefined,
     });
+    console.warn('[export] done', { format: 'docx', type });
   } catch (error) {
-    console.error('DOCX export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'docx', error: errorClass(error) });
     throw new Error(
       `Failed to export DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
@@ -170,6 +176,8 @@ export async function exportPDF(
       throw new Error(`Unknown export template: "${templateId}".`);
     }
 
+    console.warn('[export] start', { format: 'pdf', type, templateId, atsMode });
+
     const api = getClient();
     const exportText = type === 'cover-letter' ? extractCoverLetterText(text) : text;
     // See exportDOCX: the contact profile is a header fallback, not the source of truth.
@@ -195,8 +203,11 @@ export async function exportPDF(
           }
         : undefined,
     });
+    console.warn('[export] done', { format: 'pdf', type });
   } catch (error) {
-    console.error('PDF export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'pdf', error: errorClass(error) });
     throw new Error(
       `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
@@ -272,14 +283,20 @@ export function exportTXT(text: string, filename: string): void {
       throw new Error('Invalid filename provided.');
     }
 
+    console.warn('[export] start', { format: 'txt' });
+
     const clean = stripMd(text); // no **asterisks** in plain text
     const blob = new Blob([clean], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement('a'), { href: url, download: filename });
     a.click();
     URL.revokeObjectURL(url);
+
+    console.warn('[export] done', { format: 'txt' });
   } catch (error) {
-    console.error('TXT export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'txt', error: errorClass(error) });
     throw new Error(
       `Failed to export TXT: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
