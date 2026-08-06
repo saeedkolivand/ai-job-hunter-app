@@ -958,8 +958,15 @@ pub async fn embed_text(
         client
             .default_embedding_model()
             .ok_or_else(|| {
+                // Distinct from the capability message below on purpose: these
+                // are two different problems and used to be indistinguishable.
+                // This one means "we don't presume a default model for this
+                // provider" (every OpenAI-compatible gateway — its catalog is
+                // its own), which the user fixes by PICKING one. The other
+                // means the provider has no embeddings API at all, which they
+                // can't fix by choosing anything.
                 AppError::Config(format!(
-                    "{} does not support embeddings.",
+                    "No default embedding model for {}. Choose one in Settings → AI → Embeddings.",
                     provider.as_str()
                 ))
             })?
