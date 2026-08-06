@@ -57,8 +57,11 @@ const SLIDES = [
     file: '04-private-ai',
     eyebrow: 'PRIVATE BY DESIGN',
     title: ['Bring your own AI —', 'or run <k>100% offline</k>.'],
-    sub: 'Ollama, OpenAI, Anthropic, Gemini, or local CLI agents (Claude Code, Codex, Gemini CLI). Credentials in your OS keychain. Local SQLite database. Zero telemetry.',
-    pills: ['Ollama (offline)', 'OpenAI · Anthropic · Gemini', 'CLI agents', 'Zero telemetry'],
+    // "No analytics" is the strongest claim that is still true: ADR-0020 added
+    // opt-out crash reporting, so the older wording here stopped being accurate.
+    // scripts/check-landing-drift.mjs fails the build if it comes back.
+    sub: 'Ollama, OpenAI, Anthropic, Gemini, or local CLI agents (Claude Code, Codex, Gemini CLI). Credentials in your OS keychain. Local SQLite database. No analytics.',
+    pills: ['Ollama (offline)', 'OpenAI · Anthropic · Gemini', 'CLI agents', 'No analytics'],
   },
 ];
 
