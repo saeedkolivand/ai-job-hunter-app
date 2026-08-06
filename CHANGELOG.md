@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.133.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.132.0...v0.133.0) (2026-08-06)
+
+### ✨ Features
+
+* add a tech radar that fails the build when an entry goes stale ([#941](https://github.com/saeedkolivand/ai-job-hunter-app/issues/941)) ([e3556dd](https://github.com/saeedkolivand/ai-job-hunter-app/commit/e3556dda4ebc1d2da5f58d54089e220066923efa)), closes [#934](https://github.com/saeedkolivand/ai-job-hunter-app/issues/934)
+* add the cologne navy resume template and a shared navy letter layout ([#953](https://github.com/saeedkolivand/ai-job-hunter-app/issues/953)) ([607bac4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/607bac482b91a3103c8a73b2e30bece11f05ebc6))
+* index documents automatically, and stop the index strip reading as a chore ([#951](https://github.com/saeedkolivand/ai-job-hunter-app/issues/951)) ([00881e5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/00881e58672170ff9974b7d172ba36bce5bde198))
+* load cloud model lists from the provider instead of a curated array ([#936](https://github.com/saeedkolivand/ai-job-hunter-app/issues/936)) ([984cb3d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/984cb3dff272250c652fa494b9814a33f1930fca)), closes [#935](https://github.com/saeedkolivand/ai-job-hunter-app/issues/935) [#935](https://github.com/saeedkolivand/ai-job-hunter-app/issues/935) [#935](https://github.com/saeedkolivand/ai-job-hunter-app/issues/935)
+* make provider model listing report failures and carry model metadata ([#935](https://github.com/saeedkolivand/ai-job-hunter-app/issues/935)) ([9c6ee42](https://github.com/saeedkolivand/ai-job-hunter-app/commit/9c6ee42a9b2047f382b750deadd2612081e56e6e))
+* offer reasoning effort per model and fix embedding re-indexing ([#933](https://github.com/saeedkolivand/ai-job-hunter-app/issues/933)) ([82d2444](https://github.com/saeedkolivand/ai-job-hunter-app/commit/82d244477cb8d63fdc6064ccf3c199ff8b4bb1a3))
+
+### 🐛 Bug Fixes
+
+* bound every http body read, validate probe base urls, and stop reporting failed imports as success ([#947](https://github.com/saeedkolivand/ai-job-hunter-app/issues/947)) ([1335e87](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1335e870dd9d35c0f091aea1f76d5d4d178bd893))
+* import linkedin profiles anonymously, because signing in is what breaks it ([#940](https://github.com/saeedkolivand/ai-job-hunter-app/issues/940)) ([7715a2b](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7715a2be6a93ef802c1b8cf0ef0ff32275c0fc61))
+* keep project links out of the resume header and make them work ([#931](https://github.com/saeedkolivand/ai-job-hunter-app/issues/931)) ([0c78659](https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c78659a1f84fd6cdc6d12621970c1dd3a7c8c38))
+* keep the typed name when onboarding advances by keyboard ([#939](https://github.com/saeedkolivand/ai-job-hunter-app/issues/939)) ([91de55e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/91de55ec924197f66c652011ea16cb29c2882475))
+* make clicking an OS notification open the app, on the right screen ([#949](https://github.com/saeedkolivand/ai-job-hunter-app/issues/949)) ([06daf61](https://github.com/saeedkolivand/ai-job-hunter-app/commit/06daf61575e4865c9030a1306cf9afffd88d0c9e))
+* make the how-it-works page reachable and add structured data ([#934](https://github.com/saeedkolivand/ai-job-hunter-app/issues/934)) ([c7a9957](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c7a9957d43ad0da22b3b2606b4b49410f8f1f330)), closes [#922](https://github.com/saeedkolivand/ai-job-hunter-app/issues/922)
+* map local Ollama's stop reason, and stop presuming an OpenAI embedding model ([#950](https://github.com/saeedkolivand/ai-job-hunter-app/issues/950)) ([ce9000a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce9000a4d70fe2f9709011c5c601b7d09b408af5)), closes [#948](https://github.com/saeedkolivand/ai-job-hunter-app/issues/948)
+* pay off three deferred correctness defects ([#946](https://github.com/saeedkolivand/ai-job-hunter-app/issues/946)) ([b41e049](https://github.com/saeedkolivand/ai-job-hunter-app/commit/b41e049d3226875e08d3eef52590f1d1710088eb)), closes [#933](https://github.com/saeedkolivand/ai-job-hunter-app/issues/933)
+* stop probing api.openai.com for users who never configured it ([#937](https://github.com/saeedkolivand/ai-job-hunter-app/issues/937)) ([7a10018](https://github.com/saeedkolivand/ai-job-hunter-app/commit/7a100185ff7af5de19083353f4a27f76c5d5fc23)), closes [#936](https://github.com/saeedkolivand/ai-job-hunter-app/issues/936)
+* stop squashing the embeddings checkbox, and unnest the provider row button ([#952](https://github.com/saeedkolivand/ai-job-hunter-app/issues/952)) ([07c9924](https://github.com/saeedkolivand/ai-job-hunter-app/commit/07c9924125088a73f5579f0a11cc3fffafd13b61))
+* the macOS bug report — docx sizes, blocked pdf downloads, empty generations, and logs you can actually read ([#948](https://github.com/saeedkolivand/ai-job-hunter-app/issues/948)) ([721c5e5](https://github.com/saeedkolivand/ai-job-hunter-app/commit/721c5e517cb60f024e0178ee9da3353742117852)), closes [#940](https://github.com/saeedkolivand/ai-job-hunter-app/issues/940)
+* upload only our own debug files to sentry ([#930](https://github.com/saeedkolivand/ai-job-hunter-app/issues/930)) ([1ff031a](https://github.com/saeedkolivand/ai-job-hunter-app/commit/1ff031ad2c5aecbddf8aa66f3212acde188e2a18))
+* warn when local ollama has no account key for company research ([#932](https://github.com/saeedkolivand/ai-job-hunter-app/issues/932)) ([386a07f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/386a07f729c7e2cc90c25090f6b09728acdd7398))
+
+### 📚 Documentation
+
+* record the no-fallback-model-list decision, and post medium review findings inline ([#938](https://github.com/saeedkolivand/ai-job-hunter-app/issues/938)) ([cdbe70e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/cdbe70ee807dfbddca6bdefa03168a57a6148c3e)), closes [#935](https://github.com/saeedkolivand/ai-job-hunter-app/issues/935) [#936](https://github.com/saeedkolivand/ai-job-hunter-app/issues/936)
+* stop claiming zero telemetry now that crash reporting ships ([#954](https://github.com/saeedkolivand/ai-job-hunter-app/issues/954)) ([ce62cca](https://github.com/saeedkolivand/ai-job-hunter-app/commit/ce62cca933ac5ab09953688d800ea45e58d718db))
+
 ## [0.132.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.131.0...v0.132.0) (2026-08-02)
 
 ### ✨ Features
