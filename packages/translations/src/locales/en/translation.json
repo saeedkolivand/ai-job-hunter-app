@@ -1127,13 +1127,13 @@
       "modelPlaceholder": "embedding model",
       "cloudCostAdvisory": "Cloud embedding providers charge per token indexed and per score computed. For unlimited free embeddings, run Ollama locally with",
       "apply": "Apply",
-      "applied": "Embedding model updated. Re-index documents to rebuild the index.",
+      "applied": "Embedding model updated. Documents re-index as they're used, or press Re-index now.",
       "applyFailed": "Failed to update the embedding model.",
       "activeLabel": "Active:",
       "indexed": "{{indexed}}/{{total}} indexed",
-      "staleOne": "{{count}} document needs re-indexing for the active model.",
-      "staleOther": "{{count}} documents need re-indexing for the active model.",
-      "reindex": "Re-index documents",
+      "staleOne": "{{count}} document isn't indexed yet. Matching indexes it the first time it's needed.",
+      "staleOther": "{{count}} documents aren't indexed yet. Matching indexes them the first time they're needed.",
+      "reindex": "Re-index now",
       "reindexing": "Re-indexing…",
       "reindexStarted": "Re-indexing documents…",
       "reindexComplete": "Re-indexing complete.",
@@ -1141,7 +1141,11 @@
       "reindexFailedReason": "Re-indexing failed: {{reason}}",
       "reindexPartial": "{{failed}} of {{total}} documents failed to re-index.",
       "semanticScoring": "Semantic scoring",
-      "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring."
+      "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring.",
+      "staleAutoOne": "{{count}} document isn't indexed yet — indexing it now.",
+      "staleAutoOther": "{{count}} documents aren't indexed yet — indexing them now.",
+      "autoIndex": "Index automatically",
+      "autoIndexDesc": "Index a document as soon as it's imported, and after changing the embedding model, instead of waiting for the first match. Cloud providers charge per token indexed."
     },
     "spend": {
       "heading": "AI spend (today)",
@@ -2441,6 +2445,13 @@
       "skip": "Skip for now",
       "next": "Set up AI",
       "uploadArea": "Upload your resume"
+    },
+    "autoIndex": {
+      "title": "Keep matching fast",
+      "subtitle": "Documents need to be indexed before they can be matched semantically.",
+      "toggleLabel": "Index documents automatically",
+      "what": "Indexes a résumé as soon as you import it, and re-indexes after you change the embedding model — so the first match is instant instead of pausing to index.",
+      "cost": "Leave this off and nothing breaks: matching still indexes a document the first time it needs it. Cloud embedding providers charge per token indexed; local Ollama is free."
     }
   },
   "jobUrlImport": {
