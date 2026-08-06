@@ -1131,13 +1131,13 @@
       "modelPlaceholder": "Embedding-Modell",
       "cloudCostAdvisory": "Cloud-Embedding-Anbieter berechnen pro indiziertem Token und pro berechnetem Score. Für unbegrenzte kostenlose Embeddings führen Sie Ollama lokal aus mit",
       "apply": "Übernehmen",
-      "applied": "Embedding-Modell aktualisiert. Indizieren Sie die Dokumente neu, um den Index neu aufzubauen.",
+      "applied": "Embedding-Modell aktualisiert. Dokumente werden bei Bedarf neu indexiert, oder jetzt neu indexieren.",
       "applyFailed": "Embedding-Modell konnte nicht aktualisiert werden.",
       "activeLabel": "Aktiv:",
       "indexed": "{{indexed}}/{{total}} indiziert",
-      "staleOne": "{{count}} Dokument muss für das aktive Modell neu indiziert werden.",
-      "staleOther": "{{count}} Dokumente müssen für das aktive Modell neu indiziert werden.",
-      "reindex": "Dokumente neu indizieren",
+      "staleOne": "{{count}} Dokument ist noch nicht indexiert. Beim ersten Abgleich wird es indexiert.",
+      "staleOther": "{{count}} Dokumente sind noch nicht indexiert. Beim ersten Abgleich werden sie indexiert.",
+      "reindex": "Jetzt neu indexieren",
       "reindexing": "Neuindizierung…",
       "reindexStarted": "Dokumente werden neu indiziert…",
       "reindexComplete": "Neuindizierung abgeschlossen.",
@@ -1145,7 +1145,11 @@
       "reindexFailedReason": "Neuindizierung fehlgeschlagen: {{reason}}",
       "reindexPartial": "{{failed}} von {{total}} Dokumenten konnten nicht neu indiziert werden.",
       "semanticScoring": "Semantische Bewertung",
-      "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung."
+      "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung.",
+      "staleAutoOne": "{{count}} Dokument ist noch nicht indexiert – wird jetzt indexiert.",
+      "staleAutoOther": "{{count}} Dokumente sind noch nicht indexiert – werden jetzt indexiert.",
+      "autoIndex": "Automatisch indexieren",
+      "autoIndexDesc": "Indexiert ein Dokument direkt nach dem Import und nach einem Wechsel des Embedding-Modells, statt auf den ersten Abgleich zu warten. Cloud-Anbieter berechnen pro indexiertem Token."
     },
     "spend": {
       "heading": "KI-Ausgaben (heute)",
@@ -2445,6 +2449,13 @@
       "skip": "Vorerst überspringen",
       "next": "KI einrichten",
       "uploadArea": "Lebenslauf hochladen"
+    },
+    "autoIndex": {
+      "title": "Abgleich schnell halten",
+      "subtitle": "Dokumente müssen indexiert sein, bevor sie semantisch abgeglichen werden können.",
+      "toggleLabel": "Dokumente automatisch indexieren",
+      "what": "Indexiert einen Lebenslauf direkt beim Import und nach einem Wechsel des Embedding-Modells – so ist der erste Abgleich sofort da, statt zum Indexieren zu pausieren.",
+      "cost": "Ohne diese Option geht nichts kaputt: Beim ersten Bedarf wird ein Dokument weiterhin automatisch indexiert. Cloud-Anbieter berechnen pro indexiertem Token; lokales Ollama ist kostenlos."
     }
   },
   "jobUrlImport": {

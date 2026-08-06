@@ -204,6 +204,19 @@ export interface AiContract {
 
   /** Re-embed every document with the active embedding config. Returns a job id. */
   reembedAll(): Promise<{ jobId: string }>;
+  /**
+   * Index ONLY the documents with no usable vector in the active embedding
+   * space — a newly imported résumé, or everything after the provider/model
+   * changed. Backs the `autoIndexOnUpload` preference.
+   *
+   * Not `reembedAll`: that re-embeds every document unconditionally, which would
+   * re-bill a cloud embedding provider for already-indexed documents each time
+   * one new file is added.
+   *
+   * `jobId` is `null` when nothing was stale, so the caller can stay silent
+   * rather than show progress for a no-op.
+   */
+  indexStaleDocuments(): Promise<{ jobId: string | null }>;
 
   /**
    * Read-only AI-spend summary: today's REAL per-provider token totals — as

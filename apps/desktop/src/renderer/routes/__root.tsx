@@ -30,6 +30,7 @@ import { CapabilityProvider } from '@/providers/CapabilityProvider';
 import {
   useAccentEvents,
   useApplicationEvents,
+  useAutoIndex,
   useExtensionBridgeEvents,
   useNotificationEvents,
   useSyncCloseToTray,
@@ -61,6 +62,15 @@ function ApplicationEventsBridge() {
  *  Rendered once inside `NotificationProvider`; the listeners attach a single time. */
 function NotificationEventsBridge() {
   useNotificationEvents();
+  return null;
+}
+
+/** Keeps the embedding index current when `autoIndexOnUpload` is on — covers a
+ *  fresh import, an embedding provider/model change, and leftovers from a
+ *  previous session. Mounted once here for the same reason the event bridges
+ *  are: a per-route mount would re-run the check on every navigation. */
+function AutoIndexBridge() {
+  useAutoIndex();
   return null;
 }
 
@@ -217,6 +227,7 @@ function RootLayout() {
         <MenuNavigationBridge />
         <ApplicationEventsBridge />
         <NotificationEventsBridge />
+        <AutoIndexBridge />
         <ExtensionBridgeEventsBridge />
         <AccentEventsBridge />
         <NotificationToastBridge />

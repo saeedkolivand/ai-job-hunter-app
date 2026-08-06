@@ -121,6 +121,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       }),
       setEmbeddingConfig: async () => ({ success: true }),
       reembedAll: async () => ({ jobId: 'mock-reembed' }),
+      indexStaleDocuments: async () => ({ jobId: null }),
       spendSummary: async () => ({
         today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
         perProvider: [],

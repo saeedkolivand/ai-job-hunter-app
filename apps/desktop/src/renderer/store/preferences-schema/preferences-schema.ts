@@ -176,6 +176,12 @@ export const PreferencesSchema = z.object({
 
   // Scoring
   semanticScoring: z.boolean().default(false),
+  // Embed a document as soon as it is imported, and index anything stale after
+  // the embedding provider/model changes, instead of waiting for the first
+  // match to embed it inline. Defaults FALSE so an existing install never
+  // starts calling a paid embedding provider without being asked; the
+  // onboarding step offers it to new users.
+  autoIndexOnUpload: z.boolean().default(false),
 
   // Window close behaviour — keep the app running in the tray/menu-bar when the
   // window is closed (default on). Pushed to the Rust shell on boot + on change;

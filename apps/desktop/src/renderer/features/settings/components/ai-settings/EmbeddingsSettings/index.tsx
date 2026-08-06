@@ -6,7 +6,11 @@ import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
 
 import { useEmbeddingStatus, useJobEvents, useReembedAll, useSetEmbeddingConfig } from '@/services';
-import { usePreferencesStore, useSemanticScoring } from '@/store/preferences-store';
+import {
+  useAutoIndexOnUpload,
+  usePreferencesStore,
+  useSemanticScoring,
+} from '@/store/preferences-store';
 
 // Providers that expose an embeddings API. Anthropic is intentionally excluded —
 // it has no embeddings endpoint.
@@ -138,6 +142,8 @@ export function EmbeddingsSettings() {
   const reindexing = reindexJobId !== null || reembed.isPending;
 
   const semanticScoring = useSemanticScoring();
+  const autoIndexOnUpload = useAutoIndexOnUpload();
+  const setAutoIndexOnUpload = usePreferencesStore((s) => s.setAutoIndexOnUpload);
   const setSemanticScoring = usePreferencesStore((s) => s.setSemanticScoring);
 
   return (
@@ -226,10 +232,17 @@ export function EmbeddingsSettings() {
             )}
           </div>
           {stale > 0 && (
-            <div className="mt-1 text-amber-400/80">
-              {stale === 1
-                ? t('settings.embeddings.staleOne', { count: stale })
-                : t('settings.embeddings.staleOther', { count: stale })}
+            // Informational, not a warning: an unindexed document blocks
+            // nothing — `match_resume` embeds it the first time it needs a
+            // vector. The old amber "needs re-indexing" line read as a chore.
+            <div className="mt-1 text-foreground/40">
+              {autoIndexOnUpload
+                ? stale === 1
+                  ? t('settings.embeddings.staleAutoOne', { count: stale })
+                  : t('settings.embeddings.staleAutoOther', { count: stale })
+                : stale === 1
+                  ? t('settings.embeddings.staleOne', { count: stale })
+                  : t('settings.embeddings.staleOther', { count: stale })}
             </div>
           )}
         </div>
@@ -243,6 +256,24 @@ export function EmbeddingsSettings() {
             {reindexing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             {reindexing ? t('settings.embeddings.reindexing') : t('settings.embeddings.reindex')}
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
+          <div className="space-y-0.5">
+            <p className="text-xs font-semibold text-foreground/70">
+              {t('settings.embeddings.autoIndex')}
+            </p>
+            <p className="text-[11px] text-foreground/40 leading-relaxed">
+              {t('settings.embeddings.autoIndexDesc')}
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={autoIndexOnUpload}
+            onChange={(e) => setAutoIndexOnUpload(e.target.checked)}
+            className="h-4 w-4 accent-[var(--color-brand)] cursor-pointer"
+            aria-label={t('settings.embeddings.autoIndex')}
+          />
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
