@@ -99,9 +99,12 @@ export function useGeneration(
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const provider = resolveActiveProvider(selectedModel).activeProvider;
+    // Log the RESOLVED model, not `selectedModel` — the latter is only the
+    // fallback `resolveActiveProvider` uses when the active config has none, so
+    // a diagnostics bundle would otherwise name a model the run never used.
+    const { activeProvider: provider, activeModel } = resolveActiveProvider(selectedModel);
     const startedAt = Date.now();
-    console.warn('[handleGenerate] start', { provider, model: selectedModel, target });
+    console.warn('[handleGenerate] start', { provider, model: activeModel, target });
 
     let finalResume = '';
     let finalCover = '';

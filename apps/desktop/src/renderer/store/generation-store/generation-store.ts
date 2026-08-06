@@ -197,9 +197,11 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       const controller = new AbortController();
       controllers.set(id, controller);
 
-      const provider = resolveActiveProvider(model).activeProvider;
+      // Resolved model, not the caller's `model` argument — see the same note
+      // in `useGeneration`'s handleGenerate.
+      const { activeProvider: provider, activeModel } = resolveActiveProvider(model);
       const startedAt = Date.now();
-      console.warn('[runTailor] start', { provider, model, target });
+      console.warn('[runTailor] start', { provider, model: activeModel, target });
 
       // Fresh session for this run.
       patch(id, {
@@ -271,7 +273,17 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
-        if (!controller.signal.aborted) {
+        if (controller.signal.aborted) {
+          // Still log it: without this, a cancelled run is indistinguishable in
+          // the log from a run that hung or died mid-stream — both just stop
+          // after '[runTailor] start'.
+          console.warn('[runTailor] cancelled', {
+            provider,
+            model: activeModel,
+            target,
+            durationMs: Date.now() - startedAt,
+          });
+        } else {
           const message = err instanceof Error ? err.message : t('autopilot.apply.failed');
           console.error('[runTailor] failed', { target, error: message });
           patch(id, { error: message });
