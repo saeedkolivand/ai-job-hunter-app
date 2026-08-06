@@ -7,6 +7,7 @@ use super::{
     types::{ExportFormat, ExportRequest, ExportResult, PreviewResult},
 };
 use crate::error::{AppError, AppResult};
+use crate::observability::Span;
 use crate::validate::{validate_and_fix, ExportReport, Severity};
 
 /// MIME type for every page string returned by the SVG live-preview path.
@@ -24,6 +25,12 @@ const SVG_MIME: &str = "image/svg+xml";
 /// of [`ExportRequest`] itself, so it covers both commands automatically.
 fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     if request.text.trim().is_empty() {
+        // No document text, no user content — safe to log the request shape.
+        log::warn!(
+            "export: rejected empty document documentType={:?} format={:?}",
+            request.document_type,
+            request.format
+        );
         return Err(AppError::Validation(
             "Cannot export empty document. Please generate content first.".to_string(),
         ));
@@ -35,9 +42,33 @@ fn validate_and_normalize(request: &mut ExportRequest) -> AppResult<()> {
     Ok(())
 }
 
-/// Tauri command to export resume or cover letter
+/// Tauri command to export resume or cover letter.
+///
+/// Wraps the actual work in a [`Span`] so an export's shape (format, template,
+/// document type, ATS mode, locale) and outcome are always logged. Before this
+/// the entire `export/`+`validate/` tree had zero log lines on the command
+/// path — a real failure was unreconstructable from a diagnostics bundle
+/// alone. Never logs document text, a URL, or a path (see the block-path log
+/// below, which intentionally logs issue `code`s, never `.message`).
 #[command]
-pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<ExportResult> {
+pub async fn documents_export_document(request: ExportRequest) -> AppResult<ExportResult> {
+    let span = Span::begin(
+        "export",
+        format!(
+            "format={:?} template={:?} documentType={:?} atsMode={} locale={}",
+            request.format,
+            request.template_id,
+            request.document_type,
+            request.ats_mode,
+            request.locale.as_deref().unwrap_or("-"),
+        ),
+    );
+    let result = documents_export_document_inner(request).await;
+    span.end(result.is_ok());
+    result
+}
+
+async fn documents_export_document_inner(mut request: ExportRequest) -> AppResult<ExportResult> {
     // Validate + normalize input (empty-text guard + Unicode/Markdown/typography
     // passes). Shared with the preview command so they stay in lock-step.
     validate_and_normalize(&mut request)?;
@@ -89,11 +120,33 @@ pub async fn documents_export_document(mut request: ExportRequest) -> AppResult<
             }
         })
         .await
-        .map_err(|e| AppError::Message(format!("Export task panicked: {e}")))??;
+        .map_err(|e| {
+            // A panic inside the blocking task (most likely a Typst compile
+            // panic) is a more serious signal than an ordinary validation
+            // block — the renderer itself crashed, not that the document
+            // failed a check.
+            tracing::error!("export: render task panicked: {e}");
+            AppError::Message(format!("Export task panicked: {e}"))
+        })??;
 
     // Block only when a critical defect survived auto-fix.
     if let Some(report) = &report {
         if !report.ok {
+            // Log the machine-readable `code`s only — never `.message`, which
+            // can embed a URL (the header-link checks put the offending URL
+            // in the message text, and these bundles get shared over chat).
+            let codes: Vec<&str> = report
+                .issues
+                .iter()
+                .filter(|i| i.severity == Severity::Critical)
+                .map(|i| i.code.as_str())
+                .collect();
+            log::error!(
+                "export: blocked format={:?} template={:?} documentType={:?} codes={codes:?}",
+                request_for_filename.format,
+                request_for_filename.template_id,
+                request_for_filename.document_type,
+            );
             return Err(AppError::Validation(blocking_reason(report)));
         }
     }

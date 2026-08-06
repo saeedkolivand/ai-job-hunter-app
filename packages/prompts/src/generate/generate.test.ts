@@ -2036,6 +2036,69 @@ describe('extractPlainText', () => {
     expect(out).toBe('Use the npm install command.');
     expect(out).not.toContain('`');
   });
+
+  describe('whole-response code fence (HIGH — a local model that wraps its ENTIRE answer in one fence must not have the whole document deleted, the same Ollama tell already fixed in parseGitHubProjects)', () => {
+    it('unwraps a bare-fenced whole résumé instead of deleting it', () => {
+      const raw =
+        '```\nJohn Doe\nSenior Engineer\n\nPROFESSIONAL SUMMARY\nBuilt lots of things.\n```';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('John Doe');
+      expect(out).toContain('PROFESSIONAL SUMMARY');
+    });
+
+    it('unwraps a language-tagged (```markdown) whole résumé instead of deleting it', () => {
+      const raw = '```markdown\nJohn Doe\nSenior Engineer\n\nBuilt lots of things.\n```';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('John Doe');
+    });
+
+    it('unwraps a whole-fenced cover letter with a trailing newline instead of deleting it', () => {
+      const raw = '```\nDear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane\n```\n';
+      const out = extractPlainText(raw);
+      expect(out).not.toBe('');
+      expect(out).not.toContain('```');
+      expect(out).toContain('Dear Hiring Manager,');
+      expect(out).toContain('Sincerely,');
+    });
+
+    it('unwraps a ONE-LINE whole-response fence (no interior newline) instead of emptying it', () => {
+      // The original fix only matched a fence whose opening marker was
+      // followed by a newline, so a short answer the model wrapped on a
+      // single line fell straight through to the delete pass and came back
+      // as ''. A one-word application answer is exactly that shape.
+      expect(extractPlainText('```Yes.```')).toBe('Yes.');
+      expect(extractPlainText('```I have 5 years of TypeScript experience.```')).toBe(
+        'I have 5 years of TypeScript experience.'
+      );
+    });
+
+    it('leaves two back-to-back one-line fences to the delete pass', () => {
+      // Not a single whole-answer wrap — the interior-fence guard must still
+      // refuse to guess which of the two blocks is "the" answer.
+      const out = extractPlainText('```a``` and ```b```');
+      // Assert the exact result, not just the absence of backticks: stripping
+      // only the delimiters and leaving `a`/`b` behind would also satisfy a
+      // `not.toContain('```')` check.
+      expect(out).toBe('and');
+    });
+
+    it('still deletes a genuine fenced code block embedded mid-answer (not the whole response)', () => {
+      // This is the differential the fix must preserve: only a fence spanning
+      // the ENTIRE trimmed response is unwrapped. A fence that is part of a
+      // larger answer is still noise to strip, per the existing behaviour
+      // pinned by the two tests above this describe block.
+      const raw = 'Here is an example:\n\n```js\nconst x = 1;\n```\n\nThat is how you would do it.';
+      const out = extractPlainText(raw);
+      expect(out).not.toContain('```');
+      expect(out).not.toContain('const x = 1;');
+      expect(out).toContain('Here is an example:');
+      expect(out).toContain('That is how you would do it.');
+    });
+  });
 });
 
 describe('validateMetadata', () => {

@@ -5,9 +5,19 @@ use crate::export::{
 };
 use docx_rs::*;
 
-/// Convert points to twentieths of a point (DOCX unit).
+/// Convert points to twentieths of a point (DOCX `dxa` unit — spacing,
+/// indentation, table widths, page geometry). **Not for font size** — see
+/// [`pt_to_half_points`].
 pub fn pt_to_dxa(pt: f32) -> usize {
     (pt * 20.0) as usize
+}
+
+/// Convert points to half-points, the unit `docx_rs::Run::size`/`RunProperty::size`
+/// writes verbatim into OOXML's `<w:sz w:val="…"/>` (no conversion happens inside
+/// docx-rs — confirmed against the vendored `sz.rs`/`run_property.rs`). Rounds
+/// rather than truncates so half-point sizes (10.5pt → 21) survive exactly.
+pub fn pt_to_half_points(pt: f32) -> usize {
+    (pt * 2.0).round() as usize
 }
 
 /// Convert inches to twentieths of a point.
@@ -119,7 +129,7 @@ pub fn render_name_line(
     let mut para = Paragraph::new().add_run(
         Run::new()
             .add_text(name_text)
-            .size(pt_to_dxa(template.name_pt))
+            .size(pt_to_half_points(template.name_pt))
             .bold()
             .color(&colors.name)
             .fonts(docx_run_fonts(template.fonts.name_family)),
@@ -145,7 +155,7 @@ pub fn render_contact_line(text: &str, template: &Template, colors: &DocxColors)
                 para = para.add_run(
                     Run::new()
                         .add_text(&t)
-                        .size(pt_to_dxa(9.0))
+                        .size(pt_to_half_points(9.0))
                         .color(&colors.date)
                         .fonts(docx_run_fonts(family)),
                 );
@@ -153,7 +163,7 @@ pub fn render_contact_line(text: &str, template: &Template, colors: &DocxColors)
             Span::Link { label, url } => {
                 let link_run = Run::new()
                     .add_text(&label)
-                    .size(pt_to_dxa(9.0))
+                    .size(pt_to_half_points(9.0))
                     .color(&colors.date)
                     .fonts(docx_run_fonts(family));
                 let hyperlink = Hyperlink::new(&url, HyperlinkType::External).add_run(link_run);
@@ -188,7 +198,7 @@ pub fn render_section_header(text: &str, template: &Template, colors: &DocxColor
     let para = Paragraph::new().add_run(
         Run::new()
             .add_text(&header_text)
-            .size(pt_to_dxa(effective_pt))
+            .size(pt_to_half_points(effective_pt))
             .bold()
             .color(&colors.section)
             .fonts(docx_run_fonts(template.fonts.heading_family))
@@ -212,7 +222,7 @@ pub fn render_cover_letter_paragraph(
     let segments = crate::export::parser::parse_inline_md(text);
     let runs = create_runs(
         &segments,
-        pt_to_dxa(template.body_pt),
+        pt_to_half_points(template.body_pt),
         &colors.body,
         Some(&colors.emphasis),
         family,
@@ -265,6 +275,27 @@ pub fn create_bullet_numbering() -> (AbstractNumbering, Numbering) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pt_to_half_points_is_distinct_from_pt_to_dxa() {
+        // The bug this guards: font size (`w:sz`, half-points) was routed through
+        // the `dxa` (twentieths-of-a-point) conversion, producing a 10× oversize —
+        // 10.5pt → 210 (105pt rendered) instead of 21 (10.5pt rendered).
+        assert_eq!(pt_to_half_points(10.5), 21);
+        assert_eq!(pt_to_dxa(10.5), 210);
+        assert_ne!(pt_to_half_points(10.5), pt_to_dxa(10.5));
+    }
+
+    #[test]
+    fn pt_to_half_points_rounds_rather_than_truncates() {
+        // Half-points make odd sizes representable (10.5pt → 21 exactly); a
+        // truncating `as usize` would still be correct for whole points but wrong
+        // for anything that lands on a `.25`/`.75` boundary once doubled.
+        assert_eq!(pt_to_half_points(20.0), 40);
+        assert_eq!(pt_to_half_points(9.0), 18);
+        assert_eq!(pt_to_half_points(9.5), 19);
+        assert_eq!(pt_to_half_points(6.25), 13); // 12.5 rounds up to 13
+    }
 
     #[test]
     fn mm_to_dxa_matches_word_a4_and_letter() {

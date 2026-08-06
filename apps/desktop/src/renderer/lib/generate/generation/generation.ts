@@ -180,7 +180,13 @@ async function streamGenerate(
     contextWindow: localLimits?.contextWindow,
   });
 
-  return awaitAiStream(api, res.jobId, { onToken, onThinking, signal });
+  return awaitAiStream(api, res.jobId, {
+    onToken,
+    onThinking,
+    signal,
+    provider: activeProvider,
+    model: activeModel,
+  });
 }
 
 // ─── Generation steps ─────────────────────────────────────────────────────────

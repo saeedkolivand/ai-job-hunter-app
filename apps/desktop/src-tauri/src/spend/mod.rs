@@ -443,6 +443,43 @@ const RATES: &[(&str, f64, f64)] = &[
     ("gemini-2.0-flash", 0.10, 0.40),
     ("gemini-1.5-flash", 0.075, 0.30),
     ("gemini-1.5-pro", 1.25, 5.00),
+    // gpt-oss (OpenAI's open-weight model family) — the model this row exists
+    // for previously fell through to DEFAULT_RATE ($3/$15), ~100x too high for
+    // this tier of open model. Hosted primarily via Ollama Cloud
+    // (`ollama-cloud`), whose ids use Ollama's colon-tag form
+    // ("gpt-oss:120b"/"gpt-oss:20b" — NOT the dash form other gateways use),
+    // and re-servable through any `openai-compatible` gateway that hosts it
+    // (dash form, "gpt-oss-120b"). Ollama Cloud itself publishes NO per-token
+    // rate for individual accounts — its plans are flat-fee subscriptions
+    // ($0/$20 per month, Free/Pro) gated by a per-model "usage level", not
+    // $/1M tokens (`ollama.com/pricing`, checked 2026-08-05; Teams overage
+    // bills "at the model's token rate" but that rate itself is not published
+    // anywhere on the page). These rates are OpenRouter's current live
+    // published rate for the SAME open-weight model
+    // (`openrouter.ai/api/v1/models`, checked 2026-08-05) — the closest
+    // verifiable $/1M figure for this model family, and the SAME rows also
+    // correctly price gpt-oss reached through any other openai-compatible
+    // gateway that bills it per-token. The colon-tag rows must precede the
+    // bare `"gpt-oss"` catch-all below (same "more specific prefix first"
+    // rule as every other row in this table) — a bare `"gpt-oss"` row is a
+    // prefix of both and would otherwise win first and mask the size-specific
+    // rates.
+    ("gpt-oss:120b", 0.037, 0.17),
+    ("gpt-oss:20b", 0.03, 0.13),
+    // `gpt-oss-safeguard-20b` is the one shipped variant whose rate is HIGHER
+    // than either base size ($0.075/$0.30 per 1M — Groq via OpenRouter,
+    // `openrouter.ai/api/v1/models/openai/gpt-oss-safeguard-20b/endpoints`,
+    // checked 2026-08-06), so the catch-all below would under-cost it by ~2x.
+    // Must precede the bare `"gpt-oss"` prefix row for the same reason the
+    // colon-tag rows do.
+    ("gpt-oss-safeguard", 0.075, 0.30),
+    // Catch-all for any other gpt-oss spelling/gateway (dash form, a future
+    // size) — the 120B rate, the higher of the two BASE sizes. Note this is
+    // NOT a conservative ceiling for the family: `-safeguard` above already
+    // prices above it, so a genuinely new variant can still be under-costed
+    // until it gets its own row. Check a new variant's published rate rather
+    // than assuming this row covers it.
+    ("gpt-oss", 0.037, 0.17),
     // Embeddings — input-only (no completion tokens), so the output rate is
     // always 0.0 and unused (`embed_text` always records `output_tokens: 0`).
     ("text-embedding-3-small", 0.02, 0.0),

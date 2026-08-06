@@ -209,11 +209,24 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     let extracted = match extracted {
         Ok(t) => t,
         // Never block on a tooling failure — surface it as a note instead.
-        Err(_) => {
+        // Log the failure's *kind* only (the prefix before the first ':' —
+        // "pdf extract" / "docx open" / "docx read entry" / "docx read xml",
+        // set by `extract_pdf_text`/`extract_docx_text` below), never the
+        // full `{e}` text: these are structural pdf_extract/zip failures, not
+        // a content problem, and the full message is the underlying crate's
+        // own text, not ours to vouch for.
+        Err(e) => {
+            let msg = e.to_string();
+            let kind = msg.split(':').next().unwrap_or("unknown");
+            log::warn!(
+                "export: could not re-extract {:?} bytes for validation ({kind}); \
+                 export proceeded unchecked",
+                request.format
+            );
             return vec![ExportIssue::warning(
                 "roundtrip_unavailable",
                 "Could not re-read the exported file to verify it; export proceeded unchecked.",
-            )]
+            )];
         }
     };
 
@@ -360,8 +373,14 @@ fn topmost_n<'a>(links: &[&'a PdfLink], n: usize) -> Vec<&'a PdfLink> {
 ///     narrowed to the header's own expected link COUNT (not the whole
 ///     144pt band) so a genuine, correctly-placed body link near the top of
 ///     page 1 is never mistaken for a header link. For a cover letter it is
-///     always the profile, over the full band (no body section can render
-///     into a cover letter's header-band the way a résumé's can).
+///     always the profile, narrowed the SAME way (the topmost
+///     `allowed.len()` band links): the letterhead (name/contact) always
+///     renders before date/recipient/salutation/body, so its own links are
+///     always the topmost ones — but a markdown link inside the OPENING
+///     PARAGRAPH (e.g. a company-research URL the AI echoes in its first
+///     sentence) can still land inside the same 144pt band as a short
+///     letterhead, and a cover letter has no `can_linearize` remediation for
+///     a false block (never two-column).
 ///   * `header_url_missing` (warning) — the reverse completeness check (a
 ///     profile link that did not surface anywhere in the full header band,
 ///     only checked when the profile is what supplied the header); advisory
@@ -373,7 +392,12 @@ fn topmost_n<'a>(links: &[&'a PdfLink], n: usize) -> Vec<&'a PdfLink> {
 fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     let doc = match lopdf::Document::load_mem(bytes) {
         Ok(d) => d,
-        Err(_) => return Vec::new(), // tooling failure never blocks
+        Err(e) => {
+            // Tooling failure never blocks — debug only, this is diagnostic
+            // noise a valid export will never hit.
+            log::debug!("export: lopdf failed to parse rendered PDF bytes: {e}");
+            return Vec::new();
+        }
     };
     let page_h_pt = request.page_geometry().height_mm * 2.834_645_7;
 
@@ -570,10 +594,27 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
             // prefer), so this keeps the original, simpler profile-parity
             // form. The strict checks genuinely need a profile to compare
             // against — no profile (or an empty one) means nothing to check.
-            // Not narrowed the way the résumé arm is: a cover letter's
-            // header is short and fixed-shape (no body section can render
-            // early into its band the way a résumé's can), so the band
-            // heuristic doesn't carry the same false-block risk here.
+            //
+            // Narrowed the SAME way the résumé arm is (`topmost_n`) — a
+            // production incident (a macOS user's PDF export blocked with
+            // no remediation) traced back to this arm running unnarrowed
+            // over the full band. The original reasoning here ("no body
+            // SECTION can render early into a cover letter's header-band
+            // the way a résumé's can") is true but incomplete: it rules out
+            // a body *section* racing the header, not a body *link* inside
+            // the opening paragraph itself. `parse_cover_letter` parses the
+            // letterhead first and the body last (letterhead → date →
+            // recipient → salutation → body, in that order), so the
+            // letterhead's own links always render ABOVE the body — the
+            // same "topmost N are the header's own" invariant the résumé
+            // arm already relies on holds here too. A markdown link the AI
+            // echoes in the opening sentence (e.g. from a company-research
+            // brief) can still land inside the same 144pt band as a short
+            // letterhead (no date/recipient lines to push it down), and a
+            // cover letter is never two-column — `can_linearize` is always
+            // false, so a false block here had NO remediation for the user.
+            // Pinned by
+            // `validate::tests::cover_letter_body_link_in_a_short_letterhead_band_does_not_false_block`.
             if let Some(profile) = request
                 .contact
                 .as_ref()
@@ -584,16 +625,24 @@ fn pdf_render_issues(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> 
                 let allowed_canonical: std::collections::BTreeSet<String> =
                     allowed.iter().map(|u| canonicalize_url(u)).collect();
 
-                for link in &header_links {
-                    if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
-                        issues.push(ExportIssue::critical(
-                            "header_url_mismatch",
-                            format!(
-                                "Header link {} is not one of the contact profile's fields — \
-                                 a body/company link leaked into the header.",
-                                link.url
-                            ),
-                        ));
+                // Same empty-`allowed` invariant as the résumé arm: a
+                // profile can be non-empty (e.g. phone/location only, which
+                // `header_urls` never turns into a link) yet supply zero
+                // links, in which case nothing in the band is legitimately
+                // "the letterhead's" and every link there is body content.
+                if !allowed.is_empty() {
+                    let header_owned_links = topmost_n(&header_links, allowed.len());
+                    for link in &header_owned_links {
+                        if !allowed_canonical.contains(&canonicalize_url(&link.url)) {
+                            issues.push(ExportIssue::critical(
+                                "header_url_mismatch",
+                                format!(
+                                    "Header link {} is not one of the contact profile's fields \
+                                     — a body/company link leaked into the header.",
+                                    link.url
+                                ),
+                            ));
+                        }
                     }
                 }
                 for url in &allowed {

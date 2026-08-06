@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { errorDetail } from '@/lib/error-class';
 import {
   extractMetadata,
   generateCoverLetter,
@@ -7,6 +8,7 @@ import {
   type GenerationMeta,
   type GenerationMode,
 } from '@/lib/generate';
+import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
 /** Which document(s) a run produces. */
 export type TailorTarget = 'resume' | 'cover' | 'both';
@@ -196,6 +198,12 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       const controller = new AbortController();
       controllers.set(id, controller);
 
+      // Resolved model, not the caller's `model` argument — see the same note
+      // in `useGeneration`'s handleGenerate.
+      const { activeProvider: provider, activeModel } = resolveActiveProvider(model);
+      const startedAt = Date.now();
+      console.warn('[runTailor] start', { provider, model: activeModel, target });
+
       // Fresh session for this run.
       patch(id, {
         ...EMPTY_SESSION,
@@ -255,12 +263,33 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
         // last, leaving activeOut on 'cover'); the user expects résumé first.
         if (target === 'both') patch(id, { activeOut: 'resume' });
 
+        console.warn('[runTailor] done', {
+          target,
+          resumeLength: resumeText.length,
+          coverLength: coverLetterText.length,
+          durationMs: Date.now() - startedAt,
+        });
+
         // Persist after a clean run only — a cancel/error throws and skips this.
         onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
-        if (!controller.signal.aborted) {
-          patch(id, { error: err instanceof Error ? err.message : t('autopilot.apply.failed') });
+        if (controller.signal.aborted) {
+          // Still log it: without this, a cancelled run is indistinguishable in
+          // the log from a run that hung or died mid-stream — both just stop
+          // after '[runTailor] start'.
+          console.warn('[runTailor] cancelled', {
+            provider,
+            model: activeModel,
+            target,
+            durationMs: Date.now() - startedAt,
+          });
+        } else {
+          const message = err instanceof Error ? err.message : t('autopilot.apply.failed');
+          // Capped, not classed — see `errorDetail`: the provider's own error
+          // text is the ONLY record of why a generation died.
+          console.error('[runTailor] failed', { target, error: errorDetail(err) });
+          patch(id, { error: message });
         }
       } finally {
         controllers.delete(id);

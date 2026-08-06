@@ -19,11 +19,17 @@ import { routeTree } from '@/routeTree.gen';
 import { queryClient } from '@/services/query-client';
 
 import { installDesktopNativeBehaviors } from './desktop-native';
+import { installConsoleLogBridge } from './log-bridge';
 import { createTauriInvokeClient } from './tauri-client/index.js';
 import { TauriWindowControls } from './TauriWindowControls';
 
 import '@/i18n';
 import './styles.css';
+
+// First — so every console.warn/console.error from here on (including ones
+// raised while the rest of this file runs) reaches the log file, not just
+// devtools nobody opens.
+installConsoleLogBridge();
 
 installDesktopNativeBehaviors();
 
