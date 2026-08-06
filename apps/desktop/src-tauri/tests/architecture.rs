@@ -637,30 +637,44 @@ fn r8_no_oversized_modules() {
 // deliberately not scanned here; only the log-macro argument span is in scope.
 const R15_ALLOW: &[&str] = &[];
 
-const LOG_MACRO_MARKERS: &[&str] = &[
-    "log::error!(",
-    "log::warn!(",
-    "log::info!(",
-    "log::debug!(",
-    "log::trace!(",
-    "tracing::error!(",
-    "tracing::warn!(",
-    "tracing::info!(",
-    "tracing::debug!(",
-    "tracing::trace!(",
-];
+/// Both the fully-qualified call form and the bare one. The bare markers are NOT
+/// redundant: `extraction/{mod,pdf,registry}.rs` really do `use tracing::warn;`
+/// and then call `warn!(…)`, which a qualified-only marker list cannot see — so
+/// the rule silently exempted three modules. A bare marker also matches the
+/// qualified form (`log::warn!(` contains `warn!(`), which is harmless: the
+/// span scan below is idempotent per line. Over-matching a lookalike macro
+/// (`my_error!(`) is likewise harmless — a `.display()` inside ANY macro
+/// argument that reaches a log sink is the leak this rule exists to stop.
+const LOG_MACRO_MARKERS: &[&str] = &["error!(", "warn!(", "info!(", "debug!(", "trace!("];
 
 /// The lines spanning one macro call starting at `lines[start]`, up to and including its
 /// closing `);`. Bounded so a malformed/unusually long call can't scan the rest of the
-/// file. Relies on this codebase's consistent `rustfmt` output: inside a multi-line macro
-/// call, a nested call closes with a bare `)` (it isn't its own statement), so the first
-/// line ending in `);` is the outer call's own close — a single-line call's own opening
-/// line already ends in `);` and is returned alone.
+/// file.
+///
+/// Relies on this codebase's consistent `rustfmt` output, with one correction: "the first
+/// line ending in `);`" is NOT always the outer call's close. A macro argument containing a
+/// block or closure can hold a *statement* that ends in `);` at a DEEPER indent, e.g.
+///
+/// ```ignore
+/// log::info!("{}", {
+///     let p = compute_path();      // <- ends in `);`, but is not the close
+///     p.display()                  // <- the real leak, one line further down
+/// });
+/// ```
+///
+/// Ending the span at that inner statement hid the leak entirely. So the close must also be
+/// at an indent no deeper than the macro's own line — which is exactly how rustfmt formats
+/// the outer `);`. Falls back to the first `);` at any indent if none matches, so a call
+/// rustfmt has not touched still gets a bounded (if imperfect) span rather than none.
 fn macro_call_span<'a>(lines: &'a [&'a str], start: usize) -> &'a [&'a str] {
     const MAX_SPAN: usize = 20;
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let open_indent = indent(lines[start]);
     let last = start + MAX_SPAN.min(lines.len() - start) - 1;
+    let closes = |i: usize| lines[i].trim_end().ends_with(");");
     let end = (start..=last)
-        .find(|&i| lines[i].trim_end().ends_with(");"))
+        .find(|&i| closes(i) && indent(lines[i]) <= open_indent)
+        .or_else(|| (start..=last).find(|&i| closes(i)))
         .unwrap_or(start);
     &lines[start..=end]
 }
@@ -737,6 +751,49 @@ fn f() {
         let src = r#"log::warn!("mkdir {} failed: {e}", parent.display());"#;
         let hits = find_display_leaks(src);
         assert_eq!(hits.len(), 1, "single-line call must still be flagged");
+    }
+
+    /// True positive: a BARE macro call (`use tracing::warn;` then `warn!(…)`), which the
+    /// original fully-qualified-only marker list could not see at all. Three real modules
+    /// (`extraction/{mod,pdf,registry}.rs`) import the macro exactly this way, so the rule
+    /// silently exempted them.
+    #[test]
+    fn flags_display_in_a_bare_imported_macro_call() {
+        let src = r#"
+use tracing::warn;
+fn f() {
+    warn!("could not read {}: {e}", path.display());
+}
+"#;
+        let hits = find_display_leaks(src);
+        assert_eq!(
+            hits.len(),
+            1,
+            "a bare `warn!(…)` call must be flagged; got {hits:?}"
+        );
+    }
+
+    /// True positive: an interposed statement ending in `);` at a DEEPER indent must not
+    /// end the span early. This is the documented risk in `macro_call_span`'s heuristic —
+    /// before the indent guard, the scan stopped at `compute_path();` and the real
+    /// `.display()` one line further down was never seen.
+    #[test]
+    fn flags_display_after_an_inner_statement_that_ends_in_a_paren_semicolon() {
+        let src = r#"
+fn f() {
+    log::info!("{}", {
+        let p = compute_path();
+        p.display()
+    });
+}
+"#;
+        let hits = find_display_leaks(src);
+        assert_eq!(
+            hits.len(),
+            1,
+            "an inner `);` must not truncate the span before the leak; got {hits:?}"
+        );
+        assert!(hits[0].1.contains(".display()"));
     }
 
     /// True negative: a `.display()` used to build a user-facing `AppError` — never
