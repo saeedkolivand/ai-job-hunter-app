@@ -667,6 +667,11 @@ pub async fn ai_embedding_status(app: AppHandle) -> Value {
             "indexedInActiveSpace": indexed_in_active,
             "stale": total_docs.saturating_sub(indexed_in_active),
         },
+        // Whether an embedding job is running right now (auto or manual). The
+        // settings strip needs the real thing: inferring "indexing now" from the
+        // auto-index PREFERENCE alone claims work is happening even when the run
+        // already failed, or was never started because nothing changed.
+        "indexing": running_embed_job(&app).is_some(),
     })
 }
 
@@ -819,25 +824,88 @@ fn reembed_run_failed(done: u32, failed: u32) -> bool {
     done == 0 && failed > 0
 }
 
-/// Re-embed every document with the active embedding config, rebuilding the
-/// vector index in the active space. Emits `jobs:event` progress and returns a
-/// job id. Clears the live posting embedding cache so stale-space entries go too.
-#[tauri::command]
-pub async fn ai_reembed_all(app: AppHandle) -> Value {
-    let job_id = new_job_id();
-    crate::commands::jobs::job_start(&app, &job_id, "ai.reembed");
+/// Job kinds that embed documents. Both write the same vectors for the same
+/// documents, so only ONE may run at a time.
+const EMBED_JOB_KINDS: [&str; 2] = ["ai.reembed", "ai.indexStale"];
 
-    let job_id_clone = job_id.clone();
-    let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
-        // Drop stale live-posting embeddings so search re-embeds them.
-        app_clone
-            .state::<Mutex<PostingsCache>>()
-            .lock()
-            .clear_embeddings();
+/// Claim the right to run an embedding job, or report the one already running.
+///
+/// Auto-indexing and the manual "Re-index now" button are independent triggers
+/// with no knowledge of each other, so without this a background auto-index and
+/// a user's button press embed the same documents concurrently — billing a cloud
+/// provider twice for identical work. Enforced in the BACKEND rather than by
+/// disabling the button, because that is the only place every trigger has to
+/// pass through; a UI-only guard narrows the race instead of closing it.
+///
+/// The scan and the registration happen under ONE lock
+/// ([`JobTracker::start_exclusive`]): checking first and starting after is
+/// check-then-act, and two commands can both see "nothing running" before either
+/// registers.
+///
+/// `None` means this caller owns the run; `Some(existing)` is the job to watch
+/// instead — a normal outcome, not a failure, which is why this is not a
+/// `Result` (see R6).
+fn claim_embed_job(app: &AppHandle, job_id: &str, kind: &str) -> Option<String> {
+    crate::commands::jobs::job_start_exclusive(app, job_id, kind, &EMBED_JOB_KINDS)
+}
 
-        // Snapshot documents up front so no store guard is held across awaits.
-        let docs = app_clone.state::<DocumentStore>().list();
+/// Whether an embedding job is running right now (for the status surface).
+fn running_embed_job(app: &AppHandle) -> Option<String> {
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .list()
+        .iter()
+        .find(|j| is_active_embed_job(&j.kind, &j.status))
+        .map(|j| j.id.clone())
+}
+
+/// Whether a job record is an embedding job that has NOT finished.
+///
+/// Split out purely so it is testable: the callers need an `AppHandle` this
+/// crate has no harness for, this needs nothing. The terminal-status half is the
+/// load-bearing part — counting a COMPLETED job as active would block every
+/// future index permanently after the first run. Mirrors the predicate inside
+/// [`JobTracker::start_exclusive`]; a test pins the two agreeing.
+fn is_active_embed_job(kind: &str, status: &JobStatus) -> bool {
+    EMBED_JOB_KINDS.contains(&kind)
+        && matches!(
+            status,
+            JobStatus::Running | JobStatus::Queued | JobStatus::Streaming
+        )
+}
+
+/// Documents with no usable vector in the ACTIVE embedding space — i.e. never
+/// indexed, or indexed under a different provider/model/format.
+///
+/// The same `EmbeddingConfig::matches` predicate `match_resume` uses to decide
+/// whether it can reuse a stored vector, so "stale" means exactly the same thing
+/// to the indexer and to the consumer.
+fn stale_documents(app: &AppHandle) -> Vec<crate::documents::DocumentRecord> {
+    let store = app.state::<DocumentStore>();
+    let cfg = store.embedding_config();
+    store
+        .list()
+        .into_iter()
+        .filter(|d| {
+            !store
+                .get_vector(&d.id)
+                .is_some_and(|v| cfg.matches(&v.space))
+        })
+        .collect()
+}
+
+/// Embed `docs` with the active config and write the vectors, emitting
+/// `jobs:event` progress. The shared body of [`ai_reembed_all`] (every document,
+/// a full rebuild) and [`ai_index_stale_documents`] (only what is missing) so the
+/// two can never drift in error handling, cancellation or progress reporting.
+async fn run_embed_job(
+    app: AppHandle,
+    job_id: String,
+    docs: Vec<crate::documents::DocumentRecord>,
+) {
+    let app_clone = app;
+    let job_id_clone = job_id;
+    {
         let total = docs.len();
         let mut done = 0u32;
         let mut failed = 0u32;
@@ -937,6 +1005,66 @@ pub async fn ai_reembed_all(app: AppHandle) -> Value {
             &job_id_clone,
             json!({ "reembedded": done, "failed": failed, "total": total }),
         );
+    }
+}
+
+/// Re-embed every document with the active embedding config, rebuilding the
+/// vector index in the active space. Emits `jobs:event` progress and returns a
+/// job id. Clears the live posting embedding cache so stale-space entries go too.
+#[tauri::command]
+pub async fn ai_reembed_all(app: AppHandle) -> Value {
+    let job_id = new_job_id();
+    // Already embedding (an auto-index run, or a double-click): hand back the
+    // running job so the caller watches THAT instead of starting a paid duplicate.
+    if let Some(existing) = claim_embed_job(&app, &job_id, "ai.reembed") {
+        return json!({ "jobId": existing });
+    }
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Drop stale live-posting embeddings so search re-embeds them.
+        app_clone
+            .state::<Mutex<PostingsCache>>()
+            .lock()
+            .clear_embeddings();
+
+        // Snapshot documents up front so no store guard is held across awaits.
+        let docs = app_clone.state::<DocumentStore>().list();
+        run_embed_job(app_clone, job_id_clone, docs).await;
+    });
+
+    json!({ "jobId": job_id })
+}
+
+/// Index only the documents that have no usable vector in the active space.
+///
+/// The auto-index path (renderer preference `autoIndexOnUpload`): a newly
+/// imported résumé, or every document after the embedding provider/model
+/// changed. Deliberately NOT [`ai_reembed_all`] — that re-embeds every document
+/// unconditionally, so using it here would re-bill a cloud embedding provider
+/// for documents that are already correctly indexed every time one new file is
+/// added.
+///
+/// Returns `{ "jobId": null }` when nothing is stale, so the caller can stay
+/// silent instead of showing progress for a no-op run.
+#[tauri::command]
+pub async fn ai_index_stale_documents(app: AppHandle) -> Value {
+    let docs = stale_documents(&app);
+    if docs.is_empty() {
+        return json!({ "jobId": Value::Null });
+    }
+    let job_id = new_job_id();
+    // Same guard as `ai_reembed_all` — a manual re-index already covers every
+    // stale document, so joining it is strictly better than racing it.
+    if let Some(existing) = claim_embed_job(&app, &job_id, "ai.indexStale") {
+        return json!({ "jobId": existing });
+    }
+
+    let job_id_clone = job_id.clone();
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        run_embed_job(app_clone, job_id_clone, docs).await;
     });
 
     json!({ "jobId": job_id })
@@ -1211,5 +1339,53 @@ mod embedding_base_url_tests {
         )
         .expect("a non-OpenAiCompatible provider must never error on base_url");
         assert_eq!(url, None);
+    }
+}
+
+#[cfg(test)]
+mod embed_job_guard_tests {
+    //! Only ONE embedding job may run at a time: auto-indexing and the manual
+    //! "Re-index now" button are independent triggers that write the same
+    //! vectors for the same documents, so a concurrent pair bills a cloud
+    //! provider twice for identical work. `running_embed_job` itself needs an
+    //! `AppHandle` this crate has no harness for; the decision it makes per job
+    //! record does not.
+
+    use super::*;
+
+    #[test]
+    fn both_embedding_job_kinds_count_while_they_are_still_going() {
+        for kind in ["ai.reembed", "ai.indexStale"] {
+            for status in [JobStatus::Running, JobStatus::Queued, JobStatus::Streaming] {
+                assert!(
+                    is_active_embed_job(kind, &status),
+                    "{kind} in {status:?} must block a second embedding job"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_finished_embedding_job_never_blocks_the_next_one() {
+        // The differential. Without it the guard would latch after the first
+        // run and auto-indexing would never fire again.
+        for status in [
+            JobStatus::Completed,
+            JobStatus::Failed,
+            JobStatus::Cancelled,
+        ] {
+            assert!(
+                !is_active_embed_job("ai.reembed", &status),
+                "a {status:?} job must not block the next index"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_jobs_do_not_block_indexing() {
+        // A generation or a scrape running is no reason to refuse to index.
+        for kind in ["ai.generate", "scrape", "ai.reembed.not-really"] {
+            assert!(!is_active_embed_job(kind, &JobStatus::Running), "{kind}");
+        }
     }
 }

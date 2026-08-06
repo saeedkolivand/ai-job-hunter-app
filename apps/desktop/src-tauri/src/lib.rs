@@ -938,6 +938,7 @@ pub fn run() {
             commands::ai::ai_embedding_status,
             commands::ai::ai_set_embedding_config,
             commands::ai::ai_reembed_all,
+            commands::ai::ai_index_stale_documents,
             commands::ai::ai_spend_summary,
             commands::ai::ai_active_config,
             commands::ai::ai_set_active_provider,
