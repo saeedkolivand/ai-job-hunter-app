@@ -287,6 +287,15 @@ struct LetterDocxStyle {
     centred_letterhead: bool,
     /// Role line under the name (Refined, Navy).
     shows_title: bool,
+    /// Role line rendered uppercase + letter-spaced in the accent colour
+    /// (Refined), vs. plain case in the muted date colour (Navy). Presence and
+    /// STYLE are separate decisions: the first pass made `shows_title` layout
+    /// aware but left the styling hardcoded to Refined's, so Navy's DOCX title
+    /// was accent/uppercase/tracked while its `.typ` renders muted plain text.
+    title_emphasised: bool,
+    /// Subject caption colour: accent for Refined (`letter_refined.typ` uses
+    /// `c-accent`), the name colour for Navy (`letter_navy.typ` uses `c-name`).
+    caption_uses_name_colour: bool,
     /// Small-caps subject caption (Refined, Navy).
     shows_subject_caption: bool,
     /// Bold date + recipient blocks (Banded only — see each `.typ`'s emit blocks).
@@ -310,6 +319,8 @@ impl LetterDocxStyle {
             // it is listed so the match stays exhaustive and a future layout
             // fails to compile until someone states its style.
             LetterLayout::Classic | LetterLayout::Refined => Self {
+                title_emphasised: true,
+                caption_uses_name_colour: false,
                 uppercase_name: false,
                 name_pt_bonus: 4.0,
                 header_band: false,
@@ -324,6 +335,8 @@ impl LetterDocxStyle {
                 signoff_space_after: 40,
             },
             LetterLayout::Banded => Self {
+                title_emphasised: false,
+                caption_uses_name_colour: false,
                 uppercase_name: true,
                 name_pt_bonus: 0.0,
                 header_band: true,
@@ -338,6 +351,8 @@ impl LetterDocxStyle {
                 signoff_space_after: 480,
             },
             LetterLayout::Navy => Self {
+                title_emphasised: false,
+                caption_uses_name_colour: true,
                 uppercase_name: true,
                 name_pt_bonus: 0.0,
                 header_band: false,
@@ -495,15 +510,26 @@ fn generate_cover_letter_docx_layout(
             // Navy both render it; Banded does not.
             if sty.shows_title {
                 if let Some(job_title) = meta.and_then(|m| m.job_title.as_deref()) {
+                    let mut title_run = Run::new()
+                        .add_text(if sty.title_emphasised {
+                            job_title.to_uppercase()
+                        } else {
+                            job_title.to_string()
+                        })
+                        .size(pt_to_half_points(template.body_pt))
+                        .color(if sty.title_emphasised {
+                            &accent_hex
+                        } else {
+                            // Navy's `.typ` puts the role line in the muted date
+                            // colour, not the accent, and does not track it.
+                            &colors.date
+                        })
+                        .fonts(docx_run_fonts(body_family));
+                    if sty.title_emphasised {
+                        title_run = title_run.character_spacing(24);
+                    }
                     let mut title_para = Paragraph::new()
-                        .add_run(
-                            Run::new()
-                                .add_text(job_title.to_uppercase())
-                                .size(pt_to_half_points(template.body_pt))
-                                .color(&accent_hex)
-                                .character_spacing(24)
-                                .fonts(docx_run_fonts(body_family)),
-                        )
+                        .add_run(title_run)
                         .line_spacing(LineSpacing::new().after(40));
                     if sty.centred_letterhead {
                         title_para = title_para.align(AlignmentType::Center);
@@ -647,7 +673,11 @@ fn generate_cover_letter_docx_layout(
                                     .add_text(caption.to_uppercase())
                                     .size(pt_to_half_points((template.body_pt - 1.5).max(6.0)))
                                     .bold()
-                                    .color(&accent_hex)
+                                    .color(if sty.caption_uses_name_colour {
+                                        &colors.name
+                                    } else {
+                                        &accent_hex
+                                    })
                                     .character_spacing(24)
                                     .fonts(docx_run_fonts(body_family)),
                             )

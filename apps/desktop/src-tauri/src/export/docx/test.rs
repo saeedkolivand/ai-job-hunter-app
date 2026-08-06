@@ -560,6 +560,55 @@ fn navy_docx_follows_the_navy_design_not_banded() {
     );
 }
 
+/// Navy's role line and subject caption must use NAVY's styling, not Refined's.
+///
+/// The style struct made each feature's PRESENCE layout-aware but left its
+/// STYLING hardcoded to Refined's, so Navy rendered the role line
+/// accent-coloured, uppercased and letter-spaced while `letter_navy.typ` puts it
+/// in the muted date colour, plain case, untracked — and the subject caption in
+/// the accent colour where the `.typ` uses the name colour. Presence and style
+/// are separate decisions; asserting only presence missed both.
+#[test]
+fn navy_docx_styles_the_title_and_caption_like_its_typ() {
+    let with_title = |layout: LetterLayout| {
+        let mut req = letter_request(REFINED_US_TEXT, layout);
+        req.meta = Some(GenerationMeta {
+            candidate_name: Some("Jane Smith".to_string()),
+            job_title: Some("Platform Engineer".to_string()),
+            company_name: None,
+            target_language: None,
+        });
+        document_xml(&generate_docx(&req).expect("docx"))
+    };
+
+    let navy = with_title(LetterLayout::Navy);
+    let refined = with_title(LetterLayout::Refined);
+
+    // Refined uppercases and tracks its role line; Navy does neither.
+    assert!(
+        refined.contains("PLATFORM ENGINEER"),
+        "precondition: Refined uppercases the role line"
+    );
+    assert!(
+        navy.contains("Platform Engineer"),
+        "Navy must keep the role line in its original case"
+    );
+    assert!(
+        !navy.contains("PLATFORM ENGINEER"),
+        "Navy must not uppercase the role line — letter_navy.typ renders it as written"
+    );
+
+    // Letter-spacing is Refined-only (`character_spacing` ⇒ `<w:spacing w:val=…>`
+    // on the run). Navy's role line carries none.
+    let spaced_runs = |xml: &str| xml.matches("w:spacing w:val=\"24\"").count();
+    assert!(
+        spaced_runs(&refined) > spaced_runs(&navy),
+        "Refined tracks more runs than Navy: refined={} navy={}",
+        spaced_runs(&refined),
+        spaced_runs(&navy)
+    );
+}
+
 /// A cover letter that opens directly at the salutation (no letterhead name/
 /// contact lines) must keep its "Dear …" line and render the body normally.
 ///
