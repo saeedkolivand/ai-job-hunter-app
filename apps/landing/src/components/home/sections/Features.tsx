@@ -172,7 +172,8 @@ export function Features() {
           <div className="feat reveal">
             <h3>Privacy-first</h3>
             <p>
-              OS keychain, local SQLite, zero telemetry. No one is watching you spiral. For once.
+              OS keychain, local SQLite, no analytics — just an opt-out crash report when it breaks.
+              No one is watching you spiral. For once.
             </p>
           </div>
           <div className="feat reveal">
