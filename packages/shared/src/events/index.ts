@@ -17,7 +17,12 @@ import type { ApplicationChangedEvent } from '../ipc/contracts/applications.js';
 import type { AutopilotFocusEvent, AutopilotStepEvent } from '../ipc/contracts/autopilot.js';
 import type { ExtensionBridgeChangedEvent } from '../ipc/contracts/extensionBridge.js';
 import type { MenuActionEvent, MenuNavigateEvent } from '../ipc/contracts/menu.js';
-import type { AiStreamChunk, JobEvent, NotificationToast } from '../types/index.js';
+import type {
+  AiStreamChunk,
+  JobEvent,
+  NotificationOpen,
+  NotificationToast,
+} from '../types/index.js';
 import { AGENT_EVENTS } from './agent.js';
 import { AI_EVENTS } from './ai.js';
 import { APPLICATIONS_EVENTS } from './applications.js';
@@ -61,7 +66,7 @@ export interface AppEvents {
   'jobs:event': JobEvent;
   'applications:changed': ApplicationChangedEvent;
   'notifications:changed': void;
-  'notifications:open': void;
+  'notifications:open': NotificationOpen;
   'notifications:toast': NotificationToast;
   'updater:status': unknown;
   'menu:navigate': MenuNavigateEvent;

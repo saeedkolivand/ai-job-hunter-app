@@ -8,16 +8,24 @@
 //!
 //! Every mutator emits [`crate::events::NOTIFICATIONS_CHANGED`]
 //! (`notifications:changed`) so any live renderer inbox refetches.
-//! [`notifications_clicked`] is the unified OS-banner / tray click target: it
-//! focuses the main window (via [`crate::tray::show_focus`]) and emits
+//! [`notifications_clicked`] is the tray/renderer click target: it focuses the
+//! main window (via [`crate::tray::show_focus`]) and emits
 //! [`crate::events::NOTIFICATIONS_OPEN`] (`notifications:open`) so the renderer
-//! opens the inbox. (Phase 4 repoints the global notification `onAction` at it.)
+//! opens the inbox.
+//!
+//! An **OS-banner** click reaches the same place without a renderer round-trip —
+//! [`show_clickable_banner`] registers the native callback per platform. It used
+//! to be routed through the notification plugin's JS `onAction`, which resolves
+//! to a command the plugin registers only on mobile; that never worked on
+//! desktop and is gone.
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 
 use crate::events::{emit_event, NOTIFICATIONS_CHANGED, NOTIFICATIONS_OPEN, NOTIFICATIONS_TOAST};
-use crate::notifications::{AppNotification, NewNotification, NotificationStore};
+use crate::notifications::{
+    AppNotification, NewNotification, NotificationOpen, NotificationRoute, NotificationStore,
+};
 
 fn store(app: &AppHandle) -> tauri::State<'_, NotificationStore> {
     app.state::<NotificationStore>()
@@ -51,7 +59,12 @@ pub enum OsBanner {
 /// only if that returns `Granted`. Used by [`push_and_notify`]; the tray's
 /// autopilot banner routes through here too, so there is exactly ONE gated
 /// `.show()` call site in the app.
-pub fn show_os_notification(app: &AppHandle, title: &str, body: &str) {
+pub fn show_os_notification(
+    app: &AppHandle,
+    title: &str,
+    body: &str,
+    route: Option<NotificationRoute>,
+) {
     // Permission gate: send when granted; skip silently (no re-request) when
     // already denied; otherwise request once and show only if that grants.
     let granted = match app.notification().permission_state() {
@@ -65,7 +78,148 @@ pub fn show_os_notification(app: &AppHandle, title: &str, body: &str) {
     if !granted {
         return;
     }
-    let _ = app.notification().builder().title(title).body(body).show();
+    show_clickable_banner(app, title, body, route);
+}
+
+/// Focus the window and open the inbox — the same thing [`notifications_clicked`]
+/// does, callable from a native notification callback where there is no renderer
+/// round-trip.
+fn open_from_banner(app: &AppHandle, route: Option<NotificationRoute>) {
+    crate::tray::show_focus(app);
+    emit_event(app, NOTIFICATIONS_OPEN, NotificationOpen { route });
+}
+
+/// Show the OS banner so that clicking its BODY opens the app.
+///
+/// Not `tauri_plugin_notification`'s `.show()`: its desktop implementation is
+/// notify-rust fire-and-forget, and the `onAction` JS helper it documents for
+/// clicks resolves to `plugin:notification|register_listener`, which the plugin
+/// registers **only on mobile** (its desktop `invoke_handler` has exactly
+/// `notify`, `request_permission`, `is_permission_granted`). So the renderer's
+/// subscription failed with "Command not found" at every startup and an OS-banner
+/// click reached nothing — reported as "clicking a Windows notification doesn't
+/// open the app", and visible in the log file only after the renderer console
+/// bridge landed.
+///
+/// Each platform needs a different mechanism, and only Windows is callback-based:
+///
+/// - **Windows** — `tauri-winrt-notification`'s `on_activated` fires on a WinRT
+///   event handler, so this returns immediately.
+/// - **macOS / Linux** — notify-rust's `wait_for_action` BLOCKS the calling
+///   thread until the user acts or the banner closes, so it must not run on a
+///   runtime worker. Hence `spawn_blocking`.
+///
+/// Shared limitation, all platforms: the callback lives in THIS process, so it
+/// only fires while the app is running. A click after the app exits does nothing
+/// (that needs a COM activator on Windows / a launch agent elsewhere) — out of
+/// scope, and not the reported case.
+fn show_clickable_banner(
+    app: &AppHandle,
+    title: &str,
+    body: &str,
+    route: Option<NotificationRoute>,
+) {
+    #[cfg(windows)]
+    {
+        // Same app id the plugin uses (notify-rust passes `config().identifier`
+        // straight through to this crate), so the toast keeps its existing
+        // identity, icon and Action Center grouping.
+        let handle = app.clone();
+        let toast = tauri_winrt_notification::Toast::new(&app.config().identifier)
+            .title(title)
+            .text1(body)
+            // `FnMut`, so the route is cloned per activation rather than moved.
+            .on_activated(move |_action| {
+                open_from_banner(&handle, route.clone());
+                Ok(())
+            });
+        if let Err(e) = toast.show() {
+            log::warn!("[notifications] windows toast failed: {e}");
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let handle = app.clone();
+        let (title, body) = (title.to_string(), body.to_string());
+        // Reserve BEFORE spawning: no point occupying a blocking worker we then
+        // can't let listen. See [`MAX_BANNER_LISTENERS`].
+        let slot = ListenerSlot::reserve();
+        // `wait_for_action` blocks; keep it off the async runtime's workers.
+        tauri::async_runtime::spawn_blocking(move || {
+            let mut n = notify_rust::Notification::new();
+            n.summary(&title).body(&body);
+            // Linux: a body click is delivered as the `default` action, and only
+            // when the notification declares one. Harmless on macOS, which maps a
+            // body click to "default" itself.
+            #[cfg(target_os = "linux")]
+            n.action("default", "default");
+            match n.show() {
+                Ok(shown) => match slot {
+                    Some(_slot) => shown.wait_for_action(|action| {
+                        if action == "default" {
+                            open_from_banner(&handle, route);
+                        }
+                    }),
+                    // Over budget: DROP the handle instead of parking on it. The
+                    // banner is still delivered — on Linux `show()` already sent
+                    // it, and macOS's handle `Drop` sends it — it just
+                    // isn't clickable. Degrading one banner's click beats
+                    // starving the blocking pool for every other caller.
+                    None => log::warn!(
+                        "[notifications] {MAX_BANNER_LISTENERS} banner listeners already parked; \
+                         showing this one without a click handler"
+                    ),
+                },
+                Err(e) => log::warn!("[notifications] os banner failed: {e}"),
+            }
+        });
+    }
+}
+
+/// Cap on macOS/Linux banner listeners parked at once.
+///
+/// `wait_for_action` blocks its thread until the user clicks or the banner
+/// closes — and a notification the user never touches (sitting in macOS
+/// Notification Center, say) parks that thread indefinitely. `OsBanner::Always`
+/// sources like autopilot can emit a burst, so without a bound a run of ignored
+/// notifications would hold blocking workers permanently and starve every other
+/// `spawn_blocking` caller in the app.
+///
+/// 8 is well above any realistic count of banners a user has on screen and far
+/// below the runtime's blocking-pool size, so the cap only ever engages in the
+/// pathological case it exists for.
+#[cfg(not(windows))]
+const MAX_BANNER_LISTENERS: usize = 8;
+
+#[cfg(not(windows))]
+static BANNER_LISTENERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// RAII permit for one parked banner listener. Releasing on `Drop` (rather than
+/// after `wait_for_action` returns) means a panic inside the wait can't leak the
+/// slot and shrink the budget permanently.
+#[cfg(not(windows))]
+struct ListenerSlot;
+
+#[cfg(not(windows))]
+impl ListenerSlot {
+    /// `Some` when a slot was free, `None` when already at [`MAX_BANNER_LISTENERS`].
+    fn reserve() -> Option<Self> {
+        use std::sync::atomic::Ordering;
+        BANNER_LISTENERS
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < MAX_BANNER_LISTENERS).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for ListenerSlot {
+    fn drop(&mut self) {
+        BANNER_LISTENERS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
 }
 
 /// Push a notification and deliver it across every surface, best-effort
@@ -103,7 +257,7 @@ pub fn push_and_notify(app: &AppHandle, input: NewNotification, banner: OsBanner
     let show_banner = matches!(banner, OsBanner::Always)
         || (matches!(banner, OsBanner::WhenUnfocused) && !focused);
     if show_banner {
-        show_os_notification(app, &rec.title, &rec.body);
+        show_os_notification(app, &rec.title, &rec.body, rec.route.clone());
     }
 }
 
@@ -143,6 +297,7 @@ pub async fn notifications_clear_all(app: AppHandle) {
 /// opens the inbox. Phase 4 repoints the global notification `onAction` here.
 #[tauri::command]
 pub fn notifications_clicked(app: AppHandle) {
-    crate::tray::show_focus(&app);
-    emit_event(&app, NOTIFICATIONS_OPEN, ());
+    // No route: a tray / renderer click means "open the inbox", not "go to one
+    // specific thing". Only an OS-banner click knows which notification it was.
+    open_from_banner(&app, None);
 }

@@ -53,6 +53,18 @@ pub struct NotificationRoute {
     pub search: Option<Map<String, Value>>,
 }
 
+/// Payload of [`crate::events::NOTIFICATIONS_OPEN`]. `route` is the clicked
+/// notification's own destination when the click came from an OS banner, and
+/// `None` for a generic "open the inbox" click (tray, or the bell's own row
+/// handling). Kept as a struct rather than a bare `Option<NotificationRoute>`
+/// so a future field (e.g. the notification id, to mark it read) is additive.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationOpen {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route: Option<NotificationRoute>,
+}
+
 /// A persisted notification record. `kind` is an OPEN string (e.g.
 /// `"autopilot.new_jobs"`, `"import.result"`) so new notification kinds need no
 /// codebase change.

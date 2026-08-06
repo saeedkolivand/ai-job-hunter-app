@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from '@tanstack/react-router';
 
 import type { AppNotification } from '@ajh/shared';
 
+import { resolveNotificationRoute } from '@/lib/notification-route';
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useUiStore } from '@/store/ui-store';
 
@@ -74,23 +76,43 @@ export const useNotificationEvents = () => {
   // Keep the latest setter in a ref so the effect subscribes ONCE.
   const setOpenRef = useRef(setNotificationsOpen);
   setOpenRef.current = setNotificationsOpen;
+  // Same subscribe-once discipline as the setter above: the router identity is
+  // stable in practice, but keeping it behind a ref means the effect can never
+  // re-subscribe because of it.
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   useEffect(() => {
     const offChanged = api.notifications.onChanged(() => {
       void qc.invalidateQueries({ queryKey: keys.notifications.all });
     });
-    const offOpen = api.notifications.onOpenInbox(() => {
-      setOpenRef.current(true);
-    });
-    // Any OS-banner body click focuses the window + opens the inbox: `clicked()`
-    // → `notifications_clicked` → emits `notifications:open` → `onOpenInbox` above.
-    // api is a stable context value, so a direct call here is safe (no per-render re-subscribe)
-    const offBanner = api.notifications.onOsBannerClick(() => {
-      void api.notifications.clicked();
+    // Covers BOTH the tray click and an OS-banner body click: the backend now
+    // handles the banner natively (`show_clickable_banner`) and emits
+    // `notifications:open` itself, so there is no renderer-side banner
+    // subscription any more. The old one went through the notification plugin's
+    // `onAction`, which is mobile-only — it failed with "Command not found" on
+    // every desktop startup and no banner click ever reached the app.
+    //
+    // With a `route` (an OS banner for one specific notification) go straight
+    // there — clicking "Autopilot X found 3 jobs" should land on THAT autopilot,
+    // not on a list the user then has to search. Without one (tray click) fall
+    // back to opening the inbox. Same validate-then-navigate rule the bell's own
+    // rows use, so an unknown backend route can't break navigation.
+    const offOpen = api.notifications.onOpenInbox((payload) => {
+      const route = payload?.route;
+      if (!route) {
+        setOpenRef.current(true);
+        return;
+      }
+      const validatedTo = resolveNotificationRoute(route.to);
+      void routerRef.current.navigate({
+        to: validatedTo,
+        search: validatedTo === route.to ? route.search : undefined,
+      });
     });
     return () => {
       offChanged();
       offOpen();
-      offBanner();
     };
   }, [api, qc]);
 };
