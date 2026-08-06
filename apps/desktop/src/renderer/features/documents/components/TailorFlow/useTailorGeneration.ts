@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
+import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
   exportDOCX,
@@ -267,7 +268,8 @@ export function useTailorGeneration({
       console.error('[export] failed', {
         format: fmt,
         docType,
-        message: err instanceof Error ? err.message : String(err),
+        // Never the raw message — it can embed a header URL. See `errorClass`.
+        error: errorClass(err),
       });
       notify.error({
         message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),

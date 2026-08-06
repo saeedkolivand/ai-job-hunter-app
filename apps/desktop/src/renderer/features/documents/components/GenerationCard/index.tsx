@@ -28,6 +28,7 @@ import {
   ExportPicker,
 } from '@/components/generation/ExportPicker';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
+import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
   exportDOCX,
@@ -213,7 +214,8 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
       console.error('[export] failed', {
         format: exportFormat,
         docType,
-        message: err instanceof Error ? err.message : String(err),
+        // Never the raw message — it can embed a header URL. See `errorClass`.
+        error: errorClass(err),
       });
       notify.error({
         message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),

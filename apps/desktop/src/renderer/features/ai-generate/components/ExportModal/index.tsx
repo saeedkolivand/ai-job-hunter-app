@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button, ModalShell, useNotification } from '@ajh/ui';
 
+import { errorClass } from '@/lib/error-class';
 import { buildFilename, type GenerationMeta } from '@/lib/generate';
 
 type Fmt = 'pdf' | 'docx' | 'txt';
@@ -37,7 +38,8 @@ export function ExportModal({ open, onClose, meta, docType, onExport }: Props) {
       console.error('[export] failed', {
         format: fmt,
         docType,
-        message: err instanceof Error ? err.message : String(err),
+        // Never the raw message — it can embed a header URL. See `errorClass`.
+        error: errorClass(err),
       });
       notify.error({
         message: err instanceof Error && err.message ? err.message : t('common.exportFailed'),

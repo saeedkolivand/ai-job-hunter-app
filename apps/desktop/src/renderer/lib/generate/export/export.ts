@@ -4,6 +4,7 @@
 import type { GenerationMeta } from '@ajh/prompts/generate';
 
 import { getClient } from '../../app-client';
+import { errorClass } from '../../error-class';
 import { type LetterLayoutId, type TemplateId, TEMPLATES } from '../templates';
 
 // ─── Filename ─────────────────────────────────────────────────────────────────
@@ -139,7 +140,9 @@ export async function exportDOCX(
     });
     console.warn('[export] done', { format: 'docx', type });
   } catch (error) {
-    console.error('DOCX export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'docx', error: errorClass(error) });
     throw new Error(
       `Failed to export DOCX: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
@@ -202,7 +205,9 @@ export async function exportPDF(
     });
     console.warn('[export] done', { format: 'pdf', type });
   } catch (error) {
-    console.error('PDF export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'pdf', error: errorClass(error) });
     throw new Error(
       `Failed to export PDF: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
@@ -289,7 +294,9 @@ export function exportTXT(text: string, filename: string): void {
 
     console.warn('[export] done', { format: 'txt' });
   } catch (error) {
-    console.error('TXT export failed:', error);
+    // Class only — the backend's validation messages can embed a header
+    // URL and this line is persisted into the diagnostics bundle.
+    console.error('[export] failed', { format: 'txt', error: errorClass(error) });
     throw new Error(
       `Failed to export TXT: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }

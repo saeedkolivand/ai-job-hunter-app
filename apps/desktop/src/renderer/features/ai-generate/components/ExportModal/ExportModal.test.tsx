@@ -62,6 +62,36 @@ describe('ExportModal — a rejected export surfaces a toast, not a silent no-op
     consoleError.mockRestore();
   });
 
+  it('never persists the rejection message — a header URL must not reach the log file', async () => {
+    // `validate/mod.rs`'s `header_url_mismatch` puts the offending URL in its
+    // message. `log-bridge.ts` forwards console.error into the rotated log file
+    // that ships inside a diagnostics bundle, so the message must stay on
+    // screen only. Regression for the CWE-532 review finding on #948.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const secret = 'https://linkedin.com/in/jane-doe-private';
+    const onExport = vi
+      .fn()
+      .mockRejectedValue(new Error(`Export blocked: Header link ${secret} is not allowed.`));
+
+    render(<ExportModal open onClose={vi.fn()} meta={null} docType="resume" onExport={onExport} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /PDF/ }));
+
+    // The user still sees it — the toast is not persisted anywhere.
+    await waitFor(() =>
+      expect(mockNotify.error).toHaveBeenCalledWith({
+        message: `Export blocked: Header link ${secret} is not allowed.`,
+      })
+    );
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain(secret);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[export] failed',
+      expect.objectContaining({ format: 'pdf', docType: 'resume', error: 'Error' })
+    );
+
+    consoleError.mockRestore();
+  });
+
   it('falls back to a localized generic message when the rejection carries none', async () => {
     const onExport = vi.fn().mockRejectedValue('not an Error instance');
     vi.spyOn(console, 'error').mockImplementation(() => {});
