@@ -279,8 +279,24 @@ fn rate_for_falls_back_to_the_bare_gpt_oss_row_for_an_unlisted_spelling() {
         rate_for("gpt-oss-120b").map(|(p, _, _)| *p),
         Some("gpt-oss")
     );
-    let cost = estimate_cost("gpt-oss-safeguard-20b", 1_000_000, 1_000_000);
+    // An actually-unlisted size — `-safeguard` has its own row below.
+    let cost = estimate_cost("gpt-oss-400b", 1_000_000, 1_000_000);
     assert!((cost - (0.037 + 0.17)).abs() < 1e-9, "got {cost}");
+}
+
+#[test]
+fn rate_for_prices_gpt_oss_safeguard_above_the_family_catch_all() {
+    // Regression: `gpt-oss-safeguard-20b` costs MORE than either base size
+    // ($0.075/$0.30 per 1M), so the bare `gpt-oss` catch-all under-costs it by
+    // ~2x. Its own row must out-rank the catch-all.
+    assert_eq!(
+        rate_for("gpt-oss-safeguard-20b").map(|(p, _, _)| *p),
+        Some("gpt-oss-safeguard")
+    );
+    let cost = estimate_cost("gpt-oss-safeguard-20b", 1_000_000, 1_000_000);
+    assert!((cost - (0.075 + 0.30)).abs() < 1e-9, "got {cost}");
+    // Strictly more expensive than the catch-all it used to fall through to.
+    assert!(cost > estimate_cost("gpt-oss-400b", 1_000_000, 1_000_000));
 }
 
 #[test]

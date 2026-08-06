@@ -466,10 +466,19 @@ const RATES: &[(&str, f64, f64)] = &[
     // rates.
     ("gpt-oss:120b", 0.037, 0.17),
     ("gpt-oss:20b", 0.03, 0.13),
-    // Catch-all for any other gpt-oss spelling/gateway (dash form,
-    // "-safeguard", a future size) — the 120B rate, the more conservative
-    // (higher) of the two known sizes, so an unmatched variant is never
-    // silently under-costed.
+    // `gpt-oss-safeguard-20b` is the one shipped variant whose rate is HIGHER
+    // than either base size ($0.075/$0.30 per 1M — Groq via OpenRouter,
+    // `openrouter.ai/api/v1/models/openai/gpt-oss-safeguard-20b/endpoints`,
+    // checked 2026-08-06), so the catch-all below would under-cost it by ~2x.
+    // Must precede the bare `"gpt-oss"` prefix row for the same reason the
+    // colon-tag rows do.
+    ("gpt-oss-safeguard", 0.075, 0.30),
+    // Catch-all for any other gpt-oss spelling/gateway (dash form, a future
+    // size) — the 120B rate, the higher of the two BASE sizes. Note this is
+    // NOT a conservative ceiling for the family: `-safeguard` above already
+    // prices above it, so a genuinely new variant can still be under-costed
+    // until it gets its own row. Check a new variant's published rate rather
+    // than assuming this row covers it.
     ("gpt-oss", 0.037, 0.17),
     // Embeddings — input-only (no completion tokens), so the output rate is
     // always 0.0 and unused (`embed_text` always records `output_tokens: 0`).
