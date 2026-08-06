@@ -1,11 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+
+import type { JobEvent } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useAutoIndexOnUpload } from '@/store/preferences-store';
 
 import { keys } from '../query-client';
 import { useEmbeddingStatus } from '../use-ai-provider';
+import { useJobEvents } from '../use-jobs';
 
 /**
  * Keep the embedding index up to date on its own, when the user has asked for it
@@ -39,42 +42,76 @@ export const useAutoIndex = () => {
   const activeModel = status?.active?.model ?? '';
   const activeProvider = status?.active?.provider ?? '';
 
-  // One run per (space, stale-count) situation. Without this the effect would
-  // re-fire on every refetch while a run is still in flight and queue duplicate
-  // index jobs for the same documents — paid duplicates, on a cloud provider.
-  const inFlight = useRef(false);
-  const lastAttempt = useRef('');
+  // The concurrency guard, held until the JOB ends — not until
+  // `indexStaleDocuments` resolves, which happens as soon as the job is SPAWNED.
+  // The status refetch right after that still reports the pre-run stale count,
+  // and would otherwise start a second, separately-billed run over the same
+  // documents.
+  //
+  // STATE rather than a ref because the effect must re-run when a job finishes,
+  // and clearing a ref re-renders nothing.
+  const [inFlightJob, setInFlightJob] = useState<string | null>(null);
+  const starting = useRef(false);
+
+  // One attempt per (space, stale count), CLEARED once the index goes clean or
+  // the space changes. Both halves are load-bearing:
+  //   - without the key, a run that fails to reduce `stale` re-triggers the
+  //     moment it ends, looping paid provider calls forever;
+  //   - without the reset, a later batch that happens to share a previous
+  //     count is skipped forever — import one résumé (stale 1, indexed), import
+  //     another (stale 1 again) and auto-indexing silently dies after the first.
+  const attemptedFor = useRef<string | null>(null);
+
+  // Release the guard when our job reaches a terminal state, then refresh the
+  // strip so it shows the post-run count.
+  useJobEvents((evt: JobEvent) => {
+    const e = evt as { type: string; jobId: string };
+    if (e.jobId !== inFlightJob) return;
+    if (e.type !== 'job.completed' && e.type !== 'job.failed' && e.type !== 'job.cancelled') return;
+    setInFlightJob(null);
+    void qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+  });
 
   useEffect(() => {
+    const space = `${activeProvider}/${activeModel}`;
+    // A clean index (or a space change) means any future non-zero count is new
+    // work, not the run we already attempted.
+    if (stale === 0 || attemptedFor.current?.startsWith(`${space}/`) === false) {
+      attemptedFor.current = null;
+    }
+
     if (!enabled || stale === 0) return;
     // An embedding space with no model configured cannot index anything; wait
-    // for the user to pick one rather than failing once per refetch.
+    // for the user to pick one rather than failing once per refetch. This is the
+    // normal first run — the résumé step precedes the AI step in onboarding.
     if (!activeProvider || !activeModel) return;
+    if (inFlightJob || starting.current) return;
 
-    const attempt = `${activeProvider}/${activeModel}/${stale}`;
-    if (inFlight.current || lastAttempt.current === attempt) return;
-    inFlight.current = true;
-    lastAttempt.current = attempt;
+    const attempt = `${space}/${stale}`;
+    if (attemptedFor.current === attempt) return;
+    attemptedFor.current = attempt;
 
+    starting.current = true;
     void (async () => {
       try {
-        await api.ai.indexStaleDocuments();
-        // Refresh the strip so it reflects the new count rather than the one
-        // that triggered this run.
-        await qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
-      } catch (err) {
+        const { jobId } = await api.ai.indexStaleDocuments();
+        // Null means nothing was actually stale by the time the backend looked
+        // (a lazy embed during matching got there first) — no job, nothing to
+        // wait for, and the next real change is free to trigger a run.
+        if (jobId) setInFlightJob(jobId);
+        else await qc.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+      } catch {
         // Best-effort by design: matching still embeds lazily when it needs a
-        // vector, so a failed pre-warm degrades to the old behaviour rather
-        // than breaking anything. Logged (never the raw provider message — see
-        // `errorClass`) so a diagnostics bundle still shows it was attempted.
+        // vector, so a failed pre-warm degrades to the old behaviour rather than
+        // breaking anything. The provider's own message is deliberately not
+        // logged — this line is persisted into diagnostics bundles.
         console.warn('[auto-index] stale-document indexing failed', {
           provider: activeProvider,
           stale,
         });
-        void err;
       } finally {
-        inFlight.current = false;
+        starting.current = false;
       }
     })();
-  }, [api, qc, enabled, stale, activeProvider, activeModel]);
+  }, [api, qc, enabled, stale, activeProvider, activeModel, inFlightJob]);
 };

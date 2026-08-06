@@ -8,8 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
 import { usePreferencesStore } from '@/store/preferences-store';
-import { createMockClient, renderHookWithClient } from '@/test-support';
+import { createMockClient, makeQueryClient, renderHookWithClient } from '@/test-support';
 
+import { keys } from '../query-client';
 import { useAutoIndex } from './use-auto-index';
 
 afterEach(() => {
@@ -88,10 +89,11 @@ describe('useAutoIndex', () => {
     expect(indexStaleDocuments).not.toHaveBeenCalled();
   });
 
-  it('does not queue a second run for the same situation', async () => {
-    // The paid-duplicate guard: the status query refetches, and without the
-    // attempt key each refetch would start another index job over the same
-    // documents.
+  it('does not start a second run while the first job is still running', async () => {
+    // The paid-duplicate guard. `indexStaleDocuments` resolves as soon as the job
+    // is SPAWNED, so the status refetch right after it still reports the old
+    // stale count — without holding the guard until the job ends, that refetch
+    // would start another separately-billed run over the same documents.
     usePreferencesStore.setState({ autoIndexOnUpload: true });
     const indexStaleDocuments = vi.fn().mockResolvedValue({ jobId: 'job-1' });
     const client = createMockClient({
@@ -110,22 +112,81 @@ describe('useAutoIndex', () => {
     expect(indexStaleDocuments).toHaveBeenCalledTimes(1);
   });
 
-  it('survives a failing index call — matching still embeds lazily', async () => {
+  it('indexes a SECOND upload that happens to leave the same stale count', async () => {
+    // Regression for the HIGH review finding on #951. The first guard keyed on
+    // `provider/model/staleCount` and never reset, so: import one résumé
+    // (stale 1 → indexed → stale 0), import another (stale 1 AGAIN) and the
+    // second was treated as already handled. Auto-indexing silently died after
+    // the very first document. The count identifies a situation, not a batch.
     usePreferencesStore.setState({ autoIndexOnUpload: true });
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const indexStaleDocuments = vi.fn().mockRejectedValue(new Error('provider down'));
+    let jobHandler: ((e: unknown) => void) | null = null;
+    let staleNow = 1;
+    const indexStaleDocuments = vi.fn().mockResolvedValue({ jobId: 'job-1' });
     const client = createMockClient({
-      'ai.embeddingStatus': vi.fn().mockResolvedValue(status(1)),
+      'ai.embeddingStatus': vi.fn().mockImplementation(async () => status(staleNow)),
       'ai.indexStaleDocuments': indexStaleDocuments,
+      'jobs.onEvent': vi.fn((cb: (e: unknown) => void) => {
+        jobHandler = cb;
+        return () => {};
+      }),
     });
 
-    renderHookWithClient(() => useAutoIndex(), { client });
-
+    const queryClient = makeQueryClient();
+    renderHookWithClient(() => useAutoIndex(), { client, queryClient });
     await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(1));
-    // No unhandled rejection, and the raw provider message never reaches the log.
+
+    // The job finishes and the index goes clean.
+    staleNow = 0;
+    await act(async () => {
+      jobHandler?.({ type: 'job.completed', jobId: 'job-1' });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<{ documents: { stale: number } }>(keys.ai.embeddingStatus)
+          ?.documents.stale
+      ).toBe(0)
+    );
+
+    // A second document arrives, leaving the SAME stale count as the first did.
+    staleNow = 1;
+    indexStaleDocuments.mockResolvedValue({ jobId: 'job-2' });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.ai.embeddingStatus });
+    });
+
+    await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(2), { timeout: 3000 });
+  });
+
+  it('does not retry forever when a run fails to reduce the stale count', async () => {
+    // The other half of the same guard. Without a per-(space, count) attempt key
+    // a run that indexes nothing re-triggers the instant it ends — an unbounded
+    // loop of paid provider calls.
+    usePreferencesStore.setState({ autoIndexOnUpload: true });
+    let jobHandler: ((e: unknown) => void) | null = null;
+    const indexStaleDocuments = vi.fn().mockResolvedValue({ jobId: 'job-1' });
+    const client = createMockClient({
+      'ai.embeddingStatus': vi.fn().mockResolvedValue(status(2)),
+      'ai.indexStaleDocuments': indexStaleDocuments,
+      'jobs.onEvent': vi.fn((cb: (e: unknown) => void) => {
+        jobHandler = cb;
+        return () => {};
+      }),
+    });
+
+    const { rerender } = renderHookWithClient(() => useAutoIndex(), { client });
+    await waitFor(() => expect(indexStaleDocuments).toHaveBeenCalledTimes(1));
+
+    // Job ends with the count unchanged (every document failed to embed).
+    await act(async () => {
+      jobHandler?.({ type: 'job.failed', jobId: 'job-1' });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    rerender();
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(JSON.stringify(vi.mocked(console.warn).mock.calls)).not.toContain('provider down');
+
+    expect(indexStaleDocuments).toHaveBeenCalledTimes(1);
   });
 });
