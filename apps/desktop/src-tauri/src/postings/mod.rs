@@ -373,10 +373,14 @@ impl InteractionStore {
         if !renamed {
             self.block_save = true;
         }
+        // Log the backup FILE NAME only, never the full path — the data dir is
+        // under the user's home directory and a `.display()` here would put an
+        // absolute, username-bearing path into logs (which ship in diagnostics
+        // bundles the user may send us).
         log::error!(
             "[postings] interactions.json failed to parse ({err}); \
-             backed_up={renamed} backup={}",
-            backup.display()
+             backed_up={renamed} backup_name={}",
+            file_name_label(&backup)
         );
     }
 
@@ -403,10 +407,11 @@ impl InteractionStore {
         // recoverable data, so skip the write. The new interaction stays in
         // memory (lost on restart) — preserving the on-disk original wins.
         if self.block_save {
+            // No path here — "corrupt interactions.json" already identifies which
+            // file, and a full path would leak the user's home directory into logs.
             log::error!(
                 "[postings] save skipped: corrupt interactions.json could not be \
-                 backed up; refusing to overwrite the un-backed-up original at {}",
-                self.data_file.display()
+                 backed up; refusing to overwrite the un-backed-up original"
             );
             return;
         }
@@ -431,7 +436,7 @@ impl InteractionStore {
         if let Err(e) = std::fs::write(&tmp, &json) {
             log::error!(
                 "[postings] failed to write {}: {e} — interaction NOT persisted",
-                tmp.display()
+                file_name_label(&tmp)
             );
             std::fs::remove_file(&tmp).ok();
             return;
@@ -440,12 +445,23 @@ impl InteractionStore {
             log::error!(
                 "[postings] failed to move {} onto {}: {e} — interaction NOT persisted \
                  (the previous file is intact)",
-                tmp.display(),
-                self.data_file.display()
+                file_name_label(&tmp),
+                file_name_label(&self.data_file)
             );
             std::fs::remove_file(&tmp).ok();
         }
     }
+}
+
+/// The final path component as a diagnostic label — never the full path. The
+/// data dir this file lives under is inside the user's home directory, and
+/// these `log::error!` calls end up in `crashes.log` / diagnostics bundles
+/// users send us, so only the file name (e.g. `interactions.json.tmp`) is
+/// logged, never an absolute, username-bearing path.
+fn file_name_label(path: &std::path::Path) -> &str {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("<interactions-file>")
 }
 
 #[cfg(test)]

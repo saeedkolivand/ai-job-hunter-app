@@ -51,6 +51,98 @@ const REFINED_US_TEXT: &str = "Jane Smith\njane@example.com | https://linkedin.c
 
 const REFINED_DE_TEXT: &str = "Max Müller\nmax@example.de | https://linkedin.com/in/maxmueller\n\nFrankfurt, 2. Juni 2025\n\nFrau Dr. Anna Weber\nMusterfirma GmbH\n\nBetreff: Bewerbung als Software Engineer\n\nSehr geehrte Frau Dr. Weber,\n\nmit großem Interesse habe ich Ihre Stellenausschreibung gelesen und bewerbe mich hiermit.\n\nMit freundlichen Grüßen,\n\nMax Müller\n";
 
+/// Every `w:sz w:val="N"` (half-points) found in a DOCX body, in document order.
+/// Deliberately does not match `w:szCs` (the companion complex-script size,
+/// same value) — the literal `w:sz w:val="` substring requires a space right
+/// after `sz`, which `szCs` never has.
+fn all_font_sizes(xml: &str) -> Vec<u32> {
+    let needle = "w:sz w:val=\"";
+    let mut sizes = Vec::new();
+    let mut rest = xml;
+    while let Some(idx) = rest.find(needle) {
+        let after = &rest[idx + needle.len()..];
+        let end = after
+            .find('"')
+            .expect("w:sz w:val opening quote must close");
+        sizes.push(
+            after[..end]
+                .parse::<u32>()
+                .expect("w:sz w:val must be numeric"),
+        );
+        rest = &after[end..];
+    }
+    sizes
+}
+
+#[test]
+fn cover_letter_docx_emits_half_point_sizes_not_dxa() {
+    // Classic template: name_pt 20.0, body_pt 10.5 (`templates/mod.rs`). The
+    // regression this guards: routing font size through `pt_to_dxa` (×20)
+    // instead of `pt_to_half_points` (×2) produced `w:sz w:val="400"`/`"210"` —
+    // a 200pt/105pt name and body, the exact defect behind the 132-page export.
+    let bytes = generate_docx(&letter_request(
+        "Jane Doe\njane@example.com\n\nDear Hiring Manager,\n\nI am writing to apply.\n\nSincerely,\nJane Doe",
+        LetterLayout::Classic,
+    ))
+    .expect("docx");
+    let xml = document_xml(&bytes);
+    assert!(
+        xml.contains(r#"w:sz w:val="40""#),
+        "Classic name_pt 20.0 must emit w:sz w:val=\"40\" (half-points), not a dxa value: {xml}"
+    );
+    assert!(
+        xml.contains(r#"w:sz w:val="21""#),
+        "Classic body_pt 10.5 must emit w:sz w:val=\"21\" (half-points), not a dxa value: {xml}"
+    );
+}
+
+#[test]
+fn no_cover_letter_font_size_exceeds_sane_ceiling() {
+    // Independent of any one template's literal numbers: no half-point run size
+    // should ever exceed 100 (50pt). This is the guard that would have caught
+    // the pt_to_dxa/pt_to_half_points class outright — every real template's
+    // pt sizes top out well under 40pt, so 50pt is a generous, stable ceiling.
+    const MAX_HALF_POINTS: u32 = 100;
+    for template_id in [
+        TemplateId::Classic,
+        TemplateId::SwissMinimal,
+        TemplateId::Academic,
+        TemplateId::Atelier,
+        TemplateId::Meridian,
+        TemplateId::Throughline,
+        TemplateId::Cadence,
+        TemplateId::Regent,
+    ] {
+        for layout in [
+            LetterLayout::Classic,
+            LetterLayout::Refined,
+            LetterLayout::Banded,
+        ] {
+            let request = ExportRequest {
+                text: REFINED_US_TEXT.to_string(),
+                format: ExportFormat::Docx,
+                document_type: DocumentType::CoverLetter,
+                template_id,
+                meta: None,
+                ats_mode: false,
+                locale: None,
+                contact: None,
+                accent: None,
+                letter_layout: layout,
+            };
+            let xml = document_xml(&generate_docx(&request).expect("docx"));
+            for size in all_font_sizes(&xml) {
+                assert!(
+                    size <= MAX_HALF_POINTS,
+                    "{template_id:?}/{layout:?}: w:sz={size} half-points ({}pt) exceeds the sane ceiling — \
+                     likely a font size routed through pt_to_dxa instead of pt_to_half_points",
+                    size as f32 / 2.0
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn resume_docx_declares_a4_page_size() {
     let bytes = generate_docx(&resume_request(TemplateId::SwissMinimal)).expect("docx");

@@ -3,12 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
+import { exportPDF } from '@/lib/generate';
 import { useGenerationStore } from '@/store/generation-store';
 
 import { useTailorGeneration } from './useTailorGeneration';
 
 // i18n: identity translator so phaseLabel resolves without the i18n runtime.
 vi.mock('@ajh/translations', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+
+// useNotification: return an API of spies; the export-failure test asserts on it.
+const mockNotify = {
+  open: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  warning: vi.fn(),
+  destroy: vi.fn(),
+};
+vi.mock('@ajh/ui', () => ({ useNotification: () => mockNotify }));
 
 // Capture the saved application record so we can assert the job link is attached.
 const save = vi.fn().mockResolvedValue({ id: 'gen-1', success: true });
@@ -93,6 +105,7 @@ describe('useTailorGeneration', () => {
   beforeEach(() => {
     useGenerationStore.setState({ sessions: {} });
     save.mockClear();
+    mockNotify.error.mockClear();
   });
 
   it('starts idle with empty buffers', () => {
@@ -147,5 +160,24 @@ describe('useTailorGeneration', () => {
     expect(result.current.resumeOut).toBe('');
     expect(result.current.generating).toBe(false);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a rejected export as a notification instead of an unhandled rejection', async () => {
+    vi.mocked(exportPDF).mockRejectedValueOnce(new Error('Export blocked: too many pages.'));
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate('my resume', 'resume');
+    });
+
+    // exportAs must resolve (not reject) even though the underlying export threw —
+    // that's what turned this into an unhandled rejection with no toast.
+    await act(async () => {
+      await result.current.exportAs('pdf');
+    });
+
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'Export blocked: too many pages.',
+    });
   });
 });

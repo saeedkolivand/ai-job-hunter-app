@@ -314,10 +314,33 @@ fn parse_openai_delta(event: &Value) -> (&str, &str) {
     (reasoning, content)
 }
 
+/// Extract a streamed chunk's `finish_reason`, when present and non-null.
+/// Most streamed chunks carry `finish_reason: null`; only the terminal
+/// content-bearing chunk (typically right before `data: [DONE]`) sets it.
+/// Ollama Cloud (routed through this same client, see `ollama_cloud.rs`) uses
+/// the identical Chat Completions streaming shape. Reuses the SAME mapping
+/// [`parse_openai_turn`] already uses for the non-streaming path, so callers
+/// never need a second vocabulary. Pure + unit-tested.
+fn parse_openai_finish_reason(event: &Value) -> Option<StopReason> {
+    let reason = event
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("finish_reason"))
+        .and_then(|f| f.as_str())?;
+    Some(match reason {
+        "tool_calls" => StopReason::ToolUse,
+        "stop" => StopReason::End,
+        "length" => StopReason::Length,
+        _ => StopReason::Other,
+    })
+}
+
 /// Drain complete `data:`-prefixed SSE lines from the accumulated stream buffer
 /// into [`StreamPiece`]s, leaving any partial trailing line for the next chunk.
 /// `data: [DONE]` yields a terminal sentinel; other lines split into reasoning +
-/// content via [`parse_openai_delta`]. Pure + unit-tested; this is the `parse`
+/// content via [`parse_openai_delta`], plus a `stop_reason` piece whenever a
+/// chunk carries a non-null `finish_reason` (see
+/// [`parse_openai_finish_reason`]). Pure + unit-tested; this is the `parse`
 /// closure handed to [`stream_response`], so OpenAI's SSE framing lives here only.
 fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
     let mut out = Vec::new();
@@ -344,6 +367,9 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
         };
         if let Some(usage) = parse_openai_usage(&event) {
             out.push(StreamPiece::usage(usage));
+        }
+        if let Some(reason) = parse_openai_finish_reason(&event) {
+            out.push(StreamPiece::stop_reason(reason));
         }
         let (reasoning, delta) = parse_openai_delta(&event);
         if !reasoning.is_empty() {

@@ -552,6 +552,20 @@ export default tseslint.config(
     },
   },
 
+  // ── Desktop console→file-log bridge — the whole file IS console.* ──────────
+  // `log-bridge.ts` wraps `console.info`/`warn`/`error` so every renderer log
+  // site (existing and future) also reaches the Tauri file logger, not just
+  // devtools. It reassigns `console[level]` via a dynamic key, which the
+  // `no-console` rule can't statically prove is 'warn'/'error' and flags
+  // defensively — scoped off for this one file only; no other desktop source
+  // may log outside the repo-wide `warn`/`error` allowlist.
+  {
+    files: ['apps/desktop/src/log-bridge.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+
   // ── Home/creature ported inline hex — DOM-parity, not design-system chrome ──
   // ADR-0018: home and creature are byte-for-byte ports of hand-authored static
   // HTML whose vanilla JS (public/scripts/{home,creature}-0.js) binds to the

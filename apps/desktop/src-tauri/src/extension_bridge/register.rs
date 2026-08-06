@@ -63,21 +63,23 @@ fn manifest_json(exe: &Path, firefox: bool) -> Vec<u8> {
 
 /// Write `bytes` to `path`, creating parent dirs. Best-effort: logs + returns on
 /// any failure.
-fn write_manifest(path: &Path, bytes: &[u8]) {
+///
+/// `label` (e.g. `"chrome"`, `"vivaldi (flatpak)"`) identifies which manifest
+/// this was for a caller reading the log; `path` itself is NEVER logged. Every
+/// path here is under the user's home directory, and several browsers share the
+/// same manifest file NAME in different directories (so even `file_name()`
+/// would be ambiguous) — a caller-supplied label is both the safe choice and
+/// the more precise one. These `log::warn!` calls end up in diagnostics bundles
+/// users send us, and a path there would leak the OS username.
+fn write_manifest(label: &str, path: &Path, bytes: &[u8]) {
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            log::warn!(
-                "[native_host] mkdir {} failed (non-fatal): {e}",
-                parent.display()
-            );
+            log::warn!("[native_host] mkdir for {label} manifest failed (non-fatal): {e}");
             return;
         }
     }
     if let Err(e) = std::fs::write(path, bytes) {
-        log::warn!(
-            "[native_host] write {} failed (non-fatal): {e}",
-            path.display()
-        );
+        log::warn!("[native_host] write {label} manifest failed (non-fatal): {e}");
     }
 }
 
@@ -90,11 +92,11 @@ fn write_manifest(path: &Path, bytes: &[u8]) {
 // Used only in the Linux branch (Flatpak guard logic); the cfg mirrors the
 // call-sites so the compiler doesn't emit a dead_code warning on other platforms.
 #[cfg(any(target_os = "linux", test))]
-fn write_manifest_if_app_dir_exists(guard_dir: &Path, path: &Path, bytes: &[u8]) {
+fn write_manifest_if_app_dir_exists(label: &str, guard_dir: &Path, path: &Path, bytes: &[u8]) {
     if !guard_dir.exists() {
         return;
     }
-    write_manifest(path, bytes);
+    write_manifest(label, path, bytes);
 }
 
 /// Register the native-messaging host for Firefox + Chrome. Best-effort and
@@ -117,8 +119,8 @@ pub fn register_native_host(data_dir: &Path) {
         let dir = data_dir.join("native-messaging");
         let firefox_path = dir.join(format!("{NATIVE_HOST_NAME}.firefox.json"));
         let chrome_path = dir.join(format!("{NATIVE_HOST_NAME}.chrome.json"));
-        write_manifest(&firefox_path, &firefox_json);
-        write_manifest(&chrome_path, &chrome_json);
+        write_manifest("firefox", &firefox_path, &firefox_json);
+        write_manifest("chrome", &chrome_path, &chrome_json);
 
         let firefox_key = format!("Software\\Mozilla\\NativeMessagingHosts\\{NATIVE_HOST_NAME}");
         let chrome_key =
@@ -147,8 +149,8 @@ pub fn register_native_host(data_dir: &Path) {
             let chrome_path = home
                 .join("Library/Application Support/Google/Chrome/NativeMessagingHosts")
                 .join(NATIVE_HOST_MANIFEST);
-            write_manifest(&firefox_path, &firefox_json);
-            write_manifest(&chrome_path, &chrome_json);
+            write_manifest("firefox", &firefox_path, &firefox_json);
+            write_manifest("chrome", &chrome_path, &chrome_json);
         }
 
         #[cfg(target_os = "linux")]
@@ -172,12 +174,12 @@ pub fn register_native_host(data_dir: &Path) {
             let vivaldi_path = home
                 .join(".config/vivaldi/NativeMessagingHosts")
                 .join(NATIVE_HOST_MANIFEST);
-            write_manifest(&firefox_path, &firefox_json);
-            write_manifest(&chrome_path, &chrome_json);
-            write_manifest(&chromium_path, &chrome_json);
-            write_manifest(&brave_path, &chrome_json);
-            write_manifest(&edge_path, &chrome_json);
-            write_manifest(&vivaldi_path, &chrome_json);
+            write_manifest("firefox", &firefox_path, &firefox_json);
+            write_manifest("chrome", &chrome_path, &chrome_json);
+            write_manifest("chromium", &chromium_path, &chrome_json);
+            write_manifest("brave", &brave_path, &chrome_json);
+            write_manifest("edge", &edge_path, &chrome_json);
+            write_manifest("vivaldi", &vivaldi_path, &chrome_json);
 
             // ── Flatpak per-app config dirs ───────────────────────────────────
             // Sandboxed Flatpak browsers cannot read ~/.config; they read their
@@ -250,7 +252,7 @@ pub fn register_native_host(data_dir: &Path) {
                 } else {
                     &chrome_json
                 };
-                write_manifest_if_app_dir_exists(&guard, &path, bytes);
+                write_manifest_if_app_dir_exists(entry.app_id, &guard, &path, bytes);
             }
         }
     }
@@ -349,7 +351,7 @@ mod tests {
         let guard = tmp.path().join("nonexistent-app");
         let target = guard.join("config/NativeMessagingHosts/host.json");
         // Must NOT create any file or directory when the guard dir is absent.
-        write_manifest_if_app_dir_exists(&guard, &target, b"{}");
+        write_manifest_if_app_dir_exists("test", &guard, &target, b"{}");
         assert!(
             !target.exists(),
             "should not create file when guard is absent"
@@ -365,7 +367,7 @@ mod tests {
         let target = guard
             .join("config/google-chrome/NativeMessagingHosts")
             .join("host.json");
-        write_manifest_if_app_dir_exists(&guard, &target, b"{\"ok\":true}");
+        write_manifest_if_app_dir_exists("com.google.Chrome", &guard, &target, b"{\"ok\":true}");
         assert!(
             target.exists(),
             "manifest should be written when guard exists"
@@ -437,7 +439,7 @@ mod tests {
             } else {
                 manifest_json(&exe, false)
             };
-            write_manifest_if_app_dir_exists(&guard, &target, &bytes);
+            write_manifest_if_app_dir_exists(case.app_id, &guard, &target, &bytes);
             assert!(
                 !target.exists(),
                 "app_id={} must not write when guard absent",
@@ -446,7 +448,7 @@ mod tests {
 
             // 2. Guard present → file IS written with correct JSON.
             std::fs::create_dir_all(&guard).unwrap();
-            write_manifest_if_app_dir_exists(&guard, &target, &bytes);
+            write_manifest_if_app_dir_exists(case.app_id, &guard, &target, &bytes);
             assert!(
                 target.exists(),
                 "app_id={} must write when guard present",
@@ -497,7 +499,7 @@ mod tests {
         ];
         for (bytes, rel) in native_paths {
             let path = tmp.path().join(rel).join(NATIVE_HOST_MANIFEST);
-            write_manifest(&path, bytes);
+            write_manifest(rel, &path, bytes);
             assert!(path.exists(), "native path not written: {rel}");
         }
     }
