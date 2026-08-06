@@ -287,6 +287,22 @@ fn generate_cover_letter_docx_layout(
     let is_banded = matches!(layout, LetterLayout::Banded);
     let is_navy = matches!(layout, LetterLayout::Navy);
 
+    // Per-FEATURE flags, derived from what each `.typ` actually renders, rather
+    // than a single `is_refined` boolean with everything else defaulting to
+    // Banded. The first pass at Navy split only the header band and the footer
+    // rule and left the rest binary, so Navy still inherited Banded's bolding
+    // and lost Refined's title/caption — the same PDF-vs-DOCX divergence this
+    // renderer exists to avoid, just in less obvious places.
+    //
+    //   role/title line   — letter_refined.typ and letter_navy.typ render it;
+    //                       letter_banded.typ does not.
+    //   subject caption   — same two.
+    //   bold date/recipient — letter_banded.typ ONLY (`weight: "bold"` on both
+    //                       emit blocks); letter_navy.typ leaves them regular.
+    let shows_title = is_refined || is_navy;
+    let shows_subject_caption = is_refined || is_navy;
+    let bolds_addressing = is_banded;
+
     let mut docx = Docx::new();
 
     let profile_contact_md: Option<String> = contact
@@ -383,10 +399,11 @@ fn generate_cover_letter_docx_layout(
                 )
                 .line_spacing(LineSpacing::new().after(60));
             if is_navy {
-                // Centred letterhead over a rule — the parser-safe echo of
-                // `letter_navy.typ`'s centred header and 0.9pt navy line.
+                // Centred letterhead — `letter_navy.typ` centres name, title and
+                // contact, then rules UNDER the lot. The rule therefore goes on
+                // the contact paragraph below, not here; drawing it on the name
+                // would put a line between the name and its own contact line.
                 name_para = name_para.align(AlignmentType::Center);
-                name_para.property = name_para.property.set_borders(bottom_rule(&rule_hex, 8));
             }
             if is_banded {
                 // Banded band approximation — see module-level doc comment.
@@ -400,32 +417,43 @@ fn generate_cover_letter_docx_layout(
             }
             docx = docx.add_paragraph(name_para);
 
-            // Refined: role line right after the name (see approximation note
-            // above re: `meta.job_title` vs the `.typ`'s `signature_title`).
-            if is_refined {
+            // Role line right after the name (see approximation note above re:
+            // `meta.job_title` vs the `.typ`'s `signature_title`). Refined and
+            // Navy both render it; Banded does not.
+            if shows_title {
                 if let Some(job_title) = meta.and_then(|m| m.job_title.as_deref()) {
-                    docx = docx.add_paragraph(
-                        Paragraph::new()
-                            .add_run(
-                                Run::new()
-                                    .add_text(job_title.to_uppercase())
-                                    .size(pt_to_half_points(template.body_pt))
-                                    .color(&accent_hex)
-                                    .character_spacing(24)
-                                    .fonts(docx_run_fonts(body_family)),
-                            )
-                            .line_spacing(LineSpacing::new().after(40)),
-                    );
+                    let mut title_para = Paragraph::new()
+                        .add_run(
+                            Run::new()
+                                .add_text(job_title.to_uppercase())
+                                .size(pt_to_half_points(template.body_pt))
+                                .color(&accent_hex)
+                                .character_spacing(24)
+                                .fonts(docx_run_fonts(body_family)),
+                        )
+                        .line_spacing(LineSpacing::new().after(40));
+                    if is_navy {
+                        title_para = title_para.align(AlignmentType::Center);
+                    }
+                    docx = docx.add_paragraph(title_para);
                 }
             }
 
             if let Some(md) = &profile_contact_md {
                 let mut contact_para =
                     super::docx_renderer::render_contact_line(md, template, &colors)
-                        .align(AlignmentType::Right)
+                        .align(if is_navy {
+                            // Navy centres its contact under the name; Refined
+                            // and Banded both right-align it.
+                            AlignmentType::Center
+                        } else {
+                            AlignmentType::Right
+                        })
                         .line_spacing(LineSpacing::new().after(if is_refined { 80 } else { 40 }));
-                if is_refined {
+                if is_refined || is_navy {
                     // Full-width rule under the header — see approximation note.
+                    // For Navy this is the letterhead rule, which is why it sits
+                    // here (after name + title + contact) rather than on the name.
                     contact_para.property =
                         contact_para.property.set_borders(bottom_rule(&rule_hex, 6));
                 }
@@ -450,9 +478,10 @@ fn generate_cover_letter_docx_layout(
                 .size(pt_to_half_points(9.0))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
-            if !is_refined {
+            if bolds_addressing {
                 // Banded bolds date/address-ish lines, mirroring
-                // `letter_banded.typ`'s bold `emit-date-block`.
+                // `letter_banded.typ`'s bold `emit-date-block`. Navy does not —
+                // its `emit-date-block` is regular weight.
                 run = run.bold();
             }
             let mut para = Paragraph::new()
@@ -522,7 +551,7 @@ fn generate_cover_letter_docx_layout(
 
         // Subject / reference line (Betreff/Objet/Re/…) — before the salutation.
         if !in_body && is_subject_line {
-            if is_refined {
+            if shows_subject_caption {
                 // The always-on JOB REFERENCE line: caption suppressed when the
                 // subject already opens with the market's own label or "Re:" —
                 // same content rule as `letter_refined.typ`'s
@@ -591,9 +620,10 @@ fn generate_cover_letter_docx_layout(
                 .size(pt_to_half_points(template.body_pt))
                 .color(&colors.date)
                 .fonts(docx_run_fonts(body_family));
-            if !is_refined {
+            if bolds_addressing {
                 // Banded bolds the recipient block, mirroring
-                // `letter_banded.typ`'s bold `emit-recipient-block`.
+                // `letter_banded.typ`'s bold `emit-recipient-block`. Navy's is
+                // regular weight.
                 run = run.bold();
             }
             docx = docx.add_paragraph(

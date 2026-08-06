@@ -502,6 +502,50 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
     assert_ne!(navy, classic, "Navy and Classic DOCX bytes must differ");
 }
 
+/// Navy's DOCX must match Navy's PDF, not Banded's.
+///
+/// The renderer branched on a single `is_refined` boolean, so every non-Refined
+/// layout got Banded's treatment. Two review rounds were needed to find them
+/// all, because "differs from Banded" passes as soon as ONE branch is split —
+/// these assert the specific features instead.
+#[test]
+fn navy_docx_follows_the_navy_design_not_banded() {
+    let navy = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Navy)).expect("navy"),
+    );
+    let banded = document_xml(
+        &generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Banded)).expect("banded"),
+    );
+
+    // 1. No header band. `letter_navy.typ` has no shaded block; Banded does, and
+    //    Navy silently inherited it.
+    assert!(
+        banded.contains("<w:shd"),
+        "precondition: Banded is expected to carry the shaded band"
+    );
+    assert!(
+        !navy.contains("<w:shd"),
+        "Navy must not render Banded's shaded header band"
+    );
+
+    // 2. Centred letterhead. Banded/Refined never centre anything in the header.
+    assert!(
+        navy.contains(r#"<w:jc w:val="center" />"#) || navy.contains(r#"w:val="center""#),
+        "Navy's letterhead must be centred, mirroring letter_navy.typ"
+    );
+
+    // 3. Date and recipient stay REGULAR weight — `letter_navy.typ`'s
+    //    emit-date-block / emit-recipient-block carry no `weight: "bold"`,
+    //    unlike Banded's. Bold-run count is the observable proxy.
+    let bold_runs = |xml: &str| xml.matches("<w:b />").count();
+    assert!(
+        bold_runs(&navy) < bold_runs(&banded),
+        "Navy bolds fewer runs than Banded (it does not bold date/recipient):          navy={} banded={}",
+        bold_runs(&navy),
+        bold_runs(&banded)
+    );
+}
+
 /// A cover letter that opens directly at the salutation (no letterhead name/
 /// contact lines) must keep its "Dear …" line and render the body normally.
 ///
