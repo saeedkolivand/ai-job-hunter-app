@@ -520,6 +520,17 @@ pub fn run() {
                 // bridged to `log` by the `tracing` crate's `log` feature) in the
                 // terminal/logs.
                 .level_for("ajh_tauri::cover_letter::research", log::LevelFilter::Info)
+                // Renderer `console.*` forwarded by `src/log-bridge.ts`. The
+                // plugin's `log` command targets these records at
+                // `tauri_plugin_log::WEBVIEW_TARGET` ("webview"), which is NOT a
+                // Rust module path — without this entry the global `Warn` above
+                // drops every forwarded `console.info`, i.e. exactly the
+                // "where did the generation get to" breadcrumbs the bridge
+                // exists for. The bridge sends no `location` on purpose so the
+                // target stays bare `webview`: fern's `level_for` prefix match
+                // only walks `::` boundaries, so the `webview:{location}` form
+                // would match nothing here. Keep the two in lockstep.
+                .level_for(tauri_plugin_log::WEBVIEW_TARGET, log::LevelFilter::Info)
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())

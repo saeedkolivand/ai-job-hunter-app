@@ -1,8 +1,8 @@
 /**
  * Unit tests for log-bridge.ts.
  *
- * `@tauri-apps/plugin-log`'s `info`/`warn`/`error` are mocked so we can assert
- * what the bridge forwards without a real Tauri IPC bridge. Each test restores
+ * `@tauri-apps/api/core`'s `invoke` is mocked so we can assert exactly what the
+ * bridge sends over IPC without a real Tauri bridge. Each test restores
  * `console.warn`/`console.error` afterward — `installConsoleLogBridge` mutates
  * the global `console` object, so a leaked wrapper would bleed into later tests
  * in this file. `console.info` is exercised by the bridge too (it wraps all
@@ -12,14 +12,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const logInfo = vi.fn();
-const logWarn = vi.fn();
-const logError = vi.fn();
+const invoke = vi.fn();
 
-vi.mock('@tauri-apps/plugin-log', () => ({
-  info: (...args: unknown[]) => logInfo(...args),
-  warn: (...args: unknown[]) => logWarn(...args),
-  error: (...args: unknown[]) => logError(...args),
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => invoke(...args),
 }));
 
 import { installConsoleLogBridge } from './log-bridge';
@@ -28,9 +24,7 @@ describe('installConsoleLogBridge', () => {
   const original = { warn: console.warn, error: console.error };
 
   beforeEach(() => {
-    logInfo.mockReset().mockResolvedValue(undefined);
-    logWarn.mockReset().mockResolvedValue(undefined);
-    logError.mockReset().mockResolvedValue(undefined);
+    invoke.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -50,14 +44,46 @@ describe('installConsoleLogBridge', () => {
     console.warn = vi.fn();
     installConsoleLogBridge();
     console.warn('low disk space', { count: 3 });
-    expect(logWarn).toHaveBeenCalledWith('low disk space {"count":3}');
+    expect(invoke).toHaveBeenCalledWith('plugin:log|log', {
+      level: 4,
+      message: 'low disk space {"count":3}',
+    });
+  });
+
+  it('sends NO location, so the Rust record target stays bare `webview`', () => {
+    // The whole reason this bridge invokes the command directly instead of
+    // using the plugin's `warn()` wrapper: the Rust side builds the target as
+    // `webview:{location}` when a location is present, and fern's `level_for`
+    // prefix match only walks `::` boundaries — so a single-colon target
+    // matches no entry and falls back to the global `Warn`, dropping every
+    // forwarded `console.info`. `lib.rs` registers `level_for("webview", Info)`,
+    // which only matches when the target is exactly `webview`.
+    console.warn = vi.fn();
+    installConsoleLogBridge();
+    console.warn('anything');
+    const payload = invoke.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('location');
+    expect(Object.keys(payload).sort()).toEqual(['level', 'message']);
+  });
+
+  it('maps each console level to the plugin LogLevel discriminant', () => {
+    console.warn = vi.fn();
+    console.error = vi.fn();
+    installConsoleLogBridge();
+    console.warn('w');
+    console.error('e');
+    expect(invoke).toHaveBeenNthCalledWith(1, 'plugin:log|log', { level: 4, message: 'w' });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'plugin:log|log', { level: 5, message: 'e' });
   });
 
   it('joins multiple args the way existing call sites use them', () => {
     console.error = vi.fn();
     installConsoleLogBridge();
     console.error('DOCX export failed:', new Error('Save dialog was cancelled'));
-    expect(logError).toHaveBeenCalledWith('DOCX export failed: Error: Save dialog was cancelled');
+    expect(invoke).toHaveBeenCalledWith('plugin:log|log', {
+      level: 5,
+      message: 'DOCX export failed: Error: Save dialog was cancelled',
+    });
   });
 
   it('falls back to String() for a circular object instead of throwing', () => {
@@ -66,11 +92,14 @@ describe('installConsoleLogBridge', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expect(() => console.warn('circular', circular)).not.toThrow();
-    expect(logWarn).toHaveBeenCalledWith(expect.stringContaining('circular'));
+    expect(invoke).toHaveBeenCalledWith(
+      'plugin:log|log',
+      expect.objectContaining({ message: expect.stringContaining('circular') })
+    );
   });
 
   it('swallows a forwarding failure instead of raising an unhandled rejection', async () => {
-    logError.mockRejectedValueOnce(new Error('ipc not ready'));
+    invoke.mockRejectedValueOnce(new Error('ipc not ready'));
     console.error = vi.fn();
     installConsoleLogBridge();
     expect(() => console.error('boom')).not.toThrow();
