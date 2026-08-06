@@ -43,15 +43,16 @@ pub struct StreamPiece {
     /// at completion — never estimated, never fabricated when absent.
     pub usage: Option<Usage>,
     /// The provider's own end-of-turn reason, when this piece happens to carry
-    /// it (OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk — see
-    /// `openai::parse_openai_finish_reason`). `None` before one has been
-    /// reported, and always `None` for Anthropic/Gemini/local Ollama — NOT
-    /// because those have no streamed equivalent (they do: Anthropic's
-    /// `message_delta.stop_reason`, Gemini's `candidates[].finishReason`,
-    /// Ollama's `done_reason`) but because their frame parsers do not map it
-    /// yet. Mapping any of them is additive: parse the field into
-    /// [`StopReason`] and the length diagnosis below starts working there too.
-    /// Mirrors `usage`'s "latest non-`None` wins" handling.
+    /// it: OpenAI/Ollama Cloud's `finish_reason` on a streamed chunk (see
+    /// `openai::parse_openai_finish_reason`) and local Ollama's `done_reason` on
+    /// its final object (see `ollama::ollama_done_reason`). `None` before one has
+    /// been reported, and always `None` for Anthropic/Gemini — NOT because those
+    /// have no streamed equivalent (they do: Anthropic's
+    /// `message_delta.stop_reason`, Gemini's `candidates[].finishReason`) but
+    /// because their frame parsers do not map it yet. Mapping either is
+    /// additive: parse the field into [`StopReason`] and the length diagnosis
+    /// below starts working there too. Mirrors `usage`'s "latest non-`None`
+    /// wins" handling.
     /// What this exists for: telling a `finish_reason: length` empty answer
     /// (the model ran out of budget mid-reasoning, never reached its final
     /// channel) apart from a provider that just silently returned nothing —
@@ -153,20 +154,42 @@ pub(super) const EMPTY_ANSWER_MESSAGE: &str = "The model produced no answer cont
 /// pin down for a real report (Ollama Cloud `gpt-oss:120b`).
 /// Deliberately does NOT point at a Settings control: the only max-output-tokens
 /// field in the UI is `LocalModelLimits`, rendered solely for the LOCAL `ollama`
-/// provider, and local Ollama is the one provider that never reaches this
-/// branch (no `finish_reason` in its stream). Sending an OpenAI/Ollama Cloud
-/// user to a field they cannot see is worse than no advice.
+/// provider — so for every OTHER provider that reaches this branch there is
+/// nothing to adjust, and sending them to a field they cannot see is worse than
+/// no advice. Local Ollama gets [`EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE`] instead.
 pub(super) const EMPTY_ANSWER_LENGTH_MESSAGE: &str = "The model ran out of output budget \
     before producing any answer text (finish_reason: length) — it was most likely still \
     reasoning when it hit the limit. Try again, or pick a model with a larger output budget.";
 
-/// Pick the right empty-completion message for `stop_reason` — see the two
+/// Same case as [`EMPTY_ANSWER_LENGTH_MESSAGE`], but for LOCAL Ollama, which is
+/// the one provider whose output budget the user can actually raise in-app:
+/// `LocalModelLimits` ("Generation limits" → "Max output tokens") renders under
+/// the Ollama card in Settings → AI.
+///
+/// This message only became reachable when `ollama::parse_ollama_frames` started
+/// mapping `done_reason` onto the streamed sentinel. Before that local Ollama
+/// reported no stop reason at all and always fell through to
+/// [`EMPTY_ANSWER_MESSAGE`] — which is why the constant above was originally
+/// written with no Settings pointer. If a future change makes another provider's
+/// cap adjustable in-app, it needs its own arm here rather than a reworded shared
+/// string.
+pub(super) const EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE: &str = "The model ran out of output budget \
+    before producing any answer text — it was most likely still reasoning when it hit the \
+    limit. Raise \"Max output tokens\" under Generation limits in Settings → AI, or try again.";
+
+/// Pick the right empty-completion message for `stop_reason` — see the three
 /// constants' docs for what each one means.
-pub(super) fn empty_answer_message(stop_reason: Option<StopReason>) -> &'static str {
-    if stop_reason == Some(StopReason::Length) {
-        EMPTY_ANSWER_LENGTH_MESSAGE
-    } else {
-        EMPTY_ANSWER_MESSAGE
+///
+/// `provider` is needed because the remedy differs: only local Ollama exposes an
+/// adjustable output cap in the UI.
+pub(super) fn empty_answer_message(
+    stop_reason: Option<StopReason>,
+    provider: ProviderId,
+) -> &'static str {
+    match (stop_reason, provider) {
+        (Some(StopReason::Length), ProviderId::Ollama) => EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE,
+        (Some(StopReason::Length), _) => EMPTY_ANSWER_LENGTH_MESSAGE,
+        _ => EMPTY_ANSWER_MESSAGE,
     }
 }
 
@@ -245,7 +268,7 @@ fn finish(
     );
 
     if is_empty {
-        let message = empty_answer_message(stop_reason);
+        let message = empty_answer_message(stop_reason, provider);
         log::warn!(
             "[ai] stream produced no answer content provider={} model={} thinkingLen={} \
              finishReason={:?}",
@@ -1290,10 +1313,45 @@ mod tests {
     #[test]
     fn empty_answer_message_reports_the_length_truncation_distinctly() {
         assert_eq!(
-            empty_answer_message(Some(StopReason::Length)),
+            empty_answer_message(Some(StopReason::Length), ProviderId::OpenAi),
             EMPTY_ANSWER_LENGTH_MESSAGE,
             "finish_reason: length must get its own, more actionable message"
         );
+    }
+
+    /// Local Ollama is the ONE provider whose output cap the user can raise in
+    /// the app (`LocalModelLimits`, rendered only under the Ollama card), so it
+    /// gets the actionable wording. Every other provider must keep the generic
+    /// one — pointing them at a control they cannot see is worse than no advice,
+    /// which is why the original message dropped the pointer entirely.
+    ///
+    /// This distinction only became reachable when local Ollama started
+    /// reporting `done_reason`; before that it never hit the `Length` arm.
+    #[test]
+    fn empty_answer_message_points_local_ollama_at_the_control_it_actually_has() {
+        assert_eq!(
+            empty_answer_message(Some(StopReason::Length), ProviderId::Ollama),
+            EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE
+        );
+        assert!(
+            EMPTY_ANSWER_LENGTH_LOCAL_MESSAGE.contains("Max output tokens"),
+            "must name the field as the UI labels it"
+        );
+        // The differential — no other provider may be sent to that field.
+        for p in [
+            ProviderId::OllamaCloud,
+            ProviderId::OpenAi,
+            ProviderId::OpenAiCompatible,
+            ProviderId::Anthropic,
+            ProviderId::Gemini,
+        ] {
+            assert_eq!(
+                empty_answer_message(Some(StopReason::Length), p),
+                EMPTY_ANSWER_LENGTH_MESSAGE,
+                "{} has no adjustable output cap in the UI",
+                p.as_str()
+            );
+        }
     }
 
     #[test]
@@ -1302,7 +1360,10 @@ mod tests {
         // signal both fall back to the SAME generic message — only `Length`
         // is distinct, per the report this closes.
         for reason in [None, Some(StopReason::End), Some(StopReason::Other)] {
-            assert_eq!(empty_answer_message(reason), EMPTY_ANSWER_MESSAGE);
+            assert_eq!(
+                empty_answer_message(reason, ProviderId::OpenAi),
+                EMPTY_ANSWER_MESSAGE
+            );
         }
     }
 }

@@ -1143,3 +1143,31 @@ fn parse_model_list_errors_when_data_field_is_missing() {
         Err(AppError::Provider(_))
     ));
 }
+
+/// Regression: `text-embedding-3-small` is an OPENAI model id, and every
+/// OpenAI-compatible client is built on this one — Ollama Cloud delegates this
+/// method straight through, and `OpenAiCompatible` covers LM Studio / vLLM /
+/// OpenRouter. Returning it for those posted an OpenAI model to a gateway that
+/// has never heard of it, so embeddings failed with a model-not-found that read
+/// as "embeddings are broken" instead of "pick an embedding model".
+#[test]
+fn default_embedding_model_is_offered_only_for_native_openai() {
+    assert_eq!(
+        OpenAiClient::new(ProviderId::OpenAi, None).default_embedding_model(),
+        Some("text-embedding-3-small")
+    );
+    assert_eq!(
+        OpenAiClient::new(
+            ProviderId::OpenAiCompatible,
+            Some("http://localhost:1234/v1".into())
+        )
+        .default_embedding_model(),
+        None,
+        "an openai-compatible gateway serves its own catalogue — never presume an OpenAI model id"
+    );
+    assert_eq!(
+        OpenAiClient::new(ProviderId::OllamaCloud, None).default_embedding_model(),
+        None,
+        "ollama-cloud delegates this method, so the gate has to hold at the inner client"
+    );
+}

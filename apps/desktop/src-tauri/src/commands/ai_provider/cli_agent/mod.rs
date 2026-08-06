@@ -954,7 +954,7 @@ fn emit_done(
             "[ai] cli-agent stream produced no answer content provider={provider} model={model}"
         );
         return Err(AppError::Provider(
-            super::stream::empty_answer_message(None).to_string(),
+            super::stream::EMPTY_ANSWER_MESSAGE.to_string(),
         ));
     }
     emit_event(
@@ -1078,8 +1078,7 @@ mod tests {
     /// `run_stream`'s earlier `!emitted_done && !success` guard entirely.
     #[test]
     fn a_nonzero_exit_after_done_prefers_the_stderr_diagnosis() {
-        let empty =
-            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
         let err = terminal_error(
             empty,
             false,
@@ -1099,8 +1098,7 @@ mod tests {
     /// rather than claim the model simply returned nothing.
     #[test]
     fn a_nonzero_exit_with_opaque_stderr_still_beats_the_empty_answer_message() {
-        let empty =
-            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
         let err = terminal_error(empty, false, "codex", Some(3), "segfault at 0x0");
         let msg = format!("{err}");
         assert!(
@@ -1117,8 +1115,7 @@ mod tests {
     /// diagnosis to prefer, so the empty-answer message must survive untouched.
     #[test]
     fn a_clean_exit_keeps_the_empty_answer_message() {
-        let empty =
-            AppError::Provider(super::super::stream::empty_answer_message(None).to_string());
+        let empty = AppError::Provider(super::super::stream::EMPTY_ANSWER_MESSAGE.to_string());
         let err = terminal_error(empty, true, "codex", Some(0), "some harmless warning");
         assert!(
             format!("{err}").contains("no answer content"),
