@@ -141,7 +141,22 @@ export function ProviderRow({
               <Button
                 variant="glass"
                 disabled={isTesting}
-                onClick={() => void onTestKey()}
+                onClick={(e) => {
+                  // The row is a `role="button"` that expands on click, so
+                  // without this a "test key" press ALSO toggles the row —
+                  // which is the behaviour the old nested-<button> markup had
+                  // and that unnesting alone does NOT fix: the click still
+                  // bubbles. Same guard `ApplicationRow` uses for its note chip.
+                  e.stopPropagation();
+                  void onTestKey();
+                }}
+                // Enter/Space on a focused <button> also fires a native click,
+                // so the keydown must be stopped too — otherwise it reaches the
+                // row's own Enter/Space handler, whose `preventDefault()` can
+                // suppress this button's activation entirely.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+                }}
                 className="h-auto px-1.5 py-0.5 text-[10px]"
               >
                 {isTesting ? <Loader2 size={9} className="animate-spin" /> : <RefreshCw size={9} />}
