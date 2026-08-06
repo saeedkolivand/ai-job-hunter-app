@@ -90,11 +90,24 @@ export function ProviderRow({
     <div
       className={`rounded-xl border transition-all ${isExpanded ? 'border-foreground/15 bg-foreground/[0.03]' : 'border-foreground/10 bg-foreground/[0.03]'}`}
     >
-      {/* Row header */}
-      <Button
-        variant="unstyled"
+      {/* Row header.
+          A `<button>` row would nest the "test key" `Button` below inside it —
+          invalid DOM, and the inner click also fires this row's expand. React
+          reports it as "<button> cannot contain a nested <button>"; it showed up
+          in the log file once the renderer console bridge landed. Follows the
+          repo's `role="button"` row pattern (see `NotificationBell`), which
+          keeps keyboard activation without the nesting. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onToggleExpand}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggleExpand();
+          }
+        }}
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left"
       >
         <Bot size={15} className={connected ? meta.color : 'text-foreground/25'} />
         <div className="min-w-0 flex-1">
@@ -138,7 +151,7 @@ export function ProviderRow({
         ) : (
           <span className="text-[10px] text-foreground/30">Not connected</span>
         )}
-      </Button>
+      </div>
 
       {/* Expanded config */}
       {isExpanded && (

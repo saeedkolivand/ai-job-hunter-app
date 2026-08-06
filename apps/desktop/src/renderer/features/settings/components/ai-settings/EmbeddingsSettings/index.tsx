@@ -263,7 +263,13 @@ export function EmbeddingsSettings() {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
+        {/* `gap-3` + `shrink-0` on the input: `justify-between` alone leaves no
+            space once a description wraps to two lines, and a flex `<input>`
+            without `shrink-0` is COMPRESSED below its `h-4 w-4` — the checkbox
+            then looks like a different control from its neighbour rather than a
+            squashed one. Applied to both rows so a future copy change to either
+            cannot resurrect it. */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-foreground/70">
               {t('settings.embeddings.autoIndex')}
@@ -276,12 +282,12 @@ export function EmbeddingsSettings() {
             type="checkbox"
             checked={autoIndexOnUpload}
             onChange={(e) => setAutoIndexOnUpload(e.target.checked)}
-            className="h-4 w-4 accent-[var(--color-brand)] cursor-pointer"
+            className="h-4 w-4 shrink-0 accent-[var(--color-brand)] cursor-pointer"
             aria-label={t('settings.embeddings.autoIndex')}
           />
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-foreground/70">
               {t('settings.embeddings.semanticScoring')}
@@ -294,7 +300,8 @@ export function EmbeddingsSettings() {
             type="checkbox"
             checked={semanticScoring}
             onChange={(e) => setSemanticScoring(e.target.checked)}
-            className="h-4 w-4 accent-[var(--color-brand)] cursor-pointer"
+            className="h-4 w-4 shrink-0 accent-[var(--color-brand)] cursor-pointer"
+            aria-label={t('settings.embeddings.semanticScoring')}
           />
         </div>
       </div>
