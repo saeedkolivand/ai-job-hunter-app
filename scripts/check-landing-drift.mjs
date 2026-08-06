@@ -12,7 +12,13 @@
 //   3. No reference to the removed auto-apply registry (APPLIERS / &dyn Applier).
 //   4. Forbidden-term denylist for the removed engine (anchored; the verb "applies" is fine).
 //   5. Every board-count claim matches the live SCRAPERS registry entry count.
+//   6. No stale "zero/no telemetry" privacy claim (ADR-0020 made it untrue).
 // Secret-scan (ALL landing html/js): no committed GitHub token — the site is public.
+//
+// Check 6 reaches beyond apps/landing/ — to README.md, SECURITY.md and branding/ —
+// because a privacy claim drifts across every surface that repeats it, not just the
+// site. Hosted here rather than in a new script so there is one place to look for
+// "did the copy stop matching the code".
 //
 // Read-only. Run via `pnpm check:landing-drift`; CI runs it in the Lint & Format job.
 
@@ -260,6 +266,95 @@ function checkBoardCount(file, text, expected) {
   }
 }
 
+// ── Check 6: no "zero/no telemetry" claim outside the extension ─────────────
+// ADR-0020 added Sentry crash reporting (desktop, default ON, opt-out), which
+// reversed a published "no telemetry" promise. The PROSE in README.md and
+// SECURITY.md was rewritten at the time, but three SUMMARY claims were missed —
+// README's Privacy bullet, the landing home page's Privacy-first card, and the
+// marketing asset copy — so the repo contradicted itself, in one case ~70 lines
+// apart in the same file, with nothing to catch it. This check is that catch.
+//
+// The claim is still TRUE of the browser extension: it is excluded from Sentry
+// and declares `data_collection_permissions: { required: ['none'] }` to Firefox
+// AMO. `apps/extension/**` is therefore deliberately NOT scanned, and the one
+// extension-scoped file inside a scanned root is allowlisted below.
+//
+// Everywhere else, say "no analytics" or name the crash report — the canonical
+// vocabulary is the "Crash reporting" entry in docs/CONTEXT.md, which reserves
+// "telemetry"/"analytics" for behavioural and usage events (none are collected)
+// and keeps them distinct from failure reports (which are).
+const TELEMETRY_CLAIM_RE = /\b(?:zero|no)[\s-]+telemetry\b/gi;
+
+// Files/dirs carrying user-facing privacy summaries. Roots rather than an
+// explicit file list so a NEW marketing surface is covered on the day it lands —
+// an explicit list only guards the three spots we already know about.
+const TELEMETRY_SCAN_ROOTS = [
+  'README.md',
+  'SECURITY.md',
+  'branding',
+  'apps/landing/src',
+  'apps/landing/public/llms.txt',
+];
+
+const TELEMETRY_TEXT_EXT = /\.(md|mdx|tsx?|mjs|js|txt|html)$/i;
+
+// The regex is deliberately blunt, so it also hits prose that NARRATES the
+// reversal rather than claiming it. Those files are named here individually —
+// never a directory, or the guard starts failing open on whole trees.
+const TELEMETRY_ALLOWED = new Set([
+  // Extension-scoped section of the privacy page — true, and load-bearing for
+  // the AMO declaration above.
+  'apps/landing/src/components/privacy/sections/Extension.tsx',
+  // The tech-radar entry for Sentry, whose rationale reads "reversed a published
+  // no-telemetry promise" — a description of ADR-0020, not a promise. Its own
+  // accuracy is covered by the radar staleness check.
+  'apps/landing/src/data/tech-radar.ts',
+]);
+
+/** Text files under `rel`, recursively; `rel` may itself be a file. */
+function textFilesUnder(rel) {
+  const abs = join(ROOT, rel);
+  if (!existsSync(abs)) return null;
+  const entries = (() => {
+    try {
+      return readdirSync(abs, { withFileTypes: true });
+    } catch {
+      return null; // not a directory → a single file
+    }
+  })();
+  if (entries === null) return TELEMETRY_TEXT_EXT.test(rel) ? [rel] : [];
+  return entries.flatMap((e) => {
+    if (e.name === 'node_modules' || e.name === 'out' || e.name === 'dist') return [];
+    return textFilesUnder(`${rel}/${e.name}`) ?? [];
+  });
+}
+
+function checkTelemetryClaim() {
+  for (const root of TELEMETRY_SCAN_ROOTS) {
+    const files = textFilesUnder(root);
+    if (files === null) {
+      // Fail loud rather than open: a moved root would silently void the scan.
+      fail(
+        'Privacy-claim scan source moved',
+        root,
+        'listed in TELEMETRY_SCAN_ROOTS but no longer exists — update the list'
+      );
+      continue;
+    }
+    for (const file of files) {
+      if (TELEMETRY_ALLOWED.has(file)) continue;
+      for (const [match] of read(file).matchAll(TELEMETRY_CLAIM_RE)) {
+        fail(
+          'Stale no-telemetry claim',
+          file,
+          `claims '${match}' — untrue since ADR-0020 added opt-out crash reporting. ` +
+            `Say "no analytics", or name the crash report (see docs/CONTEXT.md)`
+        );
+      }
+    }
+  }
+}
+
 // ── Secret-scan: no committed GitHub token on the public site ───────────────
 const TOKEN_RE = /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
 
@@ -300,6 +395,8 @@ if (!existsSync(join(ROOT, SCRAPERS_FILE))) {
   }
 }
 
+checkTelemetryClaim();
+
 for (const file of SECRET_SCAN_FILES) {
   if (!existsSync(join(ROOT, file))) {
     fail(
@@ -315,13 +412,14 @@ for (const file of SECRET_SCAN_FILES) {
 
 if (failures.length === 0) {
   console.log(
-    '✓ apps/landing/ diagrams in sync with source (paths, IPC contracts, registries, no secrets)'
+    '✓ landing diagrams in sync with source (paths, IPC contracts, registries, no secrets) ' +
+      'and no stale no-telemetry claim'
   );
   process.exit(0);
 }
 
 // Group the report by check, then file.
-console.error(`✗ apps/landing/ drift detected — ${failures.length} issue(s):\n`);
+console.error(`✗ copy drift detected — ${failures.length} issue(s):\n`);
 const byCheck = new Map();
 for (const f of failures) {
   if (!byCheck.has(f.check)) byCheck.set(f.check, []);
