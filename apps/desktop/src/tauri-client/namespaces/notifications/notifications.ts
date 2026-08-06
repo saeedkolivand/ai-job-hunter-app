@@ -1,8 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { onAction } from '@tauri-apps/plugin-notification';
 
-import { EVENT_CHANNELS, type NotificationToast } from '@ajh/shared';
+import { EVENT_CHANNELS, type NotificationOpen, type NotificationToast } from '@ajh/shared';
 
 import { asyncUnsub } from '../../utils.js';
 
@@ -16,15 +15,12 @@ export const notifications = {
   // Emitted by every mutator command — see `commands::notifications::CHANGED_EVENT`.
   onChanged: (handler: () => void) =>
     asyncUnsub(() => listen(EVENT_CHANNELS.notifications.changed, () => handler())),
-  // OS-banner / tray click "open the inbox" signal — see `notifications_clicked`.
-  onOpenInbox: (handler: () => void) =>
-    asyncUnsub(() => listen(EVENT_CHANNELS.notifications.open, () => handler())),
-  // OS-banner body click (`@tauri-apps/plugin-notification` `onAction`). The
-  // payload is unused — any click opens the inbox. Wire the handler to
-  // `clicked()` (focuses the window + emits `notifications:open`).
-  onOsBannerClick: (handler: () => void) =>
+  // OS-banner / tray click "open the inbox" signal — see `notifications_clicked`
+  // and `show_clickable_banner`. The payload carries the clicked banner's own
+  // route (absent for a tray click).
+  onOpenInbox: (handler: (payload: NotificationOpen) => void) =>
     asyncUnsub(() =>
-      onAction(() => handler()).then((listener) => () => void listener.unregister())
+      listen<NotificationOpen>(EVENT_CHANNELS.notifications.open, (e) => handler(e.payload))
     ),
   // In-app toast for a just-pushed notification (window focused) — see the Rust
   // `push_and_notify` `notifications:toast` emit.

@@ -6,11 +6,15 @@
  *  - renderHookWithClient wraps QueryClient + AppClientProvider.
  *  - Assertions: each hook calls the right client method; mutations invalidate
  *    keys.notifications.all on success; useNotificationEvents subscribes once,
- *    wires all three channels, and unsubscribes on unmount.
+ *    wires both channels, and unsubscribes on unmount.
+ *  - @tanstack/react-router's useRouter is mocked (same as NotificationBell's
+ *    test) so the hook can navigate without a RouterProvider.
  */
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
+
+import type { NotificationOpen } from '@ajh/shared';
 
 import {
   createMockClient,
@@ -30,6 +34,11 @@ import {
   useNotifications,
   useRemoveNotification,
 } from './use-notifications';
+
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useRouter: () => ({ navigate: mockNavigate }),
+}));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -229,26 +238,25 @@ describe('useNotificationEvents', () => {
   beforeEach(async () => {
     const { useUiStore } = await import('@/store/ui-store');
     useUiStore.setState({ notificationsOpen: false });
+    mockNavigate.mockClear();
   });
 
-  it('subscribes to onChanged, onOpenInbox, and onOsBannerClick exactly once on mount', () => {
+  it('subscribes to onChanged and onOpenInbox exactly once on mount', () => {
+    // Deliberately no third (banner) subscription: the OS-banner click is
+    // handled natively in Rust and arrives on `onOpenInbox` carrying a route.
     const offChanged = vi.fn();
     const offOpen = vi.fn();
-    const offBanner = vi.fn();
     const onChanged = vi.fn(() => offChanged);
     const onOpenInbox = vi.fn(() => offOpen);
-    const onOsBannerClick = vi.fn(() => offBanner);
     const client = createMockClient({
       'notifications.onChanged': onChanged,
       'notifications.onOpenInbox': onOpenInbox,
-      'notifications.onOsBannerClick': onOsBannerClick,
     });
 
     renderHookWithClient(() => useNotificationEvents(), { client });
 
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(onOpenInbox).toHaveBeenCalledTimes(1);
-    expect(onOsBannerClick).toHaveBeenCalledTimes(1);
   });
 
   it('calling the onChanged handler invalidates keys.notifications.all', async () => {
@@ -295,36 +303,84 @@ describe('useNotificationEvents', () => {
     expect(useUiStore.getState().notificationsOpen).toBe(true);
   });
 
-  it('calling the onOsBannerClick handler calls api.notifications.clicked()', async () => {
-    let bannerHandler: (() => void) | null = null;
-    const onOsBannerClick = vi.fn((cb: () => void) => {
-      bannerHandler = cb;
+  it('an OS-banner payload carrying a route navigates instead of opening the inbox', async () => {
+    // The reported ask: clicking "Autopilot X found 3 jobs" must land on THAT
+    // autopilot. The backend puts the clicked notification's own route on the
+    // payload; a routed open must NOT also pop the inbox drawer, which would be
+    // a second, competing destination.
+    const { useUiStore } = await import('@/store/ui-store');
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
+      openHandler = cb;
       return () => {};
     });
-    const clicked = vi.fn().mockResolvedValue(undefined);
-    const client = createMockClient({
-      'notifications.onOsBannerClick': onOsBannerClick,
-      'notifications.clicked': clicked,
-    });
+    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
 
     renderHookWithClient(() => useNotificationEvents(), { client });
 
     await act(async () => {
-      bannerHandler?.();
+      openHandler?.({ route: { to: '/autopilot', search: { focus: 'ap-42' } } });
       await Promise.resolve();
     });
 
-    expect(clicked).toHaveBeenCalledTimes(1);
+    // Straight to the exact autopilot, search params preserved.
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/autopilot',
+      search: { focus: 'ap-42' },
+    });
+    // And NOT also popping the inbox drawer — that would be a second,
+    // competing destination for one click.
+    expect(useUiStore.getState().notificationsOpen).toBe(false);
   });
 
-  it('unsubscribes all three listeners on unmount', () => {
+  it('an unknown backend route is survived, not thrown on', async () => {
+    // `resolveNotificationRoute` maps it to the '/' fallback rather than handing
+    // TanStack Router a path it does not know.
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
+      openHandler = cb;
+      return () => {};
+    });
+    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
+
+    renderHookWithClient(() => useNotificationEvents(), { client });
+
+    await act(async () => {
+      openHandler?.({ route: { to: '/does-not-exist' } });
+      await Promise.resolve();
+    });
+
+    // Falls back to '/', and drops the search: those params were meant for a
+    // route we are no longer going to.
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/', search: undefined });
+  });
+
+  it('a payload with no route opens the inbox (the tray-click case)', async () => {
+    const { useUiStore } = await import('@/store/ui-store');
+    let openHandler: ((p: NotificationOpen) => void) | null = null;
+    const onOpenInbox = vi.fn((cb: (p: NotificationOpen) => void) => {
+      openHandler = cb;
+      return () => {};
+    });
+    const client = createMockClient({ 'notifications.onOpenInbox': onOpenInbox });
+
+    renderHookWithClient(() => useNotificationEvents(), { client });
+
+    await act(async () => {
+      openHandler?.({});
+      await Promise.resolve();
+    });
+
+    expect(useUiStore.getState().notificationsOpen).toBe(true);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribes both listeners on unmount', () => {
     const offChanged = vi.fn();
     const offOpen = vi.fn();
-    const offBanner = vi.fn();
     const client = createMockClient({
       'notifications.onChanged': vi.fn(() => offChanged),
       'notifications.onOpenInbox': vi.fn(() => offOpen),
-      'notifications.onOsBannerClick': vi.fn(() => offBanner),
     });
 
     const { unmount } = renderHookWithClient(() => useNotificationEvents(), { client });
@@ -332,17 +388,14 @@ describe('useNotificationEvents', () => {
 
     expect(offChanged).toHaveBeenCalledTimes(1);
     expect(offOpen).toHaveBeenCalledTimes(1);
-    expect(offBanner).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT re-subscribe on re-render (subscribe-once discipline)', () => {
     const onChanged = vi.fn(() => () => {});
     const onOpenInbox = vi.fn(() => () => {});
-    const onOsBannerClick = vi.fn(() => () => {});
     const client = createMockClient({
       'notifications.onChanged': onChanged,
       'notifications.onOpenInbox': onOpenInbox,
-      'notifications.onOsBannerClick': onOsBannerClick,
     });
 
     const { rerender } = renderHookWithClient(() => useNotificationEvents(), { client });
@@ -350,10 +403,11 @@ describe('useNotificationEvents', () => {
     rerender();
     rerender();
 
-    // Effect deps are [api, qc] — both stable; listeners must register exactly once.
+    // Effect deps are [api, qc] — both stable; listeners must register exactly
+    // once. The router added for route navigation sits behind a ref for the same
+    // reason, so it did not reintroduce a re-subscribe.
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(onOpenInbox).toHaveBeenCalledTimes(1);
-    expect(onOsBannerClick).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -379,15 +433,12 @@ describe('useNotificationEvents', () => {
   it('no listener leak under React.StrictMode (subscribe×N == unsubscribe×(N-1) while mounted; ==N after unmount)', () => {
     const unsubChanged = vi.fn();
     const unsubOpen = vi.fn();
-    const unsubBanner = vi.fn();
     const onChanged = vi.fn(() => unsubChanged);
     const onOpenInbox = vi.fn(() => unsubOpen);
-    const onOsBannerClick = vi.fn(() => unsubBanner);
 
     const client = createMockClient({
       'notifications.onChanged': onChanged,
       'notifications.onOpenInbox': onOpenInbox,
-      'notifications.onOsBannerClick': onOsBannerClick,
     });
     const queryClient = makeQueryClient();
 
@@ -411,16 +462,13 @@ describe('useNotificationEvents', () => {
     // Net-active = subscribe calls - unsubscribe calls must equal 1.
     const netChanged = onChanged.mock.calls.length - unsubChanged.mock.calls.length;
     const netOpen = onOpenInbox.mock.calls.length - unsubOpen.mock.calls.length;
-    const netBanner = onOsBannerClick.mock.calls.length - unsubBanner.mock.calls.length;
     expect(netChanged).toBe(1);
     expect(netOpen).toBe(1);
-    expect(netBanner).toBe(1);
 
     unmount();
 
     // After unmount: every listener is unsubscribed — subscribe count == unsubscribe count.
     expect(onChanged.mock.calls.length).toBe(unsubChanged.mock.calls.length);
     expect(onOpenInbox.mock.calls.length).toBe(unsubOpen.mock.calls.length);
-    expect(onOsBannerClick.mock.calls.length).toBe(unsubBanner.mock.calls.length);
   });
 });

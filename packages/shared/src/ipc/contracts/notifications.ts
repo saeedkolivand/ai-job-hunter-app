@@ -1,4 +1,4 @@
-import type { AppNotification, NotificationToast } from '../../types/index.js';
+import type { AppNotification, NotificationOpen, NotificationToast } from '../../types/index.js';
 
 /**
  * Notification Center capability (Phase 2). The read/mutate seam over the
@@ -17,14 +17,13 @@ export interface NotificationsContract {
   clicked(): Promise<void>;
   /** Subscribe to list changes (push / read / remove / clear). Sync unsubscribe. */
   onChanged(handler: () => void): () => void;
-  /** Subscribe to the "open inbox" signal (OS-banner / tray click). Sync unsubscribe. */
-  onOpenInbox(handler: () => void): () => void;
   /**
-   * Subscribe to OS-banner body clicks (the `@tauri-apps/plugin-notification`
-   * `onAction`). Any click opens the inbox — wire it to `clicked()` so it focuses
-   * the window and emits `notifications:open`. Sync unsubscribe.
+   * Subscribe to the "open inbox" signal. Emitted by a tray click (no `route`)
+   * and by an OS-banner click, which carries the clicked notification's own
+   * `route` so the renderer can navigate straight to it rather than only
+   * opening the inbox. Sync unsubscribe.
    */
-  onOsBannerClick(handler: () => void): () => void;
+  onOpenInbox(handler: (payload: NotificationOpen) => void): () => void;
   /**
    * Subscribe to in-app toasts: a notification was just pushed while the window
    * was focused, so the renderer shows a transient toast (with a "View" that

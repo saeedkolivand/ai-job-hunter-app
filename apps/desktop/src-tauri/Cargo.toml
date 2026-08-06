@@ -274,6 +274,13 @@ native-tls = "0.2"
 mail-parser = "0.11.5"
 
 [target.'cfg(windows)'.dependencies]
+# Windows toast with a click callback. `tauri-plugin-notification`'s desktop
+# `show()` is fire-and-forget (notify-rust) and its `onAction`/`register_listener`
+# command is MOBILE-ONLY, so an OS-banner click could never reach the app — see
+# `commands::notifications::show_os_notification`. Already in the tree
+# transitively (notify-rust -> here); pinned to the locked 0.7.2 so no duplicate
+# version / lockfile churn.
+tauri-winrt-notification = "0.7.2"
 wmi = "0.18"
 windows-native-keyring-store = "1"
 # DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
@@ -299,6 +306,11 @@ wait-timeout = "0.2"
 # password comes from macOS Keychain / Linux libsecret). The `hmac` feature
 # gates the bare `pbkdf2_hmac` fn; default features (password-hash) stay off.
 [target."cfg(unix)".dependencies]
+# Same OS-banner-click reason as `tauri-winrt-notification` above, for the
+# macOS/Linux half: we need the `NotificationHandle` that
+# `tauri-plugin-notification` never hands back. Version matches the plugin's own
+# (`notify-rust = "4.11"`, locked to 4.18) so the two resolve to ONE copy.
+notify-rust = "4.18"
 aes = "0.9"
 # `alloc` + `block-padding` expose `cipher` 0.5's Vec-returning
 # `decrypt_padded_vec` (used by the Chromium cookie CBC decrypt in

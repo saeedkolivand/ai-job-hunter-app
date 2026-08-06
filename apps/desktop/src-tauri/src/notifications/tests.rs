@@ -195,6 +195,33 @@ fn route_round_trips_with_camel_case_search() {
     assert_eq!(reopened.list()[0].route, Some(route));
 }
 
+/// The `notifications:open` payload is what carries "which notification did the
+/// user click" from an OS banner to the renderer, so its wire shape is a
+/// contract with `packages/shared`'s `NotificationOpen`. A routed open must
+/// serialize `route.to` (+ `search`) verbatim; a tray click must omit `route`
+/// entirely rather than send `null`, so the renderer's `payload?.route` check
+/// distinguishes "go here" from "just open the inbox".
+#[test]
+fn notification_open_payload_matches_the_renderer_contract() {
+    use crate::notifications::NotificationOpen;
+
+    let mut search = serde_json::Map::new();
+    search.insert("focus".to_string(), serde_json::json!("ap-42"));
+    let routed = NotificationOpen {
+        route: Some(NotificationRoute {
+            to: "/autopilot".to_string(),
+            search: Some(search),
+        }),
+    };
+    assert_eq!(
+        serde_json::to_value(&routed).unwrap(),
+        serde_json::json!({ "route": { "to": "/autopilot", "search": { "focus": "ap-42" } } })
+    );
+
+    let bare = NotificationOpen { route: None };
+    assert_eq!(serde_json::to_value(&bare).unwrap(), serde_json::json!({}));
+}
+
 #[test]
 fn record_serializes_camel_case_created_at() {
     let n = AppNotification {

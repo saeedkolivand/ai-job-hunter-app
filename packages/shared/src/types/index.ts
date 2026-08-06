@@ -468,6 +468,17 @@ export interface NotificationRoute {
 }
 
 /**
+ * Payload of `notifications:open`. Mirrors the Rust `NotificationOpen`.
+ *
+ * `route` is present only when the signal came from clicking a specific OS
+ * banner — then the renderer navigates THERE instead of just opening the inbox.
+ * A tray click (or any generic "show me my notifications") carries no route.
+ */
+export interface NotificationOpen {
+  route?: NotificationRoute;
+}
+
+/**
  * A persisted notification record. Hand-written to EXACTLY match the Rust
  * `AppNotification` camelCase serialization (`createdAt`, optional `route`).
  * `kind` is an OPEN string (e.g. `autopilot.new_jobs`, `import.result`) so new
