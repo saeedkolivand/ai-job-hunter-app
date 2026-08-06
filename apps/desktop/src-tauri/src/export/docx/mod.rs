@@ -274,9 +274,18 @@ fn generate_cover_letter_docx_layout(
 ) -> Result<Docx> {
     debug_assert!(
         !matches!(layout, LetterLayout::Classic),
-        "generate_cover_letter_docx_layout is only for Refined/Banded"
+        "generate_cover_letter_docx_layout serves Refined, Banded and Navy"
     );
     let is_refined = matches!(layout, LetterLayout::Refined);
+    // Navy and Banded share the uppercase name and the bolded date/recipient
+    // treatment, so most branches below can stay on `!is_refined`. They differ
+    // in the two places that would otherwise put Banded's DECORATION on a Navy
+    // letter: the shaded header band (Navy has none — it has a rule) and the
+    // short rule footer (Navy's rule sits under the letterhead instead).
+    // Without this split a Navy letter renders as Navy in PDF and as Banded in
+    // DOCX, which is a visible inconsistency in the same export.
+    let is_banded = matches!(layout, LetterLayout::Banded);
+    let is_navy = matches!(layout, LetterLayout::Navy);
 
     let mut docx = Docx::new();
 
@@ -373,8 +382,15 @@ fn generate_cover_letter_docx_layout(
                         .fonts(docx_run_fonts(name_family)),
                 )
                 .line_spacing(LineSpacing::new().after(60));
-            if !is_refined {
+            if is_navy {
+                // Centred letterhead over a rule — the parser-safe echo of
+                // `letter_navy.typ`'s centred header and 0.9pt navy line.
+                name_para = name_para.align(AlignmentType::Center);
+                name_para.property = name_para.property.set_borders(bottom_rule(&rule_hex, 8));
+            }
+            if is_banded {
                 // Banded band approximation — see module-level doc comment.
+                // Navy is deliberately excluded: its design has no band.
                 name_para.property = name_para.property.shading(
                     Shading::new()
                         .shd_type(ShdType::Clear)
@@ -593,8 +609,9 @@ fn generate_cover_letter_docx_layout(
         docx = docx.add_paragraph(para);
     }
 
-    if !is_refined {
-        // Banded's short rule footer — see approximation note above.
+    if is_banded {
+        // Banded's short rule footer — see approximation note above. Navy's
+        // rule is under the letterhead, not at the foot, so it is excluded.
         let mut footer = Paragraph::new()
             .add_run(
                 Run::new()

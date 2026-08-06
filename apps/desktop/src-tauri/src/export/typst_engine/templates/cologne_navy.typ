@@ -80,6 +80,11 @@
 
 #let all-caps = if "section_all_caps" in st { st.section_all_caps } else { true }
 
+// Read from the registry rather than hardcoded, so `Template::cologne_navy`'s
+// `heading_tracking` is the single source of truth — a hardcode here made that
+// field dead AND wrong (it said 0.18 while this rendered 0.10).
+#let heading-tracking = if "heading_tracking" in st { st.heading_tracking } else { 0.10 }
+
 #let name-pt    = if "name_pt"    in st { st.name_pt * 1pt } else { 20.8pt }
 #let section-pt = if "section_pt" in st { st.section_pt * 1pt } else { 9.5pt }
 #let body-pt    = if "body_pt"    in st { st.body_pt * 1pt } else { 10pt }
@@ -102,7 +107,12 @@
   height: page-h * 1mm,
   margin: (top: 13mm, bottom: 12mm, x: 14mm),
 )
-#set text(font: font-body, size: body-pt, fill: c-body, lang: doc-lang)
+#set text(
+  font: (font-body, "Carlito", "Inter", "Noto Sans"),
+  size: body-pt,
+  fill: c-body,
+  lang: doc-lang,
+)
 #set par(leading: lead, justify: false)
 
 // ── Rich-text helper ──────────────────────────────────────────────────────────
@@ -136,7 +146,7 @@
 
 #align(center)[
   #text(
-    font: font-name,
+    font: (font-name, "Carlito", "Inter"),
     size: name-pt,
     weight: "bold",
     fill: c-name,
@@ -165,11 +175,11 @@
 #let render-heading(title) = {
   block(above: sp-section-above, below: sp-after-rule, {
     text(
-      font: font-head,
+      font: (font-head, "Carlito", "Inter"),
       size: section-pt,
       weight: "bold",
       fill: c-section,
-      tracking: 0.10em,
+      tracking: heading-tracking * 1em,
       if all-caps { upper(title) } else { title },
     )
     v(sp-rule-below, weak: true)

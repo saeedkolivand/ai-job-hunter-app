@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TEST_IDS } from '@ajh/test-ids';
@@ -402,6 +402,16 @@ describe('StepTemplate', () => {
     renderStep();
     expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(8);
     expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(5);
+  });
+
+  it('renders the cologne-navy card with an ATS badge', () => {
+    // The aggregate count above would still pass if some OTHER card supplied
+    // the eighth ATS badge and cologne-navy were missing entirely — so name it.
+    renderStep();
+    const card = screen.getByText('Cologne Navy').closest('[data-testid], button, div');
+    expect(card).not.toBeNull();
+    expect(screen.getByText('Cologne Navy')).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText('aiGenerate.tier.atsBadge')).toBeInTheDocument();
   });
 
   // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────

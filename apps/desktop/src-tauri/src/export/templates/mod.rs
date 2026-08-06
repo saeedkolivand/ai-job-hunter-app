@@ -669,7 +669,11 @@ impl Template {
             job_title_italic: false,
             section_small_caps: false,
             rule_thickness: 0.9, // the design's 0.9pt navy rule
-            heading_tracking: 0.18,
+            // 0.10, NOT the brief's 0.18: wider tracking makes the PDF text
+            // extract letter-by-letter ("S U M M A R Y") and an ATS cannot read
+            // it. See the DEVIATION note in `cologne_navy.typ`. The template
+            // reads this field, so the two cannot drift.
+            heading_tracking: 0.10,
             link_underline: false,
             two_column: None,
             cover_letter: CoverLetterLayout {

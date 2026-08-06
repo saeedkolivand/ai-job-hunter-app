@@ -117,6 +117,7 @@ fn no_cover_letter_font_size_exceeds_sane_ceiling() {
             LetterLayout::Classic,
             LetterLayout::Refined,
             LetterLayout::Banded,
+            LetterLayout::Navy,
         ] {
             let request = ExportRequest {
                 text: REFINED_US_TEXT.to_string(),
@@ -480,14 +481,25 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
         generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Refined)).expect("refined");
     let banded =
         generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Banded)).expect("banded");
+    let navy = generate_docx(&letter_request(REFINED_US_TEXT, LetterLayout::Navy)).expect("navy");
 
-    assert!(!classic.is_empty() && !refined.is_empty() && !banded.is_empty());
+    assert!(!classic.is_empty() && !refined.is_empty() && !banded.is_empty() && !navy.is_empty());
     assert_ne!(
         classic, refined,
         "Classic and Refined DOCX bytes must differ"
     );
     assert_ne!(classic, banded, "Classic and Banded DOCX bytes must differ");
     assert_ne!(refined, banded, "Refined and Banded DOCX bytes must differ");
+    // Navy vs Banded is the load-bearing pair: `generate_cover_letter_docx_layout`
+    // branched on a single `is_refined` boolean, so Navy silently inherited
+    // Banded's shaded header band and rule footer — a letter that rendered as
+    // Navy in PDF and as Banded in DOCX from the same export.
+    assert_ne!(
+        navy, banded,
+        "Navy must not render as Banded in DOCX — it has no header band"
+    );
+    assert_ne!(navy, refined, "Navy and Refined DOCX bytes must differ");
+    assert_ne!(navy, classic, "Navy and Classic DOCX bytes must differ");
 }
 
 /// A cover letter that opens directly at the salutation (no letterhead name/
@@ -497,13 +509,14 @@ fn cover_letter_docx_layouts_produce_distinct_bytes() {
 /// letterhead-less letter had its salutation consumed as the name (replaced with
 /// `meta.candidate_name`) and, because `in_body` is set only in the salutation
 /// arm, the whole body then rendered in the muted addressee style. Covers BOTH
-/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded).
+/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded/Navy).
 #[test]
 fn letterhead_less_letter_keeps_its_salutation_and_body() {
     for layout in [
         LetterLayout::Classic,
         LetterLayout::Refined,
         LetterLayout::Banded,
+        LetterLayout::Navy,
     ] {
         let request = ExportRequest {
             text: "Dear Hiring Manager,\n\nI am writing to apply for the role.\n\nSincerely,\nJane Smith".to_string(),
@@ -541,13 +554,14 @@ fn letterhead_less_letter_keeps_its_salutation_and_body() {
 /// the subject line was consumed as the name (replaced with
 /// `meta.candidate_name`) instead of rendering as a subject-styled line, and
 /// the salutation/body that follow it must still render normally. Covers BOTH
-/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded).
+/// letter renderers — `_classic` (Classic) and `_layout` (Refined/Banded/Navy).
 #[test]
 fn letterhead_less_letter_with_subject_line_keeps_subject_and_body() {
     for layout in [
         LetterLayout::Classic,
         LetterLayout::Refined,
         LetterLayout::Banded,
+        LetterLayout::Navy,
     ] {
         let request = ExportRequest {
             text: "Betreff: Bewerbung als Software Engineer\n\nSehr geehrte Frau Dr. Weber,\n\nmit großem Interesse habe ich Ihre Stellenausschreibung gelesen und bewerbe mich hiermit.\n\nMit freundlichen Grüßen,\nMax Müller".to_string(),
