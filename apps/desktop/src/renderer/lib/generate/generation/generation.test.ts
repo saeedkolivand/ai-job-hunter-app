@@ -832,6 +832,38 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     );
     expect(out).toBe('+49 30 0000000\nSUMMARY\nSenior engineer with great experience.');
   });
+
+  // The exact repro this task closes (round 1): an ALL-CAPS own name at line
+  // 0 passes `isAllCapsSectionHeading`, so `looksLikeHeaderBoundary` used to
+  // read it as a section boundary and unshift the profile's name ABOVE it,
+  // leaving "JORDAN LEE" behind as a fake body section carrying the title and
+  // the model's original contact line — a fully duplicated header. It must
+  // instead be reconciled IN PLACE: same line count, exactly one contact
+  // line.
+  it('reconciles an ALL-CAPS own name at line 0 in place instead of stacking a duplicate header', () => {
+    const text = 'JORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const beforeLineCount = text.split('\n').length;
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out.split('\n')).toHaveLength(beforeLineCount);
+    expect(out.split('\n').filter((l) => l === CONTACT_LINE)).toHaveLength(1);
+  });
+
+  // The other reachable repro (round 2): a leading blank line (PDF
+  // extraction routinely emits one) used to get blindly replaced with the
+  // name, leaving the model's real ALL-CAPS name line sitting untouched one
+  // row down — where the contact scan then also broke, splicing in a SECOND
+  // contact line. The name reconciliation search must find the name at index
+  // 1 (not just index 0) and the real contact line below it must still be
+  // found and replaced normally.
+  it('reconciles an ALL-CAPS name at index 1 after a leading blank line, and still replaces the real contact line below it', () => {
+    const text = '\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const beforeLineCount = text.split('\n').length;
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out.split('\n')).toHaveLength(beforeLineCount);
+    expect(out.split('\n').filter((l) => l === CONTACT_LINE)).toHaveLength(1);
+  });
 });
 
 describe('generateCoverLetter', () => {
