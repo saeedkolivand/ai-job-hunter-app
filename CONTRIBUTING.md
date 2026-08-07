@@ -74,7 +74,8 @@ ai-job-hunter-app/
 │   ├── desktop/                 # Tauri app: Rust core + React renderer
 │   │   ├── src-tauri/           # Rust core (commands, scraping, AI, export, DB, extension bridge)
 │   │   └── src/                 # React UI + tauri-client
-│   └── extension/               # Browser extension (MV3, Chrome + Firefox)
+│   ├── extension/               # Browser extension (MV3, Chrome + Firefox)
+│   └── landing/                 # Next.js 16 static export marketing site
 │
 ├── packages/
 │   ├── shared/                  # Types, Zod schemas, IPC contracts

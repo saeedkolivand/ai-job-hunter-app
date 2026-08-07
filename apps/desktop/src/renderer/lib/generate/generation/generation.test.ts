@@ -832,6 +832,115 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     );
     expect(out).toBe('+49 30 0000000\nSUMMARY\nSenior engineer with great experience.');
   });
+
+  // The exact repro this task closes (round 1): an ALL-CAPS own name at line
+  // 0 passes `isAllCapsSectionHeading`, so `looksLikeHeaderBoundary` used to
+  // read it as a section boundary and unshift the profile's name ABOVE it,
+  // leaving "JORDAN LEE" behind as a fake body section carrying the title and
+  // the model's original contact line — a fully duplicated header. It must
+  // instead be reconciled IN PLACE: same line count, exactly one contact
+  // line.
+  it('reconciles an ALL-CAPS own name at line 0 in place instead of stacking a duplicate header', () => {
+    const text = 'JORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const beforeLineCount = text.split('\n').length;
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out.split('\n')).toHaveLength(beforeLineCount);
+  });
+
+  // The other reachable repro (round 2): a leading blank line (PDF
+  // extraction routinely emits one) used to get blindly replaced with the
+  // name, leaving the model's real ALL-CAPS name line sitting untouched one
+  // row down — where the contact scan then also broke, splicing in a SECOND
+  // contact line. The name reconciliation search must find the name at index
+  // 1 (not just index 0) and the real contact line below it must still be
+  // found and replaced normally.
+  it('reconciles an ALL-CAPS name at index 1 after a leading blank line, and still replaces the real contact line below it', () => {
+    const text = '\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const beforeLineCount = text.split('\n').length;
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+    expect(out.split('\n')).toHaveLength(beforeLineCount);
+  });
+
+  // Sibling-review finding 1 (HIGH): NFKD decomposes an accented character
+  // into base letter + combining mark; the mark is category `Mn`, NOT
+  // `\p{L}`/`\p{N}`, so collapsing it to a SPACE (an earlier version of
+  // `nameKey` did) inserts a spurious word break — "François" keyed to
+  // "franc ois", which never matches "FRANCOIS" (no diacritics at all, the
+  // shape a document extracted without accent support produces). The
+  // combining marks must be stripped outright before the punctuation
+  // collapse, not turned into separators.
+  it('reconciles an accented profile name against the same name written without diacritics (NFKD combining marks must be stripped, not spaced)', () => {
+    const profile = { fullName: 'François Müller', email: 'contact@example.com' };
+    const contactLine = 'Berlin | contact@example.com';
+    const text = 'FRANCOIS MULLER\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, profile, contactLine);
+    expect(out).toBe('François Müller\nBerlin | contact@example.com\n\nSUMMARY\nSome text.');
+  });
+
+  // Sibling-review finding 2 (HIGH): `sanitizeHeaderName` never changes case
+  // — reconciling an ALL-CAPS `fullName` onto the ALL-CAPS document line
+  // below a leading blank leaves that line ALL-CAPS, which re-trips
+  // `looksLikeHeaderBoundary` right where the contact scan starts (i = 1),
+  // breaking the scan before it reaches the real contact line and stacking a
+  // second one via the insert branch instead of replacing the first.
+  it('does not re-trip the contact scan when the reconciled name itself is ALL-CAPS', () => {
+    const profile = { fullName: 'JORDAN LEE', email: 'jordan@profile.example.com' };
+    const text = '\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, profile, CONTACT_LINE);
+    expect(out).toBe('\nJORDAN LEE\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+  });
+
+  // Sibling-review finding 3 (MEDIUM): `headerBlockEnd` returns
+  // `lines.length` when the document has no blank line anywhere, so an
+  // unbounded name search can match the profile's name recurring later in
+  // the BODY (a sign-off line) and reconcile THAT occurrence instead of ever
+  // seeding a name line at the top — strictly worse than the pre-existing
+  // fallback, which always unshifts. `findNameLine` must stop at the first
+  // `looksLikeHeaderBoundary` line (checking the name match FIRST, so an
+  // ALL-CAPS name isn't blocked from matching itself).
+  it('does not reconcile a coincidental body occurrence of the name — falls through to seeding one at the top instead', () => {
+    const text = 'SUMMARY\nExperienced engineer.\nCertifications awarded\nJordan Lee';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      'Jordan Lee\nBerlin | jordan@profile.example.com\nSUMMARY\nExperienced engineer.\nCertifications awarded\nJordan Lee'
+    );
+  });
+
+  // CodeRabbit (round 7): `headerBlockEnd` started its termination scan at a
+  // hardcoded `i = 1`, which coincidentally still worked for exactly ONE
+  // leading blank line (index 1 there IS the real name) but returns 1
+  // immediately — the SECOND blank — for TWO OR MORE, making the name at
+  // index 2 (and everything after it) unreachable to `findNameLine`. The
+  // reconciliation search then finds nothing, falls through to the
+  // unshift/replace fallback, and replaces line 0 (still blank) — leaving
+  // the model's real ALL-CAPS name line sitting untouched below, exactly the
+  // duplicated-header shape this whole file exists to close.
+  it('reconciles the name and the contact line past TWO leading blank lines, not just one', () => {
+    const text = '\n\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('\n\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+  });
+
+  // CodeRabbit (round 8): the never-overwrite protection on the first
+  // content line was hardcoded to index 0, which stopped covering the line
+  // it protects once the header block itself started at `firstContentLine`
+  // instead of index 0 (round 7). With ≥2 leading blanks and no `fullName`
+  // (so `reconciledNameIndex` stays -1), a combined "Jane Doe |
+  // jane@old.example.com" first content line now sits at index ≥ 2 — inside
+  // the scan range, `isHeaderContactLine`-eligible, and (without this fix)
+  // blind-overwritten with the profile's contact line, erasing "Jane Doe"
+  // entirely since there's no separate name line to fall back to.
+  it('does not overwrite a combined name+contact first content line behind two leading blank lines', () => {
+    const profile = { phone: '+49 30 0000000' };
+    const contactLine = '+49 30 0000000';
+    const text = '\n\nJane Doe | jane@old.example.com\n\nEXPERIENCE\nAcme Corp';
+    const out = seedHeaderFromProfile(text, profile, contactLine);
+    expect(out).toBe(
+      '\n\nJane Doe | jane@old.example.com\n+49 30 0000000\n\nEXPERIENCE\nAcme Corp'
+    );
+  });
 });
 
 describe('generateCoverLetter', () => {
