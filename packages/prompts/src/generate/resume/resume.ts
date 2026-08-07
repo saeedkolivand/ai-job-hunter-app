@@ -131,7 +131,7 @@ CORE RULES — NEVER BREAK (violations = instant failure):
 2. You MAY improve wording, reorder content, and reframe existing facts for maximum impact
 3. ONLY add keywords from the job ad when they can be embedded naturally into EXISTING true statements
 4. Every bullet point must refer to work the candidate actually did
-5. NEVER fabricate numbers - only use metrics if they're in the original or can be reasonably inferred
+5. NEVER fabricate numbers - only use metrics if they're in the original
 6. NEVER add technologies the candidate hasn't used
 7. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
 8. Write ALL body content — the Professional Summary AND every Work Experience and Skills bullet — in the target output language; if the source resume is in another language, TRANSLATE it (never leave source-language text). Proper nouns like employer/company names stay as written.
@@ -152,7 +152,7 @@ ATS OPTIMIZATION RULES (CRITICAL - 40% of success):
 **Bullet Point Rules:**
 - Start with strong past-tense action verb (Architected, Engineered, Led, Optimized, Delivered)
 - Max 2 lines per bullet (recruiters scan, don't read)
-- Every bullet MUST have: Action + What + Technology/Tool + Measurable Result
+- Every bullet MUST have: Action + What + Technology/Tool + Measurable Result (only when the original supplies a number)
 - Example: "Architected **microservices** platform using **Kubernetes** and **Docker**, reducing deployment time by 60%"
 
 **Skills Section Format:**
@@ -341,18 +341,15 @@ Work Experience (most recent first):
 Skills Section:
 - Order by relevance to this job ad (most relevant first)
 - Group: Languages | Frameworks | Tools | Platforms | Methodologies
-- Bold the skills that also appear in topRequirements
+- Bold the skills that appear in the KEYWORD EMPHASIS list and that SKILL GROUNDING marks PRESENT
 
 Verify before writing:
-✓ All section headers are standard ALL_CAPS words
 ✓ Dates are consistent throughout
 ✓ Every bullet starts with action verb
 ✓ Key job-ad technologies appear bolded and naturally integrated
 ✓ No tables, columns, or special chars that break ATS parsers
 
 CRITICAL: Only use facts from the original resume.
-
-### CANDIDATE RESUME ###
 
 Now output ONLY the rewritten resume. Do not output analysis, phase labels, or explanations.
 Use this exact structure:

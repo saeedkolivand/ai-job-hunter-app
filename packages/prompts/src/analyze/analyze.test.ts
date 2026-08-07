@@ -20,6 +20,22 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('resume reviewer');
     expect(prompt.length).toBeLessThan(buildSystemPrompt('large').length);
   });
+
+  it('keeps semantic keyword matching as the single rule — no "exact match only" contradiction (fix #3)', () => {
+    // "Synonyms fail 70% of the time" and "Must match EXACTLY" both directly
+    // contradicted the semantic-matching rule the pipeline actually
+    // implements (and that this same prompt states elsewhere), which drives
+    // the user-visible missingKeywords/keywordCoverage scores.
+    const prompt = buildSystemPrompt('large');
+    expect(prompt).not.toMatch(/Synonyms fail 70% of the time/i);
+    // The Hard Skills bullet demanded an exact match; Certifications' own
+    // (unrelated, in-scope-elsewhere) exact-match rule is untouched.
+    expect(prompt).not.toMatch(/Hard Skills.*Must match EXACTLY/i);
+    expect(prompt).toContain(
+      '- **Certifications**: Must match exactly - "AWS Certified" ≠ "AWS experience"'
+    );
+    expect(prompt).toMatch(/"React\.js" = "React" = "ReactJS"/);
+  });
 });
 
 describe('buildAnalysisPrompt', () => {

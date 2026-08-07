@@ -925,7 +925,19 @@ export async function generateCoverLetter(
   // builder's own voice directive points there instead of duplicating it (see
   // buildResumeVoiceDirective). `hasStyleReference` stays false (default), so
   // the fictional tone exemplar (English-target only) still applies.
-  const system = buildCoverLetterSystemPrompt(mode, profile, tone, meta.targetLanguage);
+  // `hasBrief` mirrors `buildCoverLetterPrompt`'s own derivation exactly
+  // (`Boolean(companyBrief.trim())`), so the system prompt only points at
+  // <company_research> when the user prompt will actually fence one. Passing it
+  // is what makes the gate live — the parameter defaults to `true` (today's
+  // unconditional behavior) for callers that cannot know yet.
+  const system = buildCoverLetterSystemPrompt(
+    mode,
+    profile,
+    tone,
+    meta.targetLanguage,
+    false,
+    Boolean(companyBrief.trim())
+  );
   const user = buildCoverLetterPrompt(
     resume,
     jobAd,

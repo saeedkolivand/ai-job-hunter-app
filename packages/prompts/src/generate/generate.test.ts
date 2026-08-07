@@ -993,6 +993,27 @@ describe('buildResumeSystemPrompt', () => {
       /told through the candidate's real story/i
     );
   });
+
+  it('never licenses "reasonably inferred" as an excuse to fabricate a metric (fix #1)', () => {
+    // The full-tier CORE RULES no-fabrication line must not reopen the
+    // loophole the brief tier and the honesty rule elsewhere in this same
+    // prompt both close: a metric absent from the original resume.
+    const prompt = buildResumeSystemPrompt('ats');
+    expect(prompt).not.toMatch(/reasonably inferred/i);
+    expect(prompt).toContain(
+      "5. NEVER fabricate numbers - only use metrics if they're in the original"
+    );
+  });
+
+  it('makes the bullet-formula Measurable Result conditional on the original having a number (fix #2)', () => {
+    // Previously this line mandated a Measurable Result on every bullet,
+    // contradicting the "keep it qualitative when there's no number" rule
+    // later in the same prompt — the likely cause of invented metrics.
+    const prompt = buildResumeSystemPrompt('ats');
+    expect(prompt).toContain(
+      'Every bullet MUST have: Action + What + Technology/Tool + Measurable Result (only when the original supplies a number)'
+    );
+  });
 });
 
 describe('buildEmphasisDirectivesBlock (#15)', () => {
@@ -1308,6 +1329,46 @@ describe('buildCoverLetterSystemPrompt', () => {
     expect(small).not.toContain('Use the real company name and job title.');
     expect(cli).not.toContain('the real company name and job title;');
   });
+
+  it('gates the three <company_research> sentences on the hasBrief flag, at every depth (fix #12)', () => {
+    // Defaults to true (today's behavior — unconditional mention) so callers
+    // that don't know yet whether a brief was fetched are unaffected; a
+    // caller that does know can pass false to drop the now-noisy pointer.
+    const large = buildCoverLetterSystemPrompt('recruiter', 'large');
+    const small = buildCoverLetterSystemPrompt('recruiter', 'small');
+    const cli = buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' });
+    for (const prompt of [large, small, cli]) {
+      expect(prompt).toMatch(/<company_research>/);
+    }
+
+    const noBriefLarge = buildCoverLetterSystemPrompt(
+      'recruiter',
+      'large',
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    const noBriefSmall = buildCoverLetterSystemPrompt(
+      'recruiter',
+      'small',
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    const noBriefCli = buildCoverLetterSystemPrompt(
+      'recruiter',
+      { kind: 'cli' },
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    for (const prompt of [noBriefLarge, noBriefSmall, noBriefCli]) {
+      expect(prompt).not.toMatch(/<company_research>/);
+    }
+  });
 });
 
 describe('buildCoverLetterPrompt', () => {
@@ -1398,7 +1459,11 @@ describe('buildCoverLetterPrompt', () => {
       'de'
     );
     expect(prompt).toContain('<market_conventions market="Germany">');
-    expect(prompt).toContain('Betreff');
+    // The subject-line label now goes through the same sameLanguage/formal-
+    // equivalent wrap as the salutation and sign-off (#10 fix): a German
+    // "Betreff" no longer leaks unqualified into an English-language letter.
+    expect(prompt).toContain('the formal en equivalent of "Betreff"');
+    expect(prompt).not.toContain('labelled "Betreff"');
     expect(prompt).toMatch(/salary expectation/i);
     // Decision: write in the letter language (en here), apply German etiquette.
     expect(prompt).toMatch(/Write the letter in en/);
