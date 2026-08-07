@@ -138,3 +138,46 @@ describe('TrustBadge — strong prop', () => {
     expect(screen.getByText('Low trust')).toBeInTheDocument();
   });
 });
+
+// ── Level description ───────────────────────────────────────────────────────
+//
+// The flag list answers "which checks failed" but never "so what?" —
+// "Suspicious domain" doesn't tell a reader whether to skip the posting or just
+// look twice. These pin the plain-language verdict that now leads the tooltip.
+// Real translations (see the file header), so a missing `jobs.trust.levelDesc.*`
+// key surfaces as the raw key here.
+describe('TrustBadge — level description', () => {
+  for (const level of ['low', 'medium'] as const) {
+    it(`explains what "${level} trust" means, in resolved copy`, () => {
+      render(<TrustBadge trust={assessment(level, ['suspiciousDomain'])} />);
+      const detail = screen.getByText(/:/).textContent ?? '';
+
+      expect(detail).not.toContain('jobs.trust.levelDesc');
+      expect(detail).not.toContain('jobs.trust.whyPrefix');
+      // The verdict comes before the evidence — a reader needs to know whether
+      // to care before being handed a list of failed checks.
+      expect(detail.indexOf('Suspicious domain')).toBeGreaterThan(10);
+    });
+  }
+
+  it('still explains the level when no flags accompany it', () => {
+    // Previously the whole detail block was gated on `reasons` being non-empty,
+    // so a flagged-but-reasonless assessment rendered a bare badge with nothing
+    // to explain it.
+    render(<TrustBadge trust={assessment('low', [])} />);
+    const detail = screen.getByText(/^:/).textContent ?? '';
+    expect(detail.length).toBeGreaterThan(20);
+    expect(detail).not.toContain('jobs.trust');
+  });
+
+  it('carries the same words on a non-interactive surface, via title', () => {
+    // Listbox rows and in-Button placements can't host a focusable popover, but
+    // must not therefore be silent.
+    const { container } = render(
+      <TrustBadge trust={assessment('low', ['invalidUrl'])} interactive={false} />
+    );
+    const title = container.querySelector('[title]')?.getAttribute('title') ?? '';
+    expect(title).toContain('Broken apply link');
+    expect(title).not.toContain('jobs.trust');
+  });
+});
