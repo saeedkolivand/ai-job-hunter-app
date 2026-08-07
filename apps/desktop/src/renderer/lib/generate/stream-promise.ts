@@ -20,11 +20,63 @@
 import type { AppClient } from '../app-client';
 import { createThinkSplitter } from './think-split';
 
-/** Maximum wall-clock time for a single streamed generation (ms). */
+/**
+ * Baseline wall-clock budget for a single streamed generation (ms), before
+ * {@link EFFORT_TIMEOUT_MULTIPLIER} scaling. MUST match the Rust
+ * `timeouts::STREAM` baseline (`apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs`)
+ * — see {@link computeStreamTimeoutMs}'s doc for why the two can't literally
+ * share code and are pinned by a test instead.
+ */
 const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Interval between job-status poll ticks (ms). */
 const JOB_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * Reasoning-effort → {@link STREAM_TIMEOUT_MS} multiplier. MUST mirror Rust's
+ * `effort_multiplier` (`timeouts.rs`) exactly — same closed vocabulary, same
+ * numbers — or the two deadlines could disagree about which effort level
+ * warrants extra time. Rust and TS can't share a literal table across the IPC
+ * boundary, so this is duplicated deliberately; `stream-promise.test.ts`'s
+ * `computeStreamTimeoutMs` tests pin the one invariant that actually matters
+ * (the renderer timeout for a given effort always exceeds the Rust backend's
+ * own scaled deadline for that SAME effort, by at least {@link OUTER_BOUND_MARGIN_MS}),
+ * so a future edit to either table that breaks the relationship fails a test
+ * instead of silently drifting.
+ */
+const EFFORT_TIMEOUT_MULTIPLIER: Record<string, number> = {
+  // Ascending tier order — `max` is the TOP tier, above `xhigh`, per Anthropic's
+  // effort docs and OpenAI's `reasoning_effort`. Not alphabetical, and it reads
+  // wrong at a glance: an earlier version had `max` below `xhigh`, giving the
+  // highest-effort runs the shortest deadline. Mirrors `effort_multiplier` in
+  // `apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs` — keep both in
+  // this order.
+  medium: 1.5,
+  high: 2.0,
+  xhigh: 2.5,
+  max: 3.0,
+};
+
+/**
+ * Safety margin (ms) the renderer timeout adds on top of the backend's own
+ * `timeouts::stream_deadline` for the same effort — the backend deadline must
+ * always fire FIRST (it returns an actionable provider error; a renderer
+ * timeout is a generic "Generation timed out"), so the renderer's own bound
+ * has to strictly exceed it, not merely match it.
+ */
+const OUTER_BOUND_MARGIN_MS = 30_000;
+
+/**
+ * The renderer-side stream timeout for a given `effort` string (the SAME
+ * value threaded to the backend as `AiGenerateRequest.effort`) — the outer
+ * bound the backend's own `timeouts::stream_deadline` must always fire
+ * before. An unrecognized/absent effort gets multiplier 1 (the baseline),
+ * matching Rust's fallback for the same case.
+ */
+export function computeStreamTimeoutMs(effort?: string): number {
+  const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
+  return Math.round(STREAM_TIMEOUT_MS * multiplier) + OUTER_BOUND_MARGIN_MS;
+}
 
 /**
  * Rejection message for a completion that resolved with no usable content
@@ -44,8 +96,14 @@ export interface AwaitAiStreamOptions {
   signal?: AbortSignal;
   /** Override the poll interval (ms). Defaults to `JOB_POLL_INTERVAL_MS`. */
   pollIntervalMs?: number;
-  /** Override the stream timeout (ms). Defaults to `STREAM_TIMEOUT_MS`. */
+  /** Override the stream timeout (ms) outright. Defaults to
+   *  `computeStreamTimeoutMs(effort)` — prefer passing `effort` over this. */
   timeoutMs?: number;
+  /** The SAME reasoning-effort value sent to the backend as
+   *  `AiGenerateRequest.effort` — sizes the default `timeoutMs` via
+   *  `computeStreamTimeoutMs` so a high-effort generation isn't killed
+   *  client-side while the backend is still legitimately streaming. */
+  effort?: string;
   /** Active provider — diagnostic only, logged (never generated content) if the
    *  completion resolves empty. */
   provider?: string;
@@ -77,7 +135,7 @@ export function awaitAiStream(
     onThinking,
     signal,
     pollIntervalMs = JOB_POLL_INTERVAL_MS,
-    timeoutMs = STREAM_TIMEOUT_MS,
+    timeoutMs = computeStreamTimeoutMs(opts.effort),
     provider,
     model,
   } = opts;

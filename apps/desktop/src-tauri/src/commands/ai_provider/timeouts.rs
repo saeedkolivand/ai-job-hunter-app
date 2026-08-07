@@ -1,21 +1,81 @@
 //! Per-request HTTP timeouts for the AI provider adapters.
 //!
 //! Each constant is named by the *operation* it bounds, not by its raw value, so
-//! a call site reads as `.timeout(timeouts::STREAM)` instead of a bare magic
+//! a call site reads as `.timeout(timeouts::COMPLETION)` instead of a bare magic
 //! number. Two sites share a constant only when they bound the **same operation**
 //! at the **same duration**; same duration + different operation gets its own
-//! constant so the values can drift independently later.
+//! constant so the values can drift independently later. The one exception is
+//! [`STREAM`]: every `chat_stream` call site uses [`stream_deadline`] (a
+//! function of the request's reasoning effort) instead of the bare constant —
+//! see its doc comment.
 //!
 //! Values are intentionally identical to the literals they replaced — this module
-//! is a pure extraction with no behavior change.
+//! is a pure extraction with no behavior change (except [`stream_deadline`],
+//! added later to fix a high-effort stream being killed mid-generation by the
+//! flat [`STREAM`] deadline).
 
 use std::time::Duration;
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
 
 /// Streaming chat completion (`chat_stream`): the long-running SSE/JSON stream a
-/// cloud provider or the local Ollama daemon emits while generating.
+/// cloud provider or the local Ollama daemon emits while generating. This is the
+/// BASELINE — every `chat_stream` call site uses [`stream_deadline`] (which
+/// scales this by the request's reasoning effort), never this constant
+/// directly, so a high-effort generation on a slow model isn't killed
+/// mid-stream by a one-size-fits-all cap. Kept `pub` (rather than folded into
+/// `stream_deadline`) because it's also the number the renderer's own
+/// `STREAM_TIMEOUT_MS` (`renderer/lib/generate/stream-promise.ts`) must be
+/// derived from — see that file's `computeStreamTimeoutMs` and its
+/// cross-language relationship test.
 pub const STREAM: Duration = Duration::from_secs(300);
+
+/// Reasoning-effort → [`STREAM`] multiplier. `req.effort` (`AiGenerateRequest`)
+/// is a closed, cross-provider vocabulary (see `OPENAI_EFFORT_LEVELS`,
+/// `OLLAMA_EFFORT_LEVELS`, `anthropic_effort_levels`, `gemini_effort_levels`) —
+/// this table is the union of every level any adapter currently exposes.
+/// "minimal"/"low"/unset/unrecognized get 1.0 (no reason to extend the
+/// baseline); everything above that scales up, since a higher reasoning
+/// budget is the actual driver of a stream legitimately running long. A new
+/// provider that reuses this SAME `effort` vocabulary benefits automatically;
+/// one that ever needs a genuinely new tier name already requires touching
+/// its own `effort_levels()` to expose it, so adding a match arm here at the
+/// same time is not a departure from the zero-change-per-provider rule.
+///
+/// TIER ORDER, because it is not alphabetical and reads wrong at a glance:
+/// `minimal < low < medium < high < xhigh < max`. **`max` is the TOP tier, not
+/// `xhigh`** — per Anthropic's effort docs (`low | medium | high | xhigh |
+/// max`) and OpenAI's `reasoning_effort` (`none | minimal | low | medium |
+/// high | xhigh | max`). An earlier version of this table gave `max` a SMALLER
+/// multiplier than `xhigh`, so the highest-effort requests got the shortest
+/// deadline — the exact failure this function exists to prevent, reserved for
+/// the runs most likely to hit it. Keep the arms in ascending tier order and
+/// keep the monotonicity test's array in that same order, or it will pass
+/// while pinning the inversion.
+fn effort_multiplier(effort: Option<&str>) -> f64 {
+    match effort {
+        Some("medium") => 1.5,
+        Some("high") => 2.0,
+        Some("xhigh") => 2.5,
+        Some("max") => 3.0,
+        _ => 1.0,
+    }
+}
+
+/// The actual per-request deadline for `chat_stream`: [`STREAM`] scaled by
+/// [`effort_multiplier`]. `reqwest::RequestBuilder::timeout` bounds the WHOLE
+/// request (connect through the last streamed byte — see reqwest's own docs),
+/// so this is a total deadline, not a per-chunk idle timeout; a per-chunk idle
+/// timeout would be architecturally nicer (it wouldn't need effort awareness
+/// at all — a stream that's still actively producing text would never be
+/// killed, regardless of how long it legitimately runs) but would mean
+/// loosening or removing this same total timeout at all 4 call sites AND
+/// adding a second timing mechanism inside the shared `stream_response` loop
+/// (`stream.rs`) — a materially bigger surface for the same bug. Scaling the
+/// existing total deadline is the smaller, fully-tested fix.
+pub fn stream_deadline(effort: Option<&str>) -> Duration {
+    Duration::from_secs_f64(STREAM.as_secs_f64() * effort_multiplier(effort))
+}
 
 /// Non-streaming cloud completion (`complete`): a single full-response call to a
 /// cloud provider (OpenAI / Anthropic / Gemini).
@@ -72,3 +132,62 @@ pub const OLLAMA_SHOW: Duration = Duration::from_secs(15);
 /// Pulling (downloading) a local Ollama model (`/api/pull`): a large multi-GB
 /// download streamed with progress, hence the hour-long ceiling.
 pub const MODEL_PULL: Duration = Duration::from_secs(3600);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_deadline_matches_the_baseline_for_no_or_low_effort() {
+        assert_eq!(stream_deadline(None), STREAM);
+        assert_eq!(stream_deadline(Some("")), STREAM);
+        assert_eq!(stream_deadline(Some("minimal")), STREAM);
+        assert_eq!(stream_deadline(Some("low")), STREAM);
+    }
+
+    #[test]
+    fn stream_deadline_scales_up_for_higher_effort() {
+        assert_eq!(stream_deadline(Some("medium")), Duration::from_secs(450));
+        assert_eq!(stream_deadline(Some("high")), Duration::from_secs(600));
+        // `xhigh` then `max` — vendors' ascending order, see `effort_multiplier`.
+        assert_eq!(stream_deadline(Some("xhigh")), Duration::from_secs(750));
+        assert_eq!(stream_deadline(Some("max")), Duration::from_secs(900));
+    }
+
+    /// A caller must be able to trust the ordering, not just the individual
+    /// values — this is what "scales with effort" actually promises.
+    ///
+    /// The array below must stay in the VENDORS' ascending tier order
+    /// (`… high < xhigh < max`), not in the order the match arms happen to be
+    /// written. A previous version listed `max` before `xhigh`, which made this
+    /// test pass against a table that gave the top tier the shortest deadline.
+    #[test]
+    fn stream_deadline_is_monotonically_nondecreasing_by_effort_tier() {
+        let tiers = [
+            None,
+            Some("minimal"),
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ];
+        let mut prev = Duration::from_secs(0);
+        for effort in tiers {
+            let d = stream_deadline(effort);
+            assert!(
+                d >= prev,
+                "stream_deadline({effort:?}) = {d:?} must be >= the previous tier's {prev:?}"
+            );
+            prev = d;
+        }
+    }
+
+    /// An effort string outside the known vocabulary must fall back to the
+    /// baseline — never explode a typo/future-provider string into an
+    /// unbounded multiplier.
+    #[test]
+    fn stream_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
+        assert_eq!(stream_deadline(Some("ultra-mega-think")), STREAM);
+    }
+}

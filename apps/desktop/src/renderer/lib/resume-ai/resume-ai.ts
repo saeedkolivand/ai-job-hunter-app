@@ -114,6 +114,11 @@ export async function runAnalysis({
     signal,
     provider: activeProvider,
     model: activeModel,
+    // Same value just sent to the backend above (`effort`) — sizes the
+    // renderer-side timeout so it stays the outer bound over the backend's own
+    // effort-scaled deadline (`computeStreamTimeoutMs`,
+    // apps/desktop/src/renderer/lib/generate/stream-promise.ts).
+    effort: providerSettings?.effort,
   });
 
   // Validate and repair

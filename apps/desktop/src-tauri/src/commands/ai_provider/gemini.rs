@@ -1069,7 +1069,7 @@ impl AiProvider for GeminiClient {
         let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()
             .post(&url)
-            .timeout(timeouts::STREAM)
+            .timeout(timeouts::stream_deadline(req.effort.as_deref()))
             .header("x-goog-api-key", &api_key)
             .json(&body)
             .send()
