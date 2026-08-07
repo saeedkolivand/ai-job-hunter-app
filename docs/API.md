@@ -54,30 +54,16 @@ AI generation, model management, streaming output, and provider configuration.
 
 ### Methods
 
-#### `ai.generate(req: GenerateRequest): Promise<GenerateResponse>`
+#### `ai.generate(req: AiGenerateRequest): Promise<{ jobId: string }>`
 
-Initiates AI generation. Returns immediately with a `generationId`; content streams via `ai.onStream`.
+Initiates AI generation. Returns immediately with a `jobId`; content streams via `ai.onStream`. Signature per `packages/shared/src/ipc/contracts/ai.ts`.
 
-```typescript
-interface GenerateRequest {
-  type: 'cover-letter' | 'resume' | 'email' | 'summary';
-  resumeId: string;
-  jobId?: string;
-  jobText?: string;
-  language: string; // ISO 639-1 code: "en", "de", etc.
-  model: string; // e.g. "mistral", "gpt-4o"
-  provider: AIProvider;
-  template?: string; // template ID for document export
-  intent?: 'deterministic' | 'prose' | 'prose_grounded' | 'default'; // declared sampling intent — each provider adapter picks its own numbers (see AiProvider::sampling_profile); real values wherever the provider accepts them, omitted only where sending is documented-harmful
-  temperature?: number; // explicit override — wins over `intent` on every adapter; in practice only ever set by the Ollama per-model "Custom temperature" slider, NOT a universal 0–1/0.3-default knob
-  maxTokens?: number; // default 4096
-  systemPromptOverride?: string;
-}
+The request type is **`AiGenerateRequestSchema`** in `packages/shared/src/schemas/index.ts` (exported as the `AiGenerateRequest` type, and code-generated into `apps/desktop/src-tauri/src/ipc_contracts/ai.rs` by `pnpm --filter @ajh/shared gen:ipc`). Read the schema for the field list — it is the source of truth and this page does not restate it.
 
-interface GenerateResponse {
-  generationId: string;
-}
-```
+Two fields whose behaviour is not obvious from their types:
+
+- **`intent`** — the caller declares what the generation is _for_; each provider adapter then picks its own sampling numbers. See `AiProvider::sampling_profile` in `apps/desktop/src-tauri/src/commands/ai_provider/mod.rs`. The accepted values are generated from the schema into `ipc_contracts/ai_intents.rs`, so they cannot drift from this page's description because this page does not list them.
+- **`temperature`** (and the other numeric sampling fields) — an explicit **override** that wins over `intent` on every adapter. In practice it is only ever set by the per-model "Custom temperature" control in Settings; it is not a default the app applies.
 
 #### `ai.listModels(): Promise<ModelInfo[]>`
 

@@ -313,6 +313,15 @@ pub const PROSE_TEMPERATURE: f64 = 0.5;
 /// `Intent::ProseGrounded`'s temperature (application answers 0.5, referral
 /// 0.7, application email 0.7, cover letter 0.58 small-tier / 0.8
 /// large-tier).
+///
+/// This is HIGHER than [`PROSE_TEMPERATURE`], which reads backwards until you
+/// see why: grounding is enforced by withholding `presence_penalty` (the knob
+/// that rewards new topics), NOT by cooling the sampler. The ordering is an
+/// accident of which surfaces carry which intent — the grounded ones are
+/// long-form letters and emails, the ungrounded ones are STAR feedback (0.4)
+/// and interview questions (0.5). Do not read a semantic claim into it, and do
+/// not "fix" it by swapping the values: both preserve the per-surface
+/// temperatures this app shipped before sampling moved into the adapters.
 pub const PROSE_GROUNDED_TEMPERATURE: f64 = 0.6;
 /// Shared prose penalty knobs — RAID (ACL 2024) detector-resistance,
 /// unchanged from the pre-fix renderer's `PROSE_SAMPLING` constant.

@@ -243,6 +243,15 @@ mod tests {
         assert_eq!(gpt_oss.temperature, Some(1.0));
         assert_eq!(gpt_oss.top_p, Some(1.0));
 
+        // `ollama_cloud_sampling_profile` returns the gpt-oss 1.0/1.0 override
+        // BEFORE it ever inspects `intent` — pin a second, different intent on
+        // the SAME model so a future refactor that starts branching gpt-oss on
+        // intent (breaking the family-wide override) fails here, not silently.
+        let gpt_oss_deterministic =
+            OllamaCloudClient::new().sampling_profile("gpt-oss:120b", Intent::Deterministic);
+        assert_eq!(gpt_oss_deterministic.temperature, Some(1.0));
+        assert_eq!(gpt_oss_deterministic.top_p, Some(1.0));
+
         // Every OTHER family reuses the SAME per-intent targets native
         // OpenAI does (the `/v1` layer hardcodes 1.0/1.0 on omission for
         // every family, not just gpt-oss — see `ollama_cloud_sampling_profile`'s

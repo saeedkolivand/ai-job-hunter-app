@@ -1062,8 +1062,10 @@ export async function generateJobAdSummary(params: {
 
   const system = buildJobAdSummarySystemPrompt(lang?.englishName);
   const user = buildJobAdSummaryPrompt(jobAd, meta, profile, lang?.englishName);
-  // A factual digest, not creative writing — `deterministic`.
-  const sampling = resolveSampling('answers', 'deterministic');
+  // A factual digest, not creative writing — `deterministic`, keyed off
+  // `analysis` (the same job-ad-analysis surface as `extractMetadata`, not
+  // `answers` — this never touches the résumé or the candidate's own words).
+  const sampling = resolveSampling('analysis', 'deterministic');
   const raw = await streamGenerate(
     model,
     system,
@@ -1154,8 +1156,10 @@ export async function generateInterviewQuestions(params: {
     market,
     language: languageName,
   });
-  // Interview questions are prose: creative, detector-resistant writing.
-  const sampling = resolveSampling('answers', 'prose');
+  // Interview questions are prose: creative, detector-resistant writing —
+  // keyed off `questions`, not `answers` (that key is application answers
+  // only; the candidate asks these, they don't answer them).
+  const sampling = resolveSampling('questions', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1197,8 +1201,8 @@ export async function generateLikelyInterviewQuestions(params: {
 
   const system = buildLikelyQuestionsSystemPrompt();
   const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile, market });
-  // Prose, same intent as the other interview surfaces.
-  const sampling = resolveSampling('answers', 'prose');
+  // Prose, same intent (and same `questions` key) as the other interview surfaces.
+  const sampling = resolveSampling('questions', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1248,8 +1252,9 @@ export async function generateStarFeedback(params: {
     market,
   });
   // Feedback on the candidate's own answer — still prose (a written critique,
-  // not a fixed-shape extraction).
-  const sampling = resolveSampling('answers', 'prose');
+  // not a fixed-shape extraction), keyed off `questions` alongside the other
+  // interview-prep surfaces above.
+  const sampling = resolveSampling('questions', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1341,8 +1346,10 @@ export async function generateGitHubProjects(params: {
       profile
     );
     // Résumé-ready bullets extracted from real repo data — factual, not
-    // creative prose, so `deterministic` (never had a penalty set applied).
-    const sampling = resolveSampling('answers', 'deterministic');
+    // creative prose, so `deterministic`; keyed off `resume` (this content
+    // lands directly in the résumé's `projects` field, the same surface
+    // `generateResume`/`synthesizeResume` use), never had a penalty set applied.
+    const sampling = resolveSampling('resume', 'deterministic');
     const raw = await streamGenerate(
       model,
       system,

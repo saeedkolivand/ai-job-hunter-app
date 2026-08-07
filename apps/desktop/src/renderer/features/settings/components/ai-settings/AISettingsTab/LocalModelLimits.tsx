@@ -26,18 +26,19 @@ const SLIDER_CLASS =
 // sends a `deterministic`/`prose`/`prose_grounded` INTENT; each provider
 // adapter's own `sampling_profile` — `commands/ai_provider/mod.rs` — picks
 // the numbers). These seeds instead mirror that Rust module's
-// `DETERMINISTIC_TEMPERATURE` (0.3) / `PROSE_GROUNDED_TEMPERATURE` (0.6)
-// constants, keyed by which intent each step's surface(s) actually use:
-// analysis + résumé are `deterministic`; cover letter, application answers,
-// and referral are all `prose_grounded` (see `Intent::ProseGrounded`'s doc
-// comment for why a cover letter belongs there too). This slider is
-// Ollama-only, so it never needs the `prose` bucket (interview questions/
-// likely questions/STAR feedback have no per-model UI control here).
+// `DETERMINISTIC_TEMPERATURE` (0.3) / `PROSE_TEMPERATURE` (0.5) /
+// `PROSE_GROUNDED_TEMPERATURE` (0.6) constants. Each key maps to exactly ONE
+// intent/surface group (see `TemperatureStep`'s doc comment): analysis
+// (metadata extraction, job-ad summaries) and résumé (résumé generation,
+// imported GitHub projects) are `deterministic`; cover letter, application
+// answers, and referral are `prose_grounded`; questions (interview
+// questions, likely questions, STAR feedback) is `prose`.
 const TEMP_STEPS = [
   { key: 'analysis', labelKey: 'settings.ai.localLimits.tempAnalysis', def: 0.3 },
   { key: 'resume', labelKey: 'settings.ai.localLimits.tempResume', def: 0.3 },
   { key: 'cover', labelKey: 'settings.ai.localLimits.tempCover', def: 0.6 },
   { key: 'answers', labelKey: 'settings.ai.localLimits.tempAnswers', def: 0.6 },
+  { key: 'questions', labelKey: 'settings.ai.localLimits.tempQuestions', def: 0.5 },
   { key: 'referral', labelKey: 'settings.ai.localLimits.tempReferral', def: 0.6 },
 ] as const;
 

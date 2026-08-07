@@ -118,11 +118,12 @@ fn wire_body_carries_the_declared_deterministic_temperature_with_no_explicit_ove
 }
 
 #[test]
-fn wire_body_prose_grounded_carries_a_lower_temperature_than_prose() {
+fn wire_body_prose_grounded_carries_its_own_temperature_not_proses() {
     // Ollama's wire body has no presence_penalty field at all (see
-    // `build_chat_stream_body`'s doc comment) — `Intent::ProseGrounded`'s
-    // distinguishing feature on this adapter is its lower, more-traceable
-    // temperature, not a withheld penalty field.
+    // `build_chat_stream_body`'s doc comment), so on this adapter the only
+    // observable difference between the two prose intents is the temperature.
+    // It is HIGHER for grounded, not lower — see `PROSE_GROUNDED_TEMPERATURE`'s
+    // doc comment for why that is not the contradiction it looks like.
     let mut req = base_request();
     req.temperature = None;
     req.intent = Some("prose_grounded".to_string());
@@ -148,6 +149,10 @@ fn chat_stream_body_serializes_top_p_and_repeat_penalty_when_set() {
     req.top_p = Some(0.95);
     req.repeat_penalty = Some(1.15);
     let body = build_chat_stream_body(&req, sampling_for(&req));
+    // `base_request()` sets `temperature: Some(0.8)` — the request's
+    // explicit override the Settings slider depends on — and it must still
+    // win over the intent-derived profile after `.resolve(req)`.
+    assert_eq!(body["options"]["temperature"], json!(0.8));
     assert_eq!(body["options"]["top_p"], json!(0.95));
     assert_eq!(body["options"]["repeat_penalty"], json!(1.15));
     // frequency_penalty is never remapped into Ollama's repeat_penalty field.

@@ -95,8 +95,12 @@ export type GenerationIntent = NonNullable<AiGenerateRequest['intent']>;
 /** One generation step that can carry its own per-model temperature override
  *  (Settings → local model limits → "Custom temperature"). Shared between
  *  `generation.ts` and `resume-ai.ts` so the override key vocabulary can't
- *  drift between the two callers. */
-export type TemperatureStep = 'analysis' | 'resume' | 'cover' | 'answers' | 'referral';
+ *  drift between the two callers. Each key maps to exactly ONE call site
+ *  intent (see `resolveSampling`'s callers in `generation.ts`) — never widen
+ *  a key to cover a second, unrelated surface, or a user's single slider
+ *  silently retunes generation it never meant to touch. */
+export type TemperatureStep =
+  'analysis' | 'resume' | 'cover' | 'answers' | 'questions' | 'referral';
 
 /**
  * The user-set per-model, per-step temperature OVERRIDE for one generation

@@ -240,9 +240,13 @@ impl AiProvider for OllamaClient {
     /// `build_chat_stream_body`'s doc comment), never a `frequency_penalty`
     /// remap, and this app has no way to forward `presence_penalty` to
     /// Ollama at all (its wire body has no such field — see
-    /// `build_chat_stream_body`), so `Intent::ProseGrounded`'s distinction
-    /// from `Intent::Prose` collapses to "same as Prose" on this adapter,
-    /// exactly like Anthropic's.
+    /// `build_chat_stream_body`), so `Intent::ProseGrounded`'s
+    /// presence-penalty distinction from `Intent::Prose` has no Ollama
+    /// equivalent to withhold, exactly like Anthropic's — but the two
+    /// intents still land on different temperatures here
+    /// (`PROSE_TEMPERATURE` vs `PROSE_GROUNDED_TEMPERATURE` below), pinned
+    /// by `ollama_tests.rs`'s
+    /// `wire_body_prose_grounded_carries_a_lower_temperature_than_prose`.
     fn sampling_profile(&self, _model: &str, intent: Intent) -> SamplingProfile {
         match intent {
             // `Default` (no declared intent) resolves the same as
