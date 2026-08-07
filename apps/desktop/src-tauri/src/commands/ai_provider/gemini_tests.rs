@@ -185,6 +185,24 @@ fn chat_stream_body_uses_the_deterministic_target_for_a_pre_v3_model_with_no_exp
 }
 
 #[test]
+fn chat_stream_body_uses_the_deterministic_target_for_a_non_gemini_prefixed_pre_v3_model() {
+    // `gemma-3-27b-it` is what a REAL non-`gemini-`-prefixed pre-v3 id looks
+    // like on this provider (`parse_model_page` surfaces it into the model
+    // picker exactly like a `gemini-*` id — see `gemini_is_pre_v3`'s doc
+    // comment). It must reach the wire with the SAME deterministic
+    // temperature as a `gemini-`-prefixed pre-v3 model, not silently drop to
+    // neutral.
+    let mut req = base_request();
+    req.model = "gemma-3-27b-it".to_string();
+    req.temperature = None;
+    let body = build_chat_stream_body(&req, sampling_for(&req));
+    assert_eq!(
+        body["generationConfig"]["temperature"],
+        json!(DETERMINISTIC_TEMPERATURE)
+    );
+}
+
+#[test]
 fn gemini_omits_sampling_params_matches_the_v3_gate() {
     // ONE predicate decides temperature AND topP (and topK, if this file
     // ever wires one up) — pinned directly so the two parameters can't
@@ -256,9 +274,8 @@ fn sampling_profile_is_fully_neutral_on_a_v3_model_for_every_intent() {
 
 #[test]
 fn sampling_profile_declares_real_values_per_intent_on_a_recognized_pre_v3_model() {
-    // "gemini-1.5-flash" is POSITIVELY recognized as pre-v3 (carries the
-    // `gemini-` family prefix and fails `gemini_is_v3_or_later`) — it
-    // declares REAL values reproducing this app's pre-fix shipped numbers,
+    // "gemini-1.5-flash" fails `gemini_is_v3_or_later`, so it is pre-v3 —
+    // it declares REAL values reproducing this app's pre-fix shipped numbers,
     // the same [`DETERMINISTIC_TEMPERATURE`]/[`PROSE_TEMPERATURE`]/
     // [`PROSE_GROUNDED_TEMPERATURE`] targets every other accepting adapter
     // uses (this app's pre-fix renderer sent identical numbers to Gemini as
@@ -299,36 +316,34 @@ fn sampling_profile_declares_real_values_per_intent_on_a_recognized_pre_v3_model
 }
 
 #[test]
-fn sampling_profile_is_fully_neutral_for_an_unrecognized_model() {
-    // An id this adapter cannot positively classify as belonging to the
-    // Gemini family at all (doesn't even start with "gemini-") must NOT
-    // inherit the pre-v3 `0.7` temperature default — that would assume
-    // "unknown" is safe, legacy behavior instead of failing toward "no
-    // sampling params", the direction that can never 400 or trigger
-    // Gemini's documented below-1.0 degradation. Matches
-    // OpenAI/Anthropic/Ollama Cloud's unknown-model neutrality exactly.
-    for intent in [
-        Intent::Deterministic,
-        Intent::Prose,
-        Intent::ProseGrounded,
-        Intent::Default,
-    ] {
-        let profile = GeminiClient.sampling_profile("totally-unrecognized-model-id", intent);
-        assert_eq!(
-            profile,
-            SamplingProfile::default(),
-            "{intent:?} on an unrecognized model must be fully neutral"
-        );
-    }
+fn sampling_profile_declares_real_values_for_a_non_gemini_prefixed_pre_v3_model() {
+    // `parse_model_page` filters Google's `/v1beta/models` listing only on
+    // the `models/` wrapper prefix, not on family, so a `gemma-*` id reaches
+    // this app's model picker exactly like a `gemini-*` one and is a real
+    // Google model served by the same endpoint — it must get the SAME
+    // deterministic profile as a `gemini-`-prefixed pre-v3 model, not fall
+    // back to neutral. (A previous version of `gemini_is_pre_v3` required
+    // the literal `gemini-` prefix and silently dropped these to neutral —
+    // see that function's own doc comment for why that was wrong and
+    // reverted.)
+    let model = "gemma-3-27b-it";
+    assert_eq!(
+        GeminiClient.sampling_profile(model, Intent::Deterministic),
+        SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        }
+    );
 }
 
 #[test]
-fn gemini_effective_temperature_is_unaffected_by_the_sampling_profile_recognition_gate() {
+fn gemini_effective_temperature_uses_fallback_for_a_non_gemini_prefixed_model() {
     // `gemini_effective_temperature`'s own gate stays on the wider
-    // `gemini_omits_sampling_params` (v3+ only) — an unrecognized non-
-    // "gemini-"-prefixed id still gets its caller's `fallback` here, exactly
-    // as before this task. Only `GeminiClient::sampling_profile` (above)
-    // additionally requires POSITIVE recognition.
+    // `gemini_omits_sampling_params` (v3+ only, via `gemini_is_v3_or_later`)
+    // — a non-"gemini-"-prefixed id that isn't v3+ still gets its caller's
+    // `fallback` here. `GeminiClient::sampling_profile`'s own gate
+    // (`gemini_is_pre_v3`) is now the exact same v3 boundary, so the two no
+    // longer diverge for any model id.
     assert_eq!(
         gemini_effective_temperature("totally-unrecognized-model-id", None, 0.7),
         Some(0.7)

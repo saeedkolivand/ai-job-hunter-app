@@ -251,27 +251,34 @@ fn gemini_is_v3_or_later(model: &str) -> bool {
     digits.parse::<u32>().is_ok_and(|major| major >= 3)
 }
 
-/// Whether `model` is POSITIVELY recognized as a pre-v3 Gemini id: it carries
-/// the `gemini-` family prefix (after stripping an optional `models/`
-/// prefix) but is NOT [`gemini_is_v3_or_later`]. Used ONLY by
-/// [`GeminiClient::sampling_profile`] to decide whether ITS OWN `0.7`
-/// temperature default applies — NOT by [`gemini_effective_temperature`] or
-/// any other gate in this file, which stay on [`gemini_is_v3_or_later`]
+/// Whether `model` is anything OTHER than [`gemini_is_v3_or_later`] — the
+/// exact same boundary, inverted. Used by [`GeminiClient::sampling_profile`]
+/// to decide whether its per-intent temperature defaults apply, mirroring
+/// [`gemini_effective_temperature`]/[`gemini_omits_sampling_params`] and
+/// every other gate in this file, which stay on [`gemini_is_v3_or_later`]
 /// unchanged.
 ///
-/// An id this app cannot even recognize as belonging to the Gemini family at
-/// all (a typo, a future non-`gemini-`-prefixed line, a blank/garbage
-/// string) is NOT "recognized pre-v3" — mirrors
-/// `anthropic_supports_temperature`'s fail-safe (`anthropic.rs`): an
-/// unclassified new id defaults to "no sampling params", the direction that
-/// can never 400 or trigger Gemini's documented below-1.0 degradation,
-/// rather than assuming it is safe, legacy pre-v3 behavior.
-fn gemini_is_recognized_pre_v3(model: &str) -> bool {
-    let m = model
-        .strip_prefix("models/")
-        .unwrap_or(model)
-        .to_ascii_lowercase();
-    m.starts_with("gemini-") && !gemini_is_v3_or_later(model)
+/// A PREVIOUS version of this function additionally required the literal
+/// `gemini-` family prefix, treating any id it could not POSITIVELY classify
+/// (a `gemma-*`/`learnlm-*`/other id — [`parse_model_page`] filters the
+/// `/v1beta/models` listing only on the `models/` wrapper prefix, not on
+/// family, so these DO reach this app's model picker) as unrecognized →
+/// fully neutral, no temperature at all. That was wrong for this call site
+/// and was dropped: unlike OpenAI's `OpenAiCompatible` gateways, this
+/// provider has no other-vendor concept — every id reachable here is a
+/// Google model served by Google's own endpoint, so there is nothing to
+/// guess about. The unknown-model fail-safe this was copying from
+/// `anthropic_supports_temperature` exists to avoid GUESSING an unknown
+/// model's preferred *creative* sampling; `Intent::Deterministic` encodes an
+/// APP requirement (the analyze surface's strict-JSON contract) rather than
+/// a model preference, so withholding it is never correct — see
+/// `openai_sampling_profile`'s identical fix for `OpenAiCompatible`
+/// gateways (commit 89435a47) for the same mistake made once already. Do
+/// not reintroduce a `starts_with("gemini-")` (or any other family-prefix)
+/// requirement here — this is the SECOND time an "unclassifiable → neutral"
+/// gate has cost a deterministic, strict-JSON surface its temperature.
+fn gemini_is_pre_v3(model: &str) -> bool {
+    !gemini_is_v3_or_later(model)
 }
 
 /// Reasoning-effort levels Gemini 3.x accepts, PER MODEL — Google's live
@@ -999,20 +1006,22 @@ impl AiProvider for GeminiClient {
     }
 
     /// Neutral on Gemini 3+ (Google: "Remove these parameters from all
-    /// requests" — see [`gemini_omits_sampling_params`]) AND neutral on any
-    /// id this adapter cannot positively recognize as pre-v3
-    /// ([`gemini_is_recognized_pre_v3`]) — an unclassified id defaults to "no
-    /// sampling params", never a guessed-safe legacy default. A RECOGNIZED
-    /// pre-v3 model declares real values reproducing this app's pre-fix
-    /// shipped numbers per intent — the same [`DETERMINISTIC_TEMPERATURE`]/
+    /// requests" — see [`gemini_omits_sampling_params`]); every OTHER model
+    /// on this provider declares real per-intent values reproducing this
+    /// app's pre-fix shipped numbers — the same [`DETERMINISTIC_TEMPERATURE`]/
     /// [`PROSE_TEMPERATURE`]/[`PROSE_GROUNDED_TEMPERATURE`] + penalty
     /// constants every other accepting adapter uses (this app's pre-fix
     /// renderer sent the identical numbers to Gemini as every other cloud
-    /// provider). `gemini_effective_temperature` itself is UNCHANGED — still
-    /// gated on the wider [`gemini_omits_sampling_params`] for its own
-    /// callers (e.g. `complete_impl`), independent of this method.
+    /// provider). Gated on [`gemini_is_pre_v3`] — the exact inverse of
+    /// [`gemini_is_v3_or_later`], NOT additionally restricted to ids that
+    /// carry the literal `gemini-` prefix (see that function's own doc for
+    /// why a prefix requirement was tried here and dropped).
+    /// `gemini_effective_temperature` itself is UNCHANGED — still gated on
+    /// the wider [`gemini_omits_sampling_params`] for its own callers (e.g.
+    /// `complete_impl`), independent of this method; the two gates are now
+    /// the same v3 boundary, just phrased from opposite sides.
     fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
-        if !gemini_is_recognized_pre_v3(model) {
+        if !gemini_is_pre_v3(model) {
             return SamplingProfile::default();
         }
         match intent {
