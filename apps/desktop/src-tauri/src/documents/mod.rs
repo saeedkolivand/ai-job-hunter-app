@@ -22,6 +22,7 @@ use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Mig
 use crate::error::AppResult;
 
 pub mod keywords;
+mod mojibake_repair;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -496,6 +497,13 @@ impl DocumentStore {
                 Ok(())
             },
         },
+        Migration {
+            // See `mojibake_repair` module doc for the full corruption shape
+            // and the error-policy rationale (why a per-row failure
+            // propagates instead of being logged-and-skipped).
+            name: "repair_pre_pdf_text_string_mojibake",
+            up: mojibake_repair::up,
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -519,8 +527,18 @@ impl DocumentStore {
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
+        // The `repair_pre_pdf_text_string_mojibake` migration (see
+        // `mojibake_repair::up`) snapshots every affected row's pre-repair,
+        // still-corrupt text into `documents_pre_mojibake_repair` as a
+        // safety net for its in-place rewrite. That snapshot holds the
+        // user's ORIGINAL document text, so a full "erase my data" reset
+        // must drop it too, not just the live tables — a one-shot migration
+        // artifact, not a table the app writes going forward, so `DROP`
+        // (not `DELETE`) is correct: `user_version` is already past this
+        // migration, so it will not be recreated.
         conn.execute_batch(
-            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores;",
+            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores; \
+             DROP TABLE IF EXISTS documents_pre_mojibake_repair;",
         )
         .ok();
     }
@@ -586,6 +604,13 @@ impl DocumentStore {
             .unwrap_or(0);
         let is_default = if count == 0 { true } else { rec.is_default };
 
+        // Defensive, not just the migration: a restored backup exported
+        // before `repair_pre_pdf_text_string_mojibake` would otherwise
+        // re-inject the mojibake via `import` -> `insert` (`serde_json`
+        // round-trips an embedded NUL intact). No-op scan on clean input.
+        let text = crate::extraction::pdf::repair_utf16_mojibake(&rec.text);
+        let text_was_repaired = matches!(text, std::borrow::Cow::Owned(_));
+
         conn.execute(
             "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -594,7 +619,7 @@ impl DocumentStore {
                 rec.title,
                 rec.name,
                 rec.locale,
-                rec.text,
+                text.as_ref(),
                 rec.pages,
                 ts_to_db(rec.created_at),
                 rec.indexed as i64,
@@ -603,6 +628,16 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
+
+        if text_was_repaired {
+            // The text just changed under this id — any `vectors` row for
+            // it (a stale leftover, or one `import` below is about to
+            // restore) is now derived from the WRONG text. `stale_documents`
+            // (`commands/ai.rs`) decides what to re-embed purely from
+            // `get_vector` presence in the active space, never `indexed`.
+            conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![rec.id])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -1329,9 +1364,21 @@ impl DataStore for DocumentStore {
             if record.is_default {
                 default_id = Some(record.id.clone());
             }
+            // A pre-#955 bundle carries BOTH the corrupt text and the vector
+            // derived from it. `insert()` repairs the text and, if it
+            // changed, deletes any latent vector for this id — but that
+            // happens BEFORE the `upsert_vector` below would restore the
+            // bundle's own (corrupt-derived) one, so it must be skipped
+            // here too or it would just get written right back.
+            let text_was_repaired = matches!(
+                crate::extraction::pdf::repair_utf16_mojibake(&record.text),
+                std::borrow::Cow::Owned(_)
+            );
             self.insert(record)?;
             if let Some(vector) = vector {
-                self.upsert_vector(&record.id, vector)?;
+                if !text_was_repaired {
+                    self.upsert_vector(&record.id, vector)?;
+                }
             }
             count += 1;
         }

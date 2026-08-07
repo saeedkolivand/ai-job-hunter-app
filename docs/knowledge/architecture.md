@@ -1,6 +1,6 @@
 # Architecture (map + boundaries + feature ownership)
 
-Last updated: 2026-07-16
+Last updated: 2026-08-07
 
 Canonical: [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/architecture-rules.md`](../architecture-rules.md) (the L0–L3 rules, tested by `cargo test --test architecture`), [`docs/PATTERNS.md`](../PATTERNS.md). Query graphify (MCP `query_graph`, else `graphify explain "<module>"`) for a scoped view.
 
@@ -15,6 +15,7 @@ Local-first desktop app, [pnpm][pnpm] monorepo. **[Tauri][tauri] is the shell.**
 - `packages/test-ids` — central `TEST_IDS` map → `@ajh/test-ids`, feature-namespaced to mirror translation keys.
 - `apps/desktop` — [Rust][rust] core (`src-tauri/src/`) + [React][react] renderer (`src/renderer/`).
 - `apps/extension` — MV3 browser extension (Chrome + Firefox): job import + opt-in autofill over the loopback bridge (`apps/desktop/src-tauri/src/extension_bridge/`).
+- `apps/landing` — [Next.js][nextjs] marketing site (see `docs/ARCHITECTURE.md` for build config).
 
 ## Rust/TS boundary (Rust-first)
 
@@ -58,6 +59,7 @@ Renderer (`apps/desktop/src/renderer/features/`): 12 features each owning a rout
 [pnpm]: https://pnpm.io
 [react]: https://react.dev
 [rust]: https://www.rust-lang.org
+[nextjs]: https://nextjs.org
 [typescript]: https://www.typescriptlang.org
 [zod]: https://zod.dev
 [tanstack-query]: https://tanstack.com/query

@@ -306,6 +306,106 @@ function sanitizeHeaderName(name: string): string {
   return [...name.replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, 200).join('');
 }
 
+/**
+ * Casing/diacritic/punctuation-insensitive key so "SAEED KOLIVAND" and "Saeed
+ * Kolivand" — or "François Müller" and "FRANCOIS MULLER" (a document without
+ * accents, a profile with them, or vice versa) — compare equal. NFKD
+ * decomposes an accented character into base letter + combining mark (`ç` →
+ * `c` + U+0327); the mark's Unicode category is `Mn` (Nonspacing_Mark), NOT
+ * `\p{L}`/`\p{N}`, so it must be STRIPPED explicitly (`\p{M}` → `''`) before
+ * the punctuation collapse below — collapsing it to a space instead (an
+ * earlier version of this function did) inserts a spurious word break
+ * ("François" → "franc ois"), which fails to match the same name written
+ * without diacritics. Only after marks are gone does collapsing every
+ * remaining non-letter/non-number run to a single space fold in whitespace
+ * and punctuation differences (extra spaces, a stray period) too.
+ */
+function nameKey(s: string): string {
+  return s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * The index of the first non-blank line, or `lines.length` if every line is
+ * blank (including an empty array). Shared by {@link headerBlockEnd} (the
+ * header block starts here, not unconditionally at index 0 — Rust's parser
+ * accepts the first line with content after ANY number of leading blanks,
+ * `export/parser/mod.rs`, and this side must agree with it) and
+ * `seedHeaderFromProfile`'s no-match insert branch (so a spliced-in contact
+ * line lands right at/after the real content, not sandwiched inside a run of
+ * several leading blanks).
+ */
+function firstContentLine(lines: string[]): number {
+  let i = 0;
+  while (i < lines.length && (lines[i] ?? '').trim() === '') i++;
+  return i;
+}
+
+/**
+ * The header block: the first run of content lines — starting at
+ * {@link firstContentLine}, not unconditionally at index 0 — up to (not
+ * including) the next blank line after that, or the whole array if there is
+ * none. Shared ceiling for the name reconciliation search in
+ * {@link findNameLine} and the contact-line scan in `seedHeaderFromProfile`
+ * below — see that function's STRUCTURAL bound note for why neither scan may
+ * look past it. Recomputed fresh wherever it's needed rather than cached
+ * across a mutation: an `unshift` earlier in the same line array shifts every
+ * later index by one, so a stale block-end value would silently drift out of
+ * alignment with the array it's bounding.
+ *
+ * CodeRabbit (round 7): starting the termination scan at a hardcoded `i = 1`
+ * (rather than one past {@link firstContentLine}) made TWO OR MORE leading
+ * blank lines — a shape PDF extraction can and does produce, this codebase
+ * has already special-cased ONE — return 1 immediately (the second blank),
+ * so every real header line beyond it (the name at index 2+) fell outside
+ * the block and became unreachable to both scans above. One leading blank
+ * happened to still work by accident: index 1 there IS the real content
+ * line, so the old hardcoded start coincided with the correct one.
+ */
+function headerBlockEnd(lines: string[]): number {
+  for (let i = firstContentLine(lines) + 1; i < lines.length; i++) {
+    if ((lines[i] ?? '').trim() === '') return i;
+  }
+  return lines.length;
+}
+
+/**
+ * The index of the header-block line that's already the profile's own name
+ * (compared via {@link nameKey}, so casing/diacritics/punctuation don't
+ * matter), or -1 if none is. `key` is expected pre-computed by the caller so
+ * an empty-after-normalizing `fullName` (punctuation-only) short-circuits
+ * without scanning at all — an empty key would otherwise spuriously match
+ * any other blank-after-normalizing line in the block.
+ *
+ * Also stops at the first `looksLikeHeaderBoundary` line, same STRUCTURAL
+ * bound as the contact scan below it — WITHOUT this, `headerBlockEnd`
+ * degrades to `lines.length` whenever the text has no blank line anywhere
+ * (a wholly unstructured document), and an unbounded scan can then match the
+ * candidate's name recurring later in the BODY (a "References available
+ * upon request — Jordan Lee" sign-off, a certifications line repeating the
+ * name) and reconcile THAT line instead of ever seeding one at the top —
+ * strictly worse than the pre-reconciliation fallback, which at least always
+ * unshifts. The match check runs BEFORE the boundary check, not after: an
+ * ALL-CAPS name is itself boundary-shaped (`isAllCapsSectionHeading`), so it
+ * must be allowed to match on the very line that would otherwise break the
+ * scan — checking boundary first would make an ALL-CAPS name at the top of
+ * the block unreachable.
+ */
+function findNameLine(lines: string[], key: string): number {
+  if (!key) return -1;
+  const blockEnd = headerBlockEnd(lines);
+  for (let i = 0; i < blockEnd; i++) {
+    const line = lines[i] ?? '';
+    if (nameKey(line) === key) return i;
+    if (looksLikeHeaderBoundary(line)) break;
+  }
+  return -1;
+}
+
 /** A real email shape (local-part `@` domain `.` tld), not just a bare `@` —
  *  "Software Engineer @ Acme" contains an `@` but no email; only a genuine
  *  email should outrank other candidates in {@link pickReplacementIndex}. */
@@ -370,14 +470,65 @@ function pickReplacementIndex(lines: string[], matches: number[]): number {
  * line it mis-scans as contact-shaped) — whether by deleting it outright or
  * by silently overwriting it in place, which is just as much a loss.
  *
- * Index 0 is never a candidate for the replacement scan below (which starts
- * at `i = 1`), including when there's no `fullName` and line 0 is already
- * contact-shaped by Rust's narrower line-0 rule (`isFirstLineContactShaped`)
- * — a combined "Jane Doe | jane@example.com" with no separate name line.
- * Were it eligible and the ONLY candidate, overwriting it would erase "Jane
- * Doe" entirely (there is no separate name line to fall back to), which is
- * worse than leaving it untouched and inserting the profile's line right
- * after — so it always falls to the "insert" branch instead.
+ * The first content line ({@link firstContentLine} — NOT unconditionally
+ * index 0; with N ≥ 2 leading blank lines it can sit deeper in the block) is
+ * never a candidate for the replacement scan below, including when there's
+ * no `fullName` and that line is already contact-shaped by Rust's narrower
+ * line-0-ONLY rule (`isFirstLineContactShaped`) — a combined
+ * "Jane Doe | jane@example.com" with no separate name line. Were it eligible
+ * and the ONLY candidate, overwriting it would erase "Jane Doe" entirely
+ * (there is no separate name line to fall back to), which is worse than
+ * leaving it untouched and inserting the profile's line right after — so it
+ * always falls to the "insert" branch instead. (CodeRabbit, round 8: this
+ * exclusion originally hardcoded index 0, which silently stopped covering
+ * the line it protects once the header block itself started at
+ * `firstContentLine` instead of index 0 — the exact line a combined
+ * name+contact first line moves to behind ≥2 leading blanks.)
+ *
+ * Before the unshift/replace fallback above runs, the `fullName` branch
+ * first searches the header block ({@link findNameLine}, bounded by the same
+ * {@link headerBlockEnd} the contact scan below uses) for a line that's
+ * ALREADY the profile's own name — compared casing/punctuation-insensitively
+ * via {@link nameKey}, not by position — and overwrites just that line in
+ * place instead of falling through to unshift/replace. This closes two
+ * duplicate-header repros the position-0-only logic above didn't cover: (1)
+ * an ALL-CAPS name line — `looksLikeHeaderBoundary` reads it as a section
+ * heading via `isAllCapsSectionHeading`, so the unshift/replace fallback
+ * would insert the profile's name ABOVE it, leaving the ALL-CAPS original
+ * sitting right below as a fake body section (with the model's title and
+ * original contact line under it — a fully duplicated header); (2) a leading
+ * blank line (PDF extraction routinely emits one) — line 0 gets blindly
+ * replaced, leaving the model's real, still-unrecognized name line one row
+ * down, where the contact scan then also mis-splices a second contact line.
+ * Reclassifying that one line is the ONLY safe re-scoping of a line
+ * `looksLikeHeaderBoundary` flagged: `nameKey` can match nothing but the
+ * profile's own name, so it's the single line in the block guaranteed to be
+ * redundant with what we're about to write there — the
+ * never-remove-or-blind-overwrite invariant above still holds for every
+ * OTHER line in the block.
+ *
+ * `sanitizeHeaderName` never changes case — the profile's own casing is what
+ * the user typed, and this function must not invent a different rendering of
+ * their name — so an ALL-CAPS `fullName` reconciled onto a line at `i > 0`
+ * (case (2) above) is STILL ALL-CAPS afterward, and would re-trip
+ * `looksLikeHeaderBoundary` right where the contact scan below starts
+ * looking. That scan is told which index (if any) was just reconciled and
+ * skips it exactly like index 0 — see the comment at that scan.
+ *
+ * `findNameLine` shares the contact scan's STRUCTURAL bound (below) for the
+ * same reason: without it, a document with no blank line anywhere turns
+ * `headerBlockEnd` into `lines.length`, and the name search could match the
+ * profile's name recurring later in the BODY (a sign-off, a repeated byline)
+ * instead of ever finding a header line to reconcile — worse than not
+ * searching at all, since it would suppress the unshift fallback that
+ * otherwise guarantees a name line lands at the top.
+ *
+ * ponytail: known ceiling, not a bug — an ALL-CAPS (or otherwise
+ * boundary-shaped) name line that does NOT match the profile's `fullName`
+ * still falls through to unshift and stacks as a visible duplicate. The
+ * profile is the only ground truth available here; guessing that some
+ * OTHER boundary-shaped line is "probably the name anyway" would risk
+ * destroying a real section heading instead, which is strictly worse.
  *
  * STRUCTURAL bound (the actual safety mechanism — `looksLikeHeaderBoundary`
  * is best-effort recognition, not this): the scan below never looks past the
@@ -400,39 +551,74 @@ export function seedHeaderFromProfile(
   if (!lines.length) return text;
 
   const fullName = profile.fullName?.trim();
+  // Set below when the fullName branch reconciles an EXISTING header-block
+  // line in place (rather than unshifting/replacing index 0) — the contact
+  // scan needs this index so it can treat that line like index 0 (never a
+  // boundary check, never a match candidate). See the note at that scan.
+  let reconciledNameIndex = -1;
   if (fullName) {
-    // Guarded like every other write below: line 0 is only overwritten when
-    // it's actually name-shaped — not a section heading (`looksLikeHeaderBoundary`)
-    // and not already contact-shaped (`isFirstLineContactShaped`). A model
-    // that omits the name line (starts straight with "SUMMARY" or a
-    // "Jane Doe | jane@example.com" combined line) must never have that line
-    // clobbered — the name is INSERTED ahead of it instead, same
-    // never-remove-or-blind-overwrite invariant the rest of this function
-    // holds. See the doc comment above for the destructive repro this closes.
-    const line0 = lines[0] ?? '';
-    if (looksLikeHeaderBoundary(line0) || isFirstLineContactShaped(line0)) {
-      lines.unshift(sanitizeHeaderName(fullName));
+    // First: is one of the header block's own lines already this name, just
+    // differently cased/punctuated (e.g. an ALL-CAPS name, or the model's
+    // real name line pushed to index 1 by a leading blank)? If so, fix it in
+    // place — see the doc comment above ("Before the unshift/replace
+    // fallback above runs…") for why this is safe.
+    const nameLineIndex = findNameLine(lines, nameKey(fullName));
+    if (nameLineIndex !== -1) {
+      lines[nameLineIndex] = sanitizeHeaderName(fullName);
+      reconciledNameIndex = nameLineIndex;
     } else {
-      lines[0] = sanitizeHeaderName(fullName);
+      // Guarded like every other write below: line 0 is only overwritten when
+      // it's actually name-shaped — not a section heading (`looksLikeHeaderBoundary`)
+      // and not already contact-shaped (`isFirstLineContactShaped`). A model
+      // that omits the name line (starts straight with "SUMMARY" or a
+      // "Jane Doe | jane@example.com" combined line) must never have that line
+      // clobbered — the name is INSERTED ahead of it instead, same
+      // never-remove-or-blind-overwrite invariant the rest of this function
+      // holds. See the doc comment above for the destructive repro this closes.
+      const line0 = lines[0] ?? '';
+      if (looksLikeHeaderBoundary(line0) || isFirstLineContactShaped(line0)) {
+        lines.unshift(sanitizeHeaderName(fullName));
+      } else {
+        lines[0] = sanitizeHeaderName(fullName);
+      }
     }
   }
 
   if (contactLine.trim()) {
     // The header block: line 0 up to (not including) the first blank line,
     // or the whole text if there is none. Hard ceiling for the scan below —
-    // see the STRUCTURAL bound note above.
-    let blockEnd = lines.length;
-    for (let i = 1; i < lines.length; i++) {
-      if ((lines[i] ?? '').trim() === '') {
-        blockEnd = i;
-        break;
-      }
-    }
+    // see the STRUCTURAL bound note above. Recomputed here (not reused from
+    // the fullName branch above) because an `unshift` there would have
+    // shifted every index by one.
+    const blockEnd = headerBlockEnd(lines);
 
-    // Starts at i = 1: index 0 is never a candidate here — see the doc
-    // comment above.
+    // The first content line is never a candidate here (loop starts at
+    // i = 1, and this second check excludes it again when it sits deeper
+    // than 1 behind ≥2 leading blanks) — see the doc comment above. Computed
+    // once, not per-iteration: it doesn't change across the loop (nothing
+    // above this point mutates `lines`' length once we're inside the
+    // contact branch).
+    const contentStart = firstContentLine(lines);
     const matches: number[] = [];
     for (let i = 1; i < blockEnd; i++) {
+      // Two independent exclusions, checked every iteration since either can
+      // land anywhere in the block (not just near the top):
+      // - `contentStart`: the first content line — see the doc comment above
+      //   for why it can never be a candidate, regardless of `fullName`.
+      // - `reconciledNameIndex`: the name step above can reconcile fullName
+      //   IN PLACE onto a DIFFERENT line at i > 0 (a leading-blank shifted
+      //   the real name line down one, or a non-name-shaped line sits ahead
+      //   of it) without changing its casing — `sanitizeHeaderName` never
+      //   Title-Cases, since the profile's own casing is what the user
+      //   typed. An ALL-CAPS profile name therefore stays ALL-CAPS after
+      //   reconciliation and would re-trip `looksLikeHeaderBoundary` right
+      //   here, breaking the scan before it ever reaches the real contact
+      //   line below and stacking a second one via the insert branch.
+      // These usually coincide (the name IS the first content line) but not
+      // always (a non-name, non-boundary line — an unrecognized subtitle —
+      // can sit ahead of the name inside the block), so both are checked
+      // independently rather than assuming equality.
+      if (i === contentStart || i === reconciledNameIndex) continue;
       const line = lines[i] ?? '';
       if (looksLikeHeaderBoundary(line)) break;
       if (isHeaderContactLine(line)) matches.push(i);
@@ -441,15 +627,26 @@ export function seedHeaderFromProfile(
     if (matches.length > 0) {
       lines[pickReplacementIndex(lines, matches)] = contactLine;
     } else {
-      // CodeRabbit (security re-review): index 1 assumes line 0 is always
-      // the name — true after the fullName-driven unshift/replace above, or
-      // when the model already wrote a name/contact line on its own. But
-      // when there's no fullName to seed AND line 0 is itself a section
-      // heading (the model omitted the name line entirely), splicing at 1
-      // put the contact line INSIDE that section, right under its heading,
-      // not in the header block above it. Insert at 0 (ahead of the
-      // heading) in that case instead.
-      const insertAt = looksLikeHeaderBoundary(lines[0] ?? '') ? 0 : 1;
+      // CodeRabbit (security re-review): assuming line 0 is always the name
+      // was already wrong once — true after the fullName-driven
+      // unshift/replace above, or when the model already wrote a name/
+      // contact line on its own, but NOT when there's no fullName to seed
+      // AND line 0 is itself a section heading (the model omitted the name
+      // line entirely); splicing right after it would put the contact line
+      // INSIDE that section, under its heading, not in the header block
+      // above it. Insert ahead of the heading in that case instead.
+      //
+      // CodeRabbit (round 7): the same reasoning generalizes past index 0 —
+      // with N ≥ 2 leading blank lines the real first content line is at
+      // `firstContentLine(lines)`, not unconditionally index 0/1, and a
+      // hardcoded `1` would splice the contact line into the MIDDLE of that
+      // blank run, ahead of the actual content. Reduces to the exact
+      // original 0-or-1 ternary above for zero leading blanks (where
+      // `firstContentLine` is 0).
+      const contentStart = firstContentLine(lines);
+      const insertAt = looksLikeHeaderBoundary(lines[contentStart] ?? '')
+        ? contentStart
+        : contentStart + 1;
       lines.splice(insertAt, 0, contactLine);
     }
   }
