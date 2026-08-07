@@ -19,6 +19,7 @@
 import { getModelTier } from '@ajh/prompts/context-manager';
 import type { PromptTier, ProviderKind, ProviderProfile } from '@ajh/prompts/provider';
 import type { ActiveAiConfig } from '@ajh/shared';
+import type { AiGenerateRequest } from '@ajh/shared/schemas';
 
 import { keys, queryClient } from '@/services/query-client';
 import type { AiProvider, PerProviderSettings } from '@/store/preferences-schema';
@@ -76,6 +77,46 @@ export function resolveActiveProvider(fallbackModel = ''): ActiveProviderContext
   const providerSettings =
     usePreferencesStore.getState().aiProviderConfig?.providers?.[activeProvider];
   return { activeProvider, providerSettings, activeModel };
+}
+
+// ─── Sampling intent (renderer owns intent, adapter owns numbers) ────────────
+
+/**
+ * The renderer's declared INTENT for one generation step — never a raw
+ * sampling number. Mirrors `AiGenerateRequestSchema.intent`
+ * (`packages/shared/src/schemas/index.ts`); each backend provider adapter
+ * maps `(model, intent)` to its OWN numbers, or none at all, via
+ * `AiProvider::sampling_profile` (`commands/ai_provider/mod.rs`). Sending the
+ * SAME hardcoded temperature/penalty numbers to every vendor is what this
+ * type exists to stop — see that Rust doc comment for the full rationale.
+ */
+export type GenerationIntent = NonNullable<AiGenerateRequest['intent']>;
+
+/** One generation step that can carry its own per-model temperature override
+ *  (Settings → local model limits → "Custom temperature"). Shared between
+ *  `generation.ts` and `resume-ai.ts` so the override key vocabulary can't
+ *  drift between the two callers. Each key maps to exactly ONE call site
+ *  intent (see `resolveSampling`'s callers in `generation.ts`) — never widen
+ *  a key to cover a second, unrelated surface, or a user's single slider
+ *  silently retunes generation it never meant to touch. */
+export type TemperatureStep =
+  'analysis' | 'resume' | 'cover' | 'answers' | 'questions' | 'referral';
+
+/**
+ * The user-set per-model, per-step temperature OVERRIDE for one generation
+ * step (`LocalModelLimits.tsx`) — the only sampling value in this app a human
+ * actually chose. Ollama-only: cloud/CLI providers have no such UI control,
+ * so this always resolves to `undefined` for them, leaving the backend
+ * adapter's own per-(model, intent) `sampling_profile` to apply instead. The
+ * renderer no longer ships a raw default number for any step — see
+ * `GenerationIntent`.
+ */
+export function resolveTemperatureOverride(step: TemperatureStep): number | undefined {
+  const { activeProvider, providerSettings, activeModel } = resolveActiveProvider();
+  if (activeProvider !== 'ollama') return undefined;
+  return activeModel
+    ? providerSettings?.modelLimits?.[activeModel]?.temperature?.[step]
+    : undefined;
 }
 
 // ─── Effective prompt tier ────────────────────────────────────────────────────

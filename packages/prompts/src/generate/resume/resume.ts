@@ -57,7 +57,7 @@ NEVER BREAK THESE RULES:
 1. NEVER invent skills, technologies, employers, dates, or achievements not in the original resume
 2. NEVER copy phrases from the job ad as if the candidate wrote them
 3. ONLY add keywords from the job ad when they embed naturally into EXISTING true statements
-4. Every bullet: Action Verb + What + Technology + Measurable Result (if number exists in original)
+4. Every bullet: Action Verb + What + Technology (only when the original names one) + Measurable Result (only when the original supplies a number)
 5. Every skill, job title, company, date, and achievement MUST come from the original resume
 6. NEVER omit a work role — keep every employer/role from the original; only condense the bullets within each role
 
@@ -97,7 +97,7 @@ GOAL: rewrite the candidate's resume tailored to the target job, in the target l
 HARD CONSTRAINTS (never violate):
 - Use only facts from the candidate's resume — never invent skills, employers, titles, dates, or numbers.
 - Only weave in job-ad keywords where they fit an EXISTING true statement.
-- Every bullet: action verb + what + technology + a measurable result that already exists in the source.
+- Every bullet: action verb + what + technology (only when the original names one) + a measurable result (only when the original supplies a number).
 - Keep every work role from the candidate's resume — never drop or merge roles; only tailor the bullets inside each role.
 
 ACCEPTANCE CHECKS — verify and revise until all pass:
@@ -131,7 +131,7 @@ CORE RULES — NEVER BREAK (violations = instant failure):
 2. You MAY improve wording, reorder content, and reframe existing facts for maximum impact
 3. ONLY add keywords from the job ad when they can be embedded naturally into EXISTING true statements
 4. Every bullet point must refer to work the candidate actually did
-5. NEVER fabricate numbers - only use metrics if they're in the original or can be reasonably inferred
+5. NEVER fabricate numbers - only use metrics if they're in the original
 6. NEVER add technologies the candidate hasn't used
 7. NEVER drop, merge, or omit a work role — every employer/role in the original resume MUST appear in the output, with its real title and dates; you may only reorder and condense the bullets within each role
 8. Write ALL body content — the Professional Summary AND every Work Experience and Skills bullet — in the target output language; if the source resume is in another language, TRANSLATE it (never leave source-language text). Proper nouns like employer/company names stay as written.
@@ -152,7 +152,7 @@ ATS OPTIMIZATION RULES (CRITICAL - 40% of success):
 **Bullet Point Rules:**
 - Start with strong past-tense action verb (Architected, Engineered, Led, Optimized, Delivered)
 - Max 2 lines per bullet (recruiters scan, don't read)
-- Every bullet MUST have: Action + What + Technology/Tool + Measurable Result
+- Every bullet MUST have: Action + What + Technology/Tool (only when the original names one) + Measurable Result (only when the original supplies a number)
 - Example: "Architected **microservices** platform using **Kubernetes** and **Docker**, reducing deployment time by 60%"
 
 **Skills Section Format:**
@@ -201,8 +201,6 @@ Why weak: Passive voice, no metrics, vague, no specific technologies.
 ✓ "Led migration of monolith to **microservices** using **Docker** and **Kubernetes**, reducing deployment time by 75%"
 ✓ "Optimized **PostgreSQL** queries and implemented **connection pooling**, handling 10x traffic spike with zero downtime"
 ✓ "Engineered **CI/CD pipeline** with **Jenkins** and **GitHub Actions**, automating deployments for 15 services"
-
-Formula: [Action Verb] + [What you built/did] + [Technology used (bolded)] + [Measurable impact]
 
 **Keyword Naturalization (critical for ATS):**
 
@@ -287,6 +285,19 @@ export function buildResumePrompt(
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
+  // Both blocks render '' when `meta.topRequirements` is empty (e.g. a
+  // synthesized/builder-flow résumé with no scored job ad) — the Skills
+  // Section instruction below must only point at whichever block(s) are
+  // ACTUALLY fenced above, the same dangling-pointer class already fixed for
+  // `<company_research>` (`cover-letter.ts`'s `hasBrief` gate).
+  const hasEmphasis = Boolean(emphasisBlock);
+  const hasGrounding = Boolean(groundingBlock);
+  const skillsBoldInstruction =
+    hasEmphasis && hasGrounding
+      ? 'Bold the skills that appear in the KEYWORD EMPHASIS list and that SKILL GROUNDING marks PRESENT'
+      : hasEmphasis
+        ? 'Bold the skills that appear in the KEYWORD EMPHASIS list'
+        : 'Bold the skills most relevant to this job ad';
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}${bodyLinksBlock ? `${bodyLinksBlock}\n\n` : ''}<candidate_resume>
 ${resumeBody}
@@ -333,7 +344,7 @@ Work Experience (most recent first):
 - Write every bullet in ${meta.targetLanguage}. If a source bullet is in another language, TRANSLATE it into ${meta.targetLanguage} — never leave source-language text. Keep employer, title, and dates factual (do not translate proper nouns like company names).
 - Include EVERY role from <candidate_resume> — same employer, title, and dates. Never drop, merge, or summarise away a role, even if it seems less relevant to this job.
 - Within each role, reorder bullets so the most relevant to this job come first
-- Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded) + Result
+- Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded, only when the original names one) + Result (only when the original supplies a number)
 - Embed bolded keywords naturally into EXISTING true statements
 - Condense wording within a role, but keep at least one bullet for every role so no role is left empty
 - Aim for 3–5 strong bullets on the most relevant roles; older or less relevant roles may have fewer, but never zero
@@ -341,18 +352,15 @@ Work Experience (most recent first):
 Skills Section:
 - Order by relevance to this job ad (most relevant first)
 - Group: Languages | Frameworks | Tools | Platforms | Methodologies
-- Bold the skills that also appear in topRequirements
+- ${skillsBoldInstruction}
 
 Verify before writing:
-✓ All section headers are standard ALL_CAPS words
 ✓ Dates are consistent throughout
 ✓ Every bullet starts with action verb
 ✓ Key job-ad technologies appear bolded and naturally integrated
 ✓ No tables, columns, or special chars that break ATS parsers
 
 CRITICAL: Only use facts from the original resume.
-
-### CANDIDATE RESUME ###
 
 Now output ONLY the rewritten resume. Do not output analysis, phase labels, or explanations.
 Use this exact structure:

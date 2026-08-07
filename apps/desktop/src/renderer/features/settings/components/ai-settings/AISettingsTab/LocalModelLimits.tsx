@@ -20,14 +20,26 @@ const SLIDER_CLASS =
   'w-full h-2 appearance-none rounded-lg bg-foreground/[0.06] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brand-soft [&::-webkit-slider-thumb]:cursor-pointer';
 
 // Per-step temperature sliders revealed when "Custom temperature" is ON. Each
-// step is set independently; `def` is the app's per-step default (mirrors
-// generation.ts) used both to seed the toggle and as the slider's fallback value.
+// step is set independently; `def` seeds the toggle and is the slider's
+// fallback value. These do NOT mirror `generation.ts` any more — the
+// renderer no longer ships per-step numbers at all (`generation.ts` now
+// sends a `deterministic`/`prose`/`prose_grounded` INTENT; each provider
+// adapter's own `sampling_profile` — `commands/ai_provider/mod.rs` — picks
+// the numbers). These seeds instead mirror that Rust module's
+// `DETERMINISTIC_TEMPERATURE` (0.3) / `PROSE_TEMPERATURE` (0.5) /
+// `PROSE_GROUNDED_TEMPERATURE` (0.6) constants. Each key maps to exactly ONE
+// intent/surface group (see `TemperatureStep`'s doc comment): analysis
+// (metadata extraction, job-ad summaries) and résumé (résumé generation,
+// imported GitHub projects) are `deterministic`; cover letter, application
+// answers, and referral are `prose_grounded`; questions (interview
+// questions, likely questions, STAR feedback) is `prose`.
 const TEMP_STEPS = [
-  { key: 'analysis', labelKey: 'settings.ai.localLimits.tempAnalysis', def: 0.15 },
+  { key: 'analysis', labelKey: 'settings.ai.localLimits.tempAnalysis', def: 0.3 },
   { key: 'resume', labelKey: 'settings.ai.localLimits.tempResume', def: 0.3 },
-  { key: 'cover', labelKey: 'settings.ai.localLimits.tempCover', def: 0.5 },
-  { key: 'answers', labelKey: 'settings.ai.localLimits.tempAnswers', def: 0.3 },
-  { key: 'referral', labelKey: 'settings.ai.localLimits.tempReferral', def: 0.4 },
+  { key: 'cover', labelKey: 'settings.ai.localLimits.tempCover', def: 0.6 },
+  { key: 'answers', labelKey: 'settings.ai.localLimits.tempAnswers', def: 0.6 },
+  { key: 'questions', labelKey: 'settings.ai.localLimits.tempQuestions', def: 0.5 },
+  { key: 'referral', labelKey: 'settings.ai.localLimits.tempReferral', def: 0.6 },
 ] as const;
 
 /**
@@ -169,7 +181,7 @@ export function LocalModelLimits({ selectedModel }: Props) {
           onCheckedChange={(v) =>
             setLocalModelLimits(selectedModel, {
               temperature: v
-                ? { analysis: 0.15, resume: 0.3, cover: 0.5, answers: 0.3, referral: 0.4 }
+                ? Object.fromEntries(TEMP_STEPS.map(({ key, def }) => [key, def]))
                 : undefined,
             })
           }

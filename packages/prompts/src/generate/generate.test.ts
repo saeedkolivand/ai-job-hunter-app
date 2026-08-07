@@ -993,6 +993,49 @@ describe('buildResumeSystemPrompt', () => {
       /told through the candidate's real story/i
     );
   });
+
+  it('never licenses "reasonably inferred" as an excuse to fabricate a metric (fix #1)', () => {
+    // The full-tier CORE RULES no-fabrication line must not reopen the
+    // loophole the brief tier and the honesty rule elsewhere in this same
+    // prompt both close: a metric absent from the original resume.
+    const prompt = buildResumeSystemPrompt('ats');
+    expect(prompt).not.toMatch(/reasonably inferred/i);
+    expect(prompt).toContain(
+      "5. NEVER fabricate numbers - only use metrics if they're in the original"
+    );
+  });
+
+  it('makes the bullet-formula Technology AND Measurable Result both conditional on the original (fix #2, hardened)', () => {
+    // f28f44c9 gated Measurable Result but left Technology/Tool mandatory in
+    // the very same formula — the same fabrication defect, one token to the
+    // left. A source bullet with no tool in it ("Mentored three junior
+    // engineers") still forced the model to name one. Both clauses are now
+    // evidence-gated and worded identically to the brief/task tiers below,
+    // so they can't drift apart again.
+    const prompt = buildResumeSystemPrompt('ats');
+    expect(prompt).toContain(
+      'Every bullet MUST have: Action + What + Technology/Tool (only when the original names one) + Measurable Result (only when the original supplies a number)'
+    );
+  });
+
+  it('gates Technology the same way at the brief and task tiers, and drops the now-redundant duplicate formula line', () => {
+    const brief = buildResumeSystemPrompt('ats', 'small');
+    expect(brief).toContain(
+      'Every bullet: Action Verb + What + Technology (only when the original names one) + Measurable Result (only when the original supplies a number)'
+    );
+
+    const task = buildResumeSystemPrompt('ats', { kind: 'cli' });
+    expect(task).toContain(
+      'Every bullet: action verb + what + technology (only when the original names one) + a measurable result (only when the original supplies a number).'
+    );
+
+    // The full tier's "Formula: [Action Verb] + ... + [Technology used
+    // (bolded)] + ..." line duplicated the ATS Optimization Rules bullet
+    // formula above it (an earlier audit flagged the redundancy) — deleted
+    // so there is a single statement to keep in sync.
+    const full = buildResumeSystemPrompt('ats');
+    expect(full).not.toMatch(/Technology used \(bolded\)/);
+  });
 });
 
 describe('buildEmphasisDirectivesBlock (#15)', () => {
@@ -1051,6 +1094,15 @@ describe('buildResumePrompt', () => {
     expect(prompt).not.toContain('remove bullets irrelevant');
     expect(prompt).not.toContain('experience to minimize');
     expect(prompt).not.toContain('experience items most relevant');
+  });
+
+  it('gates the CAR-format rewrite instruction on the original supporting Technology and Result (fix #2 site 4)', () => {
+    // Same defect as the system-prompt bullet formula: Technology was
+    // mandatory even for a bullet with no tool in the source.
+    const prompt = buildResumePrompt(RESUME_WITH_LINKS, 'Job ad', META, 'ats');
+    expect(prompt).toContain(
+      'Rewrite weak bullets to CAR format: Action Verb + What + Technology (bolded, only when the original names one) + Result (only when the original supplies a number)'
+    );
   });
 
   it('folds in emphasis directives only when selected (#15)', () => {
@@ -1308,6 +1360,46 @@ describe('buildCoverLetterSystemPrompt', () => {
     expect(small).not.toContain('Use the real company name and job title.');
     expect(cli).not.toContain('the real company name and job title;');
   });
+
+  it('gates the three <company_research> sentences on the hasBrief flag, at every depth (fix #12)', () => {
+    // Defaults to true (today's behavior — unconditional mention) so callers
+    // that don't know yet whether a brief was fetched are unaffected; a
+    // caller that does know can pass false to drop the now-noisy pointer.
+    const large = buildCoverLetterSystemPrompt('recruiter', 'large');
+    const small = buildCoverLetterSystemPrompt('recruiter', 'small');
+    const cli = buildCoverLetterSystemPrompt('recruiter', { kind: 'cli' });
+    for (const prompt of [large, small, cli]) {
+      expect(prompt).toMatch(/<company_research>/);
+    }
+
+    const noBriefLarge = buildCoverLetterSystemPrompt(
+      'recruiter',
+      'large',
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    const noBriefSmall = buildCoverLetterSystemPrompt(
+      'recruiter',
+      'small',
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    const noBriefCli = buildCoverLetterSystemPrompt(
+      'recruiter',
+      { kind: 'cli' },
+      undefined,
+      undefined,
+      false,
+      false
+    );
+    for (const prompt of [noBriefLarge, noBriefSmall, noBriefCli]) {
+      expect(prompt).not.toMatch(/<company_research>/);
+    }
+  });
 });
 
 describe('buildCoverLetterPrompt', () => {
@@ -1398,7 +1490,11 @@ describe('buildCoverLetterPrompt', () => {
       'de'
     );
     expect(prompt).toContain('<market_conventions market="Germany">');
-    expect(prompt).toContain('Betreff');
+    // The subject-line label now goes through the same sameLanguage/formal-
+    // equivalent wrap as the salutation and sign-off (#10 fix): a German
+    // "Betreff" no longer leaks unqualified into an English-language letter.
+    expect(prompt).toContain('the formal en equivalent of "Betreff"');
+    expect(prompt).not.toContain('labelled "Betreff"');
     expect(prompt).toMatch(/salary expectation/i);
     // Decision: write in the letter language (en here), apply German etiquette.
     expect(prompt).toMatch(/Write the letter in en/);

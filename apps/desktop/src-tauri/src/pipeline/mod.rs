@@ -121,7 +121,7 @@ impl Completer {
     /// request no longer carries either. `model` is overwritten with the resolved
     /// active model so an empty/stale renderer value can never ship (every
     /// `chat_stream` impl reads `req.model`); every other field (messages, sampling
-    /// knobs, effort) is preserved.
+    /// knobs, effort, intent) is preserved.
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
         self.provider.chat_stream(&self.app, job_id, &req).await
@@ -291,6 +291,10 @@ impl Completer {
             max_tokens,
             context_window: None,
             effort: None,
+            // No declared intent — this caller (agentic tool loop / extension
+            // bridge answer.assist) already passes its own explicit
+            // `temperature`, which wins over any adapter default regardless.
+            intent: None,
         };
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
