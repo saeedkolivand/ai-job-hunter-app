@@ -179,37 +179,111 @@ fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
 /// existed (PR #955). This is NOT part of any live extraction path — it only
 /// undoes damage already sitting in the store, called exclusively from the
 /// one-time DB migrations `documents::DocumentStore::MIGRATIONS` and
-/// `ai_generations::AiGenerationStore::MIGRATIONS`.
+/// `ai_generations::AiGenerationStore::MIGRATIONS`, and defensively from the
+/// stores' insert/save paths (so restoring an old backup bundle — which still
+/// carries the corruption, `serde_json` round-trips a NUL intact — can't
+/// re-inject it into an already-migrated store).
 ///
 /// Before that fix, a PDF text string's raw bytes were decoded with
 /// `String::from_utf8_lossy`. For the common producer (UTF-16BE behind a
 /// `FE FF` BOM), that turns each BOM byte — individually invalid UTF-8 — into
-/// its own U+FFFD, while the UTF-16BE code units of the (mostly-ASCII) text
-/// survive byte-for-byte, because every byte `< 0x80`, including each unit's
-/// NUL high byte, is independently valid UTF-8 on its own. The stored result
-/// looks like `- [` + `\u{FFFD}\u{FFFD}` (the mangled BOM) +
-/// `\0a\0i\0j\0o\0b…` (the text, NUL-interleaved) + a clean, never-corrupted
-/// `](url)` suffix (added by the markdown link builder, not the byte decode).
-/// Dropping the doubled U+FFFD and every NUL recovers the original text
-/// exactly — the NUL-interleaving already *is* the correct ASCII text with a
-/// spacer byte dropped in between each character.
+/// its own U+FFFD, while a UTF-16BE code unit whose high byte is ASCII
+/// (`0x00`) survives as two independently-valid single-byte UTF-8 chars: the
+/// high byte decodes to U+0000 (NUL) and the low byte to the intended ASCII
+/// char. The stored result looks like `- [` + `\u{FFFD}\u{FFFD}` (the mangled
+/// BOM) + `\0a\0i\0j\0o\0b…` (the text, NUL-interleaved) + a clean,
+/// never-corrupted `](url)` suffix (added by the markdown link builder, not
+/// the byte decode).
 ///
-/// Gated on the string containing a NUL: an embedded NUL is never legitimate
-/// in stored document text, so it is an unambiguous marker that a row
-/// predates the fix, and it is what keeps a legitimate lone U+FFFD elsewhere
-/// in a document (a genuinely undecodable byte, unrelated to this bug) from
-/// being touched. Returns `Cow::Borrowed` when the gate doesn't fire — the
-/// overwhelmingly common, already-clean case — so callers pay no allocation.
+/// **Why a global, document-wide strip is safe for PDF/DOCX but not HTML/RTF.**
+/// `extraction::clean::strip_icon_glyphs` — called by `pdf::extract` and
+/// `docx::extract` *before* [`inline_links`] appends the link tail — already
+/// removes every U+FFFD and control char from the body text. So for a
+/// PDF/DOCX-sourced row, the appended link tail is the ONLY place a NUL or a
+/// genuine BOM-derived U+FFFD pair can survive, which is what made a blind
+/// document-wide strip look safe. `extraction::html` and `extraction::rtf`
+/// decode with `from_utf8_lossy` too but never call `strip_icon_glyphs`, so a
+/// legitimate lone or paired U+FFFD can appear ANYWHERE in one of their rows
+/// — this function does not assume a PDF/DOCX-shaped row and is scoped
+/// narrowly enough (below) to stay correct for those too.
+///
+/// **Scoping.** Only rewrites a span that starts with the doubled-U+FFFD
+/// immediately followed by a NUL (`\u{FFFD}\u{FFFD}\0`) — the reliable
+/// signature of "mangled BOM, then the first code unit's NUL high byte" —
+/// and only for as long as the following code units keep pairing as
+/// (NUL, ASCII `< 0x80`).
+/// - A genuine, unrelated doubled U+FFFD elsewhere in the row (not
+///   immediately followed by a NUL) is left untouched: the marker check is
+///   what keeps `"Berlin\u{FFFD}\u{FFFD}Germany\0"` from being fused into
+///   `"BerlinGermany"`.
+/// - A code unit whose high byte is non-zero (CJK, anything `>= U+0100`)
+///   breaks the (NUL, ASCII) pairing immediately, so the span simply stops
+///   there instead of guessing at a reconstruction. An exotic row is left
+///   detectably corrupt (its U+FFFDs stay visible) rather than silently
+///   reassembled into plausible-but-wrong text — recoverable later beats
+///   silently wrong now.
+/// - This function touches ONLY characters inside a recognized span. Any
+///   other character — including a stray NUL that isn't part of one — is
+///   left exactly as stored, even in the same row as a recognized span.
+///   Deliberately conservative: an ASCII-prefixed anchor that transitions
+///   into non-ASCII mid-run (e.g. `gi` then a CJK char then `hub`) has its
+///   safe `gi` prefix recovered, but the leftover NULs past that point are
+///   left in place rather than guessed at or blanket-stripped — leaving the
+///   row unambiguously, mechanically detectable as still-corrupt (a future,
+///   smarter repair — or a human — can find it again by the very NULs this
+///   function refused to touch) instead of risking a plausible-looking but
+///   silently WRONG reconstruction.
+///
+/// Returns `Cow::Borrowed` unchanged whenever nothing above actually
+/// applies — including the overwhelmingly common already-clean case (no NUL
+/// at all) — so callers pay no allocation.
 pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
     if !s.contains('\0') {
         return Cow::Borrowed(s);
     }
-    Cow::Owned(
-        s.replace("\u{FFFD}\u{FFFD}", "")
-            .chars()
-            .filter(|&c| c != '\0')
-            .collect(),
-    )
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut changed = false;
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\u{FFFD}'
+            && chars.get(i + 1) == Some(&'\u{FFFD}')
+            && chars.get(i + 2) == Some(&'\0')
+        {
+            // Greedily consume (NUL, ASCII) pairs — the shape produced when
+            // every UTF-16BE code unit in the run had a `0x00` high byte.
+            // Stop at the first pair that doesn't fit: that's either the
+            // clean, never-corrupted suffix, or a non-ASCII code unit this
+            // transform cannot safely reconstruct. `c != '\0'` additionally
+            // refuses to "recover" a genuine embedded NUL char as content.
+            let mut j = i + 2;
+            let mut run = String::new();
+            while chars.get(j) == Some(&'\0') {
+                match chars.get(j + 1) {
+                    Some(&c) if c != '\0' && (c as u32) < 0x80 => {
+                        run.push(c);
+                        j += 2;
+                    }
+                    _ => break,
+                }
+            }
+            if j > i + 2 {
+                // At least one full (NUL, ASCII) pair recovered — safe to
+                // drop the BOM marker and splice in the decoded run.
+                out.push_str(&run);
+                i = j;
+                changed = true;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    if changed {
+        Cow::Owned(out)
+    } else {
+        Cow::Borrowed(s)
+    }
 }
 
 /// Append extracted links at the end of the text as a markdown reference list.
@@ -395,5 +469,69 @@ mod test {
         // pre-#955 rows instead of eating every replacement char in the store.
         let legit = "Caf\u{FFFD} — one bad byte, no embedded NUL";
         assert_eq!(repair_utf16_mojibake(legit), legit);
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_does_not_fuse_an_unrelated_adjacent_replacement_char_pair() {
+        // A genuine, UNRELATED doubled U+FFFD elsewhere in the row (not the
+        // BOM marker — not immediately followed by a NUL) must survive
+        // untouched, even though the row does contain some other, unrelated
+        // stray NUL that gates the repair. Blindly stripping every doubled
+        // U+FFFD would fuse "Berlin" and "Germany" into one word here. No
+        // recognized marker exists anywhere in this string, so the whole row
+        // — trailing NUL included — is left byte-for-byte as stored.
+        let input = "Berlin\u{FFFD}\u{FFFD}Germany\0";
+        assert_eq!(repair_utf16_mojibake(input), input);
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_leaves_a_row_untouched_when_the_first_code_unit_is_non_ascii() {
+        // A UTF-16BE anchor whose FIRST code unit already has a non-zero
+        // high byte (CJK here) never matches the doubled-FFFD-then-NUL
+        // marker, so nothing is touched — the row stays exactly as stored,
+        // still visibly corrupt (U+FFFD-bearing), rather than being silently
+        // reassembled into plausible-but-wrong text. Built from real bytes,
+        // not hand-waved — the exact `from_utf8_lossy` output for a genuine
+        // UTF-16BE-behind-BOM encoding of "中文x".
+        let mut bytes = vec![0xFE, 0xFF];
+        for unit in "中文x".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        let corrupt = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(
+            corrupt.contains('\0'),
+            "the ASCII 'x' code unit's NUL high byte must still gate the repair"
+        );
+
+        let repaired = repair_utf16_mojibake(&corrupt);
+        assert_eq!(
+            repaired, corrupt,
+            "no recognized marker exists here, so nothing must be touched"
+        );
+        assert!(matches!(repaired, Cow::Borrowed(_)), "a true no-op must not allocate");
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_recovers_only_the_safe_ascii_prefix_of_a_mixed_anchor() {
+        // An anchor that starts ASCII ("gi"), then transitions mid-run to a
+        // non-ASCII code unit (CJK), then resumes ASCII ("hub") — recovering
+        // "gi" is safe (the marker + a full (NUL, ASCII) pair), but the
+        // transform must STOP there rather than keep guessing: silently
+        // producing "giN-hub" (the naive blind-strip result) would hide real
+        // data loss behind plausible-looking text. Built from real bytes.
+        let mut bytes = vec![0xFE, 0xFF];
+        for unit in "gi中hub".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        let corrupt = String::from_utf8_lossy(&bytes).into_owned();
+
+        let repaired = repair_utf16_mojibake(&corrupt);
+
+        assert_eq!(repaired, "giN-\0h\0u\0b");
+        assert!(
+            repaired.contains('\0'),
+            "the un-recovered exotic suffix must stay detectably corrupt, not be \
+             silently smoothed into \"giN-hub\"; got {repaired:?}"
+        );
     }
 }

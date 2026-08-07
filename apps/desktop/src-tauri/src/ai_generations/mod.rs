@@ -95,6 +95,25 @@ pub struct AiGenerationRecord {
     pub application_id: Option<String>,
 }
 
+/// Repair pre-#955 mojibake in `resume_text`/`cover_letter_text` on every
+/// write path (`insert`, `update`, and `import`'s bulk-restore loop), not
+/// just the one-time migration — so restoring an old backup bundle (which
+/// still carries the corruption; `serde_json` round-trips an embedded NUL
+/// intact) can't re-inject it into an already-migrated store. See
+/// `extraction::pdf::repair_utf16_mojibake` and the
+/// `repair_pre_pdf_text_string_mojibake` migration above. The gate inside
+/// returns `Cow::Borrowed` on clean input, so this costs one `contains('\0')`
+/// scan per write on the common (already-clean) case.
+fn repaired_generation_texts<'a>(
+    resume_text: &'a str,
+    cover_letter_text: &'a str,
+) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'a, str>) {
+    (
+        crate::extraction::pdf::repair_utf16_mojibake(resume_text),
+        crate::extraction::pdf::repair_utf16_mojibake(cover_letter_text),
+    )
+}
+
 pub struct AiGenerationStore {
     conn: Mutex<Connection>,
 }
@@ -240,14 +259,40 @@ impl AiGenerationStore {
             // TEXT is not dependable in SQLite, and `char(0)` cannot produce
             // a NUL to match against in the first place.
             //
-            // A single row's UPDATE failing is logged and skipped rather than
-            // propagated: this is a best-effort repair of already-corrupt
-            // data, not new data, so aborting the whole migration would roll
-            // back every other row's fix AND leave `user_version` stuck
-            // retrying the identical failure on every future startup —
-            // bricking the app over a cosmetic mojibake defect.
+            // A snapshot of every affected row is taken FIRST, in the same
+            // transaction, before anything is rewritten — an irreversible
+            // in-place edit gets a safety net despite the repair being
+            // shape-specific and therefore low-risk (see
+            // `repair_utf16_mojibake`). No other derived state in THIS store
+            // is keyed on `resume_text`/`cover_letter_text` — they are the
+            // final generated content shown to the user, not an input to any
+            // cache here (ATS/match scoring reads the SOURCE résumé from
+            // `documents.db`, never this store) — so, unlike the sibling
+            // `documents` migration, there is nothing else to invalidate.
+            //
+            // A per-row UPDATE failure PROPAGATES (`?`), aborting and rolling
+            // back the whole migration rather than being logged and
+            // skipped — see the identical reasoning on the sibling
+            // `documents::DocumentStore::MIGRATIONS` entry of the same name:
+            // on SQLite's "fatal" error classes (SQLITE_FULL and friends),
+            // SQLite may silently roll back the WHOLE enclosing transaction,
+            // and a swallowed error would let the unconditional `PRAGMA
+            // user_version = N` bump that follows commit anyway — durably
+            // marking this migration "done" with the row never repaired and
+            // no future retry. Not fatal to startup either way: `lib.rs`'s
+            // setup hook treats a failed `AiGenerationStore::open()` as
+            // non-fatal.
             name: "repair_pre_pdf_text_string_mojibake",
             up: |conn| {
+                // Safety net: snapshot the pre-repair value of every row this
+                // migration is about to touch, in this same transaction.
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS ai_generations_pre_mojibake_repair AS
+                     SELECT id, resume_text, cover_letter_text FROM ai_generations
+                     WHERE instr(cast(resume_text as blob), x'00') > 0
+                        OR instr(cast(cover_letter_text as blob), x'00') > 0;",
+                )?;
+
                 let rows: Vec<(String, String, String)> = {
                     let mut stmt = conn.prepare(
                         "SELECT id, resume_text, cover_letter_text FROM ai_generations
@@ -261,20 +306,29 @@ impl AiGenerationStore {
                             row.get::<_, String>(2)?,
                         ))
                     })?;
-                    mapped.filter_map(|r| r.ok()).collect()
+                    let mut out = Vec::new();
+                    for r in mapped {
+                        match r {
+                            Ok(row) => out.push(row),
+                            // Never silently drop a row this migration was
+                            // supposed to reach — see the identical note on
+                            // the sibling `documents` migration.
+                            Err(e) => tracing::warn!(
+                                "[db] repair_pre_pdf_text_string_mojibake: skipping a row \
+                                 that failed to map: {e}"
+                            ),
+                        }
+                    }
+                    out
                 };
                 for (id, resume_text, cover_letter_text) in rows {
                     let resume_repaired = crate::extraction::pdf::repair_utf16_mojibake(&resume_text);
                     let cover_repaired =
                         crate::extraction::pdf::repair_utf16_mojibake(&cover_letter_text);
-                    if let Err(e) = conn.execute(
+                    conn.execute(
                         "UPDATE ai_generations SET resume_text = ?1, cover_letter_text = ?2 WHERE id = ?3",
                         params![resume_repaired.as_ref(), cover_repaired.as_ref(), id],
-                    ) {
-                        tracing::warn!(
-                            "[db] repair_pre_pdf_text_string_mojibake: failed to repair ai_generation {id}: {e}"
-                        );
-                    }
+                    )?;
                 }
                 Ok(())
             },
@@ -339,6 +393,8 @@ impl AiGenerationStore {
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
         let interview_questions_json =
             serde_json::to_string(&rec.interview_questions).unwrap_or_default();
+        let (resume_text, cover_letter_text) =
+            repaired_generation_texts(&rec.resume_text, &rec.cover_letter_text);
         let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO ai_generations
@@ -360,8 +416,8 @@ impl AiGenerationStore {
                 rec.mismatch as i64,
                 top_req_json,
                 rec.mode,
-                rec.resume_text,
-                rec.cover_letter_text,
+                resume_text.as_ref(),
+                cover_letter_text.as_ref(),
                 rec.job_ad,
                 rec.job_url,
                 rec.board,
@@ -383,6 +439,8 @@ impl AiGenerationStore {
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
         let interview_questions_json =
             serde_json::to_string(&rec.interview_questions).unwrap_or_default();
+        let (resume_text, cover_letter_text) =
+            repaired_generation_texts(&rec.resume_text, &rec.cover_letter_text);
         let conn = self.conn.lock();
         conn.execute(
             "UPDATE ai_generations SET
@@ -404,8 +462,8 @@ impl AiGenerationStore {
                 rec.mismatch as i64,
                 top_req_json,
                 rec.mode,
-                rec.resume_text,
-                rec.cover_letter_text,
+                resume_text.as_ref(),
+                cover_letter_text.as_ref(),
                 rec.job_ad,
                 rec.job_url,
                 rec.board,
@@ -707,6 +765,13 @@ impl DataStore for AiGenerationStore {
             let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
             let interview_questions_json =
                 serde_json::to_string(&rec.interview_questions).unwrap_or_default();
+            // Backup-restore is a live re-infection path for pre-#955
+            // mojibake — see `repaired_generation_texts`. This loop binds
+            // its own `tx.execute` (it does not go through `insert()`, which
+            // takes `&self.conn.lock()` and would deadlock here), so it
+            // needs the same repair applied explicitly.
+            let (resume_text, cover_letter_text) =
+                repaired_generation_texts(&rec.resume_text, &rec.cover_letter_text);
             tx.execute(
                 "INSERT INTO ai_generations
                  (id, created_at, candidate_name, job_title, company_name,
@@ -727,8 +792,8 @@ impl DataStore for AiGenerationStore {
                     rec.mismatch as i64,
                     top_req_json,
                     rec.mode,
-                    rec.resume_text,
-                    rec.cover_letter_text,
+                    resume_text.as_ref(),
+                    cover_letter_text.as_ref(),
                     rec.job_ad,
                     rec.job_url,
                     rec.board,

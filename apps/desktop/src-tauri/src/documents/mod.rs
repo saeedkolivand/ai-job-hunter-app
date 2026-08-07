@@ -22,6 +22,7 @@ use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Mig
 use crate::error::AppResult;
 
 pub mod keywords;
+mod mojibake_repair;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -497,51 +498,11 @@ impl DocumentStore {
             },
         },
         Migration {
-            // One-shot repair for rows written before PR #955 fixed
-            // `pdf_text_string` (see `extraction::pdf::pdf_text_string` and
-            // `repair_utf16_mojibake`, which documents the exact corruption
-            // shape). A pre-fix PDF import decoded a link anchor's raw bytes
-            // with `String::from_utf8_lossy`, and that mojibake was persisted
-            // verbatim into `documents.text`.
-            //
-            // Only rows with an embedded NUL are candidates — SQLite's
-            // `length()` stops at the first NUL in NUL-bearing TEXT, so
-            // `instr(cast(text as blob), x'00')` is used instead (a `LIKE
-            // '%' || char(0) || '%'` would never match: `char(0)` does not
-            // produce a NUL in SQLite). The repair itself runs in RUST, not
-            // SQL — `replace()` on NUL-bearing TEXT is not dependable in
-            // SQLite either.
-            //
-            // A single row's UPDATE failing is logged and skipped rather than
-            // propagated: this is a best-effort repair of already-corrupt
-            // data, not new data, so aborting the whole migration would roll
-            // back every other row's fix AND leave `user_version` stuck
-            // retrying the identical failure on every future startup —
-            // bricking the app over a cosmetic mojibake defect.
+            // See `mojibake_repair` module doc for the full corruption shape
+            // and the error-policy rationale (why a per-row failure
+            // propagates instead of being logged-and-skipped).
             name: "repair_pre_pdf_text_string_mojibake",
-            up: |conn| {
-                let rows: Vec<(String, String)> = {
-                    let mut stmt = conn.prepare(
-                        "SELECT id, text FROM documents WHERE instr(cast(text as blob), x'00') > 0",
-                    )?;
-                    let mapped = stmt.query_map([], |row| {
-                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                    })?;
-                    mapped.filter_map(|r| r.ok()).collect()
-                };
-                for (id, text) in rows {
-                    let repaired = crate::extraction::pdf::repair_utf16_mojibake(&text);
-                    if let Err(e) = conn.execute(
-                        "UPDATE documents SET text = ?1 WHERE id = ?2",
-                        params![repaired.as_ref(), id],
-                    ) {
-                        tracing::warn!(
-                            "[db] repair_pre_pdf_text_string_mojibake: failed to repair document {id}: {e}"
-                        );
-                    }
-                }
-                Ok(())
-            },
+            up: mojibake_repair::up,
         },
     ];
 
@@ -633,6 +594,12 @@ impl DocumentStore {
             .unwrap_or(0);
         let is_default = if count == 0 { true } else { rec.is_default };
 
+        // Defensive, not just the migration: a restored backup exported
+        // before `repair_pre_pdf_text_string_mojibake` would otherwise
+        // re-inject the mojibake via `import` -> `insert` (`serde_json`
+        // round-trips an embedded NUL intact). No-op scan on clean input.
+        let text = crate::extraction::pdf::repair_utf16_mojibake(&rec.text);
+
         conn.execute(
             "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -641,7 +608,7 @@ impl DocumentStore {
                 rec.title,
                 rec.name,
                 rec.locale,
-                rec.text,
+                text.as_ref(),
                 rec.pages,
                 ts_to_db(rec.created_at),
                 rec.indexed as i64,

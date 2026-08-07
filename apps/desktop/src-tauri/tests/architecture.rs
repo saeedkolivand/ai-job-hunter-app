@@ -382,6 +382,10 @@ const R3_ALLOW: &[&str] = &[
     // `applications` domain store — see applications::reminders.
     "applications/reminders.rs",
     "documents/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the
+    // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
+    // still lives entirely inside the `documents` domain store.
+    "documents/mojibake_repair.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
