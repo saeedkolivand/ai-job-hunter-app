@@ -1453,6 +1453,135 @@ fn repair_pre_pdf_text_string_mojibake_leaves_user_version_unadvanced_on_a_faile
     );
 }
 
+#[test]
+#[serial]
+fn repair_pre_pdf_text_string_mojibake_evicts_the_active_space_vector_so_the_document_becomes_stale(
+) {
+    // Regression test for a real defect: the migration used to only flip
+    // `indexed = 0`, which is a complete no-op for re-embedding —
+    // `stale_documents` (`commands/ai.rs`) decides what to re-embed purely
+    // from whether `get_vector` hits in the ACTIVE embedding space, and
+    // never reads `indexed`. A pre-repair vector that still matches the
+    // active space means the document is never picked up, so the embedding
+    // stays permanently derived from the corrupt text. Asserted directly on
+    // `vectors` (via `get_vector`), not on `indexed` — asserting only on
+    // `indexed` is exactly what made this defect invisible the first time.
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let repair_idx = all
+        .iter()
+        .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
+        .expect("repair_pre_pdf_text_string_mojibake must still be registered");
+
+    let corrupt_text = corrupt_mojibake_text();
+    let clean_text = "Software Engineer with 5 years experience".to_string();
+
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..repair_idx]).unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
+             VALUES ('corrupt', 't', 'n', 'en', ?1, 1, 0, 1, 0)",
+            params![corrupt_text],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
+             VALUES ('clean', 't', 'n', 'en', ?1, 1, 0, 1, 0)",
+            params![clean_text],
+        )
+        .unwrap();
+        // Both docs already have a vector in the CURRENT active embedding
+        // space (the default: ollama/nomic-embed-text, seeded by the
+        // `create_embedding_config` migration) — a real "already indexed
+        // before this repair runs" document.
+        conn.execute(
+            "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
+             VALUES ('corrupt', '[0.1,0.2]', 'ollama', 'nomic-embed-text', 2, ?1)",
+            params![EMBEDDING_VECTOR_VERSION],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
+             VALUES ('clean', '[0.3,0.4]', 'ollama', 'nomic-embed-text', 2, ?1)",
+            params![EMBEDDING_VECTOR_VERSION],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, including the repair.
+    let store = DocumentStore::open(&dir).unwrap();
+
+    assert!(
+        store.get_vector("corrupt").is_none(),
+        "the vector derived from the corrupt text must be evicted, or \
+         `stale_documents` will never pick this document up for re-embedding"
+    );
+    assert!(
+        store.get_vector("clean").is_some(),
+        "an unaffected row's vector must survive — the repair must not evict \
+         embeddings for documents whose text was never touched"
+    );
+}
+
+#[test]
+fn import_of_a_repaired_row_does_not_restore_a_vector_derived_from_the_corrupt_text() {
+    // The write-path half of the same defect class: a backup bundle
+    // exported before PR #955 carries BOTH the corrupt text AND the vector
+    // computed from it. `import` -> `insert` repairs the text; restoring
+    // the bundle's own vector right afterward would silently reintroduce
+    // exactly the stale-vector problem the migration exists to fix.
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let bundle = serde_json::json!([
+        {
+            "_id": "corrupt",
+            "title": "Resume",
+            "name": "resume.pdf",
+            "text": corrupt_mojibake_text(),
+            "createdAt": 1,
+            "indexed": true,
+            "isDefault": true,
+            "vector": [0.1, 0.2],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 2 }
+        },
+        {
+            "_id": "clean",
+            "title": "Resume 2",
+            "name": "resume2.pdf",
+            "text": "Software Engineer with 5 years experience",
+            "createdAt": 2,
+            "indexed": true,
+            "isDefault": false,
+            "vector": [0.3, 0.4],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 2 }
+        }
+    ]);
+    let n = crate::data_store::DataStore::import(&store, &bundle).unwrap();
+    assert_eq!(n, 2);
+
+    assert_eq!(
+        store.get("corrupt").unwrap().text,
+        REPAIRED_MOJIBAKE_TEXT,
+        "the text must still be repaired on import"
+    );
+    assert!(
+        store.get_vector("corrupt").is_none(),
+        "the bundle's vector (derived from the corrupt text) must not be restored \
+         for a row whose text was actually repaired"
+    );
+    assert!(
+        store.get_vector("clean").is_some(),
+        "a row whose text was NOT changed must keep its restored vector — \
+         the fix must not evict embeddings for clean documents"
+    );
+}
+
 // ── Match-result cache ────────────────────────────────────────────────────────
 
 fn match_key<'a>(

@@ -16,6 +16,18 @@
 //! a safety net for an irreversible in-place edit of what may be the only
 //! remaining copy of a résumé.
 //!
+//! Also DELETEs the row's `vectors` entry (not just clearing `keywords_json`
+//! and `indexed`): `stale_documents` (`commands/ai.rs`) — the sole consumer
+//! that decides what the auto-indexer re-embeds — asks only whether
+//! `get_vector` returns a hit in the ACTIVE embedding space; it never reads
+//! `indexed`. A prior version of this migration only flipped `indexed = 0`,
+//! which was a complete no-op for re-embedding: the pre-repair vector still
+//! matched the active space, so the document was never considered stale and
+//! the embedding stayed permanently derived from the corrupt text. Deleting
+//! the vector is what actually makes `get_vector` miss, so `stale_documents`
+//! picks the document up on the next auto-index run. `indexed = 0` is kept
+//! as an honest reflection of "no vector exists", not the mechanism.
+//!
 //! A per-row UPDATE failure PROPAGATES (`?`) instead of being
 //! logged-and-skipped: on SQLite's "fatal" error classes
 //! (SQLITE_FULL/IOERR/NOMEM/BUSY/INTERRUPT — sqlite.org/lang_transaction.html),
@@ -63,15 +75,16 @@ pub(super) fn up(conn: &Connection) -> rusqlite::Result<()> {
     };
     for (id, text) in rows {
         let repaired = crate::extraction::pdf::repair_utf16_mojibake(&text);
-        // Invalidate derived caches keyed on this text too: `keywords_json`
-        // (NULL falls back to live extraction — see `cache_document_keywords`
-        // in `mod.rs`) and `indexed` (forces a re-embed; `vectors` has no
-        // text hash, so it would otherwise stay pinned to the pre-repair
-        // text).
+        // `keywords_json = NULL` falls back to live extraction (see
+        // `cache_document_keywords` in `mod.rs`). `indexed = 0` is cosmetic
+        // bookkeeping, kept honest by the DELETE below — see the module doc.
         conn.execute(
             "UPDATE documents SET text = ?1, keywords_json = NULL, indexed = 0 WHERE id = ?2",
             params![repaired.as_ref(), id],
         )?;
+        // The mechanism: without this, the pre-repair vector still matches
+        // the active embedding space and `stale_documents` never re-embeds.
+        conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![id])?;
     }
     Ok(())
 }

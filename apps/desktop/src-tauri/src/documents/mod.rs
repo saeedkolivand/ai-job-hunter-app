@@ -609,6 +609,7 @@ impl DocumentStore {
         // re-inject the mojibake via `import` -> `insert` (`serde_json`
         // round-trips an embedded NUL intact). No-op scan on clean input.
         let text = crate::extraction::pdf::repair_utf16_mojibake(&rec.text);
+        let text_was_repaired = matches!(text, std::borrow::Cow::Owned(_));
 
         conn.execute(
             "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default, keywords_json)
@@ -627,6 +628,16 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
+
+        if text_was_repaired {
+            // The text just changed under this id — any `vectors` row for
+            // it (a stale leftover, or one `import` below is about to
+            // restore) is now derived from the WRONG text. `stale_documents`
+            // (`commands/ai.rs`) decides what to re-embed purely from
+            // `get_vector` presence in the active space, never `indexed`.
+            conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![rec.id])
+                .map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 
@@ -1353,9 +1364,21 @@ impl DataStore for DocumentStore {
             if record.is_default {
                 default_id = Some(record.id.clone());
             }
+            // A pre-#955 bundle carries BOTH the corrupt text and the vector
+            // derived from it. `insert()` repairs the text and, if it
+            // changed, deletes any latent vector for this id — but that
+            // happens BEFORE the `upsert_vector` below would restore the
+            // bundle's own (corrupt-derived) one, so it must be skipped
+            // here too or it would just get written right back.
+            let text_was_repaired = matches!(
+                crate::extraction::pdf::repair_utf16_mojibake(&record.text),
+                std::borrow::Cow::Owned(_)
+            );
             self.insert(record)?;
             if let Some(vector) = vector {
-                self.upsert_vector(&record.id, vector)?;
+                if !text_was_repaired {
+                    self.upsert_vector(&record.id, vector)?;
+                }
             }
             count += 1;
         }
