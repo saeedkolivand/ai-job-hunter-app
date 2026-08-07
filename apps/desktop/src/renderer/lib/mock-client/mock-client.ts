@@ -239,6 +239,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     match: {
       resume: noop,
+      trimSuggestions: async () => ({ maxPages: 2, lines: [] }),
     },
 
     geocode: {

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use parking_lot::Mutex;
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
@@ -13,8 +14,11 @@ use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
     MatchScoreKey,
 };
-use crate::ipc_contracts::matching::MatchResumeRequest;
+use crate::export::parser::parse_resume;
+use crate::export::types::LineKind;
+use crate::ipc_contracts::matching::{MatchResumeRequest, ResumeTrimSuggestionsRequest};
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
+use crate::locale::LocaleProfile;
 use crate::postings::PostingsCache;
 
 /// Score a resume against a job posting.
@@ -463,6 +467,85 @@ pub async fn resume_extract_text(req: ResumeExtractTextRequest) -> Value {
         }
         Err(e) => json!({ "error": e.to_string() }),
     }
+}
+
+// ── Trim suggestions (advisory) ───────────────────────────────────────────────
+
+/// One résumé bullet, scored by how much of THIS posting's vocabulary it carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrimCandidate {
+    /// The bullet's markdown-stripped text, as the reader sees it.
+    pub text: String,
+    /// Readable (unstemmed) job keywords this line carries — may be empty.
+    pub hits: Vec<String>,
+    pub score: usize,
+}
+
+/// Rank a résumé's bullets weakest-first for a given posting.
+///
+/// Deliberately embedding-free: it reuses the same `documents::keywords` kernel
+/// (and the same JD-derived stemmer) as [`score_one`], so the panel can never
+/// disagree with the match score the user sees on the same pair. Zero model
+/// calls, works offline.
+///
+/// Only `LineKind::Bullet` lines are candidates — section headers, job entries
+/// and the contact block are structural, and cutting them to save space is never
+/// the right advice.
+///
+/// Returns empty when the posting has no extractable keywords, mirroring
+/// `keyword_coverage`'s `None`: with nothing to score against, every line would
+/// tie at zero and the ranking would be noise dressed up as a recommendation.
+fn rank_trim_candidates(resume_text: &str, job_text: &str) -> Vec<TrimCandidate> {
+    // Stemmer language is detected from the JD, not the résumé — same rule as
+    // `score_one`; see `keywords_normalized`'s doc comment.
+    let stemmer = make_stemmer(job_text);
+    let job_keywords = keywords(job_text, &stemmer);
+    if job_keywords.is_empty() {
+        return Vec::new();
+    }
+    let display = display_forms(job_text, &stemmer);
+
+    let mut candidates: Vec<TrimCandidate> = parse_resume(resume_text)
+        .lines
+        .into_iter()
+        .filter(|line| matches!(line.kind, LineKind::Bullet))
+        .map(|line| {
+            let mut hits: Vec<String> = keywords(&line.text, &stemmer)
+                .intersection(&job_keywords)
+                .map(|stem| display.get(stem).cloned().unwrap_or_else(|| stem.clone()))
+                .collect();
+            hits.sort();
+            TrimCandidate {
+                score: hits.len(),
+                hits,
+                text: line.text,
+            }
+        })
+        .collect();
+
+    // Weakest first. Among lines carrying equally little, the LONGEST goes first:
+    // same loss to the reader, most space recovered.
+    candidates.sort_by(|a, b| {
+        a.score
+            .cmp(&b.score)
+            .then_with(|| b.text.len().cmp(&a.text.len()))
+    });
+    candidates
+}
+
+/// Advisory trim panel: which bullets are carrying the least weight for this
+/// posting, and how long this market expects the document to be.
+///
+/// Read-only — it never edits the document. The renderer shows the ranking when
+/// the rendered preview exceeds `maxPages`; the user does the cutting.
+#[tauri::command]
+pub async fn resume_trim_suggestions(req: ResumeTrimSuggestionsRequest) -> Value {
+    let profile = LocaleProfile::get(req.locale.as_deref().unwrap_or("en"));
+    json!({
+        "maxPages": profile.max_pages,
+        "lines": rank_trim_candidates(&req.resume_text, &req.job_text),
+    })
 }
 
 #[cfg(test)]
@@ -998,6 +1081,116 @@ mod test {
             en_cov > 0.0,
             "matching-language path (both English, both stemmed) must still yield > 0% coverage; \
              got {en_cov}%"
+        );
+    }
+
+    // ── rank_trim_candidates ─────────────────────────────────────────────────
+
+    const RESUME: &str = "\
+EXPERIENCE
+
+Senior Engineer, Acme
+- Built and shipped Docker containers onto a Kubernetes cluster
+- Organised the team offsite and the summer party for forty people
+- Ran the weekly standup
+";
+
+    /// The whole point: a bullet the posting never mentions must rank BELOW one
+    /// full of the posting's vocabulary, so the weakest-first list is cuttable
+    /// from the top.
+    #[test]
+    fn irrelevant_bullets_rank_below_keyword_bearing_ones() {
+        let job = "We need a backend engineer with strong Docker and Kubernetes experience \
+                   to own our container platform.";
+        let ranked = rank_trim_candidates(RESUME, job);
+
+        assert_eq!(ranked.len(), 3, "all three bullets are candidates");
+        assert!(
+            ranked[0].text.contains("offsite"),
+            "the offsite bullet carries none of the posting's vocabulary and must rank first \
+             for cutting; got {:?}",
+            ranked[0].text
+        );
+        let docker = ranked
+            .iter()
+            .position(|c| c.text.contains("Docker"))
+            .expect("the Docker bullet must be present");
+        assert_eq!(docker, 2, "the Docker bullet is the strongest — cut it last");
+        assert!(ranked[docker].score > 0);
+        // Hits are surfaced unstemmed — "kubernetes", never the stem "kubernet".
+        assert!(
+            ranked[docker].hits.iter().any(|h| h == "kubernetes"),
+            "hits must be readable display forms, not Snowball stems; got {:?}",
+            ranked[docker].hits
+        );
+    }
+
+    /// Ties break on length: two equally worthless bullets, the longer one frees
+    /// more space, so it is offered first.
+    #[test]
+    fn equally_weak_bullets_are_ordered_longest_first() {
+        let job = "Docker and Kubernetes platform engineering.";
+        let ranked = rank_trim_candidates(RESUME, job);
+        let zeroes: Vec<&TrimCandidate> = ranked.iter().filter(|c| c.score == 0).collect();
+        assert!(zeroes.len() >= 2, "expected at least two zero-scoring lines");
+        assert!(
+            zeroes[0].text.len() >= zeroes[1].text.len(),
+            "equal-score lines must be ordered longest-first; got {:?} before {:?}",
+            zeroes[0].text,
+            zeroes[1].text
+        );
+    }
+
+    /// `SHORT_TECH_TERMS` bypass stemming (aws → aw would be corruption). The
+    /// panel must surface them intact, same as the match score does.
+    #[test]
+    fn short_tech_terms_survive_intact() {
+        let resume = "EXPERIENCE\n\n- Migrated the fleet to AWS and wrote the Go services\n";
+        let job = "Hiring an engineer fluent in AWS and Go.";
+        let ranked = rank_trim_candidates(resume, job);
+        let hits = &ranked[0].hits;
+        assert!(hits.iter().any(|h| h == "aws"), "got {hits:?}");
+        assert!(hits.iter().any(|h| h == "go"), "got {hits:?}");
+    }
+
+    /// A posting with nothing extractable yields no ranking rather than a
+    /// ranking in which everything ties at zero — mirrors `keyword_coverage`
+    /// returning `None` instead of 0%.
+    #[test]
+    fn keywordless_posting_yields_no_suggestions() {
+        assert!(rank_trim_candidates(RESUME, "!!! ??? ...").is_empty());
+    }
+
+    /// The renderer skips the trim query entirely for documents of 2 pages or
+    /// fewer (`SHORTEST_OVERFLOW` in `features/ai-generate/components/TrimPanel`),
+    /// which is only sound while no market's target is below 2. Adding a
+    /// 1-page market means revisiting that guard — this test is the tripwire.
+    #[test]
+    fn no_market_targets_fewer_than_two_pages() {
+        for profile in LocaleProfile::all() {
+            assert!(
+                profile.max_pages >= 2,
+                "market {} targets {} pages; the renderer's SHORTEST_OVERFLOW guard \
+                 assumes no market goes below 2",
+                profile.id,
+                profile.max_pages
+            );
+        }
+    }
+
+    /// Only bullets are cuttable. Section headers and the name/contact block are
+    /// structural — never offer them.
+    #[test]
+    fn only_bullets_are_candidates() {
+        let job = "Docker and Kubernetes platform engineering.";
+        let ranked = rank_trim_candidates(RESUME, job);
+        assert!(
+            !ranked.iter().any(|c| c.text.contains("EXPERIENCE")),
+            "section headers must not be offered for cutting"
+        );
+        assert!(
+            !ranked.iter().any(|c| c.text.contains("Senior Engineer, Acme")),
+            "job entries must not be offered for cutting"
         );
     }
 }

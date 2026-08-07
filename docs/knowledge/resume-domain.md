@@ -1,12 +1,18 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-04
+Last updated: 2026-08-07
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
 ## Résumé structure
 
 `DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. **Header contact line is editor-owned at export time** ([ADR 0021](../adr/0021-editor-owns-resume-header.md)) — two distinct moments, don't conflate them; read source for the exact rules, this is a pointer not a spec. **Generation** (`generateResume` AND `synthesizeResume` → `seedHeaderFromProfile` in `apps/desktop/src/renderer/lib/generate/generation/generation.ts`) seeds the profile's name + contact line into the model-written text, so re-generating a document discards header edits by design; the function's own doc comments carry the replace-vs-insert invariants (never delete a line). **Export** (`ContactProfile::apply_to_header` in `apps/desktop/src-tauri/src/contact_profile/mod.rs`, `meta.candidate_name` in `export/pdf/mod.rs` / `export/model_docx.rs`) fills from the profile only when the parsed header is blank — whatever the text says wins for PDF/DOCX/TXT. Export validation (`validate/mod.rs`'s `pdf_render_issues`) gates on which side is the header's source of truth; a job-board/ATS host in the header band always warns, independent of whether a profile is present.
+
+## Page target (≠ page size)
+
+**Page target** = the customary maximum _length_ of a résumé in a market, in pages — `LocaleProfile::max_pages` (`locale/mod.rs`). Do not conflate it with `page_size`, the physical sheet (A4 vs US Letter), which sits on the same struct. Hiring convention, not a published standard: anglophone + FR/NL cap at 2, DACH and generic-EU tolerate 3 (a `Lebenslauf` lists every position rather than summarising). **Advisory only** — nothing blocks a longer export.
+
+Consumed by the trim panel (`features/ai-generate/components/TrimPanel`): when the rendered preview exceeds the target, `resume_trim_suggestions` (`commands/match_resume.rs`) ranks the résumé's `LineKind::Bullet` lines weakest-first by how much of _this_ posting's vocabulary each carries, ties broken longest-first. Reuses the same `documents/keywords` kernel and JD-derived stemmer as `score_one`, so the panel can't disagree with the match score; embedding-free, zero model calls. Read-only — it never edits the document. The renderer skips the query at ≤2 pages, an assumption pinned by `no_market_targets_fewer_than_two_pages`.
 
 ## Templates
 
