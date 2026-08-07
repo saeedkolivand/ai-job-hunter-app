@@ -1116,18 +1116,8 @@ fn repair_pre_pdf_text_string_mojibake_heals_a_pre_seeded_row_through_a_real_ope
         .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
         .expect("repair_pre_pdf_text_string_mojibake must still be registered");
 
-    // "- [" + doubled U+FFFD (the BOM misread as UTF-8) + NUL-interleaved
-    // "aijobhunter.app" (UTF-16BE misread as UTF-8) + the never-corrupted
-    // "](url)\n" suffix — see `extraction::pdf::repair_utf16_mojibake`.
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
-    let expected_repaired = "- [aijobhunter.app](https://aijobhunter.app/)\n";
+    let corrupt_text = corrupt_mojibake_text();
+    let expected_repaired = REPAIRED_MOJIBAKE_TEXT;
     let clean_text = "Software Engineer with 5 years experience".to_string();
 
     {
@@ -1187,6 +1177,24 @@ fn repair_pre_pdf_text_string_mojibake_heals_a_pre_seeded_row_through_a_real_ope
     );
 }
 
+/// Build the exact hex-dumped corrupt byte shape used across the mojibake
+/// repair tests: `- [` + doubled U+FFFD (the BOM misread as UTF-8) +
+/// NUL-interleaved "aijobhunter.app" (UTF-16BE misread as UTF-8) + the
+/// never-corrupted `](url)\n` suffix — see
+/// `extraction::pdf::repair_utf16_mojibake`.
+fn corrupt_mojibake_text() -> String {
+    let mut bytes = b"- [".to_vec();
+    bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
+    for &b in b"aijobhunter.app" {
+        bytes.push(0x00);
+        bytes.push(b);
+    }
+    bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
+    String::from_utf8(bytes).unwrap()
+}
+
+const REPAIRED_MOJIBAKE_TEXT: &str = "- [aijobhunter.app](https://aijobhunter.app/)\n";
+
 #[test]
 #[serial]
 fn repair_pre_pdf_text_string_mojibake_snapshots_the_pre_repair_value_before_rewriting() {
@@ -1205,14 +1213,7 @@ fn repair_pre_pdf_text_string_mojibake_snapshots_the_pre_repair_value_before_rew
         .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
         .expect("repair_pre_pdf_text_string_mojibake must still be registered");
 
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
+    let corrupt_text = corrupt_mojibake_text();
 
     {
         let mut conn = crate::db::open(&db_path).unwrap();
@@ -1265,14 +1266,7 @@ fn repair_pre_pdf_text_string_mojibake_skips_an_unmappable_row_without_failing_t
         .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
         .expect("repair_pre_pdf_text_string_mojibake must still be registered");
 
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
+    let corrupt_text = corrupt_mojibake_text();
 
     {
         let mut conn = crate::db::open(&db_path).unwrap();
@@ -1295,7 +1289,26 @@ fn repair_pre_pdf_text_string_mojibake_skips_an_unmappable_row_without_failing_t
     // Must NOT fail overall, and must still repair the mappable row.
     let store = DocumentStore::open(&dir).unwrap();
     let repaired = store.get("corrupt").unwrap().text;
-    assert_eq!(repaired, "- [aijobhunter.app](https://aijobhunter.app/)\n");
+    assert_eq!(repaired, REPAIRED_MOJIBAKE_TEXT);
+
+    // The unmappable row itself: `store.get()` can't map it either (its
+    // `text` column is still BLOB, so `row.get::<_, String>` still fails),
+    // so query the raw row count directly. If the migration ever started
+    // DELETEing rows it can't map instead of just skipping them, this is
+    // the only assertion in the suite that would catch it.
+    let unmappable_row_count: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM documents WHERE id = 'unmappable'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        unmappable_row_count, 1,
+        "a row the migration can't map must be logged and skipped, not deleted"
+    );
 
     let version: i64 = store
         .conn
@@ -1318,22 +1331,13 @@ fn insert_repairs_pre_pdf_text_string_mojibake_on_write() {
     let temp_dir = TempDir::new().unwrap();
     let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
 
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
-
     store
         .insert(&DocumentRecord {
             id: make_doc_id(),
             title: "Resume".to_string(),
             name: "resume.pdf".to_string(),
             locale: Some("en".to_string()),
-            text: corrupt_text,
+            text: corrupt_mojibake_text(),
             pages: Some(1),
             created_at: now_ms(),
             indexed: false,
@@ -1343,10 +1347,7 @@ fn insert_repairs_pre_pdf_text_string_mojibake_on_write() {
         .unwrap();
 
     let stored = &store.list()[0];
-    assert_eq!(
-        stored.text,
-        "- [aijobhunter.app](https://aijobhunter.app/)\n"
-    );
+    assert_eq!(stored.text, REPAIRED_MOJIBAKE_TEXT);
 }
 
 #[test]
@@ -1745,14 +1746,7 @@ fn test_clear_all_drops_the_mojibake_repair_snapshot_table() {
         .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
         .expect("repair_pre_pdf_text_string_mojibake must still be registered");
 
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
+    let corrupt_text = corrupt_mojibake_text();
 
     {
         let mut conn = crate::db::open(&db_path).unwrap();
