@@ -307,16 +307,23 @@ function sanitizeHeaderName(name: string): string {
 }
 
 /**
- * Casing/punctuation-insensitive key so "SAEED KOLIVAND" and "Saeed Kolivand"
- * compare equal — the join point between a header line and the profile's own
- * `fullName` in {@link findNameLine}. NFKD-normalizing first folds accented
- * variants together; collapsing every non-letter/non-number run to a single
- * space means whitespace and punctuation differences (extra spaces, a stray
- * period) don't defeat the match either.
+ * Casing/diacritic/punctuation-insensitive key so "SAEED KOLIVAND" and "Saeed
+ * Kolivand" — or "François Müller" and "FRANCOIS MULLER" (a document without
+ * accents, a profile with them, or vice versa) — compare equal. NFKD
+ * decomposes an accented character into base letter + combining mark (`ç` →
+ * `c` + U+0327); the mark's Unicode category is `Mn` (Nonspacing_Mark), NOT
+ * `\p{L}`/`\p{N}`, so it must be STRIPPED explicitly (`\p{M}` → `''`) before
+ * the punctuation collapse below — collapsing it to a space instead (an
+ * earlier version of this function did) inserts a spurious word break
+ * ("François" → "franc ois"), which fails to match the same name written
+ * without diacritics. Only after marks are gone does collapsing every
+ * remaining non-letter/non-number run to a single space fold in whitespace
+ * and punctuation differences (extra spaces, a stray period) too.
  */
 function nameKey(s: string): string {
   return s
     .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .toLowerCase();
@@ -341,17 +348,33 @@ function headerBlockEnd(lines: string[]): number {
 
 /**
  * The index of the header-block line that's already the profile's own name
- * (compared via {@link nameKey}, so casing/punctuation don't matter), or -1
- * if none is. `key` is expected pre-computed by the caller so an
- * empty-after-normalizing `fullName` (punctuation-only) short-circuits
+ * (compared via {@link nameKey}, so casing/diacritics/punctuation don't
+ * matter), or -1 if none is. `key` is expected pre-computed by the caller so
+ * an empty-after-normalizing `fullName` (punctuation-only) short-circuits
  * without scanning at all — an empty key would otherwise spuriously match
  * any other blank-after-normalizing line in the block.
+ *
+ * Also stops at the first `looksLikeHeaderBoundary` line, same STRUCTURAL
+ * bound as the contact scan below it — WITHOUT this, `headerBlockEnd`
+ * degrades to `lines.length` whenever the text has no blank line anywhere
+ * (a wholly unstructured document), and an unbounded scan can then match the
+ * candidate's name recurring later in the BODY (a "References available
+ * upon request — Jordan Lee" sign-off, a certifications line repeating the
+ * name) and reconcile THAT line instead of ever seeding one at the top —
+ * strictly worse than the pre-reconciliation fallback, which at least always
+ * unshifts. The match check runs BEFORE the boundary check, not after: an
+ * ALL-CAPS name is itself boundary-shaped (`isAllCapsSectionHeading`), so it
+ * must be allowed to match on the very line that would otherwise break the
+ * scan — checking boundary first would make an ALL-CAPS name at the top of
+ * the block unreachable.
  */
 function findNameLine(lines: string[], key: string): number {
   if (!key) return -1;
   const blockEnd = headerBlockEnd(lines);
   for (let i = 0; i < blockEnd; i++) {
-    if (nameKey(lines[i] ?? '') === key) return i;
+    const line = lines[i] ?? '';
+    if (nameKey(line) === key) return i;
+    if (looksLikeHeaderBoundary(line)) break;
   }
   return -1;
 }
@@ -451,6 +474,22 @@ function pickReplacementIndex(lines: string[], matches: number[]): number {
  * never-remove-or-blind-overwrite invariant above still holds for every
  * OTHER line in the block.
  *
+ * `sanitizeHeaderName` never changes case — the profile's own casing is what
+ * the user typed, and this function must not invent a different rendering of
+ * their name — so an ALL-CAPS `fullName` reconciled onto a line at `i > 0`
+ * (case (2) above) is STILL ALL-CAPS afterward, and would re-trip
+ * `looksLikeHeaderBoundary` right where the contact scan below starts
+ * looking. That scan is told which index (if any) was just reconciled and
+ * skips it exactly like index 0 — see the comment at that scan.
+ *
+ * `findNameLine` shares the contact scan's STRUCTURAL bound (below) for the
+ * same reason: without it, a document with no blank line anywhere turns
+ * `headerBlockEnd` into `lines.length`, and the name search could match the
+ * profile's name recurring later in the BODY (a sign-off, a repeated byline)
+ * instead of ever finding a header line to reconcile — worse than not
+ * searching at all, since it would suppress the unshift fallback that
+ * otherwise guarantees a name line lands at the top.
+ *
  * ponytail: known ceiling, not a bug — an ALL-CAPS (or otherwise
  * boundary-shaped) name line that does NOT match the profile's `fullName`
  * still falls through to unshift and stacks as a visible duplicate. The
@@ -479,6 +518,11 @@ export function seedHeaderFromProfile(
   if (!lines.length) return text;
 
   const fullName = profile.fullName?.trim();
+  // Set below when the fullName branch reconciles an EXISTING header-block
+  // line in place (rather than unshifting/replacing index 0) — the contact
+  // scan needs this index so it can treat that line like index 0 (never a
+  // boundary check, never a match candidate). See the note at that scan.
+  let reconciledNameIndex = -1;
   if (fullName) {
     // First: is one of the header block's own lines already this name, just
     // differently cased/punctuated (e.g. an ALL-CAPS name, or the model's
@@ -488,6 +532,7 @@ export function seedHeaderFromProfile(
     const nameLineIndex = findNameLine(lines, nameKey(fullName));
     if (nameLineIndex !== -1) {
       lines[nameLineIndex] = sanitizeHeaderName(fullName);
+      reconciledNameIndex = nameLineIndex;
     } else {
       // Guarded like every other write below: line 0 is only overwritten when
       // it's actually name-shaped — not a section heading (`looksLikeHeaderBoundary`)
@@ -518,6 +563,17 @@ export function seedHeaderFromProfile(
     // comment above.
     const matches: number[] = [];
     for (let i = 1; i < blockEnd; i++) {
+      // The name step above can reconcile fullName IN PLACE onto a line at
+      // i > 0 (a leading-blank shifted the real name line down one) without
+      // changing its casing — `sanitizeHeaderName` never Title-Cases, since
+      // the profile's own casing is what the user typed. An ALL-CAPS profile
+      // name therefore stays ALL-CAPS after reconciliation and would re-trip
+      // `looksLikeHeaderBoundary` on the very next line, right here, breaking
+      // the scan before it ever reaches the real contact line below and
+      // stacking a second contact line via the insert branch. Skip it
+      // exactly like index 0 is already skipped: no boundary check, no
+      // match candidacy, scan continues past it to the real contact line.
+      if (i === reconciledNameIndex) continue;
       const line = lines[i] ?? '';
       if (looksLikeHeaderBoundary(line)) break;
       if (isHeaderContactLine(line)) matches.push(i);

@@ -846,7 +846,6 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
     expect(out).toBe('Jordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
     expect(out.split('\n')).toHaveLength(beforeLineCount);
-    expect(out.split('\n').filter((l) => l === CONTACT_LINE)).toHaveLength(1);
   });
 
   // The other reachable repro (round 2): a leading blank line (PDF
@@ -862,7 +861,51 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
     expect(out).toBe('\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
     expect(out.split('\n')).toHaveLength(beforeLineCount);
-    expect(out.split('\n').filter((l) => l === CONTACT_LINE)).toHaveLength(1);
+  });
+
+  // Sibling-review finding 1 (HIGH): NFKD decomposes an accented character
+  // into base letter + combining mark; the mark is category `Mn`, NOT
+  // `\p{L}`/`\p{N}`, so collapsing it to a SPACE (an earlier version of
+  // `nameKey` did) inserts a spurious word break — "François" keyed to
+  // "franc ois", which never matches "FRANCOIS" (no diacritics at all, the
+  // shape a document extracted without accent support produces). The
+  // combining marks must be stripped outright before the punctuation
+  // collapse, not turned into separators.
+  it('reconciles an accented profile name against the same name written without diacritics (NFKD combining marks must be stripped, not spaced)', () => {
+    const profile = { fullName: 'François Müller', email: 'contact@example.com' };
+    const contactLine = 'Berlin | contact@example.com';
+    const text = 'FRANCOIS MULLER\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, profile, contactLine);
+    expect(out).toBe('François Müller\nBerlin | contact@example.com\n\nSUMMARY\nSome text.');
+  });
+
+  // Sibling-review finding 2 (HIGH): `sanitizeHeaderName` never changes case
+  // — reconciling an ALL-CAPS `fullName` onto the ALL-CAPS document line
+  // below a leading blank leaves that line ALL-CAPS, which re-trips
+  // `looksLikeHeaderBoundary` right where the contact scan starts (i = 1),
+  // breaking the scan before it reaches the real contact line and stacking a
+  // second one via the insert branch instead of replacing the first.
+  it('does not re-trip the contact scan when the reconciled name itself is ALL-CAPS', () => {
+    const profile = { fullName: 'JORDAN LEE', email: 'jordan@profile.example.com' };
+    const text = '\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, profile, CONTACT_LINE);
+    expect(out).toBe('\nJORDAN LEE\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+  });
+
+  // Sibling-review finding 3 (MEDIUM): `headerBlockEnd` returns
+  // `lines.length` when the document has no blank line anywhere, so an
+  // unbounded name search can match the profile's name recurring later in
+  // the BODY (a sign-off line) and reconcile THAT occurrence instead of ever
+  // seeding a name line at the top — strictly worse than the pre-existing
+  // fallback, which always unshifts. `findNameLine` must stop at the first
+  // `looksLikeHeaderBoundary` line (checking the name match FIRST, so an
+  // ALL-CAPS name isn't blocked from matching itself).
+  it('does not reconcile a coincidental body occurrence of the name — falls through to seeding one at the top instead', () => {
+    const text = 'SUMMARY\nExperienced engineer.\nCertifications awarded\nJordan Lee';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe(
+      'Jordan Lee\nBerlin | jordan@profile.example.com\nSUMMARY\nExperienced engineer.\nCertifications awarded\nJordan Lee'
+    );
   });
 });
 
