@@ -17,6 +17,7 @@ import {
   generateJobAdSummary,
   generateLikelyInterviewQuestions,
   generateReferral,
+  generateReferralImprove,
   generateResume,
   generateStarFeedback,
   lookupSalaryRange,
@@ -1924,6 +1925,26 @@ describe('generation intent wiring (renderer states intent, adapter picks number
       companyName: 'Acme',
       jobTitle: 'Engineer',
       resume: 'My resume',
+      format: 'connection_note',
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Hi Jamie,');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
+  });
+
+  it('referral improve sends prose_grounded (mirrors generateReferral, same no-fabrication contract)', async () => {
+    const client = register();
+    const p = generateReferralImprove({
+      personName: 'Jamie',
+      companyName: 'Acme',
+      jobTitle: 'Engineer',
+      resume: 'My resume',
+      draft: 'Hi Jamie, I noticed the Engineer opening.',
+      instruction: 'Make it shorter',
       format: 'connection_note',
       model: 'llama3',
     });

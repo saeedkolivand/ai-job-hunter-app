@@ -419,11 +419,13 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// PER PROVIDER, not per model — `preferences-store.ts`).
 const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
-/// Non-reasoning native-OpenAI profile: real values reproducing this app's
-/// pre-fix shipped numbers for every intent — see the shared constants'
-/// doc comments (`commands/ai_provider/mod.rs`) for the exact per-surface
-/// history each one preserves. `frequency_penalty`/`presence_penalty` both
-/// sit inside OpenAI's own documented "reasonable" band
+/// Non-reasoning profile shared by native OpenAI AND `OpenAiCompatible`
+/// gateways (LM Studio/vLLM/OpenRouter/custom endpoints — same wire
+/// protocol): real values reproducing this app's pre-fix shipped numbers
+/// for every intent — see the shared constants' doc comments
+/// (`commands/ai_provider/mod.rs`) for the exact per-surface history each
+/// one preserves. `frequency_penalty`/`presence_penalty` both sit inside
+/// OpenAI's own documented "reasonable" band
 /// (`platform.openai.com/docs/api-reference/chat/create`: "Number between
 /// -2.0 and 2.0 ... reasonable values are between 0 and 1").
 fn openai_sampling_profile(intent: Intent) -> SamplingProfile {
@@ -993,16 +995,22 @@ impl AiProvider for OpenAiClient {
         if is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model) {
             return SamplingProfile::default();
         }
-        // `openai_sampling_profile`'s numbers are THIS APP'S choices, tuned
-        // against native OpenAI's own documented "reasonable" bands — never
-        // extended to LM Studio/vLLM/OpenRouter/custom `OpenAiCompatible`
-        // gateways or any other non-native id: those speak the SAME wire
-        // protocol but serve an arbitrary, unknown catalog this app has no
-        // basis to assume reacts the same way (the same unknown-model
-        // fail-safe every other adapter applies to an unrecognized model).
-        if self.id != ProviderId::OpenAi {
-            return SamplingProfile::default();
-        }
+        // `openai_sampling_profile`'s numbers ARE applied to
+        // `OpenAiCompatible` gateways (LM Studio/vLLM/OpenRouter/custom
+        // endpoints) too, deliberately — this is NOT the unknown-model
+        // fail-safe the other adapters use for an unrecognized *model*.
+        // `Intent` (e.g. `Deterministic`, which the analyze prompt's
+        // strict-JSON contract relies on — `runAnalysis` hard-throws on a
+        // parse failure) is an APP requirement on the response shape, not a
+        // guess about a specific model's preferred creative sampling, so it
+        // belongs on every provider that speaks this wire protocol and
+        // accepts `temperature` — `caps.supports_temperature` (checked at
+        // the send site) is what actually gates whether a value is sent at
+        // all, same as native OpenAI. This also matches pre-fix behavior:
+        // the renderer used to send these exact numbers to every
+        // OpenAI-compatible gateway. Do not re-gate this on `self.id ==
+        // ProviderId::OpenAi` — that was tried and reverted (it silently
+        // neutralized the JSON-strict analysis surface for every gateway).
         openai_sampling_profile(intent)
     }
 

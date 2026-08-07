@@ -249,26 +249,50 @@ fn native_openai_has_no_unknown_model_carve_out_unlike_gemini_or_ollama_cloud() 
 }
 
 #[test]
-fn sampling_profile_is_neutral_for_every_non_native_openai_id_regardless_of_intent() {
-    // Hard constraint (fix #2): LM Studio/vLLM/OpenRouter/custom
-    // `OpenAiCompatible` gateways speak the SAME wire protocol as native
-    // OpenAI but serve an arbitrary, unknown catalog — this app must never
-    // assume they want native OpenAI's own app-chosen numbers, the same
-    // unknown-model fail-safe every other adapter applies.
-    for intent in [
-        Intent::Deterministic,
-        Intent::Prose,
-        Intent::ProseGrounded,
-        Intent::Default,
-    ] {
-        let profile = OpenAiClient::new(ProviderId::OpenAiCompatible, None)
-            .sampling_profile("gpt-4o", intent);
-        assert_eq!(
-            profile,
-            SamplingProfile::default(),
-            "OpenAiCompatible / {intent:?}"
-        );
-    }
+fn openai_compatible_wire_body_per_intent() {
+    // Mirrors `native_openai_wire_body_per_intent` exactly. LM
+    // Studio/vLLM/OpenRouter/custom `OpenAiCompatible` gateways speak the
+    // SAME wire protocol as native OpenAI, and `Intent` encodes an APP
+    // requirement on the response shape (e.g. the analyze prompt's
+    // strict-JSON contract needs a low temperature) — not a guess about an
+    // unrecognized MODEL's preferred creative sampling — so it applies
+    // here too. This is NOT the unknown-model fail-safe the other adapters
+    // use; see `OpenAiClient::sampling_profile`'s doc comment. A prior
+    // round wrongly neutralized this path (gated on `self.id ==
+    // ProviderId::OpenAi`), silently dropping the JSON-strict analysis
+    // surface's low temperature for every gateway — this test pins the
+    // regression.
+    let det = body_for(
+        ProviderId::OpenAiCompatible,
+        "gpt-4o",
+        Some("deterministic"),
+    );
+    assert_eq!(det["temperature"], json!(DETERMINISTIC_TEMPERATURE));
+    assert!(det.get("top_p").is_none());
+    assert!(det.get("frequency_penalty").is_none());
+    assert!(det.get("presence_penalty").is_none());
+
+    let prose = body_for(ProviderId::OpenAiCompatible, "gpt-4o", Some("prose"));
+    assert_eq!(prose["temperature"], json!(PROSE_TEMPERATURE));
+    assert_eq!(prose["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(prose["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
+    assert_eq!(prose["presence_penalty"], json!(PROSE_PRESENCE_PENALTY));
+
+    let grounded = body_for(
+        ProviderId::OpenAiCompatible,
+        "gpt-4o",
+        Some("prose_grounded"),
+    );
+    assert_eq!(grounded["temperature"], json!(PROSE_GROUNDED_TEMPERATURE));
+    assert_eq!(grounded["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(
+        grounded["frequency_penalty"],
+        json!(PROSE_FREQUENCY_PENALTY)
+    );
+    assert!(
+        grounded.get("presence_penalty").is_none(),
+        "prose_grounded must never send presence_penalty"
+    );
 }
 
 #[test]
