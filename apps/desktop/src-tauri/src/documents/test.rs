@@ -1726,6 +1726,77 @@ fn test_clear_all_wipes_posting_vectors_and_match_scores() {
     );
 }
 
+// The mojibake-repair migration snapshots the pre-repair (still-corrupt)
+// résumé text into `documents_pre_mojibake_repair` before rewriting it in
+// place (see `mojibake_repair::up`). That snapshot is the user's ORIGINAL
+// document text at rest — a full "erase my data" reset must drop the table,
+// not just leave an empty shell behind.
+#[test]
+#[serial]
+fn test_clear_all_drops_the_mojibake_repair_snapshot_table() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let db_path = dir.join("documents.db");
+
+    let all = DocumentStore::MIGRATIONS;
+    let repair_idx = all
+        .iter()
+        .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
+        .expect("repair_pre_pdf_text_string_mojibake must still be registered");
+
+    let mut corrupt_bytes = b"- [".to_vec();
+    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
+    for &b in b"aijobhunter.app" {
+        corrupt_bytes.push(0x00);
+        corrupt_bytes.push(b);
+    }
+    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
+    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
+
+    {
+        let mut conn = crate::db::open(&db_path).unwrap();
+        run_migrations(&mut conn, &all[..repair_idx]).unwrap();
+        conn.execute(
+            "INSERT INTO documents (id, title, name, locale, text, pages, created_at, indexed, is_default)
+             VALUES ('corrupt', 't', 'n', 'en', ?1, 1, 0, 0, 0)",
+            params![corrupt_text],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, populating the
+    // snapshot table.
+    let store = DocumentStore::open(&dir).unwrap();
+    let snapshot_rows: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM documents_pre_mojibake_repair",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the migration must have created and populated the snapshot table");
+    assert_eq!(snapshot_rows, 1, "snapshot must hold the pre-repair row");
+
+    store.clear_all();
+
+    let table_exists: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'documents_pre_mojibake_repair'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        table_exists, 0,
+        "clear_all() must DROP the mojibake snapshot table (not just empty it) — \
+         it holds the user's original, un-repaired document text"
+    );
+}
+
 // ── Cache eviction (prune_caches / PerformanceConfig integration) ─────────────
 //
 // Tests for:

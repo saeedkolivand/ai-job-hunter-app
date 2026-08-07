@@ -527,8 +527,18 @@ impl DocumentStore {
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
+        // The `repair_pre_pdf_text_string_mojibake` migration (see
+        // `mojibake_repair::up`) snapshots every affected row's pre-repair,
+        // still-corrupt text into `documents_pre_mojibake_repair` as a
+        // safety net for its in-place rewrite. That snapshot holds the
+        // user's ORIGINAL document text, so a full "erase my data" reset
+        // must drop it too, not just the live tables — a one-shot migration
+        // artifact, not a table the app writes going forward, so `DROP`
+        // (not `DELETE`) is correct: `user_version` is already past this
+        // migration, so it will not be recreated.
         conn.execute_batch(
-            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores;",
+            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores; \
+             DROP TABLE IF EXISTS documents_pre_mojibake_repair;",
         )
         .ok();
     }

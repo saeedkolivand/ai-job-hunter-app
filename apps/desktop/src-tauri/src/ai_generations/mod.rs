@@ -348,7 +348,17 @@ impl AiGenerationStore {
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM ai_generations", []).ok();
+        // The `repair_pre_pdf_text_string_mojibake` migration snapshots every
+        // affected row's pre-repair, still-corrupt résumé/cover-letter text
+        // into `ai_generations_pre_mojibake_repair` as a safety net for its
+        // in-place rewrite (see the identical rationale on the sibling
+        // `documents::DocumentStore::clear_all`). A full "erase my data"
+        // reset must drop that snapshot too — `DROP`, not `DELETE`, since it
+        // is a one-shot migration artifact `user_version` will not recreate.
+        conn.execute_batch(
+            "DELETE FROM ai_generations; DROP TABLE IF EXISTS ai_generations_pre_mojibake_repair;",
+        )
+        .ok();
     }
 
     pub fn list(&self) -> Vec<AiGenerationRecord> {

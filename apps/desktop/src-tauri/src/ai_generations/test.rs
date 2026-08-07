@@ -259,18 +259,8 @@ fn repair_pre_pdf_text_string_mojibake_heals_a_pre_seeded_row_through_a_real_ope
         .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
         .expect("repair_pre_pdf_text_string_mojibake must still be registered");
 
-    // "- [" + doubled U+FFFD (the BOM misread as UTF-8) + NUL-interleaved
-    // "aijobhunter.app" (UTF-16BE misread as UTF-8) + the never-corrupted
-    // "](url)\n" suffix — see `extraction::pdf::repair_utf16_mojibake`.
-    let mut corrupt_bytes = b"- [".to_vec();
-    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
-    for &b in b"aijobhunter.app" {
-        corrupt_bytes.push(0x00);
-        corrupt_bytes.push(b);
-    }
-    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
-    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
-    let expected_repaired = "- [aijobhunter.app](https://aijobhunter.app/)\n";
+    let corrupt_text = corrupt_mojibake_text();
+    let expected_repaired = REPAIRED_MOJIBAKE_TEXT;
     let clean_cover_letter = "Dear Hiring Manager, I'm excited to apply.".to_string();
 
     {
@@ -368,6 +358,65 @@ fn repair_pre_pdf_text_string_mojibake_snapshots_the_pre_repair_value_before_rew
         .expect("the backup table must contain the pre-repair row");
     assert_eq!(backed_up_resume, corrupt_text);
     assert_eq!(backed_up_cover, "clean cover letter");
+}
+
+// The mojibake-repair migration snapshots the pre-repair (still-corrupt)
+// résumé/cover-letter text into `ai_generations_pre_mojibake_repair` before
+// rewriting it in place. That snapshot is the user's ORIGINAL document text
+// at rest — a full "erase my data" reset must drop the table, not just leave
+// an empty shell behind.
+#[test]
+fn clear_all_drops_the_mojibake_repair_snapshot_table() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("ai_generations.db");
+    let corrupt_text = corrupt_mojibake_text();
+
+    let all = AiGenerationStore::MIGRATIONS;
+    let repair_idx = all
+        .iter()
+        .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
+        .expect("repair_pre_pdf_text_string_mojibake must still be registered");
+    {
+        let mut conn = crate::db::open(&path).unwrap();
+        crate::db::run_migrations(&mut conn, &all[..repair_idx]).unwrap();
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text)
+             VALUES ('corrupt', 0, ?1, 'clean cover letter')",
+            params![corrupt_text],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, populating the
+    // snapshot table.
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let snapshot_rows: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM ai_generations_pre_mojibake_repair",
+            [],
+            |r| r.get(0),
+        )
+        .expect("the migration must have created and populated the snapshot table");
+    assert_eq!(snapshot_rows, 1, "snapshot must hold the pre-repair row");
+
+    store.clear_all();
+
+    let table_exists: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ai_generations_pre_mojibake_repair'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        table_exists, 0,
+        "clear_all() must DROP the mojibake snapshot table (not just empty it) — \
+         it holds the user's original, un-repaired résumé/cover-letter text"
+    );
 }
 
 #[test]
