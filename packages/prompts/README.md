@@ -2,7 +2,7 @@
 
 Pure, dependency-free TypeScript that builds the prompt strings and output
 validators for the app's AI features. It **constructs strings and repairs model
-output**. It never calls an LLM or the network.
+output** — it never calls an LLM or the network.
 
 ## Provider-aware
 
