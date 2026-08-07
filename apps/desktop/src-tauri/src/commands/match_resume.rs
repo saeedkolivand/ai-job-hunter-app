@@ -5,6 +5,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
 use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
 use crate::documents::keywords::{
     apply_stemmer, detect_locale_tag, display_forms, keyword_coverage, keywords,
@@ -540,10 +541,18 @@ fn rank_trim_candidates(resume_text: &str, job_text: &str) -> Vec<TrimCandidate>
 /// the rendered preview exceeds `maxPages`; the user does the cutting.
 #[tauri::command]
 pub async fn resume_trim_suggestions(req: ResumeTrimSuggestionsRequest) -> Value {
+    // Bound the work before doing any of it. The request schema's `.max(200_000)`
+    // is zod, i.e. renderer-side — serde enforces nothing, so an IPC caller that
+    // isn't our own UI could otherwise hand language detection, stemming and the
+    // résumé parser an unbounded string. Clamped rather than rejected, matching
+    // `clamp_job_description`'s convention: an advisory panel ranking the first
+    // 200 kB beats an error dialog.
+    let resume_text = clamp_to_bytes(req.resume_text, MAX_JOB_DESCRIPTION_BYTES);
+    let job_text = clamp_to_bytes(req.job_text, MAX_JOB_DESCRIPTION_BYTES);
     let profile = LocaleProfile::get(req.locale.as_deref().unwrap_or("en"));
     json!({
         "maxPages": profile.max_pages,
-        "lines": rank_trim_candidates(&req.resume_text, &req.job_text),
+        "lines": rank_trim_candidates(&resume_text, &job_text),
     })
 }
 
@@ -1202,6 +1211,32 @@ Senior Engineer, Acme
     #[test]
     fn keywordless_posting_yields_no_suggestions() {
         assert!(rank_trim_candidates(RESUME, "!!! ??? ...").is_empty());
+    }
+
+    /// The request schema's `.max(200_000)` is zod — renderer-side only. serde
+    /// enforces nothing, so the command must cap its own inputs or an IPC caller
+    /// that isn't our UI hands language detection + stemming unbounded work.
+    /// Clamped on a char boundary, so the text stays valid UTF-8.
+    #[tokio::test]
+    async fn oversized_input_is_clamped_rather_than_processed_whole() {
+        // Multi-byte char straddling the cap — a naive byte truncate would split
+        // it and produce invalid UTF-8.
+        let huge = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(5_000);
+        assert!(huge.len() > MAX_JOB_DESCRIPTION_BYTES);
+
+        let clamped = clamp_to_bytes(huge.clone(), MAX_JOB_DESCRIPTION_BYTES);
+        assert_eq!(clamped.len(), MAX_JOB_DESCRIPTION_BYTES - 1);
+        assert!(!clamped.contains('\u{1F600}'), "must cut before the emoji");
+
+        // And the command itself survives the oversized pair.
+        let out = resume_trim_suggestions(ResumeTrimSuggestionsRequest {
+            resume_text: huge.clone(),
+            job_text: huge,
+            locale: Some("us".into()),
+        })
+        .await;
+        assert_eq!(out["maxPages"], 2);
+        assert!(out["lines"].is_array());
     }
 
     /// The renderer skips the trim query entirely for documents of 2 pages or

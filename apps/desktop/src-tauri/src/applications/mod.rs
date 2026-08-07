@@ -188,19 +188,29 @@ pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 200_000;
 /// duplicating the literal.
 pub(crate) const MAX_TOTAL_ANSWERS: usize = 500;
 
-/// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes, cutting on
-/// a UTF-8 char boundary so the stored text is always valid UTF-8. Truncate (never
-/// reject): an over-cap import is clamped, not dropped.
-fn clamp_job_description(mut jd: String) -> String {
-    if jd.len() <= MAX_JOB_DESCRIPTION_BYTES {
-        return jd;
+/// Clamp `s` to at most `max` bytes, cutting on a UTF-8 char boundary so the
+/// result is always valid UTF-8. Truncate (never reject): over-cap input is
+/// clamped, not dropped.
+///
+/// Shared by every IPC entry point that accepts free text, so an untrusted
+/// caller can't hand the backend unbounded work. Zod's `.max()` on the request
+/// schema is renderer-side only — serde does not enforce it — so the cap has to
+/// exist on this side too.
+pub(crate) fn clamp_to_bytes(mut s: String, max: usize) -> String {
+    if s.len() <= max {
+        return s;
     }
-    let mut end = MAX_JOB_DESCRIPTION_BYTES;
-    while end > 0 && !jd.is_char_boundary(end) {
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
         end -= 1;
     }
-    jd.truncate(end);
-    jd
+    s.truncate(end);
+    s
+}
+
+/// Clamp a job description to at most `MAX_JOB_DESCRIPTION_BYTES` bytes.
+fn clamp_job_description(jd: String) -> String {
+    clamp_to_bytes(jd, MAX_JOB_DESCRIPTION_BYTES)
 }
 
 /// The aggregate root. Owns identity, status, the job link, and the audit fields
