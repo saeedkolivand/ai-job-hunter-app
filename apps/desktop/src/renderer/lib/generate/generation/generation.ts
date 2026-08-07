@@ -330,17 +330,44 @@ function nameKey(s: string): string {
 }
 
 /**
- * The header block: line 0 up to (not including) the first blank line, or
- * the whole array if there is none. Shared ceiling for the name
- * reconciliation search in {@link findNameLine} and the contact-line scan in
- * `seedHeaderFromProfile` below — see that function's STRUCTURAL bound note
- * for why neither scan may look past it. Recomputed fresh wherever it's
- * needed rather than cached across a mutation: an `unshift` earlier in the
- * same line array shifts every later index by one, so a stale block-end
- * value would silently drift out of alignment with the array it's bounding.
+ * The index of the first non-blank line, or `lines.length` if every line is
+ * blank (including an empty array). Shared by {@link headerBlockEnd} (the
+ * header block starts here, not unconditionally at index 0 — Rust's parser
+ * accepts the first line with content after ANY number of leading blanks,
+ * `export/parser/mod.rs`, and this side must agree with it) and
+ * `seedHeaderFromProfile`'s no-match insert branch (so a spliced-in contact
+ * line lands right at/after the real content, not sandwiched inside a run of
+ * several leading blanks).
+ */
+function firstContentLine(lines: string[]): number {
+  let i = 0;
+  while (i < lines.length && (lines[i] ?? '').trim() === '') i++;
+  return i;
+}
+
+/**
+ * The header block: the first run of content lines — starting at
+ * {@link firstContentLine}, not unconditionally at index 0 — up to (not
+ * including) the next blank line after that, or the whole array if there is
+ * none. Shared ceiling for the name reconciliation search in
+ * {@link findNameLine} and the contact-line scan in `seedHeaderFromProfile`
+ * below — see that function's STRUCTURAL bound note for why neither scan may
+ * look past it. Recomputed fresh wherever it's needed rather than cached
+ * across a mutation: an `unshift` earlier in the same line array shifts every
+ * later index by one, so a stale block-end value would silently drift out of
+ * alignment with the array it's bounding.
+ *
+ * CodeRabbit (round 7): starting the termination scan at a hardcoded `i = 1`
+ * (rather than one past {@link firstContentLine}) made TWO OR MORE leading
+ * blank lines — a shape PDF extraction can and does produce, this codebase
+ * has already special-cased ONE — return 1 immediately (the second blank),
+ * so every real header line beyond it (the name at index 2+) fell outside
+ * the block and became unreachable to both scans above. One leading blank
+ * happened to still work by accident: index 1 there IS the real content
+ * line, so the old hardcoded start coincided with the correct one.
  */
 function headerBlockEnd(lines: string[]): number {
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = firstContentLine(lines) + 1; i < lines.length; i++) {
     if ((lines[i] ?? '').trim() === '') return i;
   }
   return lines.length;
@@ -582,15 +609,26 @@ export function seedHeaderFromProfile(
     if (matches.length > 0) {
       lines[pickReplacementIndex(lines, matches)] = contactLine;
     } else {
-      // CodeRabbit (security re-review): index 1 assumes line 0 is always
-      // the name — true after the fullName-driven unshift/replace above, or
-      // when the model already wrote a name/contact line on its own. But
-      // when there's no fullName to seed AND line 0 is itself a section
-      // heading (the model omitted the name line entirely), splicing at 1
-      // put the contact line INSIDE that section, right under its heading,
-      // not in the header block above it. Insert at 0 (ahead of the
-      // heading) in that case instead.
-      const insertAt = looksLikeHeaderBoundary(lines[0] ?? '') ? 0 : 1;
+      // CodeRabbit (security re-review): assuming line 0 is always the name
+      // was already wrong once — true after the fullName-driven
+      // unshift/replace above, or when the model already wrote a name/
+      // contact line on its own, but NOT when there's no fullName to seed
+      // AND line 0 is itself a section heading (the model omitted the name
+      // line entirely); splicing right after it would put the contact line
+      // INSIDE that section, under its heading, not in the header block
+      // above it. Insert ahead of the heading in that case instead.
+      //
+      // CodeRabbit (round 7): the same reasoning generalizes past index 0 —
+      // with N ≥ 2 leading blank lines the real first content line is at
+      // `firstContentLine(lines)`, not unconditionally index 0/1, and a
+      // hardcoded `1` would splice the contact line into the MIDDLE of that
+      // blank run, ahead of the actual content. Reduces to the exact
+      // original 0-or-1 ternary above for zero leading blanks (where
+      // `firstContentLine` is 0).
+      const contentStart = firstContentLine(lines);
+      const insertAt = looksLikeHeaderBoundary(lines[contentStart] ?? '')
+        ? contentStart
+        : contentStart + 1;
       lines.splice(insertAt, 0, contactLine);
     }
   }

@@ -907,6 +907,21 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
       'Jordan Lee\nBerlin | jordan@profile.example.com\nSUMMARY\nExperienced engineer.\nCertifications awarded\nJordan Lee'
     );
   });
+
+  // CodeRabbit (round 7): `headerBlockEnd` started its termination scan at a
+  // hardcoded `i = 1`, which coincidentally still worked for exactly ONE
+  // leading blank line (index 1 there IS the real name) but returns 1
+  // immediately — the SECOND blank — for TWO OR MORE, making the name at
+  // index 2 (and everything after it) unreachable to `findNameLine`. The
+  // reconciliation search then finds nothing, falls through to the
+  // unshift/replace fallback, and replaces line 0 (still blank) — leaving
+  // the model's real ALL-CAPS name line sitting untouched below, exactly the
+  // duplicated-header shape this whole file exists to close.
+  it('reconciles the name and the contact line past TWO leading blank lines, not just one', () => {
+    const text = '\n\nJORDAN LEE\nmodel@old.example.com\n\nSUMMARY\nSome text.';
+    const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
+    expect(out).toBe('\n\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
+  });
 });
 
 describe('generateCoverLetter', () => {
