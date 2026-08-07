@@ -136,3 +136,39 @@ describe('EffortPicker — compact (rendered by ModelSelector)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+// ── Stranded effort values (CodeRabbit #955) ────────────────────────────────
+//
+// `effort` persists per PROVIDER; `effortLevels` varies per MODEL. Switching to
+// a model with a narrower set can leave a saved level the new model rejects.
+describe('EffortPicker — a stored level the selected model rejects', () => {
+  it('resets to the provider default instead of letting the stale value reach generation', () => {
+    // Saved 'medium', but this model only accepts minimal/high.
+    modelCapsState.data = { effortLevels: ['minimal', 'high'] };
+    providerConfigState.data = { providers: { gemini: { effort: 'medium' } } };
+
+    render(<EffortPicker provider="gemini" model="gemini-3.1-flash-lite-image" />);
+
+    expect(setProviderSettings).toHaveBeenCalledWith('gemini', { effort: '' });
+  });
+
+  it('leaves a supported level alone', () => {
+    modelCapsState.data = { effortLevels: ['low', 'medium', 'high'] };
+    providerConfigState.data = { providers: { openai: { effort: 'medium' } } };
+
+    render(<EffortPicker provider="openai" model="gpt-5.6" />);
+
+    expect(setProviderSettings).not.toHaveBeenCalled();
+  });
+
+  it('does not clear anything while the capability query is still unresolved', () => {
+    // An empty/pending level set must not be read as "this model rejects it" —
+    // that would wipe a valid saved preference on every cold mount.
+    modelCapsState.data = undefined;
+    providerConfigState.data = { providers: { openai: { effort: 'high' } } };
+
+    render(<EffortPicker provider="openai" model="gpt-5.6" />);
+
+    expect(setProviderSettings).not.toHaveBeenCalled();
+  });
+});

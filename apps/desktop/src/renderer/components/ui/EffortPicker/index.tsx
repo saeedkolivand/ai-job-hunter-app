@@ -1,4 +1,5 @@
 import { Gauge } from 'lucide-react';
+import { useEffect } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
@@ -43,11 +44,31 @@ interface Props {
 export function EffortPicker({ provider, model, baseUrl, compact = false }: Props) {
   const { t } = useTranslation();
   const caps = useModelCapabilities(provider, model, baseUrl);
-  const effortLevels = caps.data?.effortLevels ?? [];
+  // Keep the query's own array reference — `?? []` would mint a new one every
+  // render and make any effect depending on it fire forever.
+  const levels = caps.data?.effortLevels;
   const setProviderSettings = usePreferencesStore((s) => s.setProviderSettings);
   const providerConfig = useAiProviderConfig();
   const currentEffort = providerConfig?.providers?.[provider]?.effort ?? '';
 
+  // `effort` is stored per PROVIDER but the accepted levels vary per MODEL, so
+  // switching models can strand a saved level the new model rejects (a stored
+  // `medium` against a model offering only minimal/high). The Dropdown would
+  // fall back to its placeholder and read as "Default" while the stale value
+  // was still what reached generation. Reset it to the provider default.
+  //
+  // An unresolved capability query (`levels` undefined) is NOT a rejection —
+  // treating it as one would wipe a valid saved preference on every cold mount.
+  //
+  // Terminates: the write sets `effort` to '', which makes `stranded` false on
+  // the next render. It fires once per stranding and never loops. Depends on
+  // the boolean, never on the array.
+  const stranded = !!levels?.length && currentEffort !== '' && !levels.includes(currentEffort);
+  useEffect(() => {
+    if (stranded) setProviderSettings(provider, { effort: '' });
+  }, [stranded, provider, setProviderSettings]);
+
+  const effortLevels = levels ?? [];
   if (effortLevels.length === 0) return null;
 
   return (

@@ -7,8 +7,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
 use crate::documents::keywords::{
-    apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, make_stemmer,
-    readable_gaps,
+    apply_stemmer, detect_locale_tag, display_forms, keyword_coverage, keywords,
+    keywords_normalized, languages_align, make_stemmer, readable_gaps,
 };
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
@@ -162,39 +162,11 @@ async fn score_one(
     let stemmer = make_stemmer(&job_text);
 
     // Re-detect the JD language after translate_if_needed (translation may have
-    // changed the text language; the result is used to decide whether both sides
-    // should be stemmed or both left normalized-only).
-    let jd_lang = whatlang::detect(&job_text).map(|i| i.lang());
+    // changed the text language). The decision itself lives in the keyword
+    // kernel — `rank_trim_candidates` below routes through the same function, so
+    // the trim panel and this score can't disagree on a cross-language pair.
     let resume_locale = resume.locale.as_deref().unwrap_or("en");
-    let jd_matches_resume_locale = match jd_lang {
-        Some(whatlang::Lang::Deu) => resume_locale.starts_with("de"),
-        Some(whatlang::Lang::Fra) => resume_locale.starts_with("fr"),
-        Some(whatlang::Lang::Spa) => resume_locale.starts_with("es"),
-        Some(whatlang::Lang::Ita) => resume_locale.starts_with("it"),
-        Some(whatlang::Lang::Por) => resume_locale.starts_with("pt"),
-        Some(whatlang::Lang::Nld) => resume_locale.starts_with("nl"),
-        // CJK and other non-Latin scripts that the English Snowball stemmer cannot
-        // handle: treat as divergent so BOTH sides stay normalized-only. Applying
-        // an English stemmer to Japanese/Chinese/Korean text would corrupt tokens.
-        Some(
-            whatlang::Lang::Cmn  // Mandarin Chinese
-            | whatlang::Lang::Jpn  // Japanese
-            | whatlang::Lang::Kor  // Korean
-            | whatlang::Lang::Vie  // Vietnamese (tonal, non-Latin morphology)
-            | whatlang::Lang::Tha  // Thai
-            | whatlang::Lang::Ara  // Arabic
-            | whatlang::Lang::Heb  // Hebrew
-            | whatlang::Lang::Hin  // Hindi / Devanagari
-            | whatlang::Lang::Ben  // Bengali
-            | whatlang::Lang::Tur  // Turkish (agglutinative — no Snowball support)
-            | whatlang::Lang::Ukr  // Ukrainian
-            | whatlang::Lang::Rus, // Russian
-        ) => false, // divergent: do not apply English stemmer
-        // English is the default Snowball stemmer; match when the résumé locale is
-        // also English (or unset).  Any other unrecognised language is treated as
-        // English-compatible only when the résumé locale says so.
-        _ => resume_locale.starts_with("en"),
-    };
+    let jd_matches_resume_locale = languages_align(&job_text, resume_locale);
 
     // Symmetric treatment: stem BOTH sides with the JD stemmer when languages
     // match; leave BOTH sides normalized-only (unstemmed) when they diverge.
@@ -497,21 +469,48 @@ pub struct TrimCandidate {
 /// `keyword_coverage`'s `None`: with nothing to score against, every line would
 /// tie at zero and the ranking would be noise dressed up as a recommendation.
 fn rank_trim_candidates(resume_text: &str, job_text: &str) -> Vec<TrimCandidate> {
-    // Stemmer language is detected from the JD, not the résumé — same rule as
-    // `score_one`; see `keywords_normalized`'s doc comment.
+    // Symmetric normalization, exactly as `score_one` does it: stem BOTH sides
+    // with the JD-derived stemmer when the languages align, leave BOTH
+    // normalized-only when they diverge. Stemming one side alone mutates
+    // language-neutral tech tokens on that side only and matches neither set.
+    //
+    // The résumé's language is DETECTED here rather than read from a stored
+    // locale — this path scores generator output that was never persisted, so
+    // there is no `DocumentRecord::locale` to consult. The request's `locale` is
+    // the export MARKET (`us`/`dach`), not a language; using it here would be a
+    // different concept wearing the same word.
+    let aligned = languages_align(job_text, detect_locale_tag(resume_text));
     let stemmer = make_stemmer(job_text);
-    let job_keywords = keywords(job_text, &stemmer);
+    let job_keywords = if aligned {
+        keywords(job_text, &stemmer)
+    } else {
+        keywords_normalized(job_text)
+    };
     if job_keywords.is_empty() {
         return Vec::new();
     }
-    let display = display_forms(job_text, &stemmer);
+    // Display forms are keyed on whatever the JD side produced, so they must be
+    // built the same way — a stemmed map would miss every unstemmed hit.
+    let display = if aligned {
+        display_forms(job_text, &stemmer)
+    } else {
+        keywords_normalized(job_text)
+            .into_iter()
+            .map(|t| (t.clone(), t))
+            .collect()
+    };
 
     let mut candidates: Vec<TrimCandidate> = parse_resume(resume_text)
         .lines
         .into_iter()
         .filter(|line| matches!(line.kind, LineKind::Bullet))
         .map(|line| {
-            let mut hits: Vec<String> = keywords(&line.text, &stemmer)
+            let line_words = if aligned {
+                keywords(&line.text, &stemmer)
+            } else {
+                keywords_normalized(&line.text)
+            };
+            let mut hits: Vec<String> = line_words
                 .intersection(&job_keywords)
                 .map(|stem| display.get(stem).cloned().unwrap_or_else(|| stem.clone()))
                 .collect();
@@ -1157,6 +1156,44 @@ Senior Engineer, Acme
         let hits = &ranked[0].hits;
         assert!(hits.iter().any(|h| h == "aws"), "got {hits:?}");
         assert!(hits.iter().any(|h| h == "go"), "got {hits:?}");
+    }
+
+    /// The invariant the whole panel rests on: it must never disagree with the
+    /// match score for the same pair. A cross-language pair is where that breaks
+    /// — `score_one` leaves BOTH sides unstemmed there, so ranking must too.
+    /// Before this, ranking always stemmed with the JD stemmer and a German
+    /// posting against an English résumé scored a shared tech token on one side
+    /// only. Both now route through `languages_align`.
+    #[test]
+    fn cross_language_pair_ranks_symmetrically_like_score_one() {
+        // German JD, English résumé — divergent, so neither side may be stemmed.
+        let job = "Wir suchen einen erfahrenen Entwickler mit Kubernetes und Docker \
+                   für unsere Container-Plattform in München.";
+        let resume = "EXPERIENCE\n\n\
+                      - Shipped kubernetes clusters and docker containers to production\n\
+                      - Organised the team offsite and the summer party for forty people\n";
+
+        assert!(
+            !languages_align(job, detect_locale_tag(resume)),
+            "fixture must actually be a divergent pair, or this test proves nothing"
+        );
+
+        let ranked = rank_trim_candidates(resume, job);
+        let tech = ranked
+            .iter()
+            .find(|c| c.text.contains("kubernetes"))
+            .expect("the tech bullet must be a candidate");
+        assert!(
+            tech.score > 0,
+            "shared tech tokens must still match across languages when both sides \
+             stay unstemmed; got {:?}",
+            tech.hits
+        );
+        assert!(
+            ranked[0].text.contains("offsite"),
+            "the JD-irrelevant bullet must still rank first for cutting; got {:?}",
+            ranked[0].text
+        );
     }
 
     /// A posting with nothing extractable yields no ranking rather than a

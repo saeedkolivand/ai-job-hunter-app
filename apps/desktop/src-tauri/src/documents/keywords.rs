@@ -157,6 +157,81 @@ pub fn make_stemmer(text: &str) -> Stemmer {
     })
 }
 
+/// Whether the job posting's language and the résumé's locale are close enough
+/// that BOTH sides should be stemmed with the JD-derived stemmer.
+///
+/// When they diverge, both sides must stay **normalized-only** (unstemmed):
+/// stemming one side alone mutates language-neutral tech tokens (`docker`,
+/// `kubernetes`) on that side only, so they match neither set — strictly worse
+/// than the unstemmed symmetric baseline. Non-Latin scripts (CJK, Arabic,
+/// Cyrillic, Turkish…) always count as divergent, because the English Snowball
+/// fallback in [`make_stemmer`] would corrupt them.
+///
+/// Single source of this decision. Every consumer of the keyword kernel that
+/// intersects a résumé against a posting MUST route through it, or two surfaces
+/// scoring the same pair will disagree — see `score_one` and
+/// `rank_trim_candidates` in `commands/match_resume.rs`.
+pub fn languages_align(job_text: &str, resume_locale: &str) -> bool {
+    match detect(job_text).map(|i| i.lang()) {
+        Some(Lang::Deu) => resume_locale.starts_with("de"),
+        Some(Lang::Fra) => resume_locale.starts_with("fr"),
+        Some(Lang::Spa) => resume_locale.starts_with("es"),
+        Some(Lang::Ita) => resume_locale.starts_with("it"),
+        Some(Lang::Por) => resume_locale.starts_with("pt"),
+        Some(Lang::Nld) => resume_locale.starts_with("nl"),
+        // Scripts the English Snowball stemmer cannot handle: always divergent.
+        Some(
+            Lang::Cmn
+            | Lang::Jpn
+            | Lang::Kor
+            | Lang::Vie
+            | Lang::Tha
+            | Lang::Ara
+            | Lang::Heb
+            | Lang::Hin
+            | Lang::Ben
+            | Lang::Tur
+            | Lang::Ukr
+            | Lang::Rus,
+        ) => false,
+        // English is the default Snowball stemmer; any other unrecognised
+        // language aligns only when the résumé locale says English.
+        _ => resume_locale.starts_with("en"),
+    }
+}
+
+/// Best-effort language tag for text whose locale is not stored — the shape
+/// [`languages_align`] expects on its `resume_locale` side.
+///
+/// Needed because a résumé being scored straight out of the generator has no
+/// persisted `locale` the way a `DocumentRecord` does. Non-Latin languages are
+/// mapped to their own tags rather than collapsing into the `"en"` fallback:
+/// a Japanese résumé that answered `"en"` here would align with an English
+/// posting and get stemmed by the English Snowball stemmer.
+pub fn detect_locale_tag(text: &str) -> &'static str {
+    match detect(text).map(|i| i.lang()) {
+        Some(Lang::Deu) => "de",
+        Some(Lang::Fra) => "fr",
+        Some(Lang::Spa) => "es",
+        Some(Lang::Ita) => "it",
+        Some(Lang::Por) => "pt",
+        Some(Lang::Nld) => "nl",
+        Some(Lang::Cmn) => "zh",
+        Some(Lang::Jpn) => "ja",
+        Some(Lang::Kor) => "ko",
+        Some(Lang::Vie) => "vi",
+        Some(Lang::Tha) => "th",
+        Some(Lang::Ara) => "ar",
+        Some(Lang::Heb) => "he",
+        Some(Lang::Hin) => "hi",
+        Some(Lang::Ben) => "bn",
+        Some(Lang::Tur) => "tr",
+        Some(Lang::Ukr) => "uk",
+        Some(Lang::Rus) => "ru",
+        _ => "en",
+    }
+}
+
 /// Normalize text to a language-agnostic keyword set: lowercase,
 /// synonym-normalized, filtered - but NOT stemmed. Tokens shorter than 4 chars
 /// are dropped unless they are in SHORT_TECH_TERMS; stopwords are excluded.

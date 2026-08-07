@@ -98,11 +98,13 @@ fn annotation_contents(dict: &Dictionary) -> Option<String> {
 /// project title, so every link falls through to the unmatched-links append
 /// path and lands in a block of its own instead of on its project.
 ///
-/// `ponytail:` the no-BOM branch decodes as UTF-8 rather than true
-/// PDFDocEncoding. Identical for the ASCII range (all a link anchor normally
-/// is), and right for the many producers that emit UTF-8 in defiance of the
-/// spec. Add a PDFDocEncoding table only if accented anchors come back wrong
-/// from a BOM-less producer.
+/// The BOM-less case is genuinely ambiguous — PDFDocEncoding and UTF-8 share the
+/// ASCII range and disagree above it, and nothing in the bytes says which one a
+/// producer meant. Resolved by trying UTF-8 strictly first and falling back to
+/// PDFDocEncoding: a byte sequence that is valid UTF-8 is overwhelmingly likely
+/// to BE UTF-8 (spec-defiant producers are common), while `0xE9` alone is not
+/// valid UTF-8 and can only have meant PDFDocEncoding's `é`. Decoding blindly
+/// either way corrupts the other population.
 pub(crate) fn pdf_text_string(bytes: &[u8]) -> String {
     match bytes {
         [0xFE, 0xFF, rest @ ..] => decode_utf16(rest, true),
@@ -111,8 +113,47 @@ pub(crate) fn pdf_text_string(bytes: &[u8]) -> String {
         [0xFF, 0xFE, rest @ ..] => decode_utf16(rest, false),
         // PDF 2.0 additionally allows UTF-8 behind a BOM.
         [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
-        _ => String::from_utf8_lossy(bytes).into_owned(),
+        _ => match std::str::from_utf8(bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => decode_pdf_doc_encoding(bytes),
+        },
     }
+}
+
+/// PDFDocEncoding → UTF-8 (PDF 32000-1 Annex D.2).
+///
+/// Latin-1 for `0x20..=0x7E` and `0xA0..=0xFF`, which is the whole range a link
+/// anchor realistically occupies. The `0x18..=0x1F` and `0x80..=0x9F` bands hold
+/// typography (dashes, curly quotes, dagger, bullet…) that Latin-1 maps
+/// differently, so those are spelled out; PDFDocEncoding leaves `0x7F`, `0x9F`
+/// and `0xAD` undefined, which become U+FFFD rather than silently inventing a
+/// character.
+fn decode_pdf_doc_encoding(bytes: &[u8]) -> String {
+    /// Annex D.2, `0x18..=0x1F` (8 entries) — accents.
+    const ACCENTS: [char; 8] = [
+        '\u{02D8}', '\u{02C7}', '\u{02C6}', '\u{02D9}', // breve caron circumflex dotaccent
+        '\u{02DD}', '\u{02DB}', '\u{02DA}', '\u{02DC}', // hungarumlaut ogonek ring tilde
+    ];
+    /// Annex D.2, `0x80..=0x9E` (31 entries) — typography and Latin extras.
+    const TYPOGRAPHY: [char; 31] = [
+        '\u{2022}', '\u{2020}', '\u{2021}', '\u{2026}', // • † ‡ …        0x80
+        '\u{2014}', '\u{2013}', '\u{0192}', '\u{2044}', // — – ƒ ⁄        0x84
+        '\u{2039}', '\u{203A}', '\u{2212}', '\u{2030}', // ‹ › − ‰        0x88
+        '\u{201E}', '\u{201C}', '\u{201D}', '\u{2018}', // „ " " '        0x8C
+        '\u{2019}', '\u{201A}', '\u{2122}', '\u{FB01}', // ' ‚ ™ ﬁ        0x90
+        '\u{FB02}', '\u{0141}', '\u{0152}', '\u{0160}', // ﬂ Ł Œ Š        0x94
+        '\u{0178}', '\u{017D}', '\u{0131}', '\u{0142}', // Ÿ Ž ı ł        0x98
+        '\u{0153}', '\u{0161}', '\u{017E}', // œ š ž                       0x9C
+    ];
+    bytes
+        .iter()
+        .map(|&b| match b {
+            0x18..=0x1F => ACCENTS[(b - 0x18) as usize],
+            0x80..=0x9E => TYPOGRAPHY[(b - 0x80) as usize],
+            0x7F | 0x9F | 0xAD => char::REPLACEMENT_CHARACTER, // undefined in PDFDocEncoding
+            _ => b as char,                                    // Latin-1 elsewhere
+        })
+        .collect()
 }
 
 /// Decode UTF-16 code units, substituting U+FFFD for unpaired surrogates. A
@@ -217,5 +258,52 @@ mod test {
     fn odd_trailing_byte_does_not_panic() {
         let bytes = [0xFE, 0xFF, 0x00, b'a', 0x00];
         assert_eq!(pdf_text_string(&bytes), "a");
+    }
+
+    /// BOM-less non-ASCII is the ambiguous case. `0xE9` is not valid UTF-8, so
+    /// it can only have meant PDFDocEncoding's `é` — decoding it as UTF-8
+    /// (lossy) would have produced U+FFFD and corrupted the anchor.
+    #[test]
+    fn bomless_pdfdocencoding_high_bytes_decode_to_their_characters() {
+        assert_eq!(pdf_text_string(b"Caf\xE9"), "Café");
+        assert_eq!(pdf_text_string(b"Ing\xE9nieur"), "Ingénieur");
+        assert!(!pdf_text_string(b"Caf\xE9").contains('\u{FFFD}'));
+    }
+
+    /// PDFDocEncoding's 0x80..=0x9E band is typography, where Latin-1 has
+    /// control characters — so it cannot be decoded as Latin-1 throughout.
+    #[test]
+    fn pdfdocencoding_typography_band_is_not_latin1() {
+        assert_eq!(pdf_text_string(b"\x88x\x89"), "‹x›"); // guilsingl left/right
+        assert_eq!(pdf_text_string(b"a\x83b"), "a…b"); // ellipsis
+        assert_eq!(pdf_text_string(b"a\x84b"), "a—b"); // emdash
+        assert_eq!(pdf_text_string(b"\x9E"), "ž"); // last entry — off-by-one guard
+    }
+
+    /// Every byte must decode without panicking. This is the test that caught a
+    /// truncated lookup table indexing past its end for 0x97..=0x9E.
+    #[test]
+    fn every_byte_decodes_without_panicking() {
+        for b in 0u8..=0xFF {
+            let _ = pdf_text_string(&[b]);
+        }
+        let all: Vec<u8> = (0u8..=0xFF).collect();
+        let _ = pdf_text_string(&all);
+    }
+
+    /// A BOM-less byte string that IS valid UTF-8 must be read as UTF-8 — many
+    /// producers emit it in defiance of the spec, and reading those bytes as
+    /// PDFDocEncoding would render "é" as "Ã©".
+    #[test]
+    fn bomless_valid_utf8_wins_over_pdfdocencoding() {
+        assert_eq!(pdf_text_string("Café".as_bytes()), "Café");
+        assert_eq!(pdf_text_string("東京".as_bytes()), "東京");
+    }
+
+    /// Undefined PDFDocEncoding code points must not silently become a wrong
+    /// character.
+    #[test]
+    fn undefined_pdfdocencoding_bytes_become_replacement_chars() {
+        assert_eq!(pdf_text_string(b"a\xADb"), "a\u{FFFD}b");
     }
 }

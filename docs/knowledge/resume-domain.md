@@ -10,9 +10,11 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 
 ## Page target (≠ page size)
 
-**Page target** = the customary maximum _length_ of a résumé in a market, in pages — `LocaleProfile::max_pages` (`locale/mod.rs`). Do not conflate it with `page_size`, the physical sheet (A4 vs US Letter), which sits on the same struct. Hiring convention, not a published standard: anglophone + FR/NL cap at 2, DACH and generic-EU tolerate 3 (a `Lebenslauf` lists every position rather than summarising). **Advisory only** — nothing blocks a longer export.
+**Page target** = the customary maximum _length_ of a résumé in a market, in pages — `LocaleProfile::max_pages` (`locale/mod.rs`, per-market values + their rationale on the field's doc comment). Do not conflate it with `page_size`, the physical sheet, which sits on the same struct. Hiring convention, not a published standard. **Advisory only** — nothing blocks a longer export.
 
-Consumed by the trim panel (`features/ai-generate/components/TrimPanel`): when the rendered preview exceeds the target, `resume_trim_suggestions` (`commands/match_resume.rs`) ranks the résumé's `LineKind::Bullet` lines weakest-first by how much of _this_ posting's vocabulary each carries, ties broken longest-first. Reuses the same `documents/keywords` kernel and JD-derived stemmer as `score_one`, so the panel can't disagree with the match score; embedding-free, zero model calls. Read-only — it never edits the document. The renderer skips the query at ≤2 pages, an assumption pinned by `no_market_targets_fewer_than_two_pages`.
+Consumed by the trim panel (`features/ai-generate/components/TrimPanel`): when the rendered preview exceeds the target, `resume_trim_suggestions` (`commands/match_resume.rs` → `rank_trim_candidates`) ranks the résumé's `LineKind::Bullet` lines weakest-first by how much of _this_ posting's vocabulary each carries. Embedding-free, zero model calls. Read-only — it never edits the document.
+
+**Both surfaces that intersect a résumé against a posting must route through `keywords::languages_align`** — `score_one` and `rank_trim_candidates` alike. It decides whether both sides get stemmed or both stay normalized-only; one side stemmed alone mangles language-neutral tech tokens, and two surfaces disagreeing on it makes the panel contradict the match score for the same pair (`cross_language_pair_ranks_symmetrically_like_score_one`). The renderer skips the query below a floor (`SHORTEST_OVERFLOW` in `TrimPanel`), sound only while no market target sits under it — pinned by `no_market_targets_fewer_than_two_pages`.
 
 ## Templates
 

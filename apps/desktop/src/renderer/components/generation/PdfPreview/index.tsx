@@ -93,6 +93,11 @@ export function PdfPreview({
 
   useEffect(() => {
     if (paused || !text.trim()) {
+      // Invalidate any render already in flight BEFORE returning. Without this
+      // bump, a render started for the previous text resolves after we've gone
+      // idle, still sees `token === renderToken.current`, and publishes pages
+      // (and a page count) for a document that is no longer on screen.
+      ++renderToken.current;
       setStatus('idle');
       return;
     }
