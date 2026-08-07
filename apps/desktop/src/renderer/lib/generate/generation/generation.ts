@@ -62,8 +62,10 @@ import { getClient } from '../../app-client';
 import { OUTPUT_LANGUAGES, safeLocale } from '../locales';
 import {
   buildProviderProfile,
+  type GenerationIntent,
   resolveActiveProvider,
-  resolveEffectiveTier,
+  resolveTemperatureOverride,
+  type TemperatureStep,
 } from '../provider-context';
 import { awaitAiStream } from '../stream-promise';
 
@@ -72,66 +74,21 @@ export { MODES } from '@ajh/prompts/generate';
 
 // ─── LLM helpers ─────────────────────────────────────────────────────────────
 
-/** One generation step that can carry its own per-model temperature override. */
-type TemperatureStep = 'analysis' | 'resume' | 'cover' | 'answers' | 'referral';
-
-/** Effective sampling temperature for one generation step. A user-set per-model,
- *  per-step temperature override (settings → local model limits) wins for that
- *  step; otherwise the per-step default applies. Each step is independent — an
- *  unset step falls back to its default. Override is Ollama-only — cloud/CLI
- *  providers always use the per-step default. */
-function resolveTemperature(step: TemperatureStep, stepDefault: number): number {
-  // The active provider/model come from the backend store (task #16); the per-model
-  // temperature override is a renderer-side tuning knob (Ollama-only) read from the
-  // resolver's Zustand-sourced `providerSettings`.
-  const { activeProvider, providerSettings, activeModel } = resolveActiveProvider();
-  if (activeProvider !== 'ollama') return stepDefault;
-  const override = activeModel
-    ? providerSettings?.modelLimits?.[activeModel]?.temperature?.[step]
-    : undefined;
-  return override ?? stepDefault;
-}
-
-/** Effective sampling parameters for one generation step. */
+/** Effective sampling inputs for one generation step: the user's per-model
+ *  temperature OVERRIDE (Ollama-only, see {@link resolveTemperatureOverride}),
+ *  plus the declared {@link GenerationIntent}. NEITHER field carries a raw
+ *  default number — the backend adapter picks its own numbers (or none) per
+ *  `(model, intent)`; the renderer states intent only. */
 interface SamplingParams {
-  temperature: number;
-  topP?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  repeatPenalty?: number;
+  temperature?: number;
+  intent: GenerationIntent;
 }
 
-// ponytail: detector-resistance sampling knobs. RAID (ACL 2024) found that
-// random sampling + repetition/frequency penalties drop AI-detector accuracy
-// by up to 38 points — today the app only plumbs temperature. Applied ONLY to
-// PROSE generation surfaces (cover letter, application answers, email,
-// referral, interview); resume/analysis/inline-rewrite stay excluded because
-// frequency/presence penalties would suppress the exact job-ad keyword
-// repetition ATS keyword-matching needs. NOTE: on Anthropic's extended-thinking
-// path these knobs are a near-no-op — `top_p` is dropped and temperature is
-// forced to 1.0 (the API rejects `top_p` alongside `thinking`), and Anthropic
-// has no frequency/presence/repeat penalty params at all — don't assume this
-// set is "active" there.
-const PROSE_SAMPLING = {
-  topP: 0.95,
-  frequencyPenalty: 0.3,
-  presencePenalty: 0.2,
-  repeatPenalty: 1.15,
-} as const;
-
-/** Generalizes {@link resolveTemperature} into a per-step sampling resolver:
- *  the temperature override lookup is unchanged, and `prose: true` layers on
- *  the shared {@link PROSE_SAMPLING} penalty set for detector-resistant steps.
- *  `overrides` lets one surface tune a specific knob (e.g. drop a penalty, or
- *  tighten topP for a drift-prone small model) without forking the shared set. */
-function resolveSampling(
-  step: TemperatureStep,
-  temperatureDefault: number,
-  prose = false,
-  overrides?: Partial<Omit<SamplingParams, 'temperature'>>
-): SamplingParams {
-  const temperature = resolveTemperature(step, temperatureDefault);
-  return prose ? { temperature, ...PROSE_SAMPLING, ...overrides } : { temperature };
+/** Resolve one step's {@link SamplingParams}: the temperature override lookup
+ *  is Ollama-only and per-step; `intent` is the caller's declared, fixed
+ *  classification for that surface (never computed from tier/model). */
+function resolveSampling(step: TemperatureStep, intent: GenerationIntent): SamplingParams {
+  return { temperature: resolveTemperatureOverride(step), intent };
 }
 
 async function streamGenerate(
@@ -139,11 +96,11 @@ async function streamGenerate(
   system: string,
   user: string,
   onToken: (tok: string) => void,
-  temperature = 0.3,
+  temperature?: number,
   locale = 'en',
   signal?: AbortSignal,
   onThinking?: (tok: string) => void,
-  sampling?: Omit<SamplingParams, 'temperature'>
+  intent: GenerationIntent = 'default'
 ): Promise<string> {
   const api = getClient();
   const { activeProvider, providerSettings, activeModel } = resolveActiveProvider(model);
@@ -161,13 +118,15 @@ async function streamGenerate(
       { role: 'user', content: user },
     ],
     locale: safeLocale(locale),
+    // `temperature` is the Ollama per-model override ONLY — an explicit user
+    // choice that wins on every adapter. Every other sampling knob
+    // (topP/frequencyPenalty/presencePenalty/repeatPenalty) is no longer sent
+    // from here at all: each provider adapter picks its own numbers for
+    // `intent`, or none, via `AiProvider::sampling_profile`
+    // (`commands/ai_provider/mod.rs`) — see that doc comment for why sending
+    // the same hardcoded numbers to every vendor was the actual bug.
     temperature,
-    // Detector-resistance sampling knobs — present only for prose steps that
-    // opted in (see PROSE_SAMPLING); omitted (undefined) everywhere else.
-    topP: sampling?.topP,
-    frequencyPenalty: sampling?.frequencyPenalty,
-    presencePenalty: sampling?.presencePenalty,
-    repeatPenalty: sampling?.repeatPenalty,
+    intent,
     // provider + baseUrl are NO LONGER sent (task #16): the backend resolves the
     // active provider/base_url from its own store and overwrites `model` before
     // streaming, so an XSS'd renderer can no longer point generation at an
@@ -204,14 +163,19 @@ export async function extractMetadata(
 
   const { system, user } = buildMetadataPrompt(resume, jobAd, profile);
   try {
-    // Analysis carries its own per-model temperature override (user's chosen design).
+    // Analysis carries its own per-model temperature override (user's chosen
+    // design) plus the `deterministic` intent — exact, non-creative output.
+    const sampling = resolveSampling('analysis', 'deterministic');
     const raw = await streamGenerate(
       model,
       system,
       user,
       () => {},
-      resolveTemperature('analysis', 0.15),
-      locale
+      sampling.temperature,
+      locale,
+      undefined,
+      undefined,
+      sampling.intent
     );
     const meta = validateMetadata(raw);
     if (meta) {
@@ -732,15 +696,19 @@ export async function generateResume(
 
   const system = buildResumeSystemPrompt(mode, profile, tone, meta.targetLanguage);
   const user = buildResumePrompt(resume, jobAd, meta, mode, profile);
+  // Résumé generation is `deterministic`: exact, non-creative output — the
+  // exact job-ad keyword repetition ATS matching needs must survive verbatim.
+  const sampling = resolveSampling('resume', 'deterministic');
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken,
-    resolveTemperature('resume', 0.3),
+    sampling.temperature,
     locale,
     signal,
-    onThinking
+    onThinking,
+    sampling.intent
   );
   // Contact links go on the header line; body links (projects/publications, #18)
   // are re-attached to their own items anywhere in the body.
@@ -782,15 +750,17 @@ export async function synthesizeResume(
 
   const system = buildBuilderSystemPrompt(profile);
   const user = buildInterviewResumePrompt(answers, meta);
+  const sampling = resolveSampling('resume', 'deterministic');
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken,
-    resolveTemperature('resume', 0.3),
+    sampling.temperature,
     locale,
     signal,
-    onThinking
+    onThinking,
+    sampling.intent
   );
   return seedHeaderFromContactProfile(extractPlainText(raw), meta, locale, signal);
 }
@@ -900,8 +870,6 @@ export async function generateCoverLetter(
   onThinking?: (tok: string) => void,
   opts?: { researchCompany?: boolean; market?: string }
 ): Promise<{ text: string; companyBrief: string }> {
-  const { activeModel, activeProvider } = resolveActiveProvider(model);
-  const tier = resolveEffectiveTier(activeModel, activeProvider);
   const profile = buildProviderProfile(model);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
@@ -948,21 +916,13 @@ export async function generateCoverLetter(
     market,
     applicant
   );
-  // Cover letters are prose: more temperature + the shared detector-resistance
-  // penalty set (see PROSE_SAMPLING) loosens the phrasing so it reads human, not
-  // mechanical, and resists AI-detector fingerprinting. Small models stay lower
-  // to limit drift (raised proportionally from the previous 0.4/0.55 split). A
-  // per-model override (if set) wins over this tier-based default. Small local
-  // models (7-8B) also compound drift when the full topP randomness stacks with
-  // repeatPenalty, so tighten topP for the small tier only; large stays at the
-  // shared PROSE_SAMPLING default.
-  const stepDefault = tier === 'small' ? 0.58 : 0.8;
-  const sampling = resolveSampling(
-    'cover',
-    stepDefault,
-    true,
-    tier === 'small' ? { topP: 0.9 } : undefined
-  );
+  // Cover letters are prose: creative, detector-resistant writing — the
+  // active provider's adapter picks its own temperature/penalty numbers (or
+  // none) for this intent, per model (see `AiProvider::sampling_profile`,
+  // `commands/ai_provider/mod.rs`). The old per-tier temperature/topP split
+  // was a renderer-side guess sent uniformly to every vendor regardless of
+  // what that vendor's API actually wanted — the defect this design fixes.
+  const sampling = resolveSampling('cover', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -972,7 +932,7 @@ export async function generateCoverLetter(
     locale,
     signal,
     onThinking,
-    sampling
+    sampling.intent
   );
   return {
     text: injectLinksIntoGeneratedText(extractPlainText(raw), getLinkMap(resume)),
@@ -1048,12 +1008,14 @@ export async function generateApplicationAnswer(params: {
     // <candidate_resume>, and the prompt builder's own voice directive points
     // there instead of duplicating it (see buildResumeVoiceDirective).
   });
-  // Application answers are prose but résumé-grounded (no-fabrication surface):
-  // keep topP/frequencyPenalty/repeatPenalty for detector resistance, but drop
-  // presencePenalty (it pushes toward new topics, which risks factual drift
-  // here) and use a lower temperature than the freer prose surfaces (cover
-  // letter, referral) to keep answers traceable to the résumé.
-  const sampling = resolveSampling('answers', 0.5, true, { presencePenalty: undefined });
+  // Application answers are `prose_grounded`, not plain `prose`: the output
+  // asserts factual claims about the candidate to a real employer, so it
+  // must stay traceable to the résumé — the active provider's adapter drops
+  // `presencePenalty` for this intent specifically (it pushes toward new
+  // topics, i.e. invented candidate facts) while keeping every other
+  // detector-resistance knob `prose` gets (see `AiProvider::sampling_profile`,
+  // `commands/ai_provider/mod.rs`).
+  const sampling = resolveSampling('answers', 'prose_grounded');
   const raw = await streamGenerate(
     model,
     system,
@@ -1063,7 +1025,7 @@ export async function generateApplicationAnswer(params: {
     meta.targetLanguage || 'en',
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1096,14 +1058,18 @@ export async function generateJobAdSummary(params: {
 
   const system = buildJobAdSummarySystemPrompt(lang?.englishName);
   const user = buildJobAdSummaryPrompt(jobAd, meta, profile, lang?.englishName);
+  // A factual digest, not creative writing — `deterministic`.
+  const sampling = resolveSampling('answers', 'deterministic');
   const raw = await streamGenerate(
     model,
     system,
     user,
     onToken ?? (() => {}),
-    resolveTemperature('answers', 0.3),
+    sampling.temperature,
     lang?.code ?? meta?.targetLanguage ?? 'en',
-    signal
+    signal,
+    undefined,
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1184,9 +1150,8 @@ export async function generateInterviewQuestions(params: {
     market,
     language: languageName,
   });
-  // Interview questions are prose: keep the existing 0.5 temperature default,
-  // adding only the shared detector-resistance penalty set (see PROSE_SAMPLING).
-  const sampling = resolveSampling('answers', 0.5, true);
+  // Interview questions are prose: creative, detector-resistant writing.
+  const sampling = resolveSampling('answers', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1198,7 +1163,7 @@ export async function generateInterviewQuestions(params: {
     languageCode || 'en',
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1228,8 +1193,8 @@ export async function generateLikelyInterviewQuestions(params: {
 
   const system = buildLikelyQuestionsSystemPrompt();
   const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile, market });
-  // Prose, same detector-resistance treatment as the other interview surfaces.
-  const sampling = resolveSampling('answers', 0.5, true);
+  // Prose, same intent as the other interview surfaces.
+  const sampling = resolveSampling('answers', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1239,7 +1204,7 @@ export async function generateLikelyInterviewQuestions(params: {
     meta.targetLanguage || 'en',
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1278,9 +1243,9 @@ export async function generateStarFeedback(params: {
     target: profile,
     market,
   });
-  // Slightly lower temperature than free-form prose — feedback should stay
-  // traceable to the candidate's actual answer, not wander.
-  const sampling = resolveSampling('answers', 0.4, true);
+  // Feedback on the candidate's own answer — still prose (a written critique,
+  // not a fixed-shape extraction).
+  const sampling = resolveSampling('answers', 'prose');
   const raw = await streamGenerate(
     model,
     system,
@@ -1290,7 +1255,7 @@ export async function generateStarFeedback(params: {
     meta.targetLanguage || 'en',
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1371,14 +1336,19 @@ export async function generateGitHubProjects(params: {
       })),
       profile
     );
+    // Résumé-ready bullets extracted from real repo data — factual, not
+    // creative prose, so `deterministic` (never had a penalty set applied).
+    const sampling = resolveSampling('answers', 'deterministic');
     const raw = await streamGenerate(
       model,
       system,
       user,
       onToken ?? (() => {}),
-      resolveTemperature('answers', 0.4),
+      sampling.temperature,
       'en',
-      signal
+      signal,
+      undefined,
+      sampling.intent
     );
     // Parse the RAW stream, NOT extractPlainText(raw): extractPlainText deletes a
     // whole ```-fenced answer entirely, which a local model often emits — that
@@ -1423,6 +1393,27 @@ export async function generateGitHubProjects(params: {
   });
 }
 
+/** Per-{@link RewriteDocType} step (for the Ollama temperature override lookup)
+ *  + intent (for the active provider's own sampling profile) — résumé rewrites
+ *  stay `deterministic` (ATS keyword fidelity), the rest are `prose`. */
+const REWRITE_STEP: Record<RewriteDocType, TemperatureStep> = {
+  resume: 'resume',
+  'cover-letter': 'cover',
+  'application-answer': 'answers',
+  email: 'cover',
+};
+const REWRITE_INTENT: Record<RewriteDocType, GenerationIntent> = {
+  resume: 'deterministic',
+  // Cover letters are deliberately more creative — no traceability
+  // requirement, unlike the two `prose_grounded` surfaces below.
+  'cover-letter': 'prose',
+  // Both make factual claims about the candidate to a real employer, so both
+  // must stay traceable to the résumé (see `generateApplicationAnswer`'s and
+  // `generateApplicationEmail`'s own `prose_grounded` rationale above).
+  'application-answer': 'prose_grounded',
+  email: 'prose_grounded',
+};
+
 /**
  * Inline AI rewrite of a selected span (F4). Mirrors {@link generateApplicationAnswer}:
  * reads the active provider config, computes the effective prompt tier, builds the
@@ -1463,7 +1454,22 @@ export async function rewriteSelection(params: {
     { selection, instruction, before, after, docType },
     profile
   );
-  const raw = await streamGenerate(model, system, user, onToken ?? (() => {}), 0.3, locale, signal);
+  // Bypassed `resolveTemperature`/`resolveSampling` entirely (bare `0.3`) —
+  // routed through the same per-docType step/intent mapping every other
+  // rewrite-adjacent surface uses, so the per-model temperature override and
+  // the active provider's own sampling profile both apply here too.
+  const sampling = resolveSampling(REWRITE_STEP[docType], REWRITE_INTENT[docType]);
+  const raw = await streamGenerate(
+    model,
+    system,
+    user,
+    onToken ?? (() => {}),
+    sampling.temperature,
+    locale,
+    signal,
+    undefined,
+    sampling.intent
+  );
   return extractPlainText(raw);
 }
 
@@ -1511,9 +1517,12 @@ export async function generateReferral(params: {
     { personName, personRole, companyName, jobTitle, resume, format, charLimit },
     profile
   );
-  // Referral messages are prose: randomness + the shared detector-resistance
-  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
-  const sampling = resolveSampling('referral', 0.7, true);
+  // Referral messages are `prose_grounded`, not plain `prose`: the prompt's
+  // own contract is "grounded only in the candidate's résumé — no
+  // fabrication, no invented shared history" (`referral.ts`), the same
+  // no-fabrication requirement application answers have, so this drops
+  // `presencePenalty` the same way (see `AiProvider::sampling_profile`).
+  const sampling = resolveSampling('referral', 'prose_grounded');
   const raw = await streamGenerate(
     model,
     system,
@@ -1523,7 +1532,7 @@ export async function generateReferral(params: {
     locale,
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1585,9 +1594,12 @@ export async function generateReferralImprove(params: {
     },
     profile
   );
-  // Referral messages are prose: randomness + the shared detector-resistance
-  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
-  const sampling = resolveSampling('referral', 0.7, true);
+  // Referral messages are `prose_grounded`, not plain `prose`: the prompt's
+  // own contract is "grounded only in the candidate's résumé — no
+  // fabrication, no invented shared history" (`referral.ts`), the same
+  // no-fabrication requirement application answers have, so this drops
+  // `presencePenalty` the same way (see `AiProvider::sampling_profile`).
+  const sampling = resolveSampling('referral', 'prose_grounded');
   const raw = await streamGenerate(
     model,
     system,
@@ -1597,7 +1609,7 @@ export async function generateReferralImprove(params: {
     locale,
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
   return extractPlainText(raw);
 }
@@ -1647,9 +1659,12 @@ export async function generateApplicationEmail(params: {
     { resume, jobAd, meta, recipientName, recipientEmail, companyBrief, market, tone },
     profile
   );
-  // Application emails are prose: randomness + the shared detector-resistance
-  // penalty set (see PROSE_SAMPLING) resist AI-detector fingerprinting.
-  const sampling = resolveSampling('cover', 0.7, true);
+  // Application emails are `prose_grounded`, not plain `prose`: the prompt's
+  // own contract is "No-fabrication: same résumé-grounded honesty contract"
+  // (`application-email.ts`) — it makes candidate claims to a real employer,
+  // so it drops `presencePenalty` the same way application answers do (see
+  // `AiProvider::sampling_profile`).
+  const sampling = resolveSampling('cover', 'prose_grounded');
   return streamGenerate(
     model,
     system,
@@ -1659,6 +1674,6 @@ export async function generateApplicationEmail(params: {
     meta.targetLanguage ?? 'en',
     signal,
     undefined,
-    sampling
+    sampling.intent
   );
 }

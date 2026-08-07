@@ -23,7 +23,11 @@ import { detectLanguages } from '@ajh/shared/language-detection';
 import { safeLocale } from '@/lib/generate';
 
 import { getClient } from '../app-client';
-import { buildProviderProfile, resolveActiveProvider } from '../generate/provider-context';
+import {
+  buildProviderProfile,
+  resolveActiveProvider,
+  resolveTemperatureOverride,
+} from '../generate/provider-context';
 import { awaitAiStream } from '../generate/stream-promise';
 
 export type { AnalysisMode, AnalysisResult };
@@ -79,6 +83,13 @@ export async function runAnalysis({
   // CLI reasoning knob, not routing) stays renderer-side per RESOLVED-Q1.
   const api = getClient();
   const { activeProvider, providerSettings, activeModel } = resolveActiveProvider(model);
+  // This is the MAIN job analysis — bypassed `resolveTemperature` entirely
+  // (bare `0.1`) until now, so the Settings "analysis" temperature slider
+  // silently never affected the analysis it's named for. `deterministic`:
+  // exact, non-creative JSON output — the active provider's own adapter
+  // picks its numbers (or none) for that intent (`AiProvider::sampling_profile`,
+  // `commands/ai_provider/mod.rs`); the per-model Ollama override, when set,
+  // still wins.
   const res = await api.ai.generate({
     model: activeModel || model,
     messages: [
@@ -86,7 +97,8 @@ export async function runAnalysis({
       { role: 'user', content: userPrompt },
     ],
     locale: safeLocale(locale),
-    temperature: 0.1,
+    temperature: resolveTemperatureOverride('analysis'),
+    intent: 'deterministic',
     effort: providerSettings?.effort,
   });
 

@@ -13,8 +13,8 @@ use crate::error::AppResult;
 
 use super::openai::OpenAiClient;
 use super::{
-    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
-    Usage,
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId,
+    SamplingProfile, ToolSpec, Usage,
 };
 
 /// Ollama Cloud's OpenAI-compatible base URL.
@@ -57,6 +57,18 @@ impl AiProvider for OllamaCloudClient {
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
         self.inner.effort_levels(model)
+    }
+
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        // The inner client's `sampling_profile` already special-cases
+        // `self.id == ProviderId::OllamaCloud` (its `id` field is set to
+        // `OllamaCloud` in `new()` above), so this delegates to the SAME
+        // gpt-oss-aware table `chat_stream` actually uses — never a second,
+        // divergent copy. Delegating (rather than leaving the trait default)
+        // matters for any direct caller of this method, e.g. a future
+        // capabilities surface or a test — `chat_stream` reaches the inner
+        // client's own `sampling_profile` regardless of this override.
+        self.inner.sampling_profile(model, intent)
     }
 
     async fn chat_stream(
@@ -215,5 +227,23 @@ mod tests {
         assert!(OllamaCloudClient::new()
             .effort_levels("qwen3-coder:480b")
             .is_empty());
+    }
+
+    /// Regression guard, same shape as the two tests above: a naive
+    /// delegation to `self.inner` (a generic `OpenAiClient`) would apply
+    /// OpenAI's own deterministic/prose defaults instead of the gpt-oss-aware
+    /// table this client's `id` (`OllamaCloud`) is supposed to route to.
+    /// `chat_stream` reaches the SAME inner client, so this pins the exact
+    /// path production traffic takes, not a parallel copy.
+    #[test]
+    fn sampling_profile_delegates_to_the_inner_clients_ollama_cloud_table() {
+        let gpt_oss = OllamaCloudClient::new().sampling_profile("gpt-oss:120b", Intent::Prose);
+        assert_eq!(gpt_oss.temperature, Some(1.0));
+        assert_eq!(gpt_oss.top_p, Some(1.0));
+
+        // Every other family stays neutral, regardless of intent — never the
+        // generic OpenAI deterministic/prose profile.
+        let other = OllamaCloudClient::new().sampling_profile("qwen3-coder:480b", Intent::Prose);
+        assert_eq!(other, SamplingProfile::default());
     }
 }

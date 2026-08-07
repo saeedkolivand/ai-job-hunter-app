@@ -14,7 +14,9 @@ use super::{
     build_chat_stream_body, is_gpt5_or_later_reasoning_family, is_reasoning_model,
     join_responses_text, parse_model_list, parse_openai_delta, parse_openai_embed_usage,
     parse_openai_finish_reason, parse_openai_frames, parse_openai_turn, parse_openai_usage,
-    resolve_openai_key, scrub_url_secret, should_list_model, OpenAiClient,
+    resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model, Intent, OpenAiClient,
+    SamplingProfile, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_PRESENCE_PENALTY,
+    PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -39,6 +41,7 @@ fn base_request() -> AiGenerateRequest {
         max_tokens: None,
         context_window: None,
         effort: None,
+        intent: None,
     }
 }
 
@@ -56,11 +59,26 @@ fn chat_caps(supports_temperature: bool) -> ModelCapabilities {
     }
 }
 
+/// Mirrors what `OpenAiClient::chat_stream` does: resolve this adapter's own
+/// profile for `id` + `req.model` + `req.intent`, merged with the request's
+/// explicit numeric overrides. `id` lets a test exercise Ollama Cloud's
+/// distinct table through the SAME production code path.
+fn sampling_for(id: ProviderId, req: &AiGenerateRequest) -> SamplingProfile {
+    OpenAiClient::new(id, None)
+        .sampling_profile(&req.model, resolve_intent(req))
+        .resolve(req)
+}
+
 #[test]
 fn chat_stream_body_always_requests_streamed_usage() {
     // AI-spend visibility depends on this flag being sent on every OpenAI
     // Chat Completions stream (native, OpenAI-compatible, and Ollama Cloud).
-    let body = build_chat_stream_body(&base_request(), chat_caps(true));
+    let req = base_request();
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
     assert_eq!(body["stream_options"], json!({ "include_usage": true }));
 }
 
@@ -103,11 +121,18 @@ fn parse_embed_usage_zero_when_absent() {
 
 #[test]
 fn chat_stream_body_serializes_sampling_params_when_set() {
+    // Explicit numeric overrides win over the adapter's own profile — here
+    // `gpt-4o` + `Intent::Default` resolves to a neutral profile, so every
+    // value below is the request's own explicit override, sent verbatim.
     let mut req = base_request();
     req.top_p = Some(0.95);
     req.frequency_penalty = Some(0.3);
     req.presence_penalty = Some(0.2);
-    let body = build_chat_stream_body(&req, chat_caps(true));
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
     assert_eq!(body["top_p"], json!(0.95));
     assert_eq!(body["frequency_penalty"], json!(0.3));
     assert_eq!(body["presence_penalty"], json!(0.2));
@@ -115,7 +140,12 @@ fn chat_stream_body_serializes_sampling_params_when_set() {
 
 #[test]
 fn chat_stream_body_omits_sampling_params_when_none() {
-    let body = build_chat_stream_body(&base_request(), chat_caps(true));
+    let req = base_request();
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
     assert!(body.get("top_p").is_none());
     assert!(body.get("frequency_penalty").is_none());
     assert!(body.get("presence_penalty").is_none());
@@ -124,16 +154,149 @@ fn chat_stream_body_omits_sampling_params_when_none() {
 #[test]
 fn chat_stream_body_skips_sampling_params_on_reasoning_models() {
     // o-series models reject `temperature` entirely — sampling knobs must be
-    // skipped alongside it, never sent to a model that 400s on them.
+    // skipped alongside it, never sent to a model that 400s on them. Explicit
+    // overrides don't matter either: `caps.supports_temperature` gates the
+    // whole block before `sampling.*` is ever read.
     let mut req = base_request();
     req.top_p = Some(0.95);
     req.frequency_penalty = Some(0.3);
     req.presence_penalty = Some(0.2);
-    let body = build_chat_stream_body(&req, chat_caps(false));
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(false),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
     assert!(body.get("temperature").is_none());
     assert!(body.get("top_p").is_none());
     assert!(body.get("frequency_penalty").is_none());
     assert!(body.get("presence_penalty").is_none());
+}
+
+#[test]
+fn sampling_profile_deterministic_and_prose_on_a_non_reasoning_model() {
+    let mut req = base_request();
+    req.model = "gpt-4o".to_string();
+    // `base_request()`'s own `temperature: Some(0.8)` is an EXPLICIT override
+    // that would otherwise win over the profile — clear it so this test
+    // exercises the adapter's own per-intent default, not the override path
+    // (covered separately by `sampling_profile_explicit_override_wins_over_the_prose_profile`).
+    req.temperature = None;
+
+    req.intent = Some("deterministic".to_string());
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
+    assert_eq!(body["temperature"], json!(DETERMINISTIC_TEMPERATURE));
+    assert!(body.get("top_p").is_none());
+    assert!(body.get("frequency_penalty").is_none());
+    assert!(body.get("presence_penalty").is_none());
+
+    req.intent = Some("prose".to_string());
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
+    assert!(body.get("temperature").is_none());
+    assert_eq!(body["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(body["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
+    assert_eq!(body["presence_penalty"], json!(PROSE_PRESENCE_PENALTY));
+}
+
+#[test]
+fn sampling_profile_prose_grounded_never_sends_presence_penalty() {
+    // Application answers / referral messages / application email make
+    // factual claims about the candidate — presence_penalty pushes a model
+    // toward new topics (invented facts), so `prose_grounded` must NEVER
+    // send it, even though it shares every other `prose` knob. Mutation
+    // check: flip the assertion below (or delete the `Intent::ProseGrounded`
+    // match arm's field omission in `openai.rs`) and this test must fail —
+    // it currently pins `None`, the exact field the surface exists to guard.
+    let mut req = base_request();
+    req.model = "gpt-4o".to_string();
+    req.temperature = None;
+    req.intent = Some("prose_grounded".to_string());
+    let body = build_chat_stream_body(
+        &req,
+        chat_caps(true),
+        sampling_for(ProviderId::OpenAi, &req),
+    );
+    assert!(
+        body.get("presence_penalty").is_none(),
+        "prose_grounded must never send presence_penalty"
+    );
+    // Every other `prose` knob still applies — this isn't a silently-broken
+    // neutral profile, just presence_penalty specifically withheld.
+    assert!(body.get("temperature").is_none());
+    assert_eq!(body["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(body["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
+}
+
+#[test]
+fn sampling_profile_explicit_override_wins_over_the_prose_profile() {
+    // Hard constraint: an explicit user value still wins on every adapter.
+    let mut req = base_request();
+    req.model = "gpt-4o".to_string();
+    req.intent = Some("prose".to_string());
+    req.temperature = Some(0.42);
+    req.top_p = Some(0.11);
+    let merged = sampling_for(ProviderId::OpenAi, &req);
+    assert_eq!(merged.temperature, Some(0.42));
+    assert_eq!(merged.top_p, Some(0.11));
+    // Untouched fields still come from the profile.
+    assert_eq!(merged.frequency_penalty, Some(PROSE_FREQUENCY_PENALTY));
+}
+
+#[test]
+fn sampling_profile_is_neutral_for_a_reasoning_model_regardless_of_intent() {
+    // Hard constraint: an OpenAI reasoning model receives no temperature —
+    // true for o-series (which also 400s on it) AND gpt-5.x (which technically
+    // accepts it but gets no per-task tuning either, see the doc comment on
+    // `OpenAiClient::sampling_profile`).
+    for model in ["o3-mini", "gpt-5.6"] {
+        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
+            let profile =
+                OpenAiClient::new(ProviderId::OpenAi, None).sampling_profile(model, intent);
+            assert_eq!(
+                profile,
+                SamplingProfile::default(),
+                "{model} / {intent:?} must stay neutral"
+            );
+        }
+    }
+}
+
+#[test]
+fn sampling_profile_is_neutral_for_an_unknown_model_with_no_declared_intent() {
+    let profile = OpenAiClient::new(ProviderId::OpenAi, None)
+        .sampling_profile("some-unrecognized-model", Intent::Default);
+    assert_eq!(profile, SamplingProfile::default());
+}
+
+#[test]
+fn ollama_cloud_sampling_profile_special_cases_gpt_oss_only() {
+    // Source: `github.com/openai/gpt-oss` README, "Recommended Sampling
+    // Parameters" — Ollama's `/v1` layer hardcodes 1.0/1.0 when omitted,
+    // overriding the Modelfile, so this app must declare it explicitly.
+    let gpt_oss = OpenAiClient::new(ProviderId::OllamaCloud, None)
+        .sampling_profile("gpt-oss:120b", Intent::Deterministic);
+    assert_eq!(gpt_oss.temperature, Some(1.0));
+    assert_eq!(gpt_oss.top_p, Some(1.0));
+    assert!(gpt_oss.frequency_penalty.is_none());
+
+    // Every other Ollama Cloud family stays neutral for now, regardless of
+    // intent — no vendor-safe number to declare yet.
+    for model in ["qwen3-coder:480b", "deepseek-v3.1:671b", "some-new-model"] {
+        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
+            assert_eq!(
+                OpenAiClient::new(ProviderId::OllamaCloud, None).sampling_profile(model, intent),
+                SamplingProfile::default(),
+                "{model} / {intent:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -925,7 +1088,7 @@ fn chat_stream_body_sends_reasoning_effort_for_a_reasoning_capable_model() {
         supports_reasoning: true,
         ..chat_caps(false)
     };
-    let body = build_chat_stream_body(&req, caps);
+    let body = build_chat_stream_body(&req, caps, SamplingProfile::default());
     assert_eq!(body["reasoning_effort"], json!("high"));
 }
 
@@ -938,7 +1101,7 @@ fn chat_stream_body_omits_reasoning_effort_for_a_non_reasoning_model() {
         supports_reasoning: false,
         ..chat_caps(true)
     };
-    let body = build_chat_stream_body(&req, caps);
+    let body = build_chat_stream_body(&req, caps, SamplingProfile::default());
     assert!(body.get("reasoning_effort").is_none());
 }
 
@@ -949,7 +1112,7 @@ fn chat_stream_body_omits_reasoning_effort_when_not_set() {
         supports_reasoning: true,
         ..chat_caps(true)
     };
-    let body = build_chat_stream_body(&req, caps);
+    let body = build_chat_stream_body(&req, caps, SamplingProfile::default());
     assert!(body.get("reasoning_effort").is_none());
 }
 
@@ -968,7 +1131,7 @@ fn chat_stream_body_omits_reasoning_effort_outside_the_verified_level_set() {
         supports_reasoning: true,
         ..chat_caps(false)
     };
-    let body = build_chat_stream_body(&req, caps);
+    let body = build_chat_stream_body(&req, caps, SamplingProfile::default());
     assert!(
         body.get("reasoning_effort").is_none(),
         "xhigh is outside OPENAI_EFFORT_LEVELS — must not be sent"

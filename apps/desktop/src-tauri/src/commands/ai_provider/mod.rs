@@ -202,6 +202,95 @@ pub struct ModelCapabilities {
     pub token_param: TokenParam,
 }
 
+// ── Sampling intent (renderer owns intent, adapter owns numbers) ───────────────
+//
+// The renderer states WHAT a generation step is — exact/deterministic or
+// creative prose — never a raw sampling number. Each provider adapter maps
+// `(model, intent)` to its OWN numbers, or none at all, via
+// [`AiProvider::sampling_profile`]. This exists because sending the SAME
+// hardcoded temperature/penalty numbers to every vendor is actively harmful
+// on the modern frontier: Gemini 3.x degrades below its 1.0 default
+// temperature, Claude 4.7+/5 400s on ANY non-default sampling param, and
+// OpenAI's reasoning models reject `temperature` outright. See
+// `AiGenerateRequestSchema.intent` (`packages/shared/src/schemas/index.ts`)
+// for the wire contract this mirrors.
+
+/// The renderer's declared intent for one generation step. Parsed from the
+/// wire `AiGenerateRequest.intent` string via [`resolve_intent`] —
+/// unrecognized/absent always fails toward [`Intent::Default`] ("no
+/// opinion"), never a guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Intent {
+    /// Analysis/résumé/job-ad-summary/GitHub-projects: exact, non-creative
+    /// output.
+    Deterministic,
+    /// Cover letter, interview questions, STAR feedback: creative,
+    /// detector-resistant prose with no traceability requirement.
+    Prose,
+    /// Application answers, referral messages, application email: the SAME
+    /// detector-resistant register as [`Intent::Prose`], but the output
+    /// makes factual claims about the candidate that must stay traceable to
+    /// the résumé/job ad — concretely `Prose` minus the presence-penalty
+    /// knob (it pushes a model toward new topics, i.e. invented candidate
+    /// facts). Never collapse this back into `Prose`.
+    ProseGrounded,
+    /// No declared intent — every provider's own default applies.
+    #[default]
+    Default,
+}
+
+/// Parse `req.intent` into the typed [`Intent`] every adapter's
+/// `sampling_profile` consumes. Pure so it needs no `AppHandle`/mock harness.
+pub fn resolve_intent(req: &AiGenerateRequest) -> Intent {
+    match req.intent.as_deref() {
+        Some("deterministic") => Intent::Deterministic,
+        Some("prose") => Intent::Prose,
+        Some("prose_grounded") => Intent::ProseGrounded,
+        _ => Intent::Default,
+    }
+}
+
+/// A provider's own sampling NUMBERS for a `(model, intent)` pair — the
+/// adapter's half of the intent/numbers split. Every field `None` means "omit
+/// this wire parameter entirely", letting the provider's own
+/// default/Modelfile/`generation_config.json` apply — the correct answer on
+/// Claude 4.7+/5, OpenAI's reasoning models, Gemini 3.x, Ollama native
+/// `/api/chat`, and vLLM-style gateways alike. [`Default`] is therefore the
+/// safe NEUTRAL profile, not an accident of derive-macro convenience.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SamplingProfile {
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub frequency_penalty: Option<f64>,
+    pub presence_penalty: Option<f64>,
+    pub repeat_penalty: Option<f64>,
+}
+
+impl SamplingProfile {
+    /// Merge this provider-declared profile with the request's explicit
+    /// numeric fields — explicit ALWAYS wins, per field. The Ollama
+    /// per-model/per-step temperature slider (`LocalModelLimits.tsx`) is the
+    /// only value in the system a human actually chose; every other numeric
+    /// field is currently never sent by the renderer at all, but the same
+    /// override contract applies to any of them the moment one is. A field
+    /// absent on both sides stays `None` — omitted from the wire body.
+    ///
+    /// This is NOT a bypass of a provider's own safety gate (e.g. Anthropic's
+    /// `anthropic_supports_temperature`, Gemini's `gemini_omits_sampling_params`):
+    /// those gate whether the adapter reads `.temperature`/`.top_p` from the
+    /// merged result AT ALL, so an explicit value still never reaches a model
+    /// that would 400 on it.
+    pub fn resolve(self, req: &AiGenerateRequest) -> SamplingProfile {
+        SamplingProfile {
+            temperature: req.temperature.or(self.temperature),
+            top_p: req.top_p.or(self.top_p),
+            frequency_penalty: req.frequency_penalty.or(self.frequency_penalty),
+            presence_penalty: req.presence_penalty.or(self.presence_penalty),
+            repeat_penalty: req.repeat_penalty.or(self.repeat_penalty),
+        }
+    }
+}
+
 // ── Agentic tool-calling (Phase 1 foundation) ───────────────────────────────
 //
 // Shared vocabulary for multi-turn tool-calling. A `ToolSpec` is the schema handed
@@ -563,6 +652,21 @@ pub trait AiProvider: Send + Sync {
     /// that offers one overrides this.
     fn effort_levels(&self, _model: &str) -> Vec<&'static str> {
         Vec::new()
+    }
+
+    /// This provider's own sampling numbers for `model` given the renderer's
+    /// declared [`Intent`] (see the "Sampling intent" section above and
+    /// [`resolve_intent`]) — never raw numbers dictated by the caller.
+    /// DEFAULT: [`SamplingProfile::default`], the neutral profile (every field
+    /// `None`) — correct-or-better on the modern frontier (Claude 4.7+/5,
+    /// OpenAI's reasoning models, Gemini 3.x) and on self-hosted servers that
+    /// carry their own defaults (Ollama native, vLLM-style gateways); an
+    /// unknown model on an unknown/new provider therefore falls through to
+    /// THAT provider's own default, preserving the zero-code-change promise.
+    /// `chat_stream` merges this with the request's explicit numeric fields
+    /// via [`SamplingProfile::resolve`] — those always win.
+    fn sampling_profile(&self, _model: &str, _intent: Intent) -> SamplingProfile {
+        SamplingProfile::default()
     }
 
     /// Stream a chat completion, emitting `ai:stream` deltas and marking the job

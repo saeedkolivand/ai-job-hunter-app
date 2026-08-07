@@ -15,9 +15,9 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, model_entry, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    friendly_api_error, model_entry, resolve_intent, single_shot_turn, AgentTurn,
+    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
+    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -417,15 +417,63 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// PER PROVIDER, not per model — `preferences-store.ts`).
 const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
+/// `Intent::Deterministic`'s temperature on a non-reasoning OpenAI-family
+/// model. This is an APP CHOICE, not a vendor-published value — OpenAI
+/// publishes no per-task number — chosen to sit inside OpenAI's documented
+/// "reasonable" 0.1–1.0 range (`platform.openai.com/docs/guides/text-generation`,
+/// `temperature`) so it stays defensible rather than folklore. Determinism on
+/// this surface leans on the analyze prompt's explicit JSON-only output
+/// contract (`packages/prompts/src/analyze/system-prompt.ts`), the
+/// vendor-recommended lever — not this constant.
+const DETERMINISTIC_TEMPERATURE: f64 = 0.3;
+/// `Intent::Prose`'s penalty defaults on a non-reasoning OpenAI-family model —
+/// unchanged from this app's pre-fix renderer-side constant (RAID, ACL 2024:
+/// random sampling + repetition/frequency penalties measurably drop
+/// AI-detector accuracy), both values inside OpenAI's documented "reasonable"
+/// band for `frequency_penalty`/`presence_penalty`
+/// (`platform.openai.com/docs/api-reference/chat/create`: "Number between -2.0
+/// and 2.0 ... reasonable values are between 0 and 1") — an app choice within
+/// that band, not a vendor-published number either. Temperature is
+/// deliberately NOT part of the prose profile — OpenAI's own default (1.0)
+/// already sits in a creative range, and this app's old per-step prose
+/// temperatures (0.5–0.8) had no single vendor-endorsed number to inherit.
+const PROSE_TOP_P: f64 = 0.95;
+const PROSE_FREQUENCY_PENALTY: f64 = 0.3;
+const PROSE_PRESENCE_PENALTY: f64 = 0.2;
+
+/// Ollama Cloud's `/v1` layer hardcodes `temperature: 1.0, top_p: 1.0` when
+/// the caller omits them — overriding the model's own Modelfile defaults —
+/// so omission is NOT neutral there, unlike every other OpenAI-compatible
+/// gateway this client talks to. Source: `github.com/openai/gpt-oss` README,
+/// "Recommended Sampling Parameters" (temperature 1.0, top_p 1.0). Every
+/// OTHER Ollama Cloud family stays neutral for now: the `/v1` endpoint can't
+/// reach `repeat_penalty`/`num_ctx` at all (Ollama-native-only fields), so
+/// there is nothing vendor-safe to declare for them yet.
+fn ollama_cloud_sampling_profile(model: &str) -> SamplingProfile {
+    if model.to_ascii_lowercase().contains("gpt-oss") {
+        SamplingProfile {
+            temperature: Some(1.0),
+            top_p: Some(1.0),
+            ..SamplingProfile::default()
+        }
+    } else {
+        SamplingProfile::default()
+    }
+}
+
 /// Build the `/chat/completions` streaming request body for a given
-/// [`AiGenerateRequest`] + capability matrix. Pure + unit-tested — this is the
-/// shared body shape for native OpenAI, any OpenAI-compatible gateway, and
-/// Ollama Cloud (all backed by [`OpenAiClient`]). `top_p`/`frequency_penalty`/
-/// `presence_penalty` are the detector-resistance sampling knobs (RAID, ACL
-/// 2024) the renderer sets only for prose generation surfaces — each is only
-/// ever added when `Some` (never sent as `null`), and skipped entirely on
-/// reasoning models that reject `temperature`.
-fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> Value {
+/// [`AiGenerateRequest`] + capability matrix + resolved [`SamplingProfile`].
+/// Pure + unit-tested — this is the shared body shape for native OpenAI, any
+/// OpenAI-compatible gateway, and Ollama Cloud (all backed by
+/// [`OpenAiClient`]). `sampling` is already merged with the request's
+/// explicit numeric overrides (see [`SamplingProfile::resolve`]) — each field
+/// is added only when `Some` (never sent as `null`), and the whole block is
+/// skipped on reasoning models that reject `temperature`.
+fn build_chat_stream_body(
+    req: &AiGenerateRequest,
+    caps: ModelCapabilities,
+    sampling: SamplingProfile,
+) -> Value {
     let messages = req
         .messages
         .iter()
@@ -440,14 +488,16 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
     // silently ignores the unknown field — never a 400.
     body["stream_options"] = json!({ "include_usage": true });
     if caps.supports_temperature {
-        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
-        if let Some(top_p) = req.top_p {
+        if let Some(t) = sampling.temperature {
+            body["temperature"] = json!(t);
+        }
+        if let Some(top_p) = sampling.top_p {
             body["top_p"] = json!(top_p);
         }
-        if let Some(fp) = req.frequency_penalty {
+        if let Some(fp) = sampling.frequency_penalty {
             body["frequency_penalty"] = json!(fp);
         }
-        if let Some(pp) = req.presence_penalty {
+        if let Some(pp) = sampling.presence_penalty {
             body["presence_penalty"] = json!(pp);
         }
     }
@@ -905,6 +955,49 @@ impl AiProvider for OpenAiClient {
         }
     }
 
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        // Ollama Cloud gets its own family table — never the generic
+        // deterministic/prose defaults below (see the doc comment on
+        // `ollama_cloud_sampling_profile`).
+        if self.id == ProviderId::OllamaCloud {
+            return ollama_cloud_sampling_profile(model);
+        }
+        // o-series (`is_reasoning_model`) genuinely reject `temperature`
+        // (`capabilities().supports_temperature` already gates the send
+        // site). gpt-5.x TECHNICALLY accepts a normal `temperature`/`top_p`
+        // (see `is_gpt5_or_later_reasoning_family`'s doc comment) but a
+        // reasoning model doesn't need the old per-task tuning either — both
+        // families stay neutral here so this app never second-guesses their
+        // own adaptive defaults.
+        if is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model) {
+            return SamplingProfile::default();
+        }
+        match intent {
+            Intent::Deterministic => SamplingProfile {
+                temperature: Some(DETERMINISTIC_TEMPERATURE),
+                ..SamplingProfile::default()
+            },
+            Intent::Prose => SamplingProfile {
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+                ..SamplingProfile::default()
+            },
+            // Same detector-resistance register as `Prose`, MINUS the
+            // presence penalty: this surface (application answers, referral
+            // messages, application email) asserts factual claims about the
+            // candidate to a third party, and presence_penalty pushes a
+            // model toward new topics — i.e. exactly the invented-fact risk
+            // this intent exists to avoid. Never merge this arm with `Prose`.
+            Intent::ProseGrounded => SamplingProfile {
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                ..SamplingProfile::default()
+            },
+            Intent::Default => SamplingProfile::default(),
+        }
+    }
+
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -913,6 +1006,9 @@ impl AiProvider for OpenAiClient {
     ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(&req.model);
+        let sampling = self
+            .sampling_profile(&req.model, resolve_intent(req))
+            .resolve(req);
         let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(
             self.id,
@@ -922,7 +1018,7 @@ impl AiProvider for OpenAiClient {
             true,
         );
 
-        let body = build_chat_stream_body(req, caps);
+        let body = build_chat_stream_body(req, caps, sampling);
 
         let response = crate::net::http::shared()
             .post(endpoint)

@@ -79,6 +79,7 @@ fn base_request(model: &str) -> AiGenerateRequest {
         max_tokens: None,
         context_window: None,
         effort: None,
+        intent: None,
     }
 }
 
@@ -87,6 +88,29 @@ fn base_request(model: &str) -> AiGenerateRequest {
 /// gate the adapter actually uses, not a hand-rolled stand-in.
 fn caps_for(model: &str) -> ModelCapabilities {
     AnthropicClient.capabilities(model)
+}
+
+#[test]
+fn sampling_profile_is_neutral_for_every_model_and_intent() {
+    // Hard constraint: a Claude 4.7+/5 model receives no sampling params at
+    // all — and, unlike every other adapter, Anthropic stays neutral for
+    // EVERY model (legacy, classic-thinking, adaptive), not just the
+    // frontier ones, since there are no vendor-endorsed penalty params to
+    // declare and `temperature`/`top_p` 400 outright on adaptive models.
+    for model in [
+        "claude-opus-5",
+        "claude-3-5-sonnet-20241022",
+        "claude-opus-4-7",
+        "some-unrecognized-future-claude-id",
+    ] {
+        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
+            assert_eq!(
+                AnthropicClient.sampling_profile(model, intent),
+                SamplingProfile::default(),
+                "{model} / {intent:?} must stay neutral"
+            );
+        }
+    }
 }
 
 #[test]

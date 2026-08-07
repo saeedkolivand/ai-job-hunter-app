@@ -26,6 +26,8 @@ pub struct AiGenerateRequest {
     pub context_window: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

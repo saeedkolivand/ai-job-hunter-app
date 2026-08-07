@@ -15,7 +15,8 @@
 use super::{
     build_chat_stream_body, build_ollama_embed_body, normalize_show,
     ollama_family_supports_thinking, ollama_supports_tools, parse_model_list, parse_ollama_frames,
-    parse_ollama_turn, parse_ollama_usage, parse_web_search, OllamaClient, StreamPiece,
+    parse_ollama_turn, parse_ollama_usage, parse_web_search, Intent, OllamaClient, SamplingProfile,
+    StreamPiece,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, AiProvider, StopReason, ToolCall};
 use crate::error::AppError;
@@ -38,6 +39,21 @@ fn base_request() -> AiGenerateRequest {
         max_tokens: None,
         context_window: None,
         effort: None,
+        intent: None,
+    }
+}
+
+#[test]
+fn sampling_profile_is_neutral_for_every_intent_and_an_unknown_model() {
+    // Local Ollama always defers to the model's own Modelfile — never a
+    // per-(model, intent) app default.
+    for model in ["llama3.1:8b", "some-unrecognized-future-model"] {
+        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
+            assert_eq!(
+                OllamaClient.sampling_profile(model, intent),
+                SamplingProfile::default()
+            );
+        }
     }
 }
 

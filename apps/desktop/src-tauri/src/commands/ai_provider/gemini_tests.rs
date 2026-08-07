@@ -14,8 +14,8 @@ use super::{
     build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
     gemini_is_v3_or_later, gemini_omits_sampling_params, gemini_supports_thinking, join_parts_text,
     parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
-    parse_gemini_usage, parse_model_page, validate_gemini_key, AiProvider, GeminiClient,
-    GeminiScanner, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
+    parse_gemini_usage, parse_model_page, resolve_intent, validate_gemini_key, AiProvider,
+    GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -87,7 +87,17 @@ fn base_request() -> AiGenerateRequest {
         max_tokens: None,
         context_window: None,
         effort: None,
+        intent: None,
     }
+}
+
+/// Mirrors exactly what `GeminiClient::chat_stream` does: resolve this
+/// adapter's own profile for `req.model` + `req.intent`, then merge with the
+/// request's explicit numeric overrides.
+fn sampling_for(req: &AiGenerateRequest) -> SamplingProfile {
+    GeminiClient
+        .sampling_profile(&req.model, resolve_intent(req))
+        .resolve(req)
 }
 
 #[test]
@@ -96,7 +106,7 @@ fn chat_stream_body_serializes_sampling_params_when_set() {
     req.top_p = Some(0.95);
     req.frequency_penalty = Some(0.3);
     req.presence_penalty = Some(0.2);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     let config = &body["generationConfig"];
     assert_eq!(config["topP"], json!(0.95));
     assert_eq!(config["frequencyPenalty"], json!(0.3));
@@ -134,7 +144,7 @@ fn chat_stream_body_omits_temperature_for_a_v3_model_with_no_explicit_value() {
     let mut req = base_request();
     req.model = "gemini-3.6-flash".to_string();
     req.temperature = None;
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body["generationConfig"].get("temperature").is_none(),
         "must not invent a temperature for a v3+ model — let the API apply its own 1.0"
@@ -146,7 +156,7 @@ fn chat_stream_body_sends_an_explicit_temperature_even_on_a_v3_model() {
     let mut req = base_request();
     req.model = "gemini-3.6-flash".to_string();
     req.temperature = Some(0.3);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["generationConfig"]["temperature"],
         json!(0.3),
@@ -159,7 +169,7 @@ fn chat_stream_body_keeps_the_default_temperature_for_a_pre_v3_model_with_no_exp
     let mut req = base_request();
     req.model = "gemini-1.5-flash".to_string();
     req.temperature = None;
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["generationConfig"]["temperature"],
         json!(0.7),
@@ -187,7 +197,7 @@ fn chat_stream_body_omits_top_p_for_a_v3_model_even_when_explicit() {
     let mut req = base_request();
     req.model = "gemini-3.6-flash".to_string();
     req.top_p = Some(0.95);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body["generationConfig"].get("topP").is_none(),
         "topP must never reach a v3+ model, even when explicitly set"
@@ -199,7 +209,7 @@ fn chat_stream_body_sends_top_p_for_a_pre_v3_model_when_explicit() {
     let mut req = base_request();
     req.model = "gemini-1.5-flash".to_string();
     req.top_p = Some(0.95);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["generationConfig"]["topP"],
         json!(0.95),
@@ -209,11 +219,89 @@ fn chat_stream_body_sends_top_p_for_a_pre_v3_model_when_explicit() {
 
 #[test]
 fn chat_stream_body_omits_sampling_params_when_none() {
-    let body = build_chat_stream_body(&base_request());
+    let req = base_request();
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     let config = &body["generationConfig"];
     assert!(config.get("topP").is_none());
     assert!(config.get("frequencyPenalty").is_none());
     assert!(config.get("presencePenalty").is_none());
+}
+
+#[test]
+fn sampling_profile_is_fully_neutral_on_a_v3_model_for_every_intent() {
+    // Hard constraint: a Gemini 3+ model receives NO temperature and NO
+    // top_p, even under `Intent::Deterministic` — Google's deprecation
+    // notice is unconditional, not intent-scoped.
+    for intent in [
+        Intent::Deterministic,
+        Intent::Prose,
+        Intent::ProseGrounded,
+        Intent::Default,
+    ] {
+        let profile = GeminiClient.sampling_profile("gemini-3.6-flash", intent);
+        assert_eq!(
+            profile,
+            SamplingProfile::default(),
+            "{intent:?} must stay neutral on a v3+ model"
+        );
+    }
+}
+
+#[test]
+fn sampling_profile_ignores_intent_on_a_recognized_pre_v3_model() {
+    // "Pre-v3 keeps today's behaviour" — this adapter's temperature default
+    // was never intent-conditional (unlike OpenAI's), only version-gated.
+    // "gemini-1.5-flash" is POSITIVELY recognized as pre-v3 (carries the
+    // `gemini-` family prefix and fails `gemini_is_v3_or_later`).
+    for intent in [
+        Intent::Deterministic,
+        Intent::Prose,
+        Intent::ProseGrounded,
+        Intent::Default,
+    ] {
+        let profile = GeminiClient.sampling_profile("gemini-1.5-flash", intent);
+        assert_eq!(profile.temperature, Some(0.7));
+        assert!(profile.top_p.is_none());
+        assert!(profile.frequency_penalty.is_none());
+        assert!(profile.presence_penalty.is_none());
+    }
+}
+
+#[test]
+fn sampling_profile_is_fully_neutral_for_an_unrecognized_model() {
+    // An id this adapter cannot positively classify as belonging to the
+    // Gemini family at all (doesn't even start with "gemini-") must NOT
+    // inherit the pre-v3 `0.7` temperature default — that would assume
+    // "unknown" is safe, legacy behavior instead of failing toward "no
+    // sampling params", the direction that can never 400 or trigger
+    // Gemini's documented below-1.0 degradation. Matches
+    // OpenAI/Anthropic/Ollama Cloud's unknown-model neutrality exactly.
+    for intent in [
+        Intent::Deterministic,
+        Intent::Prose,
+        Intent::ProseGrounded,
+        Intent::Default,
+    ] {
+        let profile = GeminiClient.sampling_profile("totally-unrecognized-model-id", intent);
+        assert_eq!(
+            profile,
+            SamplingProfile::default(),
+            "{intent:?} on an unrecognized model must be fully neutral"
+        );
+    }
+}
+
+#[test]
+fn gemini_effective_temperature_is_unaffected_by_the_sampling_profile_recognition_gate() {
+    // `gemini_effective_temperature`'s own gate stays on the wider
+    // `gemini_omits_sampling_params` (v3+ only) — an unrecognized non-
+    // "gemini-"-prefixed id still gets its caller's `fallback` here, exactly
+    // as before this task. Only `GeminiClient::sampling_profile` (above)
+    // additionally requires POSITIVE recognition.
+    assert_eq!(
+        gemini_effective_temperature("totally-unrecognized-model-id", None, 0.7),
+        Some(0.7)
+    );
 }
 
 #[test]
@@ -573,7 +661,7 @@ fn chat_stream_body_sends_thinking_level_for_a_v3_model_with_effort_set() {
     let mut req = base_request();
     req.model = "gemini-3.1-pro-preview".to_string();
     req.effort = Some("low".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
         json!("LOW")
@@ -594,7 +682,7 @@ fn chat_stream_body_omits_thinking_level_invalid_for_the_current_model_tier() {
     let mut req = base_request();
     req.model = "gemini-3.1-flash-lite-image".to_string();
     req.effort = Some("medium".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body["generationConfig"]["thinkingConfig"]
             .get("thinkingLevel")
@@ -612,7 +700,7 @@ fn chat_stream_body_omits_thinking_level_for_a_pre_v3_model_even_with_effort_set
     let mut req = base_request();
     req.model = "gemini-2.5-pro".to_string();
     req.effort = Some("low".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body["generationConfig"]["thinkingConfig"]
         .get("thinkingLevel")
         .is_none());
@@ -623,7 +711,7 @@ fn chat_stream_body_omits_thinking_config_for_a_non_thinking_model_with_no_effor
     let mut req = base_request();
     // Pre-v3, non-2.5, non-"*-thinking-*" — genuinely no thinking support.
     req.model = "gemini-2.0-flash".to_string();
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body["generationConfig"].get("thinkingConfig").is_none());
 }
 
@@ -639,7 +727,7 @@ fn chat_stream_body_keeps_include_thoughts_alongside_thinking_level() {
     let mut req = base_request();
     req.model = "gemini-3.1-pro-preview".to_string();
     req.effort = Some("high".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     let tc = &body["generationConfig"]["thinkingConfig"];
     assert_eq!(tc["includeThoughts"], json!(true));
     assert_eq!(tc["thinkingLevel"], json!("HIGH"));

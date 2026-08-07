@@ -13,9 +13,10 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    bounded, friendly_api_error, model_entry, pagination_step, single_shot_turn, split_system,
-    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, PaginationStep,
-    ProviderId, RequestTrace, Role, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    bounded, friendly_api_error, model_entry, pagination_step, resolve_intent, single_shot_turn,
+    split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
+    PaginationStep, ProviderId, RequestTrace, Role, SamplingProfile, StopReason, TokenParam,
+    ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -247,6 +248,29 @@ fn gemini_is_v3_or_later(model: &str) -> bool {
     };
     let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse::<u32>().is_ok_and(|major| major >= 3)
+}
+
+/// Whether `model` is POSITIVELY recognized as a pre-v3 Gemini id: it carries
+/// the `gemini-` family prefix (after stripping an optional `models/`
+/// prefix) but is NOT [`gemini_is_v3_or_later`]. Used ONLY by
+/// [`GeminiClient::sampling_profile`] to decide whether ITS OWN `0.7`
+/// temperature default applies — NOT by [`gemini_effective_temperature`] or
+/// any other gate in this file, which stay on [`gemini_is_v3_or_later`]
+/// unchanged.
+///
+/// An id this app cannot even recognize as belonging to the Gemini family at
+/// all (a typo, a future non-`gemini-`-prefixed line, a blank/garbage
+/// string) is NOT "recognized pre-v3" — mirrors
+/// `anthropic_supports_temperature`'s fail-safe (`anthropic.rs`): an
+/// unclassified new id defaults to "no sampling params", the direction that
+/// can never 400 or trigger Gemini's documented below-1.0 degradation,
+/// rather than assuming it is safe, legacy pre-v3 behavior.
+fn gemini_is_recognized_pre_v3(model: &str) -> bool {
+    let m = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    m.starts_with("gemini-") && !gemini_is_v3_or_later(model)
 }
 
 /// Reasoning-effort levels Gemini 3.x accepts, PER MODEL — Google's live
@@ -493,19 +517,20 @@ fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f6
 }
 
 /// Build the `streamGenerateContent` request body for a given
-/// [`AiGenerateRequest`]. Pure + unit-tested. `topP`/`frequencyPenalty`/
-/// `presencePenalty` are the detector-resistance sampling knobs (RAID, ACL
-/// 2024) the renderer sets only for prose generation surfaces — the v1beta API
+/// [`AiGenerateRequest`] + resolved [`SamplingProfile`] (already merged with
+/// the request's explicit numeric overrides — see [`SamplingProfile::resolve`]).
+/// Pure + unit-tested. `topP`/`frequencyPenalty`/`presencePenalty` are the
+/// detector-resistance sampling knobs (RAID, ACL 2024) — the v1beta API
 /// supports all three on `generationConfig`, each added only when `Some`
 /// (never sent as `null`). `topP` additionally never reaches a gated model
-/// (see [`gemini_omits_sampling_params`]) — unlike `temperature`, it has no
-/// app-side fallback to protect and no "explicit user intent" to preserve
-/// (it's a renderer-set anti-detection knob, not a user dial), so a gated
-/// model omits it unconditionally rather than only when unset.
-/// `frequencyPenalty`/`presencePenalty` are NOT covered by Google's
-/// deprecation and stay ungated.
-fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
-    let temperature = gemini_effective_temperature(&req.model, req.temperature, 0.7);
+/// (see [`gemini_omits_sampling_params`]) — unlike `temperature`, Google's
+/// deprecation notice covers it unconditionally (no "explicit user intent" to
+/// preserve there), so a gated model omits it regardless of what `sampling`
+/// carries. `frequencyPenalty`/`presencePenalty` are NOT covered by Google's
+/// deprecation and stay ungated — this adapter's [`GeminiClient::sampling_profile`]
+/// never declares either (no vendor-recommended band for them, unlike
+/// OpenAI's), so in practice they only ever carry an explicit override.
+fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) -> Value {
     let system_text: String = req
         .messages
         .iter()
@@ -528,18 +553,18 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         .collect();
 
     let mut generation_config = json!({});
-    if let Some(t) = temperature {
+    if let Some(t) = sampling.temperature {
         generation_config["temperature"] = json!(t);
     }
     if !gemini_omits_sampling_params(&req.model) {
-        if let Some(top_p) = req.top_p {
+        if let Some(top_p) = sampling.top_p {
             generation_config["topP"] = json!(top_p);
         }
     }
-    if let Some(fp) = req.frequency_penalty {
+    if let Some(fp) = sampling.frequency_penalty {
         generation_config["frequencyPenalty"] = json!(fp);
     }
-    if let Some(pp) = req.presence_penalty {
+    if let Some(pp) = sampling.presence_penalty {
         generation_config["presencePenalty"] = json!(pp);
     }
     if let Some(mt) = req.max_tokens {
@@ -972,6 +997,27 @@ impl AiProvider for GeminiClient {
         gemini_effort_levels(model)
     }
 
+    /// Neutral on Gemini 3+ (Google: "Remove these parameters from all
+    /// requests" — see [`gemini_omits_sampling_params`]) AND neutral on any
+    /// id this adapter cannot positively recognize as pre-v3
+    /// ([`gemini_is_recognized_pre_v3`]) — an unclassified id defaults to "no
+    /// sampling params", never a guessed-safe legacy default. ONLY a
+    /// recognized pre-v3 model keeps this adapter's long-standing `0.7`
+    /// temperature default — the ONE number [`gemini_effective_temperature`]
+    /// used to fall back to before the renderer stopped shipping a per-task
+    /// value (that function itself is UNCHANGED — still gated on the wider
+    /// [`gemini_omits_sampling_params`] for its own callers, e.g.
+    /// `complete_impl`). `topP`/`frequencyPenalty`/`presencePenalty` were
+    /// never adapter-defaulted here (pure request pass-through, see
+    /// [`build_chat_stream_body`]) and still aren't — `intent` is therefore
+    /// unused on this adapter, unlike OpenAI's.
+    fn sampling_profile(&self, model: &str, _intent: Intent) -> SamplingProfile {
+        SamplingProfile {
+            temperature: gemini_is_recognized_pre_v3(model).then_some(0.7),
+            ..SamplingProfile::default()
+        }
+    }
+
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -983,7 +1029,10 @@ impl AiProvider for GeminiClient {
         let trace =
             RequestTrace::begin(ProviderId::Gemini, &req.model, &endpoint_label, BASE, true);
 
-        let body = build_chat_stream_body(req);
+        let sampling = self
+            .sampling_profile(&req.model, resolve_intent(req))
+            .resolve(req);
+        let body = build_chat_stream_body(req, sampling);
 
         let url = format!("{BASE}{endpoint_label}");
         let response = crate::net::http::shared()

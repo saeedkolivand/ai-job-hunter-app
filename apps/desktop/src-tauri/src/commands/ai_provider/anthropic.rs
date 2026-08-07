@@ -14,9 +14,9 @@ use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
     bounded, friendly_api_error, model_entry, pagination_step, parse_rfc3339_millis,
-    single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg,
-    ModelCapabilities, PaginationStep, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent,
+    ModelCapabilities, PaginationStep, ProviderId, RequestTrace, SamplingProfile, StopReason,
+    TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -983,6 +983,18 @@ impl AiProvider for AnthropicClient {
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
         anthropic_effort_levels(model)
+    }
+
+    /// Neutral, unconditionally — Anthropic has no frequency/presence/repeat
+    /// penalty parameters at all, and `temperature`/`top_p`/`top_k` 400 on
+    /// every adaptive-thinking (Claude 4.7+/5) request regardless of value
+    /// (see [`anthropic_supports_temperature`]). There is nothing this app
+    /// can safely declare here for ANY model/intent, unlike every other
+    /// adapter — `chat_stream`'s existing [`anthropic_supports_temperature`]
+    /// gate (below, in [`build_chat_stream_body`]) already fails safe and is
+    /// left untouched by this method.
+    fn sampling_profile(&self, _model: &str, _intent: Intent) -> SamplingProfile {
+        SamplingProfile::default()
     }
 
     async fn chat_stream(

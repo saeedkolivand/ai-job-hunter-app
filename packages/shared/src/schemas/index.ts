@@ -84,6 +84,24 @@ export const AiGenerateRequestSchema = z.object({
    * agent tool-calling loop and `research*` calls keep the provider default.
    */
   effort: z.string().optional(),
+  /**
+   * The renderer's declared INTENT for this generation step — never a raw
+   * sampling number. `'deterministic'` (analysis/résumé/job-ad-summary/
+   * GitHub-projects): exact, non-creative output. `'prose'` (cover letter,
+   * interview questions, STAR feedback): creative, detector-resistant
+   * writing with no traceability requirement. `'prose_grounded'`
+   * (application answers, referral messages, application email): same
+   * detector-resistant register as `'prose'`, but the output makes factual
+   * claims about the candidate that MUST stay traceable to the résumé/job ad
+   * — concretely, `'prose'` minus the presence-penalty knob (it pushes a
+   * model toward new topics, i.e. invented candidate facts). Absent/
+   * `'default'`: no opinion. Each provider adapter maps `(model, intent)` to
+   * its OWN sampling numbers — or none at all — via `AiProvider::sampling_profile`
+   * (`commands/ai_provider/mod.rs`); the explicit numeric fields above
+   * (`temperature` etc.) still win over whatever the adapter would otherwise
+   * pick. Only reaches `chat_stream`, exactly like `effort`.
+   */
+  intent: z.enum(['deterministic', 'prose', 'prose_grounded', 'default']).optional(),
 });
 
 /**

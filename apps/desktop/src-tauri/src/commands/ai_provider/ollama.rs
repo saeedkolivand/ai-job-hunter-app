@@ -18,8 +18,8 @@ use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
     model_entry, parse_rfc3339_millis, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace, SamplingProfile, StopReason,
+    TokenParam, ToolCall, ToolSpec, Usage,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -218,6 +218,17 @@ impl AiProvider for OllamaClient {
         } else {
             Vec::new()
         }
+    }
+
+    /// Neutral, always — matches the trait default, made explicit here so the
+    /// design decision is visible rather than implicit. Omitting every
+    /// sampling param lets `/api/chat` inherit the model's own Modelfile
+    /// defaults, which carry the model author's own recommended values —
+    /// this adapter's `build_chat_stream_body` already only ever forwards an
+    /// EXPLICIT `req.*` value (see its doc comment) and never invents one, so
+    /// this override changes nothing; it documents why.
+    fn sampling_profile(&self, _model: &str, _intent: Intent) -> SamplingProfile {
+        SamplingProfile::default()
     }
 
     async fn chat_stream(
@@ -927,11 +938,14 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
 }
 
 /// Build the `/api/chat` streaming request body for a given [`AiGenerateRequest`].
-/// Pure + unit-tested. `options.top_p`/`options.repeat_penalty` are the
-/// detector-resistance sampling knobs (RAID, ACL 2024) the renderer sets only
-/// for prose generation surfaces, added only when `Some` (never sent as
-/// `null`). `repeat_penalty` uses Ollama's own field/semantics — it is NEVER a
-/// remap of `frequency_penalty` (different math, different field).
+/// Pure + unit-tested. Every `options.*` sampling field (`temperature`,
+/// `top_p`, `repeat_penalty`, …) is forwarded ONLY when the request carries an
+/// explicit value (never invented — see [`AiProvider::sampling_profile`]'s
+/// neutral override on [`OllamaClient`], which omitting-by-default already
+/// matches), added only when `Some` (never sent as `null`), so an unset field
+/// lets `/api/chat` fall back to the model's own Modelfile default.
+/// `repeat_penalty` uses Ollama's own field/semantics — it is NEVER a remap
+/// of `frequency_penalty` (different math, different field).
 fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     let messages = serde_json::to_value(
         req.messages
