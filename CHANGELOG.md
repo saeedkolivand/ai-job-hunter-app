@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.134.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.1...v0.134.2) (2026-08-07)
+
+### 🐛 Bug Fixes
+
+* stop the resume header rendering twice and repair pre-v0.134.0 link mojibake ([#957](https://github.com/saeedkolivand/ai-job-hunter-app/issues/957)) ([94d65b3](https://github.com/saeedkolivand/ai-job-hunter-app/commit/94d65b35746dcab83aba69ca3eab372fb36b20ac)), closes [#955](https://github.com/saeedkolivand/ai-job-hunter-app/issues/955)
+
 ## [0.134.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.0...v0.134.1) (2026-08-07)
 
 ### 🎨 UI/UX
