@@ -633,3 +633,47 @@ fn name_line_at_idx_zero_without_hash_is_name() {
         line.kind
     );
 }
+
+// ── Leading-blank-line regression (PDF extraction emits a leading blank) ────
+
+/// Root-cause regression: PDF-extracted résumé text routinely starts with a
+/// blank line before the real header. The name rule must key on the first
+/// line WITH CONTENT (idx 1 here), not raw idx 0 — otherwise the name falls
+/// through to `is_all_caps_section_heading`, `model_from_resume_text` never
+/// sets `seen_section` correctly, and the header renders twice (once from
+/// the empty header + once as a bogus body section titled with the name).
+/// Asserts BOTH symptoms: the header name is populated correctly AND no
+/// section in the model is (incorrectly) headed with the candidate's name.
+#[test]
+fn leading_blank_line_before_name_still_yields_header_not_section() {
+    let model = crate::model::adapter::model_from_resume_text(
+        "\nSAEED KOLIVAND\nAI & Full-Stack Engineer\nKöln, Germany | a@b.com | +49 179 1402319\n\nPROFESSIONAL SUMMARY\nSome summary.",
+    );
+
+    assert_eq!(
+        model.header.name, "SAEED KOLIVAND",
+        "leading blank line must not prevent the name from populating the header"
+    );
+    assert!(
+        !model
+            .sections
+            .iter()
+            .any(|s| s.heading == model.header.name),
+        "the name must never become a section heading; sections: {:?}",
+        model.sections.iter().map(|s| &s.heading).collect::<Vec<_>>()
+    );
+}
+
+/// Control case: a genuine section heading as the first line WITH CONTENT
+/// (still preceded by a leading blank) must still classify as a heading —
+/// proving the fix didn't turn real headings into names.
+#[test]
+fn leading_blank_line_before_section_heading_still_classifies_as_heading() {
+    let lines = ["", "EXPERIENCE", "Some body text"];
+    let line = parse_line("EXPERIENCE", 1, &lines);
+    assert!(
+        matches!(line.kind, LineKind::SectionHeader),
+        "expected SectionHeader for the first content line, got {:?}",
+        line.kind
+    );
+}

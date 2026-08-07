@@ -521,8 +521,24 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
         }
     }
 
-    // First line is name ONLY if it doesn't look like a section header or contact
-    if idx == 0 {
+    // First line WITH CONTENT is name ONLY if it doesn't look like a section
+    // header or contact — NOT literally raw line 0. PDF extraction routinely
+    // emits a leading blank line before the real header text, so gating on
+    // `idx == 0` misses the name entirely (it lands at idx 1+), falls through
+    // to the ALL-CAPS section-header branch below, and the header renders
+    // twice. `idx == 0` is kept as its own arm so this can never regress the
+    // original rule, whatever `all_lines` holds. Past that, the preceding
+    // lines must all be blank AND `idx` must be a real index into `all_lines`
+    // — an out-of-bounds range yields `None` rather than a vacuously-true
+    // empty slice, which is what unit tests calling `parse_line(x, 5, &[])`
+    // rely on to mean "not the first line". `.all()` short-circuits at the
+    // first non-blank line, so this stays effectively constant-time (blank
+    // lines return early above, so only the first content line reaches here).
+    if idx == 0
+        || all_lines
+            .get(..idx)
+            .is_some_and(|head| head.iter().all(|l| l.trim().is_empty()))
+    {
         if SECTION_NAMES.contains(&lower.as_str()) {
             return ParsedLine {
                 kind: LineKind::SectionHeader,
