@@ -508,7 +508,10 @@ mod test {
             repaired, corrupt,
             "no recognized marker exists here, so nothing must be touched"
         );
-        assert!(matches!(repaired, Cow::Borrowed(_)), "a true no-op must not allocate");
+        assert!(
+            matches!(repaired, Cow::Borrowed(_)),
+            "a true no-op must not allocate"
+        );
     }
 
     #[test]

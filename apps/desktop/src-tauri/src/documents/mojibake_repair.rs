@@ -44,8 +44,9 @@ pub(super) fn up(conn: &Connection) -> rusqlite::Result<()> {
     let rows: Vec<(String, String)> = {
         let mut stmt = conn
             .prepare("SELECT id, text FROM documents WHERE instr(cast(text as blob), x'00') > 0")?;
-        let mapped =
-            stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+        let mapped = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
         let mut out = Vec::new();
         for r in mapped {
             match r {

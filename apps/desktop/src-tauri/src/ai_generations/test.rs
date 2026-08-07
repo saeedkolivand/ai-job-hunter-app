@@ -538,7 +538,11 @@ fn save_application_update_path_repairs_pre_pdf_text_string_mojibake_on_write() 
     store.save_application(regenerated).unwrap();
 
     let list = store.list();
-    assert_eq!(list.len(), 1, "the per-job aggregate must have merged into one row");
+    assert_eq!(
+        list.len(),
+        1,
+        "the per-job aggregate must have merged into one row"
+    );
     assert_eq!(list[0].resume_text, REPAIRED_MOJIBAKE_TEXT);
     assert_eq!(list[0].cover_letter_text, REPAIRED_MOJIBAKE_TEXT);
 }

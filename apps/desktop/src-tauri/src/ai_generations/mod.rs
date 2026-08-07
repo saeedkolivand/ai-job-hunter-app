@@ -322,7 +322,8 @@ impl AiGenerationStore {
                     out
                 };
                 for (id, resume_text, cover_letter_text) in rows {
-                    let resume_repaired = crate::extraction::pdf::repair_utf16_mojibake(&resume_text);
+                    let resume_repaired =
+                        crate::extraction::pdf::repair_utf16_mojibake(&resume_text);
                     let cover_repaired =
                         crate::extraction::pdf::repair_utf16_mojibake(&cover_letter_text);
                     conn.execute(

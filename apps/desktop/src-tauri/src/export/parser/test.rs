@@ -660,7 +660,11 @@ fn leading_blank_line_before_name_still_yields_header_not_section() {
             .iter()
             .any(|s| s.heading == model.header.name),
         "the name must never become a section heading; sections: {:?}",
-        model.sections.iter().map(|s| &s.heading).collect::<Vec<_>>()
+        model
+            .sections
+            .iter()
+            .map(|s| &s.heading)
+            .collect::<Vec<_>>()
     );
 }
 
