@@ -1,4 +1,4 @@
-# Contributing — AI Job Hunter
+# Contributing to AI Job Hunter
 
 Thank you for contributing. This document covers everything you need to ship a change consistently.
 
@@ -25,7 +25,7 @@ Thank you for contributing. This document covers everything you need to ship a c
 | ------- | --------- | -------------------------------------------------------------------------------- |
 | Node.js | ≥ 20.11.0 | Use [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm) |
 | pnpm    | ≥ 11      | `npm install -g pnpm`                                                            |
-| Ollama  | Latest    | [ollama.ai](https://ollama.ai) — required to run AI features                     |
+| Ollama  | Latest    | [ollama.ai](https://ollama.ai), required to run AI features                      |
 | Git     | Any       | With commit message hook support                                                 |
 
 ### First-time setup
@@ -116,7 +116,7 @@ Build order: `shared → ui / prompts / translations / test-ids → desktop`
 
 ### 1. Never push to `main`
 
-All work goes through pull requests. `main` is protected and always releasable — every release ships from it.
+All work goes through pull requests. `main` is protected and always releasable; every release ships from it.
 
 ```bash
 # Always branch from an up-to-date main
@@ -162,7 +162,7 @@ PR checklist:
 
 ## Commit Conventions
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org). Commit messages are enforced by commitlint (runs on every commit via Husky) — invalid messages are rejected at commit time.
+This project uses [Conventional Commits](https://www.conventionalcommits.org). Commit messages are enforced by commitlint (runs on every commit via Husky); invalid messages are rejected at commit time.
 
 ### Format
 
@@ -211,10 +211,10 @@ ESLint and Prettier are enforced on every commit via lint-staged; CI also checks
 
 ### TypeScript
 
-- `strict: true` — no implicit `any`, no `@ts-ignore`
+- `strict: true`: no implicit `any`, no `@ts-ignore`
 - `import type` for all pure type imports (auto-fixed by `lint:fix`)
 - Import groups (blank line between each): `node:*` → external → `@ajh/*` → `@/*` → relative
-- No `// eslint-disable` — fix the issue or add a scoped override to `eslint.config.mjs` with a reason comment
+- No `// eslint-disable`: fix the issue or add a scoped override to `eslint.config.mjs` with a reason comment
 - Prefer `const` over `let`
 
 ### React
@@ -223,17 +223,17 @@ ESLint and Prettier are enforced on every commit via lint-staged; CI also checks
 - Shared components go in `packages/ui`
 - Chrome components go in `components/layout/`
 - No cross-feature imports
-- No `window.api.*` in feature or route files — use service hooks
-- No raw `<button>`, `<select>`, `<textarea>` — use `@ajh/ui` primitives
+- No `window.api.*` in feature or route files: use service hooks
+- No raw `<button>`, `<select>`, `<textarea>`: use `@ajh/ui` primitives
 
 ### Styling
 
-- `text-brand`, `bg-brand`, `border-brand` — never hardcoded hex colors
-- No inline `{ duration, ease }` animation objects — use `transition.*` from `@ajh/ui`
+- `text-brand`, `bg-brand`, `border-brand`: never hardcoded hex colors
+- No inline `{ duration, ease }` animation objects: use `transition.*` from `@ajh/ui`
 
 ### i18n
 
-- `import { useTranslation } from "@ajh/translations"` — never from `react-i18next` directly
+- `import { useTranslation } from "@ajh/translations"`: never from `react-i18next` directly
 
 ### Other conventions
 
@@ -266,7 +266,7 @@ pnpm test:watch        # Watch mode
 pnpm test:coverage     # With HTML coverage report → ./coverage/
 ```
 
-Use `createMockClient()` from `@/lib/mock-client` for React component tests. Never mock the database — use real in-memory SQLite for data layer tests.
+Use `createMockClient()` from `@/lib/mock-client` for React component tests. Never mock the database: use real in-memory SQLite for data layer tests.
 
 ### What to test
 
@@ -278,11 +278,11 @@ Use `createMockClient()` from `@/lib/mock-client` for React component tests. Nev
 
 ## Release Process
 
-Releases are **manually triggered** — nothing runs automatically on push or merge to `main`. `ci-pipeline.yml` deliberately excludes push-to-`main`, and `release.yml` only runs on `workflow_dispatch`. **Never manually tag or bump versions** — semantic-release owns the version; you only trigger it.
+Releases are **manually triggered**: nothing runs automatically on push or merge to `main`. `ci-pipeline.yml` deliberately excludes push-to-`main`, and `release.yml` only runs on `workflow_dispatch`. **Never manually tag or bump versions**: semantic-release owns the version; you only trigger it.
 
 Actions → "🚀 Release" has two independent manual steps:
 
-1. **`action: release`** — semantic-release derives the version bump from the conventional-commit types merged since the last release (`feat` → minor, `fix`/`perf` → patch, `BREAKING CHANGE` → minor while pre-1.0), syncs the version files + `CHANGELOG.md`, creates the GitHub Release + tag, and commits the bump back to `main`. Does **not** build installers.
-2. **`action: build-installers`** — a _separate_ manual dispatch that builds the Tauri installers (Windows NSIS/MSI, Linux AppImage/.deb/.rpm, macOS dmg for Intel + Apple Silicon) and the browser-extension zips, then attaches them to the release.
+1. **`action: release`**: semantic-release derives the version bump from the conventional-commit types merged since the last release (`feat` → minor, `fix`/`perf` → patch, `BREAKING CHANGE` → minor while pre-1.0), syncs the version files + `CHANGELOG.md`, creates the GitHub Release + tag, and commits the bump back to `main`. Does **not** build installers.
+2. **`action: build-installers`**: a _separate_ manual dispatch that builds the Tauri installers (Windows NSIS/MSI, Linux AppImage/.deb/.rpm, macOS dmg for Intel + Apple Silicon) and the browser-extension zips, then attaches them to the release.
 
 See `CLAUDE.md` § Release & commits and the header comment in `.github/workflows/release.yml` for the authoritative reference.
