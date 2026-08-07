@@ -15,7 +15,7 @@ Local-first desktop app, [pnpm][pnpm] monorepo. **[Tauri][tauri] is the shell.**
 - `packages/test-ids` — central `TEST_IDS` map → `@ajh/test-ids`, feature-namespaced to mirror translation keys.
 - `apps/desktop` — [Rust][rust] core (`src-tauri/src/`) + [React][react] renderer (`src/renderer/`).
 - `apps/extension` — MV3 browser extension (Chrome + Firefox): job import + opt-in autofill over the loopback bridge (`apps/desktop/src-tauri/src/extension_bridge/`).
-- `apps/landing` — [Next.js][nextjs] 16 static export marketing site.
+- `apps/landing` — [Next.js][nextjs] marketing site (see `docs/ARCHITECTURE.md` for build config).
 
 ## Rust/TS boundary (Rust-first)
 
