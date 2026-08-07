@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.134.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.133.0...v0.134.0) (2026-08-07)
+
+### ✨ Features
+
+* résumé trim panel, pdf link-anchor decode fix, and effort picker on every model surface ([#955](https://github.com/saeedkolivand/ai-job-hunter-app/issues/955)) ([67cf9c4](https://github.com/saeedkolivand/ai-job-hunter-app/commit/67cf9c41fb5114a18dc54978dff0285f33a0cf05))
+
+### 📚 Documentation
+
+* remove ai-writing tells from root docs and prompts readme ([bcc3b8c](https://github.com/saeedkolivand/ai-job-hunter-app/commit/bcc3b8cca17f06d147287d1b37c4ef708179e435))
+
 ## [0.133.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.132.0...v0.133.0) (2026-08-06)
 
 ### ✨ Features
