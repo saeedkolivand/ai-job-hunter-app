@@ -1,6 +1,6 @@
 # Architecture — AI Job Hunter
 
-Last updated: 2026-08-02
+Last updated: 2026-08-07
 
 ## High-Level Overview
 
@@ -118,6 +118,10 @@ The Tauri app is split into two processes:
 ### `apps/extension` — Browser Extension
 
 MV3 extension (Chrome Web Store + Firefox AMO) for one-click job import: captures the current tab's job posting and sends it to the desktop app over a private loopback WebSocket (mutual HMAC handshake, no account, no remote backend). Also offers opt-in **assisted autofill** (off by default) that fills matching empty form fields from the user's saved Contact Profile, fetched fresh over the same loopback connection and never persisted in the browser. The desktop half (bridge server, parser, Applications store) lives in `apps/desktop/src-tauri/src/extension_bridge/`; the wire protocol is shared via `packages/shared/src/ipc/extension-protocol.ts`. See `apps/extension/README.md`.
+
+### `apps/landing` — Marketing Site
+
+[Next.js 16](https://nextjs.org) static export (no server runtime, published to GitHub Pages) — landing page, feature descriptions, and SEO-friendly public content. Built with `output: 'export'` and no dynamic route handlers (see ADR-0018). Hot-links to app downloads and social channels.
 
 ---
 
