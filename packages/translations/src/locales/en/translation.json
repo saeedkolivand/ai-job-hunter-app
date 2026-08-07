@@ -1268,6 +1268,12 @@
       "failed": "Preview unavailable",
       "empty": "Generate a document to preview it here."
     },
+    "trim": {
+      "summary_one": "{{pages}} pages — {{maxPages}} is typical here. 1 line to consider cutting.",
+      "summary_other": "{{pages}} pages — {{maxPages}} is typical here. {{count}} lines to consider cutting.",
+      "hint": "Ranked by how little of this job ad each line covers. Edit above to cut.",
+      "noKeywords": "Nothing carries less weight than anything else — this job ad has too little text to rank against."
+    },
     "rewrite": {
       "trigger": "Rewrite with AI",
       "title": "Rewrite selection",

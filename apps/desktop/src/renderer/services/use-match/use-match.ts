@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import type { MatchResumeRequest, MatchScore } from '@ajh/shared';
+import type { MatchResumeRequest, MatchScore, TrimSuggestions } from '@ajh/shared';
 
 import { useAppClient } from '@/providers/AppClientProvider';
 import { useSemanticScoring } from '@/store/preferences-store';
@@ -37,6 +37,35 @@ export const useJobMatchScore = (resumeId: string | null, jobId: string, enabled
         semanticScoringEnabled: semanticScoring,
       }),
     enabled: enabled && !!resumeId && !!jobId,
+    staleTime: QUERY_TIMES.TEN_MIN,
+  });
+};
+
+/**
+ * Advisory trim ranking for the résumé currently on screen: which bullets carry
+ * the least of this posting's vocabulary, weakest first.
+ *
+ * Keyed on the document text itself (not an id) because the AI-Generate flow
+ * scores unsaved, hand-edited output. Scoring is embedding-free and local, so
+ * re-running it on each committed edit is cheap — but the caller should pass
+ * `enabled = false` until the preview actually overflows, so a normal-length
+ * résumé never pays for it at all.
+ */
+export const useTrimSuggestions = (
+  resumeText: string,
+  jobText: string,
+  locale: string | undefined,
+  enabled = true
+) => {
+  const api = useAppClient();
+  return useQuery({
+    queryKey: ['trim-suggestions', resumeText, jobText, locale],
+    queryFn: (): Promise<TrimSuggestions> =>
+      api.match.trimSuggestions({ resumeText, jobText, locale }),
+    // Truthy checks only — never call methods on an argument here. The
+    // `exerciseServiceHooks` smoke test renders every exported hook with a
+    // single junk argument, so a `.trim()` in the render path throws.
+    enabled: enabled && !!resumeText && !!jobText,
     staleTime: QUERY_TIMES.TEN_MIN,
   });
 };

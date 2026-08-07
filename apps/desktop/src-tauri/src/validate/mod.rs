@@ -766,7 +766,10 @@ fn page_link_annotations(
                 d.get(b"URI")
                     .ok()
                     .and_then(|u| u.as_str().ok())
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
+                    // Same PDF-text-string decode as the extractor: a UTF-16
+                    // `/URI` read as UTF-8 is mojibake that no content check
+                    // could match. Single decoder so the two can't drift.
+                    .map(crate::extraction::pdf::pdf_text_string)
             });
         if let Some(url) = url {
             out.push(PdfLink {

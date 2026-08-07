@@ -56,6 +56,19 @@ pub struct LocaleProfile {
     pub id: &'static str,
     pub page_size: PageSize,
     pub photo: PhotoPolicy,
+    /// Customary maximum **length** of a résumé in this market, in pages.
+    ///
+    /// NOT to be confused with [`Self::page_size`], which is the physical paper
+    /// (A4 vs US Letter). This is "how long may the document be", not "how big
+    /// is the sheet".
+    ///
+    /// These are hiring-convention norms, not a specification — no standards
+    /// body publishes them. Anglophone markets cap at 2; DACH and the generic
+    /// EU/Europass style tolerate 3 because a German `Lebenslauf` conventionally
+    /// lists every position with dates rather than summarising. Advisory only:
+    /// the trim panel uses it to decide when to *offer* suggestions, and nothing
+    /// blocks an export that runs longer.
+    pub max_pages: u8,
 }
 
 impl LocaleProfile {
@@ -127,6 +140,7 @@ impl LocaleProfile {
             id: "en",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Never,
+            max_pages: 2,
         }
     }
 
@@ -136,6 +150,7 @@ impl LocaleProfile {
             id: "us",
             page_size: PageSize::Letter,
             photo: PhotoPolicy::Never,
+            max_pages: 2,
         }
     }
 
@@ -145,6 +160,7 @@ impl LocaleProfile {
             id: "uk",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Never,
+            max_pages: 2,
         }
     }
 
@@ -154,6 +170,7 @@ impl LocaleProfile {
             id: "dach",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Common,
+            max_pages: 3,
         }
     }
 
@@ -163,6 +180,7 @@ impl LocaleProfile {
             id: "fr",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Optional,
+            max_pages: 2,
         }
     }
 
@@ -172,6 +190,7 @@ impl LocaleProfile {
             id: "nl",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Optional,
+            max_pages: 2,
         }
     }
 
@@ -181,6 +200,7 @@ impl LocaleProfile {
             id: "eu",
             page_size: PageSize::A4,
             photo: PhotoPolicy::Optional,
+            max_pages: 3,
         }
     }
 }
@@ -290,5 +310,22 @@ mod tests {
                 "{id} should be A4"
             );
         }
+    }
+
+    #[test]
+    fn max_pages_follows_the_market_not_the_paper_size() {
+        // Anglophone + FR/NL cap at 2; DACH and generic-EU tolerate 3.
+        for id in ["us", "uk", "fr", "nl", "en", "zz"] {
+            assert_eq!(LocaleProfile::get(id).max_pages, 2, "{id} should cap at 2");
+        }
+        for id in ["de", "at", "ch", "eu"] {
+            assert_eq!(LocaleProfile::get(id).max_pages, 3, "{id} should allow 3");
+        }
+        // Resolves through locale tags, like every other profile field.
+        assert_eq!(LocaleProfile::get("de-AT").max_pages, 3);
+        assert_eq!(LocaleProfile::get("en-US").max_pages, 2);
+        // US is Letter but still caps at 2 — length is not paper size.
+        assert_eq!(LocaleProfile::get("us").page_size, PageSize::Letter);
+        assert_eq!(LocaleProfile::get("us").max_pages, 2);
     }
 }

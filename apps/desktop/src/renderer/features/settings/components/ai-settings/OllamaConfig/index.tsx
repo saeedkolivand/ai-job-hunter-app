@@ -3,9 +3,8 @@ import { Download, ExternalLink, Loader2 } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown } from '@ajh/ui';
 
+import { EffortPicker } from '@/components/ui/EffortPicker';
 import type { Model } from '@/types';
-
-import { EffortPicker } from '../EffortPicker';
 
 const QUICK_MODELS = ['llama3.2', 'mistral', 'llama3.1:8b', 'llama3.2:1b'];
 

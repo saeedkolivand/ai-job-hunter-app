@@ -20,6 +20,7 @@ import {
 } from '@/lib/generate';
 
 import { ExportModal } from '../ExportModal';
+import { TrimPanel } from '../TrimPanel';
 
 interface OutputPanelDoneProps {
   resumeOut: string;
@@ -48,6 +49,8 @@ interface OutputPanelDoneProps {
   isGenerating?: boolean;
   /** Source résumé text — forwarded to the editor's link-suggestion pick-list. */
   sourceResume?: string;
+  /** Raw job ad — ranks the trim panel's suggestions. Omitted disables the panel. */
+  jobAd?: string;
   /** Which document is still streaming during progressive reveal (#23), or null. */
   generatingDoc?: 'resume' | 'cover' | null;
 }
@@ -73,9 +76,13 @@ export function OutputPanelDone({
   isGenerating = false,
   generatingDoc = null,
   sourceResume,
+  jobAd,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
+  // Rendered page count for the active doc, reported by PdfPreview — drives the
+  // résumé trim panel.
+  const [pageCount, setPageCount] = useState(0);
 
   // ── Committed preview text (decoupled from the live edited string) ────────────
   // PdfPreview renders COMMITTED text. Local edits auto-commit after ~700 ms via
@@ -306,11 +313,23 @@ export function OutputPanelDone({
               letterLayoutId={letterLayoutId}
               locale={previewLocale}
               paused={generatingDoc === activeOut}
+              onPageCount={setPageCount}
               className="h-full w-full"
             />
           }
         />
       </div>
+
+      {/* Advisory length check — résumés only (a cover letter's one page is a
+          different rule, owned by the letter conventions, not this ranking). */}
+      {activeOut === 'resume' && jobAd && (
+        <TrimPanel
+          resumeText={committed}
+          jobText={jobAd}
+          pages={pageCount}
+          locale={previewLocale}
+        />
+      )}
 
       {/* Re-generate option */}
       <div className="shrink-0 border-t border-[var(--border-clear)] px-6 py-3 flex items-center justify-between">

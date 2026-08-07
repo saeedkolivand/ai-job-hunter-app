@@ -225,6 +225,23 @@ export const MatchResumeRequestSchema = z.object({
 });
 
 /**
+ * Request for the advisory trim panel: rank a résumé's bullets by how much
+ * keyword weight each one carries for THIS posting, weakest first.
+ *
+ * Takes the résumé and job ad as **text**, not ids — the AI-Generate flow scores
+ * the currently-previewed (possibly unsaved, possibly hand-edited) document
+ * against a pasted job ad, neither of which need exist in a store. Scoring is
+ * embedding-free (see `documents/keywords.rs`), so this is cheap enough to call
+ * on every committed edit.
+ */
+export const ResumeTrimSuggestionsRequestSchema = z.object({
+  resumeText: z.string().min(1).max(200_000),
+  jobText: z.string().min(1).max(200_000),
+  /** Export market — resolves `maxPages`. Defaults to the intl profile. */
+  locale: z.string().max(32).optional(),
+});
+
+/**
  * Request for the "prep this application" agentic flow (`agent.run`). Carries ONLY
  * the résumé + job identity: routing (provider/model/baseUrl) is BACKEND-OWNED —
  * the agent loop and every tool provider call resolve the active provider from the
@@ -620,5 +637,6 @@ export type DocumentImportRequest = z.infer<typeof DocumentImportRequestSchema>;
 export type ScrapeBoardsRequest = z.infer<typeof ScrapeBoardsRequestSchema>;
 export type ScrapeUrlRequest = z.infer<typeof ScrapeUrlRequestSchema>;
 export type MatchResumeRequest = z.infer<typeof MatchResumeRequestSchema>;
+export type ResumeTrimSuggestionsRequest = z.infer<typeof ResumeTrimSuggestionsRequestSchema>;
 export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
 export type AgentConfirmRequest = z.infer<typeof AgentConfirmRequestSchema>;
