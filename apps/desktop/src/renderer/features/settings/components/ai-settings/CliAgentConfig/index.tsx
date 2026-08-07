@@ -1,11 +1,11 @@
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown } from '@ajh/ui';
 
+import { EffortPicker } from '@/components/ui/EffortPicker';
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 
 import { CliAgentInstall } from '../CliAgentInstall';
-import { EffortPicker } from '../EffortPicker';
 
 interface Props {
   provider: AiProvider;

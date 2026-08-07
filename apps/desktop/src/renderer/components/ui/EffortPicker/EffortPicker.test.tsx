@@ -1,6 +1,7 @@
 /**
  * EffortPicker — the shared reasoning-effort dropdown behind CliAgentConfig,
- * CloudProviderConfig, and OllamaConfig.
+ * CloudProviderConfig, OllamaConfig, and `ModelSelector` (which every other
+ * model-picking surface in the app renders).
  *
  * Covers the visibility gate (hidden until the backend reports non-empty
  * `effortLevels` for this exact model — a per-model lookup, never a
@@ -101,5 +102,37 @@ describe('EffortPicker', () => {
     expect(
       screen.queryByRole('button', { name: /settings\.aiProvider\.effortDefault/ })
     ).not.toBeInTheDocument();
+  });
+});
+
+// ── Compact variant (the ModelSelector surface) ──────────────────────────────
+//
+// `ModelSelector` renders this picker so that EVERY model-picking surface in
+// the app gets it from one insertion. Compact mode drops the visible heading,
+// so these pin the two things that replace it: an accessible name, and the
+// picker still self-hiding for a model with no reasoning support.
+describe('EffortPicker — compact (rendered by ModelSelector)', () => {
+  it('keeps an accessible name once the visible heading is gone', () => {
+    modelCapsState.data = { effortLevels: ['low', 'high'] };
+    providerConfigState.data = { providers: {} };
+    render(<EffortPicker provider="openai" model="gpt-5.6" compact />);
+
+    // The heading is not rendered…
+    expect(
+      screen.queryByText('settings.aiProvider.reasoningEffort', { selector: 'div' })
+    ).not.toBeInTheDocument();
+    // …but the control is still named for assistive tech.
+    expect(
+      screen.getByRole('button', { name: 'settings.aiProvider.reasoningEffort' })
+    ).toBeInTheDocument();
+  });
+
+  it('renders nothing for a model with no reasoning support', () => {
+    // This is what makes it safe for ModelSelector to render it unconditionally
+    // on every surface — a non-reasoning model must add no UI at all.
+    modelCapsState.data = undefined;
+    providerConfigState.data = { providers: {} };
+    const { container } = render(<EffortPicker provider="ollama" model="llama3" compact />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
