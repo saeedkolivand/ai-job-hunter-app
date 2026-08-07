@@ -15,9 +15,11 @@ use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    friendly_api_error, model_entry, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, RequestTrace, StopReason, TokenParam, ToolCall,
-    ToolSpec, Usage,
+    friendly_api_error, model_entry, resolve_intent, single_shot_turn, AgentTurn,
+    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
+    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
+    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -417,15 +419,84 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// PER PROVIDER, not per model — `preferences-store.ts`).
 const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
+/// Non-reasoning profile shared by native OpenAI AND `OpenAiCompatible`
+/// gateways (LM Studio/vLLM/OpenRouter/custom endpoints — same wire
+/// protocol): real values reproducing this app's pre-fix shipped numbers
+/// for every intent — see the shared constants' doc comments
+/// (`commands/ai_provider/mod.rs`) for the exact per-surface history each
+/// one preserves. `frequency_penalty`/`presence_penalty` both sit inside
+/// OpenAI's own documented "reasonable" band
+/// (`platform.openai.com/docs/api-reference/chat/create`: "Number between
+/// -2.0 and 2.0 ... reasonable values are between 0 and 1").
+fn openai_sampling_profile(intent: Intent) -> SamplingProfile {
+    match intent {
+        // `Default` (no declared intent) resolves the same as `Deterministic`
+        // — see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
+        Intent::Deterministic | Intent::Default => SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        },
+        Intent::Prose => SamplingProfile {
+            temperature: Some(PROSE_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+            ..SamplingProfile::default()
+        },
+        // Same register as `Prose`, MINUS presence_penalty (see
+        // `Intent::ProseGrounded`'s own doc comment for why).
+        Intent::ProseGrounded => SamplingProfile {
+            temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            ..SamplingProfile::default()
+        },
+    }
+}
+
+/// Ollama Cloud's `/v1` layer hardcodes `temperature: 1.0, top_p: 1.0` when
+/// the caller omits them — overriding the model's own Modelfile defaults —
+/// so, unlike every OTHER OpenAI-compatible gateway (an unknown, arbitrary
+/// catalog this app never assumes anything about), omitting is NEVER neutral
+/// here for ANY family: every intent must declare real values, or the
+/// consequence is a forced 1.0/1.0 regardless of what this app intended.
+/// `gpt-oss` gets its own vendor-recommended values (source:
+/// `github.com/openai/gpt-oss` README, "Recommended Sampling Parameters":
+/// temperature 1.0, top_p 1.0 — which happen to coincide with `/v1`'s own
+/// hardcoded default, so this is declared for auditability, not because
+/// omission would behave differently for gpt-oss specifically). Every other
+/// family reuses the SAME per-intent targets native OpenAI does — this app's
+/// pre-fix renderer sent the identical numbers to every cloud provider,
+/// Ollama Cloud included. `repeat_penalty`/`num_ctx` can't be reached at all
+/// via `/v1` (Ollama-native-only fields), so `Prose`/`ProseGrounded` never
+/// set them here even though local Ollama does. `Intent::Default` resolves
+/// to `Intent::Deterministic`'s numbers (see `Intent`'s own doc comment) —
+/// deliberately NOT left neutral here specifically, since neutral would mean
+/// the forced 1.0/1.0 this whole function exists to avoid.
+fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile {
+    if model.to_ascii_lowercase().contains("gpt-oss") {
+        return SamplingProfile {
+            temperature: Some(1.0),
+            top_p: Some(1.0),
+            ..SamplingProfile::default()
+        };
+    }
+    openai_sampling_profile(intent)
+}
+
 /// Build the `/chat/completions` streaming request body for a given
-/// [`AiGenerateRequest`] + capability matrix. Pure + unit-tested — this is the
-/// shared body shape for native OpenAI, any OpenAI-compatible gateway, and
-/// Ollama Cloud (all backed by [`OpenAiClient`]). `top_p`/`frequency_penalty`/
-/// `presence_penalty` are the detector-resistance sampling knobs (RAID, ACL
-/// 2024) the renderer sets only for prose generation surfaces — each is only
-/// ever added when `Some` (never sent as `null`), and skipped entirely on
-/// reasoning models that reject `temperature`.
-fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> Value {
+/// [`AiGenerateRequest`] + capability matrix + resolved [`SamplingProfile`].
+/// Pure + unit-tested — this is the shared body shape for native OpenAI, any
+/// OpenAI-compatible gateway, and Ollama Cloud (all backed by
+/// [`OpenAiClient`]). `sampling` is already merged with the request's
+/// explicit numeric overrides (see [`SamplingProfile::resolve`]) — each field
+/// is added only when `Some` (never sent as `null`), and the whole block is
+/// skipped on reasoning models that reject `temperature`.
+fn build_chat_stream_body(
+    req: &AiGenerateRequest,
+    caps: ModelCapabilities,
+    sampling: SamplingProfile,
+) -> Value {
     let messages = req
         .messages
         .iter()
@@ -440,14 +511,16 @@ fn build_chat_stream_body(req: &AiGenerateRequest, caps: ModelCapabilities) -> V
     // silently ignores the unknown field — never a 400.
     body["stream_options"] = json!({ "include_usage": true });
     if caps.supports_temperature {
-        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
-        if let Some(top_p) = req.top_p {
+        if let Some(t) = sampling.temperature {
+            body["temperature"] = json!(t);
+        }
+        if let Some(top_p) = sampling.top_p {
             body["top_p"] = json!(top_p);
         }
-        if let Some(fp) = req.frequency_penalty {
+        if let Some(fp) = sampling.frequency_penalty {
             body["frequency_penalty"] = json!(fp);
         }
-        if let Some(pp) = req.presence_penalty {
+        if let Some(pp) = sampling.presence_penalty {
             body["presence_penalty"] = json!(pp);
         }
     }
@@ -905,6 +978,42 @@ impl AiProvider for OpenAiClient {
         }
     }
 
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        // Ollama Cloud gets its own family table — never the generic
+        // native-OpenAI defaults below (see the doc comment on
+        // `ollama_cloud_sampling_profile`).
+        if self.id == ProviderId::OllamaCloud {
+            return ollama_cloud_sampling_profile(model, intent);
+        }
+        // o-series (`is_reasoning_model`) genuinely reject `temperature`
+        // (`capabilities().supports_temperature` already gates the send
+        // site). gpt-5.x TECHNICALLY accepts a normal `temperature`/`top_p`
+        // (see `is_gpt5_or_later_reasoning_family`'s doc comment) but a
+        // reasoning model doesn't need the old per-task tuning either — both
+        // families stay neutral here so this app never second-guesses their
+        // own adaptive defaults.
+        if is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model) {
+            return SamplingProfile::default();
+        }
+        // `openai_sampling_profile`'s numbers ARE applied to
+        // `OpenAiCompatible` gateways (LM Studio/vLLM/OpenRouter/custom
+        // endpoints) too, deliberately — this is NOT the unknown-model
+        // fail-safe the other adapters use for an unrecognized *model*.
+        // `Intent` (e.g. `Deterministic`, which the analyze prompt's
+        // strict-JSON contract relies on — `runAnalysis` hard-throws on a
+        // parse failure) is an APP requirement on the response shape, not a
+        // guess about a specific model's preferred creative sampling, so it
+        // belongs on every provider that speaks this wire protocol and
+        // accepts `temperature` — `caps.supports_temperature` (checked at
+        // the send site) is what actually gates whether a value is sent at
+        // all, same as native OpenAI. This also matches pre-fix behavior:
+        // the renderer used to send these exact numbers to every
+        // OpenAI-compatible gateway. Do not re-gate this on `self.id ==
+        // ProviderId::OpenAi` — that was tried and reverted (it silently
+        // neutralized the JSON-strict analysis surface for every gateway).
+        openai_sampling_profile(intent)
+    }
+
     async fn chat_stream(
         &self,
         app: &AppHandle,
@@ -913,6 +1022,9 @@ impl AiProvider for OpenAiClient {
     ) -> AppResult<()> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(&req.model);
+        let sampling = self
+            .sampling_profile(&req.model, resolve_intent(req))
+            .resolve(req);
         let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(
             self.id,
@@ -922,7 +1034,7 @@ impl AiProvider for OpenAiClient {
             true,
         );
 
-        let body = build_chat_stream_body(req, caps);
+        let body = build_chat_stream_body(req, caps, sampling);
 
         let response = crate::net::http::shared()
             .post(endpoint)

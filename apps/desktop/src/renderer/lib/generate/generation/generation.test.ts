@@ -14,10 +14,16 @@ import {
   generateCoverLetter,
   generateGitHubProjects,
   generateInterviewQuestions,
+  generateJobAdSummary,
+  generateLikelyInterviewQuestions,
+  generateReferral,
+  generateReferralImprove,
   generateResume,
+  generateStarFeedback,
   lookupSalaryRange,
   researchAnswer,
   researchCompany,
+  rewriteSelection,
   seedHeaderFromProfile,
   synthesizeResume,
 } from './generation';
@@ -1595,9 +1601,12 @@ describe('local model limits wiring', () => {
   });
 });
 
-describe('per-step temperature override', () => {
-  // The resolved temperature is forwarded verbatim to generatePipeline, so we
-  // assert the wiring end-to-end through the public generation functions.
+describe('per-step temperature override (Ollama-only user-chosen value)', () => {
+  // The renderer no longer ships a default sampling number for any step —
+  // each provider adapter picks its own (or none) per (model, intent), see
+  // `AiProvider::sampling_profile` (`commands/ai_provider/mod.rs`). Only the
+  // Ollama per-model/per-step temperature slider (`LocalModelLimits.tsx`) is
+  // forwarded as an explicit `temperature`; everything else rides on `intent`.
   const META = {
     resumeLanguage: 'en',
     jobAdLanguage: 'en',
@@ -1609,9 +1618,9 @@ describe('per-step temperature override', () => {
     topRequirements: [],
   };
 
-  const tempOf = (client: ReturnType<typeof register>) => {
+  const argOf = (client: ReturnType<typeof register>) => {
     const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
-    return (call?.[0] as { temperature: number }).temperature;
+    return call?.[0] as { temperature?: number; intent?: string };
   };
 
   const setOllama = (temperature?: Record<string, number>) => {
@@ -1624,7 +1633,7 @@ describe('per-step temperature override', () => {
     });
   };
 
-  it('applies the per-step override to its own step only (cover set, resume default)', async () => {
+  it('applies the per-step override to its own step only (cover set, resume unset)', async () => {
     setOllama({ cover: 0.85 });
     const client = register();
     const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
@@ -1632,12 +1641,12 @@ describe('per-step temperature override', () => {
     emit('Dear Hiring Team.');
     done();
     await p;
-    // cover override resolves; the small tier's 0.58 default is overridden.
-    expect(tempOf(client)).toBeCloseTo(0.85);
+    expect(argOf(client).temperature).toBeCloseTo(0.85);
+    expect(argOf(client).intent).toBe('prose_grounded');
   });
 
-  it('falls back to the step default when that step is undefined', async () => {
-    // Only `cover` is set — résumé generation must still use its 0.3 default.
+  it('sends no temperature when that step has no override — the adapter decides', async () => {
+    // Only `cover` is set — résumé generation must still send nothing.
     setOllama({ cover: 0.85 });
     const client = register();
     const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
@@ -1645,11 +1654,13 @@ describe('per-step temperature override', () => {
     emit('RESUME CONTENT');
     done();
     await p;
-    expect(tempOf(client)).toBeCloseTo(0.3);
+    expect(argOf(client).temperature).toBeUndefined();
+    expect(argOf(client).intent).toBe('deterministic');
   });
 
-  it('ignores the override for non-ollama providers (always the step default)', async () => {
-    // Cloud provider active, but ollama still carries a cover override: must be ignored.
+  it('ignores the override for non-ollama providers (temperature stays unset)', async () => {
+    // Cloud provider active, but ollama still carries a cover override: must
+    // never leak across providers.
     setActive('openai', 'gpt-4o');
     usePreferencesStore.setState({
       aiProviderConfig: {
@@ -1666,15 +1677,17 @@ describe('per-step temperature override', () => {
     emit('Dear Hiring Team.');
     done();
     await p;
-    // large tier default for cloud = 0.8; the ollama override does not apply.
-    expect(tempOf(client)).toBeCloseTo(0.8);
+    expect(argOf(client).temperature).toBeUndefined();
   });
 });
 
-describe('prose detector-resistance sampling params', () => {
-  // RAID (ACL 2024): random sampling + repetition/frequency penalties drop
-  // AI-detector accuracy. Applied only to prose surfaces — resume/analysis stay
-  // LEXICAL (no new params) to protect exact ATS keyword repetition.
+describe('per-step override isolation (regression: one `answers` slider used to span 4 unrelated surfaces)', () => {
+  // Before this fix, `answers` backed application answers (prose_grounded),
+  // job-ad summary + GitHub-project import (deterministic), AND every
+  // interview-prep surface (prose) — one slider silently retuning surfaces a
+  // user never meant to touch. Each test below sets a SIBLING step's
+  // override and asserts it does NOT leak into the surface under test —
+  // the assertion that would have caught the original bug.
   const META = {
     resumeLanguage: 'en',
     jobAdLanguage: 'en',
@@ -1686,63 +1699,144 @@ describe('prose detector-resistance sampling params', () => {
     topRequirements: [],
   };
 
-  const samplingOf = (client: ReturnType<typeof register>) => {
+  const REPOS: GitHubRepo[] = [
+    {
+      name: 'merry-oasis',
+      description: 'A local-first task planner.',
+      htmlUrl: 'https://github.com/me/merry-oasis',
+      language: 'TypeScript',
+      topics: [],
+      stars: 1,
+    },
+  ];
+
+  const argOf = (client: ReturnType<typeof register>) => {
     const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
-    const arg = call?.[0] as {
-      temperature?: number;
-      topP?: number;
-      frequencyPenalty?: number;
-      presencePenalty?: number;
-      repeatPenalty?: number;
-    };
-    const { temperature, topP, frequencyPenalty, presencePenalty, repeatPenalty } = arg;
-    return { temperature, topP, frequencyPenalty, presencePenalty, repeatPenalty };
+    return call?.[0] as { temperature?: number; intent?: string };
   };
 
-  it('cover letter (small-tier local model) tightens topP to limit drift', async () => {
-    // 'llama3' has no size suffix → classified small tier (see model-size.ts);
-    // small local models compound drift when the full 0.95 topP stacks with
-    // repeatPenalty, so the small tier tightens topP to 0.9.
-    const client = register();
-    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
-    await flushUntilStreaming();
-    emit('Dear Hiring Team.');
-    done();
-    await p;
-    expect(samplingOf(client)).toEqual({
-      temperature: 0.58,
-      topP: 0.9,
-      frequencyPenalty: 0.3,
-      presencePenalty: 0.2,
-      repeatPenalty: 1.15,
-    });
-  });
-
-  it('cover letter (large-tier cloud model) keeps the shared topP default', async () => {
-    setActive('openai', 'gpt-4o');
+  const setOllama = (temperature?: Record<string, number>) => {
+    setActive('ollama', 'llama3');
     usePreferencesStore.setState({
-      aiProviderConfig: { activeProvider: 'openai', providers: { openai: { model: 'gpt-4o' } } },
+      aiProviderConfig: {
+        activeProvider: 'ollama',
+        providers: { ollama: { model: 'llama3', modelLimits: { llama3: { temperature } } } },
+      },
     });
+  };
+
+  it('job-ad summary ignores an `answers` override (was the bug — now keyed off `analysis`)', async () => {
+    setOllama({ answers: 0.99 });
     const client = register();
-    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'gpt-4o', vi.fn());
+    const p = generateJobAdSummary({ jobAd: 'Backend role at Acme', model: 'llama3' });
     await flushUntilStreaming();
-    emit('Dear Hiring Team.');
+    emit('Key notes.');
     done();
     await p;
-    expect(samplingOf(client)).toEqual({
-      temperature: 0.8,
-      topP: 0.95,
-      frequencyPenalty: 0.3,
-      presencePenalty: 0.2,
-      repeatPenalty: 1.15,
-    });
+    expect(argOf(client).temperature).toBeUndefined();
   });
 
-  it('application answer generation drops presencePenalty and lowers temperature (no-fabrication surface)', async () => {
-    // Résumé-grounded: presencePenalty pushes toward new topics (fabrication
-    // risk) so it's dropped; temperature stays lower than the freer prose
-    // surfaces to limit factual drift, while topP/frequencyPenalty/
-    // repeatPenalty still resist AI-detector fingerprinting.
+  it('job-ad summary honors its own `analysis` override', async () => {
+    setOllama({ analysis: 0.15 });
+    const client = register();
+    const p = generateJobAdSummary({ jobAd: 'Backend role at Acme', model: 'llama3' });
+    await flushUntilStreaming();
+    emit('Key notes.');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.15);
+    expect(argOf(client).intent).toBe('deterministic');
+  });
+
+  it('GitHub project import ignores an `answers` override (was the bug — now keyed off `resume`)', async () => {
+    setOllama({ answers: 0.99 });
+    const client = register();
+    const p = generateGitHubProjects({ repos: REPOS, model: 'llama3' });
+    await flushUntilStreaming();
+    emit('NAME: Merry Oasis\nDESC: Built a local-first task planner.');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeUndefined();
+  });
+
+  it('GitHub project import honors its own `resume` override', async () => {
+    setOllama({ resume: 0.2 });
+    const client = register();
+    const p = generateGitHubProjects({ repos: REPOS, model: 'llama3' });
+    await flushUntilStreaming();
+    emit('NAME: Merry Oasis\nDESC: Built a local-first task planner.');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.2);
+    expect(argOf(client).intent).toBe('deterministic');
+  });
+
+  it('interview questions ignore an `answers` override (was the bug — now keyed off `questions`)', async () => {
+    setOllama({ answers: 0.99 });
+    const client = register();
+    const p = generateInterviewQuestions({
+      resume: 'My resume',
+      jobAd: 'Job ad',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Q: What draws you to this role?');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeUndefined();
+  });
+
+  it('interview questions, likely questions, and STAR feedback all honor a shared `questions` override', async () => {
+    setOllama({ questions: 0.55 });
+
+    let client = register();
+    let p = generateInterviewQuestions({
+      resume: 'My resume',
+      jobAd: 'Job ad',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Q: What draws you to this role?');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.55);
+    expect(argOf(client).intent).toBe('prose');
+
+    client = register();
+    p = generateLikelyInterviewQuestions({
+      resume: 'My resume',
+      jobAd: 'Job ad',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Q: Tell me about yourself.');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.55);
+    expect(argOf(client).intent).toBe('prose');
+
+    client = register();
+    p = generateStarFeedback({
+      question: 'Tell me about a time you led a project.',
+      answer: 'I led the migration.',
+      resume: 'My resume',
+      jobAd: 'Job ad',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Strong structure, add a measurable result.');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.55);
+    expect(argOf(client).intent).toBe('prose');
+  });
+
+  it('application answers ignore a `questions` override — `answers` stays its own surface', async () => {
+    setOllama({ questions: 0.99 });
     const client = register();
     const p = generateApplicationAnswer({
       question: 'Why do you want to work here?',
@@ -1755,41 +1849,211 @@ describe('prose detector-resistance sampling params', () => {
     emit('Because I love building things.');
     done();
     await p;
-    expect(samplingOf(client)).toEqual({
-      temperature: 0.5,
-      topP: 0.95,
-      frequencyPenalty: 0.3,
-      presencePenalty: undefined,
-      repeatPenalty: 1.15,
-    });
+    expect(argOf(client).temperature).toBeUndefined();
+    expect(argOf(client).intent).toBe('prose_grounded');
+  });
+});
+
+describe('generation intent wiring (renderer states intent, adapter picks numbers)', () => {
+  // The renderer NEVER sends topP/frequencyPenalty/presencePenalty/
+  // repeatPenalty anymore — each provider adapter maps `(model, intent)` to
+  // its own numbers, or none at all (`AiProvider::sampling_profile`,
+  // `commands/ai_provider/mod.rs`). These tests pin the INTENT each surface
+  // sends and that no renderer-side sampling number ever rides along.
+  const META = {
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    candidateName: 'X',
+    jobTitle: 'Y',
+    companyName: 'Z',
+    targetLanguage: 'en',
+    topRequirements: [],
+  };
+
+  const argOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    return call?.[0] as {
+      intent?: string;
+      topP?: number;
+      frequencyPenalty?: number;
+      presencePenalty?: number;
+      repeatPenalty?: number;
+    };
+  };
+
+  const expectNoLegacySamplingFields = (client: ReturnType<typeof register>) => {
+    const arg = argOf(client);
+    expect(arg.topP).toBeUndefined();
+    expect(arg.frequencyPenalty).toBeUndefined();
+    expect(arg.presencePenalty).toBeUndefined();
+    expect(arg.repeatPenalty).toBeUndefined();
+  };
+
+  it('cover letter sends the prose_grounded intent (asserts real résumé achievements to an employer), no legacy sampling fields', async () => {
+    const client = register();
+    const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
+    await flushUntilStreaming();
+    emit('Dear Hiring Team.');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
   });
 
-  it('resume generation carries no sampling params (LEXICAL — protects ATS keyword repetition)', async () => {
+  it('application answer generation sends the prose_grounded intent (résumé-grounded, no-fabrication surface)', async () => {
+    const client = register();
+    const p = generateApplicationAnswer({
+      question: 'Why do you want to work here?',
+      resume: 'My resume',
+      jobAd: 'Backend role at Acme',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Because I love building things.');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
+  });
+
+  it('referral message sends prose_grounded (candidate factual claims to a real person)', async () => {
+    const client = register();
+    const p = generateReferral({
+      personName: 'Jamie',
+      companyName: 'Acme',
+      jobTitle: 'Engineer',
+      resume: 'My resume',
+      format: 'connection_note',
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Hi Jamie,');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
+  });
+
+  it('referral improve sends prose_grounded (mirrors generateReferral, same no-fabrication contract)', async () => {
+    const client = register();
+    const p = generateReferralImprove({
+      personName: 'Jamie',
+      companyName: 'Acme',
+      jobTitle: 'Engineer',
+      resume: 'My resume',
+      draft: 'Hi Jamie, I noticed the Engineer opening.',
+      instruction: 'Make it shorter',
+      format: 'connection_note',
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Hi Jamie,');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
+  });
+
+  it('application email sends prose_grounded (candidate factual claims to a real employer)', async () => {
+    const client = register();
+    const p = generateApplicationEmail({
+      resume: 'My resume',
+      jobAd: 'Backend role at Acme',
+      meta: META,
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('Subject: Application\nDear Hiring Team,');
+    done();
+    await p;
+    expect(argOf(client).intent).toBe('prose_grounded');
+    expectNoLegacySamplingFields(client);
+  });
+
+  it('resume generation sends the deterministic intent (protects exact ATS keyword repetition)', async () => {
     const client = register();
     const p = generateResume('My resume', 'Job ad', META, 'ats', 'llama3', vi.fn());
     await flushUntilStreaming();
     emit('RESUME CONTENT');
     done();
     await p;
-    const sampling = samplingOf(client);
-    expect(sampling.topP).toBeUndefined();
-    expect(sampling.frequencyPenalty).toBeUndefined();
-    expect(sampling.presencePenalty).toBeUndefined();
-    expect(sampling.repeatPenalty).toBeUndefined();
+    expect(argOf(client).intent).toBe('deterministic');
+    expectNoLegacySamplingFields(client);
   });
 
-  it('metadata extraction (analysis) carries no sampling params', async () => {
+  it('metadata extraction (analysis) sends the deterministic intent', async () => {
     const client = register();
     const p = extractMetadata('My resume', 'Job ad', 'llama3');
     await flushUntilStreaming();
     emit('{}');
     done();
     await p;
-    const sampling = samplingOf(client);
-    expect(sampling.topP).toBeUndefined();
-    expect(sampling.frequencyPenalty).toBeUndefined();
-    expect(sampling.presencePenalty).toBeUndefined();
-    expect(sampling.repeatPenalty).toBeUndefined();
+    expect(argOf(client).intent).toBe('deterministic');
+    expectNoLegacySamplingFields(client);
+  });
+});
+
+describe('rewriteSelection intent (regression: previously bypassed resolveTemperature entirely)', () => {
+  // `rewriteSelection` sent a bare `0.3` literal that never went through
+  // `resolveTemperature`/`resolveSampling` — the per-model Ollama override
+  // never applied to inline rewrites. Now routed through the same
+  // per-`docType` Ollama-override lookup every other surface uses, but
+  // ALWAYS with `deterministic` intent, regardless of docType: a surgical
+  // span edit ("tighten this sentence") must never inherit a prose/
+  // detector-resistance profile just because the surrounding document does
+  // — that would reintroduce drift/fabrication risk into exactly the span
+  // the user is deliberately hand-shaping.
+  const argOf = (client: ReturnType<typeof register>) => {
+    const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
+    return call?.[0] as { temperature?: number; intent?: string };
+  };
+
+  it.each(['resume', 'cover-letter', 'application-answer', 'email'] as const)(
+    '%s rewrite always sends the deterministic intent',
+    async (docType) => {
+      const client = register();
+      const p = rewriteSelection({
+        selection: 'I led the migration',
+        instruction: 'Tighten this',
+        before: '',
+        after: '',
+        docType,
+        model: 'llama3',
+      });
+      await flushUntilStreaming();
+      emit('I led a critical migration');
+      done();
+      await p;
+      expect(argOf(client).intent).toBe('deterministic');
+    }
+  );
+
+  it('honors the per-step Ollama temperature override for the resolved step', async () => {
+    setActive('ollama', 'llama3');
+    usePreferencesStore.setState({
+      aiProviderConfig: {
+        activeProvider: 'ollama',
+        providers: {
+          ollama: { model: 'llama3', modelLimits: { llama3: { temperature: { cover: 0.9 } } } },
+        },
+      },
+    });
+    const client = register();
+    const p = rewriteSelection({
+      selection: 'I am writing to apply',
+      instruction: 'Make it warmer',
+      before: '',
+      after: '',
+      docType: 'cover-letter',
+      model: 'llama3',
+    });
+    await flushUntilStreaming();
+    emit('I am delighted to apply');
+    done();
+    await p;
+    expect(argOf(client).temperature).toBeCloseTo(0.9);
   });
 });
 
