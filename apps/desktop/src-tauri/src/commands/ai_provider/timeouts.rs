@@ -16,6 +16,8 @@
 
 use std::time::Duration;
 
+use crate::ipc_contracts::ai_timeouts::{EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS};
+
 // ── Chat generation ─────────────────────────────────────────────────────────────
 
 /// Streaming chat completion (`chat_stream`): the long-running SSE/JSON stream a
@@ -23,24 +25,28 @@ use std::time::Duration;
 /// BASELINE — every `chat_stream` call site uses [`stream_deadline`] (which
 /// scales this by the request's reasoning effort), never this constant
 /// directly, so a high-effort generation on a slow model isn't killed
-/// mid-stream by a one-size-fits-all cap. Kept `pub` (rather than folded into
-/// `stream_deadline`) because it's also the number the renderer's own
-/// `STREAM_TIMEOUT_MS` (`renderer/lib/generate/stream-promise.ts`) must be
-/// derived from — see that file's `computeStreamTimeoutMs` and its
-/// cross-language relationship test.
-pub const STREAM: Duration = Duration::from_secs(300);
+/// mid-stream by a one-size-fits-all cap.
+///
+/// The value itself is generated from `packages/shared/src/ai-timeouts.ts`
+/// (`STREAM_BASELINE_SECS`, via `pnpm gen:ipc` →
+/// `ipc_contracts::ai_timeouts`) — the SAME source the renderer's own
+/// `computeStreamTimeoutMs` (`renderer/lib/generate/stream-promise.ts`)
+/// imports directly, so the two sides can no longer drift independently;
+/// `pnpm gen:ipc:check` fails if this constant and the TS source disagree.
+pub const STREAM: Duration = Duration::from_secs(STREAM_BASELINE_SECS);
 
 /// Reasoning-effort → [`STREAM`] multiplier. `req.effort` (`AiGenerateRequest`)
 /// is a closed, cross-provider vocabulary (see `OPENAI_EFFORT_LEVELS`,
 /// `OLLAMA_EFFORT_LEVELS`, `anthropic_effort_levels`, `gemini_effort_levels`) —
-/// this table is the union of every level any adapter currently exposes.
-/// "minimal"/"low"/unset/unrecognized get 1.0 (no reason to extend the
-/// baseline); everything above that scales up, since a higher reasoning
-/// budget is the actual driver of a stream legitimately running long. A new
-/// provider that reuses this SAME `effort` vocabulary benefits automatically;
-/// one that ever needs a genuinely new tier name already requires touching
-/// its own `effort_levels()` to expose it, so adding a match arm here at the
-/// same time is not a departure from the zero-change-per-provider rule.
+/// the underlying table (generated `EFFORT_TIMEOUT_MULTIPLIER`) is the union of
+/// every level any adapter currently exposes. "minimal"/"low"/unset/unrecognized
+/// get 1.0 (no reason to extend the baseline); everything above that scales up,
+/// since a higher reasoning budget is the actual driver of a stream legitimately
+/// running long. A new provider that reuses this SAME `effort` vocabulary
+/// benefits automatically; one that ever needs a genuinely new tier name already
+/// requires touching its own `effort_levels()` to expose it, so extending the
+/// shared table at the same time is not a departure from the
+/// zero-change-per-provider rule.
 ///
 /// TIER ORDER, because it is not alphabetical and reads wrong at a glance:
 /// `minimal < low < medium < high < xhigh < max`. **`max` is the TOP tier, not
@@ -49,16 +55,17 @@ pub const STREAM: Duration = Duration::from_secs(300);
 /// high | xhigh | max`). An earlier version of this table gave `max` a SMALLER
 /// multiplier than `xhigh`, so the highest-effort requests got the shortest
 /// deadline — the exact failure this function exists to prevent, reserved for
-/// the runs most likely to hit it. Keep the arms in ascending tier order and
-/// keep the monotonicity test's array in that same order, or it will pass
-/// while pinning the inversion.
+/// the runs most likely to hit it. The generated table
+/// (`packages/shared/src/ai-timeouts.ts`) keeps its entries in ascending tier
+/// order for the same reason — keep the monotonicity test's array in that same
+/// order too, or it will pass while pinning the inversion.
 fn effort_multiplier(effort: Option<&str>) -> f64 {
     match effort {
-        Some("medium") => 1.5,
-        Some("high") => 2.0,
-        Some("xhigh") => 2.5,
-        Some("max") => 3.0,
-        _ => 1.0,
+        Some(e) => EFFORT_TIMEOUT_MULTIPLIER
+            .iter()
+            .find(|(tier, _)| *tier == e)
+            .map_or(1.0, |(_, mult)| *mult),
+        None => 1.0,
     }
 }
 

@@ -17,45 +17,25 @@
  *     to `JOB_POLL_INTERVAL_MS = 3_000`.
  */
 
+import { EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS } from '@ajh/shared';
+
 import type { AppClient } from '../app-client';
 import { createThinkSplitter } from './think-split';
 
 /**
  * Baseline wall-clock budget for a single streamed generation (ms), before
- * {@link EFFORT_TIMEOUT_MULTIPLIER} scaling. MUST match the Rust
- * `timeouts::STREAM` baseline (`apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs`)
- * — see {@link computeStreamTimeoutMs}'s doc for why the two can't literally
- * share code and are pinned by a test instead.
+ * {@link EFFORT_TIMEOUT_MULTIPLIER} scaling. Derived from the shared
+ * {@link STREAM_BASELINE_SECS} — the SAME constant the Rust `timeouts::STREAM`
+ * baseline (`apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs`) is
+ * generated from (`packages/shared/src/ai-timeouts.ts`, via `pnpm gen:ipc`),
+ * so the two can no longer drift independently. See
+ * {@link computeStreamTimeoutMs}'s doc for the one invariant that still needs
+ * its own test even so.
  */
-const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
+const STREAM_TIMEOUT_MS = STREAM_BASELINE_SECS * 1000;
 
 /** Interval between job-status poll ticks (ms). */
 const JOB_POLL_INTERVAL_MS = 3_000;
-
-/**
- * Reasoning-effort → {@link STREAM_TIMEOUT_MS} multiplier. MUST mirror Rust's
- * `effort_multiplier` (`timeouts.rs`) exactly — same closed vocabulary, same
- * numbers — or the two deadlines could disagree about which effort level
- * warrants extra time. Rust and TS can't share a literal table across the IPC
- * boundary, so this is duplicated deliberately; `stream-promise.test.ts`'s
- * `computeStreamTimeoutMs` tests pin the one invariant that actually matters
- * (the renderer timeout for a given effort always exceeds the Rust backend's
- * own scaled deadline for that SAME effort, by at least {@link OUTER_BOUND_MARGIN_MS}),
- * so a future edit to either table that breaks the relationship fails a test
- * instead of silently drifting.
- */
-const EFFORT_TIMEOUT_MULTIPLIER: Record<string, number> = {
-  // Ascending tier order — `max` is the TOP tier, above `xhigh`, per Anthropic's
-  // effort docs and OpenAI's `reasoning_effort`. Not alphabetical, and it reads
-  // wrong at a glance: an earlier version had `max` below `xhigh`, giving the
-  // highest-effort runs the shortest deadline. Mirrors `effort_multiplier` in
-  // `apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs` — keep both in
-  // this order.
-  medium: 1.5,
-  high: 2.0,
-  xhigh: 2.5,
-  max: 3.0,
-};
 
 /**
  * Safety margin (ms) the renderer timeout adds on top of the backend's own

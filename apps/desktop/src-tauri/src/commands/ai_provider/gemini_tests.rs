@@ -318,22 +318,25 @@ fn sampling_profile_declares_real_values_per_intent_on_a_recognized_pre_v3_model
 #[test]
 fn sampling_profile_declares_real_values_for_a_non_gemini_prefixed_pre_v3_model() {
     // `parse_model_page` filters Google's `/v1beta/models` listing only on
-    // the `models/` wrapper prefix, not on family, so a `gemma-*` id reaches
-    // this app's model picker exactly like a `gemini-*` one and is a real
-    // Google model served by the same endpoint — it must get the SAME
-    // deterministic profile as a `gemini-`-prefixed pre-v3 model, not fall
-    // back to neutral. (A previous version of `gemini_is_pre_v3` required
-    // the literal `gemini-` prefix and silently dropped these to neutral —
-    // see that function's own doc comment for why that was wrong and
-    // reverted.)
-    let model = "gemma-3-27b-it";
-    assert_eq!(
-        GeminiClient.sampling_profile(model, Intent::Deterministic),
-        SamplingProfile {
-            temperature: Some(DETERMINISTIC_TEMPERATURE),
-            ..SamplingProfile::default()
-        }
-    );
+    // the `models/` wrapper prefix, not on family, so a `gemma-*`/`learnlm-*`
+    // id reaches this app's model picker exactly like a `gemini-*` one and is
+    // a real Google model served by the same endpoint — both must get the
+    // SAME deterministic profile as a `gemini-`-prefixed pre-v3 model, not
+    // fall back to neutral. (A previous version of `gemini_is_pre_v3`
+    // required the literal `gemini-` prefix and silently dropped these to
+    // neutral — see that function's own doc comment for why that was wrong
+    // and reverted; there is no "unrecognized model" case left at this gate
+    // to assert neutrality for.)
+    for model in ["gemma-3-27b-it", "learnlm-2.0-flash-experimental"] {
+        assert_eq!(
+            GeminiClient.sampling_profile(model, Intent::Deterministic),
+            SamplingProfile {
+                temperature: Some(DETERMINISTIC_TEMPERATURE),
+                ..SamplingProfile::default()
+            },
+            "model {model} must get the deterministic profile, not neutral"
+        );
+    }
 }
 
 #[test]
