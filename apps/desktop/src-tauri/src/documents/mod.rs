@@ -496,6 +496,53 @@ impl DocumentStore {
                 Ok(())
             },
         },
+        Migration {
+            // One-shot repair for rows written before PR #955 fixed
+            // `pdf_text_string` (see `extraction::pdf::pdf_text_string` and
+            // `repair_utf16_mojibake`, which documents the exact corruption
+            // shape). A pre-fix PDF import decoded a link anchor's raw bytes
+            // with `String::from_utf8_lossy`, and that mojibake was persisted
+            // verbatim into `documents.text`.
+            //
+            // Only rows with an embedded NUL are candidates — SQLite's
+            // `length()` stops at the first NUL in NUL-bearing TEXT, so
+            // `instr(cast(text as blob), x'00')` is used instead (a `LIKE
+            // '%' || char(0) || '%'` would never match: `char(0)` does not
+            // produce a NUL in SQLite). The repair itself runs in RUST, not
+            // SQL — `replace()` on NUL-bearing TEXT is not dependable in
+            // SQLite either.
+            //
+            // A single row's UPDATE failing is logged and skipped rather than
+            // propagated: this is a best-effort repair of already-corrupt
+            // data, not new data, so aborting the whole migration would roll
+            // back every other row's fix AND leave `user_version` stuck
+            // retrying the identical failure on every future startup —
+            // bricking the app over a cosmetic mojibake defect.
+            name: "repair_pre_pdf_text_string_mojibake",
+            up: |conn| {
+                let rows: Vec<(String, String)> = {
+                    let mut stmt = conn.prepare(
+                        "SELECT id, text FROM documents WHERE instr(cast(text as blob), x'00') > 0",
+                    )?;
+                    let mapped = stmt.query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?;
+                    mapped.filter_map(|r| r.ok()).collect()
+                };
+                for (id, text) in rows {
+                    let repaired = crate::extraction::pdf::repair_utf16_mojibake(&text);
+                    if let Err(e) = conn.execute(
+                        "UPDATE documents SET text = ?1 WHERE id = ?2",
+                        params![repaired.as_ref(), id],
+                    ) {
+                        tracing::warn!(
+                            "[db] repair_pre_pdf_text_string_mojibake: failed to repair document {id}: {e}"
+                        );
+                    }
+                }
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {

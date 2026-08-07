@@ -225,6 +225,60 @@ impl AiGenerationStore {
                 )
             },
         },
+        Migration {
+            // One-shot repair for rows written before PR #955 fixed
+            // `pdf_text_string` (see `extraction::pdf::pdf_text_string` and
+            // `repair_utf16_mojibake`, which documents the exact corruption
+            // shape). A generation built from a pre-fix PDF import can carry
+            // the same mojibake into `resume_text` and/or `cover_letter_text`
+            // (whichever text was assembled from the corrupted extraction).
+            //
+            // Only rows with an embedded NUL in either column are candidates
+            // — SQLite's `length()` stops at the first NUL in NUL-bearing
+            // TEXT, so `instr(cast(<col> as blob), x'00')` is used instead.
+            // The repair runs in RUST, not SQL — `replace()` on NUL-bearing
+            // TEXT is not dependable in SQLite, and `char(0)` cannot produce
+            // a NUL to match against in the first place.
+            //
+            // A single row's UPDATE failing is logged and skipped rather than
+            // propagated: this is a best-effort repair of already-corrupt
+            // data, not new data, so aborting the whole migration would roll
+            // back every other row's fix AND leave `user_version` stuck
+            // retrying the identical failure on every future startup —
+            // bricking the app over a cosmetic mojibake defect.
+            name: "repair_pre_pdf_text_string_mojibake",
+            up: |conn| {
+                let rows: Vec<(String, String, String)> = {
+                    let mut stmt = conn.prepare(
+                        "SELECT id, resume_text, cover_letter_text FROM ai_generations
+                         WHERE instr(cast(resume_text as blob), x'00') > 0
+                            OR instr(cast(cover_letter_text as blob), x'00') > 0",
+                    )?;
+                    let mapped = stmt.query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    })?;
+                    mapped.filter_map(|r| r.ok()).collect()
+                };
+                for (id, resume_text, cover_letter_text) in rows {
+                    let resume_repaired = crate::extraction::pdf::repair_utf16_mojibake(&resume_text);
+                    let cover_repaired =
+                        crate::extraction::pdf::repair_utf16_mojibake(&cover_letter_text);
+                    if let Err(e) = conn.execute(
+                        "UPDATE ai_generations SET resume_text = ?1, cover_letter_text = ?2 WHERE id = ?3",
+                        params![resume_repaired.as_ref(), cover_repaired.as_ref(), id],
+                    ) {
+                        tracing::warn!(
+                            "[db] repair_pre_pdf_text_string_mojibake: failed to repair ai_generation {id}: {e}"
+                        );
+                    }
+                }
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use lopdf::{Dictionary, Document, Object};
 use tracing::warn;
 
@@ -172,6 +174,44 @@ fn decode_utf16(bytes: &[u8], big_endian: bool) -> String {
         .collect()
 }
 
+/// One-shot repair for `documents.text` / `ai_generations.resume_text` /
+/// `ai_generations.cover_letter_text` rows written **before** [`pdf_text_string`]
+/// existed (PR #955). This is NOT part of any live extraction path — it only
+/// undoes damage already sitting in the store, called exclusively from the
+/// one-time DB migrations `documents::DocumentStore::MIGRATIONS` and
+/// `ai_generations::AiGenerationStore::MIGRATIONS`.
+///
+/// Before that fix, a PDF text string's raw bytes were decoded with
+/// `String::from_utf8_lossy`. For the common producer (UTF-16BE behind a
+/// `FE FF` BOM), that turns each BOM byte — individually invalid UTF-8 — into
+/// its own U+FFFD, while the UTF-16BE code units of the (mostly-ASCII) text
+/// survive byte-for-byte, because every byte `< 0x80`, including each unit's
+/// NUL high byte, is independently valid UTF-8 on its own. The stored result
+/// looks like `- [` + `\u{FFFD}\u{FFFD}` (the mangled BOM) +
+/// `\0a\0i\0j\0o\0b…` (the text, NUL-interleaved) + a clean, never-corrupted
+/// `](url)` suffix (added by the markdown link builder, not the byte decode).
+/// Dropping the doubled U+FFFD and every NUL recovers the original text
+/// exactly — the NUL-interleaving already *is* the correct ASCII text with a
+/// spacer byte dropped in between each character.
+///
+/// Gated on the string containing a NUL: an embedded NUL is never legitimate
+/// in stored document text, so it is an unambiguous marker that a row
+/// predates the fix, and it is what keeps a legitimate lone U+FFFD elsewhere
+/// in a document (a genuinely undecodable byte, unrelated to this bug) from
+/// being touched. Returns `Cow::Borrowed` when the gate doesn't fire — the
+/// overwhelmingly common, already-clean case — so callers pay no allocation.
+pub(crate) fn repair_utf16_mojibake(s: &str) -> Cow<'_, str> {
+    if !s.contains('\0') {
+        return Cow::Borrowed(s);
+    }
+    Cow::Owned(
+        s.replace("\u{FFFD}\u{FFFD}", "")
+            .chars()
+            .filter(|&c| c != '\0')
+            .collect(),
+    )
+}
+
 /// Append extracted links at the end of the text as a markdown reference list.
 ///
 /// PDF text and annotation layers use separate coordinate systems; there is no
@@ -305,5 +345,55 @@ mod test {
     #[test]
     fn undefined_pdfdocencoding_bytes_become_replacement_chars() {
         assert_eq!(pdf_text_string(b"a\xADb"), "a\u{FFFD}b");
+    }
+
+    // ── repair_utf16_mojibake (one-shot pre-#955 data repair) ─────────────────
+
+    /// The exact byte shape hex-dumped from a live `documents.text` row:
+    /// `- [` + doubled U+FFFD (the BOM misread as UTF-8) + NUL-interleaved
+    /// "aijobhunter.app" (the UTF-16BE text misread as UTF-8) + the clean
+    /// `](url)\n` suffix, which was never corrupted — it's appended by the
+    /// markdown link builder, not produced by the PDF byte decode.
+    fn corrupt_markdown_link_tail() -> String {
+        let mut bytes = b"- [".to_vec();
+        bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]); // doubled U+FFFD
+        for &b in b"aijobhunter.app" {
+            bytes.push(0x00);
+            bytes.push(b);
+        }
+        bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
+        String::from_utf8(bytes).expect("every byte here is individually valid UTF-8")
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_recovers_the_exact_live_row_shape() {
+        let corrupt = corrupt_markdown_link_tail();
+        assert!(
+            corrupt.contains('\0'),
+            "test input must actually contain the NUL that gates the repair"
+        );
+        assert_eq!(
+            repair_utf16_mojibake(&corrupt),
+            "- [aijobhunter.app](https://aijobhunter.app/)\n"
+        );
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_leaves_a_clean_string_unchanged() {
+        let clean = "Software Engineer with 5 years experience";
+        assert_eq!(repair_utf16_mojibake(clean), clean);
+        assert!(
+            matches!(repair_utf16_mojibake(clean), Cow::Borrowed(_)),
+            "the common clean case must not allocate"
+        );
+    }
+
+    #[test]
+    fn repair_utf16_mojibake_leaves_a_lone_replacement_char_without_a_nul_untouched() {
+        // A genuinely undecodable byte elsewhere in a document (no NUL nearby)
+        // must survive — the NUL gate is what keeps this repair scoped to real
+        // pre-#955 rows instead of eating every replacement char in the store.
+        let legit = "Caf\u{FFFD} — one bad byte, no embedded NUL";
+        assert_eq!(repair_utf16_mojibake(legit), legit);
     }
 }

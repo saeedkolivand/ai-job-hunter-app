@@ -209,10 +209,16 @@ fn add_email_draft_migration_backfills_legacy_rows_with_empty_strings() {
     let path = dir.path().join("ai_generations.db");
     {
         // Build the store at the PREVIOUS schema version by running every
-        // migration except the last one (`add_email_draft`).
+        // migration up to (not including) `add_email_draft`. Looked up BY
+        // NAME rather than "all but the last" so this stays correct
+        // regardless of what gets appended after it.
+        let all = AiGenerationStore::MIGRATIONS;
+        let add_email_draft_idx = all
+            .iter()
+            .position(|m| m.name == "add_email_draft")
+            .expect("add_email_draft must still be registered");
         let mut conn = crate::db::open(&path).unwrap();
-        let previous = &AiGenerationStore::MIGRATIONS[..AiGenerationStore::MIGRATIONS.len() - 1];
-        crate::db::run_migrations(&mut conn, previous).unwrap();
+        crate::db::run_migrations(&mut conn, &all[..add_email_draft_idx]).unwrap();
         assert!(
             !crate::db::column_exists(&conn, "ai_generations", "email_subject"),
             "precondition: the legacy schema has no email columns"
@@ -233,6 +239,79 @@ fn add_email_draft_migration_backfills_legacy_rows_with_empty_strings() {
     assert_eq!(list[0].resume_text, "R", "existing data is untouched");
     assert_eq!(list[0].email_subject, "", "new column defaults to empty");
     assert_eq!(list[0].email_body, "");
+}
+
+/// Bring a fresh DB up to JUST BEFORE the repair migration (simulating an
+/// install that generated a résumé/cover letter from a PDF import before PR
+/// #955 fixed `pdf_text_string`), seed a corrupt row with the EXACT byte
+/// shape hex-dumped from a live `ai_generations` row (in BOTH `resume_text`
+/// and `cover_letter_text`) plus an unrelated clean row, then open it for
+/// REAL — proving the `Migration { .. }` entry is actually registered and
+/// reached, and that it never touches a row it shouldn't.
+#[test]
+fn repair_pre_pdf_text_string_mojibake_heals_a_pre_seeded_row_through_a_real_open() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("ai_generations.db");
+
+    let all = AiGenerationStore::MIGRATIONS;
+    let repair_idx = all
+        .iter()
+        .position(|m| m.name == "repair_pre_pdf_text_string_mojibake")
+        .expect("repair_pre_pdf_text_string_mojibake must still be registered");
+
+    // "- [" + doubled U+FFFD (the BOM misread as UTF-8) + NUL-interleaved
+    // "aijobhunter.app" (UTF-16BE misread as UTF-8) + the never-corrupted
+    // "](url)\n" suffix — see `extraction::pdf::repair_utf16_mojibake`.
+    let mut corrupt_bytes = b"- [".to_vec();
+    corrupt_bytes.extend_from_slice(&[0xEF, 0xBF, 0xBD, 0xEF, 0xBF, 0xBD]);
+    for &b in b"aijobhunter.app" {
+        corrupt_bytes.push(0x00);
+        corrupt_bytes.push(b);
+    }
+    corrupt_bytes.extend_from_slice(b"](https://aijobhunter.app/)\n");
+    let corrupt_text = String::from_utf8(corrupt_bytes).unwrap();
+    let expected_repaired = "- [aijobhunter.app](https://aijobhunter.app/)\n";
+    let clean_cover_letter = "Dear Hiring Manager, I'm excited to apply.".to_string();
+
+    {
+        let mut conn = crate::db::open(&path).unwrap();
+        crate::db::run_migrations(&mut conn, &all[..repair_idx]).unwrap();
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text)
+             VALUES ('corrupt', 0, ?1, ?1)",
+            params![corrupt_text],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text)
+             VALUES ('clean', 0, 'resume text', ?1)",
+            params![clean_cover_letter],
+        )
+        .unwrap();
+    }
+
+    // A REAL open() — must run the remaining migrations, including the repair.
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let list = store.list();
+    let corrupt = list.iter().find(|r| r.id == "corrupt").unwrap();
+    let clean = list.iter().find(|r| r.id == "clean").unwrap();
+
+    assert_eq!(corrupt.resume_text, expected_repaired);
+    assert_eq!(corrupt.cover_letter_text, expected_repaired);
+    assert!(
+        !corrupt.resume_text.contains('\0') && !corrupt.cover_letter_text.contains('\0'),
+        "repaired text must carry no NULs; got resume={:?} cover={:?}",
+        corrupt.resume_text,
+        corrupt.cover_letter_text
+    );
+    assert_eq!(
+        clean.resume_text, "resume text",
+        "a row with no embedded NUL must be byte-identical after the migration"
+    );
+    assert_eq!(
+        clean.cover_letter_text, clean_cover_letter,
+        "a row with no embedded NUL must be byte-identical after the migration"
+    );
 }
 
 /// The email fields merge exactly like `cover_letter_text` (`pick`): a save that
