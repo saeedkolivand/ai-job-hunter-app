@@ -38,6 +38,7 @@ import {
   MatchResumeRequestSchema,
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
+  ResumeTrimSuggestionsRequestSchema,
   ScrapeBoardsRequestSchema,
   ScrapeUrlRequestSchema,
 } from '../src/schemas/index.js';
@@ -118,7 +119,13 @@ const MODULES: ModuleSpec[] = [
   },
   {
     outFile: 'apps/desktop/src-tauri/src/ipc_contracts/matching.rs',
-    structs: [{ rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema }],
+    structs: [
+      { rustName: 'MatchResumeRequest', schema: MatchResumeRequestSchema },
+      {
+        rustName: 'ResumeTrimSuggestionsRequest',
+        schema: ResumeTrimSuggestionsRequestSchema,
+      },
+    ],
   },
   {
     outFile: 'apps/desktop/src-tauri/src/ipc_contracts/dedup.rs',

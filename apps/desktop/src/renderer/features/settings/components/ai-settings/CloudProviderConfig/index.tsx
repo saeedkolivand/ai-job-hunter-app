@@ -5,12 +5,11 @@ import type { ProviderModelInfo } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, EmptyState, ErrorState, Input, useNotification } from '@ajh/ui';
 
+import { EffortPicker } from '@/components/ui/EffortPicker';
 import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
 import { isProviderConfigured } from '@/lib/ai-providers/provider-meta';
 import { useSetProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
-
-import { EffortPicker } from '../EffortPicker';
 
 interface ProviderMeta {
   label: string;

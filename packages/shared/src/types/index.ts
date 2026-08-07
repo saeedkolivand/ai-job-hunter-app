@@ -118,6 +118,26 @@ export interface MatchScore {
   guidance?: string;
 }
 
+/** One résumé bullet, ranked by the job vocabulary it carries. */
+export interface TrimCandidate {
+  /** The bullet's markdown-stripped text, as the reader sees it. */
+  text: string;
+  /** Readable (unstemmed) job keywords this line carries — may be empty. */
+  hits: string[];
+  score: number;
+}
+
+/**
+ * Advisory trim ranking for one résumé/posting pair. `lines` is ordered
+ * weakest-first (ties longest-first), so the top entries are the cheapest to
+ * cut. Empty when the posting has no extractable keywords.
+ */
+export interface TrimSuggestions {
+  /** Customary résumé length for the export market, in pages. */
+  maxPages: number;
+  lines: TrimCandidate[];
+}
+
 export interface RuntimeHealth {
   ai: { ready: boolean; model?: string; memoryMB?: number };
   /**

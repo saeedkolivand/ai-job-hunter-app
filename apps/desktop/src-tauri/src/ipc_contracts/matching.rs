@@ -12,3 +12,13 @@ pub struct MatchResumeRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantic_scoring_enabled: Option<bool>,
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct ResumeTrimSuggestionsRequest {
+    pub resume_text: String,
+    pub job_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+}

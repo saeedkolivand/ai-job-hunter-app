@@ -204,3 +204,66 @@ describe('PdfPreview (#24)', () => {
     );
   });
 });
+
+// ── Stale-render invalidation (CodeRabbit #955, outside-diff finding) ────────
+describe('PdfPreview — an in-flight render is invalidated when the doc goes away', () => {
+  it('does not publish pages or a page count for text that was cleared mid-render', async () => {
+    let resolveRender: ((pages: string[]) => void) | undefined;
+    mockRender.mockImplementation(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveRender = resolve;
+        })
+    );
+    const onPageCount = vi.fn();
+
+    const { rerender } = render(
+      <PdfPreview text="A real resume body" {...PROPS} onPageCount={onPageCount} />
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(mockRender).toHaveBeenCalledTimes(1);
+
+    // The document is cleared while the render is still in flight.
+    rerender(<PdfPreview text="" {...PROPS} onPageCount={onPageCount} />);
+    // …and only now does the stale render resolve.
+    await act(async () => {
+      resolveRender?.(['<svg>stale</svg>', '<svg>stale2</svg>']);
+      await Promise.resolve();
+    });
+
+    // Neither the pages nor the count may reach the UI: publishing 2 pages here
+    // would show a document that is no longer on screen, and would drive the
+    // trim panel off a stale length.
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(onPageCount).not.toHaveBeenCalledWith(2);
+  });
+
+  it('does the same when the preview is paused mid-render', async () => {
+    let resolveRender: ((pages: string[]) => void) | undefined;
+    mockRender.mockImplementation(
+      () =>
+        new Promise<string[]>((resolve) => {
+          resolveRender = resolve;
+        })
+    );
+    const onPageCount = vi.fn();
+
+    const { rerender } = render(
+      <PdfPreview text="A real resume body" {...PROPS} onPageCount={onPageCount} />
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    rerender(<PdfPreview text="A real resume body" {...PROPS} paused onPageCount={onPageCount} />);
+    await act(async () => {
+      resolveRender?.(['<svg>stale</svg>']);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(onPageCount).not.toHaveBeenCalledWith(1);
+  });
+});

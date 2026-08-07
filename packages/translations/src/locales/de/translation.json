@@ -1272,6 +1272,12 @@
       "failed": "Vorschau nicht verfügbar",
       "empty": "Generieren Sie ein Dokument, um es hier in der Vorschau zu sehen."
     },
+    "trim": {
+      "summary_one": "{{pages}} Seiten — hier sind {{maxPages}} üblich. 1 Zeile zum Kürzen.",
+      "summary_other": "{{pages}} Seiten — hier sind {{maxPages}} üblich. {{count}} Zeilen zum Kürzen.",
+      "hint": "Sortiert danach, wie wenig jede Zeile von dieser Stellenanzeige abdeckt. Zum Kürzen oben bearbeiten.",
+      "noKeywords": "Keine Zeile wiegt weniger als eine andere — diese Stellenanzeige enthält zu wenig Text für eine Bewertung."
+    },
     "rewrite": {
       "trigger": "Mit KI umschreiben",
       "title": "Auswahl umschreiben",

@@ -26,6 +26,8 @@ interface PdfPreviewProps {
   locale?: string;
   /** Skip rendering — e.g. while the document is still generating. */
   paused?: boolean;
+  /** Rendered page count, emitted after each successful render. */
+  onPageCount?: (pages: number) => void;
   className?: string;
 }
 
@@ -63,6 +65,7 @@ export function PdfPreview({
   letterLayoutId,
   locale,
   paused = false,
+  onPageCount,
   className,
 }: PdfPreviewProps) {
   const { t } = useTranslation();
@@ -74,6 +77,12 @@ export function PdfPreview({
   const urlsRef = useRef<string[]>([]);
   // Track last rendered docType to detect doc-switch vs. same-doc edit.
   const prevDocTypeRef = useRef<string | null>(null);
+  // Latest-ref for the page-count callback so an inline arrow from the parent
+  // does not become a render dependency and re-trigger the render effect.
+  const onPageCountRef = useRef(onPageCount);
+  useEffect(() => {
+    onPageCountRef.current = onPageCount;
+  });
 
   // Revoke all object URLs on unmount.
   useEffect(() => {
@@ -84,6 +93,11 @@ export function PdfPreview({
 
   useEffect(() => {
     if (paused || !text.trim()) {
+      // Invalidate any render already in flight BEFORE returning. Without this
+      // bump, a render started for the previous text resolves after we've gone
+      // idle, still sees `token === renderToken.current`, and publishes pages
+      // (and a page count) for a document that is no longer on screen.
+      ++renderToken.current;
       setStatus('idle');
       return;
     }
@@ -99,6 +113,7 @@ export function PdfPreview({
       urlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       urlsRef.current = [];
       setPageUrls([]);
+      onPageCountRef.current?.(0);
     }
 
     const token = ++renderToken.current;
@@ -127,6 +142,7 @@ export function PdfPreview({
           urlsRef.current = newUrls;
           setPageUrls(newUrls);
           setStatus('ready');
+          onPageCountRef.current?.(newUrls.length);
         } catch {
           if (token !== renderToken.current) return;
           setStatus('error');
