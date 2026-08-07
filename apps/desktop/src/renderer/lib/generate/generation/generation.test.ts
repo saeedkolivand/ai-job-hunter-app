@@ -922,6 +922,25 @@ describe('seedHeaderFromProfile — header-boundary edge cases (security review)
     const out = seedHeaderFromProfile(text, PROFILE, CONTACT_LINE);
     expect(out).toBe('\n\nJordan Lee\nBerlin | jordan@profile.example.com\n\nSUMMARY\nSome text.');
   });
+
+  // CodeRabbit (round 8): the never-overwrite protection on the first
+  // content line was hardcoded to index 0, which stopped covering the line
+  // it protects once the header block itself started at `firstContentLine`
+  // instead of index 0 (round 7). With ≥2 leading blanks and no `fullName`
+  // (so `reconciledNameIndex` stays -1), a combined "Jane Doe |
+  // jane@old.example.com" first content line now sits at index ≥ 2 — inside
+  // the scan range, `isHeaderContactLine`-eligible, and (without this fix)
+  // blind-overwritten with the profile's contact line, erasing "Jane Doe"
+  // entirely since there's no separate name line to fall back to.
+  it('does not overwrite a combined name+contact first content line behind two leading blank lines', () => {
+    const profile = { phone: '+49 30 0000000' };
+    const contactLine = '+49 30 0000000';
+    const text = '\n\nJane Doe | jane@old.example.com\n\nEXPERIENCE\nAcme Corp';
+    const out = seedHeaderFromProfile(text, profile, contactLine);
+    expect(out).toBe(
+      '\n\nJane Doe | jane@old.example.com\n+49 30 0000000\n\nEXPERIENCE\nAcme Corp'
+    );
+  });
 });
 
 describe('generateCoverLetter', () => {

@@ -470,14 +470,20 @@ function pickReplacementIndex(lines: string[], matches: number[]): number {
  * line it mis-scans as contact-shaped) — whether by deleting it outright or
  * by silently overwriting it in place, which is just as much a loss.
  *
- * Index 0 is never a candidate for the replacement scan below (which starts
- * at `i = 1`), including when there's no `fullName` and line 0 is already
- * contact-shaped by Rust's narrower line-0 rule (`isFirstLineContactShaped`)
- * — a combined "Jane Doe | jane@example.com" with no separate name line.
- * Were it eligible and the ONLY candidate, overwriting it would erase "Jane
- * Doe" entirely (there is no separate name line to fall back to), which is
- * worse than leaving it untouched and inserting the profile's line right
- * after — so it always falls to the "insert" branch instead.
+ * The first content line ({@link firstContentLine} — NOT unconditionally
+ * index 0; with N ≥ 2 leading blank lines it can sit deeper in the block) is
+ * never a candidate for the replacement scan below, including when there's
+ * no `fullName` and that line is already contact-shaped by Rust's narrower
+ * line-0-ONLY rule (`isFirstLineContactShaped`) — a combined
+ * "Jane Doe | jane@example.com" with no separate name line. Were it eligible
+ * and the ONLY candidate, overwriting it would erase "Jane Doe" entirely
+ * (there is no separate name line to fall back to), which is worse than
+ * leaving it untouched and inserting the profile's line right after — so it
+ * always falls to the "insert" branch instead. (CodeRabbit, round 8: this
+ * exclusion originally hardcoded index 0, which silently stopped covering
+ * the line it protects once the header block itself started at
+ * `firstContentLine` instead of index 0 — the exact line a combined
+ * name+contact first line moves to behind ≥2 leading blanks.)
  *
  * Before the unshift/replace fallback above runs, the `fullName` branch
  * first searches the header block ({@link findNameLine}, bounded by the same
@@ -586,21 +592,33 @@ export function seedHeaderFromProfile(
     // shifted every index by one.
     const blockEnd = headerBlockEnd(lines);
 
-    // Starts at i = 1: index 0 is never a candidate here — see the doc
-    // comment above.
+    // The first content line is never a candidate here (loop starts at
+    // i = 1, and this second check excludes it again when it sits deeper
+    // than 1 behind ≥2 leading blanks) — see the doc comment above. Computed
+    // once, not per-iteration: it doesn't change across the loop (nothing
+    // above this point mutates `lines`' length once we're inside the
+    // contact branch).
+    const contentStart = firstContentLine(lines);
     const matches: number[] = [];
     for (let i = 1; i < blockEnd; i++) {
-      // The name step above can reconcile fullName IN PLACE onto a line at
-      // i > 0 (a leading-blank shifted the real name line down one) without
-      // changing its casing — `sanitizeHeaderName` never Title-Cases, since
-      // the profile's own casing is what the user typed. An ALL-CAPS profile
-      // name therefore stays ALL-CAPS after reconciliation and would re-trip
-      // `looksLikeHeaderBoundary` on the very next line, right here, breaking
-      // the scan before it ever reaches the real contact line below and
-      // stacking a second contact line via the insert branch. Skip it
-      // exactly like index 0 is already skipped: no boundary check, no
-      // match candidacy, scan continues past it to the real contact line.
-      if (i === reconciledNameIndex) continue;
+      // Two independent exclusions, checked every iteration since either can
+      // land anywhere in the block (not just near the top):
+      // - `contentStart`: the first content line — see the doc comment above
+      //   for why it can never be a candidate, regardless of `fullName`.
+      // - `reconciledNameIndex`: the name step above can reconcile fullName
+      //   IN PLACE onto a DIFFERENT line at i > 0 (a leading-blank shifted
+      //   the real name line down one, or a non-name-shaped line sits ahead
+      //   of it) without changing its casing — `sanitizeHeaderName` never
+      //   Title-Cases, since the profile's own casing is what the user
+      //   typed. An ALL-CAPS profile name therefore stays ALL-CAPS after
+      //   reconciliation and would re-trip `looksLikeHeaderBoundary` right
+      //   here, breaking the scan before it ever reaches the real contact
+      //   line below and stacking a second one via the insert branch.
+      // These usually coincide (the name IS the first content line) but not
+      // always (a non-name, non-boundary line — an unrecognized subtitle —
+      // can sit ahead of the name inside the block), so both are checked
+      // independently rather than assuming equality.
+      if (i === contentStart || i === reconciledNameIndex) continue;
       const line = lines[i] ?? '';
       if (looksLikeHeaderBoundary(line)) break;
       if (isHeaderContactLine(line)) matches.push(i);
