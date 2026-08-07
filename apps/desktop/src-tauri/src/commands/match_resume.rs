@@ -1115,7 +1115,10 @@ Senior Engineer, Acme
             .iter()
             .position(|c| c.text.contains("Docker"))
             .expect("the Docker bullet must be present");
-        assert_eq!(docker, 2, "the Docker bullet is the strongest — cut it last");
+        assert_eq!(
+            docker, 2,
+            "the Docker bullet is the strongest — cut it last"
+        );
         assert!(ranked[docker].score > 0);
         // Hits are surfaced unstemmed — "kubernetes", never the stem "kubernet".
         assert!(
@@ -1132,7 +1135,10 @@ Senior Engineer, Acme
         let job = "Docker and Kubernetes platform engineering.";
         let ranked = rank_trim_candidates(RESUME, job);
         let zeroes: Vec<&TrimCandidate> = ranked.iter().filter(|c| c.score == 0).collect();
-        assert!(zeroes.len() >= 2, "expected at least two zero-scoring lines");
+        assert!(
+            zeroes.len() >= 2,
+            "expected at least two zero-scoring lines"
+        );
         assert!(
             zeroes[0].text.len() >= zeroes[1].text.len(),
             "equal-score lines must be ordered longest-first; got {:?} before {:?}",
@@ -1189,7 +1195,9 @@ Senior Engineer, Acme
             "section headers must not be offered for cutting"
         );
         assert!(
-            !ranked.iter().any(|c| c.text.contains("Senior Engineer, Acme")),
+            !ranked
+                .iter()
+                .any(|c| c.text.contains("Senior Engineer, Acme")),
             "job entries must not be offered for cutting"
         );
     }
