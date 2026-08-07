@@ -164,14 +164,20 @@ vi.mock('@/lib/match-band', async (importActual) => {
       variant,
       subtle,
       muted,
+      describe = true,
     }: {
       value: number;
       variant?: 'combined' | 'coverage';
       subtle?: boolean;
       muted?: boolean;
+      describe?: boolean;
     }) => {
       const tier = actual.scoreTier(value, variant ?? 'combined').key;
       const isMutedStyle = Boolean(muted) || (Boolean(subtle) && tier !== 'High');
+      // `describe` is echoed, not re-implemented: the question these tests ask
+      // is which value AUTOPILOTCARD passes at each call site (the provisional
+      // wrapper owns the copy and must opt out; the bare band must not). What
+      // the real MatchBand renders for it is match-band.test.tsx's job.
       return (
         <span
           data-testid="match-band"
@@ -179,6 +185,7 @@ vi.mock('@/lib/match-band', async (importActual) => {
           data-variant={variant ?? 'combined'}
           data-tier={tier}
           data-muted={isMutedStyle ? 'true' : 'false'}
+          data-describe={describe ? 'true' : 'false'}
         />
       );
     },
@@ -579,13 +586,27 @@ describe('AutopilotCard — provisional score marker', () => {
       header.click();
     });
 
-    // The native hover hint (title) is present...
-    expect(screen.getByTitle('autopilot.provisionalScoreHint')).toBeInTheDocument();
+    // The native hover hint (title) carries BOTH facts: what the tier claims,
+    // and that the number behind it is only an estimate. They answer different
+    // questions, so neither may be dropped.
+    // The band's own nearest titled ancestor — not just any title on the card.
+    const marker = screen.getByTestId('match-band').closest('[title]') as HTMLElement;
+    expect(marker.title).toContain('jobs.matchBand.desc.coverage.High');
+    expect(marker.title).toContain('autopilot.provisionalScoreHint');
+    // Exactly ONE title on this marker — the band must not render its own
+    // inside this wrapper, or the inner one wins on hover over the badge and
+    // hides the provisional caveat entirely.
+    expect(marker.querySelectorAll('[title]')).toHaveLength(0);
     // ...the "~" estimate prefix is visible...
     expect(screen.getByText('~')).toBeInTheDocument();
-    // ...an always-present sr-only span carries the same hint for screen
-    // readers (a `title` alone isn't reliably announced — TrustBadge precedent)...
-    expect(screen.getByText(': autopilot.provisionalScoreHint')).toHaveClass('sr-only');
+    // ...an always-present sr-only span carries the same words for screen
+    // readers (a `title` alone isn't reliably announced — TrustBadge
+    // precedent), and only ONE of them, not one per nested describer...
+    const srOnly = marker.querySelectorAll('.sr-only');
+    expect(srOnly).toHaveLength(1);
+    expect(srOnly[0]?.textContent).toBe(`: ${marker.title}`);
+    // The band itself must stay silent here — this wrapper speaks for it.
+    expect(screen.getByTestId('match-band')).toHaveAttribute('data-describe', 'false');
     // ...the band IS the High tier (proving this is genuinely a HIGH-score case)...
     const band = screen.getByTestId('match-band');
     expect(band).toHaveAttribute('data-tier', 'High');
@@ -608,6 +629,11 @@ describe('AutopilotCard — provisional score marker', () => {
     const band = screen.getByTestId('match-band');
     expect(band).toHaveAttribute('data-tier', 'High');
     expect(band).toHaveAttribute('data-muted', 'false');
+    // This band has NO wrapper carrying an explanation, so it must describe
+    // itself. Opting out here (as a blanket "opt out at both call sites" fix
+    // would have) leaves the badge a bare, unexplained word — the exact gap
+    // this feature exists to close.
+    expect(band).toHaveAttribute('data-describe', 'true');
   });
 
   it('treats an absent scoreProvisional field (older records) as non-provisional', async () => {

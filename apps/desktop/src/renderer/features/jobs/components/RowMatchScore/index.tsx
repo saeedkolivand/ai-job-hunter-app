@@ -4,7 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, HoverPopover } from '@ajh/ui';
 
 import { useRowMatchScore } from '@/features/jobs/providers';
-import { MatchBand } from '@/lib/match-band';
+import { MatchBand, matchBandDescriptionKey, scoreTier } from '@/lib/match-band';
 
 /**
  * Presentational per-row match score. Scores are fetched on-demand when the
@@ -23,13 +23,18 @@ export function RowMatchScore({ jobId }: { jobId: string }) {
   if (!hasResume) return null;
   if (!score) return null;
 
+  // What this tier means, then the estimate disclaimer. The band itself is
+  // `describe={false}` here — its native `title` would otherwise fire on hover
+  // alongside this popover and say a shorter version of the same thing.
+  const tierDescription = t(matchBandDescriptionKey(scoreTier(score.combined).key));
+
   return (
     <HoverPopover
       placement="top"
-      ariaLabel={t('jobs.scoreGuidance')}
+      ariaLabel={`${tierDescription} ${t('jobs.scoreGuidance')}`}
       trigger={
         <div className="flex items-center gap-1">
-          <MatchBand value={score.combined} />
+          <MatchBand value={score.combined} describe={false} />
           {/* Always-visible estimate framing — present without interaction. */}
           <span className="text-fine-print text-foreground/50">{t('jobs.scoreEst')}</span>
           <Button
@@ -42,9 +47,10 @@ export function RowMatchScore({ jobId }: { jobId: string }) {
         </div>
       }
     >
-      <p className="dropdown-surface max-w-[220px] px-3 py-2 text-fine-print leading-snug text-foreground/70">
-        {t('jobs.scoreGuidance')}
-      </p>
+      <div className="dropdown-surface max-w-[240px] space-y-1.5 px-3 py-2 text-fine-print leading-snug text-foreground/70">
+        <p className="text-foreground/85">{tierDescription}</p>
+        <p>{t('jobs.scoreGuidance')}</p>
+      </div>
     </HoverPopover>
   );
 }

@@ -212,3 +212,51 @@ describe('MatchBand — muted=true (mutes ALL tiers, unlike subtle)', () => {
     expect(el.className).toContain('bg-muted');
   });
 });
+
+// ── Self-explanatory description ────────────────────────────────────────────
+//
+// The band's visible label is a bare word ("High"), which means nothing to a
+// user who hasn't read the docs. These pin the explanation that hover surfaces.
+//
+// NOTE: `t` is stubbed to echo raw keys in this file, so these assert the KEY
+// SHAPE and the describe/opt-out wiring. That the keys actually resolve to real
+// copy is pinned by `match-band.i18n.test.tsx`, which uses real translations.
+describe('MatchBand — description', () => {
+  it('exposes the explanation on hover and to screen readers by default', () => {
+    const { container } = render(<MatchBand value={80} />);
+    const wrapper = container.querySelector('[title]');
+    expect(wrapper?.getAttribute('title')).toBe('jobs.matchBand.desc.combined.High');
+    expect(screen.getByText(': jobs.matchBand.desc.combined.High')).toHaveClass('sr-only');
+  });
+
+  it('describes the coverage variant differently from combined', () => {
+    // Not cosmetic: a coverage High is keyword overlap with no AI behind it,
+    // a combined High blends meaning and keywords. Same word, different claim.
+    const { container } = render(<MatchBand value={80} variant="coverage" />);
+    expect(container.querySelector('[title]')?.getAttribute('title')).toBe(
+      'jobs.matchBand.desc.coverage.High'
+    );
+  });
+
+  it('omits the native title when the caller supplies its own popover', () => {
+    // describe={false} exists so RowMatchScore's richer popover isn't shadowed
+    // by a browser tooltip saying a shorter version of the same thing.
+    const { container } = render(<MatchBand value={80} describe={false} />);
+    expect(container.querySelector('[title]')).toBeNull();
+    expect(container.querySelector('.sr-only')).toBeNull();
+  });
+
+  it('describes every tier, not just High', () => {
+    for (const [value, tier] of [
+      [80, 'High'],
+      [60, 'Medium'],
+      [10, 'Low'],
+    ] as const) {
+      const { container, unmount } = render(<MatchBand value={value} />);
+      expect(container.querySelector('[title]')?.getAttribute('title')).toBe(
+        `jobs.matchBand.desc.combined.${tier}`
+      );
+      unmount();
+    }
+  });
+});

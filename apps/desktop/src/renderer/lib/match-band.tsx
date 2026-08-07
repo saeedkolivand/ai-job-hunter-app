@@ -24,6 +24,21 @@ export function scoreTier(
   return { key: 'Low', color: 'error' };
 }
 
+/** i18n key for the plain-language explanation of a tier.
+ *
+ *  Keyed on the VARIANT too, because the two say genuinely different things: a
+ *  `combined` High blends meaning + keywords, a `coverage` High is keyword
+ *  overlap alone with no AI scoring behind it. One shared sentence would have
+ *  to be vague enough to be true of both, which is how a tooltip stops being
+ *  worth reading.
+ */
+export function matchBandDescriptionKey(
+  tier: ScoreTier,
+  variant: 'combined' | 'coverage' = 'combined'
+): string {
+  return `jobs.matchBand.desc.${variant}.${tier}`;
+}
+
 /** Low/Medium/High match-score Tag — localized label.
  *
  *  subtle=true: Medium/Low render muted-neutral; High stays bright — the tier
@@ -36,6 +51,16 @@ export function scoreTier(
  *  actually is. Deliberately a separate prop from `subtle`, not an extension
  *  of it — `subtle`'s High-stays-bright contract is pinned by its own tests
  *  and other callers may rely on it.
+ *
+ *  describe=true (default): the bare word "High" means nothing on its own, so
+ *  the band carries a plain-language explanation as a native `title` plus an
+ *  sr-only suffix. Deliberately NOT a `HoverPopover` like TrustBadge uses: this
+ *  band renders inside a `<Button>` on the Autopilot card (a focusable popover
+ *  trigger there is invalid button-in-button HTML) and inside
+ *  aria-activedescendant listbox rows (where it would add a tab stop per row).
+ *  `title` is hover-only and focusable-free, so it is safe in both.
+ *  Pass describe={false} where the caller already surfaces richer copy in its
+ *  own popover — see RowMatchScore — so the two don't both fire on hover.
  */
 export function MatchBand({
   value,
@@ -43,18 +68,22 @@ export function MatchBand({
   variant = 'combined',
   subtle = false,
   muted = false,
+  describe = true,
 }: {
   value: number;
   large?: boolean;
   variant?: 'combined' | 'coverage';
   subtle?: boolean;
   muted?: boolean;
+  describe?: boolean;
 }) {
   const { t } = useTranslation();
   const band = scoreTier(value, variant);
   // `muted` mutes unconditionally (all tiers); `subtle` mutes only Medium/Low.
   const isMutedStyle = muted || (subtle && band.key !== 'High');
-  return (
+  const description = describe ? t(matchBandDescriptionKey(band.key, variant)) : undefined;
+
+  const tag = (
     <Tag
       color={isMutedStyle ? undefined : band.color}
       className={cn(
@@ -65,5 +94,14 @@ export function MatchBand({
     >
       {t(`jobs.matchBand.${band.key}`)}
     </Tag>
+  );
+
+  if (!description) return tag;
+
+  return (
+    <span className="inline-flex items-center" title={description}>
+      {tag}
+      <span className="sr-only">: {description}</span>
+    </span>
   );
 }
