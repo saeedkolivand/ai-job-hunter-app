@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-07-28
+Last updated: 2026-08-07
 
 This guide gets you from zero to a running dev environment.
 
@@ -125,16 +125,19 @@ pnpm clean            # Remove dist/, .turbo/, node_modules/
 
 ```
 apps/
-  tauri/
+  desktop/              ← Tauri app (Rust core + React renderer)
     src-tauri/          ← Rust code (Cargo.toml, commands, DB, scrapers)
     src/
-      tauri-client.ts   ← Tauri invoke/listen wiring
+      tauri-client/     ← Tauri invoke/listen wiring
       renderer/         ← React app (routes, features, services, stores)
+  extension/            ← Browser extension (MV3, Chrome + Firefox)
+  landing/              ← Next.js 16 static export marketing site
 
 packages/
   shared/               ← IPC contracts + Zod schemas + shared types
   ui/                   ← @ajh/ui component library
   prompts/              ← AI prompt templates
+  translations/         ← i18n configuration + locale strings
   test-ids/             ← @ajh/test-ids — centralized test-id constants (drift-proof data-testid)
 ```
 
