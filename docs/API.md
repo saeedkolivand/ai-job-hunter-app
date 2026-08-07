@@ -1,6 +1,6 @@
 # IPC API Reference — AI Job Hunter
 
-Last updated: 2026-08-05
+Last updated: 2026-08-07
 
 All renderer ↔ Rust communication is defined as typed contracts in `packages/shared/src/ipc/contracts/`. The renderer accesses them exclusively through `AppClient` service hooks.
 
@@ -68,7 +68,8 @@ interface GenerateRequest {
   model: string; // e.g. "mistral", "gpt-4o"
   provider: AIProvider;
   template?: string; // template ID for document export
-  temperature?: number; // 0–1, default 0.3
+  intent?: 'deterministic' | 'prose' | 'prose_grounded' | 'default'; // declared sampling intent — each provider adapter picks its own numbers (see AiProvider::sampling_profile); real values wherever the provider accepts them, omitted only where sending is documented-harmful
+  temperature?: number; // explicit override — wins over `intent` on every adapter; in practice only ever set by the Ollama per-model "Custom temperature" slider, NOT a universal 0–1/0.3-default knob
   maxTokens?: number; // default 4096
   systemPromptOverride?: string;
 }

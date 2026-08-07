@@ -17,7 +17,9 @@ use super::timeouts;
 use super::{
     friendly_api_error, model_entry, resolve_intent, single_shot_turn, AgentTurn,
     AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
-    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage,
+    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
+    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 
 const DEFAULT_BASE: &str = "https://api.openai.com/v1";
@@ -417,48 +419,67 @@ fn parse_openai_frames(buf: &mut String) -> Vec<StreamPiece> {
 /// PER PROVIDER, not per model — `preferences-store.ts`).
 const OPENAI_EFFORT_LEVELS: [&str; 3] = ["low", "medium", "high"];
 
-/// `Intent::Deterministic`'s temperature on a non-reasoning OpenAI-family
-/// model. This is an APP CHOICE, not a vendor-published value — OpenAI
-/// publishes no per-task number — chosen to sit inside OpenAI's documented
-/// "reasonable" 0.1–1.0 range (`platform.openai.com/docs/guides/text-generation`,
-/// `temperature`) so it stays defensible rather than folklore. Determinism on
-/// this surface leans on the analyze prompt's explicit JSON-only output
-/// contract (`packages/prompts/src/analyze/system-prompt.ts`), the
-/// vendor-recommended lever — not this constant.
-const DETERMINISTIC_TEMPERATURE: f64 = 0.3;
-/// `Intent::Prose`'s penalty defaults on a non-reasoning OpenAI-family model —
-/// unchanged from this app's pre-fix renderer-side constant (RAID, ACL 2024:
-/// random sampling + repetition/frequency penalties measurably drop
-/// AI-detector accuracy), both values inside OpenAI's documented "reasonable"
-/// band for `frequency_penalty`/`presence_penalty`
-/// (`platform.openai.com/docs/api-reference/chat/create`: "Number between -2.0
-/// and 2.0 ... reasonable values are between 0 and 1") — an app choice within
-/// that band, not a vendor-published number either. Temperature is
-/// deliberately NOT part of the prose profile — OpenAI's own default (1.0)
-/// already sits in a creative range, and this app's old per-step prose
-/// temperatures (0.5–0.8) had no single vendor-endorsed number to inherit.
-const PROSE_TOP_P: f64 = 0.95;
-const PROSE_FREQUENCY_PENALTY: f64 = 0.3;
-const PROSE_PRESENCE_PENALTY: f64 = 0.2;
+/// Non-reasoning native-OpenAI profile: real values reproducing this app's
+/// pre-fix shipped numbers for every intent — see the shared constants'
+/// doc comments (`commands/ai_provider/mod.rs`) for the exact per-surface
+/// history each one preserves. `frequency_penalty`/`presence_penalty` both
+/// sit inside OpenAI's own documented "reasonable" band
+/// (`platform.openai.com/docs/api-reference/chat/create`: "Number between
+/// -2.0 and 2.0 ... reasonable values are between 0 and 1").
+fn openai_sampling_profile(intent: Intent) -> SamplingProfile {
+    match intent {
+        // `Default` (no declared intent) resolves the same as `Deterministic`
+        // — see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
+        Intent::Deterministic | Intent::Default => SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        },
+        Intent::Prose => SamplingProfile {
+            temperature: Some(PROSE_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+            ..SamplingProfile::default()
+        },
+        // Same register as `Prose`, MINUS presence_penalty (see
+        // `Intent::ProseGrounded`'s own doc comment for why).
+        Intent::ProseGrounded => SamplingProfile {
+            temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            ..SamplingProfile::default()
+        },
+    }
+}
 
 /// Ollama Cloud's `/v1` layer hardcodes `temperature: 1.0, top_p: 1.0` when
 /// the caller omits them — overriding the model's own Modelfile defaults —
-/// so omission is NOT neutral there, unlike every other OpenAI-compatible
-/// gateway this client talks to. Source: `github.com/openai/gpt-oss` README,
-/// "Recommended Sampling Parameters" (temperature 1.0, top_p 1.0). Every
-/// OTHER Ollama Cloud family stays neutral for now: the `/v1` endpoint can't
-/// reach `repeat_penalty`/`num_ctx` at all (Ollama-native-only fields), so
-/// there is nothing vendor-safe to declare for them yet.
-fn ollama_cloud_sampling_profile(model: &str) -> SamplingProfile {
+/// so, unlike every OTHER OpenAI-compatible gateway (an unknown, arbitrary
+/// catalog this app never assumes anything about), omitting is NEVER neutral
+/// here for ANY family: every intent must declare real values, or the
+/// consequence is a forced 1.0/1.0 regardless of what this app intended.
+/// `gpt-oss` gets its own vendor-recommended values (source:
+/// `github.com/openai/gpt-oss` README, "Recommended Sampling Parameters":
+/// temperature 1.0, top_p 1.0 — which happen to coincide with `/v1`'s own
+/// hardcoded default, so this is declared for auditability, not because
+/// omission would behave differently for gpt-oss specifically). Every other
+/// family reuses the SAME per-intent targets native OpenAI does — this app's
+/// pre-fix renderer sent the identical numbers to every cloud provider,
+/// Ollama Cloud included. `repeat_penalty`/`num_ctx` can't be reached at all
+/// via `/v1` (Ollama-native-only fields), so `Prose`/`ProseGrounded` never
+/// set them here even though local Ollama does. `Intent::Default` resolves
+/// to `Intent::Deterministic`'s numbers (see `Intent`'s own doc comment) —
+/// deliberately NOT left neutral here specifically, since neutral would mean
+/// the forced 1.0/1.0 this whole function exists to avoid.
+fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile {
     if model.to_ascii_lowercase().contains("gpt-oss") {
-        SamplingProfile {
+        return SamplingProfile {
             temperature: Some(1.0),
             top_p: Some(1.0),
             ..SamplingProfile::default()
-        }
-    } else {
-        SamplingProfile::default()
+        };
     }
+    openai_sampling_profile(intent)
 }
 
 /// Build the `/chat/completions` streaming request body for a given
@@ -957,10 +978,10 @@ impl AiProvider for OpenAiClient {
 
     fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
         // Ollama Cloud gets its own family table — never the generic
-        // deterministic/prose defaults below (see the doc comment on
+        // native-OpenAI defaults below (see the doc comment on
         // `ollama_cloud_sampling_profile`).
         if self.id == ProviderId::OllamaCloud {
-            return ollama_cloud_sampling_profile(model);
+            return ollama_cloud_sampling_profile(model, intent);
         }
         // o-series (`is_reasoning_model`) genuinely reject `temperature`
         // (`capabilities().supports_temperature` already gates the send
@@ -972,30 +993,17 @@ impl AiProvider for OpenAiClient {
         if is_reasoning_model(model) || is_gpt5_or_later_reasoning_family(model) {
             return SamplingProfile::default();
         }
-        match intent {
-            Intent::Deterministic => SamplingProfile {
-                temperature: Some(DETERMINISTIC_TEMPERATURE),
-                ..SamplingProfile::default()
-            },
-            Intent::Prose => SamplingProfile {
-                top_p: Some(PROSE_TOP_P),
-                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
-                presence_penalty: Some(PROSE_PRESENCE_PENALTY),
-                ..SamplingProfile::default()
-            },
-            // Same detector-resistance register as `Prose`, MINUS the
-            // presence penalty: this surface (application answers, referral
-            // messages, application email) asserts factual claims about the
-            // candidate to a third party, and presence_penalty pushes a
-            // model toward new topics — i.e. exactly the invented-fact risk
-            // this intent exists to avoid. Never merge this arm with `Prose`.
-            Intent::ProseGrounded => SamplingProfile {
-                top_p: Some(PROSE_TOP_P),
-                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
-                ..SamplingProfile::default()
-            },
-            Intent::Default => SamplingProfile::default(),
+        // `openai_sampling_profile`'s numbers are THIS APP'S choices, tuned
+        // against native OpenAI's own documented "reasonable" bands — never
+        // extended to LM Studio/vLLM/OpenRouter/custom `OpenAiCompatible`
+        // gateways or any other non-native id: those speak the SAME wire
+        // protocol but serve an arbitrary, unknown catalog this app has no
+        // basis to assume reacts the same way (the same unknown-model
+        // fail-safe every other adapter applies to an unrecognized model).
+        if self.id != ProviderId::OpenAi {
+            return SamplingProfile::default();
         }
+        openai_sampling_profile(intent)
     }
 
     async fn chat_stream(

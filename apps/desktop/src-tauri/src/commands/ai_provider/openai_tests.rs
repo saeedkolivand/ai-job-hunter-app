@@ -15,8 +15,8 @@ use super::{
     join_responses_text, parse_model_list, parse_openai_delta, parse_openai_embed_usage,
     parse_openai_finish_reason, parse_openai_frames, parse_openai_turn, parse_openai_usage,
     resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model, Intent, OpenAiClient,
-    SamplingProfile, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_PRESENCE_PENALTY,
-    PROSE_TOP_P,
+    SamplingProfile, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY,
+    PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -119,119 +119,74 @@ fn parse_embed_usage_zero_when_absent() {
     assert_eq!(usage.output_tokens, 0);
 }
 
-#[test]
-fn chat_stream_body_serializes_sampling_params_when_set() {
-    // Explicit numeric overrides win over the adapter's own profile — here
-    // `gpt-4o` + `Intent::Default` resolves to a neutral profile, so every
-    // value below is the request's own explicit override, sent verbatim.
+/// End-to-end wire body for one `(id, model, intent)` combination — mirrors
+/// exactly what `OpenAiClient::chat_stream` does (resolve → merge → build),
+/// so these tests pin what actually reaches the request JSON, not just the
+/// intermediate `SamplingProfile` object. `base_request()`'s own explicit
+/// `temperature: Some(0.8)` is cleared so each case exercises the adapter's
+/// OWN per-intent default, not the explicit-override path (covered
+/// separately below).
+fn body_for(id: ProviderId, model: &str, intent: Option<&str>) -> Value {
     let mut req = base_request();
-    req.top_p = Some(0.95);
-    req.frequency_penalty = Some(0.3);
-    req.presence_penalty = Some(0.2);
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(true),
-        sampling_for(ProviderId::OpenAi, &req),
-    );
-    assert_eq!(body["top_p"], json!(0.95));
-    assert_eq!(body["frequency_penalty"], json!(0.3));
-    assert_eq!(body["presence_penalty"], json!(0.2));
+    req.model = model.to_string();
+    req.temperature = None;
+    req.intent = intent.map(str::to_string);
+    let client = OpenAiClient::new(id, None);
+    let caps = client.capabilities(&req.model);
+    let sampling = client
+        .sampling_profile(&req.model, resolve_intent(&req))
+        .resolve(&req);
+    build_chat_stream_body(&req, caps, sampling)
 }
 
 #[test]
-fn chat_stream_body_omits_sampling_params_when_none() {
-    let req = base_request();
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(true),
-        sampling_for(ProviderId::OpenAi, &req),
+fn native_openai_wire_body_per_intent() {
+    let det = body_for(ProviderId::OpenAi, "gpt-4o", Some("deterministic"));
+    assert_eq!(det["temperature"], json!(DETERMINISTIC_TEMPERATURE));
+    assert!(det.get("top_p").is_none());
+    assert!(det.get("frequency_penalty").is_none());
+    assert!(det.get("presence_penalty").is_none());
+
+    let prose = body_for(ProviderId::OpenAi, "gpt-4o", Some("prose"));
+    assert_eq!(prose["temperature"], json!(PROSE_TEMPERATURE));
+    assert_eq!(prose["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(prose["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
+    assert_eq!(prose["presence_penalty"], json!(PROSE_PRESENCE_PENALTY));
+
+    let grounded = body_for(ProviderId::OpenAi, "gpt-4o", Some("prose_grounded"));
+    assert_eq!(grounded["temperature"], json!(PROSE_GROUNDED_TEMPERATURE));
+    assert_eq!(grounded["top_p"], json!(PROSE_TOP_P));
+    assert_eq!(
+        grounded["frequency_penalty"],
+        json!(PROSE_FREQUENCY_PENALTY)
     );
-    assert!(body.get("top_p").is_none());
-    assert!(body.get("frequency_penalty").is_none());
-    assert!(body.get("presence_penalty").is_none());
+    assert!(
+        grounded.get("presence_penalty").is_none(),
+        "prose_grounded must never send presence_penalty"
+    );
+
+    // `Default` (no declared intent) resolves the same as `Deterministic` —
+    // see `Intent`'s own doc comment (`commands/ai_provider/mod.rs`).
+    let default = body_for(ProviderId::OpenAi, "gpt-4o", None);
+    assert_eq!(default["temperature"], json!(DETERMINISTIC_TEMPERATURE));
+    assert!(default.get("top_p").is_none());
+    assert!(default.get("frequency_penalty").is_none());
+    assert!(default.get("presence_penalty").is_none());
 }
 
 #[test]
 fn chat_stream_body_skips_sampling_params_on_reasoning_models() {
     // o-series models reject `temperature` entirely — sampling knobs must be
-    // skipped alongside it, never sent to a model that 400s on them. Explicit
-    // overrides don't matter either: `caps.supports_temperature` gates the
-    // whole block before `sampling.*` is ever read.
-    let mut req = base_request();
-    req.top_p = Some(0.95);
-    req.frequency_penalty = Some(0.3);
-    req.presence_penalty = Some(0.2);
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(false),
-        sampling_for(ProviderId::OpenAi, &req),
-    );
-    assert!(body.get("temperature").is_none());
-    assert!(body.get("top_p").is_none());
-    assert!(body.get("frequency_penalty").is_none());
-    assert!(body.get("presence_penalty").is_none());
-}
-
-#[test]
-fn sampling_profile_deterministic_and_prose_on_a_non_reasoning_model() {
-    let mut req = base_request();
-    req.model = "gpt-4o".to_string();
-    // `base_request()`'s own `temperature: Some(0.8)` is an EXPLICIT override
-    // that would otherwise win over the profile — clear it so this test
-    // exercises the adapter's own per-intent default, not the override path
-    // (covered separately by `sampling_profile_explicit_override_wins_over_the_prose_profile`).
-    req.temperature = None;
-
-    req.intent = Some("deterministic".to_string());
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(true),
-        sampling_for(ProviderId::OpenAi, &req),
-    );
-    assert_eq!(body["temperature"], json!(DETERMINISTIC_TEMPERATURE));
-    assert!(body.get("top_p").is_none());
-    assert!(body.get("frequency_penalty").is_none());
-    assert!(body.get("presence_penalty").is_none());
-
-    req.intent = Some("prose".to_string());
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(true),
-        sampling_for(ProviderId::OpenAi, &req),
-    );
-    assert!(body.get("temperature").is_none());
-    assert_eq!(body["top_p"], json!(PROSE_TOP_P));
-    assert_eq!(body["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
-    assert_eq!(body["presence_penalty"], json!(PROSE_PRESENCE_PENALTY));
-}
-
-#[test]
-fn sampling_profile_prose_grounded_never_sends_presence_penalty() {
-    // Application answers / referral messages / application email make
-    // factual claims about the candidate — presence_penalty pushes a model
-    // toward new topics (invented facts), so `prose_grounded` must NEVER
-    // send it, even though it shares every other `prose` knob. Mutation
-    // check: flip the assertion below (or delete the `Intent::ProseGrounded`
-    // match arm's field omission in `openai.rs`) and this test must fail —
-    // it currently pins `None`, the exact field the surface exists to guard.
-    let mut req = base_request();
-    req.model = "gpt-4o".to_string();
-    req.temperature = None;
-    req.intent = Some("prose_grounded".to_string());
-    let body = build_chat_stream_body(
-        &req,
-        chat_caps(true),
-        sampling_for(ProviderId::OpenAi, &req),
-    );
-    assert!(
-        body.get("presence_penalty").is_none(),
-        "prose_grounded must never send presence_penalty"
-    );
-    // Every other `prose` knob still applies — this isn't a silently-broken
-    // neutral profile, just presence_penalty specifically withheld.
-    assert!(body.get("temperature").is_none());
-    assert_eq!(body["top_p"], json!(PROSE_TOP_P));
-    assert_eq!(body["frequency_penalty"], json!(PROSE_FREQUENCY_PENALTY));
+    // skipped alongside it, never sent to a model that 400s on them.
+    // `sampling_profile` already returns neutral for these, so this pins the
+    // wire body doubly (profile AND `caps.supports_temperature` both agree).
+    for intent in ["deterministic", "prose", "prose_grounded"] {
+        let body = body_for(ProviderId::OpenAi, "o3-mini", Some(intent));
+        assert!(body.get("temperature").is_none(), "{intent}");
+        assert!(body.get("top_p").is_none(), "{intent}");
+        assert!(body.get("frequency_penalty").is_none(), "{intent}");
+        assert!(body.get("presence_penalty").is_none(), "{intent}");
+    }
 }
 
 #[test]
@@ -256,7 +211,12 @@ fn sampling_profile_is_neutral_for_a_reasoning_model_regardless_of_intent() {
     // accepts it but gets no per-task tuning either, see the doc comment on
     // `OpenAiClient::sampling_profile`).
     for model in ["o3-mini", "gpt-5.6"] {
-        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
+        for intent in [
+            Intent::Deterministic,
+            Intent::Prose,
+            Intent::ProseGrounded,
+            Intent::Default,
+        ] {
             let profile =
                 OpenAiClient::new(ProviderId::OpenAi, None).sampling_profile(model, intent);
             assert_eq!(
@@ -269,33 +229,83 @@ fn sampling_profile_is_neutral_for_a_reasoning_model_regardless_of_intent() {
 }
 
 #[test]
-fn sampling_profile_is_neutral_for_an_unknown_model_with_no_declared_intent() {
+fn native_openai_has_no_unknown_model_carve_out_unlike_gemini_or_ollama_cloud() {
+    // Native OpenAI's ONLY two neutral cases are the reasoning-model gate
+    // and the non-native-id gate (both tested separately) — an
+    // unrecognized MODEL NAME under `ProviderId::OpenAi` is not a
+    // "family this app can't classify" case (there is no Gemini-style
+    // version-prefix or Anthropic-style `claude-` family check for native
+    // OpenAI), so it correctly still gets real Deterministic-equivalent
+    // values, not neutral.
     let profile = OpenAiClient::new(ProviderId::OpenAi, None)
         .sampling_profile("some-unrecognized-model", Intent::Default);
-    assert_eq!(profile, SamplingProfile::default());
+    assert_eq!(
+        profile,
+        SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        }
+    );
 }
 
 #[test]
-fn ollama_cloud_sampling_profile_special_cases_gpt_oss_only() {
+fn sampling_profile_is_neutral_for_every_non_native_openai_id_regardless_of_intent() {
+    // Hard constraint (fix #2): LM Studio/vLLM/OpenRouter/custom
+    // `OpenAiCompatible` gateways speak the SAME wire protocol as native
+    // OpenAI but serve an arbitrary, unknown catalog — this app must never
+    // assume they want native OpenAI's own app-chosen numbers, the same
+    // unknown-model fail-safe every other adapter applies.
+    for intent in [
+        Intent::Deterministic,
+        Intent::Prose,
+        Intent::ProseGrounded,
+        Intent::Default,
+    ] {
+        let profile = OpenAiClient::new(ProviderId::OpenAiCompatible, None)
+            .sampling_profile("gpt-4o", intent);
+        assert_eq!(
+            profile,
+            SamplingProfile::default(),
+            "OpenAiCompatible / {intent:?}"
+        );
+    }
+}
+
+#[test]
+fn ollama_cloud_wire_body_gpt_oss_vs_every_other_family() {
     // Source: `github.com/openai/gpt-oss` README, "Recommended Sampling
     // Parameters" — Ollama's `/v1` layer hardcodes 1.0/1.0 when omitted,
     // overriding the Modelfile, so this app must declare it explicitly.
-    let gpt_oss = OpenAiClient::new(ProviderId::OllamaCloud, None)
-        .sampling_profile("gpt-oss:120b", Intent::Deterministic);
-    assert_eq!(gpt_oss.temperature, Some(1.0));
-    assert_eq!(gpt_oss.top_p, Some(1.0));
-    assert!(gpt_oss.frequency_penalty.is_none());
+    let gpt_oss = body_for(
+        ProviderId::OllamaCloud,
+        "gpt-oss:120b",
+        Some("deterministic"),
+    );
+    assert_eq!(gpt_oss["temperature"], json!(1.0));
+    assert_eq!(gpt_oss["top_p"], json!(1.0));
+    assert!(gpt_oss.get("frequency_penalty").is_none());
 
-    // Every other Ollama Cloud family stays neutral for now, regardless of
-    // intent — no vendor-safe number to declare yet.
-    for model in ["qwen3-coder:480b", "deepseek-v3.1:671b", "some-new-model"] {
-        for intent in [Intent::Deterministic, Intent::Prose, Intent::Default] {
-            assert_eq!(
-                OpenAiClient::new(ProviderId::OllamaCloud, None).sampling_profile(model, intent),
-                SamplingProfile::default(),
-                "{model} / {intent:?}"
-            );
-        }
+    // Every OTHER Ollama Cloud family reuses the SAME per-intent targets
+    // native OpenAI does (fix: these used to stay neutral, which is wrong —
+    // `/v1` hardcodes 1.0/1.0 on omission for every family, not just gpt-oss).
+    for model in ["qwen3-coder:480b", "deepseek-v3.1:671b"] {
+        let det = body_for(ProviderId::OllamaCloud, model, Some("deterministic"));
+        assert_eq!(
+            det["temperature"],
+            json!(DETERMINISTIC_TEMPERATURE),
+            "{model}"
+        );
+
+        let grounded = body_for(ProviderId::OllamaCloud, model, Some("prose_grounded"));
+        assert_eq!(
+            grounded["temperature"],
+            json!(PROSE_GROUNDED_TEMPERATURE),
+            "{model}"
+        );
+        assert!(
+            grounded.get("presence_penalty").is_none(),
+            "{model}: prose_grounded must never send presence_penalty"
+        );
     }
 }
 

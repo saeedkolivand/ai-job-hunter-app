@@ -15,7 +15,9 @@ use super::{
     gemini_is_v3_or_later, gemini_omits_sampling_params, gemini_supports_thinking, join_parts_text,
     parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
     parse_gemini_usage, parse_model_page, resolve_intent, validate_gemini_key, AiProvider,
-    GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece, EMBED_OUTPUT_DIMENSIONALITY,
+    GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece, DETERMINISTIC_TEMPERATURE,
+    EMBED_OUTPUT_DIMENSIONALITY, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
+    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -165,15 +167,20 @@ fn chat_stream_body_sends_an_explicit_temperature_even_on_a_v3_model() {
 }
 
 #[test]
-fn chat_stream_body_keeps_the_default_temperature_for_a_pre_v3_model_with_no_explicit_value() {
+fn chat_stream_body_uses_the_deterministic_target_for_a_pre_v3_model_with_no_explicit_value() {
+    // No `req.intent` set → `Intent::Default`, which resolves to the SAME
+    // numbers as `Intent::Deterministic` on an accepting model (see
+    // `Intent`'s own doc comment, `commands/ai_provider/mod.rs`) — this
+    // reproduces the pre-fix renderer's own hardcoded default (`0.3` for the
+    // majority of deterministic surfaces), NOT the adapter's old standalone
+    // `0.7` fallback (that fallback's job is now done by this profile).
     let mut req = base_request();
     req.model = "gemini-1.5-flash".to_string();
     req.temperature = None;
     let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["generationConfig"]["temperature"],
-        json!(0.7),
-        "unchanged behavior for pre-v3 models"
+        json!(DETERMINISTIC_TEMPERATURE)
     );
 }
 
@@ -248,23 +255,47 @@ fn sampling_profile_is_fully_neutral_on_a_v3_model_for_every_intent() {
 }
 
 #[test]
-fn sampling_profile_ignores_intent_on_a_recognized_pre_v3_model() {
-    // "Pre-v3 keeps today's behaviour" — this adapter's temperature default
-    // was never intent-conditional (unlike OpenAI's), only version-gated.
+fn sampling_profile_declares_real_values_per_intent_on_a_recognized_pre_v3_model() {
     // "gemini-1.5-flash" is POSITIVELY recognized as pre-v3 (carries the
-    // `gemini-` family prefix and fails `gemini_is_v3_or_later`).
-    for intent in [
-        Intent::Deterministic,
-        Intent::Prose,
-        Intent::ProseGrounded,
-        Intent::Default,
-    ] {
-        let profile = GeminiClient.sampling_profile("gemini-1.5-flash", intent);
-        assert_eq!(profile.temperature, Some(0.7));
-        assert!(profile.top_p.is_none());
-        assert!(profile.frequency_penalty.is_none());
-        assert!(profile.presence_penalty.is_none());
-    }
+    // `gemini-` family prefix and fails `gemini_is_v3_or_later`) — it
+    // declares REAL values reproducing this app's pre-fix shipped numbers,
+    // the same [`DETERMINISTIC_TEMPERATURE`]/[`PROSE_TEMPERATURE`]/
+    // [`PROSE_GROUNDED_TEMPERATURE`] targets every other accepting adapter
+    // uses (this app's pre-fix renderer sent identical numbers to Gemini as
+    // every other cloud provider).
+    let model = "gemini-1.5-flash";
+    assert_eq!(
+        GeminiClient.sampling_profile(model, Intent::Deterministic),
+        SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        }
+    );
+    assert_eq!(
+        GeminiClient.sampling_profile(model, Intent::Prose),
+        SamplingProfile {
+            temperature: Some(PROSE_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+            ..SamplingProfile::default()
+        }
+    );
+    assert_eq!(
+        GeminiClient.sampling_profile(model, Intent::ProseGrounded),
+        SamplingProfile {
+            temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+            ..SamplingProfile::default()
+        },
+        "prose_grounded must never send presence_penalty"
+    );
+    // `Default` (no declared intent) resolves the same as `Deterministic`.
+    assert_eq!(
+        GeminiClient.sampling_profile(model, Intent::Default),
+        GeminiClient.sampling_profile(model, Intent::Deterministic)
+    );
 }
 
 #[test]

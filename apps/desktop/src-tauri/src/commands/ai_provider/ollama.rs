@@ -17,9 +17,10 @@ use super::research::{self, SearchResult};
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
-    model_entry, parse_rfc3339_millis, single_shot_turn, AgentTurn, AiGenerateRequest, AiProvider,
-    ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace, SamplingProfile, StopReason,
-    TokenParam, ToolCall, ToolSpec, Usage,
+    model_entry, parse_rfc3339_millis, resolve_intent, single_shot_turn, AgentTurn,
+    AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId, RequestTrace,
+    SamplingProfile, StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
+    PROSE_GROUNDED_TEMPERATURE, PROSE_REPEAT_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 
 const EMBED_MODEL: &str = "nomic-embed-text";
@@ -220,15 +221,50 @@ impl AiProvider for OllamaClient {
         }
     }
 
-    /// Neutral, always — matches the trait default, made explicit here so the
-    /// design decision is visible rather than implicit. Omitting every
-    /// sampling param lets `/api/chat` inherit the model's own Modelfile
-    /// defaults, which carry the model author's own recommended values —
-    /// this adapter's `build_chat_stream_body` already only ever forwards an
-    /// EXPLICIT `req.*` value (see its doc comment) and never invents one, so
-    /// this override changes nothing; it documents why.
-    fn sampling_profile(&self, _model: &str, _intent: Intent) -> SamplingProfile {
-        SamplingProfile::default()
+    /// Declares real values for every intent, on every model, no gating —
+    /// unlike every cloud adapter, Ollama has no "this family 400s" split to
+    /// fail-safe against, so there is no unknown-model case to stay neutral
+    /// for. Omitting is NOT a safe default here: `/api/chat` falls back to
+    /// the model's own Modelfile, a file this app cannot see or control at
+    /// request time. Confirmed empirically against this machine's live local
+    /// Ollama (not vendor docs): `qwen3.6:27b-q4_K_M`'s Modelfile defaults to
+    /// `temperature: 1, presence_penalty: 1.5, top_p: 0.95`;
+    /// `gemma4:31b-it-q4_K_M` defaults to `temperature: 1`. Both are
+    /// currently-default-tier local models — a résumé/analysis JSON call
+    /// omitting `temperature` on either would run at a creative-writing
+    /// temperature (and, on the first, a presence-penalty HIGHER than
+    /// anything this app ever sent), not a "sane default". Reuses the SAME
+    /// per-intent targets every other accepting adapter does (this app's
+    /// pre-fix renderer sent identical numbers to Ollama as every cloud
+    /// provider) — `repeat_penalty` is Ollama's own field (see
+    /// `build_chat_stream_body`'s doc comment), never a `frequency_penalty`
+    /// remap, and this app has no way to forward `presence_penalty` to
+    /// Ollama at all (its wire body has no such field — see
+    /// `build_chat_stream_body`), so `Intent::ProseGrounded`'s distinction
+    /// from `Intent::Prose` collapses to "same as Prose" on this adapter,
+    /// exactly like Anthropic's.
+    fn sampling_profile(&self, _model: &str, intent: Intent) -> SamplingProfile {
+        match intent {
+            // `Default` (no declared intent) resolves the same as
+            // `Deterministic` — see `Intent`'s own doc comment
+            // (`commands/ai_provider/mod.rs`).
+            Intent::Deterministic | Intent::Default => SamplingProfile {
+                temperature: Some(DETERMINISTIC_TEMPERATURE),
+                ..SamplingProfile::default()
+            },
+            Intent::Prose => SamplingProfile {
+                temperature: Some(PROSE_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                repeat_penalty: Some(PROSE_REPEAT_PENALTY),
+                ..SamplingProfile::default()
+            },
+            Intent::ProseGrounded => SamplingProfile {
+                temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                repeat_penalty: Some(PROSE_REPEAT_PENALTY),
+                ..SamplingProfile::default()
+            },
+        }
     }
 
     async fn chat_stream(
@@ -237,7 +273,10 @@ impl AiProvider for OllamaClient {
         job_id: &str,
         req: &AiGenerateRequest,
     ) -> AppResult<()> {
-        stream_chat(app, job_id, req).await
+        let sampling = self
+            .sampling_profile(&req.model, resolve_intent(req))
+            .resolve(req);
+        stream_chat(app, job_id, req, sampling).await
     }
 
     async fn complete(
@@ -937,16 +976,19 @@ fn parse_ollama_frames(buf: &mut String) -> Vec<StreamPiece> {
     out
 }
 
-/// Build the `/api/chat` streaming request body for a given [`AiGenerateRequest`].
+/// Build the `/api/chat` streaming request body for a given
+/// [`AiGenerateRequest`] + resolved [`SamplingProfile`] (already merged with
+/// the request's explicit numeric overrides — see [`SamplingProfile::resolve`]).
 /// Pure + unit-tested. Every `options.*` sampling field (`temperature`,
-/// `top_p`, `repeat_penalty`, …) is forwarded ONLY when the request carries an
-/// explicit value (never invented — see [`AiProvider::sampling_profile`]'s
-/// neutral override on [`OllamaClient`], which omitting-by-default already
-/// matches), added only when `Some` (never sent as `null`), so an unset field
-/// lets `/api/chat` fall back to the model's own Modelfile default.
-/// `repeat_penalty` uses Ollama's own field/semantics — it is NEVER a remap
-/// of `frequency_penalty` (different math, different field).
-fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
+/// `top_p`, `repeat_penalty`) is added only when `sampling` carries `Some`
+/// (never sent as `null`) — an unset field lets `/api/chat` fall back to the
+/// model's own Modelfile default, which is NOT a safe default this app
+/// controls (see [`AiProvider::sampling_profile`]'s doc on [`OllamaClient`]
+/// for empirical evidence: some current default-tier local models default to
+/// `temperature: 1`, one as high as `presence_penalty: 1.5`). `repeat_penalty`
+/// uses Ollama's own field/semantics — it is NEVER a remap of
+/// `frequency_penalty` (different math, different field).
+fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) -> Value {
     let messages = serde_json::to_value(
         req.messages
             .iter()
@@ -971,13 +1013,13 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
         }
     }
     let mut options = serde_json::Map::new();
-    if let Some(t) = req.temperature {
+    if let Some(t) = sampling.temperature {
         options.insert("temperature".to_string(), json!(t));
     }
-    if let Some(top_p) = req.top_p {
+    if let Some(top_p) = sampling.top_p {
         options.insert("top_p".to_string(), json!(top_p));
     }
-    if let Some(rp) = req.repeat_penalty {
+    if let Some(rp) = sampling.repeat_penalty {
         options.insert("repeat_penalty".to_string(), json!(rp));
     }
     if let Some(mt) = req.max_tokens {
@@ -995,12 +1037,17 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     body
 }
 
-async fn stream_chat(app: &AppHandle, job_id: &str, req: &AiGenerateRequest) -> AppResult<()> {
+async fn stream_chat(
+    app: &AppHandle,
+    job_id: &str,
+    req: &AiGenerateRequest,
+    sampling: SamplingProfile,
+) -> AppResult<()> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, &req.model, "/api/chat", &base, true);
 
-    let body = build_chat_stream_body(req);
+    let body = build_chat_stream_body(req, sampling);
 
     let response = crate::net::http::shared()
         .post(&endpoint)

@@ -916,13 +916,17 @@ export async function generateCoverLetter(
     market,
     applicant
   );
-  // Cover letters are prose: creative, detector-resistant writing — the
-  // active provider's adapter picks its own temperature/penalty numbers (or
-  // none) for this intent, per model (see `AiProvider::sampling_profile`,
-  // `commands/ai_provider/mod.rs`). The old per-tier temperature/topP split
-  // was a renderer-side guess sent uniformly to every vendor regardless of
-  // what that vendor's API actually wanted — the defect this design fixes.
-  const sampling = resolveSampling('cover', 'prose');
+  // Cover letters are `prose_grounded`, not plain `prose`: "deliberately
+  // creative" is a REGISTER argument (the temperature), not a license to
+  // drop the traceability guard — the letter asserts real résumé
+  // achievements to an employer and carries the prompt's own `LETTER_HONESTY`
+  // contract (`packages/prompts/src/generate/cover-letter/cover-letter.ts`),
+  // and presence_penalty pushing toward new topics is exactly the
+  // invented-achievement risk that contract exists to prevent. The active
+  // provider's adapter picks its own temperature/penalty numbers for this
+  // intent, per model (see `AiProvider::sampling_profile`,
+  // `commands/ai_provider/mod.rs`).
+  const sampling = resolveSampling('cover', 'prose_grounded');
   const raw = await streamGenerate(
     model,
     system,
@@ -1393,25 +1397,18 @@ export async function generateGitHubProjects(params: {
   });
 }
 
-/** Per-{@link RewriteDocType} step (for the Ollama temperature override lookup)
- *  + intent (for the active provider's own sampling profile) — résumé rewrites
- *  stay `deterministic` (ATS keyword fidelity), the rest are `prose`. */
+/** Per-{@link RewriteDocType} step, for the Ollama temperature override
+ *  lookup only — inline rewrite ALWAYS uses `deterministic` intent
+ *  regardless of docType (see {@link rewriteSelection}'s call site): a
+ *  surgical edit to a selected span ("tighten this sentence") must not
+ *  become a high-temperature/detector-resistant rewrite just because the
+ *  surrounding document is prose — that would reintroduce drift/fabrication
+ *  risk into exactly the span the user is deliberately hand-shaping. */
 const REWRITE_STEP: Record<RewriteDocType, TemperatureStep> = {
   resume: 'resume',
   'cover-letter': 'cover',
   'application-answer': 'answers',
   email: 'cover',
-};
-const REWRITE_INTENT: Record<RewriteDocType, GenerationIntent> = {
-  resume: 'deterministic',
-  // Cover letters are deliberately more creative — no traceability
-  // requirement, unlike the two `prose_grounded` surfaces below.
-  'cover-letter': 'prose',
-  // Both make factual claims about the candidate to a real employer, so both
-  // must stay traceable to the résumé (see `generateApplicationAnswer`'s and
-  // `generateApplicationEmail`'s own `prose_grounded` rationale above).
-  'application-answer': 'prose_grounded',
-  email: 'prose_grounded',
 };
 
 /**
@@ -1455,10 +1452,12 @@ export async function rewriteSelection(params: {
     profile
   );
   // Bypassed `resolveTemperature`/`resolveSampling` entirely (bare `0.3`) —
-  // routed through the same per-docType step/intent mapping every other
-  // rewrite-adjacent surface uses, so the per-model temperature override and
-  // the active provider's own sampling profile both apply here too.
-  const sampling = resolveSampling(REWRITE_STEP[docType], REWRITE_INTENT[docType]);
+  // now routed through the same per-docType Ollama override lookup every
+  // other surface uses, but ALWAYS with `deterministic` intent (see
+  // `REWRITE_STEP`'s doc comment): a surgical span edit must never inherit a
+  // prose/detector-resistance profile just because the surrounding document
+  // does.
+  const sampling = resolveSampling(REWRITE_STEP[docType], 'deterministic');
   const raw = await streamGenerate(
     model,
     system,

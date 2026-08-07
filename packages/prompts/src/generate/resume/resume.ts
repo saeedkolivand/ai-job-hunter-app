@@ -287,6 +287,19 @@ export function buildResumePrompt(
   const emphasisBlock = buildEmphasisBlock(meta.topRequirements ?? []);
   const directivesBlock = buildEmphasisDirectivesBlock(meta.emphasis);
   const groundingBlock = buildGroundingBlock(resumeBody, meta.topRequirements ?? []);
+  // Both blocks render '' when `meta.topRequirements` is empty (e.g. a
+  // synthesized/builder-flow résumé with no scored job ad) — the Skills
+  // Section instruction below must only point at whichever block(s) are
+  // ACTUALLY fenced above, the same dangling-pointer class already fixed for
+  // `<company_research>` (`cover-letter.ts`'s `hasBrief` gate).
+  const hasEmphasis = Boolean(emphasisBlock);
+  const hasGrounding = Boolean(groundingBlock);
+  const skillsBoldInstruction =
+    hasEmphasis && hasGrounding
+      ? 'Bold the skills that appear in the KEYWORD EMPHASIS list and that SKILL GROUNDING marks PRESENT'
+      : hasEmphasis
+        ? 'Bold the skills that appear in the KEYWORD EMPHASIS list'
+        : 'Bold the skills most relevant to this job ad';
 
   return `${linksBlock ? `${linksBlock}\n\n` : ''}${bodyLinksBlock ? `${bodyLinksBlock}\n\n` : ''}<candidate_resume>
 ${resumeBody}
@@ -341,7 +354,7 @@ Work Experience (most recent first):
 Skills Section:
 - Order by relevance to this job ad (most relevant first)
 - Group: Languages | Frameworks | Tools | Platforms | Methodologies
-- Bold the skills that appear in the KEYWORD EMPHASIS list and that SKILL GROUNDING marks PRESENT
+- ${skillsBoldInstruction}
 
 Verify before writing:
 ✓ Dates are consistent throughout

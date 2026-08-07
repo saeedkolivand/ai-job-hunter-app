@@ -16,7 +16,8 @@ use super::{
     bounded, friendly_api_error, model_entry, pagination_step, resolve_intent, single_shot_turn,
     split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities,
     PaginationStep, ProviderId, RequestTrace, Role, SamplingProfile, StopReason, TokenParam,
-    ToolCall, ToolSpec, Usage,
+    ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY,
+    PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 
 const BASE: &str = "https://generativelanguage.googleapis.com";
@@ -1001,20 +1002,42 @@ impl AiProvider for GeminiClient {
     /// requests" — see [`gemini_omits_sampling_params`]) AND neutral on any
     /// id this adapter cannot positively recognize as pre-v3
     /// ([`gemini_is_recognized_pre_v3`]) — an unclassified id defaults to "no
-    /// sampling params", never a guessed-safe legacy default. ONLY a
-    /// recognized pre-v3 model keeps this adapter's long-standing `0.7`
-    /// temperature default — the ONE number [`gemini_effective_temperature`]
-    /// used to fall back to before the renderer stopped shipping a per-task
-    /// value (that function itself is UNCHANGED — still gated on the wider
-    /// [`gemini_omits_sampling_params`] for its own callers, e.g.
-    /// `complete_impl`). `topP`/`frequencyPenalty`/`presencePenalty` were
-    /// never adapter-defaulted here (pure request pass-through, see
-    /// [`build_chat_stream_body`]) and still aren't — `intent` is therefore
-    /// unused on this adapter, unlike OpenAI's.
-    fn sampling_profile(&self, model: &str, _intent: Intent) -> SamplingProfile {
-        SamplingProfile {
-            temperature: gemini_is_recognized_pre_v3(model).then_some(0.7),
-            ..SamplingProfile::default()
+    /// sampling params", never a guessed-safe legacy default. A RECOGNIZED
+    /// pre-v3 model declares real values reproducing this app's pre-fix
+    /// shipped numbers per intent — the same [`DETERMINISTIC_TEMPERATURE`]/
+    /// [`PROSE_TEMPERATURE`]/[`PROSE_GROUNDED_TEMPERATURE`] + penalty
+    /// constants every other accepting adapter uses (this app's pre-fix
+    /// renderer sent the identical numbers to Gemini as every other cloud
+    /// provider). `gemini_effective_temperature` itself is UNCHANGED — still
+    /// gated on the wider [`gemini_omits_sampling_params`] for its own
+    /// callers (e.g. `complete_impl`), independent of this method.
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        if !gemini_is_recognized_pre_v3(model) {
+            return SamplingProfile::default();
+        }
+        match intent {
+            // `Default` (no declared intent) resolves the same as
+            // `Deterministic` — see `Intent`'s own doc comment
+            // (`commands/ai_provider/mod.rs`).
+            Intent::Deterministic | Intent::Default => SamplingProfile {
+                temperature: Some(DETERMINISTIC_TEMPERATURE),
+                ..SamplingProfile::default()
+            },
+            Intent::Prose => SamplingProfile {
+                temperature: Some(PROSE_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+                ..SamplingProfile::default()
+            },
+            // Same register as `Prose`, MINUS presence_penalty (see
+            // `Intent::ProseGrounded`'s own doc comment for why).
+            Intent::ProseGrounded => SamplingProfile {
+                temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                ..SamplingProfile::default()
+            },
         }
     }
 

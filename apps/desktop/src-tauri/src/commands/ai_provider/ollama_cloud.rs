@@ -205,6 +205,9 @@ impl AiProvider for OllamaCloudClient {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{
+        PROSE_FREQUENCY_PENALTY, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    };
     use super::*;
 
     /// Regression guard: the inner `OpenAiClient`'s own `supports_web_search`
@@ -230,20 +233,30 @@ mod tests {
     }
 
     /// Regression guard, same shape as the two tests above: a naive
-    /// delegation to `self.inner` (a generic `OpenAiClient`) would apply
-    /// OpenAI's own deterministic/prose defaults instead of the gpt-oss-aware
-    /// table this client's `id` (`OllamaCloud`) is supposed to route to.
-    /// `chat_stream` reaches the SAME inner client, so this pins the exact
-    /// path production traffic takes, not a parallel copy.
+    /// delegation to `self.inner` (a generic `OpenAiClient`) would need to
+    /// reach the SAME `self.id == ProviderId::OllamaCloud` branch inside
+    /// `OpenAiClient::sampling_profile` that `chat_stream` actually uses —
+    /// this pins the exact path production traffic takes, not a parallel copy.
     #[test]
     fn sampling_profile_delegates_to_the_inner_clients_ollama_cloud_table() {
         let gpt_oss = OllamaCloudClient::new().sampling_profile("gpt-oss:120b", Intent::Prose);
         assert_eq!(gpt_oss.temperature, Some(1.0));
         assert_eq!(gpt_oss.top_p, Some(1.0));
 
-        // Every other family stays neutral, regardless of intent — never the
-        // generic OpenAI deterministic/prose profile.
+        // Every OTHER family reuses the SAME per-intent targets native
+        // OpenAI does (the `/v1` layer hardcodes 1.0/1.0 on omission for
+        // every family, not just gpt-oss — see `ollama_cloud_sampling_profile`'s
+        // doc comment) — never left neutral.
         let other = OllamaCloudClient::new().sampling_profile("qwen3-coder:480b", Intent::Prose);
-        assert_eq!(other, SamplingProfile::default());
+        assert_eq!(
+            other,
+            SamplingProfile {
+                temperature: Some(PROSE_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+                ..SamplingProfile::default()
+            }
+        );
     }
 }

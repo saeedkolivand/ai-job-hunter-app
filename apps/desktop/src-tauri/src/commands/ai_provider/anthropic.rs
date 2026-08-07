@@ -14,9 +14,10 @@ use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
     bounded, friendly_api_error, model_entry, pagination_step, parse_rfc3339_millis,
-    single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent,
-    ModelCapabilities, PaginationStep, ProviderId, RequestTrace, SamplingProfile, StopReason,
-    TokenParam, ToolCall, ToolSpec, Usage,
+    resolve_intent, single_shot_turn, split_system, AgentTurn, AiGenerateRequest, AiProvider,
+    ChatMsg, Intent, ModelCapabilities, PaginationStep, ProviderId, RequestTrace, SamplingProfile,
+    StopReason, TokenParam, ToolCall, ToolSpec, Usage, DETERMINISTIC_TEMPERATURE,
+    PROSE_GROUNDED_TEMPERATURE, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 
 const BASE: &str = "https://api.anthropic.com/v1";
@@ -501,21 +502,28 @@ fn parse_anthropic_frames(
     out
 }
 
-/// Build the `/messages` streaming request body for a given [`AiGenerateRequest`]
-/// (mirrors `openai.rs`'s `build_chat_stream_body`'s `caps.supports_temperature`
-/// gate, via [`anthropic_supports_temperature`]). Pure + unit-tested. `top_p`
-/// is Anthropic's only sampling knob beyond temperature (no frequency/presence
-/// penalty in this API) — set only when the caller supplied it (prose
-/// surfaces), and only when [`anthropic_supports_temperature`] (false for
-/// every adaptive-thinking model, and for an unrecognized `claude-`-prefixed
-/// id — see its doc comment): those models reject *any* non-default
-/// `temperature`/`top_p`/`top_k` on every request per Anthropic's docs
-/// ("Sampling parameters"), and we don't know each model's own default value,
-/// so omitting the field entirely is the only universally-safe choice.
-/// Classic extended thinking also omits `temperature` (Anthropic forces it to
-/// 1.0 internally; omitting IS that default, and is one fewer place to get
-/// the number wrong) and never gets `top_p` (400s alongside `thinking`).
-fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
+/// Build the `/messages` streaming request body for a given
+/// [`AiGenerateRequest`] + resolved [`SamplingProfile`] (mirrors
+/// `openai.rs`'s `build_chat_stream_body`'s `caps.supports_temperature` gate,
+/// via [`anthropic_supports_temperature`]). Pure + unit-tested. `sampling` is
+/// already merged with the request's explicit numeric overrides (see
+/// [`SamplingProfile::resolve`]) — `top_p` is Anthropic's only sampling knob
+/// beyond temperature (no frequency/presence penalty in this API), each set
+/// only when `Some` AND only when [`anthropic_supports_temperature`] (false
+/// for every adaptive-thinking model, and for an unrecognized
+/// `claude-`-prefixed id — see its doc comment): those models reject *any*
+/// non-default `temperature`/`top_p`/`top_k` on every request per Anthropic's
+/// docs ("Sampling parameters"), and we don't know each model's own default
+/// value, so omitting the field entirely is the only universally-safe
+/// choice — `AnthropicClient::sampling_profile` already returns a neutral
+/// profile for those models too, so this is belt-and-suspenders, not the
+/// only gate. Classic extended thinking ALSO omits `temperature` regardless
+/// of `sampling` (Anthropic forces it to 1.0 internally; omitting IS that
+/// default, and is one fewer place to get the number wrong) and never gets
+/// `top_p` (400s alongside `thinking`) — this is a PER-REQUEST condition
+/// (whether `max_tokens` is large enough to trigger classic thinking), not a
+/// per-model one, so it can't live in `sampling_profile` itself.
+fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) -> Value {
     let max_tokens = req.max_tokens.unwrap_or(4096);
 
     let system_content: String = req
@@ -581,8 +589,10 @@ fn build_chat_stream_body(req: &AiGenerateRequest) -> Value {
     } else if is_classic && classic_thinking_budget > 0 {
         body["thinking"] = json!({ "type": "enabled", "budget_tokens": classic_thinking_budget });
     } else if anthropic_supports_temperature(&req.model) {
-        body["temperature"] = json!(req.temperature.unwrap_or(0.7));
-        if let Some(top_p) = req.top_p {
+        if let Some(t) = sampling.temperature {
+            body["temperature"] = json!(t);
+        }
+        if let Some(top_p) = sampling.top_p {
             body["top_p"] = json!(top_p);
         }
     }
@@ -985,16 +995,42 @@ impl AiProvider for AnthropicClient {
         anthropic_effort_levels(model)
     }
 
-    /// Neutral, unconditionally — Anthropic has no frequency/presence/repeat
-    /// penalty parameters at all, and `temperature`/`top_p`/`top_k` 400 on
-    /// every adaptive-thinking (Claude 4.7+/5) request regardless of value
-    /// (see [`anthropic_supports_temperature`]). There is nothing this app
-    /// can safely declare here for ANY model/intent, unlike every other
-    /// adapter — `chat_stream`'s existing [`anthropic_supports_temperature`]
-    /// gate (below, in [`build_chat_stream_body`]) already fails safe and is
-    /// left untouched by this method.
-    fn sampling_profile(&self, _model: &str, _intent: Intent) -> SamplingProfile {
-        SamplingProfile::default()
+    /// Neutral on every adaptive-thinking (Claude 4.7+/5) model AND on an
+    /// unrecognized `claude-`-prefixed id ([`anthropic_supports_temperature`]'s
+    /// own fail-safe) — `temperature`/`top_p`/`top_k` 400 there regardless of
+    /// value, and Anthropic has no frequency/presence/repeat penalty
+    /// parameters at ALL (so `Intent::ProseGrounded`'s presence-penalty
+    /// distinction from `Intent::Prose` collapses to "same as Prose" here —
+    /// there is nothing to withhold). A model
+    /// [`anthropic_supports_temperature`] accepts (legacy pre-thinking, or a
+    /// classic-thinking-capable model NOT currently thinking) declares real
+    /// values reproducing this app's pre-fix shipped numbers — this app's
+    /// pre-fix renderer sent the identical numbers to Anthropic as every
+    /// other cloud provider. `top_p` is Anthropic's only sampling knob beyond
+    /// temperature (no frequency/presence penalty in this API).
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        if !anthropic_supports_temperature(model) {
+            return SamplingProfile::default();
+        }
+        match intent {
+            // `Default` (no declared intent) resolves the same as
+            // `Deterministic` — see `Intent`'s own doc comment
+            // (`commands/ai_provider/mod.rs`).
+            Intent::Deterministic | Intent::Default => SamplingProfile {
+                temperature: Some(DETERMINISTIC_TEMPERATURE),
+                ..SamplingProfile::default()
+            },
+            Intent::Prose => SamplingProfile {
+                temperature: Some(PROSE_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                ..SamplingProfile::default()
+            },
+            Intent::ProseGrounded => SamplingProfile {
+                temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                ..SamplingProfile::default()
+            },
+        }
     }
 
     async fn chat_stream(
@@ -1007,7 +1043,10 @@ impl AiProvider for AnthropicClient {
         let endpoint = format!("{BASE}/messages");
         let trace = RequestTrace::begin(ProviderId::Anthropic, &req.model, "/messages", BASE, true);
 
-        let body = build_chat_stream_body(req);
+        let sampling = self
+            .sampling_profile(&req.model, resolve_intent(req))
+            .resolve(req);
+        let body = build_chat_stream_body(req, sampling);
 
         let response = crate::net::http::shared()
             .post(&endpoint)

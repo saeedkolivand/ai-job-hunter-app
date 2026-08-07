@@ -143,7 +143,7 @@ const COVER_LETTER_FORMAT = `FORMAT (layout only; the body itself must read as o
 [Hiring Team / Manager name if named in the job ad]
 (If the company name is not known, omit the company/addressee lines entirely. NEVER output a placeholder such as "[Company Name]", "Company", or "Unternehmen".)
 
-[Subject line, only if <market_conventions> specifies one: its exact label, on its own line before the salutation]
+[Subject line, only if <market_conventions> specifies one: use the label exactly as <market_conventions> states it (the market's own word verbatim only when the letter language matches the market, otherwise its formal equivalent in the letter language, never a raw untranslated native label in a different-language letter), on its own line before the salutation]
 
 Dear [Hiring Team / specific name],
 

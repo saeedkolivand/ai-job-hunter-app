@@ -925,7 +925,7 @@
         "maxOutput": "Max output tokens",
         "temperature": "Temperature",
         "temperatureOverride": "Custom temperature",
-        "temperatureAuto": "Auto — uses the app's per-task defaults",
+        "temperatureAuto": "Auto — uses this model's own Modelfile settings",
         "tempAnalysis": "Analysis",
         "tempResume": "Résumé",
         "tempCover": "Cover letter",

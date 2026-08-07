@@ -1638,7 +1638,7 @@ describe('per-step temperature override (Ollama-only user-chosen value)', () => 
     done();
     await p;
     expect(argOf(client).temperature).toBeCloseTo(0.85);
-    expect(argOf(client).intent).toBe('prose');
+    expect(argOf(client).intent).toBe('prose_grounded');
   });
 
   it('sends no temperature when that step has no override — the adapter decides', async () => {
@@ -1713,14 +1713,14 @@ describe('generation intent wiring (renderer states intent, adapter picks number
     expect(arg.repeatPenalty).toBeUndefined();
   };
 
-  it('cover letter sends the prose intent, no legacy sampling fields', async () => {
+  it('cover letter sends the prose_grounded intent (asserts real résumé achievements to an employer), no legacy sampling fields', async () => {
     const client = register();
     const p = generateCoverLetter('My resume', 'Job ad', META, 'recruiter', 'llama3', vi.fn());
     await flushUntilStreaming();
     emit('Dear Hiring Team.');
     done();
     await p;
-    expect(argOf(client).intent).toBe('prose');
+    expect(argOf(client).intent).toBe('prose_grounded');
     expectNoLegacySamplingFields(client);
   });
 
@@ -1801,81 +1801,37 @@ describe('generation intent wiring (renderer states intent, adapter picks number
 describe('rewriteSelection intent (regression: previously bypassed resolveTemperature entirely)', () => {
   // `rewriteSelection` sent a bare `0.3` literal that never went through
   // `resolveTemperature`/`resolveSampling` — the per-model Ollama override
-  // and the active provider's own sampling profile never applied to inline
-  // rewrites. Now routed through the same per-`docType` step/intent map every
-  // other rewrite-adjacent surface uses.
+  // never applied to inline rewrites. Now routed through the same
+  // per-`docType` Ollama-override lookup every other surface uses, but
+  // ALWAYS with `deterministic` intent, regardless of docType: a surgical
+  // span edit ("tighten this sentence") must never inherit a prose/
+  // detector-resistance profile just because the surrounding document does
+  // — that would reintroduce drift/fabrication risk into exactly the span
+  // the user is deliberately hand-shaping.
   const argOf = (client: ReturnType<typeof register>) => {
     const call = (client.ai.generatePipeline as ReturnType<typeof vi.fn>).mock.calls[0];
     return call?.[0] as { temperature?: number; intent?: string };
   };
 
-  it('résumé rewrite sends the deterministic intent', async () => {
-    const client = register();
-    const p = rewriteSelection({
-      selection: 'Built things',
-      instruction: 'Make it punchier',
-      before: '',
-      after: '',
-      docType: 'resume',
-      model: 'llama3',
-    });
-    await flushUntilStreaming();
-    emit('Built impactful things');
-    done();
-    await p;
-    expect(argOf(client).intent).toBe('deterministic');
-  });
-
-  it('cover-letter rewrite sends the prose intent', async () => {
-    const client = register();
-    const p = rewriteSelection({
-      selection: 'I am writing to apply',
-      instruction: 'Make it warmer',
-      before: '',
-      after: '',
-      docType: 'cover-letter',
-      model: 'llama3',
-    });
-    await flushUntilStreaming();
-    emit('I am delighted to apply');
-    done();
-    await p;
-    expect(argOf(client).intent).toBe('prose');
-  });
-
-  it('application-answer rewrite sends prose_grounded (candidate factual claims)', async () => {
-    const client = register();
-    const p = rewriteSelection({
-      selection: 'I led the migration',
-      instruction: 'Tighten this',
-      before: '',
-      after: '',
-      docType: 'application-answer',
-      model: 'llama3',
-    });
-    await flushUntilStreaming();
-    emit('I led a critical migration');
-    done();
-    await p;
-    expect(argOf(client).intent).toBe('prose_grounded');
-  });
-
-  it('email rewrite sends prose_grounded (candidate factual claims)', async () => {
-    const client = register();
-    const p = rewriteSelection({
-      selection: 'I led the migration',
-      instruction: 'Tighten this',
-      before: '',
-      after: '',
-      docType: 'email',
-      model: 'llama3',
-    });
-    await flushUntilStreaming();
-    emit('I led a critical migration');
-    done();
-    await p;
-    expect(argOf(client).intent).toBe('prose_grounded');
-  });
+  it.each(['resume', 'cover-letter', 'application-answer', 'email'] as const)(
+    '%s rewrite always sends the deterministic intent',
+    async (docType) => {
+      const client = register();
+      const p = rewriteSelection({
+        selection: 'I led the migration',
+        instruction: 'Tighten this',
+        before: '',
+        after: '',
+        docType,
+        model: 'llama3',
+      });
+      await flushUntilStreaming();
+      emit('I led a critical migration');
+      done();
+      await p;
+      expect(argOf(client).intent).toBe('deterministic');
+    }
+  );
 
   it('honors the per-step Ollama temperature override for the resolved step', async () => {
     setActive('ollama', 'llama3');

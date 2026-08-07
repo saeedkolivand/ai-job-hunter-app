@@ -925,7 +925,7 @@
         "maxOutput": "Max. Ausgabe-Tokens",
         "temperature": "Temperatur",
         "temperatureOverride": "Eigene Temperatur",
-        "temperatureAuto": "Automatisch — verwendet die Standardwerte pro Aufgabe",
+        "temperatureAuto": "Automatisch — verwendet die eigenen Modelfile-Einstellungen dieses Modells",
         "tempAnalysis": "Analyse",
         "tempResume": "Lebenslauf",
         "tempCover": "Anschreiben",
