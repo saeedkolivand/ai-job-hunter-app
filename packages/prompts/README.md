@@ -2,11 +2,11 @@
 
 Pure, dependency-free TypeScript that builds the prompt strings and output
 validators for the app's AI features. It **constructs strings and repairs model
-output** — it never calls an LLM or the network.
+output**; it never calls an LLM or the network.
 
 ## Provider-aware
 
-Every prompt builder accepts a `PromptTarget` **additively** — either a legacy
+Every prompt builder accepts a `PromptTarget` **additively**: either a legacy
 tier string (`'large' | 'medium' | 'small'`) or a `ProviderProfile`:
 
 ```ts
@@ -19,9 +19,9 @@ interface ProviderProfile {
 }
 ```
 
-`resolveProfile(target)` turns that into the four decisions a builder needs —
+`resolveProfile(target)` turns that into the four decisions a builder needs:
 prompt **depth**, **schema** variant, **truncation** strategy, and whether the
-caller can request **native structured output**:
+caller can request **native structured output**.
 
 | kind     | depth    | prompt                                          | truncation               | structured output² |
 | -------- | -------- | ----------------------------------------------- | ------------------------ | ------------------ |
@@ -31,12 +31,12 @@ caller can request **native structured output**:
 
 ¹ ollama uses `full` only for a large local model. `detectModelSize` parses the
 parameter size from the tag (`:1b`, `-3.2-1b`, `:7b`, `70b`, quant/instruct
-suffixes) → `<4B small · 4–14B medium · >14B large`; unknown local models default
+suffixes) → `<4B small · 4-14B medium · >14B large`; unknown local models default
 to the smaller/safer prompt.
 
 ² The **structured output** column is the _default_ per `kind`; `resolveProfile`
 computes it as `profile.supportsStructuredOutput ?? profile.kind === 'cloud'`, so any
-profile can override it — a cloud model without native JSON-schema/tool-use → `false`, a
+profile can override it: a cloud model without native JSON-schema/tool-use → `false`, a
 capable local model → `true`.
 
 `validateAndRepair` / `validateMetadata` remain the universal fallback for every
@@ -65,7 +65,7 @@ Public entry points (exported in `package.json` `exports`):
 | `@ajh/prompts/context-manager` | `src/context-manager/` |
 | `@ajh/prompts/provider`        | `src/provider/`        |
 
-Internal folders (not exported — no `@ajh/prompts/<name>` entry point):
+Internal folders (not exported, no `@ajh/prompts/<name>` entry point):
 
 ```
 src/
