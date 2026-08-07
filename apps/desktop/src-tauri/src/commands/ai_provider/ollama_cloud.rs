@@ -13,8 +13,8 @@ use crate::error::AppResult;
 
 use super::openai::OpenAiClient;
 use super::{
-    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
-    Usage,
+    AgentTurn, AiGenerateRequest, AiProvider, ChatMsg, Intent, ModelCapabilities, ProviderId,
+    SamplingProfile, ToolSpec, Usage,
 };
 
 /// Ollama Cloud's OpenAI-compatible base URL.
@@ -57,6 +57,18 @@ impl AiProvider for OllamaCloudClient {
 
     fn effort_levels(&self, model: &str) -> Vec<&'static str> {
         self.inner.effort_levels(model)
+    }
+
+    fn sampling_profile(&self, model: &str, intent: Intent) -> SamplingProfile {
+        // The inner client's `sampling_profile` already special-cases
+        // `self.id == ProviderId::OllamaCloud` (its `id` field is set to
+        // `OllamaCloud` in `new()` above), so this delegates to the SAME
+        // gpt-oss-aware table `chat_stream` actually uses — never a second,
+        // divergent copy. Delegating (rather than leaving the trait default)
+        // matters for any direct caller of this method, e.g. a future
+        // capabilities surface or a test — `chat_stream` reaches the inner
+        // client's own `sampling_profile` regardless of this override.
+        self.inner.sampling_profile(model, intent)
     }
 
     async fn chat_stream(
@@ -193,6 +205,9 @@ impl AiProvider for OllamaCloudClient {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{
+        PROSE_FREQUENCY_PENALTY, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    };
     use super::*;
 
     /// Regression guard: the inner `OpenAiClient`'s own `supports_web_search`
@@ -215,5 +230,42 @@ mod tests {
         assert!(OllamaCloudClient::new()
             .effort_levels("qwen3-coder:480b")
             .is_empty());
+    }
+
+    /// Regression guard, same shape as the two tests above: a naive
+    /// delegation to `self.inner` (a generic `OpenAiClient`) would need to
+    /// reach the SAME `self.id == ProviderId::OllamaCloud` branch inside
+    /// `OpenAiClient::sampling_profile` that `chat_stream` actually uses —
+    /// this pins the exact path production traffic takes, not a parallel copy.
+    #[test]
+    fn sampling_profile_delegates_to_the_inner_clients_ollama_cloud_table() {
+        let gpt_oss = OllamaCloudClient::new().sampling_profile("gpt-oss:120b", Intent::Prose);
+        assert_eq!(gpt_oss.temperature, Some(1.0));
+        assert_eq!(gpt_oss.top_p, Some(1.0));
+
+        // `ollama_cloud_sampling_profile` returns the gpt-oss 1.0/1.0 override
+        // BEFORE it ever inspects `intent` — pin a second, different intent on
+        // the SAME model so a future refactor that starts branching gpt-oss on
+        // intent (breaking the family-wide override) fails here, not silently.
+        let gpt_oss_deterministic =
+            OllamaCloudClient::new().sampling_profile("gpt-oss:120b", Intent::Deterministic);
+        assert_eq!(gpt_oss_deterministic.temperature, Some(1.0));
+        assert_eq!(gpt_oss_deterministic.top_p, Some(1.0));
+
+        // Every OTHER family reuses the SAME per-intent targets native
+        // OpenAI does (the `/v1` layer hardcodes 1.0/1.0 on omission for
+        // every family, not just gpt-oss — see `ollama_cloud_sampling_profile`'s
+        // doc comment) — never left neutral.
+        let other = OllamaCloudClient::new().sampling_profile("qwen3-coder:480b", Intent::Prose);
+        assert_eq!(
+            other,
+            SamplingProfile {
+                temperature: Some(PROSE_TEMPERATURE),
+                top_p: Some(PROSE_TOP_P),
+                frequency_penalty: Some(PROSE_FREQUENCY_PENALTY),
+                presence_penalty: Some(PROSE_PRESENCE_PENALTY),
+                ..SamplingProfile::default()
+            }
+        );
     }
 }

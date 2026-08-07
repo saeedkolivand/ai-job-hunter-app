@@ -46,6 +46,20 @@ export const JobEventSchema = z.object({
   ts: z.number().int(),
 });
 
+/**
+ * The declared-intent vocabulary for `AiGenerateRequestSchema.intent` — a
+ * named constant (mirroring `DATE_FILTER_OPTIONS` below) rather than an
+ * inline array literal so the IPC codegen (`pnpm gen:ipc`, see
+ * `packages/shared/scripts/gen-ipc-rust.ts`) can emit the SAME literal list
+ * as a Rust `&[&str]` const for `resolve_intent`'s own tests
+ * (`commands/ai_provider/mod.rs`) to iterate — one source of truth for the
+ * wire vocabulary instead of a hand-typed copy on each side that could
+ * silently drift (a renamed/typo'd literal here would otherwise degrade
+ * every affected request to `Intent::Default` with no test catching it).
+ */
+export const AI_GENERATE_INTENTS = ['deterministic', 'prose', 'prose_grounded', 'default'] as const;
+export type AiGenerateIntent = (typeof AI_GENERATE_INTENTS)[number];
+
 export const AiGenerateRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(AiMessageSchema).min(1),
@@ -84,6 +98,31 @@ export const AiGenerateRequestSchema = z.object({
    * agent tool-calling loop and `research*` calls keep the provider default.
    */
   effort: z.string().optional(),
+  /**
+   * The renderer's declared INTENT for this generation step — never a raw
+   * sampling number. `'deterministic'` (analysis/résumé/job-ad-summary/
+   * GitHub-projects): exact, non-creative output. `'prose'` (interview
+   * questions, likely questions, STAR feedback): creative, detector-resistant
+   * writing with no traceability requirement. `'prose_grounded'` (cover
+   * letter, application answers, referral messages, application email): same
+   * detector-resistant register as `'prose'`, but the output makes factual
+   * claims about the candidate that MUST stay traceable to the résumé/job ad
+   * — concretely, `'prose'` minus the presence-penalty knob (it pushes a
+   * model toward new topics, i.e. invented candidate facts). Absent/
+   * `'default'`: resolves to the SAME numbers as `'deterministic'` on an
+   * accepting provider (see `Intent`'s own doc comment,
+   * `commands/ai_provider/mod.rs`) — never a genuinely separate "no opinion"
+   * state, since omitting on an accepting provider is not a safe default
+   * either. Each provider adapter maps `(model, intent)` to its OWN sampling
+   * numbers via `AiProvider::sampling_profile`
+   * (`commands/ai_provider/mod.rs`) — real values wherever the provider
+   * accepts them (this fix's whole point is never sending them where they
+   * 400 or are documented-harmful, NOT changing register everywhere else);
+   * the explicit numeric fields above (`temperature` etc.) still win over
+   * whatever the adapter would otherwise pick. Only reaches `chat_stream`,
+   * exactly like `effort`.
+   */
+  intent: z.enum(AI_GENERATE_INTENTS).optional(),
 });
 
 /**

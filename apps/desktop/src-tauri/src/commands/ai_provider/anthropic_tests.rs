@@ -79,6 +79,7 @@ fn base_request(model: &str) -> AiGenerateRequest {
         max_tokens: None,
         context_window: None,
         effort: None,
+        intent: None,
     }
 }
 
@@ -89,11 +90,119 @@ fn caps_for(model: &str) -> ModelCapabilities {
     AnthropicClient.capabilities(model)
 }
 
+/// Mirrors what `AnthropicClient::chat_stream` does: resolve this adapter's
+/// own profile for `req.model` + `req.intent`, merged with the request's
+/// explicit numeric overrides.
+fn sampling_for(req: &AiGenerateRequest) -> SamplingProfile {
+    AnthropicClient
+        .sampling_profile(&req.model, resolve_intent(req))
+        .resolve(req)
+}
+
+#[test]
+fn sampling_profile_is_neutral_on_adaptive_frontier_and_unrecognized_models_only() {
+    // Hard constraint: a Claude 4.7+/5 model receives no sampling params at
+    // all, for every intent — `temperature`/`top_p` 400 outright on adaptive
+    // models regardless of value. An unrecognized `claude-`-prefixed id
+    // fails safe the same way (the same new-family fail-safe
+    // `anthropic_supports_temperature` already applies).
+    for model in ["claude-opus-5", "claude-opus-4-7", "claude-zephyr-6"] {
+        for intent in [
+            Intent::Deterministic,
+            Intent::Prose,
+            Intent::ProseGrounded,
+            Intent::Default,
+        ] {
+            assert_eq!(
+                AnthropicClient.sampling_profile(model, intent),
+                SamplingProfile::default(),
+                "{model} / {intent:?} must stay neutral"
+            );
+        }
+    }
+}
+
+#[test]
+fn sampling_profile_declares_real_values_for_a_legacy_model_per_intent() {
+    // A model `anthropic_supports_temperature` accepts (legacy pre-thinking)
+    // declares REAL values reproducing this app's pre-fix shipped numbers —
+    // omitting is not a safe fallback on a provider that accepts the field
+    // (see `commands/ai_provider/mod.rs`'s module doc for why).
+    let model = "claude-3-5-sonnet-20241022";
+    assert_eq!(
+        AnthropicClient.sampling_profile(model, Intent::Deterministic),
+        SamplingProfile {
+            temperature: Some(DETERMINISTIC_TEMPERATURE),
+            ..SamplingProfile::default()
+        }
+    );
+    assert_eq!(
+        AnthropicClient.sampling_profile(model, Intent::Prose),
+        SamplingProfile {
+            temperature: Some(PROSE_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            ..SamplingProfile::default()
+        }
+    );
+    assert_eq!(
+        AnthropicClient.sampling_profile(model, Intent::ProseGrounded),
+        SamplingProfile {
+            temperature: Some(PROSE_GROUNDED_TEMPERATURE),
+            top_p: Some(PROSE_TOP_P),
+            ..SamplingProfile::default()
+        }
+    );
+    // `Default` (no declared intent) resolves the same as `Deterministic`.
+    assert_eq!(
+        AnthropicClient.sampling_profile(model, Intent::Default),
+        AnthropicClient.sampling_profile(model, Intent::Deterministic)
+    );
+}
+
+#[test]
+fn wire_body_carries_the_declared_deterministic_temperature_with_no_explicit_override() {
+    // End-to-end: the profile's own temperature reaches the wire when the
+    // request carries no explicit override — this is exactly the path that
+    // was DEAD before `chat_stream` was wired through `sampling_profile`
+    // (previously `build_chat_stream_body` read `req.temperature` directly,
+    // defaulting to a bare 0.7 that no test ever exercised). Mutation check:
+    // change `DETERMINISTIC_TEMPERATURE` or delete the `Intent::Deterministic`
+    // arm in `AnthropicClient::sampling_profile` and this must fail.
+    let mut req = base_request("claude-3-5-sonnet-20241022");
+    req.temperature = None;
+    req.intent = Some("deterministic".to_string());
+    let body = build_chat_stream_body(&req, sampling_for(&req));
+    assert_eq!(body["temperature"], json!(DETERMINISTIC_TEMPERATURE));
+}
+
+#[test]
+fn wire_body_prose_grounded_never_sends_a_top_p_higher_register_than_declared_and_no_penalty_field_exists(
+) {
+    // Anthropic has NO frequency/presence penalty parameter at all — so
+    // `Intent::ProseGrounded`'s distinguishing feature elsewhere (omitting
+    // presence_penalty) has nothing to omit here. What DOES carry over is
+    // the lower, more-traceable temperature vs. `Intent::Prose`.
+    let mut req = base_request("claude-3-5-sonnet-20241022");
+    req.temperature = None;
+    req.intent = Some("prose_grounded".to_string());
+    let grounded = build_chat_stream_body(&req, sampling_for(&req));
+    assert_eq!(grounded["temperature"], json!(PROSE_GROUNDED_TEMPERATURE));
+    assert_eq!(grounded["top_p"], json!(PROSE_TOP_P));
+    assert!(!grounded
+        .as_object()
+        .unwrap()
+        .contains_key("presence_penalty"));
+
+    req.intent = Some("prose".to_string());
+    let prose = build_chat_stream_body(&req, sampling_for(&req));
+    assert_eq!(prose["temperature"], json!(PROSE_TEMPERATURE));
+}
+
 #[test]
 fn chat_stream_body_serializes_top_p_when_set_on_a_non_thinking_model() {
     let mut req = base_request("claude-3-5-sonnet-20241022");
     req.top_p = Some(0.95);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(body["top_p"], json!(0.95));
     assert!(body.get("thinking").is_none());
 }
@@ -101,7 +210,7 @@ fn chat_stream_body_serializes_top_p_when_set_on_a_non_thinking_model() {
 #[test]
 fn chat_stream_body_omits_top_p_when_none() {
     let req = base_request("claude-3-5-sonnet-20241022");
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("top_p").is_none());
 }
 
@@ -115,7 +224,7 @@ fn chat_stream_body_skips_top_p_when_extended_thinking_is_enabled() {
     let mut req = base_request("claude-opus-4-20250514");
     req.top_p = Some(0.95);
     req.max_tokens = Some(4096); // >= 2048 → thinking budget kicks in
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("thinking").is_some(), "thinking should be enabled");
     assert!(
         body.get("temperature").is_none(),
@@ -242,7 +351,7 @@ fn unrecognized_claude_family_fails_safe_to_no_temperature() {
 
     let mut req = base_request("claude-zephyr-6");
     req.max_tokens = Some(4096);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("temperature").is_none(),
         "an unrecognized claude- family must not receive a non-default temperature"
@@ -263,7 +372,7 @@ fn unrecognized_claude_family_fails_safe_even_behind_a_vendor_prefix() {
 
     let mut req = base_request("anthropic/claude-zephyr-6");
     req.max_tokens = Some(4096);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("temperature").is_none(),
         "a vendor-prefixed unrecognized claude- family must still fail safe"
@@ -302,7 +411,8 @@ fn legacy_pre_thinking_models_keep_temperature_despite_matching_neither_gate() {
             "{m} is a known legacy model and must keep normal temperature support"
         );
     }
-    let body = build_chat_stream_body(&base_request("claude-3-5-sonnet-20241022"));
+    let req = base_request("claude-3-5-sonnet-20241022");
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(body["temperature"], json!(0.8));
 }
 
@@ -320,7 +430,7 @@ fn chat_stream_body_sends_adaptive_thinking_with_summarized_display_for_claude_5
     ] {
         let mut req = base_request(m);
         req.max_tokens = Some(4096);
-        let body = build_chat_stream_body(&req);
+        let body = build_chat_stream_body(&req, sampling_for(&req));
         assert_eq!(
             body["thinking"],
             json!({ "type": "adaptive", "display": "summarized" }),
@@ -351,7 +461,7 @@ fn chat_stream_body_inflates_max_tokens_for_adaptive_models_below_the_classic_20
     // un-inflated 1000-token budget and drafts come back short/empty.
     let mut req = base_request("claude-sonnet-5");
     req.max_tokens = Some(1000);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(
         body["thinking"],
         json!({ "type": "adaptive", "display": "summarized" })
@@ -370,7 +480,7 @@ fn chat_stream_body_keeps_the_classic_2048_gate_for_classic_models() {
     // `max_tokens >= 2048` — only the ADAPTIVE path lost that gate.
     let mut req = base_request("claude-opus-4-20250514");
     req.max_tokens = Some(1000);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("thinking").is_none(),
         "classic thinking must stay off below the 2048 gate"
@@ -387,7 +497,7 @@ fn chat_stream_body_sends_adaptive_thinking_for_opus_4_7_and_4_8() {
     for m in ["claude-opus-4-7", "claude-opus-4-8"] {
         let mut req = base_request(m);
         req.max_tokens = Some(4096);
-        let body = build_chat_stream_body(&req);
+        let body = build_chat_stream_body(&req, sampling_for(&req));
         assert_eq!(
             body["thinking"],
             json!({ "type": "adaptive", "display": "summarized" }),
@@ -402,7 +512,7 @@ fn chat_stream_body_omits_top_p_for_adaptive_models_even_when_caller_supplies_it
     let mut req = base_request("claude-sonnet-5");
     req.top_p = Some(0.95);
     req.max_tokens = Some(4096);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("top_p").is_none(),
         "adaptive models 400 on a non-default top_p"
@@ -415,7 +525,7 @@ fn chat_stream_body_sends_no_thinking_key_for_unknown_models() {
     // max_tokens inflation, and the plain temperature/top_p path.
     let mut req = base_request("some-future-claude-model");
     req.max_tokens = Some(8192);
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("thinking").is_none());
     assert_eq!(
         body["max_tokens"],
@@ -786,7 +896,7 @@ fn capabilities_supports_reasoning_mirrors_the_effort_gate() {
 fn chat_stream_body_sends_output_config_effort_for_an_effort_capable_model() {
     let mut req = base_request("claude-opus-5");
     req.effort = Some("low".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(body["output_config"], json!({ "effort": "low" }));
 }
 
@@ -794,14 +904,14 @@ fn chat_stream_body_sends_output_config_effort_for_an_effort_capable_model() {
 fn chat_stream_body_omits_output_config_for_a_non_effort_capable_model() {
     let mut req = base_request("claude-3-5-sonnet-20241022");
     req.effort = Some("low".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("output_config").is_none());
 }
 
 #[test]
 fn chat_stream_body_omits_output_config_when_effort_not_set() {
     let req = base_request("claude-opus-5");
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(body.get("output_config").is_none());
 }
 
@@ -815,7 +925,7 @@ fn chat_stream_body_omits_output_config_effort_invalid_for_the_current_model_tie
     // level the CURRENT model rejects.
     let mut req = base_request("claude-sonnet-4-6");
     req.effort = Some("xhigh".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("output_config").is_none(),
         "xhigh is invalid for claude-sonnet-4-6 (max but no xhigh) — must not be sent"
@@ -827,7 +937,7 @@ fn chat_stream_body_omits_output_config_effort_invalid_for_opus_4_5() {
     // Opus 4.5 is the one effort-capable model with NEITHER max nor xhigh.
     let mut req = base_request("claude-opus-4-5");
     req.effort = Some("max".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert!(
         body.get("output_config").is_none(),
         "max is invalid for claude-opus-4-5 (low/medium/high only) — must not be sent"
@@ -838,7 +948,7 @@ fn chat_stream_body_omits_output_config_effort_invalid_for_opus_4_5() {
 fn chat_stream_body_sends_xhigh_only_on_a_model_that_supports_it() {
     let mut req = base_request("claude-sonnet-5");
     req.effort = Some("xhigh".to_string());
-    let body = build_chat_stream_body(&req);
+    let body = build_chat_stream_body(&req, sampling_for(&req));
     assert_eq!(body["output_config"], json!({ "effort": "xhigh" }));
 }
 

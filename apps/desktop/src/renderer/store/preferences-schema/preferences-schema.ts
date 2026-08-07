@@ -85,6 +85,7 @@ export const LocalModelLimitsSchema = z.object({
           resume: z.number().min(0).max(2).optional(),
           cover: z.number().min(0).max(2).optional(),
           answers: z.number().min(0).max(2).optional(),
+          questions: z.number().min(0).max(2).optional(),
           referral: z.number().min(0).max(2).optional(),
         })
         .optional()

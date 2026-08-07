@@ -191,9 +191,7 @@ Total = sum of above (0-100)
 
 **Keyword Coverage Calculation:**
 1. Extract ALL required skills/technologies from job ad (make a list)
-2. Count exact matches in resume (50 points max)
-3. Count semantic matches (30 points max)
-4. Count related terms (20 points max)
+2. Count matches in resume (exact, semantic, or related terms)
 Total = (matches / total_required) * 100
 RULE: Missing 5+ critical keywords = automatic score <65
 
