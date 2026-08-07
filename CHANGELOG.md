@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.134.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.0...v0.134.1) (2026-08-07)
+
+### 🎨 UI/UX
+
+* explain what the job match and trust badges mean on hover ([#956](https://github.com/saeedkolivand/ai-job-hunter-app/issues/956)) ([310f20d](https://github.com/saeedkolivand/ai-job-hunter-app/commit/310f20d18cdec68d6b9005c8f0143edfe1ae1b5b))
+
 ## [0.134.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.133.0...v0.134.0) (2026-08-07)
 
 ### ✨ Features
