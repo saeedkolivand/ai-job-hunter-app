@@ -4,6 +4,7 @@ import { useQueries } from '@tanstack/react-query';
 import { useTranslation } from '@ajh/translations';
 import { Dropdown } from '@ajh/ui';
 
+import { EffortPicker } from '@/components/ui/EffortPicker';
 import { getModelGuidance } from '@/lib/ai-providers/model-guidance';
 import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import { useAppClient } from '@/providers/AppClientProvider';
@@ -225,6 +226,17 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           )}
         </div>
       </div>
+      {/* Reasoning effort for the selected model. Rendered unconditionally —
+          EffortPicker returns null unless the backend reports `effortLevels`
+          for this model, so a non-reasoning model shows nothing here. This one
+          insertion is what puts the control on every model-picking surface in
+          the app; do not duplicate it at the call sites. */}
+      <EffortPicker
+        provider={activeProvider}
+        model={activeProviderModel}
+        baseUrl={baseUrlFor(activeProvider)}
+        compact
+      />
       {activeCloudStatus === 'needsKey' && (
         <p role="status" aria-live="polite" className="mt-1.5 text-[10px] text-foreground/40">
           {/* `openai-compatible` needs a base URL, not a key — this is the

@@ -354,6 +354,7 @@ export function AIGeneratePage() {
                 activeOut={activeOut}
                 meta={meta}
                 sourceResume={resume}
+                jobAd={jobAd}
                 mode={mode}
                 templateId={templateId}
                 atsMode={atsMode}

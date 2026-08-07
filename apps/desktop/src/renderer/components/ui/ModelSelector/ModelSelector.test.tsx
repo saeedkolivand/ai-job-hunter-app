@@ -105,6 +105,11 @@ vi.mock('@/services', () => ({
   useAIModels: () => ({ data: stubbedOllamaModels, isLoading: false }),
   useHasProviderKey: () => ({ data: { has: false } }),
   useSystemHealth: () => stubbedHealth,
+  // ModelSelector renders EffortPicker, which reads model capabilities. These
+  // suites are about the MODEL dropdown; no `effortLevels` means EffortPicker
+  // renders null and stays out of the way. Its own behaviour is covered in
+  // EffortPicker.test.tsx.
+  useModelCapabilities: () => ({ data: undefined }),
 }));
 
 // ── @tanstack/react-query stub — keep QueryClient et al, stub only useQueries ──
