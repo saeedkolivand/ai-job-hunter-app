@@ -78,6 +78,12 @@ interface RunTailorParams {
    * unmounted, so a background generation still records its result.
    */
   onComplete?: (result: GenerationResult) => void;
+  /**
+   * Called once when a run fails (not on cancel) — lets the caller fire a toast.
+   * The failure message itself is written to the session's `error` field
+   * regardless, so the UI can render it inline even if the caller has unmounted.
+   */
+  onError?: () => void;
 }
 
 interface GenerationStore {
@@ -192,6 +198,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       researchCompany,
       t,
       onComplete,
+      onError,
     }) => {
       if (get().sessions[id]?.generating || !resume.trim()) return;
 
@@ -290,6 +297,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           // text is the ONLY record of why a generation died.
           console.error('[runTailor] failed', { target, error: errorDetail(err) });
           patch(id, { error: message });
+          onError?.();
         }
       } finally {
         controllers.delete(id);
