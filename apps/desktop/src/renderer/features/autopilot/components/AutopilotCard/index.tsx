@@ -36,7 +36,7 @@ import { AgencyChip } from '@/components/job/AgencyChip';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { BoardSummaryChips } from '@/components/scrape/BoardSummaryChips';
 import { type AutopilotRunState, RUN_STATE_LABEL } from '@/lib/machines/autopilot-run.machine';
-import { MatchBand } from '@/lib/match-band';
+import { MatchBand, matchBandDescriptionKey, scoreTier } from '@/lib/match-band';
 import { timeAgo } from '@/lib/time';
 import { TrustBadge } from '@/lib/trust-badge';
 import { useInteractions, useMarkNotDuplicate, useOpenExternal, usePersistJob } from '@/services';
@@ -111,6 +111,23 @@ const NEEDS_CONFIG_BADGE = {
   labelKey: 'autopilot.badge.needsConfig',
   className: 'bg-foreground/[0.06] text-foreground/70',
 };
+
+/**
+ * Hover/screen-reader copy for a PROVISIONAL coverage score: what the tier
+ * means, then why it is only an estimate.
+ *
+ * Both, not either. They answer different questions — the tier description says
+ * what "High" is claiming, `provisionalScoreHint` says how much to trust the
+ * number behind it — so dropping one leaves a real gap. Composed here rather
+ * than inside `MatchBand` because this wrapper already owns the `title` and the
+ * sr-only span; letting the band render its own would put a second `title`
+ * inside this one (the inner wins on hover over the badge, hiding the caveat)
+ * and announce twice.
+ */
+function provisionalScoreDetail(t: (key: string) => string, score: number): string {
+  const tier = t(matchBandDescriptionKey(scoreTier(score, 'coverage').key, 'coverage'));
+  return `${tier} ${t('autopilot.provisionalScoreHint')}`;
+}
 
 /** Badges that carry a hover/focus explainer now that the chip strip exists. */
 const BADGE_HINT_KEY = {
@@ -634,7 +651,7 @@ export function AutopilotCard({
                             // above renders interactive=false).
                             <span
                               className="inline-flex shrink-0 items-center gap-0.5"
-                              title={t('autopilot.provisionalScoreHint')}
+                              title={provisionalScoreDetail(t, job.score)}
                             >
                               <span
                                 aria-hidden="true"
@@ -642,9 +659,20 @@ export function AutopilotCard({
                               >
                                 ~
                               </span>
-                              <MatchBand value={job.score} variant="coverage" muted />
+                              {/* describe={false}: this wrapper owns the copy —
+                                  the band's own `title` would otherwise win on
+                                  hover over the badge itself and hide the
+                                  provisional caveat, and its sr-only suffix
+                                  would double up with the one below. Same
+                                  caller-owns-richer-copy split as RowMatchScore. */}
+                              <MatchBand
+                                value={job.score}
+                                variant="coverage"
+                                muted
+                                describe={false}
+                              />
                               <span className="sr-only">
-                                : {t('autopilot.provisionalScoreHint')}
+                                : {provisionalScoreDetail(t, job.score)}
                               </span>
                             </span>
                           ) : (

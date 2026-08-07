@@ -44,6 +44,15 @@ export function TrustBadge({
   const isLow = trust.level === 'low';
   const levelLabel = t(`jobs.trust.level.${trust.level}`);
   const reasons = trust.flags.map((flag) => t(`jobs.trust.flags.${flag}`)).join(', ');
+  // What the LEVEL means, in plain language. The flag list alone answers "which
+  // checks failed" but never "so what?" — "Suspicious domain" doesn't tell a
+  // reader whether to skip the posting or just look twice.
+  const levelDescription = t(`jobs.trust.levelDesc.${trust.level}`);
+  // Level meaning first, failed checks second: the reader needs the verdict
+  // before the evidence.
+  const detail = reasons
+    ? `${levelDescription} ${t('jobs.trust.whyPrefix')} ${reasons}`
+    : levelDescription;
 
   const badge = (
     <Tag
@@ -62,11 +71,15 @@ export function TrustBadge({
     </Tag>
   );
 
-  if (!interactive || !reasons) {
+  // Non-interactive surfaces get the same words via a native `title` (hover,
+  // no focusable element) plus the sr-only suffix. Gated on `interactive`
+  // ALONE now, not on `reasons` too: the level description always exists, so
+  // there is always something worth saying even when no flag list accompanies it.
+  if (!interactive) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1" title={detail}>
         {badge}
-        {reasons && <span className="sr-only">: {reasons}</span>}
+        <span className="sr-only">: {detail}</span>
       </span>
     );
   }
@@ -74,16 +87,16 @@ export function TrustBadge({
   return (
     <HoverPopover
       placement="top"
-      ariaLabel={reasons}
+      ariaLabel={detail}
       trigger={
         <Button variant="unstyled" className="inline-flex items-center rounded-full">
           {badge}
-          <span className="sr-only">: {reasons}</span>
+          <span className="sr-only">: {detail}</span>
         </Button>
       }
     >
-      <p className="dropdown-surface max-w-[220px] px-3 py-2 text-fine-print leading-snug text-foreground/70">
-        {reasons}
+      <p className="dropdown-surface max-w-[240px] px-3 py-2 text-fine-print leading-snug text-foreground/70">
+        {detail}
       </p>
     </HoverPopover>
   );

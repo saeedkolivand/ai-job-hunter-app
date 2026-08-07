@@ -22,6 +22,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import type { JobTrustAssessment } from '@ajh/shared';
+import i18n from '@ajh/translations';
 
 import { TrustBadge } from './trust-badge';
 
@@ -136,5 +137,70 @@ describe('TrustBadge — strong prop', () => {
 
     rerender(<TrustBadge trust={assessment('low', ['invalidUrl'])} strong />);
     expect(screen.getByText('Low trust')).toBeInTheDocument();
+  });
+});
+
+// ── Level description ───────────────────────────────────────────────────────
+//
+// The flag list answers "which checks failed" but never "so what?" —
+// "Suspicious domain" doesn't tell a reader whether to skip the posting or just
+// look twice. These pin the plain-language verdict that now leads the tooltip.
+// Real translations (see the file header), so a missing `jobs.trust.levelDesc.*`
+// key surfaces as the raw key here.
+// Expected copy is read from the SAME resource the component renders from, so
+// these assert the description is actually present without hardcoding a
+// sentence that would have to be edited every time the wording is tweaked.
+// (Absence-of-raw-key assertions alone were too weak: with `levelDescription`
+// deleted the detail string still contained no raw keys and still placed the
+// flag list past character 10, so every assertion passed with the feature gone.)
+const levelDescriptionFor = (level: 'low' | 'medium') => i18n.t(`jobs.trust.levelDesc.${level}`);
+
+describe('TrustBadge — level description', () => {
+  for (const level of ['low', 'medium'] as const) {
+    it(`explains what "${level} trust" means, in resolved copy`, () => {
+      const expected = levelDescriptionFor(level);
+      // Guard the guard: if the key ever goes missing, `t` returns the key
+      // itself and every containment check below would trivially pass.
+      expect(expected).not.toContain('jobs.trust');
+
+      render(<TrustBadge trust={assessment(level, ['suspiciousDomain'])} />);
+      const detail = screen.getByText(/:/).textContent ?? '';
+
+      expect(detail).toContain(expected);
+      // The verdict comes before the evidence — a reader needs to know whether
+      // to care before being handed a list of failed checks.
+      expect(detail.indexOf(expected)).toBeLessThan(detail.indexOf('Suspicious domain'));
+    });
+  }
+
+  it('gives each level its own words', () => {
+    // A shared sentence would defeat the point: "treat with caution" and "worth
+    // a second look" are different instructions to the reader.
+    expect(levelDescriptionFor('low')).not.toBe(levelDescriptionFor('medium'));
+  });
+
+  it('still explains the level when no flags accompany it', () => {
+    // Previously the whole detail block was gated on `reasons` being non-empty,
+    // so a flagged-but-reasonless assessment rendered a bare badge with nothing
+    // to explain it.
+    render(<TrustBadge trust={assessment('low', [])} />);
+    const detail = screen.getByText(/^:/).textContent ?? '';
+    expect(detail).toContain(levelDescriptionFor('low'));
+  });
+
+  it('carries the same words on a non-interactive surface, via title', () => {
+    // Listbox rows and in-Button placements can't host a focusable popover, but
+    // must not therefore be silent — and must not say LESS than the popover
+    // does, which is what checking only the flag reason here allowed.
+    const { container } = render(
+      <TrustBadge trust={assessment('low', ['invalidUrl'])} interactive={false} />
+    );
+    const title = container.querySelector('[title]')?.getAttribute('title') ?? '';
+    const srText = container.querySelector('.sr-only')?.textContent ?? '';
+
+    expect(title).toContain(levelDescriptionFor('low'));
+    expect(title).toContain('Broken apply link');
+    // Sighted-hover and screen-reader paths must not drift apart.
+    expect(srText).toContain(title);
   });
 });
