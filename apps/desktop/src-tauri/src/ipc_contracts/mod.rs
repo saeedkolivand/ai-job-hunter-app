@@ -7,6 +7,7 @@
 pub mod agent;
 pub mod ai;
 pub mod ai_intents;
+pub mod ai_timeouts;
 pub mod applications;
 pub mod autopilot;
 pub mod date_filters;

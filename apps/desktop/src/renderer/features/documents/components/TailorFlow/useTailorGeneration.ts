@@ -192,6 +192,7 @@ export function useTailorGeneration({
       researchCompany,
       t,
       onComplete: persist,
+      onError: () => notify.error({ message: t('autopilot.apply.failed') }),
     });
   };
 

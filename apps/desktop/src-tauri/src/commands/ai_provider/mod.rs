@@ -1353,6 +1353,24 @@ pub fn friendly_api_error(
     }
 }
 
+/// Redact a generation-failure message before it reaches the renderer.
+///
+/// This is the choke point every generation-failure path funnels through
+/// (`ai_generate` in `commands/ai.rs`, `generate_pipeline` in
+/// `commands/pipeline.rs` — both call [`emit_stream_error`] on their `Err`
+/// branch with a raw `AppError`/`e.to_string()`). A provider or transport
+/// error can carry a `base_url` with query-string auth (the #935 shape), an
+/// absolute filesystem path, or a bare host — none of which may reach the
+/// screen. Reuses the diagnostics-bundle redactor (`commands::support::redact_lines`,
+/// ADR-027) rather than a second one: both are "text about to reach outside
+/// the machine's trust boundary" and must not drift into differing strength.
+/// Deliberately conservative (URL/path/host/credential/email shapes only) so
+/// an ordinary message like `"429 Too Many Requests"` or `"model not found"`
+/// survives byte-for-byte. Pure + unit-tested (see `mod tests`).
+fn redact_stream_error_message(message: &str) -> String {
+    crate::commands::support::redact_lines(message)
+}
+
 /// Emit the terminal `ai:stream` error event the renderer's stream reader expects.
 pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
     emit_event(
@@ -1364,7 +1382,7 @@ pub fn emit_stream_error(app: &AppHandle, job_id: &str, message: &str) {
             done: true,
             error: Some(AiStreamChunkError {
                 code: "GENERATION_FAILED".to_string(),
-                message: message.to_string(),
+                message: redact_stream_error_message(message),
             }),
             thinking: None,
         },

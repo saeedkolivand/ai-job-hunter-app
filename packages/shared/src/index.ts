@@ -1,4 +1,5 @@
 export * from './ai-models.js';
+export * from './ai-timeouts.js';
 export * from './events/index.js';
 export * from './ipc/contracts/index.js';
 export * from './ipc/extension-protocol.js';

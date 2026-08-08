@@ -17,14 +17,46 @@
  *     to `JOB_POLL_INTERVAL_MS = 3_000`.
  */
 
+import { EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS } from '@ajh/shared';
+
 import type { AppClient } from '../app-client';
 import { createThinkSplitter } from './think-split';
 
-/** Maximum wall-clock time for a single streamed generation (ms). */
-const STREAM_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Baseline wall-clock budget for a single streamed generation (ms), before
+ * {@link EFFORT_TIMEOUT_MULTIPLIER} scaling. Derived from the shared
+ * {@link STREAM_BASELINE_SECS} — the SAME constant the Rust `timeouts::STREAM`
+ * baseline (`apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs`) is
+ * generated from (`packages/shared/src/ai-timeouts.ts`, via `pnpm gen:ipc`),
+ * so the two can no longer drift independently. See
+ * {@link computeStreamTimeoutMs}'s doc for the one invariant that still needs
+ * its own test even so.
+ */
+const STREAM_TIMEOUT_MS = STREAM_BASELINE_SECS * 1000;
 
 /** Interval between job-status poll ticks (ms). */
 const JOB_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * Safety margin (ms) the renderer timeout adds on top of the backend's own
+ * `timeouts::stream_deadline` for the same effort — the backend deadline must
+ * always fire FIRST (it returns an actionable provider error; a renderer
+ * timeout is a generic "Generation timed out"), so the renderer's own bound
+ * has to strictly exceed it, not merely match it.
+ */
+const OUTER_BOUND_MARGIN_MS = 30_000;
+
+/**
+ * The renderer-side stream timeout for a given `effort` string (the SAME
+ * value threaded to the backend as `AiGenerateRequest.effort`) — the outer
+ * bound the backend's own `timeouts::stream_deadline` must always fire
+ * before. An unrecognized/absent effort gets multiplier 1 (the baseline),
+ * matching Rust's fallback for the same case.
+ */
+export function computeStreamTimeoutMs(effort?: string): number {
+  const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
+  return Math.round(STREAM_TIMEOUT_MS * multiplier) + OUTER_BOUND_MARGIN_MS;
+}
 
 /**
  * Rejection message for a completion that resolved with no usable content
@@ -44,8 +76,14 @@ export interface AwaitAiStreamOptions {
   signal?: AbortSignal;
   /** Override the poll interval (ms). Defaults to `JOB_POLL_INTERVAL_MS`. */
   pollIntervalMs?: number;
-  /** Override the stream timeout (ms). Defaults to `STREAM_TIMEOUT_MS`. */
+  /** Override the stream timeout (ms) outright. Defaults to
+   *  `computeStreamTimeoutMs(effort)` — prefer passing `effort` over this. */
   timeoutMs?: number;
+  /** The SAME reasoning-effort value sent to the backend as
+   *  `AiGenerateRequest.effort` — sizes the default `timeoutMs` via
+   *  `computeStreamTimeoutMs` so a high-effort generation isn't killed
+   *  client-side while the backend is still legitimately streaming. */
+  effort?: string;
   /** Active provider — diagnostic only, logged (never generated content) if the
    *  completion resolves empty. */
   provider?: string;
@@ -77,7 +115,7 @@ export function awaitAiStream(
     onThinking,
     signal,
     pollIntervalMs = JOB_POLL_INTERVAL_MS,
-    timeoutMs = STREAM_TIMEOUT_MS,
+    timeoutMs = computeStreamTimeoutMs(opts.effort),
     provider,
     model,
   } = opts;
