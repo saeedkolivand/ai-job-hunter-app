@@ -1055,7 +1055,7 @@ async fn stream_chat(
 
     let response = crate::net::http::shared()
         .post(&endpoint)
-        .timeout(timeouts::STREAM)
+        .timeout(timeouts::stream_deadline(req.effort.as_deref()))
         .json(&body)
         .send()
         .await;

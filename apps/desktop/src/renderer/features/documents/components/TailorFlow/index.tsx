@@ -4,7 +4,9 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import type { AiGenerationRecord, AutopilotFoundJob } from '@ajh/shared';
-import { transition } from '@ajh/ui';
+import { TEST_IDS } from '@ajh/test-ids';
+import { useTranslation } from '@ajh/translations';
+import { ErrorState, transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
@@ -126,6 +128,7 @@ export function TailorFlow({
   initialSummary,
   onJobDescChange,
 }: TailorFlowProps) {
+  const { t } = useTranslation();
   const model = useSelectedModel();
   const { canUse, reason } = useCanUseAI();
 
@@ -417,6 +420,17 @@ export function TailorFlow({
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* A failed run falls back to the wizard above — surface WHY, not silence. */}
+      {gen.error && (
+        <div data-testid={TEST_IDS.documents.generationError} className="mx-8 mb-4 shrink-0">
+          <ErrorState
+            title={t('autopilot.apply.error')}
+            description={gen.error}
+            className="rounded-xl border border-red-400/20 bg-red-400/5 py-6"
+          />
+        </div>
+      )}
 
       {questionsOpen && (
         <ApplicationQuestionsModal

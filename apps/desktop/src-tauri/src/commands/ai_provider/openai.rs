@@ -1038,7 +1038,7 @@ impl AiProvider for OpenAiClient {
 
         let response = crate::net::http::shared()
             .post(endpoint)
-            .timeout(timeouts::STREAM)
+            .timeout(timeouts::stream_deadline(req.effort.as_deref()))
             .bearer_auth(&api_key)
             .json(&body)
             .send()
