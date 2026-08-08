@@ -417,6 +417,77 @@ fn validate_model_cloud_requires_a_model() {
     assert!(ProviderId::OpenAi.validate_model("").is_err());
 }
 
+// ── redact_stream_error_message (generation-failure privacy boundary) ──────
+//
+// `emit_stream_error` is the ONE place every generation failure (`ai_generate`
+// + `generate_pipeline`) funnels through before the renderer shows the text
+// verbatim (`TailorFlow`'s `ErrorState description={gen.error}`). These pin
+// the #935 shape (query-string auth in a base_url) and the path-privacy rule,
+// AND the property that stops someone "fixing" this by flattening every
+// message to a generic string.
+
+#[test]
+fn redact_stream_error_message_scrubs_query_string_auth_in_a_url() {
+    // The #935 shape: a user-supplied base_url carrying its API key in the
+    // query string, echoed into a network/provider error.
+    let msg =
+        "error sending request to https://gw.example.com/v1?api-key=SECRET123: connection reset";
+    let redacted = redact_stream_error_message(msg);
+    assert!(
+        !redacted.contains("SECRET123"),
+        "credential must not survive: {redacted}"
+    );
+    assert!(
+        !redacted.contains("gw.example.com"),
+        "host must not survive: {redacted}"
+    );
+    assert!(
+        redacted.contains("<url-redacted>"),
+        "expected the url placeholder; got: {redacted}"
+    );
+    // MUTATION GUARD: a no-op redactor (`message.to_string()`) would leave the
+    // secret in place — this assertion only passes when redaction actually ran.
+    assert_ne!(redacted, msg);
+}
+
+#[test]
+fn redact_stream_error_message_scrubs_an_absolute_filesystem_path() {
+    // Path-privacy: a filesystem error (e.g. a local CLI-agent adapter, or a
+    // storage failure surfaced through the same `AppError::to_string()` path)
+    // must never leak an absolute path with the user's name in it.
+    let msg = r"failed to read C:\Users\alice\AppData\Local\ajh\config.json: access denied";
+    let redacted = redact_stream_error_message(msg);
+    assert!(
+        !redacted.contains("alice"),
+        "username must not survive: {redacted}"
+    );
+    assert!(
+        redacted.contains("<path-redacted>"),
+        "expected the path placeholder; got: {redacted}"
+    );
+}
+
+#[test]
+fn redact_stream_error_message_leaves_an_ordinary_provider_error_unchanged() {
+    // The assertion that stops a later "fix" from flattening every message to
+    // a generic string: an ordinary provider error carries no credential/
+    // path/host/email shape and must survive BYTE-FOR-BYTE, exactly as
+    // `friendly_api_error` built it.
+    for msg in [
+        "openai: rate limit or quota reached. Wait a moment or check your plan.",
+        "429 Too Many Requests",
+        "anthropic: model or endpoint not found — model not found",
+        "Ollama unreachable: connection refused",
+    ] {
+        let redacted = redact_stream_error_message(msg);
+        // MUTATION GUARD: an over-eager redactor (e.g. collapsing every
+        // message to a fixed string, or stripping digits/punctuation) fails
+        // this exact-equality check — only a targeted, shape-based redactor
+        // passes.
+        assert_eq!(redacted, msg, "an ordinary message must pass through as-is");
+    }
+}
+
 // ── resolve_intent (wire vocabulary fidelity) ───────────────────────────────
 
 /// Table test over the ACTUAL wire vocabulary
