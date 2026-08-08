@@ -145,6 +145,10 @@ async function streamGenerate(
     signal,
     provider: activeProvider,
     model: activeModel,
+    // Same value just sent to the backend above — sizes the renderer-side
+    // timeout so a high-effort generation isn't killed client-side while the
+    // backend is still legitimately streaming (`computeStreamTimeoutMs`).
+    effort: providerSettings?.effort,
   });
 }
 

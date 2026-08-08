@@ -115,6 +115,8 @@ export const TEST_IDS = {
     wizardGenerate: 'wizard-generate',
     generatingPanel: 'generating-panel',
     resultsPanel: 'results-panel',
+    /** Inline banner surfacing a failed generation's reason on the wizard. */
+    generationError: 'generation-error',
     questionsModal: 'questions-modal',
     interviewModal: 'interview-modal',
     referralModal: 'referral-modal',

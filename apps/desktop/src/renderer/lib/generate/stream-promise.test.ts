@@ -17,8 +17,10 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS } from '@ajh/shared';
+
 import type { AppClient } from '../app-client';
-import { awaitAiStream } from './stream-promise';
+import { awaitAiStream, computeStreamTimeoutMs } from './stream-promise';
 
 interface StreamChunk {
   jobId: string;
@@ -154,5 +156,52 @@ describe('awaitAiStream — empty completion rejects (both resolve paths)', () =
     const promise = awaitAiStream(api, 'job-empty-poll', { pollIntervalMs: 1 });
 
     await expect(promise).rejects.toThrow('Generation produced no content. Please try again.');
+  });
+});
+
+describe('computeStreamTimeoutMs — effort scaling', () => {
+  const BASELINE_MS = STREAM_BASELINE_SECS * 1000 + 30_000; // STREAM_TIMEOUT_MS + OUTER_BOUND_MARGIN_MS
+
+  it('uses the flat baseline (+ margin) for no, low-tier, or unrecognized effort', () => {
+    for (const effort of [undefined, 'minimal', 'low', 'bogus-provider-string']) {
+      expect(computeStreamTimeoutMs(effort)).toBe(BASELINE_MS);
+    }
+  });
+
+  it('scales up, strictly non-decreasing, by effort tier', () => {
+    // Vendors' ascending tier order: `max` is the TOP tier, above `xhigh`.
+    const tiers = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    let prev = 0;
+    for (const effort of tiers) {
+      const ms = computeStreamTimeoutMs(effort);
+      expect(ms).toBeGreaterThanOrEqual(prev);
+      prev = ms;
+    }
+    // And the top tier must actually be LARGER than the baseline, not just
+    // equal — otherwise "scales with effort" would be vacuously true.
+    expect(computeStreamTimeoutMs('max')).toBeGreaterThan(BASELINE_MS);
+  });
+
+  // Cross-language relationship (ADR-style pin, see the task this closed):
+  // `timeouts::STREAM`/`effort_multiplier`
+  // (apps/desktop/src-tauri/src/commands/ai_provider/timeouts.rs) are now
+  // GENERATED from `packages/shared/src/ai-timeouts.ts` (`pnpm gen:ipc`) — the
+  // SAME constants imported here, rather than a hand-typed mirror of what Rust
+  // is assumed to have. `pnpm gen:ipc:check` (CI) is what keeps the Rust side
+  // honest against this source; this test asserts the one invariant that
+  // still can't be codegen'd away — the renderer timeout for a given effort
+  // must always exceed the backend's own scaled deadline for that SAME
+  // effort, so the backend (an actionable provider error) fires first, never
+  // the renderer's generic timeout. A change to `computeStreamTimeoutMs`'s own
+  // margin/rounding that breaks this relationship must fail HERE, not surface
+  // as a support report.
+  it('stays strictly above the backend deadline (derived from the same shared schedule) for every known effort level', () => {
+    const backendBaselineMs = STREAM_BASELINE_SECS * 1000; // mirrors timeouts::STREAM's own derivation
+    for (const effort of [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
+      const backendMs = backendBaselineMs * multiplier;
+      const rendererMs = computeStreamTimeoutMs(effort);
+      expect(rendererMs).toBeGreaterThan(backendMs);
+    }
   });
 });

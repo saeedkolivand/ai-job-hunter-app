@@ -1477,6 +1477,7 @@
       "addApiKey": "Fügen Sie zuerst einen API-Schlüssel hinzu",
       "installCli": "CLI-Agent installieren",
       "failed": "Generierung fehlgeschlagen",
+      "error": "Fehler",
       "research": {
         "label": "Unternehmen recherchieren",
         "hint": "Fügt eine Web-Zusammenfassung hinzu, die Anschreiben und unternehmensbezogene Antworten schärft — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen."

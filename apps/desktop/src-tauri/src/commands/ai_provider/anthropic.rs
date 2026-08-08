@@ -1050,7 +1050,7 @@ impl AiProvider for AnthropicClient {
 
         let response = crate::net::http::shared()
             .post(&endpoint)
-            .timeout(timeouts::STREAM)
+            .timeout(timeouts::stream_deadline(req.effort.as_deref()))
             .header("x-api-key", &api_key)
             .header("anthropic-version", VERSION)
             .json(&body)
