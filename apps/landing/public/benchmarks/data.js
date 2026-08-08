@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786136689068,
+  "lastUpdate": 1786172880064,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6377,6 +6377,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 317523,
             "range": "± 14360",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1de59f9d6da6a3b367654d8dc326b01b2aa541a",
+          "message": "fix: make a failed generation visible instead of silently resetting (#959)\n\n* fix: apply the deterministic profile to non-gemini-prefixed google models\n\nThe pre-v3 gate additionally required a gemini- prefix, so a gemma or learnlm\nid got a fully neutral profile while every other gate in the same file keys\nonly on the v3 boundary and would have applied the deterministic default. The\nmodel listing filters on the models/ prefix and not on family, so those ids do\nreach the picker, and before #958 they received the low temperature the\nanalyze surface needs. The gate is now the exact inversion of the v3 check.\n\nThis is the third time an unclassifiable-means-neutral gate cost a\ndeterministic surface its temperature, after the openai-compatible one in\n89435a47, so the doc comment records that the prefix requirement was tried and\ndropped and why. That fail-safe is for declining to guess an unknown model's\ncreative sampling; it was never a reason to let a strict json contract run at\nwhatever the server defaults to.\n\nConfirmed while here that the v3 check cannot misclassify a gemma id: it\nrequires the literal prefix before it parses any version digits.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: tell the user when a tailored generation fails\n\nThe stage is derived as generating, then done if there is output, else\nconfiguring. A failed run leaves both outputs empty, so it fell back to the\nwizard, and the file had no reference to the error at all: runTailor wrote it\nto the session, the hook returned it, and nothing rendered it. The catch only\nlogged to the console, so there was no toast either. The result was a\ngeneration that appeared to do nothing, which cost two investigations to\nreproduce.\n\nReturning to the wizard is the right behaviour, since the user needs to change\nsomething and try again, but it has to arrive with the reason. The error now\nrenders below the wizard where the user just clicked Generate, and a toast\nfires, matching what the AI Generate wizard already did.\n\nThe test drives a real failure through the hook and asserts the rendered text\nrather than the store field, because a test that only checked the field was\nset would have passed against the broken code.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: scale the stream deadline by effort and flag a truncated generation\n\nThe 300 second deadline was fixed on both sides and reqwest bounds the whole\nrequest, connect through the last streamed byte, so a generation that\nlegitimately runs longer was killed mid stream. High effort on a large cloud\nmodel with a full resume and job ad sits squarely in that range, which is the\nlikely throw behind a failure that then vanished into the silent reset. Both\nsides now scale by the request's effort, and the renderer stays the outer\nbound so the backend's actionable provider error fires first rather than a\ngeneric timeout.\n\nThe tables cannot be shared across the IPC boundary, so a test hardcodes the\nbackend schedule and asserts the renderer exceeds it at every tier. The tier\norder is the vendors', where max sits above xhigh, which reads wrong at a\nglance and was inverted here at first: max got a shorter deadline than xhigh,\nso the highest effort runs got the tightest bound, which is the exact failure\nthis exists to prevent. The monotonicity tests listed the tiers in the same\nwrong order, so they passed against it; only the value assertions caught it.\nBoth orders are now pinned with a comment saying why.\n\nfinish also consulted the stop reason only when the answer was empty, so a\nstream that produced text and then reported length took the success path and a\ntruncated resume was saved and exported as complete. It still completes and\nstill keeps the partial text, since that text is worth having, but it now\nraises a notification through the existing centre rather than presenting a cut\noff document as finished.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* refactor: generate the stream deadline schedule from one source\n\nThe renderer test hardcoded the backend's baseline and effort multipliers, so\na change to either Rust constant alone would have left it passing while the\nrenderer timeout began firing before the backend deadline. That is the same\nshape as the inversion this branch already fixed, where both monotonicity\ntests listed the tiers in the wrong order and passed against it, so this table\nhas now demonstrably drifted once already.\n\nThe baseline and the multipliers live in the shared package and generate into\nthe rust contract, the way the intent vocabulary already does. Both sides\nimport the same numbers, gen:ipc:check fails on drift, and the test is left\nasserting the one thing that is still a real relationship rather than\nre-typing the other side's constants. The tier order prose moves with the\ntable, since it is the only thing standing between the next editor and the\nsame inversion.\n\nThe gemini test now covers learnlm alongside gemma. It does not restore the\nneutrality assertion the review asked for: that contract was removed\ndeliberately, because it was what withheld a temperature from those models on\na strict json surface.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: redact a generation error before it reaches the screen\n\nShowing the failure reason is the point of this branch, but the raw provider\nmessage was reaching the UI unredacted, and this repo has already leaked a\nbase_url's query string auth into an error that way. The existing redactor was\nwired into crash reporting and the diagnostics zip and never into the AI path.\n\nThe review asked for a fixed string with the real text kept in the console.\nThat would undo the change: the user was getting nothing, which is what made a\nreal failure take two investigations to reproduce, and a generic failed is\nbarely better than the silent reset it replaced. Redacting at the boundary\nkeeps both properties, so the reason survives and credentials, paths, hosts\nand emails do not.\n\nemit_stream_error is the single choke point. Neither generate command lets the\ninvoke itself reject; both route their error branch through it, and every\nother renderer failure path already uses a fixed string. A test pins that an\nordinary provider error such as 429 Too Many Requests passes through byte for\nbyte, so the next person cannot answer this by flattening everything and\ncalling it security.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-08T08:57:07+02:00",
+          "tree_id": "b341742f7072d28eb5793929f055c842bbb4b8e8",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c1de59f9d6da6a3b367654d8dc326b01b2aa541a"
+        },
+        "date": 1786172878869,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2112104,
+            "range": "± 24360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2534637,
+            "range": "± 61334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 289367,
+            "range": "± 10404",
             "unit": "ns/iter"
           }
         ]
