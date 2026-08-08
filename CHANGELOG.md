@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.134.3](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.2...v0.134.3) (2026-08-08)
+
+### 🐛 Bug Fixes
+
+* make a failed generation visible instead of silently resetting ([#959](https://github.com/saeedkolivand/ai-job-hunter-app/issues/959)) ([c1de59f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/c1de59f9d6da6a3b367654d8dc326b01b2aa541a)), closes [#958](https://github.com/saeedkolivand/ai-job-hunter-app/issues/958)
+* stop the resume prompt licensing invented metrics, and let each provider own its sampling ([#958](https://github.com/saeedkolivand/ai-job-hunter-app/issues/958)) ([09d9d0f](https://github.com/saeedkolivand/ai-job-hunter-app/commit/09d9d0f2492938665d6f47bdc1793e7fc361fe2b))
+
 ## [0.134.2](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.134.1...v0.134.2) (2026-08-07)
 
 ### 🐛 Bug Fixes
