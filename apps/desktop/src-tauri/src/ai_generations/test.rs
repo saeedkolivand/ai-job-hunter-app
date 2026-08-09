@@ -1379,12 +1379,12 @@ fn export_import_round_trip_preserves_the_quality_report() {
 }
 
 /// L-5: `import` is a write path for a user-supplied backup FILE — just as
-/// untrusted as the IPC save path, which already clamps `quality_report`
+/// untrusted as the IPC save path, which already guards `quality_report`
 /// (`commands::ai_generations::ai_generations_save`). Before this fix,
 /// `import` wrote the bundle's `quality_report` straight to the column with
-/// no cap at all, unlike every other write path for this column.
+/// no guard at all, unlike every other write path for this column.
 #[test]
-fn import_clamps_an_oversized_quality_report() {
+fn import_sanitizes_an_oversized_quality_report_to_the_empty_string() {
     let huge = "x".repeat(QUALITY_REPORT_MAX_BYTES + 10_000);
     let mut rec = record("g1", "https://acme.com/job/1");
     rec.quality_report = huge.clone();
@@ -1399,14 +1399,151 @@ fn import_clamps_an_oversized_quality_report() {
 
     let imported = store.list();
     assert_eq!(imported.len(), 1);
-    assert!(
-        imported[0].quality_report.len() <= QUALITY_REPORT_MAX_BYTES,
-        "an oversized bundle's quality_report must be clamped on import, got {} bytes",
-        imported[0].quality_report.len()
+    assert_eq!(
+        imported[0].quality_report, "",
+        "an over-cap bundle's quality_report must drop to the empty sentinel on \
+         import, not a byte-truncated blob"
     );
-    assert_ne!(
-        imported[0].quality_report, huge,
-        "the raw oversized blob must not reach storage unclamped"
+}
+
+/// The finding this regression-tests: a byte-position clamp on an otherwise
+/// VALID JSON object truncates it MID-STRUCTURE — unlike the "huge" garbage
+/// fixture above (never valid JSON either way), this fixture is a real
+/// wrapper that only becomes invalid because of where a byte clamp would cut
+/// it. `import` must reach the same documented `''` sentinel, not a
+/// truncated-but-still-invalid blob that only accidentally reads as
+/// "no report".
+#[test]
+fn import_sanitizes_an_oversized_valid_json_report_to_the_empty_string() {
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "resume",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    assert!(
+        oversized.len() > QUALITY_REPORT_MAX_BYTES,
+        "test fixture must actually exceed the cap on its own"
+    );
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = oversized;
+    let bundle = serde_json::json!([rec]);
+
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&store, &bundle).unwrap(),
+        1
+    );
+
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "an over-cap incoming report must be dropped to the empty sentinel, \
+         never stored as truncated (unparseable) JSON"
+    );
+}
+
+/// Unit coverage for the shared guard both write paths call through.
+#[test]
+fn sanitize_quality_report_drops_an_over_cap_report_to_the_empty_string() {
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 1,
+        "coverLetter": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    assert!(oversized.len() > QUALITY_REPORT_MAX_BYTES);
+    assert_eq!(sanitize_quality_report(oversized, "test"), "");
+}
+
+#[test]
+fn sanitize_quality_report_leaves_an_in_budget_report_untouched() {
+    let small = r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":1,"resume":{"ok":true}}"#;
+    assert_eq!(sanitize_quality_report(small.into(), "test"), small);
+}
+
+/// End-to-end proof for the save path: `ai_generations_save` runs the
+/// incoming `quality_report` through `sanitize_quality_report` (simulated
+/// here exactly as the command does) BEFORE building the record it hands to
+/// `save_application`. An over-cap incoming report must therefore merge as
+/// content-less, so the EXISTING report survives untouched — never replaced
+/// by truncated/unparseable garbage, and never silently lost with no signal
+/// (the guard logs a warning; see `sanitize_quality_report`).
+#[test]
+fn save_application_keeps_the_existing_report_when_the_incoming_one_was_over_cap() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let url = "https://acme.com/job/1";
+
+    let mut first = record("g1", url);
+    first.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":1,"resume":{"ok":true}}"#.into();
+    store.save_application(first.clone()).unwrap();
+
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 2,
+        "coverLetter": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    let mut second = record("g2", url);
+    second.resume_text = String::new();
+    second.cover_letter_text = String::new();
+    // Exactly what `commands::ai_generations::ai_generations_save` does to the
+    // request's `quality_report` before constructing the record.
+    second.quality_report = sanitize_quality_report(oversized, "test");
+
+    store.save_application(second).unwrap();
+
+    let stored = &store.list()[0].quality_report;
+    assert_eq!(
+        stored, &first.quality_report,
+        "an over-cap incoming report must leave the existing report intact"
+    );
+    assert!(
+        *stored == first.quality_report || stored.is_empty(),
+        "the stored quality_report must be the existing report or the empty \
+         sentinel — never unparseable truncated JSON"
+    );
+}
+
+/// The scenario a raw byte clamp actually leaves unprotected: a FIRST-EVER
+/// save for a job has no existing aggregate row, so `save_application` goes
+/// straight to `insert()` — `merge_quality_report` never runs, and its
+/// "unparseable incoming → keep existing" guard has nothing to fall back
+/// onto. Without a write-boundary guard, a byte-truncated (invalid-JSON)
+/// over-cap report would be stored verbatim. The command-layer guard
+/// (`sanitize_quality_report`, simulated here exactly as `ai_generations_save`
+/// applies it before building the record) must catch this BEFORE
+/// `save_application` is ever called.
+#[test]
+fn save_application_inserts_the_empty_sentinel_for_a_first_save_with_an_over_cap_report() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "resume",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    let mut rec = record("g1", "https://acme.com/job/brand-new");
+    // Exactly what `commands::ai_generations::ai_generations_save` does to the
+    // request's `quality_report` before constructing the record.
+    rec.quality_report = sanitize_quality_report(oversized, "test");
+
+    store.save_application(rec).unwrap();
+
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "a first-ever save (no existing row to merge onto) must store the \
+         empty sentinel, never a byte-truncated invalid-JSON blob"
     );
 }
 

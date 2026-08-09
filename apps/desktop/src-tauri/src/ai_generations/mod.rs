@@ -5,7 +5,6 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::applications::clamp_to_bytes;
 use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
@@ -19,6 +18,31 @@ use crate::error::{AppError, AppResult};
 /// [`AiGenerationStore::import`] below) — the data layer owns the column, so
 /// the cap lives here rather than duplicated per caller.
 pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 256 * 1024;
+
+/// Guard an incoming `quality_report` blob against exceeding
+/// [`QUALITY_REPORT_MAX_BYTES`] on write. A byte-position clamp
+/// (`clamp_to_bytes`) is wrong here: JSON truncated mid-object is
+/// unparseable, and [`merge_quality_report`]'s first guard would then
+/// silently keep `existing` instead of the fresh report — same outcome as
+/// the documented "no report" sentinel, but reached by parse accident
+/// instead of by design, with no signal that a report was dropped. This
+/// substitutes the sentinel (`""`) outright and logs a content-free warning
+/// (source + byte count only, per ADR-027 — never report content) so the
+/// drop is diagnosable. Shared by both untrusted write paths for this
+/// column: `commands::ai_generations::ai_generations_save` and
+/// [`AiGenerationStore::import`] below.
+pub(crate) fn sanitize_quality_report(report: String, source: &str) -> String {
+    if report.len() > QUALITY_REPORT_MAX_BYTES {
+        log::warn!(
+            "[ai_generations] {source}: quality_report exceeded {QUALITY_REPORT_MAX_BYTES} \
+             bytes ({} bytes); dropped to the empty sentinel — merge_quality_report keeps \
+             the existing report by design",
+            report.len()
+        );
+        return String::new();
+    }
+    report
+}
 
 /// One answered application question, stored on the application record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -808,15 +832,16 @@ fn merge_application(
 ///   `schemaVersion`/`pipeline`/`generatedAt` — overlays the same key on
 ///   `existing`; every key only `existing` carries survives untouched.
 /// - The merged object exceeds [`QUALITY_REPORT_MAX_BYTES`] (both write paths
-///   clamp `incoming` alone to the cap, but the sub-report `existing` already
-///   carries for the OTHER pipeline can independently sit near the cap too, so
-///   their union can still blow the column budget) → `incoming` is returned
-///   whole instead. At that point `incoming` is known-parseable (it passed the
-///   first guard above) and known within budget (both callers clamp it before
-///   it reaches here); that beats both alternatives — truncating the merged
-///   JSON mid-object would make it unparseable on the next read and silently
-///   revert to the stale stored report, and persisting the oversized union
-///   would blow the column budget outright.
+///   run `incoming` alone through [`sanitize_quality_report`] first, but the
+///   sub-report `existing` already carries for the OTHER pipeline can
+///   independently sit near the cap too, so their union can still blow the
+///   column budget) → `incoming` is returned whole instead. At that point
+///   `incoming` is known-parseable (it passed the first guard above) and
+///   known within budget (both callers sanitize it before it reaches here);
+///   that beats both alternatives — truncating the merged JSON mid-object
+///   would make it unparseable on the next read and silently revert to the
+///   stale stored report, and persisting the oversized union would blow the
+///   column budget outright.
 fn merge_quality_report(incoming: String, existing: String) -> String {
     let Some(serde_json::Value::Object(incoming_obj)) =
         serde_json::from_str::<serde_json::Value>(&incoming).ok()
@@ -879,12 +904,14 @@ impl DataStore for AiGenerationStore {
             let (resume_text, cover_letter_text) =
                 repaired_generation_texts(&rec.resume_text, &rec.cover_letter_text);
             // L-5: the IPC save path (`commands::ai_generations::ai_generations_save`)
-            // already clamps `quality_report` to QUALITY_REPORT_MAX_BYTES; a
+            // already guards `quality_report` against QUALITY_REPORT_MAX_BYTES; a
             // restored backup bundle is an equally untrusted write path (a
             // user-supplied file, not our own renderer) and must get the same
-            // clamp, not just whatever byte count the bundle happened to carry.
-            let quality_report =
-                clamp_to_bytes(rec.quality_report.clone(), QUALITY_REPORT_MAX_BYTES);
+            // guard, not just whatever byte count the bundle happened to carry.
+            // A byte clamp would truncate mid-JSON (unparseable = silently "no
+            // report" via `merge_quality_report`'s first guard); the empty
+            // sentinel below reaches that same "no report" outcome by design.
+            let quality_report = sanitize_quality_report(rec.quality_report.clone(), "import");
             tx.execute(
                 "INSERT INTO ai_generations
                  (id, created_at, candidate_name, job_title, company_name,
