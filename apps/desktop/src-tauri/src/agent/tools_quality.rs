@@ -42,7 +42,9 @@ use crate::documents::keywords::detect_locale_tag;
 use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::salary_research::SalaryRange;
-use crate::validate::content::{validate_content, ContentInput, ContentReport, DocKind};
+use crate::validate::content::{
+    validate_content, ContentInput, ContentIssue, ContentReport, DocKind,
+};
 use crate::validate::Severity;
 
 use super::tools::{fenced, AgentTool, ToolContext, ToolKind, RESUME_CAP};
@@ -154,6 +156,12 @@ fn clamp_evidence(s: &str) -> String {
 /// cap. Never a mid-string cut of the issue list. The full report — every
 /// [`crate::validate::content::ContentMetrics`] field, every issue, uncapped
 /// spans — is the quality-report panel's job, not this tool's.
+///
+/// Issues are ordered **Criticals first** before the cap is applied. The
+/// validator emits in check order, not severity order, so `ats.header_in_body`
+/// (emitted near the end) fell off the list on a draft that tripped 20+ earlier
+/// Warnings — the model then saw `criticals: 1` with no Critical it could act on.
+/// The sort is stable, so within each severity the emission order is preserved.
 fn compact_content_report(report: &ContentReport) -> Value {
     let criticals = report
         .issues
@@ -162,9 +170,11 @@ fn compact_content_report(report: &ContentReport) -> Value {
         .count();
     let warnings = report.issues.len() - criticals;
     let truncated = report.issues.len().saturating_sub(MAX_ISSUES);
-    let issues: Vec<Value> = report
-        .issues
-        .iter()
+    let mut ordered: Vec<&ContentIssue> = report.issues.iter().collect();
+    // `false < true`: Criticals sort ahead of everything else.
+    ordered.sort_by_key(|i| i.severity != Severity::Critical);
+    let issues: Vec<Value> = ordered
+        .into_iter()
         .take(MAX_ISSUES)
         .map(|i| {
             json!({
@@ -746,6 +756,50 @@ mod tests {
         // The summary must still be valid JSON — parseable, not a mid-string cut.
         let body = serde_json::to_string(&compact).unwrap();
         assert!(serde_json::from_str::<Value>(&body).is_ok());
+    }
+
+    /// The cap must never drop a Critical. The validator emits in CHECK order,
+    /// and `ats.header_in_body` is emitted near the end — so a draft tripping
+    /// `MAX_ISSUES` Warnings first pushed the only Critical off the surfaced
+    /// list while the summary still said `criticals: 1`, leaving the model a
+    /// count it could not act on. Criticals sort first; Warnings keep their
+    /// emission order behind them.
+    #[test]
+    fn compact_content_report_keeps_a_late_critical_over_earlier_warnings() {
+        let mut issues: Vec<crate::validate::content::ContentIssue> = (0..(MAX_ISSUES + 5))
+            .map(|i| crate::validate::content::ContentIssue {
+                severity: Severity::Warning,
+                code: crate::validate::content::DUPLICATE_BULLET,
+                section: None,
+                message: format!("issue {i}"),
+                evidence: None,
+            })
+            .collect();
+        // Emitted LAST, exactly like the real `ats.header_in_body` check.
+        issues.push(crate::validate::content::ContentIssue {
+            severity: Severity::Critical,
+            code: crate::validate::content::ATS_HEADER_IN_BODY,
+            section: Some("Experience".to_string()),
+            message: "contact block in the body".to_string(),
+            evidence: None,
+        });
+        let report = ContentReport {
+            ok: false,
+            issues,
+            metrics: ContentMetrics::default(),
+        };
+        let compact = compact_content_report(&report);
+        let surfaced = compact["issues"].as_array().unwrap();
+        assert_eq!(surfaced.len(), MAX_ISSUES);
+        assert_eq!(compact["criticals"], 1);
+        assert_eq!(
+            surfaced[0]["code"],
+            crate::validate::content::ATS_HEADER_IN_BODY,
+            "the Critical must lead the surfaced list, not be capped out of it"
+        );
+        // …and the Warnings behind it stay in emission order (stable sort).
+        assert_eq!(surfaced[1]["message"], "issue 0");
+        assert_eq!(surfaced[2]["message"], "issue 1");
     }
 
     /// The explicit clamp requirement: an evidence span far longer than
