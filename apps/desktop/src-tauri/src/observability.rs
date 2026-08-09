@@ -36,14 +36,19 @@ impl Span {
     }
 
     /// End the span: logs `[target] ← fields duration=<n>ms ok=<ok>`.
+    ///
+    /// `ok=false` logs at WARN, not INFO. A failed span is the single most
+    /// useful line in a support bundle and it used to be indistinguishable from
+    /// a successful one at a glance: one 27,601-line bundle carried exactly ONE
+    /// `[ERROR]` line while eight silently-failed provider calls sat at INFO.
     pub fn end(&self, ok: bool) {
-        log::info!(
+        self.log_end(&format!(
             "[{}] ← {} duration={}ms ok={}",
             self.target,
             self.fields,
             self.start.elapsed().as_millis(),
             ok
-        );
+        ), ok);
     }
 
     /// End with trailing fields rendered before `duration` (e.g. `status=200`,
@@ -52,14 +57,24 @@ impl Span {
         if extra.is_empty() {
             return self.end(ok);
         }
-        log::info!(
+        self.log_end(&format!(
             "[{}] ← {} {} duration={}ms ok={}",
             self.target,
             self.fields,
             extra,
             self.start.elapsed().as_millis(),
             ok
-        );
+        ), ok);
+    }
+
+    /// The one place a span's terminal line is emitted, so the success/failure
+    /// level split can never drift between [`Self::end`] and [`Self::end_with`].
+    fn log_end(&self, line: &str, ok: bool) {
+        if ok {
+            log::info!("{line}");
+        } else {
+            log::warn!("{line}");
+        }
     }
 }
 

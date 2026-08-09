@@ -44,6 +44,45 @@ function forward(level: Level, message: string): Promise<void> {
   return invoke('plugin:log|log', { level: PLUGIN_LEVEL[level], message });
 }
 
+/**
+ * Console output that must never reach the log file.
+ *
+ * Tauri's own JS runtime `console.warn`s once per event dispatched to a callback
+ * id it can no longer find. That is one warning PER STREAMED DELTA, and it is
+ * emitted from Tauri internals, so there is no call site to fix. In a real
+ * support bundle it produced **27,178 of 27,601 lines — 98.5% of the file** from
+ * just two stale ids, burying the eight genuinely-failed provider calls in the
+ * same session.
+ *
+ * Dropped HERE rather than in `tauri_plugin_log`'s `filter` because that filter
+ * only receives `log::Metadata` (level + target), never the message body — and
+ * dropping it renderer-side also saves an IPC round-trip per streamed token,
+ * which is the part that actually costs something.
+ *
+ * Kept deliberately narrow: an exact substring of Tauri's own message, not a
+ * pattern that could swallow app warnings. The condition it signals (a listener
+ * outliving its registration) is worth knowing about, so the first occurrence
+ * per session is still forwarded — see `shouldForward`.
+ */
+const TAURI_STALE_CALLBACK = "Couldn't find callback id";
+
+/** Whether the stale-callback notice has already been forwarded this session. */
+let staleCallbackReported = false;
+
+/** Pure: whether `message` should cross the IPC boundary into the log file.
+ *  Exported for tests — this is the whole of the suppression policy. */
+export function shouldForward(message: string): boolean {
+  if (!message.includes(TAURI_STALE_CALLBACK)) return true;
+  if (staleCallbackReported) return false;
+  staleCallbackReported = true;
+  return true;
+}
+
+/** Test-only: reset the once-per-session latch. */
+export function resetLogBridgeState(): void {
+  staleCallbackReported = false;
+}
+
 function stringifyArg(arg: unknown): string {
   if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
   if (typeof arg === 'string') return arg;
@@ -58,9 +97,13 @@ function bridgeLevel(level: Level): void {
   const original = console[level].bind(console);
   console[level] = (...args: unknown[]) => {
     original(...args);
+    const message = args.map(stringifyArg).join(' ');
+    // devtools still shows everything (`original` above ran unconditionally) —
+    // only the file/IPC copy is suppressed.
+    if (!shouldForward(message)) return;
     // Best-effort: a forwarding failure (e.g. IPC not ready yet) must never
     // break the console itself.
-    void forward(level, args.map(stringifyArg).join(' ')).catch(() => {});
+    void forward(level, message).catch(() => {});
   };
 }
 

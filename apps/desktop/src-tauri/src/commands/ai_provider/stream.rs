@@ -687,7 +687,8 @@ where
     F: FnMut(&mut String) -> Vec<StreamPiece> + Send,
 {
     log::info!(
-        "[ai] stream start provider={} model={}",
+        "[ai] stream start job={} provider={} model={}",
+        job_id,
         provider.as_str(),
         model
     );
