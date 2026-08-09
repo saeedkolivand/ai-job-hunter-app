@@ -1,6 +1,6 @@
 # Domain model (core types, traits, registries)
 
-Last updated: 2026-07-16
+Last updated: 2026-08-09
 
 Describes the **shape**; the source is authoritative for field-level detail. Query graphify (MCP `query_graph` / `get_node`, else `graphify explain "<type>"`) then read the owning file.
 
@@ -18,7 +18,9 @@ Describes the **shape**; the source is authoritative for field-level detail. Que
 ## Job / matching
 
 - **Job posting / postings** — `jobs/`, `postings/`, `commands/jobs.rs`. The scraped/normalized job representation consumed by matching.
+- **Evidence extraction** — `documents/evidence.rs`: `extract_evidence` parses a source résumé into roles, projects, and skills; `rank_bullets` scores evidence candidates against job-ad text. Consumed by: trim-panel ranking and content validation.
 - **Matching** — `commands/match_resume.rs` (single on-demand `match_resume`): keywords lookup via `documents/keywords.rs` (shared module). Pipeline split: `keywords_normalized()` caches pre-stemmed tokens (language-agnostic), `apply_stemmer()` stems at match time using JD language detection (`whatlang` + Snowball per language). Tokenization: lowercase + synonym-normalize + language-detect + filter (drop ≤3 chars unless in `SHORT_TECH_TERMS` allowlist, drop stopwords). Corrupt-cache fallback: `from_str().unwrap_or_default()` returns empty set. **Translation (local-provider-only)** — `commands/translation.rs`: `TranslationCache` (session-scoped HashMap); `translate_if_needed()` detects non-English via whatlang, gates on `provider_allows_translation()` (Ollama + CLI agents like "claude-code" allowed), invokes the provider, caches result, falls back to original on any failure. Called before stemming/keyword extraction. **Keyword coverage** — `keyword_coverage()` returns resume vs job overlap %; score model is weighted blend of semantic similarity + keyword coverage (**read source for exact weights**). **On-demand scoring** — Frontend `MatchScoresProvider` requests a score per job on demand (via the single `match_resume` IPC) as rows render, distributing results per-row; the former one-pass `match_resume_batch` command was removed (zero consumers). Default: keyword-only (no embedding; `semanticScoringEnabled=false`). See ADR-020 + ADR-017 Phase K notes. Recommendations: `recommend/`. Cover letters: `cover_letter/` + `commands/cover_letter.rs`.
+- **Content validation** — `validate/content/mod.rs`: deterministic checks on generated résumés/cover letters for factual errors (unsourced claims, dropped roles, altered links) and guidance issues (low coverage, AI-tell prose). 24 codes (6 Critical, 18 Warning). Contracts: `ContentInput`, `ContentIssue`, `ContentReport`. Agent Read tools: `validate_resume`, `search_candidate_evidence`, `get_trim_suggestions`, `lookup_salary`.
 
 ## Referrals
 
