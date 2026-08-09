@@ -8,8 +8,10 @@ import { Button, cn, Dropdown, Switch, type TabItem, Tabs } from '@ajh/ui';
 import { AccentPicker } from '@/components/generation/AccentPicker';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { type ExportFormat, ExportPicker } from '@/components/generation/ExportPicker';
+import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
+import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
@@ -17,6 +19,7 @@ import {
   isDesignTier,
   isTwoColumnTemplate,
   type LetterLayoutId,
+  type QualityReport,
   TEMPLATE_IDS,
   type TemplateId,
   TEMPLATES,
@@ -45,6 +48,7 @@ interface Props {
   onEdit: (text: string) => void;
   editable: boolean;
   meta: GenerationMeta | null;
+  report?: QualityReport | null;
   copied: boolean;
   onCopy: () => void;
   exportOpen: boolean;
@@ -81,6 +85,7 @@ export function GenerationOutput({
   onEdit,
   editable,
   meta,
+  report,
   copied,
   onCopy,
   exportOpen,
@@ -231,6 +236,13 @@ export function GenerationOutput({
           className="border-none"
         />
         <div className="flex items-center gap-1">
+          {view === 'doc' && (
+            <QualityBadge
+              report={report}
+              docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
+              className="mr-1"
+            />
+          )}
           <Button
             onClick={() => void onCopy()}
             disabled={!output || view === 'jobAd'}
@@ -260,6 +272,11 @@ export function GenerationOutput({
           />
         </div>
       </div>
+      {/* Hand-edit nudge — once per generation: keyed by the report's timestamp
+          so a NEW generation remounts (and re-shows) it; ordinary re-renders
+          (edits, tab switches) leave a dismissal in place. Pinned like the
+          toolbar above it, not part of the scrollport below. */}
+      {view === 'doc' && report && <HandEditNudge key={report.generatedAt} className="mx-3 mt-2" />}
       {/* The scrollport. ONLY the tab/action bar above pins — the option strips
           scroll WITH the document: pinning them too costs more permanent chrome
           than a small window can spare, collapsing the document to nothing and

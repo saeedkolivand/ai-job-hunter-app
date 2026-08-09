@@ -3,7 +3,7 @@ import { RefreshCw, Settings2 } from 'lucide-react';
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
-import type { GenerationMeta, LetterLayoutId, TemplateId } from '@/lib/generate';
+import type { GenerationMeta, LetterLayoutId, QualityReport, TemplateId } from '@/lib/generate';
 
 import { GenerationOutput } from './GenerationOutput';
 import type { TailorTarget } from './useTailorGeneration';
@@ -41,6 +41,7 @@ interface Props {
   output: string;
   onEdit: (text: string) => void;
   meta: GenerationMeta | null;
+  report?: QualityReport | null;
   copied: boolean;
   onCopy: () => void;
   exportOpen: boolean;
@@ -78,6 +79,7 @@ export function ResultsPanel({
   output,
   onEdit,
   meta,
+  report,
   copied,
   onCopy,
   exportOpen,
@@ -111,6 +113,7 @@ export function ResultsPanel({
           onEdit={onEdit}
           editable
           meta={meta}
+          report={report}
           copied={copied}
           onCopy={onCopy}
           exportOpen={exportOpen}

@@ -1443,6 +1443,75 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy."
   },
+  "quality": {
+    "badge": {
+      "clean": "Geprüft — keine Probleme",
+      "issues_one": "{{count}} Problem ({{critical}} kritisch)",
+      "issues_other": "{{count}} Probleme ({{critical}} kritisch)",
+      "open": "Qualitätsbericht öffnen"
+    },
+    "panel": {
+      "resumeTitle": "Qualitätsbericht Lebenslauf",
+      "coverLetterTitle": "Qualitätsbericht Anschreiben",
+      "documentWide": "Dokumentweit",
+      "critical": "Kritisch",
+      "warning": "Warnung",
+      "emptyTitle": "Keine Probleme gefunden",
+      "emptyDescription": "Dieses Dokument hat jede deterministische Prüfung bestanden.",
+      "metrics": {
+        "title": "Kennzahlen",
+        "keywordCoverage": "Schlüsselwort-Abdeckung",
+        "topRequirementHits": "Abgedeckte Top-Anforderungen",
+        "duplicateRatio": "Doppelte Aufzählungspunkte",
+        "roles": "Positionen (Quelle → Ausgabe)"
+      }
+    },
+    "nudge": {
+      "message": "Überarbeite vor dem Versenden ein bis zwei Zeilen von Hand in deiner eigenen Stimme.",
+      "dismiss": "Verwerfen"
+    },
+    "fallback": "Eine deterministische Prüfung hat dies markiert — sieh dir den Beleg unten an.",
+    "issue": {
+      "factual": {
+        "unsourced_metric": "Diese Zahl taucht in deinem Lebenslauf nicht auf — bestätige, dass sie korrekt ist, bevor du das Dokument versendest.",
+        "dropped_role": "Eine Position aus deinem Lebenslauf fehlt scheinbar in diesem Dokument.",
+        "unsupported_date": "Dieses Datum stimmt nicht mit deinem Lebenslauf überein — bitte prüfen.",
+        "altered_project_link": "Ein Projektlink hier unterscheidet sich von deinem Lebenslauf — bitte prüfen, ob er korrekt ist.",
+        "unsourced_term": "Dieser Begriff taucht in deinem Lebenslauf nicht auf — bitte auf Richtigkeit prüfen."
+      },
+      "content": {
+        "language_mismatch": "Dieser Text entspricht nicht der Zielsprache."
+      },
+      "alignment": {
+        "low_coverage": "Dieses Dokument deckt wenig vom Vokabular der Stellenanzeige ab — erwäge, mehr davon einzubauen.",
+        "missing_top_requirement": "Eine Top-Anforderung aus der Stellenanzeige wird hier nicht belegt."
+      },
+      "consistency": {
+        "date_order": "Die Daten in diesem Abschnitt sind nicht in der erwarteten Reihenfolge.",
+        "title_drift": "Eine Berufsbezeichnung hier stimmt nicht mit deinem Lebenslauf überein.",
+        "skill_not_demonstrated": "Eine behauptete Fähigkeit wird nicht durch ein Beispiel belegt — erwäge, eines hinzuzufügen.",
+        "project_structure": "Ein Projekteintrag folgt nicht dem üblichen Format."
+      },
+      "duplicate": {
+        "bullet": "Dieser Aufzählungspunkt ähnelt stark einem anderen — erwäge, sie zusammenzuführen oder zu variieren."
+      },
+      "ats": {
+        "keyword_density": "Die Schlüsselwortnutzung hier könnte überladen statt natürlich wirken.",
+        "header_in_body": "Kontaktartiger Text erscheint außerhalb der Kopfzeile — bitte nach oben verschieben.",
+        "missing_section": "Ein erwarteter Abschnitt scheint zu fehlen.",
+        "long_bullet": "Dieser Aufzählungspunkt ist lang — erwäge, ihn zu straffen.",
+        "bullet_count": "Dieser Abschnitt hat eine ungewöhnliche Anzahl an Aufzählungspunkten."
+      },
+      "voice": {
+        "ai_tell_lexical": "Ein Wort oder eine Formulierung hier wirkt häufig KI-generiert — erwäge eine Umformulierung.",
+        "template_opener": "Diese Eröffnungszeile klingt wie eine generische Vorlage.",
+        "low_burstiness": "Der Satzrhythmus hier ist sehr gleichförmig — variiere die Satzlänge.",
+        "rule_of_three_density": "Mehrere Dreier-Listen hintereinander können formelhaft wirken.",
+        "em_dash_overuse": "Häufige Gedankenstriche hier können KI-generiert wirken.",
+        "generic_letter": "Dieses Anschreiben wirkt generisch — erwäge, ein konkretes Detail zur Rolle oder Firma hinzuzufügen."
+      }
+    }
+  },
   "autopilot": {
     "title": "Autopilot",
     "subtitle": "Automatisierte Jobsuche und Bewerbungsworkflows",
