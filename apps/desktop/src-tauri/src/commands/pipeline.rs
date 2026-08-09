@@ -76,19 +76,10 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
         Err(e) => return fail(&app, &job_id, e.to_string()),
     };
 
-    // Per-provider daily ceiling — charged here, at admission, exactly like
-    // `ai_generate`. Charging after the queue wait would let an unbounded number
-    // of runs past the ceiling while they park.
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
         .clone();
-    if let Err(e) = limiter.charge_provider_daily(
-        completer.provider_id().as_str(),
-        crate::limits::PROVIDER_DAILY_MAX,
-    ) {
-        return fail(&app, &job_id, e.to_string());
-    }
 
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
@@ -122,6 +113,25 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
                 return;
             }
         };
+
+        // Per-provider daily ceiling — charged AFTER admission, matching
+        // `ai_generate` and `admit_research`. Charging before `acquire_queued`
+        // burned a day's quota on calls the rate window or the queue ceiling
+        // then rejected, which never reached a provider at all.
+        //
+        // The overshoot this ordering allows is bounded, not unbounded: at most
+        // `AI_GENERATE_CONCURRENCY_MAX + AI_GENERATE_QUEUE_MAX` calls can be
+        // admitted-but-uncharged at once, against a ceiling of
+        // `PROVIDER_DAILY_MAX`.
+        if let Err(e) = limiter.charge_provider_daily(
+            completer.provider_id().as_str(),
+            crate::limits::PROVIDER_DAILY_MAX,
+        ) {
+            let msg = e.to_string();
+            emit_stream_error(&app_clone, &job_id_clone, &msg);
+            crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
+            return;
+        }
 
         let mut ctx = GenerationContext {
             job_id: job_id_clone.clone(),
