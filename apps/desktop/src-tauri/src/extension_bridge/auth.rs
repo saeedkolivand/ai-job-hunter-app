@@ -152,6 +152,58 @@ pub fn is_safe_import_url(url: &str) -> bool {
     }
 }
 
+/// Origins already reported this session, so an extension that can never pair
+/// logs once instead of on every reconnect.
+///
+/// A browser does not expose a failed WebSocket handshake's HTTP status to
+/// script, so the extension genuinely cannot tell "desktop refused my origin"
+/// from "desktop isn't running" — its ~10s reconnect loop is correct behaviour,
+/// not a bug to fix client-side. What was wrong is that each attempt wrote TWO
+/// warnings: one unpairable build produced 1,932 rejections + 1,932 paired
+/// failures in a single reported session.
+pub(super) fn warn_rejected_origin_once(origin: &str) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+
+    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let mut seen = match SEEN.get_or_init(Default::default).lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if seen.insert(origin.to_string()) {
+        // First time only, and deliberately actionable: an unpaired extension is
+        // otherwise indistinguishable from a desktop that simply isn't running.
+        log::warn!(
+            "[extension_bridge] rejected handshake from origin: {origin:?} — not an allowed \
+             extension origin. A development build needs its origin in the \
+             `extensionDevOrigins` config; a store build should already match. \
+             Further rejections from this origin are logged at debug."
+        );
+    } else {
+        log::debug!("[extension_bridge] rejected handshake from origin: {origin:?}");
+    }
+}
+
+/// Log a failed WebSocket handshake at the right level.
+///
+/// The 403 this module's own origin check produced is already reported in full
+/// (with the origin) by [`warn_rejected_origin_once`], so re-logging it here
+/// would double every attempt — which is precisely what turned one unpairable
+/// extension into ~3,900 log lines in a single session. Any OTHER handshake
+/// failure (a malformed request line, a torn-down connection) is genuinely new
+/// information and stays at warn.
+pub(super) fn log_handshake_failure(e: &tokio_tungstenite::tungstenite::Error) {
+    use tokio_tungstenite::tungstenite::http::StatusCode;
+    use tokio_tungstenite::tungstenite::Error;
+
+    let forbidden = matches!(e, Error::Http(r) if r.status() == StatusCode::FORBIDDEN);
+    if forbidden {
+        log::debug!("[extension_bridge] handshake refused (forbidden origin): {e}");
+    } else {
+        log::warn!("[extension_bridge] handshake rejected/failed: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

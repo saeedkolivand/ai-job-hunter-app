@@ -420,11 +420,25 @@ pub fn run() {
                 .location()
                 .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
                 .unwrap_or_else(|| String::from("<unknown>"));
-            let bt = std::backtrace::Backtrace::force_capture();
-            writeln!(
-                file,
-                "[{timestamp}] PANIC at {location}: {msg}\nBacktrace:\n{bt}\n---"
-            )?;
+            // Rendered to a String BEFORE touching the file, and written in one
+            // call. Formatting a `Backtrace` directly into the file writer means
+            // a failure part-way through leaves a half-written entry on disk —
+            // which is what a reported bundle contained: two PANIC entries that
+            // stopped dead after "Backtrace:", with no frames and not even the
+            // `---` terminator, so neither crash could be diagnosed. This panic
+            // fires during shutdown, when a partial write is exactly what you
+            // would expect.
+            let bt = std::backtrace::Backtrace::force_capture().to_string();
+            let bt = if bt.trim().is_empty() {
+                // Say so explicitly. A blank section is indistinguishable from a
+                // truncated write, and that ambiguity is what cost the last two.
+                "<backtrace unavailable — capture returned no frames>".to_string()
+            } else {
+                bt
+            };
+            let entry = format!("[{timestamp}] PANIC at {location}: {msg}\nBacktrace:\n{bt}\n---\n");
+            file.write_all(entry.as_bytes())?;
+            file.flush()?;
             Ok(())
         })();
     }));

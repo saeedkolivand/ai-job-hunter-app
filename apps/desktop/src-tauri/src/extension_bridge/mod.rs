@@ -654,7 +654,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         if auth::is_allowed_origin(origin, &dev_origins) {
             Ok(res)
         } else {
-            log::warn!("[extension_bridge] rejected handshake from origin: {origin:?}");
+            auth::warn_rejected_origin_once(origin);
             let resp = ErrorResponse::new(Some("forbidden origin".to_string()));
             let (mut parts, body) = resp.into_parts();
             parts.status = StatusCode::FORBIDDEN;
@@ -675,8 +675,7 @@ async fn handle_connection(app: AppHandle, stream: TcpStream) {
         {
             Ok(ws) => ws,
             Err(e) => {
-                // Includes the rejected-origin case (handshake refused with 403).
-                log::warn!("[extension_bridge] handshake rejected/failed: {e}");
+                auth::log_handshake_failure(&e);
                 return;
             }
         };

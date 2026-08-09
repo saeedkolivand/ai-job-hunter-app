@@ -312,6 +312,39 @@ mod tests {
         assert_eq!(names.len(), 3, "unexpected entries: {names:?}");
     }
 
+    /// Redaction must not destroy the backtrace it is redacting.
+    ///
+    /// A reported bundle's `crashes.log` had two PANIC entries whose backtrace
+    /// was completely empty, making both undiagnosable. Redaction is one of the
+    /// two candidates for that (the other being capture itself), so it gets
+    /// pinned here: symbol names and frame numbers survive, only the paths go.
+    #[test]
+    fn a_backtrace_survives_redaction_with_only_its_paths_removed() {
+        let frame = "   3: ajh_tauri::window::move_state\n                                  at C:\\Users\\alice\\src\\window.rs:42:9";
+        let redacted = redact_lines(frame);
+
+        assert!(
+            redacted.contains("ajh_tauri::window::move_state"),
+            "the SYMBOL is the diagnostic value and must survive; got: {redacted}"
+        );
+        assert!(
+            redacted.contains("3:"),
+            "frame numbering must survive; got: {redacted}"
+        );
+        assert!(
+            redacted.contains("<path-redacted>"),
+            "the absolute path must still be redacted; got: {redacted}"
+        );
+        assert!(!redacted.contains("alice"), "username must not leak: {redacted}");
+    }
+
+    /// The entry separator must survive too — without it, consecutive crashes
+    /// run together and the reader cannot tell where one backtrace ends.
+    #[test]
+    fn the_crash_entry_separator_survives_redaction() {
+        assert_eq!(redact_lines("---"), "---");
+    }
+
     /// Absolute paths and credential tokens in crashes.log must be redacted.
     #[test]
     fn crashes_log_paths_are_redacted() {
