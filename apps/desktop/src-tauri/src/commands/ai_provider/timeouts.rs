@@ -114,6 +114,11 @@ pub const WEB_SEARCH: Duration = Duration::from_secs(25);
 /// call that backs the Ollama-family research path.
 pub const OLLAMA_WEB_SEARCH: Duration = Duration::from_secs(15);
 
+/// Exa (`api.exa.ai/search`): the configurable fallback search backend. Same
+/// bound as [`OLLAMA_WEB_SEARCH`] — same operation (one hosted search POST), so
+/// they share a value but not a constant, per this module's own rule.
+pub const EXA_SEARCH: Duration = Duration::from_secs(15);
+
 /// BASELINE for the OUTER bound on a whole research pass — search **plus** the
 /// model's synthesis of the results — held by `CompanyResearch::enrich_with` and
 /// `SalaryResearch`. Every call site uses [`research_deadline`], never this
