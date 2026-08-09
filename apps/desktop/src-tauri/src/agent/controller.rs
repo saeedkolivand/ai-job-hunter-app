@@ -30,14 +30,24 @@ use super::tools::{to_specs, AgentTool, ToolContext, ToolKind};
 /// Hard cap on provider round-trips per agent run (agent-safety budget).
 ///
 /// Sized for the "prep this application" flow ([`super::flows::PREP_APPLICATION_SYSTEM`]),
-/// today's longest fixed sequence: 7 tool turns (`research_company`, `match_resume`,
+/// today's longest FIXED sequence: 7 tool turns (`research_company`, `match_resume`,
 /// `draft_cover_letter`, `draft_resume`, `suggest_interview_questions`,
 /// `save_cover_letter`, `save_resume`) plus a planning turn and a closing-summary
 /// turn — 9 turns minimum with zero room for a model splitting a step across two
-/// turns or a retried confirm. 12 leaves comfortable headroom above that without
-/// opening the door to a runaway loop (see [`MAX_AGENT_TOKENS`] for the cost
-/// backstop on top).
-pub const MAX_AGENT_STEPS: usize = 12;
+/// turns or a retried confirm.
+///
+/// The whitelist also carries four OPTIONAL résumé-quality Read tools
+/// (`validate_resume`, `search_candidate_evidence`, `lookup_salary`,
+/// `get_trim_suggestions` — [`super::tools_quality::quality_tools`]), 7→11 tools
+/// total. The fixed sequence above doesn't name them, but nothing stops a
+/// tool-capable model from spending an extra turn self-checking the drafted
+/// résumé or grounding a salary/evidence claim before finishing — more useful
+/// tools legitimately mean more useful steps, at the SAME per-turn token cost
+/// ([`MAX_AGENT_TOKENS`] is unchanged). 14 keeps the 9-turn fixed-sequence floor
+/// plus its original 3-turn headroom, and adds 2 more turns for up to two such
+/// optional quality-tool calls — without opening the door to a runaway loop
+/// (see [`MAX_AGENT_TOKENS`] for the cost backstop on top).
+pub const MAX_AGENT_STEPS: usize = 14;
 /// Hard cap on the accumulated token estimate (~chars/4) across prompts +
 /// completions per run — stops a loop that keeps calling tools without converging.
 ///

@@ -16,6 +16,12 @@
 //! about, but can never redirect a credentialed provider request to an attacker
 //! host (SSRF / API-key exfil), nor substitute an arbitrary company/job-ad blob for
 //! the run's own posting.
+//!
+//! The résumé-quality tools (`validate_resume`, `search_candidate_evidence`,
+//! `lookup_salary`, `get_trim_suggestions`) live in the sibling
+//! [`super::tools_quality`] module — same registry, same [`ToolContext`] trust
+//! story, split out purely to stay under the R8 module-size cap. [`read_tools`]
+//! appends them, so every per-flow whitelist below still comes from ONE call.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -46,10 +52,16 @@ pub enum ToolKind {
 /// renderer nor the untrusted `args` (see the module-level SECURITY note). `job_id`
 /// is the run's OWN job (validated request input) — a tool that only ever concerns
 /// itself with this run's single posting (e.g. `research_company`) loads it by this
-/// id instead of trusting a model-supplied job/company blob.
+/// id instead of trusting a model-supplied job/company blob. `resume_id` is the
+/// same trust story for the run's OWN résumé: the quality tools in
+/// [`super::tools_quality`] (`validate_resume`, `search_candidate_evidence`,
+/// `get_trim_suggestions`) load the SOURCE résumé text by this id, never by a
+/// model-supplied `resumeId` arg — so a prompt-injected posting can't substitute
+/// a different candidate's document into a factual check.
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub job_id: String,
+    pub resume_id: String,
 }
 
 /// A tool's async handler: takes the app handle, the trusted [`ToolContext`], and
@@ -594,11 +606,14 @@ fn save_resume_schema() -> Value {
     })
 }
 
-/// The default read-only whitelist: company research + résumé/job matching, both
-/// thin adapters over the existing Tauri commands (reused, not re-implemented).
-/// A per-flow caller picks the slice of tools it wants to expose.
+/// The default read-only whitelist: company research + résumé/job matching +
+/// the four résumé-quality tools ([`super::tools_quality::quality_tools`] —
+/// `validate_resume`, `search_candidate_evidence`, `lookup_salary`,
+/// `get_trim_suggestions`), every one a thin adapter over an existing pure
+/// module or Tauri command (reused, not re-implemented). A per-flow caller
+/// picks the slice of tools it wants to expose.
 pub fn read_tools() -> Vec<AgentTool> {
-    vec![
+    let mut tools = vec![
         AgentTool {
             name: "research_company",
             description:
@@ -630,7 +645,9 @@ pub fn read_tools() -> Vec<AgentTool> {
             kind: ToolKind::Read,
             handler: match_resume_handler,
         },
-    ]
+    ];
+    tools.extend(super::tools_quality::quality_tools());
+    tools
 }
 
 /// The "prep this application" whitelist: the read tools, the three
@@ -735,7 +752,7 @@ mod tests {
         );
     }
 
-    /// SECURITY: the prep flow must expose exactly the seven expected tools, in
+    /// SECURITY: the prep flow must expose exactly the eleven expected tools, in
     /// order, and — critically — EXACTLY TWO Write tools (`save_cover_letter`,
     /// `save_resume`, the gated internal saves). No other write is reachable, and
     /// every write suspends for confirmation (enforced by the controller, not here).
@@ -748,13 +765,17 @@ mod tests {
             vec![
                 "research_company",
                 "match_resume",
+                "validate_resume",
+                "search_candidate_evidence",
+                "lookup_salary",
+                "get_trim_suggestions",
                 "draft_cover_letter",
                 "draft_resume",
                 "suggest_interview_questions",
                 "save_cover_letter",
                 "save_resume",
             ],
-            "prep whitelist must be exactly these seven tools in order"
+            "prep whitelist must be exactly these eleven tools in order"
         );
         let writes: Vec<&str> = tools
             .iter()
@@ -767,7 +788,7 @@ mod tests {
             "exactly two Write tools — the gated internal cover-letter and résumé saves — may be reachable"
         );
         // The specs handed to the model carry every tool through unchanged.
-        assert_eq!(to_specs(&tools).len(), 7);
+        assert_eq!(to_specs(&tools).len(), 11);
     }
 
     /// The cover-letter Write tool accepts CONTENT only: its schema declares
