@@ -164,7 +164,9 @@ export function Finale() {
       <p className="foot-nav">
         home · <a href="/how-it-works">how it works</a> · <a href="/download">download</a> ·{' '}
         <a href="/privacy">privacy</a> · <a href="/accessibility">accessibility</a> ·{' '}
-        <a href="/creature">▶ the short film</a> ·{' '}
+        <a href="/creature">▶ the short film</a> · <a href="/agent-system">the agent fleet</a> ·{' '}
+        <a href="/architecture-map">architecture</a> · <a href="/tech-radar">tech radar</a> ·{' '}
+        <a href="/storybook/">design system</a> ·{' '}
         <a href={GITHUB_REPO} target="_blank" rel="noopener noreferrer">
           GitHub
         </a>{' '}
