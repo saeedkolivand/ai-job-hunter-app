@@ -1520,3 +1520,38 @@ fn merge_quality_report_unparseable_existing_recovers_via_incoming() {
         r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":600,"resume":{"ok":true}}"#
     );
 }
+
+/// Each side clamps its OWN write to `QUALITY_REPORT_MAX_BYTES`, but the merge
+/// unions both sub-reports — a small, fresh résumé-only `incoming` overlaid
+/// onto an `existing` wrapper whose stored `coverLetter` sub-report is already
+/// near the cap can still push the merged object over budget. The merge must
+/// not truncate the oversized JSON (unparseable on the next read, silently
+/// reverting to the stale stored report on the read after that) — it falls
+/// back to `incoming` whole, which is both known-parseable and already within
+/// budget.
+#[test]
+fn merge_quality_report_oversized_union_falls_back_to_incoming() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    let huge = "x".repeat(QUALITY_REPORT_MAX_BYTES);
+    existing.quality_report = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 100,
+        "coverLetter": { "blob": huge }
+    })
+    .to_string();
+    assert!(
+        existing.quality_report.len() > QUALITY_REPORT_MAX_BYTES,
+        "test fixture must actually exceed the cap on its own"
+    );
+
+    let mut resume_save = record("g2", "https://acme.com/job/1");
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":200,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, resume_save.clone());
+    assert_eq!(
+        merged.quality_report, resume_save.quality_report,
+        "an oversized merged union must fall back to the fresh incoming report verbatim, not a truncated blob"
+    );
+}

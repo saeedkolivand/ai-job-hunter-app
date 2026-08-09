@@ -803,6 +803,16 @@ fn merge_application(
 /// - Otherwise: every top-level key `incoming` carries — including
 ///   `schemaVersion`/`pipeline`/`generatedAt` — overlays the same key on
 ///   `existing`; every key only `existing` carries survives untouched.
+/// - The merged object exceeds [`QUALITY_REPORT_MAX_BYTES`] (both write paths
+///   clamp `incoming` alone to the cap, but the sub-report `existing` already
+///   carries for the OTHER pipeline can independently sit near the cap too, so
+///   their union can still blow the column budget) → `incoming` is returned
+///   whole instead. At that point `incoming` is known-parseable (it passed the
+///   first guard above) and known within budget (both callers clamp it before
+///   it reaches here); that beats both alternatives — truncating the merged
+///   JSON mid-object would make it unparseable on the next read and silently
+///   revert to the stale stored report, and persisting the oversized union
+///   would blow the column budget outright.
 fn merge_quality_report(incoming: String, existing: String) -> String {
     let Some(serde_json::Value::Object(incoming_obj)) =
         serde_json::from_str::<serde_json::Value>(&incoming).ok()
@@ -817,7 +827,10 @@ fn merge_quality_report(incoming: String, existing: String) -> String {
     for (key, value) in incoming_obj {
         merged.insert(key, value);
     }
-    serde_json::to_string(&serde_json::Value::Object(merged)).unwrap_or(incoming)
+    match serde_json::to_string(&serde_json::Value::Object(merged)) {
+        Ok(merged_str) if merged_str.len() <= QUALITY_REPORT_MAX_BYTES => merged_str,
+        _ => incoming,
+    }
 }
 
 pub fn make_generation_id() -> String {
