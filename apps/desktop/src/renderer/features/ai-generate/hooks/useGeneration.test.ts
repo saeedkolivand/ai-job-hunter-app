@@ -281,6 +281,27 @@ describe('useGeneration — quality report wiring', () => {
       expect.objectContaining({ qualityReport: expect.anything() })
     );
   });
+
+  it('clears the previous report before the progressive-reveal window, so a regenerate in "both" mode never shows the prior run\'s report against the new résumé', async () => {
+    let resolveResume!: (v: string) => void;
+    vi.mocked(generateResume).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveResume = resolve))
+    );
+    const { handleGenerate, m } = setup('both');
+
+    const run = handleGenerate();
+    // handleGenerate clears state — including the report — synchronously,
+    // before ever awaiting the résumé generation call.
+    await vi.waitFor(() => expect(generateResume).toHaveBeenCalled());
+    expect(m.setReport).toHaveBeenCalledWith(null);
+    // Still mid-flight: the résumé hasn't resolved, so stage hasn't reached
+    // 'done' (the progressive-reveal window) yet — the report was already
+    // cleared well before that window opens.
+    expect(stageCalls(m)).not.toContain('done');
+
+    resolveResume('RESUME');
+    await run;
+  });
 });
 
 describe('useGeneration — stale-persist guard (Regenerate/reset during validation)', () => {
@@ -321,9 +342,14 @@ describe('useGeneration — stale-persist guard (Regenerate/reset during validat
     resolveStale(STALE_REPORT);
     await first;
 
-    // Only the second run's outcome (null report, one save) is ever visible.
-    expect(m.setReport).toHaveBeenCalledTimes(1);
-    expect(m.setReport).toHaveBeenCalledWith(null);
+    // Both runs eagerly clear the report at their own top (2 calls) and the
+    // winning (second) run's persist() clears it again once validation
+    // resolves null (3rd call) — the superseded run's OWN persist() bails on
+    // its aborted-controller check before ever reaching setReport, so no call
+    // ever carries the stale run's report. That "never persists twice" is
+    // what the save/notify counts below prove.
+    expect(m.setReport).toHaveBeenCalledTimes(3);
+    expect(m.setReport).toHaveBeenLastCalledWith(null);
     expect(m.saveAiGeneration.mutate).toHaveBeenCalledTimes(1);
     expect(m.notify.success).toHaveBeenCalledTimes(1);
   });
@@ -344,9 +370,12 @@ describe('useGeneration — stale-persist guard (Regenerate/reset during validat
     resolveStale(STALE_REPORT);
     await run;
 
-    // The aborted run's persist() bails before setReport/save, and its finally()
-    // owns the ref (nothing else replaced it) so it clears it back to null.
-    expect(m.setReport).not.toHaveBeenCalled();
+    // The run's own top-of-function clear still fires once (setReport(null) —
+    // never a stale report). Its persist() then bails before EVER calling
+    // setReport/mutate again once resolved, and its finally() owns the ref
+    // (nothing else replaced it) so it clears it back to null.
+    expect(m.setReport).toHaveBeenCalledTimes(1);
+    expect(m.setReport).toHaveBeenCalledWith(null);
     expect(m.saveAiGeneration.mutate).not.toHaveBeenCalled();
     expect(m.notify.success).not.toHaveBeenCalled();
     expect(abortControllerRef.current).toBeNull();

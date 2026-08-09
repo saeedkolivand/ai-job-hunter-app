@@ -90,6 +90,11 @@ export function useGeneration(
     // read. Kept separate from the stored `meta` (extracted) so the wizard owns it.
     const genMeta: GenerationMeta = emphasis.length ? { ...meta, emphasis } : meta;
     setError(null);
+    // Clear the previous generation's report too — otherwise the 'both'-mode
+    // progressive-reveal window (stage 'done' while the cover still streams)
+    // renders the PREVIOUS run's report/evidence against the NEW résumé until
+    // `persist` recomputes one.
+    setReport(null);
     setResumeOut('');
     setCoverOut('');
     setStreamBuffer('');
