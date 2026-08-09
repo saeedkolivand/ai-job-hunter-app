@@ -19,32 +19,50 @@ import { errorDetail } from '../error-class';
 const EMPTY_REPORT_PLACEHOLDER = '{}';
 
 /**
+ * One document's entry in the wrapper: the validator's verdict AND the hash of
+ * the exact text that produced it, as one indivisible unit.
+ */
+export interface QualityReportSlot {
+  /** This document's deterministic content report. */
+  report: ContentReportPayload;
+  /**
+   * djb2 hash of the EXACT text `report` validated — same document text, same
+   * moment. A reader compares `hashText(currentText)` against it to detect the
+   * document has since diverged (a hand-edit) WITHOUT keeping a full second
+   * copy of the text around: one mechanism covering both live staleness
+   * (against the session's `resumeOut`/`coverOut`) and persisted staleness
+   * (against a cold-hydrated record's saved text — the hash was computed over
+   * that exact text at save time, so an unedited reopen always matches).
+   */
+  sourceTextHash: number;
+}
+
+/**
  * Wire shape persisted in `AiGenerationRecord.qualityReport` — an opaque JSON
  * string on the Rust side (the migration/merge logic never parses it), so this
  * wrapper is free to carry BOTH documents' reports plus provenance rather than
  * mirroring Rust's single-document `ContentReport` 1:1.
+ *
+ * **The slot shape is DESIGNED for the persistence merge.** Rust's
+ * `merge_quality_report` overlays `incoming` onto `existing` per TOP-LEVEL key
+ * (semantics-free — it never looks inside a value), so everything belonging to
+ * one document has to live UNDER that document's key. v1's sibling
+ * `sourceTextHash: { resume?, coverLetter? }` map broke exactly that rule and
+ * was the bug: a résumé-only regeneration emits a map holding only `resume`
+ * (it cannot know the letter's text), the merge replaced the whole map, and
+ * the surviving `coverLetter` sub-report permanently lost its staleness anchor
+ * — after which the badge showed a green "no issues" on hand-edited text the
+ * report had never seen. With the hash inside the slot, replacing `resume`
+ * replaces its hash atomically and `coverLetter` stays whole.
  */
 export interface QualityReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   /** Which validation pipeline produced this — 'fast' is the only one today
    *  (the deterministic checks); reserved for a future slower/deeper pass. */
   pipeline: 'fast';
   generatedAt: number;
-  resume?: ContentReportPayload;
-  coverLetter?: ContentReportPayload;
-  /**
-   * djb2 hash of the EXACT text each sub-report validated. A reader compares
-   * `hashText(currentText)` against this to detect the document has since
-   * diverged (a hand-edit) WITHOUT keeping a full second copy of the text
-   * around — this single mechanism covers both live staleness (compared
-   * against the live session's `resumeOut`/`coverOut`) and persisted
-   * staleness (compared against a cold-hydrated record's saved text; the
-   * hash was computed over that exact text at generation time, so an
-   * unedited reopen always matches). Absent alongside an absent sub-report,
-   * and absent entirely on a report generated before this field existed
-   * (never treated as stale — there is nothing to compare against).
-   */
-  sourceTextHash?: { resume?: number; coverLetter?: number };
+  resume?: QualityReportSlot;
+  coverLetter?: QualityReportSlot;
 }
 
 /**
@@ -108,26 +126,27 @@ export async function computeQualityReport(params: {
   ]);
   if (!resume && !coverLetter) return null;
 
-  const sourceTextHash: { resume?: number; coverLetter?: number } = {};
-  if (resume) sourceTextHash.resume = hashText(resumeText ?? '');
-  if (coverLetter) sourceTextHash.coverLetter = hashText(coverLetterText ?? '');
-
+  // A document this run did not validate contributes NO key at all — not an
+  // `undefined` one. The merge overlays whatever keys this wrapper carries, so
+  // a key it can't fill would overwrite the stored slot for the OTHER document.
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pipeline: 'fast',
     generatedAt: Date.now(),
-    resume,
-    coverLetter,
-    sourceTextHash,
+    ...(resume ? { resume: { report: resume, sourceTextHash: hashText(resumeText ?? '') } } : {}),
+    ...(coverLetter
+      ? { coverLetter: { report: coverLetter, sourceTextHash: hashText(coverLetterText ?? '') } }
+      : {}),
   };
 }
 
 /**
  * Merge a freshly re-checked sub-report into an existing wrapper — replaces
- * only `docKind`'s payload + hash; the other doc (if any) and `generatedAt`
- * are left untouched, so a résumé-only re-check never disturbs a cover-letter
- * report sitting alongside it. Powers the quality panel's "Re-check" action,
- * which also clears staleness (the fresh hash matches the just-validated text).
+ * only `docKind`'s slot (payload AND hash, atomically); the other doc (if any)
+ * and `generatedAt` are left untouched, so a résumé-only re-check never
+ * disturbs a cover-letter report sitting alongside it. Powers the quality
+ * panel's "Re-check" action, which also clears staleness (the fresh hash
+ * matches the just-validated text).
  */
 export function mergeRecheckedReport(
   existing: QualityReport | null,
@@ -136,17 +155,12 @@ export function mergeRecheckedReport(
   currentText: string
 ): QualityReport {
   const base: QualityReport = existing ?? {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pipeline: 'fast',
     generatedAt: Date.now(),
   };
-  const sourceTextHash: { resume?: number; coverLetter?: number } = {
-    ...base.sourceTextHash,
-    [docKind]: hashText(currentText),
-  };
-  return docKind === 'resume'
-    ? { ...base, resume: payload, sourceTextHash }
-    : { ...base, coverLetter: payload, sourceTextHash };
+  const slot: QualityReportSlot = { report: payload, sourceTextHash: hashText(currentText) };
+  return docKind === 'resume' ? { ...base, resume: slot } : { ...base, coverLetter: slot };
 }
 
 /** `undefined` (omit the field) for a null report — matches the save contract's
@@ -209,15 +223,33 @@ function parseSubReport(value: unknown): ContentReportPayload | undefined {
 }
 
 /**
+ * One document slot: a valid sub-report AND its numeric hash. A slot missing
+ * either half is dropped entirely rather than half-loaded — a report without
+ * its hash is precisely the "green badge on text it never saw" state the slot
+ * shape exists to prevent.
+ */
+function parseSlot(value: unknown): QualityReportSlot | undefined {
+  if (!isRecord(value) || typeof value.sourceTextHash !== 'number') return undefined;
+  const report = parseSubReport(value.report);
+  return report ? { report, sourceTextHash: value.sourceTextHash } : undefined;
+}
+
+/**
  * Parse a persisted `AiGenerationRecord.qualityReport` string back into a
  * {@link QualityReport} for cold-entry hydration. Total: any input — absent,
  * empty, the Rust-side `'{}'` placeholder, invalid JSON, or a malformed shape
  * at any level — resolves to `null` (or a partial report with the malformed
- * sub-report dropped), never a thrown exception.
+ * slot dropped), never a thrown exception.
  *
- * `schemaVersion` gates the whole shape: anything other than `1` (missing,
- * wrong type, a future v2…) is treated as absent rather than pattern-matched
- * against v1 field names — forward-compatible without a throw.
+ * `schemaVersion` gates the whole shape: anything other than `2` is treated as
+ * absent rather than pattern-matched against its field names. That deliberately
+ * includes **v1** (sub-reports at the top level beside a shared
+ * `sourceTextHash` map): no migration is written for it because a v1 blob can
+ * only exist on a dev machine that ran this feature branch before the slot
+ * shape landed — never in a release — and "no report until the next
+ * generation" is the correct degrade. Re-pairing a v1 map's hashes with its
+ * sub-reports would also resurrect the very ambiguity (which hash belongs to
+ * which report after a partial merge?) that v2 exists to remove.
  */
 export function parseQualityReport(raw: string | undefined): QualityReport | null {
   if (!raw || raw === EMPTY_REPORT_PLACEHOLDER) return null;
@@ -227,24 +259,16 @@ export function parseQualityReport(raw: string | undefined): QualityReport | nul
   } catch {
     return null;
   }
-  if (!isRecord(parsed) || parsed.schemaVersion !== 1) return null;
+  if (!isRecord(parsed) || parsed.schemaVersion !== 2) return null;
 
-  const resume = parseSubReport(parsed.resume);
-  const coverLetter = parseSubReport(parsed.coverLetter);
-  const hash = isRecord(parsed.sourceTextHash) ? parsed.sourceTextHash : undefined;
-  const sourceTextHash = hash
-    ? {
-        resume: typeof hash.resume === 'number' ? hash.resume : undefined,
-        coverLetter: typeof hash.coverLetter === 'number' ? hash.coverLetter : undefined,
-      }
-    : undefined;
+  const resume = parseSlot(parsed.resume);
+  const coverLetter = parseSlot(parsed.coverLetter);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pipeline: 'fast',
     generatedAt: typeof parsed.generatedAt === 'number' ? parsed.generatedAt : 0,
     ...(resume ? { resume } : {}),
     ...(coverLetter ? { coverLetter } : {}),
-    ...(sourceTextHash ? { sourceTextHash } : {}),
   };
 }

@@ -11,19 +11,17 @@ import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
-import { errorDetail } from '@/lib/error-class';
+import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import {
   buildFilename,
   type GenerationMeta,
   type LetterLayoutId,
-  mergeRecheckedReport,
   MODES,
   type QualityReport,
   resolveMarket,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
-import { useValidateContent } from '@/services/use-resume-validation';
 
 import { ExportModal } from '../ExportModal';
 import { TrimPanel } from '../TrimPanel';
@@ -64,6 +62,11 @@ interface OutputPanelDoneProps {
   jobAd?: string;
   /** Which document is still streaming during progressive reveal (#23), or null. */
   generatingDoc?: 'resume' | 'cover' | null;
+  /** URL-import provenance (ADR-031) — the saved record's routing key. Lets a
+   *  panel "Re-check" persist its merged report onto that record; absent (a
+   *  pasted/uploaded ad) keeps the re-check session-only. */
+  jobUrl?: string;
+  board?: string;
 }
 
 export function OutputPanelDone({
@@ -90,8 +93,9 @@ export function OutputPanelDone({
   generatingDoc = null,
   sourceResume,
   jobAd,
+  jobUrl,
+  board,
 }: OutputPanelDoneProps) {
-  const validateContent = useValidateContent();
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
   // Rendered page count for the active doc, reported by PdfPreview — drives the
@@ -204,46 +208,22 @@ export function OutputPanelDone({
   const isPending = activeOut === 'resume' ? pendingResume : pendingCover;
   const currentMeta = meta;
 
-  // Ownership guard for "Re-check" below: a session Reset clears `meta`/
-  // `sourceResume`/`jobAd` (back to null/'') while the validate-content call
-  // is still in flight — without this, the stale result would resurrect a
-  // report into the freshly-cleared session. Bumped whenever these
-  // identity-defining inputs change; mirrors the AbortController ownership
-  // check `useGeneration`'s persist() uses for the same class of race.
-  const recheckEpochRef = useRef(0);
-  useEffect(() => {
-    recheckEpochRef.current += 1;
-  }, [meta, sourceResume, jobAd]);
-
   // "Re-check" (quality panel action): re-validate the ACTIVE doc's current
-  // text and merge the fresh sub-report into the session's report — this is
-  // what clears staleness (the fresh hash matches what was just checked).
-  // Best-effort like `computeQualityReport`: a failure just leaves the stale
-  // state showing rather than surfacing a new error path for an optional action.
-  const handleRecheck = async () => {
-    if (!sourceResume || !jobAd || !meta || !onReportChange) return;
-    const docKind = activeOut === 'resume' ? 'resume' : 'coverLetter';
-    const epoch = recheckEpochRef.current;
-    try {
-      const payload = await validateContent.mutateAsync({
-        generated: currentOutput,
-        source: sourceResume,
-        jobAd,
-        topRequirements: meta.topRequirements,
-        targetLanguage: meta.targetLanguage,
-        docKind,
-      });
-      // A Reset while this call was in flight already cleared the caller's
-      // report — don't resurrect a stale one onto the new session.
-      if (recheckEpochRef.current !== epoch) return;
-      onReportChange(mergeRecheckedReport(report ?? null, docKind, payload, currentOutput));
-    } catch (err) {
-      console.warn('[OutputPanelDone] recheck failed — report left as-is', {
-        docKind,
-        error: errorDetail(err),
-      });
-    }
-  };
+  // text, merge the fresh slot into the session's report — this is what clears
+  // staleness — and persist it so a reopen doesn't show the stale badge again.
+  const { recheck, rechecking } = useQualityRecheck({
+    report,
+    meta,
+    sourceResume,
+    jobAd,
+    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
+    currentText: currentOutput,
+    onReportChange,
+    resumeText: resumeOut,
+    coverLetterText: coverOut,
+    jobUrl,
+    board,
+  });
 
   return (
     <motion.div
@@ -288,8 +268,8 @@ export function OutputPanelDone({
             report={report}
             docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
             currentText={currentOutput}
-            onRecheck={onReportChange ? handleRecheck : undefined}
-            rechecking={validateContent.isPending}
+            onRecheck={recheck}
+            rechecking={rechecking}
           />
           <Button
             onClick={onCopy}

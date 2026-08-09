@@ -851,7 +851,40 @@ describe('TailorFlow — cold-entry hydration', () => {
     expect(genMock.hydrate).not.toHaveBeenCalled();
   });
 
-  it('parses a real seeded qualityReport (incl. sourceTextHash) into hydrate', () => {
+  it('parses a real seeded qualityReport (slot + its own hash) into hydrate', () => {
+    const slot = {
+      report: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: 80,
+          topRequirementHits: 1,
+          duplicateRatio: 0,
+          rolesSource: 1,
+          rolesOutput: 1,
+        },
+      },
+      sourceTextHash: 12345,
+    };
+    const qualityReport = JSON.stringify({
+      schemaVersion: 2,
+      pipeline: 'fast',
+      generatedAt: 42,
+      resume: slot,
+    });
+    renderFlow({ seedGeneration: { ...SAVED_GENERATION, qualityReport } });
+
+    expect(genMock.hydrate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        report: expect.objectContaining({ generatedAt: 42, resume: slot }),
+      })
+    );
+  });
+
+  // A blob in the pre-slot shape hydrates as "no report" rather than as a
+  // report with no staleness anchor — the state that renders a green badge over
+  // text it never validated.
+  it('drops a v1-shaped seeded qualityReport instead of hydrating an anchorless report', () => {
     const qualityReport = JSON.stringify({
       schemaVersion: 1,
       pipeline: 'fast',
@@ -871,14 +904,7 @@ describe('TailorFlow — cold-entry hydration', () => {
     });
     renderFlow({ seedGeneration: { ...SAVED_GENERATION, qualityReport } });
 
-    expect(genMock.hydrate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        report: expect.objectContaining({
-          generatedAt: 42,
-          sourceTextHash: { resume: 12345 },
-        }),
-      })
-    );
+    expect(genMock.hydrate).toHaveBeenCalledWith(expect.objectContaining({ report: null }));
   });
 });
 

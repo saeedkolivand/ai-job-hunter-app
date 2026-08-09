@@ -1021,22 +1021,26 @@ describe('GenerationOutput', () => {
   // staleness comparison actually renders at.
   describe('quality badge — seeded report + staleness', () => {
     const OUTPUT = 'Generated resume content'; // matches makeProps()'s default `output`
+    const PAYLOAD = {
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: 80,
+        topRequirementHits: 1,
+        duplicateRatio: 0,
+        rolesSource: 1,
+        rolesOutput: 1,
+      },
+    };
     const REPORT: QualityReport = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       pipeline: 'fast',
       generatedAt: 1,
-      resume: {
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: 80,
-          topRequirementHits: 1,
-          duplicateRatio: 0,
-          rolesSource: 1,
-          rolesOutput: 1,
-        },
-      },
-      sourceTextHash: { resume: hashText(OUTPUT) },
+      resume: { report: PAYLOAD, sourceTextHash: hashText(OUTPUT) },
+    };
+    const STALE: QualityReport = {
+      ...REPORT,
+      resume: { report: PAYLOAD, sourceTextHash: hashText('DIFFERENT') },
     };
 
     it('renders the badge for a seeded, unedited report (hash matches — not stale)', () => {
@@ -1045,11 +1049,7 @@ describe('GenerationOutput', () => {
     });
 
     it('renders the stale state once the hash no longer matches (edited since hydration)', () => {
-      const edited: QualityReport = {
-        ...REPORT,
-        sourceTextHash: { resume: hashText('DIFFERENT') },
-      };
-      render(<GenerationOutput {...makeProps({ report: edited })} />);
+      render(<GenerationOutput {...makeProps({ report: STALE })} />);
       expect(screen.getByRole('button', { name: /quality\.badge\.stale/ })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /quality\.badge\.clean/ })).toBeNull();
     });
@@ -1057,6 +1057,26 @@ describe('GenerationOutput', () => {
     it('renders nothing when there is no report yet', () => {
       render(<GenerationOutput {...makeProps({ report: null })} />);
       expect(screen.queryByRole('button', { name: /quality\.badge/ })).toBeNull();
+    });
+
+    // This is the ONE surface with inline editing, so it is the only one whose
+    // badge can go stale mid-session — it must also offer the way back out.
+    it('offers Re-check in the panel when the host wires it', async () => {
+      const user = userEvent.setup();
+      const onRecheck = vi.fn();
+      render(<GenerationOutput {...makeProps({ report: STALE, onRecheck })} />);
+
+      await user.click(screen.getByRole('button', { name: /quality\.badge\.stale/ }));
+      await user.click(screen.getByRole('button', { name: /quality\.panel\.recheck/ }));
+      expect(onRecheck).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides Re-check when the host cannot supply it', async () => {
+      const user = userEvent.setup();
+      render(<GenerationOutput {...makeProps({ report: STALE })} />);
+
+      await user.click(screen.getByRole('button', { name: /quality\.badge\.stale/ }));
+      expect(screen.queryByRole('button', { name: /quality\.panel\.recheck/ })).toBeNull();
     });
   });
 });

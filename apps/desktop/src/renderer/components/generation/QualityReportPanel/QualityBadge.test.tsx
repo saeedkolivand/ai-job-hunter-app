@@ -39,30 +39,47 @@ const WITH_ISSUES: ContentReportPayload = {
   metrics: METRICS,
 };
 
+const TEXT = 'the validated document text';
+
+/** A slot for `TEXT` — the badge is NOT stale as long as `currentText` matches. */
+function slot(payload: ContentReportPayload, text = TEXT) {
+  return { report: payload, sourceTextHash: hashText(text) };
+}
+
 function report(overrides: Partial<QualityReport>): QualityReport {
-  return { schemaVersion: 1, pipeline: 'fast', generatedAt: 1, ...overrides };
+  return { schemaVersion: 2, pipeline: 'fast', generatedAt: 1, ...overrides };
 }
 
 describe('QualityBadge', () => {
   it('renders nothing when this document has no report yet', () => {
-    const { container } = render(<QualityBadge report={null} docKind="resume" />);
+    const { container } = render(
+      <QualityBadge report={null} docKind="resume" currentText={TEXT} />
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
   it('renders nothing for a docKind the report never validated (e.g. cover-only run)', () => {
     const { container } = render(
-      <QualityBadge report={report({ coverLetter: CLEAN })} docKind="resume" />
+      <QualityBadge report={report({ coverLetter: slot(CLEAN) })} docKind="resume" currentText="" />
     );
     expect(container).toBeEmptyDOMElement();
   });
 
   it('shows the clean state for a report with zero issues', () => {
-    render(<QualityBadge report={report({ resume: CLEAN })} docKind="resume" />);
+    render(
+      <QualityBadge report={report({ resume: slot(CLEAN) })} docKind="resume" currentText={TEXT} />
+    );
     expect(screen.getByRole('button', { name: /checked/i })).toBeInTheDocument();
   });
 
   it('shows the issue count + critical count for a report with issues', () => {
-    render(<QualityBadge report={report({ resume: WITH_ISSUES })} docKind="resume" />);
+    render(
+      <QualityBadge
+        report={report({ resume: slot(WITH_ISSUES) })}
+        docKind="resume"
+        currentText={TEXT}
+      />
+    );
     const button = screen.getByRole('button');
     expect(button.textContent).toMatch(/2/);
     expect(button.textContent).toMatch(/1/);
@@ -70,7 +87,13 @@ describe('QualityBadge', () => {
 
   it('opens the quality report panel on click, scoped to the right document', async () => {
     const user = userEvent.setup();
-    render(<QualityBadge report={report({ resume: WITH_ISSUES })} docKind="resume" />);
+    render(
+      <QualityBadge
+        report={report({ resume: slot(WITH_ISSUES) })}
+        docKind="resume"
+        currentText={TEXT}
+      />
+    );
 
     expect(screen.queryByRole('dialog')).toBeNull();
     await user.click(screen.getByRole('button'));
@@ -83,18 +106,27 @@ describe('QualityBadge', () => {
   // parse → render) rather than asserting on `parseQualityReport` alone.
   it('renders without throwing when hydrated from a malformed persisted report', async () => {
     const user = userEvent.setup();
-    const malformed = parseQualityReport('{"schemaVersion":1,"resume":{"issues":42}}');
+    const malformed = parseQualityReport(
+      '{"schemaVersion":2,"resume":{"report":{"issues":42},"sourceTextHash":1}}'
+    );
 
-    expect(() => render(<QualityBadge report={malformed} docKind="resume" />)).not.toThrow();
+    expect(() =>
+      render(<QualityBadge report={malformed} docKind="resume" currentText={TEXT} />)
+    ).not.toThrow();
     // No report survived validation for this docKind — the badge renders nothing.
     expect(screen.queryByRole('button')).toBeNull();
 
     const { container } = render(
       <QualityBadge
         report={parseQualityReport(
-          JSON.stringify({ schemaVersion: 1, resume: CLEAN, coverLetter: { issues: 42 } })
+          JSON.stringify({
+            schemaVersion: 2,
+            resume: slot(CLEAN),
+            coverLetter: { report: { issues: 42 }, sourceTextHash: 1 },
+          })
         )}
         docKind="resume"
+        currentText={TEXT}
       />
     );
     expect(container).not.toBeEmptyDOMElement();
@@ -104,10 +136,10 @@ describe('QualityBadge', () => {
 });
 
 describe('QualityBadge — staleness', () => {
-  it('stays in the clean state when currentText matches the validated hash', () => {
+  it('stays in the clean state when currentText matches the slot hash', () => {
     render(
       <QualityBadge
-        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('same text') } })}
+        report={report({ resume: slot(CLEAN, 'same text') })}
         docKind="resume"
         currentText="same text"
       />
@@ -118,7 +150,7 @@ describe('QualityBadge — staleness', () => {
   it('switches to the stale state — never the green clean state — once the text diverges', () => {
     render(
       <QualityBadge
-        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('original text') } })}
+        report={report({ resume: slot(CLEAN, 'original text') })}
         docKind="resume"
         currentText="edited text"
       />
@@ -131,10 +163,7 @@ describe('QualityBadge — staleness', () => {
   it('also switches to the stale state for a report WITH issues on diverged text', () => {
     render(
       <QualityBadge
-        report={report({
-          resume: WITH_ISSUES,
-          sourceTextHash: { resume: hashText('original text') },
-        })}
+        report={report({ resume: slot(WITH_ISSUES, 'original text') })}
         docKind="resume"
         currentText="edited text"
       />
@@ -142,11 +171,26 @@ describe('QualityBadge — staleness', () => {
     expect(screen.getByRole('button').textContent).toMatch(/checked before your edits/i);
   });
 
-  it('never flags staleness for a legacy report with no sourceTextHash', () => {
-    render(
-      <QualityBadge report={report({ resume: CLEAN })} docKind="resume" currentText="anything" />
+  // The staleness anchor travels INSIDE the slot, so a résumé-only re-validation
+  // (the shape a résumé-only regeneration persists) can never leave the cover
+  // letter holding a report with no hash — the state that used to render green
+  // "no issues" over hand-edited text. Each doc is judged by its own anchor.
+  it('judges each document by its OWN slot hash — a fresh résumé slot cannot un-stale the letter', () => {
+    const wrapper = report({
+      resume: slot(CLEAN, 'fresh resume'),
+      coverLetter: slot(CLEAN, 'original letter'),
+    });
+
+    const { unmount } = render(
+      <QualityBadge report={wrapper} docKind="resume" currentText="fresh resume" />
     );
     expect(screen.getByRole('button', { name: /checked/i })).toBeInTheDocument();
+    unmount();
+
+    render(<QualityBadge report={wrapper} docKind="coverLetter" currentText="edited letter" />);
+    const button = screen.getByRole('button');
+    expect(button.textContent).toMatch(/checked before your edits/i);
+    expect(button.textContent).not.toMatch(/no issues/i);
   });
 
   it("forwards onRecheck/rechecking to the panel's Re-check action", async () => {
@@ -154,7 +198,7 @@ describe('QualityBadge — staleness', () => {
     const onRecheck = vi.fn();
     render(
       <QualityBadge
-        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('original') } })}
+        report={report({ resume: slot(CLEAN, 'original') })}
         docKind="resume"
         currentText="edited"
         onRecheck={onRecheck}

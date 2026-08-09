@@ -49,6 +49,10 @@ interface Props {
   editable: boolean;
   meta: GenerationMeta | null;
   report?: QualityReport | null;
+  /** Re-run validation on the active document — this is the only surface with
+   *  inline editing, so it is also the only one that can go stale mid-session. */
+  onRecheck?: () => void;
+  rechecking?: boolean;
   copied: boolean;
   onCopy: () => void;
   exportOpen: boolean;
@@ -86,6 +90,8 @@ export function GenerationOutput({
   editable,
   meta,
   report,
+  onRecheck,
+  rechecking,
   copied,
   onCopy,
   exportOpen,
@@ -241,6 +247,8 @@ export function GenerationOutput({
               report={report}
               docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
               currentText={output}
+              onRecheck={onRecheck}
+              rechecking={rechecking}
               className="mr-1"
             />
           )}

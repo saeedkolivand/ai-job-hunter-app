@@ -218,6 +218,10 @@ export function TailorFlow({
   const gen = useTailorGeneration({
     contextId,
     jobDesc,
+    // The résumé the wizard tailors FROM — the quality panel's "Re-check" needs
+    // it as validation context (RHF owns the live value; `generate` passes its
+    // own validated copy per run).
+    sourceResume: methods.getValues('resume'),
     model,
     canUse,
     hasDesc,
@@ -394,6 +398,8 @@ export function TailorFlow({
         onEdit={gen.editActiveOutput}
         meta={gen.meta}
         report={gen.report}
+        onRecheck={gen.recheck}
+        rechecking={gen.rechecking}
         copied={gen.copied}
         onCopy={() => void gen.copy()}
         exportOpen={gen.exportOpen}

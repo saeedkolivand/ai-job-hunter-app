@@ -42,6 +42,10 @@ interface Props {
   onEdit: (text: string) => void;
   meta: GenerationMeta | null;
   report?: QualityReport | null;
+  /** Re-run validation on the active document — clears staleness after an
+   *  inline edit. Omitted hides the panel's action. */
+  onRecheck?: () => void;
+  rechecking?: boolean;
   copied: boolean;
   onCopy: () => void;
   exportOpen: boolean;
@@ -80,6 +84,8 @@ export function ResultsPanel({
   onEdit,
   meta,
   report,
+  onRecheck,
+  rechecking,
   copied,
   onCopy,
   exportOpen,
@@ -114,6 +120,8 @@ export function ResultsPanel({
           editable
           meta={meta}
           report={report}
+          onRecheck={onRecheck}
+          rechecking={rechecking}
           copied={copied}
           onCopy={onCopy}
           exportOpen={exportOpen}

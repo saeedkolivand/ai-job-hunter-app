@@ -160,19 +160,22 @@ describe('generation store', () => {
 describe('generation store — quality report', () => {
   it('stores the computed report on the session and hands it to onComplete', async () => {
     const report = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       pipeline: 'fast' as const,
       generatedAt: 1,
       resume: {
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: null,
-          topRequirementHits: 0,
-          duplicateRatio: 0,
-          rolesSource: 0,
-          rolesOutput: 0,
+        report: {
+          ok: true,
+          issues: [],
+          metrics: {
+            keywordCoverage: null,
+            topRequirementHits: 0,
+            duplicateRatio: 0,
+            rolesSource: 0,
+            rolesOutput: 0,
+          },
         },
+        sourceTextHash: 1,
       },
     };
     vi.mocked(computeQualityReport).mockResolvedValueOnce(report);
@@ -265,7 +268,7 @@ describe('generation store — hydrate (cold-entry seed)', () => {
 
   it('seeds the report when the caller provides one (reopening an already-checked generation)', () => {
     const id = 'autopilot:job-y';
-    const report = { schemaVersion: 1 as const, pipeline: 'fast' as const, generatedAt: 1 };
+    const report = { schemaVersion: 2 as const, pipeline: 'fast' as const, generatedAt: 1 };
     useGenerationStore.getState().hydrate(id, { ...seed, report });
     expect(useGenerationStore.getState().getSession(id).report).toEqual(report);
   });

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -56,6 +56,14 @@ vi.mock('@/components/ui/ModelSelector', () => ({
 const validateContentMock = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
 vi.mock('@/services/use-resume-validation', () => ({
   useValidateContent: () => validateContentMock,
+}));
+
+// Persisting a re-checked report goes through the aiGenerations save mutation
+// (the only write path that reaches `quality_report`) — stub it and capture the
+// request so the "doesn't clobber the record" assertions can inspect its shape.
+const saveGenerationMock = vi.hoisted(() => ({ mutate: vi.fn() }));
+vi.mock('@/services/use-ai-generations', () => ({
+  useSaveAiGeneration: () => saveGenerationMock,
 }));
 
 // The Re-check tests below pass a `jobAd`, which also mounts TrimPanel — it
@@ -207,24 +215,28 @@ describe('OutputPanelDone — quality panel Re-check wiring', () => {
     topRequirements: ['rust'],
   };
   const STALE_REPORT = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     pipeline: 'fast' as const,
     generatedAt: 1,
     resume: {
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: null,
-        topRequirementHits: 0,
-        duplicateRatio: 0,
-        rolesSource: 0,
-        rolesOutput: 0,
+      report: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: null,
+          topRequirementHits: 0,
+          duplicateRatio: 0,
+          rolesSource: 0,
+          rolesOutput: 0,
+        },
       },
+      // Mismatches RAW's hash on purpose — the badge renders stale, so the
+      // panel's Re-check button is reachable.
+      sourceTextHash: -1,
     },
-    // Mismatches RAW's hash on purpose — the badge renders stale, so the
-    // panel's Re-check button is reachable.
-    sourceTextHash: { resume: -1 },
   };
+
+  beforeEach(() => saveGenerationMock.mutate.mockClear());
 
   it('re-validates the current text and hands the merged report to onReportChange', async () => {
     const freshPayload = {
@@ -266,10 +278,99 @@ describe('OutputPanelDone — quality panel Re-check wiring', () => {
     );
     expect(onReportChange).toHaveBeenCalledWith(
       expect.objectContaining({
-        resume: freshPayload,
-        sourceTextHash: { resume: expect.any(Number) },
+        resume: { report: freshPayload, sourceTextHash: expect.any(Number) },
       })
     );
+  });
+
+  // A re-check that only lived in React state was discarded on reopen — the
+  // stale badge came straight back. It must reach the record, and it must NOT
+  // take anything else with it: every other field is sent blank because Rust's
+  // `merge_application` keeps the STORED value for a blank incoming field
+  // (`pick`), while the two texts are sent at their live values so the stored
+  // text stays the text the fresh hash describes.
+  it('persists the merged report onto the record without emptying its texts', async () => {
+    const freshPayload = {
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: 90,
+        topRequirementHits: 1,
+        duplicateRatio: 0,
+        rolesSource: 1,
+        rolesOutput: 1,
+      },
+    };
+    validateContentMock.mutateAsync = vi.fn().mockResolvedValue(freshPayload);
+    validateContentMock.isPending = false;
+    const user = userEvent.setup();
+
+    renderPanel({
+      report: STALE_REPORT,
+      onReportChange: vi.fn(),
+      meta: META,
+      sourceResume: 'source resume text',
+      jobAd: 'the job ad',
+      coverOut: 'Dear Team, ...',
+      jobUrl: 'https://acme.com/job/42',
+      board: 'linkedin',
+    });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    expect(saveGenerationMock.mutate).toHaveBeenCalledTimes(1);
+    const request = saveGenerationMock.mutate.mock.calls[0]?.[0];
+    // The merged wrapper travels as the serialized wrapper, résumé slot fresh.
+    expect(JSON.parse(String(request.qualityReport))).toEqual(
+      expect.objectContaining({
+        schemaVersion: 2,
+        resume: { report: freshPayload, sourceTextHash: expect.any(Number) },
+      })
+    );
+    // Texts carried at their live values — never emptied.
+    expect(request.resumeText).toBe(RAW);
+    expect(request.coverLetterText).toBe('Dear Team, ...');
+    // Routing key present (without it the save would insert a duplicate row).
+    expect(request.jobUrl).toBe('https://acme.com/job/42');
+    // Everything else deliberately blank so the merge keeps the stored value.
+    expect(request.candidateName).toBe('');
+    expect(request.jobAd).toBe('');
+    expect(request.mode).toBe('');
+    expect(request.topRequirements).toEqual([]);
+  });
+
+  it('keeps the re-check session-only when the record has no url to merge onto', async () => {
+    validateContentMock.mutateAsync = vi.fn().mockResolvedValue({
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: 90,
+        topRequirementHits: 1,
+        duplicateRatio: 0,
+        rolesSource: 1,
+        rolesOutput: 1,
+      },
+    });
+    validateContentMock.isPending = false;
+    const onReportChange = vi.fn();
+    const user = userEvent.setup();
+
+    renderPanel({
+      report: STALE_REPORT,
+      onReportChange,
+      meta: META,
+      sourceResume: 'source resume text',
+      jobAd: 'the job ad',
+    });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    // The session still updates — only the write is skipped, because a
+    // url-less save would fork the history into a second row.
+    expect(onReportChange).toHaveBeenCalled();
+    expect(saveGenerationMock.mutate).not.toHaveBeenCalled();
   });
 
   it('leaves the report untouched when validation fails (best-effort)', async () => {

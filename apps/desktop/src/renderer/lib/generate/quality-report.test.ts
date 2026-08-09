@@ -76,9 +76,39 @@ describe('computeQualityReport', () => {
       expect.objectContaining({ generated: 'generated resume', docKind: 'resume' })
     );
     expect(report).toEqual(
-      expect.objectContaining({ schemaVersion: 1, pipeline: 'fast', resume: OK_REPORT })
+      expect.objectContaining({
+        schemaVersion: 2,
+        pipeline: 'fast',
+        resume: { report: OK_REPORT, sourceTextHash: hashText('generated resume') },
+      })
     );
     expect(report?.coverLetter).toBeUndefined();
+  });
+
+  // The persistence merge (Rust `merge_quality_report`) overlays per TOP-LEVEL
+  // key, so a key this run cannot fill must be ABSENT, not present-and-empty:
+  // a résumé-only regeneration that carried a `coverLetter` key would overwrite
+  // the stored letter slot — hash included — and strip its staleness anchor.
+  it('carries NO cover-letter key at all on a résumé-only run (the merge can only drop what it carries)', async () => {
+    register(vi.fn().mockResolvedValue(OK_REPORT));
+
+    const report = await computeQualityReport({
+      sourceResume: 'src',
+      jobAd: 'ad',
+      topRequirements: [],
+      targetLanguage: 'en',
+      resumeText: 'generated resume',
+    });
+
+    expect(report).not.toBeNull();
+    expect(Object.keys(report ?? {})).not.toContain('coverLetter');
+    // …and the surviving key is a self-contained slot: verdict + its own hash.
+    expect(report?.resume).toEqual({
+      report: OK_REPORT,
+      sourceTextHash: hashText('generated resume'),
+    });
+    // The serialized blob the merge actually sees carries no letter key either.
+    expect(JSON.parse(JSON.stringify(report))).not.toHaveProperty('coverLetter');
   });
 
   it('validates both docs in parallel and carries a critical report through', async () => {
@@ -99,8 +129,8 @@ describe('computeQualityReport', () => {
     });
 
     expect(validateContent).toHaveBeenCalledTimes(2);
-    expect(report?.resume).toEqual(CRITICAL_REPORT);
-    expect(report?.coverLetter).toEqual(OK_REPORT);
+    expect(report?.resume?.report).toEqual(CRITICAL_REPORT);
+    expect(report?.coverLetter?.report).toEqual(OK_REPORT);
   });
 
   it('degrades to no report for a doc whose validation call fails, never throwing', async () => {
@@ -138,11 +168,11 @@ describe('computeQualityReport', () => {
       coverLetterText: 'c',
     });
 
-    expect(report?.resume).toEqual(OK_REPORT);
+    expect(report?.resume?.report).toEqual(OK_REPORT);
     expect(report?.coverLetter).toBeUndefined();
   });
 
-  it("hashes each validated doc's EXACT text into sourceTextHash", async () => {
+  it("hashes each validated doc's EXACT text into its own slot", async () => {
     const validateContent = vi
       .fn()
       .mockImplementation(async (req: { docKind: 'resume' | 'coverLetter' }) =>
@@ -159,13 +189,11 @@ describe('computeQualityReport', () => {
       coverLetterText: 'generated cover',
     });
 
-    expect(report?.sourceTextHash).toEqual({
-      resume: hashText('generated resume'),
-      coverLetter: hashText('generated cover'),
-    });
+    expect(report?.resume?.sourceTextHash).toBe(hashText('generated resume'));
+    expect(report?.coverLetter?.sourceTextHash).toBe(hashText('generated cover'));
   });
 
-  it("omits a doc's hash when that doc never validated (no crash, no bogus entry)", async () => {
+  it("omits a doc's slot entirely when that doc never validated (no hash without a report)", async () => {
     const validateContent = vi.fn().mockResolvedValue(OK_REPORT);
     register(validateContent);
 
@@ -177,7 +205,8 @@ describe('computeQualityReport', () => {
       resumeText: 'generated resume',
     });
 
-    expect(report?.sourceTextHash).toEqual({ resume: hashText('generated resume') });
+    expect(report?.resume?.sourceTextHash).toBe(hashText('generated resume'));
+    expect(report?.coverLetter).toBeUndefined();
   });
 });
 
@@ -196,23 +225,22 @@ describe('hashText', () => {
 });
 
 describe('mergeRecheckedReport', () => {
-  it('replaces only the rechecked doc, leaving the other sub-report + hash intact', () => {
+  it('replaces only the rechecked doc, leaving the other slot (report AND hash) intact', () => {
     const existing = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       pipeline: 'fast' as const,
       generatedAt: 111,
-      resume: CRITICAL_REPORT,
-      coverLetter: OK_REPORT,
-      sourceTextHash: { resume: hashText('old resume'), coverLetter: hashText('old cover') },
+      resume: { report: CRITICAL_REPORT, sourceTextHash: hashText('old resume') },
+      coverLetter: { report: OK_REPORT, sourceTextHash: hashText('old cover') },
     };
 
     const merged = mergeRecheckedReport(existing, 'resume', OK_REPORT, 'new resume');
 
-    expect(merged.resume).toEqual(OK_REPORT);
-    expect(merged.coverLetter).toEqual(OK_REPORT); // untouched
-    expect(merged.sourceTextHash).toEqual({
-      resume: hashText('new resume'),
-      coverLetter: hashText('old cover'), // untouched
+    expect(merged.resume).toEqual({ report: OK_REPORT, sourceTextHash: hashText('new resume') });
+    // Untouched — verdict and hash travel together, so neither can be orphaned.
+    expect(merged.coverLetter).toEqual({
+      report: OK_REPORT,
+      sourceTextHash: hashText('old cover'),
     });
     expect(merged.generatedAt).toBe(111); // untouched
   });
@@ -220,9 +248,12 @@ describe('mergeRecheckedReport', () => {
   it('builds a fresh wrapper when there is no existing report', () => {
     const merged = mergeRecheckedReport(null, 'coverLetter', OK_REPORT, 'cover text');
 
-    expect(merged.coverLetter).toEqual(OK_REPORT);
+    expect(merged.schemaVersion).toBe(2);
+    expect(merged.coverLetter).toEqual({
+      report: OK_REPORT,
+      sourceTextHash: hashText('cover text'),
+    });
     expect(merged.resume).toBeUndefined();
-    expect(merged.sourceTextHash).toEqual({ coverLetter: hashText('cover text') });
   });
 });
 
@@ -238,18 +269,50 @@ describe('parseQualityReport', () => {
   });
 
   it('round-trips a real report', () => {
+    const slot = { report: OK_REPORT, sourceTextHash: hashText('generated resume') };
+    const raw = JSON.stringify({
+      schemaVersion: 2,
+      pipeline: 'fast',
+      generatedAt: 123,
+      resume: slot,
+    });
+    expect(parseQualityReport(raw)).toEqual({
+      schemaVersion: 2,
+      pipeline: 'fast',
+      generatedAt: 123,
+      resume: slot,
+    });
+  });
+
+  // v1 kept the hashes in a sibling map next to top-level sub-reports, which the
+  // per-top-level-key persistence merge could strip out from under a surviving
+  // sub-report. It is rejected outright rather than migrated: such a blob only
+  // exists on a machine that ran this feature branch pre-slot, and "no report
+  // until the next generation" is the correct (never falsely-green) degrade.
+  it('rejects a v1-shaped blob (top-level sub-reports + a sibling sourceTextHash map)', () => {
     const raw = JSON.stringify({
       schemaVersion: 1,
       pipeline: 'fast',
       generatedAt: 123,
       resume: OK_REPORT,
+      coverLetter: OK_REPORT,
+      sourceTextHash: { resume: hashText('r'), coverLetter: hashText('c') },
     });
-    expect(parseQualityReport(raw)).toEqual({
-      schemaVersion: 1,
+    expect(() => parseQualityReport(raw)).not.toThrow();
+    expect(parseQualityReport(raw)).toBeNull();
+  });
+
+  it('drops a slot that carries a report but no hash — never a report without its anchor', () => {
+    const raw = JSON.stringify({
+      schemaVersion: 2,
       pipeline: 'fast',
-      generatedAt: 123,
-      resume: OK_REPORT,
+      generatedAt: 1,
+      resume: { report: OK_REPORT },
+      coverLetter: { report: OK_REPORT, sourceTextHash: 42 },
     });
+    const result = parseQualityReport(raw);
+    expect(result?.resume).toBeUndefined();
+    expect(result?.coverLetter).toEqual({ report: OK_REPORT, sourceTextHash: 42 });
   });
 
   // Security finding M-1: these are the exact malformed persisted shapes that
@@ -269,12 +332,12 @@ describe('parseQualityReport', () => {
       expect(parseQualityReport(raw)).toBeNull();
     });
 
-    it('drops just the malformed resume sub-report when schemaVersion is present and valid', () => {
+    it('drops just the malformed resume slot when schemaVersion is present and valid', () => {
       const raw = JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         pipeline: 'fast',
         generatedAt: 1,
-        resume: { issues: 42 },
+        resume: { report: { issues: 42 }, sourceTextHash: 1 },
       });
       const result = parseQualityReport(raw);
       expect(() => parseQualityReport(raw)).not.toThrow();
@@ -283,26 +346,29 @@ describe('parseQualityReport', () => {
 
     it('drops a sub-report whose issues array contains a malformed entry, keeping the valid entries', () => {
       const raw = JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         pipeline: 'fast',
         generatedAt: 1,
         resume: {
-          ok: true,
-          issues: [
-            {
-              severity: 'critical',
-              code: 'factual.dropped_role',
-              section: null,
-              message: 'ok entry',
-              evidence: null,
-            },
-            { severity: 'nonsense', code: 123 },
-          ],
-          metrics: OK_REPORT.metrics,
+          sourceTextHash: 7,
+          report: {
+            ok: true,
+            issues: [
+              {
+                severity: 'critical',
+                code: 'factual.dropped_role',
+                section: null,
+                message: 'ok entry',
+                evidence: null,
+              },
+              { severity: 'nonsense', code: 123 },
+            ],
+            metrics: OK_REPORT.metrics,
+          },
         },
       });
       const result = parseQualityReport(raw);
-      expect(result?.resume?.issues).toEqual([
+      expect(result?.resume?.report.issues).toEqual([
         {
           severity: 'critical',
           code: 'factual.dropped_role',
@@ -313,27 +379,27 @@ describe('parseQualityReport', () => {
       ]);
     });
 
-    it('treats schemaVersion 2 as absent (forward-compatible, not pattern-matched against v1 fields)', () => {
+    it('treats schemaVersion 3 as absent (forward-compatible, not pattern-matched against v2 fields)', () => {
       const raw = JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         pipeline: 'fast',
         generatedAt: 1,
-        resume: OK_REPORT,
+        resume: { report: OK_REPORT, sourceTextHash: 1 },
       });
       expect(() => parseQualityReport(raw)).not.toThrow();
       expect(parseQualityReport(raw)).toBeNull();
     });
 
-    it('keeps a valid resume report while dropping a malformed cover letter report', () => {
+    it('keeps a valid resume slot while dropping a malformed cover letter slot', () => {
       const raw = JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         pipeline: 'fast',
         generatedAt: 1,
-        resume: OK_REPORT,
-        coverLetter: { issues: 42 },
+        resume: { report: OK_REPORT, sourceTextHash: 5 },
+        coverLetter: { report: { issues: 42 }, sourceTextHash: 6 },
       });
       const result = parseQualityReport(raw);
-      expect(result?.resume).toEqual(OK_REPORT);
+      expect(result?.resume).toEqual({ report: OK_REPORT, sourceTextHash: 5 });
       expect(result?.coverLetter).toBeUndefined();
     });
   });

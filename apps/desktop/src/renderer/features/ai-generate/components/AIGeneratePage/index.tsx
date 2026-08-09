@@ -361,6 +361,8 @@ export function AIGeneratePage() {
                 onReportChange={setReport}
                 sourceResume={resume}
                 jobAd={jobAd}
+                jobUrl={jobUrl}
+                board={board}
                 mode={mode}
                 templateId={templateId}
                 atsMode={atsMode}

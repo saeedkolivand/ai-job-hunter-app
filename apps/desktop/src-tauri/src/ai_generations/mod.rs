@@ -110,11 +110,15 @@ pub struct AiGenerationRecord {
     /// incoming wrapper onto the existing one PER TOP-LEVEL KEY
     /// (see [`merge_quality_report`]): a letter-only save overlays
     /// `coverLetter` (plus the envelope fields it always carries) and leaves a
-    /// stored `resume` sub-report untouched, and vice versa. Each sub-report
-    /// may carry its own `sourceTextHash` so the renderer can flag it stale
-    /// against the CURRENT résumé/letter text — this store never clears a
-    /// report on a text edit, so staleness display is entirely the renderer's
-    /// read-time job. A manual post-save text edit via
+    /// stored `resume` sub-report untouched, and vice versa. Each per-document
+    /// slot carries its report AND its `sourceTextHash` together IN the slot
+    /// (`{report, sourceTextHash}`) — the hash must live inside the top-level
+    /// key it anchors, because this merge overlays whole top-level keys: a
+    /// sibling hash map would be wholesale-replaced by a single-doc save,
+    /// silently orphaning the OTHER doc's staleness anchor. The renderer uses
+    /// the hash to flag a slot stale against the CURRENT résumé/letter text —
+    /// this store never clears a report on a text edit, so staleness display
+    /// is entirely the renderer's read-time job. A manual post-save text edit via
     /// `AiGenerationUpdateRequest` (`update_texts`) deliberately does NOT touch
     /// this column either, for the same reason. `default` keeps a
     /// pre-migration exported bundle importable.

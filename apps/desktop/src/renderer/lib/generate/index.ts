@@ -42,6 +42,7 @@ export {
   mergeRecheckedReport,
   parseQualityReport,
   type QualityReport,
+  type QualityReportSlot,
   serializeQualityReport,
 } from './quality-report';
 export {

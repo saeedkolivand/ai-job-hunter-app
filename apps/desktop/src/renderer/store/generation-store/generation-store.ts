@@ -104,6 +104,9 @@ interface GenerationStore {
   setOutput: (id: string, which: 'resume' | 'cover', text: string) => void;
   /** Record the persisted id after a clean run saves the session's result. */
   setSavedId: (id: string, savedId: string) => void;
+  /** Replace the session's quality report — the panel's "Re-check" action, which
+   *  re-validates one document and merges its fresh slot into the wrapper. */
+  setReport: (id: string, report: QualityReport) => void;
   /**
    * Seed a session from a persisted record so the flow opens on the results
    * (`done`) stage instead of the wizard. No-clobber + idempotent: writes ONLY
@@ -156,6 +159,8 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
       patch(id, which === 'resume' ? { resumeOut: text } : { coverOut: text }),
 
     setSavedId: (id, savedId) => patch(id, { savedId }),
+
+    setReport: (id, report) => patch(id, { report }),
 
     hydrate: (id, seed) =>
       set((state) => {

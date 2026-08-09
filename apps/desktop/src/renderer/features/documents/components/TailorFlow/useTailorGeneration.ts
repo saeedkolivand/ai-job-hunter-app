@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
+import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
@@ -42,6 +43,9 @@ interface Params {
    *  closing/reopening the modal and navigating away. */
   contextId: string;
   jobDesc: string;
+  /** The source résumé the wizard is tailoring FROM — context for the quality
+   *  panel's "Re-check" (the run itself takes it per call via `generate`). */
+  sourceResume: string;
   model: string;
   canUse: boolean;
   hasDesc: boolean;
@@ -75,6 +79,7 @@ interface Params {
 export function useTailorGeneration({
   contextId,
   jobDesc,
+  sourceResume,
   model,
   canUse,
   hasDesc,
@@ -98,6 +103,7 @@ export function useTailorGeneration({
   const setActiveOutInStore = useGenerationStore((s) => s.setActiveOut);
   const setOutputInStore = useGenerationStore((s) => s.setOutput);
   const setSavedIdInStore = useGenerationStore((s) => s.setSavedId);
+  const setReportInStore = useGenerationStore((s) => s.setReport);
   const hydrateInStore = useGenerationStore((s) => s.hydrate);
 
   const {
@@ -131,6 +137,26 @@ export function useTailorGeneration({
   }, []);
 
   const output = activeOut === 'resume' ? resumeOut : coverOut;
+
+  // Quality panel "Re-check" for the ACTIVE document. This surface is the one
+  // WITH inline editing (see `editActiveOutput`, which persists text via
+  // `update_texts` and deliberately never touches `quality_report`), so without
+  // it a hand-edited document was stuck on "checked before your edits" forever.
+  // The merged wrapper is written back to the session AND persisted onto this
+  // job's record, so reopening shows the cleared badge, not the stale one.
+  const { recheck, rechecking } = useQualityRecheck({
+    report,
+    meta,
+    sourceResume,
+    jobAd: jobDesc,
+    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
+    currentText: output,
+    onReportChange: (next) => setReportInStore(contextId, next),
+    resumeText: resumeOut,
+    coverLetterText: coverOut,
+    jobUrl,
+    board,
+  });
 
   // Persist the finished application linked to this job. Called by the store on a
   // clean run — bypasses the React Query mutation hook (which the modal may have
@@ -324,5 +350,8 @@ export function useTailorGeneration({
     meta,
     // Deterministic content-quality report for this session, if any.
     report,
+    // Quality panel "Re-check" — undefined only if the action is unavailable.
+    recheck,
+    rechecking,
   };
 }

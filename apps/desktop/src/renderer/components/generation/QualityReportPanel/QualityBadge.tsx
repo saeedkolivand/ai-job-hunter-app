@@ -9,18 +9,19 @@ import { hashText, type QualityReport } from '@/lib/generate';
 import { QualityReportPanel } from './QualityReportPanel';
 
 export interface QualityBadgeProps {
-  /** The generation session's full report — resume + coverLetter portions. */
+  /** The generation session's full report — resume + coverLetter slots. */
   report: QualityReport | null | undefined;
   /** Which document `docKind` this badge summarizes — selects `report.resume`
    *  or `report.coverLetter` and drives the panel's title. */
   docKind: 'resume' | 'coverLetter';
   /**
-   * The document's CURRENT text — compared against `report.sourceTextHash` to
-   * detect a hand-edit (or a divergent cold-hydrated record) since this report
-   * was generated. Only needed when the report carries a hash; omit it (or a
-   * legacy report with no hash) and staleness simply never triggers.
+   * The document's CURRENT text — compared against the slot's own
+   * `sourceTextHash` to detect a hand-edit (or a divergent cold-hydrated
+   * record) since this report was generated. REQUIRED: every slot carries a
+   * hash, so an omitted text would silently read as "the document was emptied"
+   * and flag a permanent, bogus staleness.
    */
-  currentText?: string;
+  currentText: string;
   /** Re-run validation against the current text — clears staleness on success.
    *  Omit to hide the panel's "Re-check" action entirely. */
   onRecheck?: () => void;
@@ -43,19 +44,21 @@ export interface QualityBadgeProps {
 export function QualityBadge({
   report,
   docKind,
-  currentText = '',
+  currentText,
   onRecheck,
   rechecking,
   className,
 }: QualityBadgeProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const docReport = docKind === 'resume' ? report?.resume : report?.coverLetter;
+  const slot = docKind === 'resume' ? report?.resume : report?.coverLetter;
 
-  if (!docReport) return null;
+  if (!slot) return null;
 
-  const validatedHash = report?.sourceTextHash?.[docKind];
-  const stale = validatedHash !== undefined && hashText(currentText) !== validatedHash;
+  // The verdict and the hash of the text it describes come from the SAME slot,
+  // so they can never drift apart across a partial persistence merge.
+  const docReport = slot.report;
+  const stale = hashText(currentText) !== slot.sourceTextHash;
 
   const critical = docReport.issues.filter((issue) => issue.severity === 'critical').length;
   const clean = docReport.issues.length === 0;

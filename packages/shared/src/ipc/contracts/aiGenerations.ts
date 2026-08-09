@@ -42,11 +42,15 @@ export interface AiGenerationRecord {
   /**
    * Serialized JSON wrapper `{schemaVersion, pipeline, generatedAt, resume?,
    * coverLetter?}` (this shape is renderer-owned) holding the deterministic
-   * content-quality report(s) (`validate::content::ContentReport` per
-   * sub-key). Each sub-report may carry its own `sourceTextHash` so the
-   * renderer can flag it stale against the current résumé/letter text — the
-   * Rust store never clears a report on a text edit, so staleness display is
-   * entirely a renderer-side, read-time decision.
+   * content-quality report(s). Each per-document key holds a SLOT —
+   * `{report, sourceTextHash}`: `validate::content::ContentReport` plus the
+   * hash of the exact text it validated, so the renderer can flag that
+   * document stale against the current résumé/letter text. The hash lives
+   * inside the slot precisely because the merge below is per TOP-LEVEL key: a
+   * sibling hash map would be replaced wholesale by a single-document save,
+   * orphaning the other document's anchor. The Rust store never clears a
+   * report on a text edit, so staleness display is entirely a renderer-side,
+   * read-time decision.
    *
    * Always present on a record returned from `list`/`save` (possibly `''` = no
    * report yet, or the row predates this field) — unlike on

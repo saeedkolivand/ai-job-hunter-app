@@ -245,19 +245,22 @@ describe('useGeneration — URL-import provenance (ADR-031)', () => {
 describe('useGeneration — quality report wiring', () => {
   it('stores the report and carries it on the save when validation succeeds', async () => {
     const report = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       pipeline: 'fast' as const,
       generatedAt: 1,
       resume: {
-        ok: true,
-        issues: [],
-        metrics: {
-          keywordCoverage: null,
-          topRequirementHits: 0,
-          duplicateRatio: 0,
-          rolesSource: 0,
-          rolesOutput: 0,
+        report: {
+          ok: true,
+          issues: [],
+          metrics: {
+            keywordCoverage: null,
+            topRequirementHits: 0,
+            duplicateRatio: 0,
+            rolesSource: 0,
+            rolesOutput: 0,
+          },
         },
+        sourceTextHash: 1,
       },
     };
     vi.mocked(computeQualityReport).mockResolvedValueOnce(report);
@@ -306,19 +309,22 @@ describe('useGeneration — quality report wiring', () => {
 
 describe('useGeneration — stale-persist guard (Regenerate/reset during validation)', () => {
   const STALE_REPORT = {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     pipeline: 'fast' as const,
     generatedAt: 1,
     resume: {
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: null,
-        topRequirementHits: 0,
-        duplicateRatio: 0,
-        rolesSource: 0,
-        rolesOutput: 0,
+      report: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: null,
+          topRequirementHits: 0,
+          duplicateRatio: 0,
+          rolesSource: 0,
+          rolesOutput: 0,
+        },
       },
+      sourceTextHash: 1,
     },
   };
 
