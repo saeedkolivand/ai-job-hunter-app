@@ -62,6 +62,11 @@ const QUERY_CAP: usize = 200;
 /// words), so a validator that found many issues can't blow the tool-result
 /// budget the way returning the FULL [`ContentReport`] would. The full report
 /// (and its longer spans) is the quality-report panel's job, not this tool's.
+/// Also reused ([`clamp_evidence`]) for a bullet's `hits` entries and
+/// `compact_evidence_set`'s `skillsPresent`/`skillsAbsent` entries — same
+/// "quoted, untrusted, job/résumé-derived token" shape (MEDIUM fix, PR #963
+/// round 4: `documents::keywords::keywords_normalized` only filters on
+/// `len() > 3`, so nothing upstream bounds how long a single keyword can be).
 const EVIDENCE_CAP: usize = 80;
 
 /// Cap on a validator issue's `message` in the compact summary — longer than
@@ -89,6 +94,12 @@ const MAX_ISSUES: usize = 20;
 /// unusually long skills section must not blow the tool-result budget either.
 const MAX_SKILLS: usize = 15;
 
+/// Max entries kept in one bullet's `hits` (job-derived keyword matches) —
+/// analogous to [`MAX_SKILLS`], scoped to a single bullet instead of the
+/// résumé's whole skills section: a keyword-dense job posting must not blow
+/// the tool-result budget either (MEDIUM fix, PR #963 round 4).
+const MAX_HITS: usize = MAX_SKILLS;
+
 /// How many bullets `search_candidate_evidence` returns — the strongest
 /// dozen is plenty for the model to ground a claim in; a résumé with many
 /// roles could otherwise return dozens of lines.
@@ -99,36 +110,48 @@ const EVIDENCE_SEARCH_LIMIT: usize = 12;
 /// job.
 const TRIM_SUGGESTIONS_LIMIT: usize = 10;
 
-/// Worst-case JSON chars ONE compact issue can contribute to
-/// `validate_resume`'s summary body — the only summary shape whose size
-/// scales with [`MAX_ISSUES`] (`search_candidate_evidence`/
-/// `get_trim_suggestions` are bounded by their own much-smaller item limits
-/// instead). Every clamped text field at its cap
-/// ([`SECTION_CAP`] + [`MESSAGE_CAP`] + [`EVIDENCE_CAP`]), plus 40 chars of
-/// headroom for `code` (the longest registered
+/// Worst-case RAW (pre-serialization) chars ONE compact issue's clamped
+/// fields can contribute — [`SECTION_CAP`] + [`MESSAGE_CAP`] + [`EVIDENCE_CAP`],
+/// plus 40 chars of headroom for `code` (the longest registered
 /// [`crate::validate::content::CONTENT_ISSUE_CODES`] entry today,
 /// `consistency.skill_not_demonstrated`, is 34), plus 60 chars for the
 /// object's own JSON syntax (keys/quotes/colons/commas/braces — measured at
 /// ~52: `{"code":"…","section":"…","message":"…","evidence":"…"},`).
+///
+/// A sizing dial for [`SUMMARY_CAP`] — NOT a guarantee the real SERIALIZED
+/// body stays under it (MEDIUM fix, PR #963 round 4): JSON escaping (a `"`
+/// becomes `\"`, a raw control char becomes `\u00XX`) can inflate a clamped
+/// field's serialized size well past its raw-char cap, and `duplicates.rs`
+/// quotes untrusted bullet text verbatim into `message`, so a quote-heavy
+/// draft can push a real issue past this "worst case" even though every
+/// field is within its char cap. That's exactly why [`compact_content_report`]
+/// no longer trusts this arithmetic to hold on its own — it measures the
+/// ACTUAL serialized length and drops whole issues (into `truncated`) until
+/// the body fits [`SUMMARY_CAP`], rather than relying on `fenced()`'s hard
+/// `body.chars().take(cap)` as the enforcement point.
 const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 40 + 60;
 
-/// Ceiling on a fenced tool-result summary, DERIVED rather than guessed —
-/// `MAX_ISSUES` issues at [`PER_ISSUE_WORST_CASE`] each, plus 500 chars of
-/// headroom for the summary's own envelope (`ok`/`criticals`/`warnings`/
-/// `truncated` fields, the `issues` array's brackets — measured at ~70).
+/// Target ceiling on a fenced tool-result summary's SERIALIZED body —
+/// `MAX_ISSUES` issues at [`PER_ISSUE_WORST_CASE`] each (a plain-ASCII,
+/// non-escaping estimate), plus 500 chars of headroom for the summary's own
+/// envelope (`ok`/`criticals`/`warnings`/`truncated` fields, the `issues`
+/// array's brackets — measured at ~70).
+///
+/// [`compact_content_report`] ENFORCES this by measurement, not by trusting
+/// the estimate above: it serializes the candidate summary and, if it's over
+/// `SUMMARY_CAP`, drops the weakest (last-sorted) whole issue and re-checks,
+/// repeating until the body fits or every issue is gone. Dropped issues are
+/// counted in `truncated`, never a mid-string cut.
 ///
 /// This used to just reuse [`RESUME_CAP`]'s magnitude (8,000) on the theory
-/// that a "handful of items" summary could never approach it — but
-/// [`MAX_ISSUES`] (20) issues each at their per-field caps serialize to
-/// ~13KB, comfortably PAST that number: `fenced()`'s hard char-cap
-/// (`body.chars().take(cap)`) would silently cut the JSON body mid-string,
-/// not at an issue boundary, producing an unparseable tool result — the
-/// opposite of the "never a mid-string cut" promise the doc comments on
-/// [`MAX_ISSUES`]/[`compact_content_report`] make.
-/// `summary_cap_holds_the_real_worst_case_without_truncating_the_json` pins
-/// this arithmetic against the REAL longest registered code and the REAL
-/// per-field caps, so a future cap change that outgrows this budget fails a
-/// test instead of silently truncating JSON.
+/// that a "handful of items" summary could never approach it (PR #963 round
+/// 3 fixed that by deriving the bigger number above) — but even that fix
+/// still assumed a clamped field's SERIALIZED size never exceeds its
+/// raw-char cap, which [`PER_ISSUE_WORST_CASE`]'s doc explains is false
+/// under JSON escaping. `summary_cap_holds_the_real_worst_case_without_truncating_the_json`
+/// pins the plain-ASCII worst case (zero issues dropped);
+/// `compact_content_report_drops_whole_issues_instead_of_cutting_escaped_json_mid_string`
+/// pins the quote-heavy case that broke the old char-truncation approach.
 const SUMMARY_CAP: usize = MAX_ISSUES * PER_ISSUE_WORST_CASE + 500;
 
 // ── Pure arg parsing (unit-testable without an AppHandle) ───────────────────
@@ -205,15 +228,21 @@ fn clamped_job_text(text: &str) -> String {
 /// to the model: counts, plus up to [`MAX_ISSUES`] issues (each
 /// code/section/message/evidence field individually clamped — see the module
 /// SECURITY note), plus a `truncated` count for anything dropped past that
-/// cap. Never a mid-string cut of the issue list. The full report — every
+/// cap OR past [`SUMMARY_CAP`]'s serialized-length budget (MEDIUM fix, PR
+/// #963 round 4 — see [`SUMMARY_CAP`]'s doc: per-field char clamps alone
+/// don't bound the SERIALIZED size once JSON escaping is in play). Never a
+/// mid-string cut of the issue list — a whole issue is dropped instead, one
+/// at a time, until the summary actually fits. The full report — every
 /// [`crate::validate::content::ContentMetrics`] field, every issue, uncapped
 /// spans — is the quality-report panel's job, not this tool's.
 ///
-/// Issues are ordered **Criticals first** before the cap is applied. The
+/// Issues are ordered **Criticals first** before either cap is applied. The
 /// validator emits in check order, not severity order, so `ats.header_in_body`
 /// (emitted near the end) fell off the list on a draft that tripped 20+ earlier
 /// Warnings — the model then saw `criticals: 1` with no Critical it could act on.
-/// The sort is stable, so within each severity the emission order is preserved.
+/// The sort is stable, so within each severity the emission order is
+/// preserved; dropping from the END of the sorted, already-capped list means
+/// a Critical is the last thing this function ever drops.
 fn compact_content_report(report: &ContentReport) -> Value {
     let criticals = report
         .issues
@@ -221,46 +250,72 @@ fn compact_content_report(report: &ContentReport) -> Value {
         .filter(|i| i.severity == Severity::Critical)
         .count();
     let warnings = report.issues.len() - criticals;
-    let truncated = report.issues.len().saturating_sub(MAX_ISSUES);
     let mut ordered: Vec<&ContentIssue> = report.issues.iter().collect();
     // `false < true`: Criticals sort ahead of everything else.
     ordered.sort_by_key(|i| i.severity != Severity::Critical);
-    let issues: Vec<Value> = ordered
-        .into_iter()
-        .take(MAX_ISSUES)
-        .map(|i| {
-            json!({
-                "code": i.code,
-                "section": i.section.as_deref().map(|s| clamp_chars(s, SECTION_CAP)),
-                "message": clamp_chars(&i.message, MESSAGE_CAP),
-                "evidence": i.evidence.as_deref().map(clamp_evidence),
+    let mut kept = MAX_ISSUES.min(ordered.len());
+    loop {
+        let issues: Vec<Value> = ordered
+            .iter()
+            .take(kept)
+            .map(|i| {
+                json!({
+                    "code": i.code,
+                    "section": i.section.as_deref().map(|s| clamp_chars(s, SECTION_CAP)),
+                    "message": clamp_chars(&i.message, MESSAGE_CAP),
+                    "evidence": i.evidence.as_deref().map(clamp_evidence),
+                })
             })
-        })
-        .collect();
-    json!({
-        "ok": report.ok,
-        "criticals": criticals,
-        "warnings": warnings,
-        "truncated": truncated,
-        "issues": issues,
-    })
+            .collect();
+        let candidate = json!({
+            "ok": report.ok,
+            "criticals": criticals,
+            "warnings": warnings,
+            "truncated": report.issues.len() - kept,
+            "issues": issues,
+        });
+        // Measure the ACTUAL serialized length — per-field char clamps alone
+        // don't bound this once JSON escaping inflates a field (see
+        // SUMMARY_CAP's doc). Drop a whole issue and retry rather than let
+        // `fenced()`'s hard char cap cut the JSON body mid-string.
+        let fits = serde_json::to_string(&candidate)
+            .map(|s| s.chars().count() <= SUMMARY_CAP)
+            .unwrap_or(false);
+        if fits || kept == 0 {
+            return candidate;
+        }
+        kept -= 1;
+    }
 }
 
 /// Quotes untrusted bullet `text` — clamped to [`BULLET_TEXT_CAP`] for the
-/// same reason as [`EVIDENCE_CAP`].
+/// same reason as [`EVIDENCE_CAP`]. `hits` (job-derived keyword matches the
+/// bullet scored against) is untrusted too and was serialized unclamped in
+/// both per-entry length AND count (MEDIUM fix, PR #963 round 4) — clamped
+/// here the same way, entry-for-entry, as [`compact_evidence_set`]'s skills
+/// lists.
 fn bullet_to_value(b: &EvidenceBullet) -> Value {
+    let hits: Vec<String> = b
+        .hits
+        .iter()
+        .take(MAX_HITS)
+        .map(|h| clamp_evidence(h))
+        .collect();
     json!({
         "id": b.id,
         "text": clamp_chars(&b.text, BULLET_TEXT_CAP),
-        "hits": b.hits,
+        "hits": hits,
         "score": b.score,
     })
 }
 
 /// Flatten every scored bullet in `set` (experience roles + projects) into
 /// one list, strongest-first, capped to `limit`. Skills lists are capped to
-/// [`MAX_SKILLS`] entries each. The résumé's own STRUCTURE (roles, education)
-/// is the quality-report panel's job, not a tool result.
+/// [`MAX_SKILLS`] entries each, and — MEDIUM fix, PR #963 round 4 — each
+/// entry is itself clamped to [`EVIDENCE_CAP`] chars (nothing upstream
+/// bounds an individual skill/keyword's length, only the count). The
+/// résumé's own STRUCTURE (roles, education) is the quality-report panel's
+/// job, not a tool result.
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -274,10 +329,22 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
         .take(limit)
         .map(bullet_to_value)
         .collect();
+    let skills_present: Vec<String> = set
+        .skills_present
+        .iter()
+        .take(MAX_SKILLS)
+        .map(|s| clamp_evidence(s))
+        .collect();
+    let skills_absent: Vec<String> = set
+        .skills_absent
+        .iter()
+        .take(MAX_SKILLS)
+        .map(|s| clamp_evidence(s))
+        .collect();
     json!({
         "bullets": top,
-        "skillsPresent": set.skills_present.iter().take(MAX_SKILLS).collect::<Vec<_>>(),
-        "skillsAbsent": set.skills_absent.iter().take(MAX_SKILLS).collect::<Vec<_>>(),
+        "skillsPresent": skills_present,
+        "skillsAbsent": skills_absent,
     })
 }
 
@@ -1075,6 +1142,30 @@ mod tests {
         );
     }
 
+    /// MEDIUM (PR #963 round 4): `skillsPresent`/`skillsAbsent` capped the
+    /// entry COUNT (`MAX_SKILLS`, above) but not each entry's LENGTH —
+    /// nothing upstream bounds how long a single skill/keyword string is.
+    #[test]
+    fn compact_evidence_set_clamps_each_skill_entrys_length() {
+        let long_skill = "s".repeat(EVIDENCE_CAP + 200);
+        let set = EvidenceSet {
+            roles: vec![],
+            skills_present: vec![long_skill.clone()],
+            skills_absent: vec![long_skill.clone()],
+            education: vec![],
+            projects: vec![],
+        };
+        let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+        for field in ["skillsPresent", "skillsAbsent"] {
+            let entry = compact[field][0].as_str().unwrap();
+            assert_eq!(
+                entry.chars().count(),
+                EVIDENCE_CAP,
+                "{field}'s entry must be clamped to EVIDENCE_CAP, not passed through whole"
+            );
+        }
+    }
+
     /// M-1 fix: a bullet's quoted `text` is untrusted résumé content — must
     /// be clamped like `evidence`, not passed through whole.
     #[test]
@@ -1086,6 +1177,29 @@ mod tests {
             value["text"].as_str().unwrap().chars().count(),
             BULLET_TEXT_CAP
         );
+    }
+
+    /// MEDIUM (PR #963 round 4): `bullet_to_value` clamped `text` but
+    /// serialized `hits` (job-derived keyword matches) unclamped in both
+    /// per-entry length AND count — a keyword-dense posting (or
+    /// `documents::keywords::keywords_normalized`'s missing upper length
+    /// bound on a single token) could otherwise blow the tool-result budget
+    /// the same way an unclamped `text` would.
+    #[test]
+    fn bullet_to_value_clamps_hits_length_and_count() {
+        let mut b = bullet("b0", 1.0);
+        let long_hit = "h".repeat(EVIDENCE_CAP + 50);
+        b.hits = (0..(MAX_HITS + 10)).map(|_| long_hit.clone()).collect();
+        let value = bullet_to_value(&b);
+        let hits = value["hits"].as_array().unwrap();
+        assert_eq!(hits.len(), MAX_HITS, "the hits list itself must be capped");
+        for hit in hits {
+            assert_eq!(
+                hit.as_str().unwrap().chars().count(),
+                EVIDENCE_CAP,
+                "each hit entry must be clamped, not passed through whole"
+            );
+        }
     }
 
     // ── compact_trim_suggestions ─────────────────────────────────────────
@@ -1287,6 +1401,126 @@ mod tests {
             inner.matches("\"code\"").count(),
             MAX_ISSUES,
             "all MAX_ISSUES issues must survive whole, not be cut mid-array"
+        );
+    }
+
+    // ── MEDIUM FINDING (round 4): SUMMARY_CAP must hold against JSON escaping ──
+
+    /// MEDIUM (PR #963 round 4): `SUMMARY_CAP`/`PER_ISSUE_WORST_CASE` were
+    /// sized from PRE-serialization per-field char budgets, but
+    /// `fenced_summary` applies the cap to the JSON-SERIALIZED body. JSON
+    /// escaping (`"` → `\"`, a raw control char → `\u00XX`) inflates a
+    /// clamped field's serialized size well past its raw-char cap —
+    /// `duplicates.rs` quotes untrusted bullet text verbatim into `message`,
+    /// so a quote-heavy draft can push the serialized body past `SUMMARY_CAP`
+    /// and get cut mid-string by `fenced()`'s `body.chars().take(cap)`,
+    /// handing the model unparseable JSON. `summary_cap_holds_the_real_worst_case_without_truncating_the_json`
+    /// (round 3) only uses non-escaping filler (`'s'`/`'m'`/`'e'` repeats),
+    /// so it can't catch this.
+    ///
+    /// Reproduces BOTH halves. The BUG half manually replays the pre-fix
+    /// `compact_content_report` (build all `MAX_ISSUES` issues, no
+    /// serialized-length check) on a fixture where every clamped field is
+    /// pure `"` — at its raw-char cap, but roughly DOUBLE that once escaped —
+    /// and shows the resulting body exceeds `SUMMARY_CAP` and that naively
+    /// char-truncating it at `SUMMARY_CAP` (what `fenced()` used to be relied
+    /// on to safely do) breaks JSON parsing. The FIX half runs the real
+    /// `compact_content_report`/`fenced_summary` pipeline on the same
+    /// fixture and shows it stays valid, complete JSON — dropping whole
+    /// issues into `truncated` instead of cutting mid-string.
+    ///
+    /// Mutation-checked: reverting `compact_content_report` to the pre-fix
+    /// `.take(MAX_ISSUES)`-only shape (no serialized-length drop loop) makes
+    /// the FIX half of this test fail — restored before landing.
+    #[test]
+    fn compact_content_report_drops_whole_issues_instead_of_cutting_escaped_json_mid_string() {
+        // Every clamped field is pure `"` — JSON-escaping (`"` -> `\"`)
+        // roughly doubles each field's serialized size relative to its
+        // raw-char cap.
+        let quote_section = "\"".repeat(SECTION_CAP);
+        let quote_message = "\"".repeat(MESSAGE_CAP);
+        let quote_evidence = "\"".repeat(EVIDENCE_CAP);
+        let issues: Vec<crate::validate::content::ContentIssue> = (0..MAX_ISSUES)
+            .map(|_| crate::validate::content::ContentIssue {
+                severity: Severity::Warning,
+                code: FACTUAL_UNSOURCED_METRIC,
+                section: Some(quote_section.clone()),
+                message: quote_message.clone(),
+                evidence: Some(quote_evidence.clone()),
+            })
+            .collect();
+        let report = ContentReport {
+            ok: false,
+            issues,
+            metrics: ContentMetrics::default(),
+        };
+
+        // BUG reproduction: the pre-fix `compact_content_report` built ALL
+        // `MAX_ISSUES` issues unconditionally (no serialized-length check),
+        // then handed the serialized body straight to `fenced()`'s naive
+        // char cap.
+        let buggy_issues: Vec<Value> = report
+            .issues
+            .iter()
+            .map(|i| {
+                json!({
+                    "code": i.code,
+                    "section": i.section.as_deref().map(|s| clamp_chars(s, SECTION_CAP)),
+                    "message": clamp_chars(&i.message, MESSAGE_CAP),
+                    "evidence": i.evidence.as_deref().map(clamp_evidence),
+                })
+            })
+            .collect();
+        let buggy_summary = json!({
+            "ok": false,
+            "criticals": 0,
+            "warnings": MAX_ISSUES,
+            "truncated": 0,
+            "issues": buggy_issues,
+        });
+        let buggy_body = serde_json::to_string(&buggy_summary).unwrap();
+        assert!(
+            buggy_body.chars().count() > SUMMARY_CAP,
+            "the quote-heavy fixture must actually exceed SUMMARY_CAP for this test to mean \
+             anything; got {} chars vs cap {SUMMARY_CAP}",
+            buggy_body.chars().count()
+        );
+        let buggy_truncated: String = buggy_body.chars().take(SUMMARY_CAP).collect();
+        assert!(
+            serde_json::from_str::<Value>(&buggy_truncated).is_err(),
+            "BUG reproduction: naively char-truncating the escaped JSON body at SUMMARY_CAP \
+             must break JSON parsing — that's the round-4 finding"
+        );
+
+        // FIX: the real pipeline drops whole issues instead.
+        let compact = compact_content_report(&report);
+        let wrapped = fenced_summary("validate_resume_result", &compact);
+        let result = wrapped["result"].as_str().unwrap();
+        assert!(
+            result.trim_end().ends_with("</validate_resume_result>"),
+            "the closing tag must survive uncut even for quote-heavy content; got a result \
+             ending: {:?}",
+            &result[result.len().saturating_sub(60)..]
+        );
+        let inner = result
+            .trim_start_matches("<validate_resume_result>\n")
+            .trim_end()
+            .trim_end_matches("</validate_resume_result>")
+            .trim();
+        assert!(
+            serde_json::from_str::<Value>(inner).is_ok(),
+            "the fixed pipeline must produce valid JSON even for quote-heavy content; got: {inner}"
+        );
+        assert!(
+            compact["truncated"].as_u64().unwrap() > 0,
+            "the quote-heavy worst case must exceed SUMMARY_CAP and drop at least one whole \
+             issue, not silently keep all MAX_ISSUES and risk mid-string truncation"
+        );
+        let surfaced = compact["issues"].as_array().unwrap();
+        assert_eq!(
+            surfaced.len() as u64 + compact["truncated"].as_u64().unwrap(),
+            MAX_ISSUES as u64,
+            "surfaced + truncated must account for every issue in the report"
         );
     }
 }
