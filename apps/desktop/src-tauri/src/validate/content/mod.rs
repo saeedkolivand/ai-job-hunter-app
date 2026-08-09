@@ -458,10 +458,11 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
 /// phone shape on a line with no `@` at all.
 ///
 /// `export::parser::is_first_line_contact_shaped` accepts a bare `@`, which any
-/// body line mentioning a Slack handle or a `@decorator` satisfies. Both checks
-/// that can hide a candidate's own numbers behind "this is the header" — the
-/// contact-cluster Critical and the metric-extraction skip — route through this
-/// instead, so neither can be evaded by writing `@` in a bullet.
+/// body line mentioning a Slack handle or a `@decorator` satisfies — so a bullet
+/// could hide its numbers behind "this is the header" just by carrying one.
+/// `factual::metrics_in`'s skip routes through this; `ats::is_contact_cluster`
+/// applies the same email-vs-phone rule inline, because it additionally has to
+/// reject a date range that `PHONE_RE` reads as a phone number.
 pub(crate) fn has_real_contact_match(text: &str) -> bool {
     if text.contains('@') {
         return EMAIL_RE.is_match(text);

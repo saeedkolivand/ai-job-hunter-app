@@ -103,9 +103,13 @@ pub fn normalize_number(raw: &str) -> String {
 /// Extract every impact metric from `text`, skipping the contact band.
 ///
 /// Skipped deliberately:
-/// * lines before the first section heading, and any contact-shaped line —
-///   that is where phone numbers and postal codes live, and neither is a claim
-///   about impact;
+/// * lines before the first section heading, and any line the parser classified
+///   as `Contact`/`Name` that also carries a real address or phone — that is
+///   where phone numbers and postal codes live, and neither is a claim about
+///   impact. Nothing wider than that: the skip used to accept anything
+///   `is_contact_shaped` matched, which is any line with two `·` separators or
+///   the word "website", and a body bullet could evade the whole check by
+///   containing one;
 /// * 1900–2099 four-digit runs — those are years, checked by
 ///   [`unsupported_date_issues`] instead;
 /// * numbers under three digits with no `%`/`x` unit.
