@@ -267,7 +267,10 @@ mod tests {
 
     #[test]
     fn research_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
-        assert_eq!(research_deadline(Some("ultra-mega-think")), RESEARCH_BASELINE);
+        assert_eq!(
+            research_deadline(Some("ultra-mega-think")),
+            RESEARCH_BASELINE
+        );
         assert_eq!(research_deadline(None), RESEARCH_BASELINE);
     }
 }

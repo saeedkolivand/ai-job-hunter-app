@@ -574,7 +574,6 @@ fn parse_model_list_errors_when_models_field_is_missing() {
     ));
 }
 
-
 // ── Local chat-model selection (the qwen3-embedding:8b → /api/chat 400) ────────
 //
 // `reachable_model` returned `/api/tags`'s FIRST entry unconditionally, and
@@ -625,7 +624,10 @@ fn first_chat_model_skips_a_leading_embedding_model() {
             { "name": "gemma4:31b" },
         ]
     });
-    assert_eq!(super::first_chat_model(&body).as_deref(), Some("gemma4:31b"));
+    assert_eq!(
+        super::first_chat_model(&body).as_deref(),
+        Some("gemma4:31b")
+    );
 }
 
 #[test]

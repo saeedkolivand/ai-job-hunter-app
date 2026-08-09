@@ -94,6 +94,75 @@ fn concurrency_guard_releases_slot_on_drop() {
         .expect("all slots released → acquire succeeds");
 }
 
+/// A call refused by the CONCURRENCY cap must not consume a rate-window slot.
+///
+/// The window check and the window record happen under one lock (they have to:
+/// splitting them let two callers both see room and both take it). The
+/// no-cost-on-rejection property therefore rides on `undo_admission` giving the
+/// slot back — so it gets its own test rather than resting on the old
+/// check-then-reserve shape.
+#[test]
+fn a_concurrency_rejection_refunds_its_rate_window_slot() {
+    let limiter = Arc::new(Limiter::new());
+    let now = std::time::Instant::now();
+    let max_requests = 2;
+    let max_concurrent = 1;
+
+    // Hold the only concurrency slot. One window slot consumed.
+    let _held = limiter
+        .acquire_at(CMD, max_requests, max_concurrent, now)
+        .expect("1st slot");
+
+    // Several calls now bounce off the CONCURRENCY cap. Without the refund each
+    // would also burn a window slot, and the window (cap 2) would be exhausted
+    // after one — locking the command out until the window rolled over.
+    for _ in 0..5 {
+        assert!(
+            limiter
+                .acquire_at(CMD, max_requests, max_concurrent, now)
+                .is_err(),
+            "concurrency is saturated, so every one of these is refused"
+        );
+    }
+
+    // Proof the window still has room: free the concurrency slot and the very
+    // next call must be admitted. It would not be if the refusals had consumed
+    // the window.
+    drop(_held);
+    limiter
+        .acquire_at(CMD, max_requests, max_concurrent, now)
+        .expect("the refused calls must not have consumed the rate window");
+}
+
+/// The QUEUE ceiling is a rejection too, and rejections are free.
+#[tokio::test]
+async fn a_full_queue_rejection_refunds_its_rate_window_slot() {
+    let limiter = Arc::new(Limiter::new());
+    let max_requests = 3;
+
+    let _held = limiter
+        .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+        .await
+        .expect("1st slot");
+
+    // `max_queued = 0`: every further caller is refused at the queue ceiling.
+    for _ in 0..5 {
+        assert!(
+            limiter
+                .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+                .await
+                .is_err(),
+            "queue ceiling is 0, so every one of these is refused"
+        );
+    }
+
+    drop(_held);
+    limiter
+        .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+        .await
+        .expect("queue-ceiling refusals must not have consumed the rate window");
+}
+
 #[test]
 fn provider_daily_ceiling_trips_at_the_cap() {
     let limiter = Arc::new(Limiter::new());
@@ -193,7 +262,9 @@ async fn queued_acquire_rejects_past_the_queue_ceiling() {
         tokio::task::yield_now().await;
     }
 
-    let over = limiter.acquire_queued(CMD, 1000, 1, max_queued, |_| ()).await;
+    let over = limiter
+        .acquire_queued(CMD, 1000, 1, max_queued, |_| ())
+        .await;
     assert!(
         over.is_err(),
         "a caller arriving at a full queue must be rejected, not parked"

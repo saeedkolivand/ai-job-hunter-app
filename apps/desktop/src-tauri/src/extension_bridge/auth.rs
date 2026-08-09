@@ -165,11 +165,22 @@ pub(super) fn warn_rejected_origin_once(origin: &str) {
     use std::collections::HashSet;
     use std::sync::{Mutex, OnceLock};
 
+    /// Ceiling on remembered origins. The `Origin` header is attacker-supplied
+    /// (any loopback client can send one), so an unbounded set is a memory sink
+    /// a hostile local process could grow at will. Past the cap nothing new is
+    /// remembered and further origins log at debug — the suppression is what
+    /// matters, and a real deployment has ONE bad origin, not 64.
+    const MAX_REMEMBERED: usize = 64;
+
     static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let mut seen = match SEEN.get_or_init(Default::default).lock() {
         Ok(g) => g,
         Err(poisoned) => poisoned.into_inner(),
     };
+    if seen.len() >= MAX_REMEMBERED && !seen.contains(origin) {
+        log::debug!("[extension_bridge] rejected handshake from origin: {origin:?} (cap reached)");
+        return;
+    }
     if seen.insert(origin.to_string()) {
         // First time only, and deliberately actionable: an unpaired extension is
         // otherwise indistinguishable from a desktop that simply isn't running.

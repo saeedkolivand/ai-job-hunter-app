@@ -428,6 +428,10 @@
       "matchResume": "Lebenslauf-Match",
       "autopilotRun": "Autopilot-Lauf"
     },
+    "activity": {
+      "queued": "in Warteschlange",
+      "queuedWithCount": "in Warteschlange, {{count}} davor"
+    },
     "jobKindsShort": {
       "aiGenerate": "KI",
       "aiEmbed": "Embed",

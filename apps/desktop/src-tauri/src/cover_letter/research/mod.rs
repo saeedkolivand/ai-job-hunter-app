@@ -76,11 +76,7 @@ impl CompanyResearch {
 
         // Provider-native research, bounded so generation never stalls. Any
         // failure / timeout / unconfigured provider yields an empty brief.
-        let brief = match tokio::time::timeout(
-            deadline,
-            completer.research(&company, &role),
-        )
-        .await
+        let brief = match tokio::time::timeout(deadline, completer.research(&company, &role)).await
         {
             Ok(Ok(b)) => b,
             Ok(Err(e)) => {

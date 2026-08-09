@@ -16,6 +16,10 @@ static REQUEST_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 /// `[ai] ← req=17 provider=openai model=gpt-4o endpoint=/chat/completions … status=200 duration=1842ms ok=true`
 pub struct RequestTrace {
     span: crate::observability::Span,
+    /// The id stamped on both log lines. Kept only so the uniqueness test can
+    /// read it back — the log lines themselves already carry it.
+    #[cfg(test)]
+    id: u64,
 }
 
 impl RequestTrace {
@@ -45,6 +49,8 @@ impl RequestTrace {
         );
         Self {
             span: crate::observability::Span::begin("ai", fields),
+            #[cfg(test)]
+            id: req,
         }
     }
 
@@ -63,16 +69,15 @@ mod tests {
     /// Two traces begun in the same process must never share an id — that is the
     /// entire point of the field, and an `Ordering::Relaxed` fetch_add is only
     /// correct here because uniqueness (not ordering) is what is required.
+    ///
+    /// Asserts the two ids DIFFER rather than a delta on the global counter:
+    /// `REQUEST_SEQ` is process-wide and Rust runs tests in parallel threads, so
+    /// any other test creating a trace between the two reads would fail a
+    /// delta assertion while uniqueness — the actual invariant — still holds.
     #[test]
     fn each_request_gets_a_distinct_id() {
-        let before = REQUEST_SEQ.load(std::sync::atomic::Ordering::Relaxed);
-        let _a = RequestTrace::begin(ProviderId::Ollama, "m", "/e", "http://h", false);
-        let _b = RequestTrace::begin(ProviderId::Ollama, "m", "/e", "http://h", false);
-        let after = REQUEST_SEQ.load(std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(
-            after - before,
-            2,
-            "each begin() must consume exactly one id"
-        );
+        let a = RequestTrace::begin(ProviderId::Ollama, "m", "/e", "http://h", false);
+        let b = RequestTrace::begin(ProviderId::Ollama, "m", "/e", "http://h", false);
+        assert_ne!(a.id, b.id, "two traces must never share a request id");
     }
 }

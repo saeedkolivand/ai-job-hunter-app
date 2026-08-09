@@ -155,7 +155,9 @@ impl QueueSlot {
         let Some(state) = map.get_mut(command) else {
             // `check_rate` always inserts the entry first, so this is unreachable
             // in practice; treat it as a full queue rather than panicking.
-            return Err(AppError::RateLimited(format!("{command} queue unavailable")));
+            return Err(AppError::RateLimited(format!(
+                "{command} queue unavailable"
+            )));
         };
         if state.queued >= max_queued {
             return Err(AppError::RateLimited(format!(
@@ -213,18 +215,20 @@ impl Limiter {
         max_concurrent: usize,
         now: Instant,
     ) -> Result<ConcurrencyGuard, AppError> {
-        let gate = self.check_rate(command, max_requests, max_concurrent, now)?;
+        let gate = self.admit(command, max_requests, max_concurrent, now)?;
 
-        // Non-blocking: this admission style REJECTS rather than parks. The
-        // window slot is recorded only after the permit is actually taken, so a
-        // rejected call costs nothing.
-        let permit = gate.try_acquire_owned().map_err(|_| {
-            AppError::RateLimited(format!(
-                "Too many concurrent {command} requests (max {max_concurrent}). Try again shortly."
-            ))
-        })?;
-        self.record_start(command, now);
-        Ok(ConcurrencyGuard { _permit: permit })
+        // Non-blocking: this admission style REJECTS rather than parks.
+        match gate.try_acquire_owned() {
+            Ok(permit) => Ok(ConcurrencyGuard { _permit: permit }),
+            Err(_) => {
+                // Give the window slot back — a rejected call must cost nothing,
+                // or a hammering loop pushes its own recovery time out forever.
+                self.undo_admission(command, now);
+                Err(AppError::RateLimited(format!(
+                    "Too many concurrent {command} requests (max {max_concurrent}). Try again shortly."
+                )))
+            }
+        }
     }
 
     /// [`Self::acquire`], but on a full concurrency cap the caller **waits** for a
@@ -260,19 +264,23 @@ impl Limiter {
         on_park: impl FnOnce(usize),
     ) -> Result<(ConcurrencyGuard, bool), AppError> {
         let now = Instant::now();
-        let gate = self.check_rate(command, max_requests, max_concurrent, now)?;
+        let gate = self.admit(command, max_requests, max_concurrent, now)?;
 
         // Fast path: a slot is free right now, so never touch the queue counter
         // and never emit a park signal.
         if let Ok(permit) = Arc::clone(&gate).try_acquire_owned() {
-            self.record_start(command, now);
             return Ok((ConcurrencyGuard { _permit: permit }, false));
         }
 
-        // Full: park, unless the queue itself is at its ceiling (rejected here
-        // costs no window slot, same as any other rejection).
-        let slot = QueueSlot::enter(self, command, max_queued)?;
-        self.record_start(command, now);
+        // Full: park, unless the queue itself is at its ceiling — in which case
+        // give the window slot back, same as any other rejection.
+        let slot = match QueueSlot::enter(self, command, max_queued) {
+            Ok(slot) => slot,
+            Err(e) => {
+                self.undo_admission(command, now);
+                return Err(e);
+            }
+        };
         on_park(slot.ahead);
 
         let permit = gate
@@ -284,14 +292,16 @@ impl Limiter {
         Ok((ConcurrencyGuard { _permit: permit }, true))
     }
 
-    /// The shared first half of both admission styles: age the window and
-    /// enforce the rate cap, then hand back the command's concurrency gate.
+    /// The shared first half of both admission styles: age the window, enforce
+    /// the rate cap, RECORD the start, and hand back the command's concurrency
+    /// gate — all under ONE lock hold.
     ///
-    /// Records **nothing** — the window slot is written by [`Self::record_start`]
-    /// only once the call is genuinely admitted, so a *rejected* call never
-    /// consumes a window slot and a hammering loop can't push its own recovery
-    /// time out forever.
-    fn check_rate(
+    /// Check-and-record must be atomic. Splitting them let two callers both
+    /// observe `recent.len() < max_requests` and then both push, admitting more
+    /// than the cap. The "a rejected call costs no window slot" property is
+    /// preserved instead by [`Self::undo_admission`], which the caller invokes
+    /// when the concurrency or queue admission that follows fails.
+    fn admit(
         &self,
         command: &'static str,
         max_requests: usize,
@@ -329,15 +339,23 @@ impl Limiter {
             )));
         }
 
+        state.recent.push_back(now);
         Ok(Arc::clone(&state.gate))
     }
 
-    /// Record an admitted start against the sliding window. Called only after the
-    /// call is committed to running (permit held, or parked with a permit
-    /// guaranteed to arrive).
-    fn record_start(&self, command: &'static str, now: Instant) {
+    /// Undo one [`Self::admit`] whose caller was then refused a concurrency slot
+    /// or a queue place, so the rejection costs no window slot.
+    ///
+    /// Removes the LAST timestamp equal to `now` rather than popping the back:
+    /// another caller may have been admitted in between, and popping blind would
+    /// refund someone else's slot. Two callers sharing an `Instant` is possible
+    /// but harmless — one entry is removed either way, which is the correct
+    /// accounting.
+    fn undo_admission(&self, command: &'static str, now: Instant) {
         if let Some(state) = self.per_command.lock().get_mut(command) {
-            state.recent.push_back(now);
+            if let Some(pos) = state.recent.iter().rposition(|&t| t == now) {
+                state.recent.remove(pos);
+            }
         }
     }
 

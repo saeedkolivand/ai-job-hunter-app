@@ -52,6 +52,7 @@ import {
   type RewriteDocType,
   type SalaryRange,
   sanitizeCompanyName,
+  sanitizeJobTitle,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { ContactProfile, GitHubRepo } from '@ajh/shared';
@@ -214,7 +215,8 @@ export async function extractMetadata(
   const companyMatch = jobAd.match(/(?:\b(?:at|company|employer|firm)|@)[:\s]+([^\n,]+)/i);
   return {
     candidateName: nameMatch?.[1] ?? '',
-    jobTitle: titleMatch?.[1]?.trim() ?? '',
+    // Same gate as the model's own output — this regex is the worse source.
+    jobTitle: sanitizeJobTitle(titleMatch?.[1]),
     // Same gate the model's own output goes through — this regex is the WORSE
     // of the two sources, so it certainly does not get to skip validation.
     companyName: sanitizeCompanyName(companyMatch?.[1]),

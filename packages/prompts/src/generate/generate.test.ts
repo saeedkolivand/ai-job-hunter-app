@@ -29,6 +29,7 @@ import {
   parseLinksFromResume,
   resumeMentions,
   sanitizeCompanyName,
+  sanitizeJobTitle,
   urlToFriendlyLabel,
   validateMetadata,
 } from './index';
@@ -2250,6 +2251,16 @@ describe('sanitizeCompanyName', () => {
     expect(sanitizeCompanyName(input)).toBe(input);
   });
 
+  it('pins the 60-character and 6-word caps', () => {
+    // Both caps carry real rejection load — the word cap is what rejects
+    // 'Please note: Fluent Dutch…'. Without a boundary test, widening or
+    // deleting either stays green.
+    expect(sanitizeCompanyName('A'.repeat(60))).toBe('A'.repeat(60));
+    expect(sanitizeCompanyName('A'.repeat(61))).toBe('');
+    expect(sanitizeCompanyName('Aa Bb Cc Dd Ee Ff')).toBe('Aa Bb Cc Dd Ee Ff'); // 6 words
+    expect(sanitizeCompanyName('Aa Bb Cc Dd Ee Ff Gg')).toBe(''); // 7 words
+  });
+
   it('trims surrounding whitespace and rejects non-strings', () => {
     expect(sanitizeCompanyName('  Codefield  ')).toBe('Codefield');
     expect(sanitizeCompanyName('')).toBe('');
@@ -2259,7 +2270,37 @@ describe('sanitizeCompanyName', () => {
   });
 });
 
+describe('sanitizeJobTitle', () => {
+  // The title is the OTHER half of the subject a provider web search runs on,
+  // so gating only the company left the identical hole open for it — a reported
+  // session searched for role="Jetzt bewerben".
+  it.each([
+    'Jetzt bewerben',
+    '[← Alle offenen Stellen](/karriere)',
+    'Please note: Fluent Dutch language skills are required for this role.',
+    'A'.repeat(81),
+  ])('rejects %j', (input) => {
+    expect(sanitizeJobTitle(input)).toBe('');
+  });
+
+  it.each([
+    'Senior Backend Engineer',
+    'Staff Software Engineer, Payments Platform',
+    // Longer than a company name is allowed to be — titles legitimately are.
+    'Senior Staff Software Engineer, Platform Infrastructure',
+  ])('keeps %j', (input) => {
+    expect(sanitizeJobTitle(input)).toBe(input);
+  });
+});
+
 describe('validateMetadata', () => {
+  it('gates the job title the model itself returns', () => {
+    expect(validateMetadata('{"jobTitle":"Jetzt bewerben"}')?.jobTitle).toBe('');
+    expect(validateMetadata('{"jobTitle":"Senior Backend Engineer"}')?.jobTitle).toBe(
+      'Senior Backend Engineer'
+    );
+  });
+
   it('gates the company name the model itself returns', () => {
     // The model — not just the regex fallback — is a source of these. Passing
     // `parsed.companyName ?? ''` straight through is what let "You'll Do" reach

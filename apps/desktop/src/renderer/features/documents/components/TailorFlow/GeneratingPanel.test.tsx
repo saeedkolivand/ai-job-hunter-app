@@ -173,6 +173,32 @@ describe('GeneratingPanel — reasoning-heavy hint', () => {
     expect(screen.getByText('autopilot.apply.generatingHint')).toBeInTheDocument();
   });
 
+  it('pins both thresholds exactly', () => {
+    // 8,000 chars and a 5:1 ratio are the two numbers the behaviour rests on.
+    // Without boundary cases either could be widened away silently.
+    const hint = () => screen.queryByText('autopilot.apply.reasoningHeavyHint');
+
+    // Just under the floor → no hint, even at an enormous ratio.
+    const { unmount } = render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(7_999), output: '' })} />
+    );
+    expect(hint()).not.toBeInTheDocument();
+    unmount();
+
+    // At the floor but exactly AT the ratio (not above it) → no hint.
+    const second = render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(8_000), output: 'y'.repeat(1_600) })} />
+    );
+    expect(hint()).not.toBeInTheDocument();
+    second.unmount();
+
+    // At the floor and one char past the ratio → hint.
+    render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(8_001), output: 'y'.repeat(1_600) })} />
+    );
+    expect(hint()).toBeInTheDocument();
+  });
+
   it('does not fire on a short burst of reasoning', () => {
     // Under the floor: early in ANY reasoning run the ratio is briefly huge
     // (thinking streams before the document does), and flashing the hint for a

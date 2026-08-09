@@ -428,6 +428,10 @@
       "matchResume": "Resume match",
       "autopilotRun": "Autopilot run"
     },
+    "activity": {
+      "queued": "queued",
+      "queuedWithCount": "queued, {{count}} ahead"
+    },
     "jobKindsShort": {
       "aiGenerate": "AI",
       "aiEmbed": "Embed",

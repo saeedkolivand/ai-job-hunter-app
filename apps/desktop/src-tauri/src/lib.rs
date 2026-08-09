@@ -436,7 +436,8 @@ pub fn run() {
             } else {
                 bt
             };
-            let entry = format!("[{timestamp}] PANIC at {location}: {msg}\nBacktrace:\n{bt}\n---\n");
+            let entry =
+                format!("[{timestamp}] PANIC at {location}: {msg}\nBacktrace:\n{bt}\n---\n");
             file.write_all(entry.as_bytes())?;
             file.flush()?;
             Ok(())

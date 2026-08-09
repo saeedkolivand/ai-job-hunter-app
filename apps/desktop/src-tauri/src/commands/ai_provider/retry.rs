@@ -19,7 +19,7 @@
 //! re-sends the request each attempt (a `RequestBuilder` is consumed by `send`,
 //! so the caller supplies a builder factory).
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reqwest::{RequestBuilder, Response, StatusCode};
 
@@ -101,27 +101,46 @@ pub async fn send_with_retry<F>(build: F) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
-    send_with_retry_capped(build, MAX_DELAY_MS).await
+    // No total budget: these are one-shot calls whose own `.timeout()` already
+    // bounds each attempt to a fraction of a stream's.
+    send_with_retry_capped(build, MAX_DELAY_MS, None).await
 }
 
 /// [`send_with_retry`] for a STREAM's initial send.
 ///
-/// Identical loop — the only difference is the backoff ceiling
-/// ([`MAX_STREAM_DELAY_MS`]). Safe on the streaming path because this covers
-/// only the request/response handshake: the response STATUS is known before any
-/// delta has been read, so a retry here re-sends a request that emitted nothing.
-/// Nothing restarts a stream that has already produced output.
-pub async fn send_stream_with_retry<F>(build: F) -> reqwest::Result<Response>
+/// Safe on the streaming path because this covers only the request/response
+/// handshake: the response STATUS is known before any delta has been read, so a
+/// retry here re-sends a request that emitted nothing. Nothing restarts a stream
+/// that has already produced output.
+///
+/// `budget` is the request's own `stream_deadline`, and it bounds the WHOLE
+/// sequence, not each attempt. Each attempt rebuilds its `.timeout()` fresh, so
+/// without this three attempts could run to 3x that deadline — past the
+/// renderer's own timeout, which would surface a generic "Generation timed out"
+/// instead of the actionable provider error, inverting the relationship
+/// `computeStreamTimeoutMs`'s test deliberately pins. A retry is only started
+/// while budget remains for it.
+///
+/// The practical effect matches the reported failure: that 429 came back after
+/// the full deadline had already elapsed, so it retries zero times and behaves
+/// exactly as before. Retries only help when a provider rejects promptly, which
+/// is the normal shape of a rate limit.
+pub async fn send_stream_with_retry<F>(build: F, budget: Duration) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
-    send_with_retry_capped(build, MAX_STREAM_DELAY_MS).await
+    send_with_retry_capped(build, MAX_STREAM_DELAY_MS, Some(budget)).await
 }
 
-async fn send_with_retry_capped<F>(mut build: F, max_delay_ms: u64) -> reqwest::Result<Response>
+async fn send_with_retry_capped<F>(
+    mut build: F,
+    max_delay_ms: u64,
+    budget: Option<Duration>,
+) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
+    let started = Instant::now();
     let mut attempt = 1u32;
     loop {
         let outcome = build().send().await;
@@ -136,6 +155,20 @@ where
         }
 
         let delay = backoff_delay_capped(attempt, retry_after, max_delay_ms);
+
+        // Only start another attempt if the caller's total budget can still pay
+        // for the backoff AND leave time for the request itself.
+        if let Some(budget) = budget {
+            let elapsed = started.elapsed();
+            if elapsed + delay >= budget {
+                tracing::warn!(
+                    "ai retry: budget spent after attempt {attempt}/{MAX_ATTEMPTS} \
+                     ({elapsed:?} of {budget:?}), returning the last outcome"
+                );
+                return outcome;
+            }
+        }
+
         tracing::warn!(
             // WARN, not DEBUG: a retry means the provider pushed back, which is
             // the context you want when a generation later fails outright.
@@ -224,8 +257,17 @@ mod retry_loop_tests {
         );
     }
 
-    /// [`run_retry`] driven through the STREAMING entry point instead.
+    /// [`run_retry`] driven through the STREAMING entry point instead. `budget`
+    /// is the caller's `stream_deadline`; generous here so the attempt count is
+    /// what is under test, except in the budget test below.
     async fn run_stream_retry(status_codes: Vec<u16>) -> (u32, bool) {
+        run_stream_retry_with_budget(status_codes, std::time::Duration::from_secs(60)).await
+    }
+
+    async fn run_stream_retry_with_budget(
+        status_codes: Vec<u16>,
+        budget: std::time::Duration,
+    ) -> (u32, bool) {
         let server = MockServer::start().await;
         for code in &status_codes {
             Mock::given(method("GET"))
@@ -238,10 +280,13 @@ mod retry_loop_tests {
         let client = crate::net::http::shared();
         let call_count = Arc::new(AtomicU32::new(0));
         let counter = call_count.clone();
-        let result = send_stream_with_retry(|| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            client.get(&url)
-        })
+        let result = send_stream_with_retry(
+            || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                client.get(&url)
+            },
+            budget,
+        )
         .await;
         (call_count.load(Ordering::SeqCst), result.is_ok())
     }
@@ -266,7 +311,32 @@ mod retry_loop_tests {
         // Bounded exactly like the one-shot path — a rate-limited account must
         // not turn into an unbounded retry storm.
         let (calls, _) = run_stream_retry(vec![429u16; MAX_ATTEMPTS as usize]).await;
-        assert_eq!(calls, MAX_ATTEMPTS, "stream retries must stop at the budget");
+        assert_eq!(
+            calls, MAX_ATTEMPTS,
+            "stream retries must stop at the budget"
+        );
+    }
+
+    /// The budget bounds the WHOLE retry sequence, not each attempt.
+    ///
+    /// Each attempt rebuilds its own `.timeout(stream_deadline(..))`, so without
+    /// this three attempts could run to 3x that deadline — past the renderer's
+    /// own timeout, which would replace the actionable provider error with a
+    /// generic "Generation timed out" and invert the relationship
+    /// `computeStreamTimeoutMs`'s test pins.
+    ///
+    /// A zero budget is the reported case in the extreme: that 429 came back
+    /// only after the full deadline had elapsed, so there was never budget for a
+    /// retry and behaviour is unchanged. Retries only help a provider that
+    /// rejects promptly, which is the normal shape of a rate limit.
+    #[tokio::test]
+    async fn stream_handshake_does_not_retry_once_the_budget_is_spent() {
+        let (calls, _) =
+            run_stream_retry_with_budget(vec![429, 200], std::time::Duration::ZERO).await;
+        assert_eq!(
+            calls, 1,
+            "no budget left means no retry, even though the 429 is transient"
+        );
     }
 
     #[tokio::test]

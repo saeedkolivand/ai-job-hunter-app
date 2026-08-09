@@ -106,7 +106,8 @@ fn extract_company(text: &str) -> String {
             // heading, yielded a company of "You'll Do". The renderer's own
             // fallback regex had the identical bug; this is the same defect, so
             // it gets the same fix on both sides rather than one patch.
-            if let Some(i) = find_ascii_ci(line, prefix).filter(|i| starts_at_word_boundary(line, *i))
+            if let Some(i) =
+                find_ascii_ci(line, prefix).filter(|i| starts_at_word_boundary(line, *i))
             {
                 let rest = &line[i + prefix.len()..];
                 let candidate = rest

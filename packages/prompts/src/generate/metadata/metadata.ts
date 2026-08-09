@@ -105,6 +105,20 @@ const HEADING_DENYLIST = new Set([
  * pronoun contractions.
  */
 export function sanitizeCompanyName(value: unknown): string {
+  return sanitizeSubject(value);
+}
+
+/**
+ * The shared gate behind [`sanitizeCompanyName`] and [`sanitizeJobTitle`].
+ *
+ * Both fields end up as the SUBJECT of a provider web search and as prose in the
+ * cover letter's opening, so both fail the same way: a heading or a sentence
+ * there produces a confident brief about the wrong thing. Gating only the
+ * company left the identical hole open for the title — a reported session
+ * searched for `Jetzt bewerben` and `[← Alle offenen Stellen](/karriere)` as the
+ * ROLE while the company was already being gated.
+ */
+function sanitizeSubject(value: unknown): string {
   if (typeof value !== 'string') return '';
   const name = value.trim();
   if (!name) return '';
@@ -138,6 +152,17 @@ export function sanitizeCompanyName(value: unknown): string {
   return name;
 }
 
+/**
+ * A job title, gated exactly like the company name — see [`sanitizeSubject`].
+ * Slightly more permissive on length: titles are legitimately longer than
+ * company names ("Senior Staff Software Engineer, Payments Platform").
+ */
+export function sanitizeJobTitle(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  if (value.trim().length > 80) return '';
+  return sanitizeSubject(value);
+}
+
 export function validateMetadata(raw: string): GenerationMeta | null {
   try {
     const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
@@ -148,7 +173,9 @@ export function validateMetadata(raw: string): GenerationMeta | null {
     const jobAdLanguage = toLanguage(parsed.jobAdLanguage);
     return {
       candidateName: parsed.candidateName ?? '',
-      jobTitle: parsed.jobTitle ?? '',
+      // Gated for the same reason `companyName` is: it is the other half of the
+      // subject a provider web search runs on.
+      jobTitle: sanitizeJobTitle(parsed.jobTitle),
       // Gated, not trusted: the model returns an ad heading ("You'll Do") as the
       // employer often enough that an ungated value reaches company research and
       // the cover letter's opening line.

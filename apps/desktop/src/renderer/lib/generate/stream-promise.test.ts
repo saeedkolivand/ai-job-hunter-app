@@ -150,12 +150,16 @@ describe('awaitAiStream — a queued job does not burn its stream deadline', () 
     // `timeoutMs` bounds the STREAM, not the wait for a slot. Six generations
     // fired in a minute meant later ones sat parked for minutes; without
     // re-arming they would reject on a deadline they never had a chance to
-    // beat, having never sent a request. 5 polls at 4ms with a 10ms deadline is
-    // 20ms of queueing — twice the deadline.
-    const api = makeQueuedApi(5, 'the generation that eventually ran');
+    // beat, having never sent a request.
+    //
+    // These use REAL timers, so the margins are deliberately generous: 6 polls
+    // at 25ms is ~150ms of queueing against a 60ms deadline. Still 2.5x the
+    // deadline (so the re-arm is genuinely proven) but with enough slack that a
+    // single event-loop stall on a loaded CI runner cannot flip the result.
+    const api = makeQueuedApi(6, 'the generation that eventually ran');
 
     await expect(
-      awaitAiStream(api, 'job-queued', { pollIntervalMs: 4, timeoutMs: 10 })
+      awaitAiStream(api, 'job-queued', { pollIntervalMs: 25, timeoutMs: 60 })
     ).resolves.toBe('the generation that eventually ran');
   });
 
@@ -181,7 +185,7 @@ describe('awaitAiStream — a queued job does not burn its stream deadline', () 
     } as unknown as AppClient;
 
     await expect(
-      awaitAiStream(api, 'job-stuck', { pollIntervalMs: 1, timeoutMs: 20 })
+      awaitAiStream(api, 'job-stuck', { pollIntervalMs: 5, timeoutMs: 60 })
     ).rejects.toThrow('Generation timed out. Please try again.');
   });
 });

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
+
 import type { ActivityItem, JobRecord } from '@/features/monitoring/types';
 import { fetchJob, useJobEvents } from '@/services';
 
@@ -18,6 +20,7 @@ interface JobEvent {
 }
 
 export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<string, string>) {
+  const { t } = useTranslation();
   const [liveActivity, setLiveActivity] = useState<ActivityItem[]>([]);
   const [clearedBefore, setClearedBefore] = useState<number>(0);
 
@@ -104,8 +107,8 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
         const suffix =
           event.type === 'job.queued' && typeof ahead === 'number'
             ? ahead > 0
-              ? ` (queued, ${ahead} ahead)`
-              : ' (queued)'
+              ? ` (${t('monitoring.activity.queuedWithCount', { count: ahead })})`
+              : ` (${t('monitoring.activity.queued')})`
             : '';
         setLiveActivity((prev) =>
           [

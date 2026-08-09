@@ -1039,13 +1039,16 @@ impl AiProvider for OpenAiClient {
         // Retried on a transient 429/5xx: this is only the handshake, so a retry
         // re-sends a request that emitted no deltas. Treating it as terminal is
         // what turned a provider rate-limit into a lost multi-minute generation.
-        let response = super::retry::send_stream_with_retry(|| {
-            crate::net::http::shared()
-                .post(endpoint.clone())
-                .timeout(timeouts::stream_deadline(req.effort.as_deref()))
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
+        let response = super::retry::send_stream_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(endpoint.clone())
+                    .timeout(timeouts::stream_deadline(req.effort.as_deref()))
+                    .bearer_auth(&api_key)
+                    .json(&body)
+            },
+            timeouts::stream_deadline(req.effort.as_deref()),
+        )
         .await;
 
         let response = match response {

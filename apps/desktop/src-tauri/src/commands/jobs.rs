@@ -63,7 +63,9 @@ pub fn job_start_exclusive(
 /// `awaitAiStream`. Without that, a generation waiting its turn in a batch
 /// counts down and fails having never sent a request.
 pub fn job_queued(app: &AppHandle, id: &str, ahead: usize) {
-    app.state::<Mutex<JobTracker>>().lock().set_waiting(id, true);
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .set_waiting(id, true);
     emit_job_event(app, "job.queued", id, Some(json!({ "ahead": ahead })));
 }
 

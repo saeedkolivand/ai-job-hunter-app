@@ -335,7 +335,10 @@ mod tests {
             redacted.contains("<path-redacted>"),
             "the absolute path must still be redacted; got: {redacted}"
         );
-        assert!(!redacted.contains("alice"), "username must not leak: {redacted}");
+        assert!(
+            !redacted.contains("alice"),
+            "username must not leak: {redacted}"
+        );
     }
 
     /// The entry separator must survive too — without it, consecutive crashes

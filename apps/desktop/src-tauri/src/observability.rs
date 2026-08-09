@@ -42,13 +42,16 @@ impl Span {
     /// a successful one at a glance: one 27,601-line bundle carried exactly ONE
     /// `[ERROR]` line while eight silently-failed provider calls sat at INFO.
     pub fn end(&self, ok: bool) {
-        self.log_end(&format!(
-            "[{}] ← {} duration={}ms ok={}",
-            self.target,
-            self.fields,
-            self.start.elapsed().as_millis(),
-            ok
-        ), ok);
+        self.log_end(
+            &format!(
+                "[{}] ← {} duration={}ms ok={}",
+                self.target,
+                self.fields,
+                self.start.elapsed().as_millis(),
+                ok
+            ),
+            ok,
+        );
     }
 
     /// End with trailing fields rendered before `duration` (e.g. `status=200`,
@@ -57,14 +60,17 @@ impl Span {
         if extra.is_empty() {
             return self.end(ok);
         }
-        self.log_end(&format!(
-            "[{}] ← {} {} duration={}ms ok={}",
-            self.target,
-            self.fields,
-            extra,
-            self.start.elapsed().as_millis(),
-            ok
-        ), ok);
+        self.log_end(
+            &format!(
+                "[{}] ← {} {} duration={}ms ok={}",
+                self.target,
+                self.fields,
+                extra,
+                self.start.elapsed().as_millis(),
+                ok
+            ),
+            ok,
+        );
     }
 
     /// The one place a span's terminal line is emitted, so the success/failure
