@@ -909,7 +909,12 @@ impl AiProvider for OpenAiClient {
             supports_streaming: true,
             supports_reasoning: self.supports_reasoning_effort(model),
             supports_tools: true,
-            supports_json_mode: true,
+            // Corrected from a blanket `true`: a generic `openai-compatible`
+            // gateway is an unknown server build, and this adapter never
+            // sends it `response_format` for exactly that reason — the
+            // declared capability now matches what `complete_structured`
+            // actually does. Same gate, one source of truth.
+            supports_json_mode: self.supports_response_format(),
             supports_embeddings: true,
             // Only native OpenAI exposes the `web_search` tool; any
             // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be

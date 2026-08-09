@@ -1323,3 +1323,68 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
         .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
     assert!(matches!(err, AppError::Network(_)));
 }
+
+// ── Structured-output model gate ──────────────────────────────────────────────
+
+#[test]
+fn structured_outputs_gate_covers_the_4_5_generation_and_later_plus_opus_4_1() {
+    for model in [
+        "claude-opus-4-1-20250805",
+        "claude-opus-4-5",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-fable-5",
+        // Vendor-prefixed (OpenRouter-style) ids normalize the same way every
+        // other gate in this file does.
+        "anthropic/claude-sonnet-5",
+        // Dot-form version separators collapse to dashes too.
+        "claude-opus-4.5",
+    ] {
+        assert!(
+            super::anthropic_supports_structured_outputs(model),
+            "{model} must be recognized as structured-output capable"
+        );
+    }
+}
+
+#[test]
+fn structured_outputs_gate_rejects_pre_4_5_models_and_anything_unrecognized() {
+    for model in [
+        // Claude 3.x and the 4.0 models never got structured outputs.
+        "claude-3-opus-20240229",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-7-sonnet-20250219",
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        // An unrecognized/future id defaults to unsupported — the fallback
+        // always works, a wrongly-claimed capability does not.
+        "claude-something-new",
+        "",
+        // Boundary check: `opus-4-50` must not match the `opus-4-5` needle.
+        "claude-opus-4-50",
+    ] {
+        assert!(
+            !super::anthropic_supports_structured_outputs(model),
+            "{model} must NOT be claimed as structured-output capable"
+        );
+    }
+}
+
+#[test]
+fn capabilities_reports_json_mode_from_the_structured_output_gate() {
+    // The declared capability is the gate, not a hardcoded blanket value —
+    // mutation check: pin `supports_json_mode` back to `false` and this fails.
+    assert!(
+        AnthropicClient
+            .capabilities("claude-sonnet-4-5")
+            .supports_json_mode
+    );
+    assert!(
+        !AnthropicClient
+            .capabilities("claude-3-5-sonnet-20241022")
+            .supports_json_mode
+    );
+}
