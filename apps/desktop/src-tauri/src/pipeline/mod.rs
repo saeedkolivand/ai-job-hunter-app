@@ -131,9 +131,30 @@ impl Completer {
     /// Returns `""` (never an error) when the provider can't search — see
     /// [`AiProvider::research`](crate::commands::ai_provider::AiProvider::research).
     pub async fn research(&self, company: &str, role: &str) -> AppResult<String> {
-        self.provider
-            .research(&self.app, &self.model, company, role)
-            .await
+        // THE routing decision, made in one place for all three research facets.
+        // Providers whose model searches for itself take the native call;
+        // everyone else takes search-then-synthesize, which resolves either the
+        // provider's own searcher or the configured fallback.
+        //
+        // It lives here rather than in each provider because the per-provider
+        // shape already failed once: `OpenAiClient` overrides all three methods
+        // for every id it serves, so an `openai-compatible` gateway returned ""
+        // instead of reaching the fallback — silently, and while the UI reported
+        // that research was available.
+        if self.provider.has_native_search(&self.model) {
+            return self
+                .provider
+                .research(&self.app, &self.model, company, role)
+                .await;
+        }
+        crate::commands::ai_provider::search::searched_research(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+            company,
+            role,
+        )
+        .await
     }
 
     /// Web-grounded market salary-range lookup through the active provider's
@@ -151,17 +172,31 @@ impl Completer {
         country: &str,
         currency: &str,
     ) -> AppResult<String> {
-        self.provider
-            .research_salary(
-                &self.app,
-                &self.model,
-                role,
-                company,
-                location,
-                country,
-                currency,
-            )
-            .await
+        if self.provider.has_native_search(&self.model) {
+            return self
+                .provider
+                .research_salary(
+                    &self.app,
+                    &self.model,
+                    role,
+                    company,
+                    location,
+                    country,
+                    currency,
+                )
+                .await;
+        }
+        crate::commands::ai_provider::search::searched_research_salary(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+            role,
+            company,
+            location,
+            country,
+            currency,
+        )
+        .await
     }
 
     /// Web-search reference notes for a single application-question answer
@@ -175,9 +210,21 @@ impl Completer {
         role: &str,
         company: &str,
     ) -> AppResult<String> {
-        self.provider
-            .research_answer(&self.app, &self.model, question, role, company)
-            .await
+        if self.provider.has_native_search(&self.model) {
+            return self
+                .provider
+                .research_answer(&self.app, &self.model, question, role, company)
+                .await;
+        }
+        crate::commands::ai_provider::search::searched_research_answer(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+            question,
+            role,
+            company,
+        )
+        .await
     }
 
     /// The app handle, so stages can reach managed state (caches, credentials) and
@@ -199,6 +246,17 @@ impl Completer {
     /// [`crate::commands::agent::agent_run`].
     pub fn capabilities(&self) -> ModelCapabilities {
         self.provider.capabilities(&self.model)
+    }
+
+    /// Whether company research can actually run right now — a configured search
+    /// backend exists, not merely a provider that advertises one. See
+    /// `ai_provider::search::research_available`.
+    pub fn research_available(&self) -> bool {
+        crate::commands::ai_provider::search::research_available(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+        )
     }
 
     /// The resolved active model — so a caller can name it in a capability-gate
