@@ -8,6 +8,10 @@ export interface ResumeContract {
    * AI-voice tells) on an already-generated résumé/letter against its source
    * résumé and the job ad. Pure and fast — no AI call, safe to call on every
    * save. See `validate::content::validate_content` (Rust, L1).
+   *
+   * `req.docKind` must be exactly `'resume'` or `'coverLetter'` — the Zod
+   * `z.enum` here is renderer-side only; the Rust command rejects any other
+   * value with a Validation error rather than guessing which ruleset to run.
    */
   validateContent(req: ResumeValidateContentRequest): Promise<ContentReportPayload>;
 }
