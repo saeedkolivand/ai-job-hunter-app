@@ -31,6 +31,33 @@ export interface QualityReport {
   generatedAt: number;
   resume?: ContentReportPayload;
   coverLetter?: ContentReportPayload;
+  /**
+   * djb2 hash of the EXACT text each sub-report validated. A reader compares
+   * `hashText(currentText)` against this to detect the document has since
+   * diverged (a hand-edit) WITHOUT keeping a full second copy of the text
+   * around — this single mechanism covers both live staleness (compared
+   * against the live session's `resumeOut`/`coverOut`) and persisted
+   * staleness (compared against a cold-hydrated record's saved text; the
+   * hash was computed over that exact text at generation time, so an
+   * unedited reopen always matches). Absent alongside an absent sub-report,
+   * and absent entirely on a report generated before this field existed
+   * (never treated as stale — there is nothing to compare against).
+   */
+  sourceTextHash?: { resume?: number; coverLetter?: number };
+}
+
+/**
+ * Cheap, stable, non-cryptographic string hash (djb2) — used only to detect
+ * "this text changed since validation," never for security. Exported so every
+ * comparison (live edit-diff, cold-entry hydration, a future re-check) uses
+ * the exact same algorithm the report was hashed with.
+ */
+export function hashText(text: string): number {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 33) ^ text.charCodeAt(i);
+  }
+  return hash >>> 0; // unsigned 32-bit
 }
 
 /**
@@ -80,7 +107,45 @@ export async function computeQualityReport(params: {
   ]);
   if (!resume && !coverLetter) return null;
 
-  return { schemaVersion: 1, pipeline: 'fast', generatedAt: Date.now(), resume, coverLetter };
+  const sourceTextHash: { resume?: number; coverLetter?: number } = {};
+  if (resume) sourceTextHash.resume = hashText(resumeText ?? '');
+  if (coverLetter) sourceTextHash.coverLetter = hashText(coverLetterText ?? '');
+
+  return {
+    schemaVersion: 1,
+    pipeline: 'fast',
+    generatedAt: Date.now(),
+    resume,
+    coverLetter,
+    sourceTextHash,
+  };
+}
+
+/**
+ * Merge a freshly re-checked sub-report into an existing wrapper — replaces
+ * only `docKind`'s payload + hash; the other doc (if any) and `generatedAt`
+ * are left untouched, so a résumé-only re-check never disturbs a cover-letter
+ * report sitting alongside it. Powers the quality panel's "Re-check" action,
+ * which also clears staleness (the fresh hash matches the just-validated text).
+ */
+export function mergeRecheckedReport(
+  existing: QualityReport | null,
+  docKind: 'resume' | 'coverLetter',
+  payload: ContentReportPayload,
+  currentText: string
+): QualityReport {
+  const base: QualityReport = existing ?? {
+    schemaVersion: 1,
+    pipeline: 'fast',
+    generatedAt: Date.now(),
+  };
+  const sourceTextHash: { resume?: number; coverLetter?: number } = {
+    ...base.sourceTextHash,
+    [docKind]: hashText(currentText),
+  };
+  return docKind === 'resume'
+    ? { ...base, resume: payload, sourceTextHash }
+    : { ...base, coverLetter: payload, sourceTextHash };
 }
 
 /** `undefined` (omit the field) for a null report — matches the save contract's

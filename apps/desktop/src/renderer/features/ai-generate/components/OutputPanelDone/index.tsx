@@ -11,16 +11,19 @@ import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
+import { errorDetail } from '@/lib/error-class';
 import {
   buildFilename,
   type GenerationMeta,
   type LetterLayoutId,
+  mergeRecheckedReport,
   MODES,
   type QualityReport,
   resolveMarket,
   type TemplateId,
   TEMPLATES,
 } from '@/lib/generate';
+import { useValidateContent } from '@/services/use-resume-validation';
 
 import { ExportModal } from '../ExportModal';
 import { TrimPanel } from '../TrimPanel';
@@ -32,6 +35,9 @@ interface OutputPanelDoneProps {
   meta: GenerationMeta | null;
   /** Deterministic content-quality report for the current session, if any. */
   report?: QualityReport | null;
+  /** Receives the merged report after a panel "Re-check" — omit to hide the
+   *  action (the badge/panel still render, just without it). */
+  onReportChange?: (report: QualityReport | null) => void;
   mode: string;
   templateId: TemplateId;
   /** ATS single-column override — must match the export so the preview is faithful. */
@@ -66,6 +72,7 @@ export function OutputPanelDone({
   activeOut,
   meta,
   report,
+  onReportChange,
   mode,
   templateId,
   atsMode,
@@ -84,6 +91,7 @@ export function OutputPanelDone({
   sourceResume,
   jobAd,
 }: OutputPanelDoneProps) {
+  const validateContent = useValidateContent();
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
   // Rendered page count for the active doc, reported by PdfPreview — drives the
@@ -196,6 +204,32 @@ export function OutputPanelDone({
   const isPending = activeOut === 'resume' ? pendingResume : pendingCover;
   const currentMeta = meta;
 
+  // "Re-check" (quality panel action): re-validate the ACTIVE doc's current
+  // text and merge the fresh sub-report into the session's report — this is
+  // what clears staleness (the fresh hash matches what was just checked).
+  // Best-effort like `computeQualityReport`: a failure just leaves the stale
+  // state showing rather than surfacing a new error path for an optional action.
+  const handleRecheck = async () => {
+    if (!sourceResume || !jobAd || !meta || !onReportChange) return;
+    const docKind = activeOut === 'resume' ? 'resume' : 'coverLetter';
+    try {
+      const payload = await validateContent.mutateAsync({
+        generated: currentOutput,
+        source: sourceResume,
+        jobAd,
+        topRequirements: meta.topRequirements,
+        targetLanguage: meta.targetLanguage,
+        docKind,
+      });
+      onReportChange(mergeRecheckedReport(report ?? null, docKind, payload, currentOutput));
+    } catch (err) {
+      console.warn('[OutputPanelDone] recheck failed — report left as-is', {
+        docKind,
+        error: errorDetail(err),
+      });
+    }
+  };
+
   return (
     <motion.div
       key="done"
@@ -238,6 +272,9 @@ export function OutputPanelDone({
           <QualityBadge
             report={report}
             docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
+            currentText={currentOutput}
+            onRecheck={onReportChange ? handleRecheck : undefined}
+            rechecking={validateContent.isPending}
           />
           <Button
             onClick={onCopy}

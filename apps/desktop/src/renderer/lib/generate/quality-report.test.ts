@@ -4,7 +4,12 @@ import type { ContentReportPayload } from '@ajh/shared/ipc';
 
 import { _registerClient } from '../app-client';
 import { createMockClient } from '../mock-client';
-import { computeQualityReport, parseQualityReport } from './quality-report';
+import {
+  computeQualityReport,
+  hashText,
+  mergeRecheckedReport,
+  parseQualityReport,
+} from './quality-report';
 
 const OK_REPORT: ContentReportPayload = {
   ok: true,
@@ -135,6 +140,89 @@ describe('computeQualityReport', () => {
 
     expect(report?.resume).toEqual(OK_REPORT);
     expect(report?.coverLetter).toBeUndefined();
+  });
+
+  it("hashes each validated doc's EXACT text into sourceTextHash", async () => {
+    const validateContent = vi
+      .fn()
+      .mockImplementation(async (req: { docKind: 'resume' | 'coverLetter' }) =>
+        req.docKind === 'resume' ? OK_REPORT : CRITICAL_REPORT
+      );
+    register(validateContent);
+
+    const report = await computeQualityReport({
+      sourceResume: 'src',
+      jobAd: 'ad',
+      topRequirements: [],
+      targetLanguage: 'en',
+      resumeText: 'generated resume',
+      coverLetterText: 'generated cover',
+    });
+
+    expect(report?.sourceTextHash).toEqual({
+      resume: hashText('generated resume'),
+      coverLetter: hashText('generated cover'),
+    });
+  });
+
+  it("omits a doc's hash when that doc never validated (no crash, no bogus entry)", async () => {
+    const validateContent = vi.fn().mockResolvedValue(OK_REPORT);
+    register(validateContent);
+
+    const report = await computeQualityReport({
+      sourceResume: 'src',
+      jobAd: 'ad',
+      topRequirements: [],
+      targetLanguage: 'en',
+      resumeText: 'generated resume',
+    });
+
+    expect(report?.sourceTextHash).toEqual({ resume: hashText('generated resume') });
+  });
+});
+
+describe('hashText', () => {
+  it('is stable for the same input', () => {
+    expect(hashText('hello world')).toBe(hashText('hello world'));
+  });
+
+  it('differs for different input', () => {
+    expect(hashText('hello world')).not.toBe(hashText('hello world!'));
+  });
+
+  it('never returns a negative number (unsigned 32-bit)', () => {
+    expect(hashText('x'.repeat(5000))).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('mergeRecheckedReport', () => {
+  it('replaces only the rechecked doc, leaving the other sub-report + hash intact', () => {
+    const existing = {
+      schemaVersion: 1 as const,
+      pipeline: 'fast' as const,
+      generatedAt: 111,
+      resume: CRITICAL_REPORT,
+      coverLetter: OK_REPORT,
+      sourceTextHash: { resume: hashText('old resume'), coverLetter: hashText('old cover') },
+    };
+
+    const merged = mergeRecheckedReport(existing, 'resume', OK_REPORT, 'new resume');
+
+    expect(merged.resume).toEqual(OK_REPORT);
+    expect(merged.coverLetter).toEqual(OK_REPORT); // untouched
+    expect(merged.sourceTextHash).toEqual({
+      resume: hashText('new resume'),
+      coverLetter: hashText('old cover'), // untouched
+    });
+    expect(merged.generatedAt).toBe(111); // untouched
+  });
+
+  it('builds a fresh wrapper when there is no existing report', () => {
+    const merged = mergeRecheckedReport(null, 'coverLetter', OK_REPORT, 'cover text');
+
+    expect(merged.coverLetter).toEqual(OK_REPORT);
+    expect(merged.resume).toBeUndefined();
+    expect(merged.sourceTextHash).toEqual({ coverLetter: hashText('cover text') });
   });
 });
 

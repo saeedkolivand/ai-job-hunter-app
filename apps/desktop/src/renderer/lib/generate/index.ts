@@ -38,6 +38,8 @@ export {
 } from './locales';
 export {
   computeQualityReport,
+  hashText,
+  mergeRecheckedReport,
   parseQualityReport,
   type QualityReport,
   serializeQualityReport,

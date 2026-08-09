@@ -1444,7 +1444,9 @@
       "clean": "Checked — no issues",
       "issues_one": "{{count}} issue ({{critical}} critical)",
       "issues_other": "{{count}} issues ({{critical}} critical)",
-      "open": "Open the quality report"
+      "open": "Open the quality report",
+      "stale": "Checked before your edits",
+      "staleTooltip": "This document changed after the check — the results may be out of date."
     },
     "panel": {
       "resumeTitle": "Résumé quality report",
@@ -1454,6 +1456,9 @@
       "warning": "Warning",
       "emptyTitle": "No issues found",
       "emptyDescription": "This document passed every deterministic check.",
+      "staleNotice": "This document has been edited since this report was generated — the issues below may no longer reflect the current text.",
+      "recheck": "Re-check",
+      "rechecking": "Checking…",
       "metrics": {
         "title": "Metrics",
         "keywordCoverage": "Keyword coverage",

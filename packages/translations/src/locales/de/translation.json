@@ -1448,7 +1448,9 @@
       "clean": "Geprüft — keine Probleme",
       "issues_one": "{{count}} Problem ({{critical}} kritisch)",
       "issues_other": "{{count}} Probleme ({{critical}} kritisch)",
-      "open": "Qualitätsbericht öffnen"
+      "open": "Qualitätsbericht öffnen",
+      "stale": "Vor deiner Bearbeitung geprüft",
+      "staleTooltip": "Dieses Dokument wurde nach der Prüfung geändert — die Ergebnisse könnten veraltet sein."
     },
     "panel": {
       "resumeTitle": "Qualitätsbericht Lebenslauf",
@@ -1458,6 +1460,9 @@
       "warning": "Warnung",
       "emptyTitle": "Keine Probleme gefunden",
       "emptyDescription": "Dieses Dokument hat jede deterministische Prüfung bestanden.",
+      "staleNotice": "Dieses Dokument wurde bearbeitet, seit dieser Bericht erstellt wurde — die unten aufgeführten Probleme spiegeln möglicherweise nicht mehr den aktuellen Text wider.",
+      "recheck": "Erneut prüfen",
+      "rechecking": "Wird geprüft…",
       "metrics": {
         "title": "Kennzahlen",
         "keywordCoverage": "Schlüsselwort-Abdeckung",

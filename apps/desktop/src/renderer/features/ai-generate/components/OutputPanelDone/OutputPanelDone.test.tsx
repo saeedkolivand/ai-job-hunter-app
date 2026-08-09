@@ -50,6 +50,21 @@ vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'llama3',
 }));
 
+// The quality panel's "Re-check" action calls useValidateContent(), which also
+// reaches for AppClientProvider — stub it. Hoisted + mutable so the dedicated
+// "Re-check" describe block below can control what mutateAsync resolves.
+const validateContentMock = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
+vi.mock('@/services/use-resume-validation', () => ({
+  useValidateContent: () => validateContentMock,
+}));
+
+// The Re-check tests below pass a `jobAd`, which also mounts TrimPanel — it
+// calls useTrimSuggestions() (AppClientProvider) and is out of scope here
+// (its own suite covers it).
+vi.mock('../TrimPanel', () => ({
+  TrimPanel: () => null,
+}));
+
 // Stub useDebouncedCommit so tests don't depend on fake timers.
 // scheduleCommit immediately calls onCommit with the (out, value) pair —
 // simulates instant commit in tests. flush() with no argument is also a no-op
@@ -177,5 +192,116 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
       'data-letter-layout-id',
       'refined'
     );
+  });
+});
+
+describe('OutputPanelDone — quality panel Re-check wiring', () => {
+  const META = {
+    candidateName: 'Ada',
+    jobTitle: 'Engineer',
+    companyName: 'Acme',
+    resumeLanguage: 'en',
+    jobAdLanguage: 'en',
+    mismatch: false,
+    targetLanguage: 'en',
+    topRequirements: ['rust'],
+  };
+  const STALE_REPORT = {
+    schemaVersion: 1 as const,
+    pipeline: 'fast' as const,
+    generatedAt: 1,
+    resume: {
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: null,
+        topRequirementHits: 0,
+        duplicateRatio: 0,
+        rolesSource: 0,
+        rolesOutput: 0,
+      },
+    },
+    // Mismatches RAW's hash on purpose — the badge renders stale, so the
+    // panel's Re-check button is reachable.
+    sourceTextHash: { resume: -1 },
+  };
+
+  it('re-validates the current text and hands the merged report to onReportChange', async () => {
+    const freshPayload = {
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: 90,
+        topRequirementHits: 1,
+        duplicateRatio: 0,
+        rolesSource: 1,
+        rolesOutput: 1,
+      },
+    };
+    validateContentMock.mutateAsync = vi.fn().mockResolvedValue(freshPayload);
+    validateContentMock.isPending = false;
+    const onReportChange = vi.fn();
+    const user = userEvent.setup();
+
+    renderPanel({
+      report: STALE_REPORT,
+      onReportChange,
+      meta: META,
+      sourceResume: 'source resume text',
+      jobAd: 'the job ad',
+    });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    expect(validateContentMock.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generated: RAW,
+        source: 'source resume text',
+        jobAd: 'the job ad',
+        topRequirements: ['rust'],
+        targetLanguage: 'en',
+        docKind: 'resume',
+      })
+    );
+    expect(onReportChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resume: freshPayload,
+        sourceTextHash: { resume: expect.any(Number) },
+      })
+    );
+  });
+
+  it('leaves the report untouched when validation fails (best-effort)', async () => {
+    validateContentMock.mutateAsync = vi.fn().mockRejectedValue(new Error('boom'));
+    validateContentMock.isPending = false;
+    const onReportChange = vi.fn();
+    const user = userEvent.setup();
+
+    renderPanel({
+      report: STALE_REPORT,
+      onReportChange,
+      meta: META,
+      sourceResume: 'source resume text',
+      jobAd: 'the job ad',
+    });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    expect(onReportChange).not.toHaveBeenCalled();
+  });
+
+  it('hides the Re-check action when onReportChange is not wired', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      report: STALE_REPORT,
+      meta: META,
+      sourceResume: 'source resume text',
+      jobAd: 'the job ad',
+    });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    expect(screen.queryByRole('button', { name: /re-check/i })).toBeNull();
   });
 });

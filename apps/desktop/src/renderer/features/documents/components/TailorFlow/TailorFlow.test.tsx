@@ -850,6 +850,36 @@ describe('TailorFlow — cold-entry hydration', () => {
     });
     expect(genMock.hydrate).not.toHaveBeenCalled();
   });
+
+  it('parses a real seeded qualityReport (incl. sourceTextHash) into hydrate', () => {
+    const qualityReport = JSON.stringify({
+      schemaVersion: 1,
+      pipeline: 'fast',
+      generatedAt: 42,
+      resume: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: 80,
+          topRequirementHits: 1,
+          duplicateRatio: 0,
+          rolesSource: 1,
+          rolesOutput: 1,
+        },
+      },
+      sourceTextHash: { resume: 12345 },
+    });
+    renderFlow({ seedGeneration: { ...SAVED_GENERATION, qualityReport } });
+
+    expect(genMock.hydrate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        report: expect.objectContaining({
+          generatedAt: 42,
+          sourceTextHash: { resume: 12345 },
+        }),
+      })
+    );
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

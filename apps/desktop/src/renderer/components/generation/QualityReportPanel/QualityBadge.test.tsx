@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
 
-import type { QualityReport } from '@/lib/generate';
+import { hashText, type QualityReport } from '@/lib/generate';
 
 import { QualityBadge } from './QualityBadge';
 
@@ -75,5 +75,68 @@ describe('QualityBadge', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     await user.click(screen.getByRole('button'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+describe('QualityBadge — staleness', () => {
+  it('stays in the clean state when currentText matches the validated hash', () => {
+    render(
+      <QualityBadge
+        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('same text') } })}
+        docKind="resume"
+        currentText="same text"
+      />
+    );
+    expect(screen.getByRole('button', { name: /checked/i })).toBeInTheDocument();
+  });
+
+  it('switches to the stale state — never the green clean state — once the text diverges', () => {
+    render(
+      <QualityBadge
+        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('original text') } })}
+        docKind="resume"
+        currentText="edited text"
+      />
+    );
+    const button = screen.getByRole('button');
+    expect(button.textContent).toMatch(/checked before your edits/i);
+    expect(button.textContent).not.toMatch(/no issues/i);
+  });
+
+  it('also switches to the stale state for a report WITH issues on diverged text', () => {
+    render(
+      <QualityBadge
+        report={report({
+          resume: WITH_ISSUES,
+          sourceTextHash: { resume: hashText('original text') },
+        })}
+        docKind="resume"
+        currentText="edited text"
+      />
+    );
+    expect(screen.getByRole('button').textContent).toMatch(/checked before your edits/i);
+  });
+
+  it('never flags staleness for a legacy report with no sourceTextHash', () => {
+    render(
+      <QualityBadge report={report({ resume: CLEAN })} docKind="resume" currentText="anything" />
+    );
+    expect(screen.getByRole('button', { name: /checked/i })).toBeInTheDocument();
+  });
+
+  it("forwards onRecheck/rechecking to the panel's Re-check action", async () => {
+    const user = userEvent.setup();
+    const onRecheck = vi.fn();
+    render(
+      <QualityBadge
+        report={report({ resume: CLEAN, sourceTextHash: { resume: hashText('original') } })}
+        docKind="resume"
+        currentText="edited"
+        onRecheck={onRecheck}
+      />
+    );
+    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+    expect(onRecheck).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-import { AlertOctagon, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle2, History, RefreshCw, X } from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
@@ -15,6 +15,14 @@ export interface QualityReportPanelProps {
   report: ContentReportPayload | null | undefined;
   /** Which document `report` describes — drives the modal title. */
   docKind: 'resume' | 'coverLetter';
+  /** True when the document has changed since this report was generated —
+   *  shows a small notice; the issues below still describe an EARLIER version
+   *  of the text. */
+  stale?: boolean;
+  /** Re-run validation against the current text — clears staleness on success.
+   *  Omit to hide the action. */
+  onRecheck?: () => void;
+  rechecking?: boolean;
 }
 
 /** Sentinel grouping key for document-wide findings (`issue.section === null`) —
@@ -48,7 +56,15 @@ function groupBySection(issues: ContentIssue[]): [SectionKey, ContentIssue[]][] 
  * check this build predates) falls back to `quality.fallback` rather than
  * ever rendering a raw i18n key.
  */
-export function QualityReportPanel({ open, onClose, report, docKind }: QualityReportPanelProps) {
+export function QualityReportPanel({
+  open,
+  onClose,
+  report,
+  docKind,
+  stale,
+  onRecheck,
+  rechecking,
+}: QualityReportPanelProps) {
   const { t, i18n } = useTranslation();
   const titleId = 'quality-report-title';
 
@@ -87,6 +103,27 @@ export function QualityReportPanel({ open, onClose, report, docKind }: QualityRe
       }
     >
       <div className="space-y-5 px-5 py-4">
+        {stale && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-400/20 bg-blue-400/5 px-3 py-2 text-[11px] text-blue-300/90">
+            <span className="flex items-center gap-1.5">
+              <History size={12} className="shrink-0" />
+              {t('quality.panel.staleNotice')}
+            </span>
+            {onRecheck && (
+              <Button
+                type="button"
+                variant="info"
+                size="sm"
+                onClick={onRecheck}
+                disabled={rechecking}
+                className="shrink-0"
+              >
+                <RefreshCw size={11} className={rechecking ? 'animate-spin' : undefined} />
+                {rechecking ? t('quality.panel.rechecking') : t('quality.panel.recheck')}
+              </Button>
+            )}
+          </div>
+        )}
         {groups.length === 0 ? (
           <EmptyState
             icon={CheckCircle2}

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
 
@@ -127,5 +128,55 @@ describe('QualityReportPanel', () => {
 
     rerender(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="coverLetter" />);
     expect(screen.getByRole('heading', { level: 2 }).textContent).toMatch(/cover letter/i);
+  });
+});
+
+describe('QualityReportPanel — staleness notice + re-check', () => {
+  it('shows no notice when not stale', () => {
+    render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="resume" />);
+    expect(screen.queryByText(/edited since this report/i)).toBeNull();
+  });
+
+  it('shows a small notice when stale', () => {
+    render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="resume" stale />);
+    expect(screen.getByText(/edited since this report/i)).toBeInTheDocument();
+  });
+
+  it('renders no Re-check button when onRecheck is omitted, even while stale', () => {
+    render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="resume" stale />);
+    expect(screen.queryByRole('button', { name: /re-check/i })).toBeNull();
+  });
+
+  it('calls onRecheck when the Re-check button is clicked', async () => {
+    const user = userEvent.setup();
+    const onRecheck = vi.fn();
+    render(
+      <QualityReportPanel
+        open
+        onClose={vi.fn()}
+        report={REPORT}
+        docKind="resume"
+        stale
+        onRecheck={onRecheck}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+    expect(onRecheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the Re-check button and shows the checking label while rechecking', () => {
+    render(
+      <QualityReportPanel
+        open
+        onClose={vi.fn()}
+        report={REPORT}
+        docKind="resume"
+        stale
+        onRecheck={vi.fn()}
+        rechecking
+      />
+    );
+    const button = screen.getByRole('button', { name: /checking/i });
+    expect(button).toBeDisabled();
   });
 });

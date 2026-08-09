@@ -240,6 +240,7 @@ export function GenerationOutput({
             <QualityBadge
               report={report}
               docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
+              currentText={output}
               className="mr-1"
             />
           )}
