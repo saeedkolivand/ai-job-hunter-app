@@ -21,15 +21,30 @@ export interface QualityRecheckParams {
   jobAd: string | undefined;
   /** Which document the badge is showing — the one Re-check re-validates. */
   docKind: 'resume' | 'coverLetter';
-  /** That document's CURRENT (possibly hand-edited) text. */
-  currentText: string;
   /** Writes the merged wrapper back to session state. Omit to disable the
    *  action entirely (the returned `recheck` is then `undefined`). */
   onReportChange?: (report: QualityReport) => void;
-  /** Both documents' current session text — persisted alongside the report so
-   *  the stored text is the text the fresh hash describes. */
+  /**
+   * Both documents' CURRENT session text. `docKind` selects which of the two is
+   * the text Re-check validates (they are the same two strings the surface
+   * renders, so the validated text can never drift from the displayed one), and
+   * both are persisted alongside the report so the stored text is the text the
+   * fresh hash describes.
+   */
   resumeText: string;
   coverLetterText: string;
+  /**
+   * `true` while THIS surface has a generation run in flight. Every transition
+   * to `true` is a new run and ends the previous one's ownership — see the
+   * epoch guard below.
+   *
+   * MUST be read from the component that OWNS the run state and stays mounted
+   * across it (`AIGeneratePage`'s `isGenerating`, the tailor session's
+   * `generating`), never from a panel the run unmounts: an unmounting child is
+   * never re-rendered with the new value, so a guard keyed off it there would
+   * be inert exactly when it matters.
+   */
+  generating: boolean;
   /**
    * The saved generation's routing key. Persistence is SKIPPED without it —
    * see `persistReport` below.
@@ -48,6 +63,13 @@ export interface QualityRecheckParams {
  * survives a reopen. Best-effort throughout, exactly like `computeQualityReport`:
  * a validation or save failure leaves the stale badge showing rather than
  * opening a new error path for an optional action.
+ *
+ * **Call it from the surface's state owner, not from a results panel.** The
+ * ownership guarantees below all rest on this hook still re-rendering while a
+ * re-check is in flight; a host that unmounts mid-run (AI Generate's
+ * `OutputPanelDone` is swapped out the moment Regenerate sets stage
+ * `generating`) freezes both the epoch and the live-session reads at their
+ * pre-run values and silently loses every guarantee.
  */
 export function useQualityRecheck({
   report,
@@ -55,26 +77,61 @@ export function useQualityRecheck({
   sourceResume,
   jobAd,
   docKind,
-  currentText,
   onReportChange,
   resumeText,
   coverLetterText,
+  generating,
   jobUrl,
   board,
 }: QualityRecheckParams): { recheck: (() => void) | undefined; rechecking: boolean } {
   const validateContent = useValidateContent();
   const saveAiGeneration = useSaveAiGeneration();
 
-  // Ownership guard: a session Reset (or a regeneration) clears `meta`/
-  // `sourceResume`/`jobAd` while the validate call is still in flight — without
-  // this, the stale result would resurrect a report into the freshly-cleared
-  // session, or land on a document that has since been replaced. Bumped
-  // whenever those identity-defining inputs change; mirrors the
-  // AbortController ownership check `useGeneration`'s persist() uses.
+  const activeText = docKind === 'resume' ? resumeText : coverLetterText;
+
+  /**
+   * Ownership epoch. A re-check result belongs to ONE run of ONE document;
+   * anything that starts a new run, or replaces the documents under it, has to
+   * make an in-flight result unusable instead of letting it write back. Two
+   * independent bumps, because neither subsumes the other:
+   *
+   * 1. **A new run started** — `generating` went false → true. This is the only
+   *    thing that catches Regenerate: both `handleGenerate` (AI Generate) and
+   *    `runTailor` (tailor flow) re-run with the SAME `meta`/`sourceResume`/
+   *    `jobAd` values the user already had, so an identity-keyed guard alone
+   *    never fires for them. Regenerate is also the worst case to miss: it
+   *    clears the outputs and re-saves them, so a late merge would resurrect a
+   *    report for text the user can no longer see, and a late `persistReport`
+   *    would write the SUPERSEDED texts over the fresh ones (the save is a
+   *    merge-upsert that takes any non-blank incoming text — it has no notion
+   *    of which write is newer).
+   * 2. **The inputs were replaced** — a session Reset clears `meta`/
+   *    `sourceResume`/`jobAd` without ever setting `generating`.
+   */
   const epochRef = useRef(0);
   useEffect(() => {
     epochRef.current += 1;
   }, [meta, sourceResume, jobAd]);
+  const wasGeneratingRef = useRef(generating);
+  useEffect(() => {
+    if (generating && !wasGeneratingRef.current) epochRef.current += 1;
+    wasGeneratingRef.current = generating;
+  }, [generating]);
+
+  /**
+   * Live view of the session, refreshed on every commit. The post-await half of
+   * `handleRecheck` reads THESE, never its own render-time captures:
+   *
+   * - the base `report` must be the one on screen when the result lands, or two
+   *   re-checks of different documents overwrite each other's slot (the second
+   *   to resolve would merge onto a base that predates the first);
+   * - the two texts must be the live ones, so what gets persisted is what the
+   *   fresh hash actually describes.
+   */
+  const liveRef = useRef({ report, resumeText, coverLetterText });
+  useEffect(() => {
+    liveRef.current = { report, resumeText, coverLetterText };
+  }, [report, resumeText, coverLetterText]);
 
   /**
    * Persist the merged wrapper WITHOUT disturbing anything else on the record.
@@ -84,8 +141,8 @@ export function useQualityRecheck({
    * Rust's `merge_application` picks each incoming field only when it is
    * non-blank (`pick = |inc, ex| if inc.trim().is_empty() { ex } else { inc }`;
    * empty vectors and the blank-language `mismatch` guard behave the same way),
-   * so every field left blank here keeps its stored value. The two texts are
-   * sent at their CURRENT session values — the exact strings the fresh hash was
+   * so every field left blank here keeps its stored value. The two texts come
+   * from the caller at their LIVE values — the exact strings the fresh hash was
    * computed over — so the reopened record can never read as stale by accident.
    *
    * Without a `jobUrl` there is no aggregate to merge onto: `find_by_job_url`
@@ -93,7 +150,7 @@ export function useQualityRecheck({
    * instead of updating the record the user is looking at. That surface keeps
    * the re-check session-only (deliberate) rather than forking the history.
    */
-  const persistReport = (merged: QualityReport) => {
+  const persistReport = (merged: QualityReport, liveResume: string, liveCoverLetter: string) => {
     if (!jobUrl) return;
     saveAiGeneration.mutate(
       {
@@ -109,8 +166,8 @@ export function useQualityRecheck({
         mode: '',
         jobAd: '',
         // Carried: the report, its routing key, and the text it describes.
-        resumeText,
-        coverLetterText,
+        resumeText: liveResume,
+        coverLetterText: liveCoverLetter,
         jobUrl,
         ...(board ? { board } : {}),
         qualityReport: serializeQualityReport(merged),
@@ -127,21 +184,29 @@ export function useQualityRecheck({
   const handleRecheck = async () => {
     if (!sourceResume || !jobAd || !meta || !onReportChange) return;
     const epoch = epochRef.current;
+    const validatedText = activeText;
     try {
       const payload = await validateContent.mutateAsync({
-        generated: currentText,
+        generated: validatedText,
         source: sourceResume,
         jobAd,
         topRequirements: meta.topRequirements,
         targetLanguage: meta.targetLanguage,
         docKind,
       });
-      // The session moved on while this call was in flight — don't resurrect a
-      // report onto whatever replaced it.
+      // A newer run took over, or the inputs were replaced, while this call was
+      // in flight — the result describes a document this surface no longer owns.
       if (epochRef.current !== epoch) return;
-      const merged = mergeRecheckedReport(report ?? null, docKind, payload, currentText);
+      const live = liveRef.current;
+      const liveText = docKind === 'resume' ? live.resumeText : live.coverLetterText;
+      // The same guarantee one level finer: the document changed underneath the
+      // check (an edit landed, a run cleared it), so the fresh hash would
+      // describe text that is no longer there. Drop it — never merge a report
+      // with a hash that disagrees with the document it is attached to.
+      if (liveText !== validatedText) return;
+      const merged = mergeRecheckedReport(live.report ?? null, docKind, payload, validatedText);
       onReportChange(merged);
-      persistReport(merged);
+      persistReport(merged, live.resumeText, live.coverLetterText);
     } catch (err) {
       console.warn('[useQualityRecheck] recheck failed — report left as-is', {
         docKind,

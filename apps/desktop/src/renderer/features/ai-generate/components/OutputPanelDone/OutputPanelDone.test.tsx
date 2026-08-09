@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -48,29 +48,6 @@ vi.mock('@/services/use-contact-profile', () => ({
 // query (task #16) which reaches for AppClientProvider — stub it to a plain model.
 vi.mock('@/components/ui/ModelSelector', () => ({
   useSelectedModel: () => 'llama3',
-}));
-
-// The quality panel's "Re-check" action calls useValidateContent(), which also
-// reaches for AppClientProvider — stub it. Hoisted + mutable so the dedicated
-// "Re-check" describe block below can control what mutateAsync resolves.
-const validateContentMock = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false }));
-vi.mock('@/services/use-resume-validation', () => ({
-  useValidateContent: () => validateContentMock,
-}));
-
-// Persisting a re-checked report goes through the aiGenerations save mutation
-// (the only write path that reaches `quality_report`) — stub it and capture the
-// request so the "doesn't clobber the record" assertions can inspect its shape.
-const saveGenerationMock = vi.hoisted(() => ({ mutate: vi.fn() }));
-vi.mock('@/services/use-ai-generations', () => ({
-  useSaveAiGeneration: () => saveGenerationMock,
-}));
-
-// The Re-check tests below pass a `jobAd`, which also mounts TrimPanel — it
-// calls useTrimSuggestions() (AppClientProvider) and is out of scope here
-// (its own suite covers it).
-vi.mock('../TrimPanel', () => ({
-  TrimPanel: () => null,
 }));
 
 // Stub useDebouncedCommit so tests don't depend on fake timers.
@@ -203,17 +180,12 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
   });
 });
 
+// The re-check BEHAVIOUR (ownership epoch, merge-onto-live-base, persistence)
+// lives in `useQualityRecheck`, which the HOST owns — see
+// `hooks/use-quality-recheck.test.ts`. This panel is unmounted the moment a
+// Regenerate switches the stage, so it must not own that state; all it owes is
+// forwarding the host's action into the quality panel.
 describe('OutputPanelDone — quality panel Re-check wiring', () => {
-  const META = {
-    candidateName: 'Ada',
-    jobTitle: 'Engineer',
-    companyName: 'Acme',
-    resumeLanguage: 'en',
-    jobAdLanguage: 'en',
-    mismatch: false,
-    targetLanguage: 'en',
-    topRequirements: ['rust'],
-  };
   const STALE_REPORT = {
     schemaVersion: 2 as const,
     pipeline: 'fast' as const,
@@ -236,244 +208,23 @@ describe('OutputPanelDone — quality panel Re-check wiring', () => {
     },
   };
 
-  beforeEach(() => saveGenerationMock.mutate.mockClear());
-
-  it('re-validates the current text and hands the merged report to onReportChange', async () => {
-    const freshPayload = {
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: 90,
-        topRequirementHits: 1,
-        duplicateRatio: 0,
-        rolesSource: 1,
-        rolesOutput: 1,
-      },
-    };
-    validateContentMock.mutateAsync = vi.fn().mockResolvedValue(freshPayload);
-    validateContentMock.isPending = false;
-    const onReportChange = vi.fn();
+  it('forwards the panel Re-check action to the host that owns it', async () => {
+    const onRecheck = vi.fn();
     const user = userEvent.setup();
 
-    renderPanel({
-      report: STALE_REPORT,
-      onReportChange,
-      meta: META,
-      sourceResume: 'source resume text',
-      jobAd: 'the job ad',
-    });
+    renderPanel({ report: STALE_REPORT, onRecheck });
 
     await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
     await user.click(screen.getByRole('button', { name: /re-check/i }));
 
-    expect(validateContentMock.mutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        generated: RAW,
-        source: 'source resume text',
-        jobAd: 'the job ad',
-        topRequirements: ['rust'],
-        targetLanguage: 'en',
-        docKind: 'resume',
-      })
-    );
-    expect(onReportChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resume: { report: freshPayload, sourceTextHash: expect.any(Number) },
-      })
-    );
+    expect(onRecheck).toHaveBeenCalledTimes(1);
   });
 
-  // A re-check that only lived in React state was discarded on reopen — the
-  // stale badge came straight back. It must reach the record, and it must NOT
-  // take anything else with it: every other field is sent blank because Rust's
-  // `merge_application` keeps the STORED value for a blank incoming field
-  // (`pick`), while the two texts are sent at their live values so the stored
-  // text stays the text the fresh hash describes.
-  it('persists the merged report onto the record without emptying its texts', async () => {
-    const freshPayload = {
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: 90,
-        topRequirementHits: 1,
-        duplicateRatio: 0,
-        rolesSource: 1,
-        rolesOutput: 1,
-      },
-    };
-    validateContentMock.mutateAsync = vi.fn().mockResolvedValue(freshPayload);
-    validateContentMock.isPending = false;
+  it('hides the Re-check action when the host provides none', async () => {
     const user = userEvent.setup();
-
-    renderPanel({
-      report: STALE_REPORT,
-      onReportChange: vi.fn(),
-      meta: META,
-      sourceResume: 'source resume text',
-      jobAd: 'the job ad',
-      coverOut: 'Dear Team, ...',
-      jobUrl: 'https://acme.com/job/42',
-      board: 'linkedin',
-    });
-
-    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
-    await user.click(screen.getByRole('button', { name: /re-check/i }));
-
-    expect(saveGenerationMock.mutate).toHaveBeenCalledTimes(1);
-    const request = saveGenerationMock.mutate.mock.calls[0]?.[0];
-    // The merged wrapper travels as the serialized wrapper, résumé slot fresh.
-    expect(JSON.parse(String(request.qualityReport))).toEqual(
-      expect.objectContaining({
-        schemaVersion: 2,
-        resume: { report: freshPayload, sourceTextHash: expect.any(Number) },
-      })
-    );
-    // Texts carried at their live values — never emptied.
-    expect(request.resumeText).toBe(RAW);
-    expect(request.coverLetterText).toBe('Dear Team, ...');
-    // Routing key present (without it the save would insert a duplicate row).
-    expect(request.jobUrl).toBe('https://acme.com/job/42');
-    // Everything else deliberately blank so the merge keeps the stored value.
-    expect(request.candidateName).toBe('');
-    expect(request.jobAd).toBe('');
-    expect(request.mode).toBe('');
-    expect(request.topRequirements).toEqual([]);
-  });
-
-  it('keeps the re-check session-only when the record has no url to merge onto', async () => {
-    validateContentMock.mutateAsync = vi.fn().mockResolvedValue({
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: 90,
-        topRequirementHits: 1,
-        duplicateRatio: 0,
-        rolesSource: 1,
-        rolesOutput: 1,
-      },
-    });
-    validateContentMock.isPending = false;
-    const onReportChange = vi.fn();
-    const user = userEvent.setup();
-
-    renderPanel({
-      report: STALE_REPORT,
-      onReportChange,
-      meta: META,
-      sourceResume: 'source resume text',
-      jobAd: 'the job ad',
-    });
-
-    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
-    await user.click(screen.getByRole('button', { name: /re-check/i }));
-
-    // The session still updates — only the write is skipped, because a
-    // url-less save would fork the history into a second row.
-    expect(onReportChange).toHaveBeenCalled();
-    expect(saveGenerationMock.mutate).not.toHaveBeenCalled();
-  });
-
-  it('leaves the report untouched when validation fails (best-effort)', async () => {
-    validateContentMock.mutateAsync = vi.fn().mockRejectedValue(new Error('boom'));
-    validateContentMock.isPending = false;
-    const onReportChange = vi.fn();
-    const user = userEvent.setup();
-
-    renderPanel({
-      report: STALE_REPORT,
-      onReportChange,
-      meta: META,
-      sourceResume: 'source resume text',
-      jobAd: 'the job ad',
-    });
-
-    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
-    await user.click(screen.getByRole('button', { name: /re-check/i }));
-
-    expect(onReportChange).not.toHaveBeenCalled();
-  });
-
-  it('hides the Re-check action when onReportChange is not wired', async () => {
-    const user = userEvent.setup();
-    renderPanel({
-      report: STALE_REPORT,
-      meta: META,
-      sourceResume: 'source resume text',
-      jobAd: 'the job ad',
-    });
+    renderPanel({ report: STALE_REPORT });
 
     await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
     expect(screen.queryByRole('button', { name: /re-check/i })).toBeNull();
-  });
-
-  it('a session reset while Re-check is still in flight never resurrects a report into the cleared session', async () => {
-    let resolveValidate!: (v: unknown) => void;
-    validateContentMock.mutateAsync = vi.fn(
-      () => new Promise((resolve) => (resolveValidate = resolve))
-    );
-    validateContentMock.isPending = false;
-    const onReportChange = vi.fn();
-    const user = userEvent.setup();
-
-    const props = {
-      resumeOut: RAW,
-      coverOut: '',
-      activeOut: 'resume' as const,
-      mode: 'ats',
-      templateId: 'classic' as const,
-      atsMode: false,
-      onActiveOutChange: vi.fn(),
-      onCopy: vi.fn(),
-      onExport: vi.fn(),
-      onOutputChange: vi.fn(),
-      onRegenerate: vi.fn(),
-      copied: false,
-    };
-
-    const { rerender } = render(
-      <OutputPanelDone
-        {...props}
-        report={STALE_REPORT}
-        onReportChange={onReportChange}
-        meta={META}
-        sourceResume="source resume text"
-        jobAd="the job ad"
-      />
-    );
-
-    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
-    await user.click(screen.getByRole('button', { name: /re-check/i }));
-
-    // A session Reset happens while the validate call is still in flight —
-    // the parent re-renders this panel with its cleared/default props
-    // (mirrors what AIGeneratePage's reset() produces).
-    rerender(
-      <OutputPanelDone
-        {...props}
-        resumeOut=""
-        report={null}
-        onReportChange={onReportChange}
-        meta={null}
-        sourceResume=""
-        jobAd=""
-      />
-    );
-
-    resolveValidate({
-      ok: true,
-      issues: [],
-      metrics: {
-        keywordCoverage: 90,
-        topRequirementHits: 1,
-        duplicateRatio: 0,
-        rolesSource: 1,
-        rolesOutput: 1,
-      },
-    });
-    // Flush the resolved promise's continuation (the post-await half of
-    // handleRecheck) so a would-be call to onReportChange has had its chance.
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(onReportChange).not.toHaveBeenCalled();
   });
 });

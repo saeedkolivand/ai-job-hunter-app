@@ -144,16 +144,21 @@ export function useTailorGeneration({
   // it a hand-edited document was stuck on "checked before your edits" forever.
   // The merged wrapper is written back to the session AND persisted onto this
   // job's record, so reopening shows the cleared badge, not the stale one.
+  //
+  // `generating` comes straight off the session (`runTailor` sets it before it
+  // resets the outputs), and this hook lives in the flow's own host, which stays
+  // mounted across a run — so a Regenerate always invalidates a re-check that is
+  // still in flight.
   const { recheck, rechecking } = useQualityRecheck({
     report,
     meta,
     sourceResume,
     jobAd: jobDesc,
     docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
-    currentText: output,
     onReportChange: (next) => setReportInStore(contextId, next),
     resumeText: resumeOut,
     coverLetterText: coverOut,
+    generating,
     jobUrl,
     board,
   });

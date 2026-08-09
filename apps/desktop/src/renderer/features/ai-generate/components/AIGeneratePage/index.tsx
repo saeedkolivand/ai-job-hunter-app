@@ -16,6 +16,7 @@ import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelId
 import { useFileUpload } from '@/features/ai-generate/hooks/useFileUpload';
 import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
+import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import { useResearchCompanyDefault } from '@/hooks/use-research-company-default';
 import {
   buildFilename,
@@ -160,6 +161,26 @@ export function AIGeneratePage() {
     jobUrl,
     board
   );
+
+  // Quality panel "Re-check" for the active document — owned HERE, not in
+  // OutputPanelDone: this page holds the run state (`isGenerating`) and the
+  // outputs, and it stays mounted across a run, while the done panel is swapped
+  // out the moment Regenerate sets stage `generating` (an exiting
+  // AnimatePresence child is never re-rendered with the new props, so a guard
+  // living down there would be frozen at its pre-Regenerate values).
+  const { recheck, rechecking } = useQualityRecheck({
+    report,
+    meta,
+    sourceResume: resume,
+    jobAd,
+    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
+    onReportChange: setReport,
+    resumeText: resumeOut,
+    coverLetterText: coverOut,
+    generating: isGenerating,
+    jobUrl,
+    board,
+  });
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
@@ -358,11 +379,10 @@ export function AIGeneratePage() {
                 activeOut={activeOut}
                 meta={meta}
                 report={report}
-                onReportChange={setReport}
+                onRecheck={recheck}
+                rechecking={rechecking}
                 sourceResume={resume}
                 jobAd={jobAd}
-                jobUrl={jobUrl}
-                board={board}
                 mode={mode}
                 templateId={templateId}
                 atsMode={atsMode}

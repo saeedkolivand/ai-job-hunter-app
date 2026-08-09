@@ -11,7 +11,6 @@ import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
 import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
-import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import {
   buildFilename,
   type GenerationMeta,
@@ -33,9 +32,15 @@ interface OutputPanelDoneProps {
   meta: GenerationMeta | null;
   /** Deterministic content-quality report for the current session, if any. */
   report?: QualityReport | null;
-  /** Receives the merged report after a panel "Re-check" — omit to hide the
-   *  action (the badge/panel still render, just without it). */
-  onReportChange?: (report: QualityReport | null) => void;
+  /**
+   * Re-runs validation on the active document's current text. Owned by the HOST
+   * (`useQualityRecheck` in AIGeneratePage), not by this panel: the panel is
+   * unmounted the moment a Regenerate switches the stage, which would freeze the
+   * hook's ownership epoch and its live-session reads mid-flight. Omit to hide
+   * the panel's "Re-check" action (the badge/report still render).
+   */
+  onRecheck?: () => void;
+  rechecking?: boolean;
   mode: string;
   templateId: TemplateId;
   /** ATS single-column override — must match the export so the preview is faithful. */
@@ -62,11 +67,6 @@ interface OutputPanelDoneProps {
   jobAd?: string;
   /** Which document is still streaming during progressive reveal (#23), or null. */
   generatingDoc?: 'resume' | 'cover' | null;
-  /** URL-import provenance (ADR-031) — the saved record's routing key. Lets a
-   *  panel "Re-check" persist its merged report onto that record; absent (a
-   *  pasted/uploaded ad) keeps the re-check session-only. */
-  jobUrl?: string;
-  board?: string;
 }
 
 export function OutputPanelDone({
@@ -75,7 +75,8 @@ export function OutputPanelDone({
   activeOut,
   meta,
   report,
-  onReportChange,
+  onRecheck,
+  rechecking,
   mode,
   templateId,
   atsMode,
@@ -93,8 +94,6 @@ export function OutputPanelDone({
   generatingDoc = null,
   sourceResume,
   jobAd,
-  jobUrl,
-  board,
 }: OutputPanelDoneProps) {
   const { t } = useTranslation();
   const [exportOpen, setExportOpen] = useState(false);
@@ -208,23 +207,6 @@ export function OutputPanelDone({
   const isPending = activeOut === 'resume' ? pendingResume : pendingCover;
   const currentMeta = meta;
 
-  // "Re-check" (quality panel action): re-validate the ACTIVE doc's current
-  // text, merge the fresh slot into the session's report — this is what clears
-  // staleness — and persist it so a reopen doesn't show the stale badge again.
-  const { recheck, rechecking } = useQualityRecheck({
-    report,
-    meta,
-    sourceResume,
-    jobAd,
-    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
-    currentText: currentOutput,
-    onReportChange,
-    resumeText: resumeOut,
-    coverLetterText: coverOut,
-    jobUrl,
-    board,
-  });
-
   return (
     <motion.div
       key="done"
@@ -268,7 +250,7 @@ export function OutputPanelDone({
             report={report}
             docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
             currentText={currentOutput}
-            onRecheck={recheck}
+            onRecheck={onRecheck}
             rechecking={rechecking}
           />
           <Button
