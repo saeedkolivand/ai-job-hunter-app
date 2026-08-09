@@ -4,10 +4,15 @@
 //! Cloud providers occasionally return transient 429 (rate limit) or 5xx
 //! (service) errors that succeed on a quick retry. This module retries those —
 //! and transport-level send failures — a small, bounded number of times with
-//! exponential backoff, honoring a `Retry-After` header when present. Streaming
-//! is intentionally **not** retried (a mid-stream restart would duplicate already
-//! emitted deltas), so this is only wired into the one-shot `complete`/`embed`
-//! calls.
+//! exponential backoff, honoring a `Retry-After` header when present.
+//!
+//! A stream is never restarted MID-stream (that would duplicate already-emitted
+//! deltas), but the initial `send()` on a streaming request is retried like any
+//! other: the response STATUS arrives before a single delta has been read, so a
+//! 429/5xx there is exactly the transient one-shot failure this module exists
+//! for. Treating it as terminal is what turned a provider rate-limit into a lost
+//! nine-minute generation in a reported session. See [`send_stream_with_retry`],
+//! which is the same loop with a deadline the caller can afford to spend.
 //!
 //! The retry *decision* ([`should_retry`], [`backoff_delay`]) is pure and
 //! unit-tested; [`send_with_retry`] is the thin async wrapper that rebuilds and
@@ -26,6 +31,13 @@ const BASE_DELAY_MS: u64 = 500;
 /// a one-shot completion shouldn't stall the UI for minutes.
 const MAX_DELAY_MS: u64 = 8_000;
 
+/// The same ceiling for a STREAM's initial send. Higher than [`MAX_DELAY_MS`]
+/// because the trade is different: the alternative to waiting is discarding a
+/// generation the user has already been waiting minutes for, and the renderer
+/// shows the job as running throughout. Still bounded, and still capped by the
+/// request's own `stream_deadline`.
+const MAX_STREAM_DELAY_MS: u64 = 30_000;
+
 /// Whether a response status is worth retrying. 429 (rate limit / quota) and 5xx
 /// (service errors) are transient; everything else (success, 4xx client errors)
 /// is terminal and returned to the caller as-is.
@@ -42,11 +54,22 @@ pub fn should_retry(attempt: u32, transient: bool) -> bool {
     transient && attempt < MAX_ATTEMPTS
 }
 
+/// Backoff delay at the default (one-shot) ceiling. Test-only entry point for
+/// the pure schedule — production always goes through [`backoff_delay_capped`],
+/// since the streaming path needs a different ceiling.
+///
 /// Backoff delay before the *next* attempt. Prefers the server's `Retry-After`
 /// (seconds) when present and sane, otherwise an exponential schedule. Always
 /// clamped to `[0, MAX_DELAY_MS]`. `attempt` is the 1-based number of the attempt
 /// that just failed.
+#[cfg(test)]
 pub fn backoff_delay(attempt: u32, retry_after_secs: Option<u64>) -> Duration {
+    backoff_delay_capped(attempt, retry_after_secs, MAX_DELAY_MS)
+}
+
+/// [`backoff_delay`] with an explicit ceiling, so the streaming path can afford
+/// a longer wait than a one-shot completion. Pure + unit-tested.
+pub fn backoff_delay_capped(attempt: u32, retry_after_secs: Option<u64>, max_ms: u64) -> Duration {
     let ms = match retry_after_secs {
         Some(secs) => secs.saturating_mul(1000),
         None => {
@@ -55,7 +78,7 @@ pub fn backoff_delay(attempt: u32, retry_after_secs: Option<u64>) -> Duration {
             BASE_DELAY_MS.saturating_mul(factor)
         }
     };
-    Duration::from_millis(ms.min(MAX_DELAY_MS))
+    Duration::from_millis(ms.min(max_ms))
 }
 
 /// Parse a `Retry-After` header value (RFC 7231) as whole seconds. Only the
@@ -74,7 +97,28 @@ fn parse_retry_after(resp: &Response) -> Option<u64> {
 /// (since `send` consumes it). Returns the first success, the first terminal
 /// (non-retryable) response, or — when every attempt was transient — the last
 /// outcome (response or transport error). Never retries beyond [`MAX_ATTEMPTS`].
-pub async fn send_with_retry<F>(mut build: F) -> reqwest::Result<Response>
+pub async fn send_with_retry<F>(build: F) -> reqwest::Result<Response>
+where
+    F: FnMut() -> RequestBuilder,
+{
+    send_with_retry_capped(build, MAX_DELAY_MS).await
+}
+
+/// [`send_with_retry`] for a STREAM's initial send.
+///
+/// Identical loop — the only difference is the backoff ceiling
+/// ([`MAX_STREAM_DELAY_MS`]). Safe on the streaming path because this covers
+/// only the request/response handshake: the response STATUS is known before any
+/// delta has been read, so a retry here re-sends a request that emitted nothing.
+/// Nothing restarts a stream that has already produced output.
+pub async fn send_stream_with_retry<F>(build: F) -> reqwest::Result<Response>
+where
+    F: FnMut() -> RequestBuilder,
+{
+    send_with_retry_capped(build, MAX_STREAM_DELAY_MS).await
+}
+
+async fn send_with_retry_capped<F>(mut build: F, max_delay_ms: u64) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
@@ -91,8 +135,10 @@ where
             return outcome;
         }
 
-        let delay = backoff_delay(attempt, retry_after);
-        tracing::debug!(
+        let delay = backoff_delay_capped(attempt, retry_after, max_delay_ms);
+        tracing::warn!(
+            // WARN, not DEBUG: a retry means the provider pushed back, which is
+            // the context you want when a generation later fails outright.
             "ai retry: attempt {attempt}/{MAX_ATTEMPTS} transient, backing off {:?}",
             delay
         );
@@ -124,7 +170,7 @@ mod retry_loop_tests {
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{send_with_retry, MAX_ATTEMPTS};
+    use super::{send_stream_with_retry, send_with_retry, MAX_ATTEMPTS};
 
     /// Spin up a wiremock server that serves the given status codes in FIFO order
     /// and drive `send_with_retry` once.  Returns (call_count, is_ok).
@@ -176,6 +222,58 @@ mod retry_loop_tests {
             calls, MAX_ATTEMPTS,
             "loop must stop after exactly MAX_ATTEMPTS ({MAX_ATTEMPTS}) calls; got {calls}"
         );
+    }
+
+    /// [`run_retry`] driven through the STREAMING entry point instead.
+    async fn run_stream_retry(status_codes: Vec<u16>) -> (u32, bool) {
+        let server = MockServer::start().await;
+        for code in &status_codes {
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(*code))
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+        }
+        let url = server.uri();
+        let client = crate::net::http::shared();
+        let call_count = Arc::new(AtomicU32::new(0));
+        let counter = call_count.clone();
+        let result = send_stream_with_retry(|| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            client.get(&url)
+        })
+        .await;
+        (call_count.load(Ordering::SeqCst), result.is_ok())
+    }
+
+    // A stream's INITIAL send is retried like any other request. This used to be
+    // terminal on the reasoning that "a mid-stream restart would duplicate
+    // deltas" — but the response status is known before a single delta has been
+    // read, so there is nothing to duplicate. Treating it as terminal is what
+    // turned one provider 429 into a discarded nine-minute generation.
+    #[tokio::test]
+    async fn stream_handshake_recovers_from_a_transient_429() {
+        let (calls, is_ok) = run_stream_retry(vec![429, 200]).await;
+        assert_eq!(
+            calls, 2,
+            "a 429 on the stream handshake must be retried; got {calls} calls"
+        );
+        assert!(is_ok, "the eventual 200 must be returned as Ok");
+    }
+
+    #[tokio::test]
+    async fn stream_handshake_stays_bounded_on_a_persistent_429() {
+        // Bounded exactly like the one-shot path — a rate-limited account must
+        // not turn into an unbounded retry storm.
+        let (calls, _) = run_stream_retry(vec![429u16; MAX_ATTEMPTS as usize]).await;
+        assert_eq!(calls, MAX_ATTEMPTS, "stream retries must stop at the budget");
+    }
+
+    #[tokio::test]
+    async fn stream_handshake_does_not_retry_a_terminal_4xx() {
+        // e.g. a bad model name: retrying cannot help and would triple the wait.
+        let (calls, _) = run_stream_retry(vec![400]).await;
+        assert_eq!(calls, 1, "a terminal 400 must not be retried");
     }
 
     #[tokio::test]
