@@ -117,7 +117,7 @@ function setup(target: Target, provenance?: { jobUrl?: string; board?: string })
       provenance?.board
     )
   );
-  return { handleGenerate: result.current.handleGenerate, m };
+  return { handleGenerate: result.current.handleGenerate, m, abortControllerRef };
 }
 
 const stageCalls = (m: ReturnType<typeof setup>['m']) =>
@@ -280,5 +280,75 @@ describe('useGeneration — quality report wiring', () => {
     expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
       expect.objectContaining({ qualityReport: expect.anything() })
     );
+  });
+});
+
+describe('useGeneration — stale-persist guard (Regenerate/reset during validation)', () => {
+  const STALE_REPORT = {
+    schemaVersion: 1 as const,
+    pipeline: 'fast' as const,
+    generatedAt: 1,
+    resume: {
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: null,
+        topRequirementHits: 0,
+        duplicateRatio: 0,
+        rolesSource: 0,
+        rolesOutput: 0,
+      },
+    },
+  };
+
+  it('a Regenerate click during validation never persists the superseded run', async () => {
+    // First call to computeQualityReport (the run about to be superseded) hangs
+    // until we resolve it late; every later call resolves immediately.
+    let resolveStale!: (r: typeof STALE_REPORT) => void;
+    vi.mocked(computeQualityReport).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveStale = resolve))
+    );
+    const { handleGenerate, m } = setup('resume');
+
+    const first = handleGenerate();
+    await vi.waitFor(() => expect(computeQualityReport).toHaveBeenCalledTimes(1));
+
+    // Regenerate clicked while the first run is still validating.
+    const second = handleGenerate();
+    await second;
+
+    // The stale run's validation finally resolves — must be a no-op.
+    resolveStale(STALE_REPORT);
+    await first;
+
+    // Only the second run's outcome (null report, one save) is ever visible.
+    expect(m.setReport).toHaveBeenCalledTimes(1);
+    expect(m.setReport).toHaveBeenCalledWith(null);
+    expect(m.saveAiGeneration.mutate).toHaveBeenCalledTimes(1);
+    expect(m.notify.success).toHaveBeenCalledTimes(1);
+  });
+
+  it('an abort during validation (Reset) skips setReport/save for that run', async () => {
+    let resolveStale!: (r: typeof STALE_REPORT) => void;
+    vi.mocked(computeQualityReport).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveStale = resolve))
+    );
+    const { handleGenerate, m, abortControllerRef } = setup('resume');
+
+    const run = handleGenerate();
+    await vi.waitFor(() => expect(computeQualityReport).toHaveBeenCalledTimes(1));
+
+    // Simulate what AIGeneratePage's reset() now does unconditionally.
+    abortControllerRef.current?.abort();
+
+    resolveStale(STALE_REPORT);
+    await run;
+
+    // The aborted run's persist() bails before setReport/save, and its finally()
+    // owns the ref (nothing else replaced it) so it clears it back to null.
+    expect(m.setReport).not.toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalled();
+    expect(m.notify.success).not.toHaveBeenCalled();
+    expect(abortControllerRef.current).toBeNull();
   });
 });

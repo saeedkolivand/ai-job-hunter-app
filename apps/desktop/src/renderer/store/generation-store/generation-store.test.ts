@@ -198,6 +198,41 @@ describe('generation store — quality report', () => {
     expect(useGenerationStore.getState().getSession(id).error).toBeNull();
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ report: null }));
   });
+
+  it('a cancel mid-validation never resurrects the reset session or fires onComplete', async () => {
+    // Deferred validation call — lets us cancel() BETWEEN generation finishing
+    // and the report landing, the exact window the reproduced bug lived in.
+    let resolveReport!: (r: null) => void;
+    // Prior tests share this module-level mock, so its call count is cumulative —
+    // clear it so the waitFor below observes only THIS run's call.
+    vi.mocked(computeQualityReport).mockClear();
+    vi.mocked(computeQualityReport).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveReport = resolve))
+    );
+    const onComplete = vi.fn();
+    const id = 'cancel-race';
+    const run = useGenerationStore
+      .getState()
+      .runTailor({ contextId: id, target: 'resume', onComplete, ...base });
+
+    await vi.waitFor(() => expect(computeQualityReport).toHaveBeenCalledTimes(1));
+    // The session is mid-run (generating) right up to the cancel.
+    expect(useGenerationStore.getState().getSession(id).generating).toBe(true);
+
+    useGenerationStore.getState().cancel(id);
+    // cancel() merges EMPTY_SESSION's fields into the existing session object
+    // (patch never deletes the key), so this is value-equal, not the same
+    // reference as the module's stable EMPTY_SESSION constant.
+    expect(useGenerationStore.getState().getSession(id)).toEqual(EMPTY_SESSION);
+
+    // Validation resolves LATE, after the cancel.
+    resolveReport(null);
+    await run;
+
+    // The cancelled run must never resurrect the session or persist anything.
+    expect(useGenerationStore.getState().getSession(id)).toEqual(EMPTY_SESSION);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
 });
 
 describe('generation store — hydrate (cold-entry seed)', () => {

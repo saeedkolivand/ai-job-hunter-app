@@ -186,9 +186,10 @@ export function AIGeneratePage() {
   };
 
   const reset = () => {
-    if (abortControllerRef.current && stage === 'generating') {
-      abortControllerRef.current.abort();
-    }
+    // Abort whenever a run is in flight — including the post-generation
+    // validation/save window (stage is already 'done' there, not 'generating'),
+    // so Reset can't leave a stale save persisting after the user left.
+    abortControllerRef.current?.abort();
     stopStageRotation();
     setError(null);
     setStreamBuffer('');
@@ -357,6 +358,7 @@ export function AIGeneratePage() {
                 activeOut={activeOut}
                 meta={meta}
                 report={report}
+                onReportChange={setReport}
                 sourceResume={resume}
                 jobAd={jobAd}
                 mode={mode}

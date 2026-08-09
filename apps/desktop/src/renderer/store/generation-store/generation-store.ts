@@ -299,6 +299,13 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           resumeText,
           coverLetterText,
         });
+        // Ownership guard: `cancel()` aborts this run's controller AND resets the
+        // session synchronously, but the validation call above keeps running past
+        // that point — without this check a cancelled generation would still
+        // resurrect the (now-reset) session with a stale report and fire
+        // `onComplete` (the caller's save), silently persisting + flipping
+        // "Applied" for a run the user cancelled.
+        if (controller.signal.aborted) return;
         patch(id, { report });
 
         // Persist after a clean run only — a cancel/error throws and skips this.
@@ -324,10 +331,15 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           onError?.();
         }
       } finally {
-        controllers.delete(id);
-        // Only flip generating off if THIS run still owns the session (a cancel may have
-        // already reset it, or a newer run may have started).
-        if (get().sessions[id]?.generating) patch(id, { generating: false, phase: 'idle' });
+        // Ownership guard: a cancel followed immediately by a new run for the same
+        // id may already have replaced this run's controller-map entry — only tear
+        // down state this run still owns, never a newer run's controller/session.
+        if (controllers.get(id) === controller) {
+          controllers.delete(id);
+          // Only flip generating off if THIS run still owns the session (a cancel may
+          // have already reset it, or a newer run may have started).
+          if (get().sessions[id]?.generating) patch(id, { generating: false, phase: 'idle' });
+        }
       }
     },
   };

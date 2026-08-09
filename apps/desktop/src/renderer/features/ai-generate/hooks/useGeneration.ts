@@ -103,6 +103,10 @@ export function useGeneration(
     setStage('generating');
     startStageRotation();
 
+    // A prior run may still be persisting (validating) when Regenerate is
+    // clicked again — abort its controller so `persist`'s guard below can tell
+    // its work is stale and skip it, instead of racing this fresh run's save.
+    abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -125,7 +129,14 @@ export function useGeneration(
     // validation is best-effort and can never THROW (`computeQualityReport`
     // degrades failures to `null` internally) — so it can delay this save by at
     // most one fast, local IPC round-trip, never block or fail it.
-    const persist = async (resumeText: string, coverLetterText: string, companyBrief: string) => {
+    // Returns `false` (and skips its own writes) when a NEWER run superseded
+    // this one while validation was in flight (Regenerate/reset) — see the
+    // `abort()` above and `reset()`'s abort in AIGeneratePage.
+    const persist = async (
+      resumeText: string,
+      coverLetterText: string,
+      companyBrief: string
+    ): Promise<boolean> => {
       const report = await computeQualityReport({
         sourceResume: resume,
         jobAd,
@@ -134,6 +145,7 @@ export function useGeneration(
         resumeText,
         coverLetterText,
       });
+      if (controller.signal.aborted) return false;
       setReport(report);
       saveAiGeneration.mutate({
         candidateName: meta.candidateName,
@@ -155,6 +167,7 @@ export function useGeneration(
         ...(board ? { board } : {}),
         ...(report ? { qualityReport: serializeQualityReport(report) } : {}),
       });
+      return true;
     };
 
     const onTok =
@@ -243,7 +256,10 @@ export function useGeneration(
       setStage('done');
       setActiveOut(target === 'cover' ? 'cover' : finalResume ? 'resume' : 'cover');
 
-      await persist(finalResume, finalCover, finalCompanyBrief);
+      const committed = await persist(finalResume, finalCover, finalCompanyBrief);
+      // A newer run superseded this one during validation — its own success
+      // path owns the toast; showing one here would misreport WHICH run finished.
+      if (!committed) return;
       notify.success({
         message:
           target === 'both'
@@ -268,8 +284,9 @@ export function useGeneration(
         // visible (#23: never discard a finished document) and flag the cover.
         setStage('done');
         setActiveOut('resume');
-        await persist(finalResume, '', '');
-        notify.error({ message: t('aiGenerate.toast.coverFailed') });
+        if (await persist(finalResume, '', '')) {
+          notify.error({ message: t('aiGenerate.toast.coverFailed') });
+        }
       } else {
         // Capped, not classed: unlike an export failure (whose reason the Rust
         // side logs as issue codes) a generation failure has no second record
@@ -280,8 +297,14 @@ export function useGeneration(
         notify.error({ message: t('aiGenerate.toast.failed') });
       }
     } finally {
-      setIsGenerating(false);
-      abortControllerRef.current = null;
+      // Ownership guard: a Regenerate/reset click may already have replaced
+      // this run's controller (see the `abort()` above) — only the run that
+      // still owns the ref gets to flip `isGenerating` off / clear it, so a
+      // stale run's cleanup can never stomp on a newer run's in-flight state.
+      if (abortControllerRef.current === controller) {
+        setIsGenerating(false);
+        abortControllerRef.current = null;
+      }
     }
   };
 
