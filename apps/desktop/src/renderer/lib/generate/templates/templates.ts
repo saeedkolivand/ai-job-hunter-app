@@ -19,7 +19,10 @@ export type TemplateId =
   | 'regent'
   | 'aria'
   | 'saffron'
-  | 'cologne-navy';
+  | 'cologne-navy'
+  | 'jake'
+  | 'awesome'
+  | 'deedy';
 
 /**
  * Cover-letter **layout** (arrangement only). Mirrors the Rust `LetterLayout`
@@ -370,6 +373,75 @@ export const TEMPLATES: Record<TemplateId, DocTemplate> = {
     sectionSpacingBefore: 240,
     nameCentered: false,
     sectionAllCaps: false,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Jake — after "Jake's Resume": ultra-minimal single column, centred name, thin ruled headings, compact entry lines */
+  jake: {
+    id: 'jake',
+    name: 'Jake',
+    tier: 'ats',
+    nameColor: '111111',
+    sectionColor: '111111',
+    accentColor: '111111',
+    bodyColor: '222222',
+    dateColor: '555555',
+    emphasisColor: '111111',
+    ruleColor: 'AAAAAA',
+    namePt: 24,
+    sectionPt: 11,
+    bodyPt: 10,
+    marginIn: 0.6,
+    lineSpacingDocx: 240,
+    sectionSpacingBefore: 200,
+    nameCentered: true,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Awesome — after Awesome-CV: thin accent-tinted header band, accent-bar section markers, crimson accent */
+  awesome: {
+    id: 'awesome',
+    name: 'Awesome',
+    tier: 'design',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: 'C41E3A',
+    bodyColor: '222222',
+    dateColor: '6E6E6E',
+    emphasisColor: 'C41E3A',
+    ruleColor: 'C41E3A',
+    namePt: 24,
+    sectionPt: 11,
+    bodyPt: 10.5,
+    marginIn: 0.7,
+    lineSpacingDocx: 264,
+    sectionSpacingBefore: 260,
+    nameCentered: false,
+    sectionAllCaps: true,
+    sectionStyle: 'ruled-bottom',
+  },
+
+  /** Deedy — modern single-column Deedy revision: bold name block with accent surname, cobalt accent */
+  deedy: {
+    id: 'deedy',
+    name: 'Deedy',
+    tier: 'design',
+    nameColor: '1A1A1A',
+    sectionColor: '1A1A1A',
+    accentColor: '1E4FB3',
+    bodyColor: '222222',
+    dateColor: '787878',
+    emphasisColor: '1E4FB3',
+    ruleColor: 'C8C8C8',
+    namePt: 27,
+    sectionPt: 11.5,
+    bodyPt: 10.5,
+    marginIn: 0.75,
+    lineSpacingDocx: 276,
+    sectionSpacingBefore: 320,
+    nameCentered: false,
+    sectionAllCaps: true,
     sectionStyle: 'ruled-bottom',
   },
 };

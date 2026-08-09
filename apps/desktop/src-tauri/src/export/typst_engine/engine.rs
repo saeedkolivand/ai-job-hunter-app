@@ -74,6 +74,12 @@ const SAFFRON_TYP: &str = include_str!("templates/saffron.typ");
 /// Cologne Navy — centred tracked-caps header, navy ruled headings.
 const COLOGNE_NAVY_TYP: &str = include_str!("templates/cologne_navy.typ");
 
+/// Awesome — thin accent-tinted header band, accent-bar section markers.
+const AWESOME_TYP: &str = include_str!("templates/awesome.typ");
+
+/// Deedy — bold name block with accent surname, generous section spacing.
+const DEEDY_TYP: &str = include_str!("templates/deedy.typ");
+
 /// Parametric cover-letter template driven by `data.opts` + `data.style`.
 /// A4 or Letter; themed from the chosen resume template's accent + fonts.
 /// This is the `LetterLayout::Classic` arrangement.
@@ -149,6 +155,10 @@ pub enum TypstTemplate {
     /// Cologne Navy — centred tracked-caps navy header, ruled uppercase headings,
     /// breakable experience entries.
     CologneNavy,
+    /// Awesome — thin accent-tinted header band, accent-bar section markers.
+    Awesome,
+    /// Deedy — bold name block with accent surname, generous section spacing.
+    Deedy,
 }
 
 impl TypstTemplate {
@@ -165,6 +175,8 @@ impl TypstTemplate {
             TypstTemplate::Aria => ARIA_TYP,
             TypstTemplate::Saffron => SAFFRON_TYP,
             TypstTemplate::CologneNavy => COLOGNE_NAVY_TYP,
+            TypstTemplate::Awesome => AWESOME_TYP,
+            TypstTemplate::Deedy => DEEDY_TYP,
         }
     }
 
@@ -180,20 +192,21 @@ impl TypstTemplate {
     }
 
     /// Derive the Typst template from an existing [`Template`] configuration.
-    /// All thirteen live template IDs are handled exhaustively; no fallback needed.
+    /// All sixteen live template IDs are handled exhaustively; no fallback needed.
     pub fn from_template(t: &Template) -> Self {
         match t.id {
             TemplateId::Atelier => TypstTemplate::Atelier,
-            // Classic, SwissMinimal, Academic, Cadence, Regent → parametric
+            // Classic, SwissMinimal, Academic, Cadence, Regent, Jake → parametric
             // SingleColumn renderer. (Classic migrated off its bespoke
-            // `classic.typ` onto the shared parametric template; Cadence and Regent
-            // are pure-config single-column variants — no bespoke `.typ`. All are
-            // styled from their registry palette via data.style.)
+            // `classic.typ` onto the shared parametric template; Cadence, Regent,
+            // and Jake are pure-config single-column variants — no bespoke `.typ`.
+            // All are styled from their registry palette via data.style.)
             TemplateId::Classic
             | TemplateId::SwissMinimal
             | TemplateId::Academic
             | TemplateId::Cadence
-            | TemplateId::Regent => TypstTemplate::SingleColumn,
+            | TemplateId::Regent
+            | TemplateId::Jake => TypstTemplate::SingleColumn,
             // Phase 3a: two premium single-column templates.
             TemplateId::Meridian => TypstTemplate::Meridian,
             TemplateId::Throughline => TypstTemplate::Throughline,
@@ -204,6 +217,9 @@ impl TypstTemplate {
             TemplateId::Aria => TypstTemplate::Aria,
             TemplateId::Saffron => TypstTemplate::Saffron,
             TemplateId::CologneNavy => TypstTemplate::CologneNavy,
+            // Phase 8 Track B: classic LaTeX community-template designs.
+            TemplateId::Awesome => TypstTemplate::Awesome,
+            TemplateId::Deedy => TypstTemplate::Deedy,
         }
     }
 }

@@ -20,7 +20,7 @@ use crate::export::docx_renderer::{
     rgb_to_hex, setup_colors, DocxColors,
 };
 use crate::export::templates::Template;
-use crate::export::types::{FontFamily, GenerationMeta};
+use crate::export::types::{FontFamily, GenerationMeta, TemplateId};
 use crate::locale::PageGeometry;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Placement, Section};
@@ -155,14 +155,30 @@ fn content_width_dxa(template: &Template, geom: PageGeometry) -> usize {
 
 fn add_header(mut docx: Docx, header: &HeaderBlock, t: &Template, colors: &DocxColors) -> Docx {
     if !header.name.is_empty() {
-        let mut p = Paragraph::new().add_run(
-            Run::new()
-                .add_text(&header.name)
-                .size(pt_to_half_points(t.name_pt))
-                .bold()
-                .color(colors.name.as_str())
-                .fonts(docx_run_fonts(t.fonts.name_family)),
-        );
+        let mut name_run = Run::new()
+            .add_text(&header.name)
+            .size(pt_to_half_points(t.name_pt))
+            .bold()
+            .fonts(docx_run_fonts(t.fonts.name_family));
+
+        // Awesome's PDF (`awesome.typ`) draws a full-width accent-tinted header
+        // band behind white name text. `docx-rs` exposes no paragraph-level page
+        // background, so approximate the band as run-level shading (`w:shd`)
+        // behind white text — the flat-shading echo the Banded cover-letter
+        // layout uses for its own angled band. Every other template keeps the
+        // plain `colors.name` run it always had.
+        name_run = if t.id == TemplateId::Awesome {
+            name_run.color("FFFFFF").shading(
+                Shading::new()
+                    .shd_type(ShdType::Clear)
+                    .color("auto")
+                    .fill(rgb_to_hex(t.accent_color)),
+            )
+        } else {
+            name_run.color(colors.name.as_str())
+        };
+
+        let mut p = Paragraph::new().add_run(name_run);
         if t.name_centered {
             p = p.align(AlignmentType::Center);
         }

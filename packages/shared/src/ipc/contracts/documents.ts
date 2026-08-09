@@ -15,7 +15,10 @@ export type TemplateId =
   | 'regent'
   | 'cologne-navy'
   | 'aria'
-  | 'saffron';
+  | 'saffron'
+  | 'jake'
+  | 'awesome'
+  | 'deedy';
 
 /**
  * Cover-letter **layout** (arrangement only) — MUST match the Rust `LetterLayout`
