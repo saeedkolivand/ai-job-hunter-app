@@ -150,7 +150,12 @@ fn strictify(schema: &Value) -> Value {
                 );
                 out.insert(
                     "properties".to_string(),
-                    Value::Object(props.iter().map(|(k, v)| (k.clone(), strictify(v))).collect()),
+                    Value::Object(
+                        props
+                            .iter()
+                            .map(|(k, v)| (k.clone(), strictify(v)))
+                            .collect(),
+                    ),
                 );
             }
             out.insert("additionalProperties".to_string(), json!(false));

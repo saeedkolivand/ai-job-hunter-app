@@ -11,12 +11,13 @@
 //! non-test scans.
 
 use super::{
-    build_chat_stream_body, is_gpt5_or_later_reasoning_family, is_reasoning_model,
-    join_responses_text, parse_model_list, parse_openai_delta, parse_openai_embed_usage,
-    parse_openai_finish_reason, parse_openai_frames, parse_openai_turn, parse_openai_usage,
-    resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model, Intent, OpenAiClient,
-    SamplingProfile, DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY,
-    PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    build_chat_stream_body, build_complete_body, is_gpt5_or_later_reasoning_family,
+    is_reasoning_model, join_responses_text, parse_model_list, parse_openai_delta,
+    parse_openai_embed_usage, parse_openai_finish_reason, parse_openai_frames, parse_openai_turn,
+    parse_openai_usage, resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model,
+    structured, Intent, OpenAiClient, SamplingProfile, DETERMINISTIC_TEMPERATURE,
+    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -1367,4 +1368,58 @@ fn default_embedding_model_is_offered_only_for_native_openai() {
         None,
         "ollama-cloud delegates this method, so the gate has to hold at the inner client"
     );
+}
+
+// ── Structured output (`complete_structured`) ─────────────────────────────────
+
+#[test]
+fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_supplied() {
+    // The wire assertion for OpenAI's native structured output: the field is
+    // `response_format`, and strict mode needs the schema nested under
+    // `json_schema.schema`. Mutation check: drop the `response_format` insert
+    // in `build_complete_body` and this fails.
+    let schema = json!({ "type": "object", "properties": { "score": { "type": "integer" } } });
+    let body = build_complete_body(
+        "gpt-4o",
+        "sys",
+        "user",
+        Some(0.3),
+        true,
+        Some(structured::openai_response_format(Some(&schema))),
+    );
+    assert_eq!(body["response_format"]["type"], json!("json_schema"));
+    assert_eq!(
+        body["response_format"]["json_schema"]["strict"],
+        json!(true)
+    );
+    assert_eq!(
+        body["response_format"]["json_schema"]["schema"]["properties"]["score"]["type"],
+        json!("integer")
+    );
+    assert_eq!(body["stream"], json!(false));
+}
+
+#[test]
+fn complete_body_omits_response_format_entirely_on_the_plain_completion_path() {
+    // `complete`/`complete_with_usage` pass `None` — an unconstrained call must
+    // stay byte-identical to what it sent before structured output existed.
+    let body = build_complete_body("gpt-4o", "sys", "user", Some(0.3), true, None);
+    assert!(
+        body.get("response_format").is_none(),
+        "plain completions must not start asking for JSON: {body}"
+    );
+}
+
+#[test]
+fn response_format_is_sent_only_to_provider_ids_this_adapter_can_vouch_for() {
+    // Native OpenAI defines the field; Ollama Cloud's `/v1` documents it. An
+    // arbitrary gateway is an unknown server build — guessing 400s a whole
+    // generation, so it takes the prompt-discipline fallback instead.
+    assert!(OpenAiClient::new(ProviderId::OpenAi, None).supports_response_format());
+    assert!(OpenAiClient::new(ProviderId::OllamaCloud, None).supports_response_format());
+    assert!(!OpenAiClient::new(
+        ProviderId::OpenAiCompatible,
+        Some("http://localhost:1234/v1".into())
+    )
+    .supports_response_format());
 }
