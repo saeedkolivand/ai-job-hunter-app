@@ -107,7 +107,6 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
 
 const AI_TELL_PROSE_EN: &[&str] = &[
     "not just",
-    "not only",
     "it's not about",
     "it is not about",
     "highlighting",
@@ -119,7 +118,7 @@ const AI_TELL_PROSE_EN: &[&str] = &[
     "building on this",
 ];
 
-const AI_TELL_PROSE_DE: &[&str] = &["nicht nur", "sondern auch", "erfolgte durch"];
+const AI_TELL_PROSE_DE: &[&str] = &["erfolgte durch"];
 
 const TEMPLATE_OPENERS_EN: &[&str] = &[
     "i am writing to apply",

@@ -17,7 +17,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   AI_TELL_LEXICAL_WORDS_DE,
@@ -33,14 +33,41 @@ const REPO_ROOT = resolve(HERE, '../../..');
 const OUT_FILE = 'apps/desktop/src-tauri/src/validate/content/lexicon.rs';
 
 /**
+ * True when `entry` contains a C0 control character or DEL. `JSON.stringify`
+ * escapes those as `\uXXXX`, which is valid JSON but NOT a valid Rust string
+ * escape (Rust needs the bracketed `\u{XXXX}` form) — a control character
+ * surviving into an emitted array would produce Rust source that fails to
+ * compile with a confusing "unknown character escape" error far from its
+ * actual cause. Exported for its own unit test.
+ */
+export function hasControlChar(entry: string): boolean {
+  for (let i = 0; i < entry.length; i += 1) {
+    const code = entry.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
+/**
  * One `&[&str]` const, formatted to match `cargo fmt`'s own choice: a single
  * line when the whole declaration fits within rustfmt's 100-col `max_width`,
  * else one entry per line (rustfmt's vertical list layout for the arrays this
  * module emits — words/short phrases, never short enough on average to
  * trigger rustfmt's separate horizontal-packing tactic). `cargo fmt --check`
  * (CI) is the backstop if a future word list ever lands outside that shape.
+ *
+ * Throws (rather than silently emitting invalid Rust) if any entry contains a
+ * control character — see {@link hasControlChar}.
  */
-function rustArray(name: string, entries: readonly string[]): string {
+export function rustArray(name: string, entries: readonly string[]): string {
+  const offender = entries.find(hasControlChar);
+  if (offender !== undefined) {
+    throw new Error(
+      `gen-prompts-rust: ${name} entry ${JSON.stringify(offender)} contains a control ` +
+        "character — JSON.stringify's \\uXXXX escaping is not valid Rust string-literal " +
+        'syntax (Rust needs \\u{XXXX}). Fix the array entry in natural-voice.ts and rerun.'
+    );
+  }
   const items = entries.map((e) => JSON.stringify(e));
   const singleLine = `const ${name}: &[&str] = &[${items.join(', ')}];`;
   if (singleLine.length <= 100) return singleLine;
@@ -111,23 +138,33 @@ function generate(): string {
   ].join('\n');
 }
 
-const check = process.argv.includes('--check');
-const target = join(REPO_ROOT, OUT_FILE);
-const next = generate();
+function main(): void {
+  const check = process.argv.includes('--check');
+  const target = join(REPO_ROOT, OUT_FILE);
+  const next = generate();
 
-if (check) {
-  let current: string;
-  try {
-    current = readFileSync(target, 'utf8');
-  } catch {
-    current = '';
+  if (check) {
+    let current: string;
+    try {
+      current = readFileSync(target, 'utf8');
+    } catch {
+      current = '';
+    }
+    if (current !== next) {
+      console.error(`✗ stale: ${OUT_FILE} — run \`pnpm gen:prompts\``);
+      process.exit(1);
+    }
+    console.log('✓ prompts codegen output is up to date');
+  } else {
+    writeFileSync(target, next);
+    console.log(`✓ wrote ${OUT_FILE}`);
   }
-  if (current !== next) {
-    console.error(`✗ stale: ${OUT_FILE} — run \`pnpm gen:prompts\``);
-    process.exit(1);
-  }
-  console.log('✓ prompts codegen output is up to date');
-} else {
-  writeFileSync(target, next);
-  console.log(`✓ wrote ${OUT_FILE}`);
+}
+
+// Only run when executed directly (`tsx scripts/gen-prompts-rust.ts`), not when
+// imported by a test for its pure helpers (`hasControlChar`/`rustArray`) — a
+// bare top-level call would otherwise overwrite `lexicon.rs` as a side effect
+// of running the test suite.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
 }

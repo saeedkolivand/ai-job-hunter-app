@@ -688,3 +688,26 @@ describe('buildApplicationEmailPrompt — unknown company', () => {
     expect(system).toContain('clearly about THIS role');
   });
 });
+
+// ─── Opener-ban examples — derived from TEMPLATE_OPENERS_EN, not hand-typed ───
+// (ai-provider-expert M-4 follow-up) the two "do not start with" clauses used to
+// be independently hand-typed strings; they now derive from the same array
+// `LETTER_SPECIFICS` (cover-letter.ts) quotes, so a validator-lexicon edit can't
+// silently drift out of sync with this file's copy. Pinned as exact strings —
+// the rendered wording is unchanged from before the refactor.
+
+describe('buildApplicationEmailPrompt — opener-ban examples derive from TEMPLATE_OPENERS_EN', () => {
+  it('the format-skeleton opening bullet bans the exact expected phrases (brief depth)', () => {
+    const { system } = buildApplicationEmailPrompt(BASE, 'small');
+    expect(system).toContain(
+      'Do not start with "I am excited to apply" or "I am writing to express my interest".'
+    );
+  });
+
+  it('the full-depth VOICE section bans the exact expected phrases', () => {
+    const { system } = buildApplicationEmailPrompt(BASE, 'large');
+    expect(system).toContain(
+      'Never "I am excited to apply" or "I am writing to express my interest".'
+    );
+  });
+});

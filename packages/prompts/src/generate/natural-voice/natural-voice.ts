@@ -176,10 +176,15 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
   'es ist allgemein bekannt',
 ];
 
-/** Prose-only patterns (connected writing only) — negative parallelisms, "-ing" depth-faking, hedging preambles. */
+/**
+ * Prose-only patterns (connected writing only) — negative parallelisms, "-ing"
+ * depth-faking, hedging preambles. `'not only'` is deliberately absent: the
+ * English prose rule below only ever spells out "not just X, but Y" as the
+ * negative-parallelism example, never "not only" — banning it here would flag
+ * a word the prompt never told the model to avoid.
+ */
 export const AI_TELL_PROSE_WORDS_EN = [
   'not just',
-  'not only',
   "it's not about",
   'it is not about',
   'highlighting',
@@ -191,8 +196,13 @@ export const AI_TELL_PROSE_WORDS_EN = [
   'building on this',
 ];
 
-/** German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. */
-export const AI_TELL_PROSE_WORDS_DE = ['nicht nur', 'sondern auch', 'erfolgte durch'];
+/**
+ * German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. `'nicht nur'` / `'sondern
+ * auch'` are deliberately absent: {@link ANTI_AI_TELL_LEXICAL_DE} tells the
+ * model to use that construction sparingly, never to avoid it outright, so a
+ * single-occurrence ban here would contradict the prompt it is meant to check.
+ */
+export const AI_TELL_PROSE_WORDS_DE = ['erfolgte durch'];
 
 /**
  * Stock cover-letter openers — the phrases a letter that could have been
@@ -223,6 +233,21 @@ export const TEMPLATE_OPENERS_DE = [
   'auf ihre stellenanzeige hin',
   'wie ihrer stellenanzeige zu entnehmen ist',
 ];
+
+/**
+ * Capitalizes a lowercase, validator-matched opener phrase (see
+ * {@link TEMPLATE_OPENERS_EN}) into a readable inline prompt example. Only the
+ * first letter changes — good enough for an English illustrative quote (where
+ * only the sentence-initial letter needs capitalizing), NOT a full sentence-case
+ * renderer. English-only for that reason: German capitalizes every noun
+ * mid-sentence too ("Interesse", "Stellenanzeige"), which a single-letter
+ * capitalizer can't reconstruct from {@link TEMPLATE_OPENERS_DE}'s lowercase,
+ * validator-matched form — quote a German opener as its own correctly-cased
+ * literal instead (see `LETTER_OPENER_EXAMPLE_DE` in cover-letter.ts).
+ */
+export function capitalizeOpener(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
 
 /**
  * English display names for the generic-directive locales, purely so the
