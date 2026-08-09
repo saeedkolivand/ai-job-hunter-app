@@ -56,6 +56,7 @@ export function AIGeneratePage() {
     resumeOut,
     coverOut,
     activeOut,
+    report,
   } = aiGenerate;
 
   const setResume = (v: string) => setAIGenerate({ resume: v });
@@ -69,6 +70,7 @@ export function AIGeneratePage() {
   const setStage = (v: typeof stage) =>
     setAIGenerate(v === 'configuring' ? { stage: v, wizardStep: 0 } : { stage: v });
   const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
+  const setReport = (v: typeof report) => setAIGenerate({ report: v });
   const setMode = (v: GenerationMode) => setAIGenerate({ mode: v });
   const setEmphasis = (v: EmphasisId[]) => setAIGenerate({ emphasis: v });
   const setTarget = (v: 'resume' | 'cover' | 'both') => setAIGenerate({ target: v });
@@ -133,6 +135,7 @@ export function AIGeneratePage() {
     selectedModel,
     setStage,
     setMeta,
+    setReport,
     setResumeOut,
     setCoverOut,
     setActiveOut,
@@ -353,6 +356,7 @@ export function AIGeneratePage() {
                 coverOut={coverOut}
                 activeOut={activeOut}
                 meta={meta}
+                report={report}
                 sourceResume={resume}
                 jobAd={jobAd}
                 mode={mode}

@@ -14,6 +14,7 @@ import {
   type GenerationMode,
   type LetterLayoutId,
   PERSIST_DEBOUNCE_MS,
+  serializeQualityReport,
   type TemplateId,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
@@ -99,8 +100,18 @@ export function useTailorGeneration({
   const setSavedIdInStore = useGenerationStore((s) => s.setSavedId);
   const hydrateInStore = useGenerationStore((s) => s.hydrate);
 
-  const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta, savedId } =
-    session;
+  const {
+    generating,
+    phase,
+    resumeOut,
+    coverOut,
+    thinking,
+    activeOut,
+    error,
+    meta,
+    savedId,
+    report,
+  } = session;
 
   // Modal-local, ephemeral UI — fine to reset when the modal remounts.
   const [copied, setCopied] = useState(false);
@@ -126,7 +137,13 @@ export function useTailorGeneration({
   // unmounted) and talks to the client directly, so a background generation still
   // records and flips the job to "Applied". Best-effort: a save failure never
   // surfaces over the already-shown output.
-  const persist = ({ meta: m, resumeText, coverLetterText, companyBrief }: GenerationResult) => {
+  const persist = ({
+    meta: m,
+    resumeText,
+    coverLetterText,
+    companyBrief,
+    report: freshReport,
+  }: GenerationResult) => {
     void api.aiGenerations
       .save({
         candidateName: m.candidateName,
@@ -144,6 +161,7 @@ export function useTailorGeneration({
         jobUrl,
         board,
         companyBrief,
+        ...(freshReport ? { qualityReport: serializeQualityReport(freshReport) } : {}),
       })
       .then((res) => {
         // The command reports a store failure IN-BAND (`{ error }`) instead of
@@ -203,8 +221,10 @@ export function useTailorGeneration({
   // reference so the host's seed-once effect doesn't re-fire every render; the
   // store guards against clobbering an in-flight/edited session.
   const hydrate = useCallback(
-    (seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>) =>
-      hydrateInStore(contextId, seed),
+    (
+      seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'> &
+        Partial<Pick<GenerationSession, 'report'>>
+    ) => hydrateInStore(contextId, seed),
     [hydrateInStore, contextId]
   );
 
@@ -302,5 +322,7 @@ export function useTailorGeneration({
     hydrate,
     // Detected metadata — lets the questions assistant reuse it instead of re-extracting.
     meta,
+    // Deterministic content-quality report for this session, if any.
+    report,
   };
 }

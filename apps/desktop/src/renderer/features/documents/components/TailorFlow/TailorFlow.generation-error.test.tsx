@@ -104,6 +104,9 @@ vi.mock('@/lib/generate', () => ({
   exportDOCX: vi.fn(),
   exportPDF: vi.fn(),
   exportTXT: vi.fn(),
+  computeQualityReport: vi.fn().mockResolvedValue(null),
+  serializeQualityReport: vi.fn(),
+  parseQualityReport: vi.fn().mockReturnValue(null),
 }));
 
 // ── Sibling assistants — irrelevant to this failure path ─────────────────────

@@ -2,11 +2,13 @@ import { create } from 'zustand';
 
 import { errorDetail } from '@/lib/error-class';
 import {
+  computeQualityReport,
   extractMetadata,
   generateCoverLetter,
   generateResume,
   type GenerationMeta,
   type GenerationMode,
+  type QualityReport,
 } from '@/lib/generate';
 import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
@@ -34,6 +36,9 @@ export interface GenerationSession {
   /** Persisted record id once {@link RunTailorParams.onComplete} has saved this
    *  session's result — lets the modal persist later edits to the right record. */
   savedId: string | null;
+  /** Deterministic content-quality report for the most recent run (ADR-007
+   *  addendum) — additive sibling to `meta`; never read by `phase`. */
+  report: QualityReport | null;
 }
 
 /** Stable empty session — returned for unknown ids so selectors keep one reference. */
@@ -47,6 +52,7 @@ export const EMPTY_SESSION: GenerationSession = {
   error: null,
   meta: null,
   savedId: null,
+  report: null,
 };
 
 /** The finished documents + detected metadata, handed to {@link RunTailorParams.onComplete}. */
@@ -58,6 +64,9 @@ export interface GenerationResult {
    *  off or no cover letter was generated). Persisted so the doc card can show the
    *  "Company research" section. */
   companyBrief: string;
+  /** Deterministic content-quality report for this run, or `null` if neither
+   *  doc validated (see `computeQualityReport`) — the caller persists it. */
+  report: QualityReport | null;
 }
 
 interface RunTailorParams {
@@ -104,7 +113,8 @@ interface GenerationStore {
    */
   hydrate: (
     id: string,
-    seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>
+    seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'> &
+      Partial<Pick<GenerationSession, 'report'>>
   ) => void;
   /** Cancel an in-flight run for a context id. */
   cancel: (id: string) => void;
@@ -164,6 +174,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
               coverOut: seed.coverOut,
               meta: seed.meta,
               savedId: seed.savedId,
+              report: seed.report ?? null,
               activeOut: seed.resumeOut ? 'resume' : 'cover',
             },
           },
@@ -277,8 +288,21 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           durationMs: Date.now() - startedAt,
         });
 
+        // Best-effort, never throws — see `computeQualityReport`. Stored on the
+        // session (drives the results-panel badge) AND handed to `onComplete` so
+        // the caller's save carries it.
+        const report = await computeQualityReport({
+          sourceResume: resume,
+          jobAd: jobDesc,
+          topRequirements: detected.topRequirements,
+          targetLanguage: detected.targetLanguage,
+          resumeText,
+          coverLetterText,
+        });
+        patch(id, { report });
+
         // Persist after a clean run only — a cancel/error throws and skips this.
-        onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
+        onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief, report });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
         if (controller.signal.aborted) {

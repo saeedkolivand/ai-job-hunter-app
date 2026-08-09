@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-import { generateCoverLetter, generateResume, type GenerationMeta } from '@/lib/generate';
+import {
+  computeQualityReport,
+  generateCoverLetter,
+  generateResume,
+  type GenerationMeta,
+} from '@/lib/generate';
 
 import { useGeneration } from './useGeneration';
 
@@ -23,6 +28,8 @@ vi.mock('@/lib/generate', () => ({
     text: 'COVER',
     companyBrief: 'BRIEF',
   })),
+  computeQualityReport: vi.fn().mockResolvedValue(null),
+  serializeQualityReport: vi.fn((r: unknown) => (r ? JSON.stringify(r) : undefined)),
 }));
 
 const META: GenerationMeta = {
@@ -47,6 +54,7 @@ function setup(target: Target, provenance?: { jobUrl?: string; board?: string })
   const m = {
     setStage: vi.fn(),
     setMeta: vi.fn(),
+    setReport: vi.fn(),
     setResumeOut: vi.fn(),
     setCoverOut: vi.fn(),
     setActiveOut: vi.fn(),
@@ -83,6 +91,7 @@ function setup(target: Target, provenance?: { jobUrl?: string; board?: string })
       'llama',
       m.setStage,
       m.setMeta,
+      m.setReport,
       m.setResumeOut,
       m.setCoverOut,
       m.setActiveOut,
@@ -118,6 +127,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(generateResume).mockResolvedValue('RESUME');
   vi.mocked(generateCoverLetter).mockResolvedValue({ text: 'COVER', companyBrief: 'BRIEF' });
+  vi.mocked(computeQualityReport).mockResolvedValue(null);
 });
 
 describe('useGeneration — progressive reveal (#23)', () => {
@@ -228,6 +238,47 @@ describe('useGeneration — URL-import provenance (ADR-031)', () => {
     );
     expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
       expect.objectContaining({ board: expect.anything() })
+    );
+  });
+});
+
+describe('useGeneration — quality report wiring', () => {
+  it('stores the report and carries it on the save when validation succeeds', async () => {
+    const report = {
+      schemaVersion: 1 as const,
+      pipeline: 'fast' as const,
+      generatedAt: 1,
+      resume: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: null,
+          topRequirementHits: 0,
+          duplicateRatio: 0,
+          rolesSource: 0,
+          rolesOutput: 0,
+        },
+      },
+    };
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(report);
+    const { handleGenerate, m } = setup('resume');
+    await handleGenerate();
+
+    expect(m.setReport).toHaveBeenCalledWith(report);
+    expect(m.saveAiGeneration.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ qualityReport: JSON.stringify(report) })
+    );
+  });
+
+  it('degrades to a report-less save when validation returns null, never blocking the save', async () => {
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(null);
+    const { handleGenerate, m } = setup('resume');
+    await handleGenerate();
+
+    expect(m.setReport).toHaveBeenCalledWith(null);
+    expect(m.saveAiGeneration.mutate).toHaveBeenCalled();
+    expect(m.saveAiGeneration.mutate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ qualityReport: expect.anything() })
     );
   });
 });

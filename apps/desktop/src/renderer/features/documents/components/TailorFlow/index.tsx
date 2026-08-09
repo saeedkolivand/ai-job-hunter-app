@@ -10,7 +10,7 @@ import { ErrorState, transition } from '@ajh/ui';
 
 import { useCanUseAI, useSelectedModel } from '@/components/ui/ModelSelector';
 import { useInterviewQuestions } from '@/hooks/use-interview-questions';
-import type { LetterLayoutId, TemplateId } from '@/lib/generate';
+import { type LetterLayoutId, parseQualityReport, type TemplateId } from '@/lib/generate';
 import { shouldSeedResearchDefault } from '@/lib/research-company-default';
 import { useActiveModelCapabilities, useResolveJobUrl } from '@/services';
 
@@ -266,6 +266,7 @@ export function TailorFlow({
         targetLanguage: seedGeneration.targetLanguage,
         topRequirements: seedGeneration.topRequirements,
       },
+      report: parseQualityReport(seedGeneration.qualityReport),
     });
   }, [seedGeneration, hydrateSession]);
 
@@ -392,6 +393,7 @@ export function TailorFlow({
         output={gen.output}
         onEdit={gen.editActiveOutput}
         meta={gen.meta}
+        report={gen.report}
         copied={gen.copied}
         onCopy={() => void gen.copy()}
         exportOpen={gen.exportOpen}

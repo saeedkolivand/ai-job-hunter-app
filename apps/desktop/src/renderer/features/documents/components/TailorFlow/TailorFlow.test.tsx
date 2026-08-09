@@ -834,6 +834,8 @@ describe('TailorFlow — cold-entry hydration', () => {
         targetLanguage: 'en',
         topRequirements: ['rust'],
       },
+      // seedGeneration carries no `qualityReport` — parses to null (never `'{}'`).
+      report: null,
     });
   });
 

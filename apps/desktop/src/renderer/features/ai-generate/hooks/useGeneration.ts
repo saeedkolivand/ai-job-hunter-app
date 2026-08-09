@@ -3,12 +3,15 @@ import type { NotificationApi } from '@ajh/ui';
 
 import { errorDetail } from '@/lib/error-class';
 import {
+  computeQualityReport,
   type EmphasisId,
   extractMetadata,
   generateCoverLetter,
   generateResume,
   type GenerationMeta,
   type GenerationMode,
+  type QualityReport,
+  serializeQualityReport,
 } from '@/lib/generate';
 import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
@@ -23,6 +26,9 @@ export function useGeneration(
   selectedModel: string,
   setStage: (stage: AIGenerateStage) => void,
   setMeta: (meta: GenerationMeta | null) => void,
+  /** Deterministic content-quality report for the just-finished generation
+   *  (computed right before persisting) — additive sibling to `setMeta`. */
+  setReport: (report: QualityReport | null) => void,
   setResumeOut: (out: string | ((p: string) => string)) => void,
   setCoverOut: (out: string | ((p: string) => string)) => void,
   setActiveOut: (out: 'resume' | 'cover') => void,
@@ -115,7 +121,20 @@ export function useGeneration(
 
     // Persist a finished generation (résumé and/or cover). Reused by the success
     // path and the "cover failed but the résumé is done" salvage path (#23).
-    const persist = (resumeText: string, coverLetterText: string, companyBrief: string) =>
+    // Awaited so the report lands in the same save it describes, but content
+    // validation is best-effort and can never THROW (`computeQualityReport`
+    // degrades failures to `null` internally) — so it can delay this save by at
+    // most one fast, local IPC round-trip, never block or fail it.
+    const persist = async (resumeText: string, coverLetterText: string, companyBrief: string) => {
+      const report = await computeQualityReport({
+        sourceResume: resume,
+        jobAd,
+        topRequirements: meta.topRequirements,
+        targetLanguage: meta.targetLanguage,
+        resumeText,
+        coverLetterText,
+      });
+      setReport(report);
       saveAiGeneration.mutate({
         candidateName: meta.candidateName,
         jobTitle: meta.jobTitle,
@@ -134,7 +153,9 @@ export function useGeneration(
         // pasted/uploaded text (never fabricate a url/board).
         ...(jobUrl ? { jobUrl } : {}),
         ...(board ? { board } : {}),
+        ...(report ? { qualityReport: serializeQualityReport(report) } : {}),
       });
+    };
 
     const onTok =
       (setter: (fn: (p: string) => string) => void, accumulate: (t: string) => void) =>
@@ -222,7 +243,7 @@ export function useGeneration(
       setStage('done');
       setActiveOut(target === 'cover' ? 'cover' : finalResume ? 'resume' : 'cover');
 
-      persist(finalResume, finalCover, finalCompanyBrief);
+      await persist(finalResume, finalCover, finalCompanyBrief);
       notify.success({
         message:
           target === 'both'
@@ -247,7 +268,7 @@ export function useGeneration(
         // visible (#23: never discard a finished document) and flag the cover.
         setStage('done');
         setActiveOut('resume');
-        persist(finalResume, '', '');
+        await persist(finalResume, '', '');
         notify.error({ message: t('aiGenerate.toast.coverFailed') });
       } else {
         // Capped, not classed: unlike an export failure (whose reason the Rust

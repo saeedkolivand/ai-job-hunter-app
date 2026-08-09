@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 
-import { exportPDF } from '@/lib/generate';
+import { computeQualityReport, exportPDF } from '@/lib/generate';
 import { useGenerationStore } from '@/store/generation-store';
 
 import { useTailorGeneration } from './useTailorGeneration';
@@ -79,7 +79,17 @@ vi.mock('@/lib/generate', () => ({
   exportDOCX: vi.fn(),
   exportPDF: vi.fn(),
   exportTXT: vi.fn(),
+  computeQualityReport: vi.fn().mockResolvedValue(null),
+  serializeQualityReport: vi.fn((r: unknown) => (r ? JSON.stringify(r) : undefined)),
 }));
+
+const EMPTY_METRICS = {
+  keywordCoverage: null,
+  topRequirementHits: 0,
+  duplicateRatio: 0,
+  rolesSource: 0,
+  rolesOutput: 0,
+};
 
 const params = {
   contextId: 'autopilot:test-job',
@@ -106,6 +116,7 @@ describe('useTailorGeneration', () => {
     useGenerationStore.setState({ sessions: {} });
     save.mockClear();
     mockNotify.error.mockClear();
+    vi.mocked(computeQualityReport).mockResolvedValue(null);
   });
 
   it('starts idle with empty buffers', () => {
@@ -150,6 +161,42 @@ describe('useTailorGeneration', () => {
         companyBrief: 'BRIEF',
       })
     );
+  });
+
+  it('carries a fresh quality report on the save and exposes it from the hook', async () => {
+    const report = {
+      schemaVersion: 1 as const,
+      pipeline: 'fast' as const,
+      generatedAt: 1,
+      resume: { ok: true, issues: [], metrics: EMPTY_METRICS },
+      coverLetter: { ok: true, issues: [], metrics: EMPTY_METRICS },
+    };
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(report);
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate('my resume', 'both');
+    });
+
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ qualityReport: JSON.stringify(report) })
+    );
+    expect(result.current.report).toEqual(report);
+  });
+
+  it('degrades to a report-less save when validation yields nothing, never blocking it', async () => {
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(null);
+    const { result } = render();
+
+    await act(async () => {
+      await result.current.generate('my resume', 'both');
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalledWith(
+      expect.objectContaining({ qualityReport: expect.anything() })
+    );
+    expect(result.current.report).toBeNull();
   });
 
   it('does not generate or save when AI is unavailable', async () => {
