@@ -453,6 +453,18 @@ export default tseslint.config(
     },
   },
 
+  // ── @ajh/prompts build scripts — Node tooling, never shipped ───────────────
+  // Same reasoning as the @ajh/shared block above: packages/prompts/scripts
+  // (the `gen:prompts` Rust-lexicon codegen) runs at build time only, not
+  // part of the published `src/` surface that must stay UI/Node-free.
+  {
+    files: ['packages/prompts/scripts/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+      'no-restricted-imports': 'off',
+    },
+  },
+
   // ── @ajh/extension (browser extension) — WebExtension runtime globals ───────
   // The MV3 extension runs in the browser/service-worker context (chrome /
   // browser globals via webextension-polyfill), NOT the React renderer or Node.
