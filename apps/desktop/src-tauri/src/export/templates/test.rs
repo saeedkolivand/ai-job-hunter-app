@@ -139,6 +139,10 @@ fn template_tiers_are_pinned() {
         (TemplateId::Regent, Ats),
         (TemplateId::Aria, Design),
         (TemplateId::Saffron, Design),
+        (TemplateId::CologneNavy, Ats),
+        (TemplateId::Jake, Ats),
+        (TemplateId::Awesome, Design),
+        (TemplateId::Deedy, Design),
     ];
     for (id, tier) in expected {
         assert_eq!(
@@ -294,4 +298,53 @@ fn saffron_matches_spec() {
         ParagraphIndent::BlockNoIndent
     );
     assert_eq!(t.cover_letter.paragraph_spacing_pt, 8.0);
+}
+
+// ─── Phase 8 Track B: Jake / Awesome / Deedy spec pins ─────────────────────────
+
+#[test]
+fn jake_matches_spec() {
+    let t = Template::get(TemplateId::Jake);
+    assert_eq!(t.tier, TemplateTier::Ats);
+    assert_eq!(t.name_pt, 24.0);
+    assert_eq!(t.section_pt, 11.0);
+    assert_eq!(t.body_pt, 10.0);
+    assert_eq!(t.margin_in, 0.6);
+    assert!(t.name_centered);
+    assert!(t.section_all_caps);
+    assert_eq!(t.section_style, SectionStyle::RuledBottom);
+    assert_eq!(t.rule_thickness, 0.4);
+    assert_eq!(t.heading_tracking, 0.0);
+    assert!(!t.link_underline);
+    assert!(!t.section_small_caps);
+    assert!(t.two_column.is_none());
+}
+
+#[test]
+fn awesome_matches_spec() {
+    let t = Template::get(TemplateId::Awesome);
+    assert_eq!(t.tier, TemplateTier::Design);
+    // Registry name_color must stay a real dark ink for the DOCX renderer —
+    // NOT the white the PDF band text renders in (awesome.typ hardcodes that
+    // separately). A regression here would print invisible white-on-white
+    // DOCX name text.
+    assert_ne!(t.name_color, (255, 255, 255));
+    assert_eq!(t.accent_color, (196, 30, 58));
+    assert_eq!(t.emphasis_color, (196, 30, 58));
+    assert!(t.section_all_caps);
+    assert_eq!(t.section_style, SectionStyle::RuledBottom);
+    assert_eq!(t.heading_tracking, 0.0);
+    assert!(t.two_column.is_none());
+}
+
+#[test]
+fn deedy_matches_spec() {
+    let t = Template::get(TemplateId::Deedy);
+    assert_eq!(t.tier, TemplateTier::Design);
+    assert_eq!(t.name_pt, 27.0);
+    assert_eq!(t.accent_color, (30, 79, 179));
+    assert!(t.section_all_caps);
+    assert!(!t.job_title_italic);
+    assert_eq!(t.section_style, SectionStyle::RuledBottom);
+    assert!(t.two_column.is_none());
 }

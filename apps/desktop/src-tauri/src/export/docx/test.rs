@@ -112,6 +112,9 @@ fn no_cover_letter_font_size_exceeds_sane_ceiling() {
         TemplateId::Throughline,
         TemplateId::Cadence,
         TemplateId::Regent,
+        TemplateId::Jake,
+        TemplateId::Awesome,
+        TemplateId::Deedy,
     ] {
         for layout in [
             LetterLayout::Classic,

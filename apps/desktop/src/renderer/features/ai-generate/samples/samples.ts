@@ -30,4 +30,9 @@ export const TEMPLATE_CAPTIONS: Record<TemplateId, string> = {
   aria: 'Minimalist two-column with an airy untinted sidebar and photo. Collapses to single column for ATS.',
   saffron: 'Warm serif with a tinted sidebar and ringed photo. Collapses to single column for ATS.',
   'cologne-navy': 'Centred navy header with ruled headings. Formal, single column, parser-safe.',
+  jake: 'Ultra-minimal single column with a centred name and thin ruled headings. Dense, classic, parser-safe.',
+  awesome:
+    'Thin accent-tinted header band with marker headings. Collapses to a plain header for ATS.',
+  deedy:
+    'Bold name block with an accent-colored surname and generous spacing. Plain name in ATS mode.',
 };

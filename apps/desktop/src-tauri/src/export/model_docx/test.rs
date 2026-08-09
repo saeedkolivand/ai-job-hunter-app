@@ -119,6 +119,9 @@ fn no_resume_font_size_exceeds_sane_ceiling() {
         TemplateId::Throughline,
         TemplateId::Cadence,
         TemplateId::Regent,
+        TemplateId::Jake,
+        TemplateId::Awesome,
+        TemplateId::Deedy,
     ] {
         for ats_mode in [false, true] {
             let xml = part(&build(template_id, ats_mode), "word/document.xml");
@@ -143,6 +146,32 @@ fn two_column_renders_a_borderless_shaded_table() {
     assert!(
         xml.contains(r#"w:fill="F0EFF8""#),
         "sidebar cell should carry the Atelier tint"
+    );
+}
+
+#[test]
+fn awesome_name_run_gets_white_text_shaded_with_the_accent_band_color() {
+    // Awesome's PDF (`awesome.typ`) draws a full-width accent-tinted header
+    // band behind white name text. DOCX has no page-background primitive, so
+    // `add_header` approximates it as run-level shading (`w:shd`) behind a
+    // white name run — the flat-shading echo the Banded cover-letter layout
+    // uses for its own angled band.
+    let xml = part(&build(TemplateId::Awesome, false), "word/document.xml");
+    assert!(
+        xml.contains(r#"w:fill="C41E3A""#),
+        "awesome name run must carry accent-fill shading: {xml}"
+    );
+    assert!(
+        xml.contains(r#"w:color w:val="FFFFFF""#),
+        "awesome name run must be white to read on the shaded band: {xml}"
+    );
+
+    // Control: a template with no band special-case must NOT gain shading —
+    // this would fail if the `TemplateId::Awesome` branch leaked to everyone.
+    let classic_xml = part(&build(TemplateId::Classic, false), "word/document.xml");
+    assert!(
+        !classic_xml.contains("w:shd"),
+        "classic must not gain run shading it never had: {classic_xml}"
     );
 }
 

@@ -398,10 +398,10 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.tier.design')).toBeInTheDocument();
   });
 
-  it('shows a tier badge on every card (8 ATS + 5 design)', () => {
+  it('shows a tier badge on every card (9 ATS + 7 design)', () => {
     renderStep();
-    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(8);
-    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(5);
+    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(9);
+    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(7);
   });
 
   it('renders the cologne-navy card with an ATS badge', () => {
@@ -416,7 +416,7 @@ describe('StepTemplate', () => {
 
   // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────
 
-  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron'] as const)(
+  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron', 'awesome', 'deedy'] as const)(
     'shows the ATS toggle for the design-tier template %s',
     (id) => {
       renderStep({ templateId: id });
@@ -432,6 +432,8 @@ describe('StepTemplate', () => {
     'throughline',
     'cadence',
     'regent',
+    'cologne-navy',
+    'jake',
   ] as const)('hides the ATS toggle for the ATS-tier template %s', (id) => {
     renderStep({ templateId: id });
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();

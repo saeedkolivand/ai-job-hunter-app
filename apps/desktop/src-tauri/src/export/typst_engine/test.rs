@@ -388,7 +388,7 @@ fn two_column_resume_embeds_contact_link_annotations() {
 /// (pinned by the serde round-trip test in types.rs and the TS sync guard).
 /// Shared by every test that iterates "all templates" so a newly added
 /// template is covered automatically rather than needing a remembered edit.
-fn canonical_template_ids() -> [TemplateId; 13] {
+fn canonical_template_ids() -> [TemplateId; 16] {
     [
         TemplateId::Classic,
         TemplateId::SwissMinimal,
@@ -403,6 +403,9 @@ fn canonical_template_ids() -> [TemplateId; 13] {
         TemplateId::Aria,
         TemplateId::Saffron,
         TemplateId::CologneNavy,
+        TemplateId::Jake,
+        TemplateId::Awesome,
+        TemplateId::Deedy,
     ]
 }
 
@@ -444,7 +447,7 @@ const NO_EXTRACTABLE_TEXT_THRESHOLD: usize = 20;
 #[test]
 fn every_template_renders_a_valid_pdf() {
     let ids = canonical_template_ids();
-    assert_eq!(ids.len(), 13, "expected the thirteen canonical templates");
+    assert_eq!(ids.len(), 16, "expected the sixteen canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
     for id in ids {
@@ -512,6 +515,104 @@ fn every_template_extracts_accented_latin_content() {
             "{id:?}: only {normalized_len} normalized chars extracted — the real \
              validator's no_extractable_text gate (< {NO_EXTRACTABLE_TEXT_THRESHOLD}) \
              would block this export; got {extracted:?}"
+        );
+    }
+}
+
+// ── Phase 8 Track B: Awesome / Deedy bespoke-behavior pins ─────────────────────
+
+/// Awesome's design-tier ATS toggle must be more than cosmetic: `ats=true`
+/// drops the accent-tinted header band, its keyline, AND the accent-bar
+/// section markers, leaving only accent-colored hyperlinks (unaffected by
+/// `is-ats`, matching every other non-Classic ATS-safe template). typst-svg
+/// renders decorative shapes (the band rect, the keyline, each accent bar) as
+/// `<path fill="#…"` / `stroke="#…"` elements, distinct from glyph refs
+/// (`<use … fill="#…"`) — the same fill-color detection technique
+/// `letter_banded_band_draws_on_page_one_only` uses for the cover-letter band,
+/// narrowed to SHAPES so accent-colored link text (unaffected by `is-ats`,
+/// same as every other template) can't mask the assertion.
+#[test]
+fn awesome_ats_mode_drops_the_header_band_and_section_markers() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let template = Template::get(TemplateId::Awesome);
+    let accent_hex = format!(
+        "#{:02x}{:02x}{:02x}",
+        template.accent_color.0, template.accent_color.1, template.accent_color.2
+    );
+    let fill_needle = format!(r#"<path fill="{accent_hex}""#);
+    let stroke_needle = format!(r#"stroke="{accent_hex}""#);
+    let count_shapes =
+        |svg: &str| svg.matches(&fill_needle).count() + svg.matches(&stroke_needle).count();
+
+    let banded_opts = opts_a4();
+    let banded = render_resume_svg_pages(
+        &model,
+        TypstTemplate::from_template(&template),
+        &banded_opts,
+        Some(&template),
+    )
+    .expect("render_resume_svg_pages(awesome, ats=false) should succeed");
+    let banded_page1 = banded
+        .first()
+        .expect("awesome ats=false: at least one page");
+
+    let mut ats_opts = opts_a4();
+    ats_opts.ats = true;
+    let plain = render_resume_svg_pages(
+        &model,
+        TypstTemplate::from_template(&template),
+        &ats_opts,
+        Some(&template),
+    )
+    .expect("render_resume_svg_pages(awesome, ats=true) should succeed");
+    let plain_page1 = plain.first().expect("awesome ats=true: at least one page");
+
+    let banded_shapes = count_shapes(banded_page1);
+    let plain_shapes = count_shapes(plain_page1);
+    assert!(
+        banded_shapes >= 2,
+        "awesome (ats=false) must draw at least the band rect + keyline as \
+         accent-fill/stroke shapes; got {banded_shapes}"
+    );
+    // Both modes draw an accent-colored `line` under each ruled section heading
+    // (rule_color == accent_color in the registry), so `plain_shapes` isn't
+    // zero — but it must be strictly fewer than `banded_shapes`, which adds the
+    // full-width band rect + keyline PLUS an accent bar per section on top of
+    // the same ruled headings. A non-strictly-lower count would mean `is-ats`
+    // failed to drop the band/keyline/bars.
+    assert!(
+        plain_shapes < banded_shapes,
+        "awesome (ats=true) must draw fewer decorative accent-fill/stroke shapes \
+         than ats=false (band + keyline + section-marker bars must be dropped) — \
+         banded={banded_shapes} plain={plain_shapes}"
+    );
+}
+
+/// `deedy.typ`'s name-block splits `header.name` on the last space to color the
+/// surname separately — guarded for a single-token name (`name-tokens.len() <=
+/// 1`) that has nothing to split. This is the edge path a naive
+/// `.slice(0, len - 1)` would panic on for an empty/underflowing range; render
+/// it end-to-end (not just unit-test the split) to prove the guard actually
+/// reaches production.
+#[test]
+fn deedy_single_token_name_does_not_panic() {
+    let mut model = model_from_resume_text(FIXTURE_RESUME);
+    model.header.name = "Cher".to_string();
+    let template = Template::get(TemplateId::Deedy);
+
+    for ats in [false, true] {
+        let mut opts = opts_a4();
+        opts.ats = ats;
+        let bytes = render_pdf(
+            &model,
+            TypstTemplate::from_template(&template),
+            &opts,
+            Some(&template),
+        )
+        .unwrap_or_else(|e| panic!("deedy single-token name (ats={ats}) should render: {e:?}"));
+        assert!(
+            bytes.starts_with(b"%PDF"),
+            "deedy single-token name (ats={ats}) must start with %PDF"
         );
     }
 }
@@ -4385,6 +4486,9 @@ fn generate_templates_showcase_banner() {
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
         (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
+        (TemplateId::Jake, "Jake", "jake"),
+        (TemplateId::Awesome, "Awesome", "awesome"),
+        (TemplateId::Deedy, "Deedy", "deedy"),
     ];
     assert_eq!(
         templates.len(),
@@ -4677,6 +4781,9 @@ fn generate_cover_template_previews() {
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
         (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
+        (TemplateId::Jake, "Jake", "jake"),
+        (TemplateId::Awesome, "Awesome", "awesome"),
+        (TemplateId::Deedy, "Deedy", "deedy"),
     ];
     assert_eq!(
         templates.len(),
