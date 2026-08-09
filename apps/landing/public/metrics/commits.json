@@ -1,5 +1,77 @@
 [
   {
+    "sha": "7c9fa531d3c1e73dfa81aa28b7042ba0262dd447",
+    "commit": {
+      "message": "chore: sync landing download version to v0.134.3",
+      "author": {
+        "date": "2026-08-08T07:38:30Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "c110dfd6d0893299b80188f77ed350924ef975a8",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.134.3 [skip ci]",
+      "author": {
+        "date": "2026-08-08T07:37:57Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "d326fe9c48a858a7d44f73f1edb3fe331d1610d8",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-08-08T07:08:00Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "6289dd8488bbe6d323f17a8210385cef44faa440",
+    "commit": {
+      "message": "chore(release): 0.134.3 [skip ci]",
+      "author": {
+        "date": "2026-08-08T07:00:15Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "c1de59f9d6da6a3b367654d8dc326b01b2aa541a",
+    "commit": {
+      "message": "fix: make a failed generation visible instead of silently resetting (#959)\n\n* fix: apply the deterministic profile to non-gemini-prefixed google models\n\nThe pre-v3 gate additionally required a gemini- prefix, so a gemma or learnlm\nid got a fully neutral profile while every other gate in the same file keys\nonly on the v3 boundary and would have applied the deterministic default. The\nmodel listing filters on the models/ prefix and not on family, so those ids do\nreach the picker, and before #958 they received the low temperature the\nanalyze surface needs. The gate is now the exact inversion of the v3 check.\n\nThis is the third time an unclassifiable-means-neutral gate cost a\ndeterministic surface its temperature, after the openai-compatible one in\n89435a47, so the doc comment records that the prefix requirement was tried and\ndropped and why. That fail-safe is for declining to guess an unknown model's\ncreative sampling; it was never a reason to let a strict json contract run at\nwhatever the server defaults to.\n\nConfirmed while here that the v3 check cannot misclassify a gemma id: it\nrequires the literal prefix before it parses any version digits.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: tell the user when a tailored generation fails\n\nThe stage is derived as generating, then done if there is output, else\nconfiguring. A failed run leaves both outputs empty, so it fell back to the\nwizard, and the file had no reference to the error at all: runTailor wrote it\nto the session, the hook returned it, and nothing rendered it. The catch only\nlogged to the console, so there was no toast either. The result was a\ngeneration that appeared to do nothing, which cost two investigations to\nreproduce.\n\nReturning to the wizard is the right behaviour, since the user needs to change\nsomething and try again, but it has to arrive with the reason. The error now\nrenders below the wizard where the user just clicked Generate, and a toast\nfires, matching what the AI Generate wizard already did.\n\nThe test drives a real failure through the hook and asserts the rendered text\nrather than the store field, because a test that only checked the field was\nset would have passed against the broken code.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: scale the stream deadline by effort and flag a truncated generation\n\nThe 300 second deadline was fixed on both sides and reqwest bounds the whole\nrequest, connect through the last streamed byte, so a generation that\nlegitimately runs longer was killed mid stream. High effort on a large cloud\nmodel with a full resume and job ad sits squarely in that range, which is the\nlikely throw behind a failure that then vanished into the silent reset. Both\nsides now scale by the request's effort, and the renderer stays the outer\nbound so the backend's actionable provider error fires first rather than a\ngeneric timeout.\n\nThe tables cannot be shared across the IPC boundary, so a test hardcodes the\nbackend schedule and asserts the renderer exceeds it at every tier. The tier\norder is the vendors', where max sits above xhigh, which reads wrong at a\nglance and was inverted here at first: max got a shorter deadline than xhigh,\nso the highest effort runs got the tightest bound, which is the exact failure\nthis exists to prevent. The monotonicity tests listed the tiers in the same\nwrong order, so they passed against it; only the value assertions caught it.\nBoth orders are now pinned with a comment saying why.\n\nfinish also consulted the stop reason only when the answer was empty, so a\nstream that produced text and then reported length took the success path and a\ntruncated resume was saved and exported as complete. It still completes and\nstill keeps the partial text, since that text is worth having, but it now\nraises a notification through the existing centre rather than presenting a cut\noff document as finished.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* refactor: generate the stream deadline schedule from one source\n\nThe renderer test hardcoded the backend's baseline and effort multipliers, so\na change to either Rust constant alone would have left it passing while the\nrenderer timeout began firing before the backend deadline. That is the same\nshape as the inversion this branch already fixed, where both monotonicity\ntests listed the tiers in the wrong order and passed against it, so this table\nhas now demonstrably drifted once already.\n\nThe baseline and the multipliers live in the shared package and generate into\nthe rust contract, the way the intent vocabulary already does. Both sides\nimport the same numbers, gen:ipc:check fails on drift, and the test is left\nasserting the one thing that is still a real relationship rather than\nre-typing the other side's constants. The tier order prose moves with the\ntable, since it is the only thing standing between the next editor and the\nsame inversion.\n\nThe gemini test now covers learnlm alongside gemma. It does not restore the\nneutrality assertion the review asked for: that contract was removed\ndeliberately, because it was what withheld a temperature from those models on\na strict json surface.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: redact a generation error before it reaches the screen\n\nShowing the failure reason is the point of this branch, but the raw provider\nmessage was reaching the UI unredacted, and this repo has already leaked a\nbase_url's query string auth into an error that way. The existing redactor was\nwired into crash reporting and the diagnostics zip and never into the AI path.\n\nThe review asked for a fixed string with the real text kept in the console.\nThat would undo the change: the user was getting nothing, which is what made a\nreal failure take two investigations to reproduce, and a generic failed is\nbarely better than the silent reset it replaced. Redacting at the boundary\nkeeps both properties, so the reason survives and credentials, paths, hosts\nand emails do not.\n\nemit_stream_error is the single choke point. Neither generate command lets the\ninvoke itself reject; both route their error branch through it, and every\nother renderer failure path already uses a fixed string. A test pins that an\nordinary provider error such as 429 Too Many Requests passes through byte for\nbyte, so the next person cannot answer this by flattening everything and\ncalling it security.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+      "author": {
+        "date": "2026-08-08T06:57:07Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "86fbeeba6b23d056b135927f620d570ba391bf24",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-08-08T04:20:31Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "30b8accdf2687c15791ef552715f26bb991b4024",
     "commit": {
       "message": "chore: update export benchmark data [skip ci]",
@@ -1125,78 +1197,6 @@
     },
     "author": {
       "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "17e347b64b269fa1c437f12ac2fb0d6f882800e1",
-    "commit": {
-      "message": "chore: bump taiki-e/install-action from 2.84.1 to 2.85.3 (#905)\n\nBumps [taiki-e/install-action](https://github.com/taiki-e/install-action) from 2.84.1 to 2.85.3.\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd...18b1216eba7f8039b0f8d131d5473787f0edce68)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.85.3\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-29T18:02:57Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "d56c6cc68eba970e4d5792d59e7cfc366c3e53af",
-    "commit": {
-      "message": "chore: bump anthropics/claude-code-action from 1.0.180 to 1.0.183 (#904)\n\nBumps [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) from 1.0.180 to 1.0.183.\n- [Release notes](https://github.com/anthropics/claude-code-action/releases)\n- [Commits](https://github.com/anthropics/claude-code-action/compare/fa7e2f0a29a126f0b81cdcf360561b36e44cf608...be7b93b1907a4abad570368f3c74b6fe3807510b)\n\n---\nupdated-dependencies:\n- dependency-name: anthropics/claude-code-action\n  dependency-version: 1.0.183\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-      "author": {
-        "date": "2026-07-29T18:02:30Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "40b1700cdd2ee48b00b99fb83603ce911e74cde9",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-07-29T06:07:04Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "414d6d751b0595a898ece318f7ff1726b9d9b367",
-    "commit": {
-      "message": "docs: consolidate 13 agent rule files into a canonical agents.md (#903)\n\n* docs: consolidate 13 agent rule files into a canonical agents.md\n\nThe repo maintained 13 hand-written copies of the same coding rules: CLAUDE.md,\nAGENTS.md, .clinerules, .windsurfrules, .codexrules, .roorules, .jba/guidelines.md,\n.aider/system-prompt.md, .github/copilot-instructions.md and 4x .cursor/rules/*.mdc.\n\nThey had already drifted. `NumberField` — a primitive named in enforced rule 5 — and\nthe whole apps/landing workspace existed in CLAUDE.md alone, so twelve files taught a\nstale rule set. Every rule change meant 13 edits with nothing enforcing the 13th.\n\nAGENTS.md is now canonical: a Linux Foundation standard, read natively by Copilot,\nCursor, Windsurf and Codex. CLAUDE.md imports it with the documented `@AGENTS.md`\nsyntax and keeps only Claude-Code-specific orchestration — the subagent fleet, review\ngates and model tiering, none of which other tools can act on. Files for tools that\ndon't read AGENTS.md natively or in full become one-line pointers; redundant ones go.\n\nApplied the /doctor trim heuristic while merging: cut what an agent can derive from the\ncodebase (package layout block, name-to-path lookup rows), kept every enforced rule\nverbatim plus the non-obvious locations. All 16 rules survive; the combined load is 136\nlines, inside the documented 200-line target.\n\ncheck-agent-system now enforces the invariant instead of relying on discipline: tool\nfiles must name AGENTS.md and stay under 1KB, so a forked ruleset fails pre-push and\nCI. Also fixes .aider.conf.yml, which pointed at a contracts.ts removed long ago.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct a nonexistent ui primitive in the canonical rules\n\nReview found rule 5 lists `SelectDropdown` among the required @ajh/ui\nprimitives. It is not exported — packages/ui/src/index.ts:37 exports\n`Dropdown`, and the renderer imports `Dropdown` everywhere. An agent\nfollowing the rule writes an import that fails the build.\n\nThis was pre-existing drift carried over verbatim, but \"all 16 rules\nsurvive verbatim\" is the right invariant for the merge and the wrong one\nfor correctness: verbatim preserved the bug, and the merge just blessed\nit as canonical for every tool. Same failure mode as the `NumberField`\nstaleness this PR exists to fix. Also fixes the ESLint message that fires\non raw <select> and the Form JSDoc, both naming the same missing export.\n\nEnforce the two facts the whole rule set hangs on, which nothing asserted:\nAGENTS.md exists, and CLAUDE.md contains an unfenced `@AGENTS.md` import.\nWithout either, Claude Code loads orchestration with zero coding rules\nwhile every pointer still truthfully says \"read AGENTS.md\" and the check\nstays green. Verified both assertions fail when violated, plus the size\ncap on a re-forked pointer.\n\nExempt .aider.conf.yml from the pointer size cap — it is a real settings\nfile, so growing past 1KB is legitimate and the message would mislead.\n\nOther review fixes: qualify Copilot's native AGENTS.md support (not all\nfeatures, per GitHub docs), rule 13 used grep against the repo's own rg\npolicy, rule 14 named a contracts.ts removed long ago, and the header\ndocblock plus a comment still said nine copies and CLAUDE.md.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: close a fenced-import hole in the canonical rules guard\n\nThe import guard added last round claimed to catch a \"missing or fenced\"\nimport but only caught inline backticks. Under /m, `^` matches at the start\nof a line inside a fenced block too, so a triple-backticked @AGENTS.md\npassed green while Claude Code skipped the import — the docs are explicit\nthat import parsing skips code spans and fenced blocks. That is precisely\nthe failure the guard exists to prevent: orchestration loads, zero coding\nrules load, every pointer still truthfully says \"read AGENTS.md\".\n\nMy \"verified by fault injection\" claim last round covered only the inline\nvariant. Fences are now stripped before testing, and all three variants are\nverified failing: block-fenced, tilde-fenced, and inline backticks.\n\nCap the canonical files at 200 combined lines. They load in full every\nsession and adherence drops as they grow; the PR asserted that budget and\nthen hand-checked it, the same gap as the unenforced import. Now enforced,\nwith .claude/rules/ + paths: frontmatter named as the escape hatch.\n\nAlso: rule 5's `SelectDropdown` rename left one entry behind in\nDEEP_UI_IMPORTS, banning a path that no longer exists. The .gitignore\ninventory omitted .codexrules and .roorules and claimed the 1KB cap covers\n.aider.conf.yml, now exempt. AGENTS.md told non-Claude tools to use an\nownership table that every pointer file tells them to ignore — it now\ndescribes the routing inline.\n\nVerified against vendor docs rather than the secondary sources the deletions\noriginally rested on: Windsurf processes AGENTS.md through the same rules\nengine, and Cursor documents it as a first-class alternative to\n.cursor/rules. Both deletions stand.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: correct two dead paths in rule 14 and harden the fence stripper\n\nRule 14 named `commands.rs` and `services/query-client.ts`; both are\ndirectories on disk (commands/, services/query-client/). Last round fixed\n`contracts.ts` on the same line and left its two siblings — the canonical\nfile for every tool was naming files that are not there.\n\nHarden the fence stripper: matching the full opening run means a 3-backtick\ninner fence can no longer close a 4-backtick outer one, and 1-3 leading\nspaces are still a fence per CommonMark. Both variants verified failing,\nalongside the plain and inline cases.\n\nRestore the Copilot caveat in the .gitignore inventory — that comment is\nwhere someone decides whether a pointer is still needed, and it claimed\nunqualified native support that AGENTS.md and the pointer both qualify.\n\nConsidered and rejected: a mechanical dead-path check over backticked paths\nin the canonical files. First run produced two false positives — `machines/`\n(real, under a lookup root I had not listed) and the commit-type list\n`refactor/ui/style/...`, which is not a path at all. Catching the shorthand\nform that actually broke three times (`commands.rs`, not\n`src-tauri/src/commands/`) needs a resolution table that is itself\ndrift-prone, so the checker would need more maintenance than the rules it\nguards.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n* fix: guard fully-qualified paths in the canonical rules\n\nRound 3 rejected a dead-path check because the unscoped version produced\nfalse positives. That reasoning conflated two halves. Fully-qualified paths\nresolve from the repo root with no lookup table, so nothing drifts;\nshorthand needs a workspace-root table that rots like the rules it guards.\nOnly the first half is checked now, scoped to AGENTS.md.\n\nVerified rather than assumed: 35 backticked slash-tokens in AGENTS.md, 14\nqualified, 14/14 resolve, zero false positives. The commitlint type list\nthat broke the unscoped version is correctly skipped, as is every shorthand\nform. Injecting a dead qualified path fails the check; injecting a dead\nshorthand path passes, confirming the documented gap is real and not a\nguess.\n\nThe .gitignore inventory said pointers are kept \"only for tools that don't\nread it natively / in full\", then listed Codex as a native reader and kept\n.codexrules — whose own stated reason (an unmissable pointer) the criterion\ndid not admit. Widened the criterion instead of dropping the file.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-28T21:54:33Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "c16bea0decf24a3e71255cf2691972cfedc4dac3",
-    "commit": {
-      "message": "chore: demote stop-gate llm review to pre-push and slim the agent fleet (#902)\n\n* chore: demote stop-gate llm review to pre-push and slim the agent fleet\n\n- stop hook is now deterministic tier-0 only (ast-grep + ledger re-emits, ~1s); the llm review runs at pre-push/ci\n- pre-push review boots lean (--strict-mcp-config), logs json usage/cost telemetry, and honors a prompt-hash cooldown\n- rationale: 74.7% of 830 stop-gate runs over 17 days died in their own 120s timeout after booting project mcp servers, for 68 findings / 8 hard blocks ever; uncached failures made the loop repeat\n- archive the dormant gl fleet (5 agents + 2 skills) to .claude/dormant/ per adr-0017; active roster is 25\n- effort split: only pr-reviewer + tauri-security-reviewer keep xhigh; other opus critics run high\n- cost-tiered per-change defaults (adr-025 amendment): trivial diffs edited directly, one sibling critic for single-domain non-risk, full trio only for risk-bearing/multi-domain, steward closes per pr\n- slim the shared contract skills (22.3kb -> 10.9kb) and claude.md (16.5kb -> 12.9kb); cap /review finding-verifier fan-out at 5; graphify-hint nudges once per session\n- landing agent-fleet explainer + check-agent-system drift guard updated to the new roster and effort rule\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: address ai review findings on the gate demotion\n\n- harden runClaudeReview: never treat a killed/failed spawn's partial stdout as a reply; clear the cooldown once the llm is reachable again\n- validate re-emitted ledger findings' shape before counting/formatting them in the stop gate\n- fit ast-grep (20s) inside the 30s stop-hook budget so the harness can't kill the hook mid-scan\n- graphify-hint marker uses exclusive create (wx, 0600) so a pre-planted symlink is never followed\n- check-agent-system enforces exact opus effort pins from the tiering sentence (xhigh pair vs high trio), negative-tested\n- dormant gl files reference their .claude/dormant/ skill paths; adr-025 single-domain tier names the mandatory test pair\n- claude.md path-privacy section no longer embeds path examples; grill-with-docs referenced by name\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
-      "author": {
-        "date": "2026-07-28T14:47:53Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f899bc8e8f4b2bcc3839c9ac4d477c18f537906d",
-    "commit": {
-      "message": "chore: sync landing download version to v0.130.1",
-      "author": {
-        "date": "2026-07-28T12:57:39Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
