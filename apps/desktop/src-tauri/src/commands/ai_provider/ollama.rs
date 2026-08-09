@@ -512,7 +512,47 @@ pub async fn list_tag_models() -> Vec<Value> {
     fetch_tag_models().await.unwrap_or_default()
 }
 
-/// `(reachable, first_model_name)` for the system health probe.
+/// Whether a local model name is an EMBEDDING-only model, i.e. one that
+/// `/api/chat` rejects with a 400.
+///
+/// Ollama's `/api/tags` does not mark this: `details.family` is `bert` for some
+/// (`nomic-embed-text`, `mxbai-embed-large`) but the base family for others
+/// (`qwen3-embedding` reports `qwen3`), so the name is the only signal actually
+/// present in the listing. Every embedding model Ollama publishes carries
+/// `embed`/`embedding` in its name, which is what this matches.
+///
+/// ponytail: name heuristic, not a capability probe. The ceiling is a future
+/// embedding model named without `embed` — it would be picked for chat and get
+/// one 400, exactly as today, but now WARN-logged instead of silent. Upgrade
+/// path if that happens: probe `/api/show` per model and read `capabilities`.
+/// Pure + unit-tested.
+pub(super) fn is_embedding_only_model(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.contains("embed")
+}
+
+/// The first model in an `/api/tags` body that can actually hold a chat turn.
+/// `None` when the user has ONLY embedding models installed — which is the
+/// honest answer: the caller then skips translation rather than burning a
+/// guaranteed 400 on every job ad. Pure + unit-tested.
+pub(super) fn first_chat_model(body: &Value) -> Option<String> {
+    body.get("models")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+        .find(|name| !is_embedding_only_model(name))
+        .map(String::from)
+}
+
+/// `(reachable, first_CHAT_model_name)` — the local health probe, and the source
+/// of the model the translation path uses.
+///
+/// The chat filter is not cosmetic: this returned `arr.first()` unconditionally,
+/// so a user whose first `/api/tags` entry was `qwen3-embedding:8b` had every
+/// job-ad translation POST that model to `/api/chat` and take a 400. Eight of
+/// them in one reported session, silently — `translate_text` falls back to the
+/// untranslated original on any error, so the only trace was an `ok=false` span.
 pub async fn reachable_model() -> (bool, Option<String>) {
     match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
@@ -525,14 +565,7 @@ pub async fn reachable_model() -> (bool, Option<String>) {
                 crate::net::http::read_json_capped(r, crate::net::http::DEFAULT_MAX_BODY_BYTES)
                     .await
                     .unwrap_or_default();
-            let model = body
-                .get("models")
-                .and_then(|m| m.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|m| m.get("name"))
-                .and_then(|n| n.as_str())
-                .map(String::from);
-            (true, model)
+            (true, first_chat_model(&body))
         }
         _ => (false, None),
     }

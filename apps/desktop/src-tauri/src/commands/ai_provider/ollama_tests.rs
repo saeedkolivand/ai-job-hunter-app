@@ -573,3 +573,66 @@ fn parse_model_list_errors_when_models_field_is_missing() {
         Err(AppError::Provider(_))
     ));
 }
+
+
+// ── Local chat-model selection (the qwen3-embedding:8b → /api/chat 400) ────────
+//
+// `reachable_model` returned `/api/tags`'s FIRST entry unconditionally, and
+// `reachable_chat_model` forwarded it to `translate_text`, which POSTs it to
+// `/api/chat`. A user whose first entry was an embedding model therefore took a
+// guaranteed 400 per job ad — eight in one reported session, invisible, because
+// translation falls back to the untranslated original on any error.
+
+#[test]
+fn embedding_only_models_are_recognized_by_name() {
+    for name in [
+        "qwen3-embedding:8b",
+        "nomic-embed-text:latest",
+        "mxbai-embed-large",
+        "snowflake-arctic-embed2",
+        "EMBEDDINGGEMMA:300M", // case-insensitive
+    ] {
+        assert!(
+            super::is_embedding_only_model(name),
+            "{name} must be excluded from chat"
+        );
+    }
+}
+
+#[test]
+fn real_chat_models_are_not_mistaken_for_embedding_models() {
+    for name in [
+        "gemma4:31b",
+        "gpt-oss:20b",
+        "llama3.1:8b",
+        "qwen3:32b",
+        "deepseek-v4-flash:0731",
+        "mistral-small:24b",
+    ] {
+        assert!(
+            !super::is_embedding_only_model(name),
+            "{name} must stay eligible for chat"
+        );
+    }
+}
+
+#[test]
+fn first_chat_model_skips_a_leading_embedding_model() {
+    // Exactly the reported shape: the embedding model sorts first in /api/tags.
+    let body = serde_json::json!({
+        "models": [
+            { "name": "qwen3-embedding:8b" },
+            { "name": "gemma4:31b" },
+        ]
+    });
+    assert_eq!(super::first_chat_model(&body).as_deref(), Some("gemma4:31b"));
+}
+
+#[test]
+fn first_chat_model_is_none_when_only_embedding_models_are_installed() {
+    // Better than returning one anyway: the caller skips translation instead of
+    // sending a request the daemon is guaranteed to reject.
+    let body = serde_json::json!({ "models": [{ "name": "qwen3-embedding:8b" }] });
+    assert_eq!(super::first_chat_model(&body), None);
+    assert_eq!(super::first_chat_model(&serde_json::json!({})), None);
+}
