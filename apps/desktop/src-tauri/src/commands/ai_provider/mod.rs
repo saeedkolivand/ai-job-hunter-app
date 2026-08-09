@@ -29,6 +29,7 @@ mod research; // shared company-research prompt spec + helpers used by every `re
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
 pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
+mod structured; // `complete_structured`'s prompt-discipline default + the per-provider JSON wire shapes
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
 use anthropic::AnthropicClient;
@@ -729,6 +730,35 @@ pub trait AiProvider: Send + Sync {
     ) -> AppResult<(String, Usage)> {
         let text = self.complete(app, model, system, user, temperature).await?;
         Ok((text, Usage::default()))
+    }
+
+    /// Structured (JSON) completion: the same non-streaming call as
+    /// [`complete_with_usage`](Self::complete_with_usage), but asking the model
+    /// for ONE JSON value. `schema_hint` is a FILLED EXAMPLE object (not a JSON
+    /// Schema) that every path puts in the prompt; `schema` is an optional flat
+    /// JSON Schema for the providers that can constrain decoding against one.
+    ///
+    /// DEFAULT: prompt discipline only — [`structured::prompt_only`] appends a
+    /// strict JSON directive + the example to the SYSTEM slot and calls
+    /// `complete_with_usage` (so spend recording, retries, tracing and usage
+    /// parsing are all unchanged). **This default is the PERMANENT fallback**,
+    /// not a stopgap: a CLI agent, an unknown OpenAI-compatible gateway, a
+    /// provider with no JSON mode, and a caller with an example but no schema
+    /// all land here. No caller may require native constrained output, and a
+    /// NEW provider needs zero changes to this method to work.
+    ///
+    /// Providers with a native constrained-output field override this and use
+    /// `schema` when it is present, returning to the default when it is not.
+    /// Output is still untrusted (OWASP LLM05): a schema guarantees SHAPE, not
+    /// values — every caller must validate (see `crate::pipeline::json`).
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        _schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        structured::prompt_only(self, app, req, schema_hint).await
     }
 
     /// Whether this provider's MODEL performs the search itself, so
