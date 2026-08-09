@@ -274,11 +274,7 @@ pub fn research_available<P: super::AiProvider + ?Sized>(
 ) -> bool {
     // A provider whose MODEL searches (OpenAI/Anthropic/Gemini, CLI agents)
     // reuses its generation key, so if generation is configured, so is search.
-    // The Ollama family is the exception: it advertises the capability but needs
-    // a separate account key, which `native_searcher` checks.
-    let model_side =
-        provider.capabilities(model).supports_web_search && !provider.needs_explicit_searcher();
-    model_side
+    provider.has_native_search(model)
         || provider.native_searcher(app, model).is_some()
         || ExaSearcher::from_credentials(app).is_some()
 }

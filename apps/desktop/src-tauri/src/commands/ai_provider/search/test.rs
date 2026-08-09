@@ -111,3 +111,56 @@ fn a_malformed_or_empty_body_yields_no_results_rather_than_an_error() {
     assert!(parse_exa_results(&json!({ "results": "not-an-array" }), 5).is_empty());
     assert!(parse_exa_results(&json!({ "error": "bad key" }), 5).is_empty());
 }
+
+// ── has_native_search: the routing predicate ─────────────────────────────────
+//
+// `Completer::research*` asks this ONE question to decide native-call vs
+// search-then-synthesize. It gets its own tests because the previous shape —
+// each provider deciding for itself — failed silently: `OpenAiClient` overrides
+// all three research methods for every id it serves, so an `openai-compatible`
+// gateway returned "" instead of reaching the fallback, while the UI reported
+// that research was available.
+
+use super::super::{resolve, ProviderId};
+
+#[test]
+fn providers_whose_model_searches_take_the_native_path() {
+    for id in [
+        ProviderId::OpenAi,
+        ProviderId::Anthropic,
+        ProviderId::Gemini,
+    ] {
+        let client = resolve(id, None);
+        assert!(
+            client.has_native_search("some-model"),
+            "{id:?} searches with its own model and must not be routed to a backend"
+        );
+    }
+}
+
+#[test]
+fn an_openai_compatible_gateway_is_routed_to_a_search_backend() {
+    // The regression this predicate exists for. `supports_web_search` is false
+    // for this id, so it must NOT take the native path — it has none, and
+    // taking it is what produced an empty brief for every LM Studio / vLLM /
+    // OpenRouter / Groq / Together / DeepSeek user.
+    let client = resolve(ProviderId::OpenAiCompatible, None);
+    assert!(
+        !client.has_native_search("any-model"),
+        "a gateway with no web search must be routed to the shared search path"
+    );
+}
+
+#[test]
+fn the_ollama_family_is_routed_to_a_search_backend() {
+    // Both advertise `supports_web_search` for the FAMILY, but neither model
+    // searches — they call a separate hosted API — so both must take the
+    // search-then-synthesize path and resolve a searcher there.
+    for id in [ProviderId::Ollama, ProviderId::OllamaCloud] {
+        let client = resolve(id, None);
+        assert!(
+            !client.has_native_search("gemma4:31b"),
+            "{id:?} needs an explicit search backend, not a native call"
+        );
+    }
+}

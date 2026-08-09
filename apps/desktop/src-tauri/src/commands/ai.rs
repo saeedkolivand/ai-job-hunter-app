@@ -148,7 +148,9 @@ pub async fn ai_list_provider_models(
     Ok(json!(provider_client.list_models(&app).await?))
 }
 
-/// Static, network-free capability probe for a provider/model — whether it can
+/// Capability probe for a provider/model. Network-free, but NOT side-effect
+/// free: `supportsWebSearch` reads the OS keychain to see whether a search
+/// backend is actually configured — whether it can
 /// attempt a web-grounded `research*` search, whether it accepts a
 /// reasoning-effort value, and (when it does) exactly which levels this
 /// model accepts (drives the Settings → AI effort picker). Reads the
@@ -174,8 +176,8 @@ pub fn ai_model_capabilities(
             let caps = client.capabilities(&model);
             json!({
                 // Whether research can actually RUN, not what the provider
-                // advertises — see `search::research_available`. `app` exists on
-                // this otherwise network-free probe solely to read that.
+                // advertises — see `search::research_available`. This is why the
+                // command takes `app`, and why it reads stored credentials.
                 "supportsWebSearch": super::ai_provider::search::research_available(
                     &app,
                     client.as_ref(),

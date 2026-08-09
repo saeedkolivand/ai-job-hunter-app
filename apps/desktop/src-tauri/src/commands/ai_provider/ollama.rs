@@ -307,8 +307,10 @@ impl AiProvider for OllamaClient {
         complete_impl(model, system, user, temperature).await
     }
 
-    fn needs_explicit_searcher(&self) -> bool {
-        true
+    fn has_native_search(&self, _model: &str) -> bool {
+        // Advertises web search for the family, but the MODEL never searches —
+        // the hosted Web Search API does, through `native_searcher`.
+        false
     }
 
     fn native_searcher(
@@ -318,47 +320,6 @@ impl AiProvider for OllamaClient {
     ) -> Option<Box<dyn super::search::WebSearcher>> {
         OllamaSearcher::from_credentials(app, model)
             .map(|s| Box::new(s) as Box<dyn super::search::WebSearcher>)
-    }
-
-    async fn research(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        company: &str,
-        role: &str,
-    ) -> AppResult<String> {
-        // Local Ollama can't search itself. With an ollama.com account key it
-        // uses the Web Search API; without one it falls through to whatever
-        // search backend the user configured — see `search::searcher_for`.
-        super::search::searched_research(app, self, model, company, role).await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn research_salary(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        role: &str,
-        company: &str,
-        location: &str,
-        country: &str,
-        currency: &str,
-    ) -> AppResult<String> {
-        super::search::searched_research_salary(
-            app, self, model, role, company, location, country, currency,
-        )
-        .await
-    }
-
-    async fn research_answer(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        question: &str,
-        role: &str,
-        company: &str,
-    ) -> AppResult<String> {
-        super::search::searched_research_answer(app, self, model, question, role, company).await
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -718,8 +679,7 @@ fn parse_web_search(body: &Value, limit: usize) -> Vec<SearchResult> {
 /// account key and run the Ollama Web Search API. Returns an empty `Vec` when
 /// the key is missing or the search fails, so callers degrade to `""` without
 /// each re-implementing the key-check + trace boilerplate.
-async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchResult> {
-    let key = get_provider_key(app, ACCOUNT_KEY).unwrap_or_default();
+async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec<SearchResult> {
     if key.trim().is_empty() {
         return Vec::new();
     }
@@ -730,7 +690,7 @@ async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchR
         "https://ollama.com",
         false,
     );
-    match ollama_web_search(&key, query, 5).await {
+    match ollama_web_search(key, query, limit).await {
         Ok(r) => {
             trace.end(Some(200), true);
             r
@@ -749,9 +709,12 @@ async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchR
 /// lives in [`super::search`] — this is the only Ollama-specific part, which is
 /// why the pipeline could be shared with a configurable backend at all.
 pub struct OllamaSearcher {
-    app: AppHandle,
     /// Trace label only — the Web Search API takes no model.
     model: String,
+    /// Resolved once at construction. `ollama_search` used to re-read it on
+    /// every call, which with the capability probe meant three keychain lookups
+    /// for one research pass.
+    key: String,
 }
 
 impl OllamaSearcher {
@@ -761,9 +724,10 @@ impl OllamaSearcher {
     /// exists for.
     pub fn from_credentials(app: &AppHandle, model: &str) -> Option<Self> {
         let key = get_provider_key(app, ACCOUNT_KEY)?;
-        (!key.trim().is_empty()).then(|| Self {
-            app: app.clone(),
+        let key = key.trim().to_string();
+        (!key.is_empty()).then(|| Self {
             model: model.to_string(),
+            key,
         })
     }
 }
@@ -771,9 +735,7 @@ impl OllamaSearcher {
 #[async_trait]
 impl super::search::WebSearcher for OllamaSearcher {
     async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
-        let mut results = ollama_search(&self.app, &self.model, query).await;
-        results.truncate(limit);
-        results
+        ollama_search(&self.model, &self.key, query, limit).await
     }
 }
 

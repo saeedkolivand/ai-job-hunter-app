@@ -22,6 +22,8 @@ export interface SearchKeyFieldProps {
   placeholder: string;
   /** One-line hint under the field (what else the key unlocks, or what it costs). */
   note: string;
+  /** Accessible name for the key input — it has no visible <label>. */
+  fieldLabel: string;
   savedMessage: string;
   removedMessage: string;
   removeConfirmTitle: string;
@@ -43,6 +45,7 @@ export function SearchKeyField({
   getKeyLabel,
   placeholder,
   note,
+  fieldLabel,
   savedMessage,
   removedMessage,
   removeConfirmTitle,
@@ -123,11 +126,19 @@ export function SearchKeyField({
               onChange={(e) => setApiKey(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void handleSave()}
               placeholder={placeholder}
+              aria-label={fieldLabel}
               className="w-full pr-9 text-sm"
             />
             <Button
               variant="unstyled"
               onClick={() => setShowKey((v) => !v)}
+              // Icon-only control: without this it has no accessible name, and
+              // the name must track the ACTION, not the current state.
+              aria-label={
+                showKey
+                  ? t('settings.companyResearch.hideKey')
+                  : t('settings.companyResearch.showKey')
+              }
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground/30 hover:text-foreground/60"
             >
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}

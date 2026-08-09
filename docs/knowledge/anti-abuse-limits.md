@@ -123,21 +123,11 @@ One run fans out into several provider requests; each is separately charged agai
 
 ## Configuration
 
-**Current constants** (in `limits/mod.rs`):
-
-| Constant                      | Value | Rationale                                                               |
-| ----------------------------- | ----- | ----------------------------------------------------------------------- |
-| `AI_GENERATE_RATE_MAX`        | 20    | 20 per 60s; prevents request storms                                     |
-| `AI_GENERATE_CONCURRENCY_MAX` | 3     | At most 3 in-flight; prevents cost spike                                |
-| `AI_GENERATE_QUEUE_MAX`       | 20    | Callers parked waiting for a generate slot; past this they are rejected |
-| `AI_RESEARCH_RATE_MAX`        | 20    | Shared by ai_lookup_salary, ai_research_company, ai_research_answer     |
-| `AI_RESEARCH_CONCURRENCY_MAX` | 3     | Shared research-bucket concurrency                                      |
-| `SCRAPE_RATE_MAX`             | 30    | 30 per 60s; respect target rate-limits                                  |
-| `SCRAPE_CONCURRENCY_MAX`      | 2     | At most 2 in-flight; low parallelism                                    |
-| `AGENT_RUN_RATE_MAX`          | 10    | 10 per 60s; each run fans out                                           |
-| `AGENT_RUN_CONCURRENCY_MAX`   | 2     | At most 2 in-flight agentic loops                                       |
-| `RATE_WINDOW`                 | 60s   | Rolling window for rate caps                                            |
-| `PROVIDER_DAILY_MAX`          | 4000  | Per-vendor per-UTC-day ceiling (AI providers and search backends alike) |
+**Current constants** — read them from the source, which is the only place they are
+defined and doc-commented with their rationale:
+`apps/desktop/src-tauri/src/limits/mod.rs` (the `AI_GENERATE_*`, `AI_RESEARCH_*`,
+`SCRAPE_*`, `AGENT_RUN_*`, `RATE_WINDOW` and `PROVIDER_DAILY_MAX` constants).
+Values were copied here before and drifted; a pointer cannot.
 
 All caps are **fixed compile-time constants**. A settings UI to configure them is a known follow-up (limits/mod.rs line 29).
 

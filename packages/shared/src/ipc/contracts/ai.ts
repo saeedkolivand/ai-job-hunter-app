@@ -177,7 +177,8 @@ export interface AiContract {
   listProviderModels(req: { provider: string; baseUrl?: string }): Promise<ProviderModelInfo[]>;
 
   /**
-   * Static, network-free capability probe for a provider/model — whether it can
+   * Capability probe for a provider/model. Network-free, but NOT static: it
+   * reads stored credentials to answer `supportsWebSearch` — whether it can
    * attempt a web-grounded company/role search, whether it accepts a
    * reasoning-effort value, and (when it does) exactly which levels this MODEL
    * accepts. Reads the Rust `ModelCapabilities` matrix + `AiProvider::effort_levels`

@@ -702,7 +702,11 @@
       "exaSaved": "Exa-Schlüssel gespeichert.",
       "exaRemoved": "Exa-Schlüssel entfernt.",
       "exaRemoveConfirmTitle": "Exa-Schlüssel entfernen?",
-      "exaRemoveConfirmDesc": "Dies löscht deinen gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr."
+      "exaRemoveConfirmDesc": "Dies löscht deinen gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr.",
+      "showKey": "Schlüssel anzeigen",
+      "hideKey": "Schlüssel verbergen",
+      "ollamaFieldLabel": "Ollama-API-Schlüssel",
+      "exaFieldLabel": "Exa-API-Schlüssel"
     },
     "aggregatorKeys": {
       "title": "Jobsuche-Anbieter",

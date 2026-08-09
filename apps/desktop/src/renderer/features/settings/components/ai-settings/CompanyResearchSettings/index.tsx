@@ -37,6 +37,7 @@ export function CompanyResearchSettings() {
         getKeyLabel={t('settings.companyResearch.getKeyAt')}
         placeholder={t('settings.companyResearch.keyPlaceholder')}
         note={t('settings.companyResearch.sameKeyNote')}
+        fieldLabel={t('settings.companyResearch.ollamaFieldLabel')}
         savedMessage={t('settings.companyResearch.saved')}
         removedMessage={t('settings.companyResearch.removed')}
         removeConfirmTitle={t('settings.companyResearch.removeConfirmTitle')}
@@ -54,6 +55,7 @@ export function CompanyResearchSettings() {
           getKeyLabel={t('settings.companyResearch.exaGetKeyAt')}
           placeholder={t('settings.companyResearch.exaKeyPlaceholder')}
           note={t('settings.companyResearch.exaNote')}
+          fieldLabel={t('settings.companyResearch.exaFieldLabel')}
           savedMessage={t('settings.companyResearch.exaSaved')}
           removedMessage={t('settings.companyResearch.exaRemoved')}
           removeConfirmTitle={t('settings.companyResearch.exaRemoveConfirmTitle')}

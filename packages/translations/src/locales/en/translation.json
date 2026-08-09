@@ -702,7 +702,11 @@
       "exaSaved": "Exa key saved.",
       "exaRemoved": "Exa key removed.",
       "exaRemoveConfirmTitle": "Remove Exa key?",
-      "exaRemoveConfirmDesc": "This deletes your saved Exa key. Providers without their own web search stop producing a company brief."
+      "exaRemoveConfirmDesc": "This deletes your saved Exa key. Providers without their own web search stop producing a company brief.",
+      "showKey": "Show key",
+      "hideKey": "Hide key",
+      "ollamaFieldLabel": "Ollama API key",
+      "exaFieldLabel": "Exa API key"
     },
     "aggregatorKeys": {
       "title": "Job search providers",

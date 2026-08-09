@@ -110,52 +110,22 @@ impl AiProvider for OllamaCloudClient {
             .await
     }
 
-    async fn research(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        company: &str,
-        role: &str,
-    ) -> AppResult<String> {
-        // Search via the Ollama Web Search API (same account key), then synthesize
-        // through the cloud chat model (the inner OpenAI-compatible client).
-        super::search::searched_research(app, &self.inner, model, company, role).await
+    fn has_native_search(&self, _model: &str) -> bool {
+        // Advertises web search for the family, but the MODEL never searches —
+        // the hosted Web Search API does, through `native_searcher`.
+        false
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn research_salary(
+    fn native_searcher(
         &self,
         app: &AppHandle,
         model: &str,
-        role: &str,
-        company: &str,
-        location: &str,
-        country: &str,
-        currency: &str,
-    ) -> AppResult<String> {
-        super::search::searched_research_salary(
-            app,
-            &self.inner,
-            model,
-            role,
-            company,
-            location,
-            country,
-            currency,
-        )
-        .await
-    }
-
-    async fn research_answer(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        question: &str,
-        role: &str,
-        company: &str,
-    ) -> AppResult<String> {
-        super::search::searched_research_answer(app, &self.inner, model, question, role, company)
-            .await
+    ) -> Option<Box<dyn super::search::WebSearcher>> {
+        // Same hosted Web Search API as local Ollama, and the account key IS
+        // this provider's generation key — so a configured Ollama Cloud always
+        // has it, and search never falls back.
+        super::ollama::OllamaSearcher::from_credentials(app, model)
+            .map(|s| Box::new(s) as Box<dyn super::search::WebSearcher>)
     }
 
     async fn embed(&self, app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {

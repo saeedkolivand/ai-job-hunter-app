@@ -835,14 +835,18 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
-    /// Whether this provider's MODEL cannot search on its own, so research needs
-    /// an explicit backend ([`Self::native_searcher`], or the configured
-    /// fallback). Only the Ollama family sets it: that family advertises
-    /// `supports_web_search` while a given install may have no account key, so
-    /// the capability flag alone cannot answer "will research actually produce
-    /// anything" — see `search::research_available`.
-    fn needs_explicit_searcher(&self) -> bool {
-        false
+    /// Whether this provider's MODEL performs the search itself, so
+    /// [`Self::research`] is a single native call.
+    ///
+    /// The routing question, asked once in `Completer::research*`. False means
+    /// the search-then-synthesize path runs instead, which is what lets a
+    /// provider with no search of its own use a configured backend.
+    ///
+    /// Defaults to the advertised capability. The Ollama family overrides it to
+    /// `false`: it advertises search for the FAMILY, but the model does not
+    /// search — a separate hosted API does, via [`Self::native_searcher`].
+    fn has_native_search(&self, model: &str) -> bool {
+        self.capabilities(model).supports_web_search
     }
 
     /// This provider's OWN search backend, when it is usable right now.
@@ -860,29 +864,26 @@ pub trait AiProvider: Send + Sync {
         None
     }
 
-    /// Produce a ~150-word company-research brief.
+    /// Produce a ~150-word company-research brief with the provider's OWN
+    /// model-side web search.
     ///
-    /// Providers whose model searches the web itself (OpenAI/Anthropic/Gemini,
-    /// CLI agents) override this with a single native call. The DEFAULT is the
-    /// search-then-synthesize path: fetch snippets from whichever backend
-    /// [`search::searcher_for`] resolves — the provider's own
-    /// ([`Self::native_searcher`]) or the user-configured fallback — then
-    /// synthesize with this provider's model.
+    /// Only reached when [`Self::has_native_search`] is true —
+    /// `Completer::research` routes everything else through
+    /// [`search::searched_research`]. Implement this ONLY if the model searches
+    /// for itself; a provider that needs an explicit search backend implements
+    /// [`Self::native_searcher`] instead and leaves this alone.
     ///
-    /// That default is what gives research to providers that previously had
-    /// none: every `openai-compatible` gateway, and local Ollama without an
-    /// ollama.com account key. Returns `""` (never an error) when no backend is
-    /// configured or the search finds nothing, so generation always proceeds.
-    /// The brief is untrusted reference context — fenced downstream and never a
-    /// source of candidate facts.
+    /// Returns `""` (never an error) when the search finds nothing, so
+    /// generation always proceeds. The brief is untrusted reference context —
+    /// fenced downstream and never a source of candidate facts.
     async fn research(
         &self,
-        app: &AppHandle,
-        model: &str,
-        company: &str,
-        role: &str,
+        _app: &AppHandle,
+        _model: &str,
+        _company: &str,
+        _role: &str,
     ) -> AppResult<String> {
-        search::searched_research(app, self, model, company, role).await
+        Ok(String::new())
     }
 
     /// Web-grounded market salary-range lookup for a role — at a specific
