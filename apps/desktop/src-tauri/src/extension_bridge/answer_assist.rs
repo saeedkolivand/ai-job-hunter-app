@@ -778,7 +778,17 @@ async fn resolve_salary_range<S: crate::salary_research::SalarySearcher>(
     // low-traffic path; `None` still lets `enrich` skip its cache-read branch
     // cleanly rather than erroring.
     crate::salary_research::SalaryResearch
-        .enrich(searcher, None, role, company, "", "", "")
+        .enrich(
+            searcher,
+            None,
+            role,
+            company,
+            "",
+            "",
+            "",
+            // No per-request effort at this call depth — unscaled baseline.
+            crate::commands::ai_provider::timeouts::research_deadline(None),
+        )
         .await
 }
 

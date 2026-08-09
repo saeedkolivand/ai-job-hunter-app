@@ -428,6 +428,10 @@
       "matchResume": "Resume match",
       "autopilotRun": "Autopilot run"
     },
+    "activity": {
+      "queued": "queued",
+      "queuedWithCount": "queued, {{count}} ahead"
+    },
     "jobKindsShort": {
       "aiGenerate": "AI",
       "aiEmbed": "Embed",
@@ -1463,6 +1467,7 @@
       "generate": "Generate",
       "generating": "Generating…",
       "generatingHint": "This can take a moment — tailoring against the job posting.",
+      "reasoningHeavyHint": "This model is spending far more on internal reasoning than on the document. Expect several minutes — it is working, not stuck.",
       "cancel": "Cancel",
       "analyzing": "Analyzing job description…",
       "writingResume": "Writing resume…",
