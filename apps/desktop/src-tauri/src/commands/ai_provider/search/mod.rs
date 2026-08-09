@@ -32,7 +32,7 @@
 
 use async_trait::async_trait;
 use serde_json::json;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::research::SearchResult;
 use super::{timeouts, ProviderId, RequestTrace};
@@ -88,6 +88,7 @@ pub trait WebSearcher: Send + Sync {
 /// Exa (<https://exa.ai>) — a hosted retrieval API. One POST, one key, no local
 /// runtime.
 pub struct ExaSearcher {
+    app: AppHandle,
     key: String,
 }
 
@@ -97,13 +98,47 @@ impl ExaSearcher {
     pub fn from_credentials(app: &AppHandle) -> Option<Self> {
         let key = crate::commands::ai::get_provider_key(app, EXA_KEY)?;
         let key = key.trim().to_string();
-        (!key.is_empty()).then_some(Self { key })
+        (!key.is_empty()).then(|| Self {
+            app: app.clone(),
+            key,
+        })
+    }
+
+    /// Charge one Exa search against the shared per-vendor daily ceiling.
+    ///
+    /// Exa bills per request and is a DIFFERENT vendor than the AI provider, so
+    /// it gets its own bucket rather than spending the provider's. The counter
+    /// map is `(utc_day, vendor)`-keyed, so a name that is not a `ProviderId`
+    /// needs no schema change. `false` means the ceiling is reached and the
+    /// caller must not issue the request.
+    fn charge_daily(&self) -> bool {
+        let Some(limiter) = self
+            .app
+            .try_state::<std::sync::Arc<crate::limits::Limiter>>()
+        else {
+            // No limiter in state (only reachable in a partially-built app) —
+            // fail CLOSED on a billable call rather than assume budget.
+            tracing::warn!("exa search: limiter unavailable, skipping search");
+            return false;
+        };
+        match limiter.charge_provider_daily(EXA_KEY, crate::limits::PROVIDER_DAILY_MAX) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("exa search: daily budget exceeded: {e}");
+                false
+            }
+        }
     }
 }
 
 #[async_trait]
 impl WebSearcher for ExaSearcher {
     async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+        // Charged BEFORE the request because this IS the billable call — unlike
+        // the command-layer charges, which sit before an admission check.
+        if !self.charge_daily() {
+            return Vec::new();
+        }
         let trace = RequestTrace::begin(
             // Traced under the ACTIVE provider is wrong here — the call is Exa's.
             // `ProviderId` has no Exa arm on purpose (a search backend is not a
@@ -218,6 +253,34 @@ pub fn parse_exa_results(body: &serde_json::Value, limit: usize) -> Vec<SearchRe
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Whether research can actually run for `provider`/`model` right now.
+///
+/// This is what `supportsWebSearch` reports, and it is deliberately about
+/// CONFIGURATION, not about what a provider advertises. The static capability
+/// flag says local Ollama "supports web search", which is true of the family and
+/// false of a keyless install — so the toggle read ON while every brief came
+/// back empty. A user cannot act on that; they can act on "no search backend is
+/// configured".
+///
+/// True when the provider's model searches for itself
+/// (`capabilities().supports_web_search` AND no separate searcher needed), when
+/// its own searcher is configured, or when a fallback backend is.
+pub fn research_available<P: super::AiProvider + ?Sized>(
+    app: &AppHandle,
+    provider: &P,
+    model: &str,
+) -> bool {
+    // A provider whose MODEL searches (OpenAI/Anthropic/Gemini, CLI agents)
+    // reuses its generation key, so if generation is configured, so is search.
+    // The Ollama family is the exception: it advertises the capability but needs
+    // a separate account key, which `native_searcher` checks.
+    let model_side =
+        provider.capabilities(model).supports_web_search && !provider.needs_explicit_searcher();
+    model_side
+        || provider.native_searcher(app, model).is_some()
+        || ExaSearcher::from_credentials(app).is_some()
 }
 
 // ── Backend resolution ────────────────────────────────────────────────────────

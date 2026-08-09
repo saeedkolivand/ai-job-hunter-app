@@ -307,6 +307,10 @@ impl AiProvider for OllamaClient {
         complete_impl(model, system, user, temperature).await
     }
 
+    fn needs_explicit_searcher(&self) -> bool {
+        true
+    }
+
     fn native_searcher(
         &self,
         app: &AppHandle,

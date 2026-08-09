@@ -192,6 +192,11 @@ export interface AiContract {
    * unresolvable providers degrade to `supportsWebSearch: false`,
    * `supportsReasoning: false`, `effortLevels: []`. `baseUrl` is forwarded for
    * OpenAI-compatible servers.
+   *
+   * `supportsWebSearch` is a CONFIGURATION answer, not a capability one: true
+   * when a search backend can actually serve research — the provider's own, or
+   * the configured fallback. A provider that advertises search but has no key
+   * for it reads false, because the brief it would produce is empty.
    */
   modelCapabilities(req: {
     provider: string;

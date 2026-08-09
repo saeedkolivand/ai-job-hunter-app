@@ -12,8 +12,7 @@ use crate::jobs::{JobStatus, JobTracker};
 use crate::postings::PostingsCache;
 
 use super::ai_provider::{
-    emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ModelCapabilities,
-    ProviderId,
+    emit_stream_error, ollama, resolve, resolve_by_name, AiGenerateRequest, ProviderId,
 };
 
 /// Stream an AI generation from the explicitly-selected provider.
@@ -164,6 +163,7 @@ pub async fn ai_list_provider_models(
 /// default-off fallback.
 #[tauri::command]
 pub fn ai_model_capabilities(
+    app: AppHandle,
     provider: String,
     model: Option<String>,
     base_url: Option<String>,
@@ -173,7 +173,14 @@ pub fn ai_model_capabilities(
         Ok(client) => {
             let caps = client.capabilities(&model);
             json!({
-                "supportsWebSearch": caps.supports_web_search,
+                // Whether research can actually RUN, not what the provider
+                // advertises — see `search::research_available`. `app` exists on
+                // this otherwise network-free probe solely to read that.
+                "supportsWebSearch": super::ai_provider::search::research_available(
+                    &app,
+                    client.as_ref(),
+                    &model,
+                ),
                 "supportsReasoning": caps.supports_reasoning,
                 "effortLevels": client.effort_levels(&model),
             })
@@ -310,7 +317,12 @@ pub async fn ai_research_company(
 /// re-implementing its capability-check-before-charging order, so the two
 /// call sites can never drift.
 pub(crate) trait AnswerSearcher {
-    fn capabilities(&self) -> ModelCapabilities;
+    /// Whether a search backend is actually CONFIGURED — not whether the
+    /// provider advertises one. Was `capabilities().supports_web_search`, which
+    /// answered the wrong question in both directions: it skipped a keyless
+    /// Ollama install that has a configured fallback backend, and it admitted
+    /// (and charged for) one that has neither.
+    fn research_available(&self) -> bool;
     fn research_answer(
         &self,
         question: &str,
@@ -320,8 +332,8 @@ pub(crate) trait AnswerSearcher {
 }
 
 impl AnswerSearcher for crate::pipeline::Completer {
-    fn capabilities(&self) -> ModelCapabilities {
-        crate::pipeline::Completer::capabilities(self)
+    fn research_available(&self) -> bool {
+        crate::pipeline::Completer::research_available(self)
     }
 
     async fn research_answer(
@@ -378,8 +390,8 @@ pub(crate) async fn research_answer_core<S: AnswerSearcher>(
     // gateway) would otherwise burn one daily-budget charge per question for
     // a guaranteed-empty result. Justified divergence from the company-research
     // charge order given that N× fan-out.
-    if !searcher.capabilities().supports_web_search {
-        tracing::debug!("research_answer: provider cannot web-search, skipping charge");
+    if !searcher.research_available() {
+        tracing::debug!("research_answer: no search backend configured, skipping charge");
         return String::new();
     }
 
@@ -1081,7 +1093,6 @@ mod research_answer_tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
-    use crate::commands::ai_provider::TokenParam;
     use crate::error::AppResult;
     use crate::limits::Limiter;
 
@@ -1091,23 +1102,9 @@ mod research_answer_tests {
         calls: AtomicUsize,
     }
 
-    fn capabilities_with(supports_web_search: bool) -> ModelCapabilities {
-        ModelCapabilities {
-            supports_temperature: true,
-            supports_system_role: true,
-            supports_streaming: true,
-            supports_reasoning: false,
-            supports_tools: false,
-            supports_json_mode: false,
-            supports_embeddings: false,
-            supports_web_search,
-            token_param: TokenParam::MaxTokens,
-        }
-    }
-
     impl AnswerSearcher for FakeAnswerSearcher {
-        fn capabilities(&self) -> ModelCapabilities {
-            capabilities_with(self.supports_web_search)
+        fn research_available(&self) -> bool {
+            self.supports_web_search
         }
 
         async fn research_answer(
@@ -1172,8 +1169,8 @@ mod research_answer_tests {
     async fn a_search_failure_degrades_to_empty_after_already_charging() {
         struct ErrSearcher;
         impl AnswerSearcher for ErrSearcher {
-            fn capabilities(&self) -> ModelCapabilities {
-                capabilities_with(true)
+            fn research_available(&self) -> bool {
+                true
             }
             async fn research_answer(
                 &self,

@@ -83,6 +83,11 @@ export const useSetProviderKey = () => {
     onSuccess: (_data, { provider }) => {
       void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
       void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-models', provider] });
+      // Capabilities now report whether a search backend is CONFIGURED, not what
+      // the provider advertises, so a key change can flip `supportsWebSearch` —
+      // and that query is cached with a VERY_LONG staleTime. Without this the
+      // research toggle stays wrong until the app restarts.
+      void qc.invalidateQueries({ queryKey: keys.ai.capabilities });
     },
   });
 };
@@ -94,6 +99,11 @@ export const useRemoveProviderKey = () => {
     mutationFn: ({ provider }: { provider: string }) => api.ai.removeProviderKey({ provider }),
     onSuccess: (_data, { provider }) => {
       void qc.invalidateQueries({ queryKey: [...keys.ai.models, 'provider-key', provider] });
+      // Capabilities now report whether a search backend is CONFIGURED, not what
+      // the provider advertises, so a key change can flip `supportsWebSearch` —
+      // and that query is cached with a VERY_LONG staleTime. Without this the
+      // research toggle stays wrong until the app restarts.
+      void qc.invalidateQueries({ queryKey: keys.ai.capabilities });
     },
   });
 };
@@ -353,8 +363,13 @@ export const useGenerateConfig = () => {
 /**
  * Static capabilities of a provider/model (web-search + reasoning-effort
  * support), read straight from the Rust `ModelCapabilities` matrix — never a
- * TS mirror, so a new provider is picked up with zero renderer change. Cheap +
- * rarely-changing, so cached for a long while. Exported so the AI-settings
+ * TS mirror, so a new provider is picked up with zero renderer change.
+ *
+ * `supportsWebSearch` answers "can research actually run" — a search backend is
+ * configured — not "does this provider advertise search". Keyless local Ollama
+ * therefore reads false, where it used to read true and return empty briefs.
+ * Because that depends on stored keys, the key mutations above invalidate this
+ * query; the long staleTime alone would otherwise strand it. Exported so the AI-settings
  * provider-config components can drive the effort picker's visibility from
  * this SAME query, per (provider, model) row — not just the active one.
  */

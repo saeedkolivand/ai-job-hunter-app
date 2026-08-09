@@ -201,6 +201,17 @@ impl Completer {
         self.provider.capabilities(&self.model)
     }
 
+    /// Whether company research can actually run right now — a configured search
+    /// backend exists, not merely a provider that advertises one. See
+    /// `ai_provider::search::research_available`.
+    pub fn research_available(&self) -> bool {
+        crate::commands::ai_provider::search::research_available(
+            &self.app,
+            self.provider.as_ref(),
+            &self.model,
+        )
+    }
+
     /// The resolved active model — so a caller can name it in a capability-gate
     /// error message after resolving, without re-deriving it from the (no longer
     /// trusted) request. See [`crate::commands::agent::agent_run`]'s

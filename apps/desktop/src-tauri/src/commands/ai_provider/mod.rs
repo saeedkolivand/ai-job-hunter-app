@@ -835,16 +835,23 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
-    /// This provider's OWN search backend, when it has one that is actually
-    /// usable right now — `None` otherwise.
+    /// Whether this provider's MODEL cannot search on its own, so research needs
+    /// an explicit backend ([`Self::native_searcher`], or the configured
+    /// fallback). Only the Ollama family sets it: that family advertises
+    /// `supports_web_search` while a given install may have no account key, so
+    /// the capability flag alone cannot answer "will research actually produce
+    /// anything" — see `search::research_available`.
+    fn needs_explicit_searcher(&self) -> bool {
+        false
+    }
+
+    /// This provider's OWN search backend, when it is usable right now.
     ///
-    /// Only the Ollama family implements this: its search is a separate HTTP API
-    /// needing its own account key, so "can search" is a runtime question, not a
-    /// static capability. Providers whose model searches for itself
-    /// (OpenAI/Anthropic/Gemini, CLI agents) override [`Self::research`] instead
-    /// and never consult this; providers with no search at all leave both alone
-    /// and inherit the configurable fallback below. A NEW provider therefore
-    /// needs no change here either way.
+    /// Only the Ollama family implements it: its search is a separate HTTP API
+    /// with its own account key, so "can search" is a runtime question. Providers
+    /// whose model searches for itself override [`Self::research`] and never
+    /// consult this; providers with no search leave both alone and inherit the
+    /// fallback below. A NEW provider needs no change either way.
     fn native_searcher(
         &self,
         _app: &AppHandle,
