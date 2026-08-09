@@ -204,6 +204,17 @@ export function OutputPanelDone({
   const isPending = activeOut === 'resume' ? pendingResume : pendingCover;
   const currentMeta = meta;
 
+  // Ownership guard for "Re-check" below: a session Reset clears `meta`/
+  // `sourceResume`/`jobAd` (back to null/'') while the validate-content call
+  // is still in flight — without this, the stale result would resurrect a
+  // report into the freshly-cleared session. Bumped whenever these
+  // identity-defining inputs change; mirrors the AbortController ownership
+  // check `useGeneration`'s persist() uses for the same class of race.
+  const recheckEpochRef = useRef(0);
+  useEffect(() => {
+    recheckEpochRef.current += 1;
+  }, [meta, sourceResume, jobAd]);
+
   // "Re-check" (quality panel action): re-validate the ACTIVE doc's current
   // text and merge the fresh sub-report into the session's report — this is
   // what clears staleness (the fresh hash matches what was just checked).
@@ -212,6 +223,7 @@ export function OutputPanelDone({
   const handleRecheck = async () => {
     if (!sourceResume || !jobAd || !meta || !onReportChange) return;
     const docKind = activeOut === 'resume' ? 'resume' : 'coverLetter';
+    const epoch = recheckEpochRef.current;
     try {
       const payload = await validateContent.mutateAsync({
         generated: currentOutput,
@@ -221,6 +233,9 @@ export function OutputPanelDone({
         targetLanguage: meta.targetLanguage,
         docKind,
       });
+      // A Reset while this call was in flight already cleared the caller's
+      // report — don't resurrect a stale one onto the new session.
+      if (recheckEpochRef.current !== epoch) return;
       onReportChange(mergeRecheckedReport(report ?? null, docKind, payload, currentOutput));
     } catch (err) {
       console.warn('[OutputPanelDone] recheck failed — report left as-is', {

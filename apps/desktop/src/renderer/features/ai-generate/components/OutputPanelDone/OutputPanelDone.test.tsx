@@ -304,4 +304,75 @@ describe('OutputPanelDone — quality panel Re-check wiring', () => {
     await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
     expect(screen.queryByRole('button', { name: /re-check/i })).toBeNull();
   });
+
+  it('a session reset while Re-check is still in flight never resurrects a report into the cleared session', async () => {
+    let resolveValidate!: (v: unknown) => void;
+    validateContentMock.mutateAsync = vi.fn(
+      () => new Promise((resolve) => (resolveValidate = resolve))
+    );
+    validateContentMock.isPending = false;
+    const onReportChange = vi.fn();
+    const user = userEvent.setup();
+
+    const props = {
+      resumeOut: RAW,
+      coverOut: '',
+      activeOut: 'resume' as const,
+      mode: 'ats',
+      templateId: 'classic' as const,
+      atsMode: false,
+      onActiveOutChange: vi.fn(),
+      onCopy: vi.fn(),
+      onExport: vi.fn(),
+      onOutputChange: vi.fn(),
+      onRegenerate: vi.fn(),
+      copied: false,
+    };
+
+    const { rerender } = render(
+      <OutputPanelDone
+        {...props}
+        report={STALE_REPORT}
+        onReportChange={onReportChange}
+        meta={META}
+        sourceResume="source resume text"
+        jobAd="the job ad"
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    // A session Reset happens while the validate call is still in flight —
+    // the parent re-renders this panel with its cleared/default props
+    // (mirrors what AIGeneratePage's reset() produces).
+    rerender(
+      <OutputPanelDone
+        {...props}
+        resumeOut=""
+        report={null}
+        onReportChange={onReportChange}
+        meta={null}
+        sourceResume=""
+        jobAd=""
+      />
+    );
+
+    resolveValidate({
+      ok: true,
+      issues: [],
+      metrics: {
+        keywordCoverage: 90,
+        topRequirementHits: 1,
+        duplicateRatio: 0,
+        rolesSource: 1,
+        rolesOutput: 1,
+      },
+    });
+    // Flush the resolved promise's continuation (the post-await half of
+    // handleRecheck) so a would-be call to onReportChange has had its chance.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onReportChange).not.toHaveBeenCalled();
+  });
 });
