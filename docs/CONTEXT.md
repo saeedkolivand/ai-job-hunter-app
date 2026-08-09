@@ -33,6 +33,18 @@ _Avoid_: "the only outbound calls are…" (an over-absolute phrasing — the bou
 storage/telemetry, not call count), "no network" / "fully offline" (untrue; scraping is core),
 "personal data never leaves the device" (untrue — the AI provider receives the résumé + job text)
 
+**Search backend**:
+The service that returns **web results** for company research — the provider's own
+model-side search, the Ollama Web Search API, or a configured fallback (Exa). It is
+**not an AI provider**: it retrieves, it cannot generate, and it is configured on its own
+axis (its own credential slot, absent from the provider registry and from generation
+routing). Research is always two steps — the search backend retrieves, the **AI provider**
+synthesizes the brief. A provider that can already search is never redirected to a
+fallback. See [ADR 0023](adr/0023-web-search-is-a-separate-axis-from-the-ai-provider.md).
+_Avoid_: calling it a "search provider" or listing it among AI providers (it appears in
+neither `ProviderId` nor the provider picker); "web search is on" as a synonym for the
+research toggle — the toggle asks for a brief, the backend is what can serve one
+
 **Enrichment egress**:
 An outbound call the app makes **on its own initiative** to decorate data the user did not
 ask about, trading a **public identifier** for optional presentation data (the canonical

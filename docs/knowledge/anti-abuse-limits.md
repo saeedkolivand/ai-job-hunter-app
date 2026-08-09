@@ -1,6 +1,6 @@
 # Anti-Abuse Rate & Concurrency Limits
 
-Last updated: 2026-07-16
+Last updated: 2026-08-09
 
 Canonical source: `apps/desktop/src-tauri/src/limits/mod.rs`
 
@@ -36,8 +36,8 @@ pub struct ConcurrencyGuard {
 Three independent guards (all process-local, reset on restart):
 
 1. **Sliding-window request-rate cap** — at most `max_requests` accepted starts of a given command within the last [`RATE_WINDOW`] (60 seconds). Old timestamps age out, so it is a true rolling window.
-2. **Concurrency cap** — at most `max_concurrent` in-flight calls of a command. Acquired as an RAII [`ConcurrencyGuard`] that decrements the live count on drop, so a panicking/early-returning handler can never leak a slot.
-3. **Per-provider daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted AI requests per provider per UTC day (reset at midnight UTC).
+2. **Concurrency cap** — at most `max_concurrent` in-flight calls of a command, held as an RAII [`ConcurrencyGuard`] that OWNS a semaphore permit, so a panicking/early-returning handler can never leak a slot. Two admission styles share one budget: `acquire` **rejects** when full, `acquire_queued` **waits** (bounded by a queue-depth cap) — the tailoring pipeline uses the latter, since every call there is a deliberate click.
+3. **Per-vendor daily request ceiling** — a generous runaway-cost backstop: at most `PROVIDER_DAILY_MAX` accepted billable requests per vendor per UTC day (reset at midnight UTC). Keyed by vendor name, not by `ProviderId`, so a **search backend** that bills separately (`exa`) charges its own bucket rather than spending the AI provider's — see [ADR 0023](../adr/0023-web-search-is-a-separate-axis-from-the-ai-provider.md).
 
 Defaults are intentionally **generous** so normal interactive use never trips them; they exist to stop pathological loops, not to throttle a human.
 
@@ -59,7 +59,7 @@ The variant's code string is `"RATE_LIMITED"` (line 67 of `error.rs`), and it is
 
 ### AI Commands
 
-Applied to `ai_generate` and the `ai_research` bucket in `commands/ai.rs` (lines 38–66):
+Applied to `ai_generate` (`commands/ai.rs`), the shared `ai_research` bucket (`admit_research`, same file), and — via `acquire_queued` — `generate_pipeline` (`commands/pipeline.rs`), which is the command the tailoring flow actually calls:
 
 ```rust
 #[tauri::command]
@@ -123,20 +123,21 @@ One run fans out into several provider requests; each is separately charged agai
 
 ## Configuration
 
-**Current constants** (in `limits/mod.rs`, lines 45–77):
+**Current constants** (in `limits/mod.rs`):
 
-| Constant                      | Value | Rationale                                                           |
-| ----------------------------- | ----- | ------------------------------------------------------------------- |
-| `AI_GENERATE_RATE_MAX`        | 20    | 20 per 60s; prevents request storms                                 |
-| `AI_GENERATE_CONCURRENCY_MAX` | 3     | At most 3 in-flight; prevents cost spike                            |
-| `AI_RESEARCH_RATE_MAX`        | 20    | Shared by ai_lookup_salary, ai_research_company, ai_research_answer |
-| `AI_RESEARCH_CONCURRENCY_MAX` | 3     | Shared research-bucket concurrency                                  |
-| `SCRAPE_RATE_MAX`             | 30    | 30 per 60s; respect target rate-limits                              |
-| `SCRAPE_CONCURRENCY_MAX`      | 2     | At most 2 in-flight; low parallelism                                |
-| `AGENT_RUN_RATE_MAX`          | 10    | 10 per 60s; each run fans out                                       |
-| `AGENT_RUN_CONCURRENCY_MAX`   | 2     | At most 2 in-flight agentic loops                                   |
-| `RATE_WINDOW`                 | 60s   | Rolling window for rate caps                                        |
-| `PROVIDER_DAILY_MAX`          | 4000  | Per-provider per-UTC-day ceiling                                    |
+| Constant                      | Value | Rationale                                                               |
+| ----------------------------- | ----- | ----------------------------------------------------------------------- |
+| `AI_GENERATE_RATE_MAX`        | 20    | 20 per 60s; prevents request storms                                     |
+| `AI_GENERATE_CONCURRENCY_MAX` | 3     | At most 3 in-flight; prevents cost spike                                |
+| `AI_GENERATE_QUEUE_MAX`       | 20    | Callers parked waiting for a generate slot; past this they are rejected |
+| `AI_RESEARCH_RATE_MAX`        | 20    | Shared by ai_lookup_salary, ai_research_company, ai_research_answer     |
+| `AI_RESEARCH_CONCURRENCY_MAX` | 3     | Shared research-bucket concurrency                                      |
+| `SCRAPE_RATE_MAX`             | 30    | 30 per 60s; respect target rate-limits                                  |
+| `SCRAPE_CONCURRENCY_MAX`      | 2     | At most 2 in-flight; low parallelism                                    |
+| `AGENT_RUN_RATE_MAX`          | 10    | 10 per 60s; each run fans out                                           |
+| `AGENT_RUN_CONCURRENCY_MAX`   | 2     | At most 2 in-flight agentic loops                                       |
+| `RATE_WINDOW`                 | 60s   | Rolling window for rate caps                                            |
+| `PROVIDER_DAILY_MAX`          | 4000  | Per-vendor per-UTC-day ceiling (AI providers and search backends alike) |
 
 All caps are **fixed compile-time constants**. A settings UI to configure them is a known follow-up (limits/mod.rs line 29).
 
