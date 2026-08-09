@@ -13,7 +13,7 @@ use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 
-use super::research::{self, SearchResult};
+use super::research::SearchResult;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
@@ -307,6 +307,15 @@ impl AiProvider for OllamaClient {
         complete_impl(model, system, user, temperature).await
     }
 
+    fn native_searcher(
+        &self,
+        app: &AppHandle,
+        model: &str,
+    ) -> Option<Box<dyn super::search::WebSearcher>> {
+        OllamaSearcher::from_credentials(app, model)
+            .map(|s| Box::new(s) as Box<dyn super::search::WebSearcher>)
+    }
+
     async fn research(
         &self,
         app: &AppHandle,
@@ -314,9 +323,10 @@ impl AiProvider for OllamaClient {
         company: &str,
         role: &str,
     ) -> AppResult<String> {
-        // Local Ollama can't search itself — it uses the Ollama Web Search API
-        // (needs the account key) then synthesizes via the local model.
-        ollama_research(app, self, model, company, role).await
+        // Local Ollama can't search itself. With an ollama.com account key it
+        // uses the Web Search API; without one it falls through to whatever
+        // search backend the user configured — see `search::searcher_for`.
+        super::search::searched_research(app, self, model, company, role).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -330,7 +340,10 @@ impl AiProvider for OllamaClient {
         country: &str,
         currency: &str,
     ) -> AppResult<String> {
-        ollama_research_salary(app, self, model, role, company, location, country, currency).await
+        super::search::searched_research_salary(
+            app, self, model, role, company, location, country, currency,
+        )
+        .await
     }
 
     async fn research_answer(
@@ -341,7 +354,7 @@ impl AiProvider for OllamaClient {
         role: &str,
         company: &str,
     ) -> AppResult<String> {
-        ollama_research_answer(app, self, model, question, role, company).await
+        super::search::searched_research_answer(app, self, model, question, role, company).await
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -726,83 +739,38 @@ async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchR
     }
 }
 
-/// Shared Ollama-family research: search via the Ollama Web Search API (account
-/// key), then synthesize the brief with `provider` — the local daemon for
-/// [`OllamaClient`], `ollama.com/v1` for Ollama Cloud. Returns `""` when the key
-/// is missing or the search yields nothing, so research degrades gracefully.
-pub async fn ollama_research(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    company: &str,
-    role: &str,
-) -> AppResult<String> {
-    let results = ollama_search(app, model, &research::search_query(company)).await;
-    if results.is_empty() {
-        return Ok(String::new());
-    }
-    let user = research::synth_user(company, role, &results);
-    provider
-        .complete(app, model, research::SYNTH_SYSTEM, &user, Some(0.2))
-        .await
+/// The Ollama Web Search API as a [`WebSearcher`].
+///
+/// The search half of Ollama-family research. The synthesize half is generic and
+/// lives in [`super::search`] — this is the only Ollama-specific part, which is
+/// why the pipeline could be shared with a configurable backend at all.
+pub struct OllamaSearcher {
+    app: AppHandle,
+    /// Trace label only — the Web Search API takes no model.
+    model: String,
 }
 
-/// Salary-range sibling of [`ollama_research`]: same search-then-synthesize
-/// shape, but the salary query/prompts (compact JSON contract, see
-/// `research::salary_system`). Returns `""` when the key is missing or the
-/// search yields nothing, so the lookup degrades gracefully. `country`/
-/// `currency` ground the report in the job's actual currency — see
-/// `AiProvider::research_salary`.
-#[allow(clippy::too_many_arguments)]
-pub async fn ollama_research_salary(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    role: &str,
-    company: &str,
-    location: &str,
-    country: &str,
-    currency: &str,
-) -> AppResult<String> {
-    let query = research::salary_search_query(role, company, location, country, currency);
-    let results = ollama_search(app, model, &query).await;
-    if results.is_empty() {
-        return Ok(String::new());
+impl OllamaSearcher {
+    /// `None` when no ollama.com account key is stored. Local Ollama advertises
+    /// `supports_web_search` but the API needs a CLOUD key, so a keyless local
+    /// install has no usable native search — the case the configurable fallback
+    /// exists for.
+    pub fn from_credentials(app: &AppHandle, model: &str) -> Option<Self> {
+        let key = get_provider_key(app, ACCOUNT_KEY)?;
+        (!key.trim().is_empty()).then(|| Self {
+            app: app.clone(),
+            model: model.to_string(),
+        })
     }
-    let user = research::salary_synth_user(role, company, location, country, currency, &results);
-    provider
-        .complete(
-            app,
-            model,
-            &research::salary_system(currency),
-            &user,
-            Some(0.2),
-        )
-        .await
 }
 
-/// Application-answer sibling of [`ollama_research`]: same search-then-
-/// synthesize shape, scoped to a single application question (see
-/// `research::answer_search_query`) instead of a general company brief.
-/// Returns `""` when the key is missing or the search yields nothing, so the
-/// lookup degrades gracefully.
-pub async fn ollama_research_answer(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    question: &str,
-    role: &str,
-    company: &str,
-) -> AppResult<String> {
-    let query = research::answer_search_query(question, role, company);
-    let results = ollama_search(app, model, &query).await;
-    if results.is_empty() {
-        return Ok(String::new());
+#[async_trait]
+impl super::search::WebSearcher for OllamaSearcher {
+    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+        let mut results = ollama_search(&self.app, &self.model, query).await;
+        results.truncate(limit);
+        results
     }
-    let user = research::answer_synth_user(question, role, company, &results);
-    provider
-        .complete(app, model, research::ANSWER_SYNTH_SYSTEM, &user, Some(0.2))
-        .await
 }
 
 /// Inspect a local model via `/api/show` — its real trained context length and

@@ -119,7 +119,7 @@ impl AiProvider for OllamaCloudClient {
     ) -> AppResult<String> {
         // Search via the Ollama Web Search API (same account key), then synthesize
         // through the cloud chat model (the inner OpenAI-compatible client).
-        super::ollama::ollama_research(app, &self.inner, model, company, role).await
+        super::search::searched_research(app, &self.inner, model, company, role).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -133,7 +133,7 @@ impl AiProvider for OllamaCloudClient {
         country: &str,
         currency: &str,
     ) -> AppResult<String> {
-        super::ollama::ollama_research_salary(
+        super::search::searched_research_salary(
             app,
             &self.inner,
             model,
@@ -154,7 +154,7 @@ impl AiProvider for OllamaCloudClient {
         role: &str,
         company: &str,
     ) -> AppResult<String> {
-        super::ollama::ollama_research_answer(app, &self.inner, model, question, role, company)
+        super::search::searched_research_answer(app, &self.inner, model, question, role, company)
             .await
     }
 

@@ -27,6 +27,7 @@ mod ollama_cloud;
 mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
+pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
@@ -834,21 +835,47 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
-    /// Produce a ~150-word company-research brief using **this provider's own**
-    /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's
-    /// own web tools (CLI agents), or the Ollama Web Search API (Ollama family).
-    /// Returns `""` (never an error) when the provider can't search or isn't
-    /// configured, so research degrades gracefully and generation always proceeds.
-    /// Default: no research. The brief is untrusted reference context — fenced
-    /// downstream and never a source of candidate facts.
-    async fn research(
+    /// This provider's OWN search backend, when it has one that is actually
+    /// usable right now — `None` otherwise.
+    ///
+    /// Only the Ollama family implements this: its search is a separate HTTP API
+    /// needing its own account key, so "can search" is a runtime question, not a
+    /// static capability. Providers whose model searches for itself
+    /// (OpenAI/Anthropic/Gemini, CLI agents) override [`Self::research`] instead
+    /// and never consult this; providers with no search at all leave both alone
+    /// and inherit the configurable fallback below. A NEW provider therefore
+    /// needs no change here either way.
+    fn native_searcher(
         &self,
         _app: &AppHandle,
         _model: &str,
-        _company: &str,
-        _role: &str,
+    ) -> Option<Box<dyn search::WebSearcher>> {
+        None
+    }
+
+    /// Produce a ~150-word company-research brief.
+    ///
+    /// Providers whose model searches the web itself (OpenAI/Anthropic/Gemini,
+    /// CLI agents) override this with a single native call. The DEFAULT is the
+    /// search-then-synthesize path: fetch snippets from whichever backend
+    /// [`search::searcher_for`] resolves — the provider's own
+    /// ([`Self::native_searcher`]) or the user-configured fallback — then
+    /// synthesize with this provider's model.
+    ///
+    /// That default is what gives research to providers that previously had
+    /// none: every `openai-compatible` gateway, and local Ollama without an
+    /// ollama.com account key. Returns `""` (never an error) when no backend is
+    /// configured or the search finds nothing, so generation always proceeds.
+    /// The brief is untrusted reference context — fenced downstream and never a
+    /// source of candidate facts.
+    async fn research(
+        &self,
+        app: &AppHandle,
+        model: &str,
+        company: &str,
+        role: &str,
     ) -> AppResult<String> {
-        Ok(String::new())
+        search::searched_research(app, self, model, company, role).await
     }
 
     /// Web-grounded market salary-range lookup for a role — at a specific
