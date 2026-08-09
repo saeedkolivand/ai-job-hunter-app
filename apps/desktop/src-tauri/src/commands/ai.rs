@@ -210,6 +210,20 @@ pub async fn ai_inspect_model(model: String) -> Value {
     ollama::show_model(&model).await
 }
 
+/// The outcome of [`admit_research`]: guard+completer, or WHY refused — L-2:
+/// `ai_salary::ai_lookup_salary_reasoned` surfaces the reason to the model;
+/// every other caller still just degrades to its own empty value on any
+/// non-`Admitted`. `pub(super)`: `commands::ai_salary` (split out purely for
+/// R8) reuses it — zero business-logic duplication. `#[allow]`: a
+/// short-lived, immediately-destructured value, never a loop/collection —
+/// boxing `Completer` would only add indirection.
+#[allow(clippy::large_enum_variant)]
+pub(super) enum AdmitOutcome {
+    Admitted(crate::limits::ConcurrencyGuard, crate::pipeline::Completer),
+    RateLimited,
+    ProviderUnavailable,
+}
+
 /// Admit one `"ai_research"` call: rate + concurrency cap, resolve the active
 /// provider, then charge the per-provider daily ceiling — in that order, so a
 /// rejected call costs no budget.
@@ -219,10 +233,7 @@ pub async fn ai_inspect_model(model: String) -> Value {
 /// degrades to its OWN "nothing found" value rather than an error. The guard
 /// rides in the returned tuple so the caller holds the slot for the real work.
 /// `who` only labels the debug log.
-fn admit_research(
-    app: &AppHandle,
-    who: &str,
-) -> Option<(crate::limits::ConcurrencyGuard, crate::pipeline::Completer)> {
+pub(super) fn admit_research(app: &AppHandle, who: &str) -> AdmitOutcome {
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
@@ -239,7 +250,7 @@ fn admit_research(
         Ok(g) => g,
         Err(e) => {
             tracing::debug!("{who}: rate limited: {e}");
-            return None;
+            return AdmitOutcome::RateLimited;
         }
     };
     // Backend-owned routing (task #16): the active provider comes from the store.
@@ -247,7 +258,7 @@ fn admit_research(
         Ok(c) => c,
         Err(e) => {
             tracing::debug!("{who}: provider resolution failed: {e}");
-            return None;
+            return AdmitOutcome::ProviderUnavailable;
         }
     };
     // Per-provider daily ceiling — the same coarse runaway-cost backstop
@@ -258,9 +269,9 @@ fn admit_research(
         crate::limits::PROVIDER_DAILY_MAX,
     ) {
         tracing::debug!("{who}: daily budget exceeded: {e}");
-        return None;
+        return AdmitOutcome::RateLimited;
     }
-    Some((guard, completer))
+    AdmitOutcome::Admitted(guard, completer)
 }
 
 /// Research the company named in a job ad and return a short factual brief for
@@ -287,8 +298,9 @@ pub async fn ai_research_company(
 ) -> Value {
     use crate::cover_letter::research::CompanyResearch;
 
-    let Some((_guard, completer)) = admit_research(&app, "research_company") else {
-        return json!({ "company": "", "brief": "" });
+    let (_guard, completer) = match admit_research(&app, "research_company") {
+        AdmitOutcome::Admitted(g, c) => (g, c),
+        _ => return json!({ "company": "", "brief": "" }),
     };
 
     // Prefer the accurate AI-extracted company name from the generation flow; the
@@ -495,7 +507,9 @@ pub async fn ai_research_answer(
 /// `currency` (resolved client-side from the job's validated ISO country)
 /// ground the reported currency so a blank/weak `location` can't let the
 /// model default to USD or hallucinate a currency — see
-/// `crate::salary_research::SalaryResearch::enrich`.
+/// `crate::salary_research::SalaryResearch::enrich`. Thin wrapper over
+/// `ai_salary::ai_lookup_salary_reasoned` (see its doc for the fuller reason
+/// this command's bare `Option` discards).
 #[tauri::command]
 pub async fn ai_lookup_salary(
     app: AppHandle,
@@ -512,26 +526,11 @@ pub async fn ai_lookup_salary(
     // Sizes the research deadline (`timeouts::research_deadline`).
     effort: Option<String>,
 ) -> Option<crate::salary_research::SalaryRange> {
-    use crate::pipeline::cache::KvCache;
-    use crate::salary_research::SalaryResearch;
-
-    let (_guard, completer) = admit_research(&app, "lookup_salary")?;
-
-    // Resolved once here (the sole production caller) and passed through, so
-    // `SalaryResearch::enrich` stays `AppHandle`-free and unit-testable.
-    let cache_state = app.try_state::<KvCache>();
-    SalaryResearch
-        .enrich(
-            &completer,
-            cache_state.as_deref(),
-            &role,
-            company.as_deref().unwrap_or(""),
-            location.as_deref().unwrap_or(""),
-            country.as_deref().unwrap_or(""),
-            currency.as_deref().unwrap_or(""),
-            super::ai_provider::timeouts::research_deadline(effort.as_deref()),
-        )
-        .await
+    super::ai_salary::ai_lookup_salary_reasoned(
+        &app, role, company, location, country, currency, effort,
+    )
+    .await
+    .ok()
 }
 
 #[tauri::command]
