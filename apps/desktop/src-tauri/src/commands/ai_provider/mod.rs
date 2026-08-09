@@ -27,8 +27,9 @@ mod ollama_cloud;
 mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
+pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
-mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
+pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
@@ -834,13 +835,47 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
-    /// Produce a ~150-word company-research brief using **this provider's own**
-    /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's
-    /// own web tools (CLI agents), or the Ollama Web Search API (Ollama family).
-    /// Returns `""` (never an error) when the provider can't search or isn't
-    /// configured, so research degrades gracefully and generation always proceeds.
-    /// Default: no research. The brief is untrusted reference context — fenced
-    /// downstream and never a source of candidate facts.
+    /// Whether this provider's MODEL performs the search itself, so
+    /// [`Self::research`] is a single native call.
+    ///
+    /// The routing question, asked once in `Completer::research*`. False means
+    /// the search-then-synthesize path runs instead, which is what lets a
+    /// provider with no search of its own use a configured backend.
+    ///
+    /// Defaults to the advertised capability. The Ollama family overrides it to
+    /// `false`: it advertises search for the FAMILY, but the model does not
+    /// search — a separate hosted API does, via [`Self::native_searcher`].
+    fn has_native_search(&self, model: &str) -> bool {
+        self.capabilities(model).supports_web_search
+    }
+
+    /// This provider's OWN search backend, when it is usable right now.
+    ///
+    /// Only the Ollama family implements it: its search is a separate HTTP API
+    /// with its own account key, so "can search" is a runtime question. Providers
+    /// whose model searches for itself override [`Self::research`] and never
+    /// consult this; providers with no search leave both alone and inherit the
+    /// fallback below. A NEW provider needs no change either way.
+    fn native_searcher(
+        &self,
+        _app: &AppHandle,
+        _model: &str,
+    ) -> Option<Box<dyn search::WebSearcher>> {
+        None
+    }
+
+    /// Produce a ~150-word company-research brief with the provider's OWN
+    /// model-side web search.
+    ///
+    /// Only reached when [`Self::has_native_search`] is true —
+    /// `Completer::research` routes everything else through
+    /// [`search::searched_research`]. Implement this ONLY if the model searches
+    /// for itself; a provider that needs an explicit search backend implements
+    /// [`Self::native_searcher`] instead and leaves this alone.
+    ///
+    /// Returns `""` (never an error) when the search finds nothing, so
+    /// generation always proceeds. The brief is untrusted reference context —
+    /// fenced downstream and never a source of candidate facts.
     async fn research(
         &self,
         _app: &AppHandle,
@@ -1264,42 +1299,10 @@ pub use crate::vector::cosine;
 
 // ── Request tracing ─────────────────────────────────────────────────────────────
 
-/// Structured per-request log over the shared [`crate::observability::Span`].
-/// Emits a `→` line at dispatch and a `←` line with status + duration at
-/// completion, e.g.:
-/// `[ai] ← provider=openai model=gpt-4o endpoint=/chat/completions … status=200 duration=1842ms ok=true`
-pub struct RequestTrace {
-    span: crate::observability::Span,
-}
-
-impl RequestTrace {
-    pub fn begin(
-        provider: ProviderId,
-        model: &str,
-        endpoint: &str,
-        base_url: &str,
-        streaming: bool,
-    ) -> Self {
-        let fields = format!(
-            "provider={} model={} endpoint={} baseUrl={} streaming={}",
-            provider.as_str(),
-            model,
-            endpoint,
-            base_url,
-            streaming
-        );
-        Self {
-            span: crate::observability::Span::begin("ai", fields),
-        }
-    }
-
-    pub fn end(&self, status: Option<u16>, ok: bool) {
-        let status = status
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        self.span.end_with(&format!("status={status}"), ok);
-    }
-}
+mod trace;
+/// Per-request `[ai] → / ←` tracing. Lives in its own module (this one is at its
+/// LOC cap) but keeps its path here, so no call site moves.
+pub use trace::RequestTrace;
 
 // ── Error mapping ───────────────────────────────────────────────────────────────
 

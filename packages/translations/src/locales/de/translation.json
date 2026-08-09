@@ -428,6 +428,10 @@
       "matchResume": "Lebenslauf-Match",
       "autopilotRun": "Autopilot-Lauf"
     },
+    "activity": {
+      "queued": "in Warteschlange",
+      "queuedWithCount": "in Warteschlange, {{count}} davor"
+    },
     "jobKindsShort": {
       "aiGenerate": "KI",
       "aiEmbed": "Embed",
@@ -678,7 +682,7 @@
     },
     "companyResearch": {
       "title": "Unternehmensrecherche",
-      "description": "Fügt Anschreiben und Bewerbungsantworten eine kurze, sachliche Unternehmens-Zusammenfassung hinzu — über die eigene Websuche Ihres aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel — nur Ollama benötigt den kostenlosen Ollama-Schlüssel unten.",
+      "description": "Fügt Anschreiben und Bewerbungsantworten ein kurzes, faktisches Unternehmensprofil hinzu – über die Websuche deines aktiven KI-Anbieters. Cloud- und CLI-Anbieter suchen mit ihrem eigenen Schlüssel; Ollama benötigt den kostenlosen Ollama-Kontoschlüssel unten.",
       "connected": "Verbunden — Ollama-Schlüssel gespeichert",
       "remove": "Entfernen",
       "getKeyAt": "Kostenlosen Ollama-Schlüssel erhalten unter",
@@ -689,7 +693,20 @@
       "removed": "Ollama-Schlüssel entfernt.",
       "removeConfirmTitle": "Ollama-Schlüssel entfernen?",
       "removeConfirmDesc": "Dadurch wird Ihr gespeicherter Ollama-Schlüssel gelöscht. Die Unternehmensrecherche pausiert, bis Sie wieder einen Schlüssel hinzufügen.",
-      "saveError": "Schlüssel konnte nicht gespeichert werden."
+      "saveError": "Schlüssel konnte nicht gespeichert werden.",
+      "fallbackDescription": "Ersatzsuche – wird nur verwendet, wenn dein Anbieter keine eigene Websuche hat (jeder OpenAI-kompatible Server oder Ollama ohne den Schlüssel oben). Ein Anbieter, der bereits suchen kann, wird nie auf Exa umgestellt.",
+      "exaConnected": "Verbunden – Exa-Schlüssel gespeichert",
+      "exaGetKeyAt": "Exa-Schlüssel erhältst du unter",
+      "exaKeyPlaceholder": "Exa-API-Schlüssel einfügen…",
+      "exaNote": "Nutzungsbasiert, mit monatlichem Gratis-Guthaben.",
+      "exaSaved": "Exa-Schlüssel gespeichert.",
+      "exaRemoved": "Exa-Schlüssel entfernt.",
+      "exaRemoveConfirmTitle": "Exa-Schlüssel entfernen?",
+      "exaRemoveConfirmDesc": "Dies löscht deinen gespeicherten Exa-Schlüssel. Anbieter ohne eigene Websuche erstellen dann kein Unternehmensprofil mehr.",
+      "showKey": "Schlüssel anzeigen",
+      "hideKey": "Schlüssel verbergen",
+      "ollamaFieldLabel": "Ollama-API-Schlüssel",
+      "exaFieldLabel": "Exa-API-Schlüssel"
     },
     "aggregatorKeys": {
       "title": "Jobsuche-Anbieter",
@@ -1467,6 +1484,7 @@
       "generate": "Generieren",
       "generating": "Generiere…",
       "generatingHint": "Das kann einen Moment dauern – wir passen an die Stellenanzeige an.",
+      "reasoningHeavyHint": "Dieses Modell wendet weit mehr für internes Nachdenken auf als für das Dokument. Rechne mit mehreren Minuten – es arbeitet, es hängt nicht.",
       "cancel": "Abbrechen",
       "analyzing": "Stellenbeschreibung wird analysiert…",
       "writingResume": "Lebenslauf wird geschrieben…",

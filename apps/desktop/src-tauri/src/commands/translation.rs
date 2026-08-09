@@ -123,8 +123,19 @@ pub async fn translate_if_needed(
             }
             translated
         }
-        // Empty or errored translation: safe fallback to the original text.
-        _ => text.to_string(),
+        // Empty or errored translation: safe fallback to the original text — but
+        // NOT a silent one. This degrading quietly is how a local setup with only
+        // an embedding model installed sent that model to `/api/chat` and took a
+        // 400 per job ad for a whole session with nothing but an `ok=false` span
+        // to show for it.
+        Ok(_) => {
+            tracing::warn!(model = %model, "translation: provider returned empty text, keeping the original");
+            text.to_string()
+        }
+        Err(e) => {
+            tracing::warn!(model = %model, "translation failed, keeping the original: {e}");
+            text.to_string()
+        }
     }
 }
 

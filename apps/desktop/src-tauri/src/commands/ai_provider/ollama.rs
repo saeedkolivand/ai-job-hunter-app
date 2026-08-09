@@ -13,7 +13,7 @@ use crate::commands::ai::get_provider_key;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 
-use super::research::{self, SearchResult};
+use super::research::SearchResult;
 use super::stream::{stream_response, StreamPiece};
 use super::timeouts;
 use super::{
@@ -307,41 +307,19 @@ impl AiProvider for OllamaClient {
         complete_impl(model, system, user, temperature).await
     }
 
-    async fn research(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        company: &str,
-        role: &str,
-    ) -> AppResult<String> {
-        // Local Ollama can't search itself — it uses the Ollama Web Search API
-        // (needs the account key) then synthesizes via the local model.
-        ollama_research(app, self, model, company, role).await
+    fn has_native_search(&self, _model: &str) -> bool {
+        // Advertises web search for the family, but the MODEL never searches —
+        // the hosted Web Search API does, through `native_searcher`.
+        false
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn research_salary(
+    fn native_searcher(
         &self,
         app: &AppHandle,
         model: &str,
-        role: &str,
-        company: &str,
-        location: &str,
-        country: &str,
-        currency: &str,
-    ) -> AppResult<String> {
-        ollama_research_salary(app, self, model, role, company, location, country, currency).await
-    }
-
-    async fn research_answer(
-        &self,
-        app: &AppHandle,
-        model: &str,
-        question: &str,
-        role: &str,
-        company: &str,
-    ) -> AppResult<String> {
-        ollama_research_answer(app, self, model, question, role, company).await
+    ) -> Option<Box<dyn super::search::WebSearcher>> {
+        OllamaSearcher::from_credentials(app, model)
+            .map(|s| Box::new(s) as Box<dyn super::search::WebSearcher>)
     }
 
     async fn embed(&self, _app: &AppHandle, model: &str, text: &str) -> AppResult<Vec<f64>> {
@@ -512,7 +490,47 @@ pub async fn list_tag_models() -> Vec<Value> {
     fetch_tag_models().await.unwrap_or_default()
 }
 
-/// `(reachable, first_model_name)` for the system health probe.
+/// Whether a local model name is an EMBEDDING-only model, i.e. one that
+/// `/api/chat` rejects with a 400.
+///
+/// Ollama's `/api/tags` does not mark this: `details.family` is `bert` for some
+/// (`nomic-embed-text`, `mxbai-embed-large`) but the base family for others
+/// (`qwen3-embedding` reports `qwen3`), so the name is the only signal actually
+/// present in the listing. Every embedding model Ollama publishes carries
+/// `embed`/`embedding` in its name, which is what this matches.
+///
+/// ponytail: name heuristic, not a capability probe. The ceiling is a future
+/// embedding model named without `embed` — it would be picked for chat and get
+/// one 400, exactly as today, but now WARN-logged instead of silent. Upgrade
+/// path if that happens: probe `/api/show` per model and read `capabilities`.
+/// Pure + unit-tested.
+pub(super) fn is_embedding_only_model(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.contains("embed")
+}
+
+/// The first model in an `/api/tags` body that can actually hold a chat turn.
+/// `None` when the user has ONLY embedding models installed — which is the
+/// honest answer: the caller then skips translation rather than burning a
+/// guaranteed 400 on every job ad. Pure + unit-tested.
+pub(super) fn first_chat_model(body: &Value) -> Option<String> {
+    body.get("models")
+        .and_then(|m| m.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|m| m.get("name").and_then(|n| n.as_str()))
+        .find(|name| !is_embedding_only_model(name))
+        .map(String::from)
+}
+
+/// `(reachable, first_CHAT_model_name)` — the local health probe, and the source
+/// of the model the translation path uses.
+///
+/// The chat filter is not cosmetic: this returned `arr.first()` unconditionally,
+/// so a user whose first `/api/tags` entry was `qwen3-embedding:8b` had every
+/// job-ad translation POST that model to `/api/chat` and take a 400. Eight of
+/// them in one reported session, silently — `translate_text` falls back to the
+/// untranslated original on any error, so the only trace was an `ok=false` span.
 pub async fn reachable_model() -> (bool, Option<String>) {
     match crate::net::http::shared()
         .get(format!("{}/api/tags", host()))
@@ -525,14 +543,7 @@ pub async fn reachable_model() -> (bool, Option<String>) {
                 crate::net::http::read_json_capped(r, crate::net::http::DEFAULT_MAX_BODY_BYTES)
                     .await
                     .unwrap_or_default();
-            let model = body
-                .get("models")
-                .and_then(|m| m.as_array())
-                .and_then(|arr| arr.first())
-                .and_then(|m| m.get("name"))
-                .and_then(|n| n.as_str())
-                .map(String::from);
-            (true, model)
+            (true, first_chat_model(&body))
         }
         _ => (false, None),
     }
@@ -668,8 +679,7 @@ fn parse_web_search(body: &Value, limit: usize) -> Vec<SearchResult> {
 /// account key and run the Ollama Web Search API. Returns an empty `Vec` when
 /// the key is missing or the search fails, so callers degrade to `""` without
 /// each re-implementing the key-check + trace boilerplate.
-async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchResult> {
-    let key = get_provider_key(app, ACCOUNT_KEY).unwrap_or_default();
+async fn ollama_search(model: &str, key: &str, query: &str, limit: usize) -> Vec<SearchResult> {
     if key.trim().is_empty() {
         return Vec::new();
     }
@@ -680,7 +690,7 @@ async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchR
         "https://ollama.com",
         false,
     );
-    match ollama_web_search(&key, query, 5).await {
+    match ollama_web_search(key, query, limit).await {
         Ok(r) => {
             trace.end(Some(200), true);
             r
@@ -693,83 +703,40 @@ async fn ollama_search(app: &AppHandle, model: &str, query: &str) -> Vec<SearchR
     }
 }
 
-/// Shared Ollama-family research: search via the Ollama Web Search API (account
-/// key), then synthesize the brief with `provider` — the local daemon for
-/// [`OllamaClient`], `ollama.com/v1` for Ollama Cloud. Returns `""` when the key
-/// is missing or the search yields nothing, so research degrades gracefully.
-pub async fn ollama_research(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    company: &str,
-    role: &str,
-) -> AppResult<String> {
-    let results = ollama_search(app, model, &research::search_query(company)).await;
-    if results.is_empty() {
-        return Ok(String::new());
-    }
-    let user = research::synth_user(company, role, &results);
-    provider
-        .complete(app, model, research::SYNTH_SYSTEM, &user, Some(0.2))
-        .await
+/// The Ollama Web Search API as a [`WebSearcher`].
+///
+/// The search half of Ollama-family research. The synthesize half is generic and
+/// lives in [`super::search`] — this is the only Ollama-specific part, which is
+/// why the pipeline could be shared with a configurable backend at all.
+pub struct OllamaSearcher {
+    /// Trace label only — the Web Search API takes no model.
+    model: String,
+    /// Resolved once at construction. `ollama_search` used to re-read it on
+    /// every call, which with the capability probe meant three keychain lookups
+    /// for one research pass.
+    key: String,
 }
 
-/// Salary-range sibling of [`ollama_research`]: same search-then-synthesize
-/// shape, but the salary query/prompts (compact JSON contract, see
-/// `research::salary_system`). Returns `""` when the key is missing or the
-/// search yields nothing, so the lookup degrades gracefully. `country`/
-/// `currency` ground the report in the job's actual currency — see
-/// `AiProvider::research_salary`.
-#[allow(clippy::too_many_arguments)]
-pub async fn ollama_research_salary(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    role: &str,
-    company: &str,
-    location: &str,
-    country: &str,
-    currency: &str,
-) -> AppResult<String> {
-    let query = research::salary_search_query(role, company, location, country, currency);
-    let results = ollama_search(app, model, &query).await;
-    if results.is_empty() {
-        return Ok(String::new());
+impl OllamaSearcher {
+    /// `None` when no ollama.com account key is stored. Local Ollama advertises
+    /// `supports_web_search` but the API needs a CLOUD key, so a keyless local
+    /// install has no usable native search — the case the configurable fallback
+    /// exists for.
+    pub fn from_credentials(app: &AppHandle, model: &str) -> Option<Self> {
+        let key = get_provider_key(app, ACCOUNT_KEY)?;
+        let key = key.trim().to_string();
+        (!key.is_empty()).then(|| Self {
+            model: model.to_string(),
+            key,
+        })
     }
-    let user = research::salary_synth_user(role, company, location, country, currency, &results);
-    provider
-        .complete(
-            app,
-            model,
-            &research::salary_system(currency),
-            &user,
-            Some(0.2),
-        )
-        .await
 }
 
-/// Application-answer sibling of [`ollama_research`]: same search-then-
-/// synthesize shape, scoped to a single application question (see
-/// `research::answer_search_query`) instead of a general company brief.
-/// Returns `""` when the key is missing or the search yields nothing, so the
-/// lookup degrades gracefully.
-pub async fn ollama_research_answer(
-    app: &AppHandle,
-    provider: &dyn AiProvider,
-    model: &str,
-    question: &str,
-    role: &str,
-    company: &str,
-) -> AppResult<String> {
-    let query = research::answer_search_query(question, role, company);
-    let results = ollama_search(app, model, &query).await;
-    if results.is_empty() {
-        return Ok(String::new());
+#[async_trait]
+impl super::search::WebSearcher for OllamaSearcher {
+    async fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
+        ollama_search(&self.model, &self.key, query, limit).await
     }
-    let user = research::answer_synth_user(question, role, company, &results);
-    provider
-        .complete(app, model, research::ANSWER_SYNTH_SYSTEM, &user, Some(0.2))
-        .await
 }
 
 /// Inspect a local model via `/api/show` — its real trained context length and
@@ -1053,12 +1020,19 @@ async fn stream_chat(
 
     let body = build_chat_stream_body(req, sampling);
 
-    let response = crate::net::http::shared()
-        .post(&endpoint)
-        .timeout(timeouts::stream_deadline(req.effort.as_deref()))
-        .json(&body)
-        .send()
-        .await;
+    // Retried on a transient 429/5xx: this is only the handshake, so a retry
+    // re-sends a request that emitted no deltas. Treating it as terminal is what
+    // turned a provider rate-limit into a lost multi-minute generation.
+    let response = super::retry::send_stream_with_retry(
+        || {
+            crate::net::http::shared()
+                .post(&endpoint)
+                .timeout(timeouts::stream_deadline(req.effort.as_deref()))
+                .json(&body)
+        },
+        timeouts::stream_deadline(req.effort.as_deref()),
+    )
+    .await;
 
     let response = match response {
         Ok(r) => r,

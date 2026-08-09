@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 
+import { useTranslation } from '@ajh/translations';
+
 import type { ActivityItem, JobRecord } from '@/features/monitoring/types';
 import { fetchJob, useJobEvents } from '@/services';
 
@@ -18,6 +20,7 @@ interface JobEvent {
 }
 
 export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<string, string>) {
+  const { t } = useTranslation();
   const [liveActivity, setLiveActivity] = useState<ActivityItem[]>([]);
   const [clearedBefore, setClearedBefore] = useState<number>(0);
 
@@ -82,7 +85,11 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
             ? 'amber'
             : 'blue';
 
-      if (['job.completed', 'job.failed', 'job.cancelled', 'job.started'].includes(event.type)) {
+      if (
+        ['job.completed', 'job.failed', 'job.cancelled', 'job.started', 'job.queued'].includes(
+          event.type
+        )
+      ) {
         const verb =
           event.type === 'job.completed'
             ? '✓'
@@ -90,13 +97,25 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
               ? '✕'
               : event.type === 'job.cancelled'
                 ? '⊘'
-                : '▸';
+                : event.type === 'job.queued'
+                  ? '⏸'
+                  : '▸';
+        // `job.queued` only ever fires when the job actually parked behind the
+        // concurrency limiter, and carries how many are ahead of it — without
+        // that number a batch of generations looks identical to one hung run.
+        const ahead = (event.data as { ahead?: number } | undefined)?.ahead;
+        const suffix =
+          event.type === 'job.queued' && typeof ahead === 'number'
+            ? ahead > 0
+              ? ` (${t('monitoring.activity.queuedWithCount', { count: ahead })})`
+              : ` (${t('monitoring.activity.queued')})`
+            : '';
         setLiveActivity((prev) =>
           [
             {
               id: `${event.jobId}-${event.ts}`,
               time: event.ts,
-              text: `${verb} ${kindLabel}`,
+              text: `${verb} ${kindLabel}${suffix}`,
               tone,
             },
             ...prev,

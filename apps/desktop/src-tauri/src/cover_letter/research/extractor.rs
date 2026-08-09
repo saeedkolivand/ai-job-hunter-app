@@ -6,9 +6,69 @@ pub struct JobAdMeta {
 }
 
 pub fn extract(job_ad: &str) -> JobAdMeta {
-    let company = extract_company(job_ad);
-    let role = extract_role(job_ad);
+    let company = sanitized(extract_company(job_ad));
+    let role = sanitized(extract_role(job_ad));
     JobAdMeta { company, role }
+}
+
+/// Apply/nav chrome that a scraped ad's first line frequently is. Lowercased,
+/// matched whole — these are the exact strings a heuristic returns instead of a
+/// title, seen verbatim in a support bundle (`Jetzt bewerben`,
+/// `[← Alle offenen Stellen](/karriere)`).
+const CHROME: &[&str] = &[
+    "jetzt bewerben",
+    "bewerben",
+    "apply",
+    "apply now",
+    "apply for this job",
+    "back to jobs",
+    "alle offenen stellen",
+    "view all jobs",
+    "all openings",
+    "open positions",
+    "offene stellen",
+    "share this job",
+    "solliciteer",
+];
+
+/// Drop a candidate that is page chrome, markup, or prose rather than a name or
+/// a job title. Empty means "nothing usable found", which every caller already
+/// handles by skipping research entirely.
+///
+/// Both fields feed the same provider search, and a bad value there is worse
+/// than none: it produces a confident brief about the wrong subject. Observed
+/// values this rejects: `Jetzt bewerben` (an apply button),
+/// `[← Alle offenen Stellen](/karriere)` (a nav link), and
+/// `Please note: Fluent Dutch language skills are required for this role.`
+/// Pure + unit-tested.
+fn sanitized(candidate: String) -> String {
+    let c = candidate.trim();
+    if c.is_empty() {
+        return String::new();
+    }
+    // Markdown/HTML that leaked out of the scraped page.
+    if c.contains("](") || c.starts_with('[') || c.contains("**") || c.contains('<') {
+        return String::new();
+    }
+    // A sentence, not a label.
+    if c.ends_with('.') || c.ends_with('!') || c.ends_with('?') {
+        return String::new();
+    }
+    let lower = c.to_lowercase();
+    if CHROME.contains(&lower.as_str()) {
+        return String::new();
+    }
+    c.to_string()
+}
+
+/// Whether byte offset `at` in `text` begins a word — i.e. it is the start of
+/// the string or the preceding char is not alphanumeric. `at` must be a char
+/// boundary (every caller gets it from [`find_ascii_ci`], which guarantees that).
+fn starts_at_word_boundary(text: &str, at: usize) -> bool {
+    text[..at]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !c.is_alphanumeric())
 }
 
 /// ASCII case-insensitive substring search. `needle` MUST be ASCII.
@@ -41,7 +101,14 @@ fn extract_company(text: &str) -> String {
             // code applied a per-line byte offset (from lower.find) into the
             // FULL `text` string — a completely wrong target — which panics
             // when `text` starts with multibyte chars (e.g. an emoji headline).
-            if let Some(i) = find_ascii_ci(line, prefix) {
+            // `starts_at_word_boundary`: without it the bare `"at "` prefix
+            // matches INSIDE a word — "Wh(at )You'll Do", a near-universal job-ad
+            // heading, yielded a company of "You'll Do". The renderer's own
+            // fallback regex had the identical bug; this is the same defect, so
+            // it gets the same fix on both sides rather than one patch.
+            if let Some(i) =
+                find_ascii_ci(line, prefix).filter(|i| starts_at_word_boundary(line, *i))
+            {
                 let rest = &line[i + prefix.len()..];
                 let candidate = rest
                     .split(['|', '\n', ',', '('])
@@ -228,5 +295,71 @@ mod tests {
             "expected empty company, got {:?}",
             meta.company
         );
+    }
+
+    // ── Chrome / prose rejection (the values a real bundle searched for) ───────
+    //
+    // Every string here was the `role=` or `company=` a 2026-08-08 support bundle
+    // actually sent to the provider's web search. A wrong subject is worse than
+    // none: it returns a confident brief about something that is not the employer.
+
+    #[test]
+    fn apply_buttons_and_nav_links_are_not_roles() {
+        for ad in [
+            "Jetzt bewerben\n\nWir suchen einen Entwickler",
+            "[← Alle offenen Stellen](/karriere)\n\nSoftware Engineer",
+            "Apply now\n\nWe build things",
+        ] {
+            let meta = extract(ad);
+            assert!(
+                meta.role.is_empty() || !meta.role.contains("bewerben"),
+                "chrome must not become the role, got {:?}",
+                meta.role
+            );
+            assert!(
+                !meta.role.contains("]("),
+                "a markdown link must not become the role, got {:?}",
+                meta.role
+            );
+        }
+    }
+
+    #[test]
+    fn a_prose_sentence_is_not_a_role() {
+        let ad = "Please note: Fluent Dutch language skills are required for this role.";
+        assert_eq!(extract(ad).role, "");
+    }
+
+    #[test]
+    fn a_real_first_line_title_is_still_extracted() {
+        // The gate must not eat the common, correct case.
+        let meta = extract("Senior Backend Engineer\n\nWe are a payments company.");
+        assert_eq!(meta.role, "Senior Backend Engineer");
+    }
+
+    #[test]
+    fn labelled_company_and_role_still_win() {
+        let meta = extract("Job title: Staff Engineer\nCompany: Codefield\n");
+        assert_eq!(meta.role, "Staff Engineer");
+        assert_eq!(meta.company, "Codefield");
+    }
+
+    // ── The `at` word-boundary bug (identical to the renderer's own regex) ─────
+
+    #[test]
+    fn at_inside_a_word_is_not_a_company_marker() {
+        // "Wh(at) You'll Do" is a near-universal job-ad heading. The bare `"at "`
+        // prefix matched inside it and yielded a company of "You'll Do", which a
+        // real session then researched three times.
+        let meta = extract("What You'll Do\n\nBuild and ship features.");
+        assert_ne!(meta.company, "You'll Do");
+        assert_eq!(meta.company, "");
+    }
+
+    #[test]
+    fn at_as_a_real_word_still_extracts_the_company() {
+        // The boundary fix must not break the case the prefix exists for.
+        let meta = extract("Senior Engineer at Codefield\n");
+        assert_eq!(meta.company, "Codefield");
     }
 }

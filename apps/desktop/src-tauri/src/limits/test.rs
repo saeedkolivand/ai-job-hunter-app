@@ -4,6 +4,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
+
 use super::*;
 
 const CMD: &str = "test.cmd";
@@ -92,6 +94,75 @@ fn concurrency_guard_releases_slot_on_drop() {
         .expect("all slots released → acquire succeeds");
 }
 
+/// A call refused by the CONCURRENCY cap must not consume a rate-window slot.
+///
+/// The window check and the window record happen under one lock (they have to:
+/// splitting them let two callers both see room and both take it). The
+/// no-cost-on-rejection property therefore rides on `undo_admission` giving the
+/// slot back — so it gets its own test rather than resting on the old
+/// check-then-reserve shape.
+#[test]
+fn a_concurrency_rejection_refunds_its_rate_window_slot() {
+    let limiter = Arc::new(Limiter::new());
+    let now = std::time::Instant::now();
+    let max_requests = 2;
+    let max_concurrent = 1;
+
+    // Hold the only concurrency slot. One window slot consumed.
+    let _held = limiter
+        .acquire_at(CMD, max_requests, max_concurrent, now)
+        .expect("1st slot");
+
+    // Several calls now bounce off the CONCURRENCY cap. Without the refund each
+    // would also burn a window slot, and the window (cap 2) would be exhausted
+    // after one — locking the command out until the window rolled over.
+    for _ in 0..5 {
+        assert!(
+            limiter
+                .acquire_at(CMD, max_requests, max_concurrent, now)
+                .is_err(),
+            "concurrency is saturated, so every one of these is refused"
+        );
+    }
+
+    // Proof the window still has room: free the concurrency slot and the very
+    // next call must be admitted. It would not be if the refusals had consumed
+    // the window.
+    drop(_held);
+    limiter
+        .acquire_at(CMD, max_requests, max_concurrent, now)
+        .expect("the refused calls must not have consumed the rate window");
+}
+
+/// The QUEUE ceiling is a rejection too, and rejections are free.
+#[tokio::test]
+async fn a_full_queue_rejection_refunds_its_rate_window_slot() {
+    let limiter = Arc::new(Limiter::new());
+    let max_requests = 3;
+
+    let _held = limiter
+        .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+        .await
+        .expect("1st slot");
+
+    // `max_queued = 0`: every further caller is refused at the queue ceiling.
+    for _ in 0..5 {
+        assert!(
+            limiter
+                .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+                .await
+                .is_err(),
+            "queue ceiling is 0, so every one of these is refused"
+        );
+    }
+
+    drop(_held);
+    limiter
+        .acquire_queued(CMD, max_requests, 1, 0, |_| ())
+        .await
+        .expect("queue-ceiling refusals must not have consumed the rate window");
+}
+
 #[test]
 fn provider_daily_ceiling_trips_at_the_cap() {
     let limiter = Arc::new(Limiter::new());
@@ -114,6 +185,143 @@ fn provider_daily_ceiling_trips_at_the_cap() {
     limiter
         .charge_provider_daily("anthropic", max_per_day)
         .expect("separate provider has its own daily budget");
+}
+
+// ── acquire_queued: park instead of reject ───────────────────────────────────
+//
+// The behaviour these pin is why `generate_pipeline` uses this path: a user
+// working through imported applications clicks Generate several times in a row,
+// and throwing the 4th click away is worse than making it wait.
+
+#[tokio::test]
+async fn queued_acquire_parks_the_over_cap_caller_until_a_slot_frees() {
+    let limiter = Arc::new(Limiter::new());
+    let max_requests = 1000;
+    let max_concurrent = 1;
+    let max_queued = 10;
+
+    let (first, parked) = limiter
+        .acquire_queued(CMD, max_requests, max_concurrent, max_queued, |_| {
+            panic!("an empty gate must not park")
+        })
+        .await
+        .expect("1st slot is free");
+    assert!(!parked, "the first caller starts immediately");
+
+    // The second caller must PARK, not fail — the whole point of this path.
+    let ahead = Arc::new(Mutex::new(None));
+    let seen = Arc::clone(&ahead);
+    let limiter2 = Arc::clone(&limiter);
+    let waiter = tokio::spawn(async move {
+        limiter2
+            .acquire_queued(CMD, max_requests, max_concurrent, max_queued, |n| {
+                *seen.lock() = Some(n)
+            })
+            .await
+    });
+
+    // It is still parked: it cannot have completed while the only slot is held.
+    tokio::task::yield_now().await;
+    assert!(!waiter.is_finished(), "second caller must still be waiting");
+    assert_eq!(
+        *ahead.lock(),
+        Some(0),
+        "on_park reports 0 callers ahead of it, and fires BEFORE the wait"
+    );
+
+    // Releasing the first guard hands the permit to the waiter.
+    drop(first);
+    let (_second, parked) = waiter
+        .await
+        .expect("waiter task")
+        .expect("a freed slot wakes the parked caller");
+    assert!(parked, "the second caller reports that it waited");
+}
+
+#[tokio::test]
+async fn queued_acquire_rejects_past_the_queue_ceiling() {
+    // The queue must not become the unbounded resource: a looping renderer that
+    // can't be rejected on concurrency has to be rejected on depth.
+    let limiter = Arc::new(Limiter::new());
+    let max_queued = 2;
+
+    let _held = limiter
+        .acquire_queued(CMD, 1000, 1, max_queued, |_| ())
+        .await
+        .expect("1st slot");
+
+    let mut waiters = Vec::new();
+    for _ in 0..max_queued {
+        let l = Arc::clone(&limiter);
+        waiters.push(tokio::spawn(async move {
+            l.acquire_queued(CMD, 1000, 1, max_queued, |_| ()).await
+        }));
+    }
+    // Let both waiters park before testing the ceiling.
+    while limiter.queue_depth(CMD) < max_queued {
+        tokio::task::yield_now().await;
+    }
+
+    let over = limiter
+        .acquire_queued(CMD, 1000, 1, max_queued, |_| ())
+        .await;
+    assert!(
+        over.is_err(),
+        "a caller arriving at a full queue must be rejected, not parked"
+    );
+    assert_eq!(over.err().unwrap().code(), "RATE_LIMITED");
+
+    for w in waiters {
+        w.abort();
+    }
+}
+
+#[tokio::test]
+async fn dropping_a_parked_future_frees_its_queue_slot() {
+    // `.await` is a cancellation point: a user who closes the window or cancels
+    // while queued must not leave the counter high forever, or the queue wedges
+    // shut for the rest of the session.
+    let limiter = Arc::new(Limiter::new());
+    let _held = limiter
+        .acquire_queued(CMD, 1000, 1, 4, |_| ())
+        .await
+        .expect("1st slot");
+
+    {
+        let fut = limiter.acquire_queued(CMD, 1000, 1, 4, |_| ());
+        tokio::pin!(fut);
+        // Poll once so it registers in the queue, then drop it unfinished.
+        tokio::select! {
+            biased;
+            _ = &mut fut => panic!("cannot complete while the only slot is held"),
+            _ = tokio::task::yield_now() => {}
+        }
+        assert_eq!(limiter.queue_depth(CMD), 1, "the parked caller is counted");
+    }
+
+    assert_eq!(
+        limiter.queue_depth(CMD),
+        0,
+        "dropping the future released its queue slot"
+    );
+}
+
+#[tokio::test]
+async fn queued_and_rejecting_acquires_share_one_concurrency_budget() {
+    // `ai_generate` (rejecting) and `generate_pipeline` (queueing) name the same
+    // command key on purpose. Two independent mechanisms would mean two budgets
+    // — which is exactly the bug that let 7 streams run against a cap of 3.
+    let limiter = Arc::new(Limiter::new());
+
+    let _queued_holder = limiter
+        .acquire_queued(CMD, 1000, 1, 4, |_| ())
+        .await
+        .expect("queued path takes the only slot");
+
+    assert!(
+        limiter.acquire(CMD, 1000, 1).is_err(),
+        "the rejecting path must see the slot the queueing path took"
+    );
 }
 
 #[test]

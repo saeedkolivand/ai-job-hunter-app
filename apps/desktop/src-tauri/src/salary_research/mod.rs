@@ -23,9 +23,6 @@ use crate::pipeline::Completer;
 
 const CACHE_NS: &str = "salary_range";
 const TTL_SECS: i64 = 7 * 24 * 3600;
-/// Hard cap on a single research call so generation never stalls on a slow or
-/// hung provider search. Same bound as `CompanyResearch::RESEARCH_TIMEOUT_SECS`.
-const RESEARCH_TIMEOUT_SECS: u64 = 25;
 /// Sanity ceiling on an annual salary figure, in any currency's minor-unit-free
 /// face value — comfortably above any real annual salary, so a wildly
 /// hallucinated figure is rejected rather than reaching the prompt.
@@ -117,6 +114,12 @@ impl SalaryResearch {
     /// (`commands::ai::ai_lookup_salary`) resolves it once via
     /// `app.try_state::<KvCache>()` and passes it through, which is what keeps
     /// this function testable without an `AppHandle`.
+    ///
+    /// `deadline` is injected for the same reason `cache` is — see
+    /// [`CompanyResearch::enrich_with`](crate::cover_letter::research::CompanyResearch::enrich_with).
+    /// The L3 caller derives it from the request's reasoning effort via
+    /// `timeouts::research_deadline`; a FLAT bound was the bug, since synthesis
+    /// is a model call and costs whatever the chosen model's reasoning costs.
     #[allow(clippy::too_many_arguments)]
     pub async fn enrich<S: SalarySearcher>(
         &self,
@@ -127,6 +130,7 @@ impl SalaryResearch {
         location: &str,
         country: &str,
         currency: &str,
+        deadline: Duration,
     ) -> Option<SalaryRange> {
         // The very first thing this does — before touching `searcher` at all —
         // so a whitespace-only role never reaches it. Factored to a pure
@@ -181,7 +185,7 @@ impl SalaryResearch {
         // Provider-native research, bounded so generation never stalls. Any
         // failure/timeout yields no range.
         let raw = match tokio::time::timeout(
-            Duration::from_secs(RESEARCH_TIMEOUT_SECS),
+            deadline,
             searcher.research_salary(&role, &company, &location, &country, &currency),
         )
         .await
@@ -192,7 +196,11 @@ impl SalaryResearch {
                 return None;
             }
             Err(_) => {
-                tracing::warn!("salary_research: timed out for {role}");
+                tracing::warn!(
+                    role = %role,
+                    deadline_secs = deadline.as_secs(),
+                    "salary_research: timed out"
+                );
                 return None;
             }
         };
@@ -315,6 +323,9 @@ fn extract_json_object(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    /// The bound every test injects into `enrich`. Arbitrary — production
+    /// derives its own from the request's reasoning effort.
+    const TEST_DEADLINE: Duration = Duration::from_secs(25);
     use tempfile::TempDir;
 
     use super::*;
@@ -569,10 +580,11 @@ mod tests {
             _country: &str,
             _currency: &str,
         ) -> AppResult<String> {
-            // Sleeps past RESEARCH_TIMEOUT_SECS; under `start_paused = true` this
-            // resolves the moment `enrich`'s own timeout timer fires instead of
-            // actually blocking the test for 25+ real seconds.
-            tokio::time::sleep(Duration::from_secs(RESEARCH_TIMEOUT_SECS + 5)).await;
+            // Outsleeps TEST_DEADLINE; under `start_paused = true` this resolves
+            // the moment `enrich`'s own timer fires rather than blocking for
+            // real. Derived from the same constant the call sites pass, so
+            // changing it can never silently turn this test into a no-op.
+            tokio::time::sleep(TEST_DEADLINE + Duration::from_secs(5)).await;
             Ok(r#"{"min":1,"max":2,"currency":"USD"}"#.to_string())
         }
     }
@@ -592,6 +604,7 @@ mod tests {
                 "Berlin",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -625,6 +638,7 @@ mod tests {
                 "Berlin",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -648,6 +662,7 @@ mod tests {
                 "Berlin",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -670,6 +685,7 @@ mod tests {
                 "Berlin",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -692,6 +708,7 @@ mod tests {
                 "Berlin",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -761,6 +778,7 @@ mod tests {
                 "Berlin",
                 "DE",
                 "EUR",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -795,6 +813,7 @@ mod tests {
                 "Berlin",
                 "DE",
                 "EUR",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -832,6 +851,7 @@ mod tests {
                 "Berlin",
                 "DE",
                 "EUR",
+                TEST_DEADLINE,
             )
             .await;
 
@@ -855,6 +875,7 @@ mod tests {
                 "",
                 "",
                 "",
+                TEST_DEADLINE,
             )
             .await;
 

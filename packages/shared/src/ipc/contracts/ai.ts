@@ -89,6 +89,15 @@ export interface AiContract {
     jobAd: string;
     /** Accurate AI-extracted company name; preferred over heuristic job-ad extraction. */
     company?: string;
+    /** Accurate AI-extracted job title; preferred over heuristic job-ad
+     *  extraction, whose last resort is the ad's first short line — on a scraped
+     *  page routinely an apply button ("Jetzt bewerben") or a nav link. */
+    role?: string;
+    /** The SAME reasoning-effort value a generation request carries. Sizes the
+     *  backend's deadline around search + synthesis — synthesis is a model call,
+     *  so its cost scales with the model's reasoning budget. Omit for the
+     *  unscaled baseline. */
+    effort?: string;
   }): Promise<{ company: string; brief: string }>;
 
   /**
@@ -112,6 +121,8 @@ export interface AiContract {
      *  hallucinate one; omitted when the country is unknown, which preserves
      *  today's unconstrained "local currency for that location" behavior. */
     currency?: string;
+    /** See `researchCompany.effort` — the same deadline scaling applies here. */
+    effort?: string;
   }): Promise<SalaryRange | null>;
 
   /**
@@ -166,7 +177,8 @@ export interface AiContract {
   listProviderModels(req: { provider: string; baseUrl?: string }): Promise<ProviderModelInfo[]>;
 
   /**
-   * Static, network-free capability probe for a provider/model — whether it can
+   * Capability probe for a provider/model. Network-free, but NOT static: it
+   * reads stored credentials to answer `supportsWebSearch` — whether it can
    * attempt a web-grounded company/role search, whether it accepts a
    * reasoning-effort value, and (when it does) exactly which levels this MODEL
    * accepts. Reads the Rust `ModelCapabilities` matrix + `AiProvider::effort_levels`
@@ -181,6 +193,11 @@ export interface AiContract {
    * unresolvable providers degrade to `supportsWebSearch: false`,
    * `supportsReasoning: false`, `effortLevels: []`. `baseUrl` is forwarded for
    * OpenAI-compatible servers.
+   *
+   * `supportsWebSearch` is a CONFIGURATION answer, not a capability one: true
+   * when a search backend can actually serve research — the provider's own, or
+   * the configured fallback. A provider that advertises search but has no key
+   * for it reads false, because the brief it would produce is empty.
    */
   modelCapabilities(req: {
     provider: string;
