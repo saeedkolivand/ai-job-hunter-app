@@ -10,10 +10,6 @@ use crate::pipeline::Completer;
 
 const CACHE_NS: &str = "company_brief";
 const TTL_SECS: i64 = 7 * 24 * 3600;
-/// Hard cap on a single research call so generation never stalls on a slow or
-/// hung provider search. Provider-agnostic — applied once here, around the
-/// active provider's own `research()`.
-const RESEARCH_TIMEOUT_SECS: u64 = 25;
 
 /// Company-research enricher: resolve company → cache check → the **active
 /// provider's own** web search + brief synthesis (via [`Completer::research`]) →
@@ -29,18 +25,30 @@ impl CompanyResearch {
     /// job-ad extraction, which frequently grabs a tagline ("…platform built for
     /// the era of agentic commerce") rather than the company. Falls back to the
     /// heuristic extraction only when the override is absent/empty.
+    ///
+    /// `deadline` bounds the whole pass (search + synthesis) and is INJECTED by
+    /// the L3 caller — which derives it from the request's reasoning effort via
+    /// `timeouts::research_deadline` — rather than resolved here, for the same
+    /// reason `SalaryResearch::enrich` takes its `cache`: this module must not
+    /// reach up into `commands` (R7), and an injected bound is directly
+    /// testable. A FLAT bound was the bug: synthesis is a model call, so its
+    /// cost scales with the model's reasoning budget, and a reasoning model's
+    /// research never finished inside the old fixed 25s.
     pub async fn enrich_with(
         &self,
         completer: &Completer,
         job_ad: &str,
         company_override: Option<&str>,
+        role_override: Option<&str>,
+        deadline: Duration,
     ) -> EnrichmentResult {
         let meta = extractor::extract(job_ad);
-        let company = company_override
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| meta.company.clone());
+        let company = pick(company_override, &meta.company);
+        // Same precedence as `company`, and for the same reason: the heuristic's
+        // last resort is "the ad's first short line", which on a scraped page is
+        // routinely an apply button or a nav link. A reported session searched
+        // for role="Jetzt bewerben" and role="[← Alle offenen Stellen](/karriere)".
+        let role = pick(role_override, &meta.role);
         if company.is_empty() {
             tracing::debug!("research: no company name available (override + extraction empty)");
             return EnrichmentResult::empty();
@@ -68,11 +76,7 @@ impl CompanyResearch {
 
         // Provider-native research, bounded so generation never stalls. Any
         // failure / timeout / unconfigured provider yields an empty brief.
-        let brief = match tokio::time::timeout(
-            Duration::from_secs(RESEARCH_TIMEOUT_SECS),
-            completer.research(&company, &meta.role),
-        )
-        .await
+        let brief = match tokio::time::timeout(deadline, completer.research(&company, &role)).await
         {
             Ok(Ok(b)) => b,
             Ok(Err(e)) => {
@@ -80,7 +84,11 @@ impl CompanyResearch {
                 String::new()
             }
             Err(_) => {
-                tracing::warn!("research: timed out for {company}");
+                tracing::warn!(
+                    company = %company,
+                    deadline_secs = deadline.as_secs(),
+                    "research: timed out"
+                );
                 String::new()
             }
         };
@@ -102,7 +110,7 @@ impl CompanyResearch {
 
         tracing::info!(
             company = %company,
-            role = %meta.role,
+            role = %role,
             source = "provider",
             chars = brief.len(),
             "research: company brief\n{brief}"
@@ -116,6 +124,17 @@ impl CompanyResearch {
             content: brief,
         }
     }
+}
+
+/// The AI-extracted value when it is non-empty, else the heuristic one. The
+/// AI extraction sees the whole ad and is simply better; the heuristic exists
+/// for the paths that have no extraction to offer.
+fn pick(override_value: Option<&str>, heuristic: &str) -> String {
+    override_value
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(heuristic)
+        .to_string()
 }
 
 /// A brief the model couldn't actually fill: too short to be a real ~150-word

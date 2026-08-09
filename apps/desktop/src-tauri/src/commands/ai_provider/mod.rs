@@ -28,7 +28,7 @@ mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
-mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
+pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
 use anthropic::AnthropicClient;
 use cli_agent::CliAgentClient;
@@ -1264,42 +1264,10 @@ pub use crate::vector::cosine;
 
 // ── Request tracing ─────────────────────────────────────────────────────────────
 
-/// Structured per-request log over the shared [`crate::observability::Span`].
-/// Emits a `→` line at dispatch and a `←` line with status + duration at
-/// completion, e.g.:
-/// `[ai] ← provider=openai model=gpt-4o endpoint=/chat/completions … status=200 duration=1842ms ok=true`
-pub struct RequestTrace {
-    span: crate::observability::Span,
-}
-
-impl RequestTrace {
-    pub fn begin(
-        provider: ProviderId,
-        model: &str,
-        endpoint: &str,
-        base_url: &str,
-        streaming: bool,
-    ) -> Self {
-        let fields = format!(
-            "provider={} model={} endpoint={} baseUrl={} streaming={}",
-            provider.as_str(),
-            model,
-            endpoint,
-            base_url,
-            streaming
-        );
-        Self {
-            span: crate::observability::Span::begin("ai", fields),
-        }
-    }
-
-    pub fn end(&self, status: Option<u16>, ok: bool) {
-        let status = status
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        self.span.end_with(&format!("status={status}"), ok);
-    }
-}
+mod trace;
+/// Per-request `[ai] → / ←` tracing. Lives in its own module (this one is at its
+/// LOC cap) but keeps its path here, so no call site moves.
+pub use trace::RequestTrace;
 
 // ── Error mapping ───────────────────────────────────────────────────────────────
 

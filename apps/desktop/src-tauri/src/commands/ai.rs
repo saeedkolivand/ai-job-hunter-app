@@ -201,6 +201,59 @@ pub async fn ai_inspect_model(model: String) -> Value {
     ollama::show_model(&model).await
 }
 
+/// Admit one `"ai_research"` call: rate + concurrency cap, resolve the active
+/// provider, then charge the per-provider daily ceiling — in that order, so a
+/// rejected call costs no budget.
+///
+/// Extracted because `ai_research_company`, `ai_lookup_salary` and
+/// `ai_research_answer` each open with the identical ~30-line preamble and each
+/// degrades to its OWN "nothing found" value rather than an error. The guard
+/// rides in the returned tuple so the caller holds the slot for the real work.
+/// `who` only labels the debug log.
+fn admit_research(
+    app: &AppHandle,
+    who: &str,
+) -> Option<(crate::limits::ConcurrencyGuard, crate::pipeline::Completer)> {
+    let limiter = app
+        .state::<std::sync::Arc<crate::limits::Limiter>>()
+        .inner()
+        .clone();
+    // This is a billable provider web search (Ollama fires two calls: search +
+    // synthesis) with no other ceiling, so a looping/compromised renderer
+    // varying its inputs must not drive unbounded paid-API spend. One shared
+    // bucket across all three research commands, deliberately.
+    let guard = match limiter.acquire(
+        "ai_research",
+        crate::limits::AI_RESEARCH_RATE_MAX,
+        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            tracing::debug!("{who}: rate limited: {e}");
+            return None;
+        }
+    };
+    // Backend-owned routing (task #16): the active provider comes from the store.
+    let completer = match crate::pipeline::Completer::from_active(app) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("{who}: provider resolution failed: {e}");
+            return None;
+        }
+    };
+    // Per-provider daily ceiling — the same coarse runaway-cost backstop
+    // `ai_generate` charges; the `(day, provider)` bucket is shared across every
+    // AI command against that provider.
+    if let Err(e) = limiter.charge_provider_daily(
+        completer.provider_id().as_str(),
+        crate::limits::PROVIDER_DAILY_MAX,
+    ) {
+        tracing::debug!("{who}: daily budget exceeded: {e}");
+        return None;
+    }
+    Some((guard, completer))
+}
+
 /// Research the company named in a job ad and return a short factual brief for
 /// the cover-letter "fit" paragraph. Reuses the shared [`CompanyResearch`]
 /// enricher — the **active provider's own** web search + synthesis, cached for a
@@ -212,54 +265,34 @@ pub async fn ai_inspect_model(model: String) -> Value {
 /// Returns `{ company, brief }`. The brief is reference context only; the prompt
 /// layer treats it as untrusted and never as a source of candidate facts.
 #[tauri::command]
-pub async fn ai_research_company(app: AppHandle, job_ad: String, company: Option<String>) -> Value {
+pub async fn ai_research_company(
+    app: AppHandle,
+    job_ad: String,
+    company: Option<String>,
+    // AI-extracted job title. Like `company`, it beats the heuristic, whose last
+    // resort is the ad's first short line — an apply button on a scraped page.
+    role: Option<String>,
+    // Sizes the research deadline (`timeouts::research_deadline`): flat 25s meant
+    // a reasoning model's research never finished — six for six in one session.
+    effort: Option<String>,
+) -> Value {
     use crate::cover_letter::research::CompanyResearch;
-    use crate::pipeline::Completer;
 
-    // Anti-abuse: rate + concurrency cap, sharing the same "ai_research" bucket
-    // as `ai_lookup_salary` — this is a billable provider web search with no
-    // other ceiling, so a looping/compromised renderer varying job_ad/company
-    // must not drive unbounded paid-API spend.
-    let limiter = app
-        .state::<std::sync::Arc<crate::limits::Limiter>>()
-        .inner()
-        .clone();
-    let _guard = match limiter.acquire(
-        "ai_research",
-        crate::limits::AI_RESEARCH_RATE_MAX,
-        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
-    ) {
-        Ok(g) => g,
-        Err(e) => {
-            tracing::debug!("research_company: rate limited: {e}");
-            return json!({ "company": "", "brief": "" });
-        }
-    };
-
-    // Routing is backend-owned (task #16): resolve the active provider from the
-    // store, never from renderer-supplied provider/base_url (SSRF close).
-    let completer = match Completer::from_active(&app) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!("research_company: provider resolution failed: {e}");
-            return json!({ "company": "", "brief": "" });
-        }
-    };
-
-    // Per-provider daily request ceiling — the same coarse runaway-cost
-    // backstop `ai_generate`/`ai_lookup_salary` charge.
-    if let Err(e) = limiter.charge_provider_daily(
-        completer.provider_id().as_str(),
-        crate::limits::PROVIDER_DAILY_MAX,
-    ) {
-        tracing::debug!("research_company: daily budget exceeded: {e}");
+    let Some((_guard, completer)) = admit_research(&app, "research_company") else {
         return json!({ "company": "", "brief": "" });
-    }
+    };
 
     // Prefer the accurate AI-extracted company name from the generation flow; the
     // enricher falls back to heuristic job-ad extraction only when it's absent.
+    let deadline = super::ai_provider::timeouts::research_deadline(effort.as_deref());
     let result = CompanyResearch
-        .enrich_with(&completer, &job_ad, company.as_deref())
+        .enrich_with(
+            &completer,
+            &job_ad,
+            company.as_deref(),
+            role.as_deref(),
+            deadline,
+        )
         .await;
     json!({ "company": result.key, "brief": result.content })
 }
@@ -462,52 +495,13 @@ pub async fn ai_lookup_salary(
     // preserves the unconstrained "local currency for that location"
     // behavior.
     currency: Option<String>,
+    // Sizes the research deadline (`timeouts::research_deadline`).
+    effort: Option<String>,
 ) -> Option<crate::salary_research::SalaryRange> {
     use crate::pipeline::cache::KvCache;
-    use crate::pipeline::Completer;
     use crate::salary_research::SalaryResearch;
 
-    // Anti-abuse: rate + concurrency cap, mirroring `ai_generate`'s guard
-    // exactly. This is a billable provider web search (Ollama fires two calls:
-    // search + synthesis) with no other ceiling, so a looping/compromised
-    // renderer varying inputs must not drive unbounded paid-API spend. The
-    // `"ai_research"` bucket is shared with `ai_research_company`, which uses
-    // the same guard.
-    let limiter = app
-        .state::<std::sync::Arc<crate::limits::Limiter>>()
-        .inner()
-        .clone();
-    let _guard = match limiter.acquire(
-        "ai_research",
-        crate::limits::AI_RESEARCH_RATE_MAX,
-        crate::limits::AI_RESEARCH_CONCURRENCY_MAX,
-    ) {
-        Ok(g) => g,
-        Err(e) => {
-            tracing::debug!("lookup_salary: rate limited: {e}");
-            return None;
-        }
-    };
-
-    // Backend-owned routing (task #16): the active provider comes from the store.
-    let completer = match Completer::from_active(&app) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::debug!("lookup_salary: provider resolution failed: {e}");
-            return None;
-        }
-    };
-
-    // Per-provider daily request ceiling — the same coarse runaway-cost
-    // backstop `ai_generate` charges; the `(day, provider)` bucket is already
-    // shared across every AI command against that provider.
-    if let Err(e) = limiter.charge_provider_daily(
-        completer.provider_id().as_str(),
-        crate::limits::PROVIDER_DAILY_MAX,
-    ) {
-        tracing::debug!("lookup_salary: daily budget exceeded: {e}");
-        return None;
-    }
+    let (_guard, completer) = admit_research(&app, "lookup_salary")?;
 
     // Resolved once here (the sole production caller) and passed through, so
     // `SalaryResearch::enrich` stays `AppHandle`-free and unit-testable.
@@ -521,6 +515,7 @@ pub async fn ai_lookup_salary(
             location.as_deref().unwrap_or(""),
             country.as_deref().unwrap_or(""),
             currency.as_deref().unwrap_or(""),
+            super::ai_provider::timeouts::research_deadline(effort.as_deref()),
         )
         .await
 }

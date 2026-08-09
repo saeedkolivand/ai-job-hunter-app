@@ -141,3 +141,69 @@ describe('GeneratingPanel — content rendering', () => {
     expect(screen.getByRole('button', { name: /autopilot\.apply\.cancel/i })).toBeInTheDocument();
   });
 });
+
+describe('GeneratingPanel — reasoning-heavy hint', () => {
+  // A reasoning model logged 1,039,821 chars of reasoning against 45,416 of
+  // answer and took 8–13 minutes per document, where a non-reasoning model did
+  // the same work in 12–23 seconds. The panel showed the same "this can take a
+  // moment" the whole time, so the run was indistinguishable from a hang.
+
+  it('keeps the normal hint on an ordinary run', () => {
+    render(<GeneratingPanel {...makeProps({ thinking: 'brief thought', output: 'Dear team,' })} />);
+    expect(screen.getByText('autopilot.apply.generatingHint')).toBeInTheDocument();
+  });
+
+  it('switches to the reasoning-heavy hint when reasoning dwarfs the document', () => {
+    render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(20_000), output: 'Dear team,' })} />
+    );
+    expect(screen.getByText('autopilot.apply.reasoningHeavyHint')).toBeInTheDocument();
+    expect(screen.queryByText('autopilot.apply.generatingHint')).not.toBeInTheDocument();
+  });
+
+  it('does not fire on a long run whose OUTPUT kept pace', () => {
+    // Both large: the model is producing a document, not just thinking. The
+    // ratio is the signal, not the absolute size — otherwise every long
+    // generation would show a warning that means nothing.
+    render(
+      <GeneratingPanel
+        {...makeProps({ thinking: 'x'.repeat(20_000), output: 'y'.repeat(20_000) })}
+      />
+    );
+    expect(screen.getByText('autopilot.apply.generatingHint')).toBeInTheDocument();
+  });
+
+  it('pins both thresholds exactly', () => {
+    // 8,000 chars and a 5:1 ratio are the two numbers the behaviour rests on.
+    // Without boundary cases either could be widened away silently.
+    const hint = () => screen.queryByText('autopilot.apply.reasoningHeavyHint');
+
+    // Just under the floor → no hint, even at an enormous ratio.
+    const { unmount } = render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(7_999), output: '' })} />
+    );
+    expect(hint()).not.toBeInTheDocument();
+    unmount();
+
+    // At the floor but exactly AT the ratio (not above it) → no hint.
+    const second = render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(8_000), output: 'y'.repeat(1_600) })} />
+    );
+    expect(hint()).not.toBeInTheDocument();
+    second.unmount();
+
+    // At the floor and one char past the ratio → hint.
+    render(
+      <GeneratingPanel {...makeProps({ thinking: 'x'.repeat(8_001), output: 'y'.repeat(1_600) })} />
+    );
+    expect(hint()).toBeInTheDocument();
+  });
+
+  it('does not fire on a short burst of reasoning', () => {
+    // Under the floor: early in ANY reasoning run the ratio is briefly huge
+    // (thinking streams before the document does), and flashing the hint for a
+    // second on every run would train the user to ignore it.
+    render(<GeneratingPanel {...makeProps({ thinking: 'x'.repeat(2_000), output: '' })} />);
+    expect(screen.getByText('autopilot.apply.generatingHint')).toBeInTheDocument();
+  });
+});

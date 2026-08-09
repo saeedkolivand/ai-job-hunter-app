@@ -51,6 +51,8 @@ import {
   resolveMarket,
   type RewriteDocType,
   type SalaryRange,
+  sanitizeCompanyName,
+  sanitizeJobTitle,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { ContactProfile, GitHubRepo } from '@ajh/shared';
@@ -191,17 +193,33 @@ export async function extractMetadata(
         mismatch: clientSideDetection.mismatch,
       };
     }
-  } catch {
-    /* fall through */
+    console.warn('[extractMetadata] model returned unparseable JSON — using heuristics', {
+      model,
+      rawLength: raw.length,
+    });
+  } catch (err) {
+    // Never silent: the heuristics below are materially worse than the model,
+    // and a run that quietly took this path produced cover letters addressed to
+    // a job-ad heading. Which path ran has to be visible in the log.
+    console.warn('[extractMetadata] extraction failed — using heuristics', {
+      model,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   const nameMatch = resume.match(/^([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/m);
-  const titleMatch = jobAd.match(/(?:position|role|title|job)[:\s]+([^\n]+)/i);
-  const companyMatch = jobAd.match(/(?:at|@|company|employer|firm)[:\s]+([^\n,]+)/i);
+  // `\b` on every word alternative. Without it `at` matched inside "Wh(at) You'll
+  // Do" / "gre(at) experience" / Dutch "d(at) je zelf", and `job` inside "jobs",
+  // so the capture ran from mid-word to the next comma or newline.
+  const titleMatch = jobAd.match(/\b(?:position|role|title|job)[:\s]+([^\n]+)/i);
+  const companyMatch = jobAd.match(/(?:\b(?:at|company|employer|firm)|@)[:\s]+([^\n,]+)/i);
   return {
     candidateName: nameMatch?.[1] ?? '',
-    jobTitle: titleMatch?.[1]?.trim() ?? '',
-    companyName: companyMatch?.[1]?.trim() ?? '',
+    // Same gate as the model's own output — this regex is the worse source.
+    jobTitle: sanitizeJobTitle(titleMatch?.[1]),
+    // Same gate the model's own output goes through — this regex is the WORSE
+    // of the two sources, so it certainly does not get to skip validation.
+    companyName: sanitizeCompanyName(companyMatch?.[1]),
     resumeLanguage: clientSideDetection.resumeName,
     jobAdLanguage: clientSideDetection.jobAdName,
     mismatch: clientSideDetection.mismatch,
@@ -776,7 +794,11 @@ export async function synthesizeResume(
  * the cover letter still generates. The returned brief is untrusted reference
  * text — the prompt fences it.
  */
-export async function researchCompany(jobAd: string, company?: string): Promise<string> {
+export async function researchCompany(
+  jobAd: string,
+  company?: string,
+  role?: string
+): Promise<string> {
   try {
     // Routing (provider/model/base_url) is backend-owned (task #16) — the enricher
     // reads the active provider from the store, so nothing is threaded here.
@@ -785,6 +807,14 @@ export async function researchCompany(jobAd: string, company?: string): Promise<
       // The AI-extracted company name is far more reliable than the backend's
       // heuristic job-ad scan (which can grab a tagline), so send it when known.
       company: company?.trim() || undefined,
+      // Same reasoning as `company`: the backend's heuristic falls back to the
+      // ad's first short line, which on a scraped page is an apply button.
+      role: role?.trim() || undefined,
+      // Same effort the generation request carries — the backend's deadline
+      // around search + synthesis scales with it. Without this a reasoning model
+      // never finishes research inside the flat bound, and the cover letter is
+      // written with no company knowledge and no visible failure.
+      effort: resolveActiveProvider().providerSettings?.effort,
     });
     return res?.brief ?? '';
   } catch {
@@ -847,6 +877,7 @@ export async function lookupSalaryRange(
       location: location.trim() || undefined,
       country: country?.trim() || undefined,
       currency: currency?.trim() || undefined,
+      effort: resolveActiveProvider().providerSettings?.effort,
     });
     return res ?? undefined;
   } catch {
@@ -877,7 +908,9 @@ export async function generateCoverLetter(
   const profile = buildProviderProfile(model);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
-  const companyBrief = opts?.researchCompany ? await researchCompany(jobAd, meta.companyName) : '';
+  const companyBrief = opts?.researchCompany
+    ? await researchCompany(jobAd, meta.companyName, meta.jobTitle)
+    : '';
 
   // Resolve the cover-letter market from the job's country (decision: job
   // location, not ad language) with an optional manual override; the letter is
