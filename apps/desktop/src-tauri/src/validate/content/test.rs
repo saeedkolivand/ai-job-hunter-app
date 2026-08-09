@@ -698,6 +698,67 @@ fn normalized_link_forms_are_not_altered_links() {
     );
 }
 
+/// H1c — a link with a non-ASCII character ABORTED the app. `canonical_link`
+/// stripped the scheme with `&s[..8]`, a fixed BYTE offset, so any URL whose
+/// 8th byte fell inside a multibyte char panicked ("byte index 8 is not a char
+/// boundary"). Release builds are `panic = "abort"`: the process died mid-run,
+/// before the generated document was saved. A German or French project domain is
+/// all it took.
+///
+/// Every boundary the function cuts at gets a straddling char here — byte 8
+/// (`https://`) and byte 7 (`http://`) — plus the two-, three- and four-byte
+/// widths, so a future "just slice off the scheme" rewrite fails loudly.
+#[test]
+fn accented_project_links_are_keyed_without_panicking() {
+    // Boundary 8: `é` occupies bytes 7-8 in all three of these, so the very
+    // first loop iteration (`https://`, len 8) cut inside it.
+    assert_eq!(
+        factual::canonical_link("www.café-berlin.de"),
+        "www.café-berlin.de"
+    );
+    assert_eq!(factual::canonical_link("ab.com/éx"), "ab.com/éx");
+    // …and stripping the scheme that DOES match still leaves the tail intact.
+    assert_eq!(factual::canonical_link("http://éxample.com"), "éxample.com");
+    assert_eq!(
+        factual::canonical_link("http://éxample.com"),
+        factual::canonical_link("https://Éxample.com/"),
+        "the same host written three ways is one key"
+    );
+
+    // Boundary 7: `é` occupies bytes 6-7, so `&s[..8]` is legal but the SECOND
+    // iteration (`http://`, len 7) is the one that cut inside the char.
+    assert_eq!(factual::canonical_link("abcdefé.com/x"), "abcdefé.com/x");
+
+    // Three- and four-byte chars across the same offsets.
+    assert_eq!(factual::canonical_link("abc.de/日本語"), "abc.de/日本語");
+    assert_eq!(factual::canonical_link("abc.de/🚀x"), "abc.de/🚀x");
+    // Shorter than either scheme — the length guard, not the boundary check.
+    assert_eq!(factual::canonical_link("é.de"), "é.de");
+    // Host lowercased, accents preserved; path case and accents untouched.
+    assert_eq!(
+        factual::canonical_link("HTTPS://Café.Example.DE/Ünicode/"),
+        "café.example.de/Ünicode"
+    );
+
+    // The three verifier-reproduced URLs, through the FULL validate_content
+    // path (the way the panic actually reached a user: a Projects entry).
+    let doc = "PROJECTS\n\n\
+               **Café Ledger** · www.café-berlin.de · http://éxample.com · ab.com/éx\n\
+               Rust · SQLite\n\
+               A double-entry bookkeeping tool for freelancers.\n";
+    let report = report_for(doc, doc, EN_JOB_AD, &[]);
+    silent(&report, FACTUAL_ALTERED_PROJECT_LINK);
+    let criticals: Vec<&ContentIssue> = report
+        .issues
+        .iter()
+        .filter(|i| i.severity == Severity::Critical)
+        .collect();
+    assert!(
+        criticals.is_empty(),
+        "an accented but truthful project link must produce a clean report; got {criticals:#?}"
+    );
+}
+
 /// H2 — a shortened company name is normal tailoring, not a dropped role.
 /// "IBM Deutschland GmbH" has exactly one 4+ character token that is not a legal
 /// form — "deutschland" — so writing the employer as "IBM" made the entry look

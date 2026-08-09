@@ -18,7 +18,7 @@ Backend Developer | Globex | 2018 - 2021
 
 PROJECTS
 
-**Ledger CLI** · https://ledger.example.dev/ · github.com/janedoe/ledger
+**Ledger CLI** · https://ledger.example.dev/ · github.com/janedoe/ledger · www.café-ledger.de
 Rust · SQLite · Clap
 A double-entry bookkeeping tool for freelancers.
 

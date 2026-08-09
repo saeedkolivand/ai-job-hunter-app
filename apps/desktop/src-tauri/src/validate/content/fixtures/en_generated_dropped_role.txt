@@ -16,7 +16,7 @@ Senior Backend Engineer | Acme Payments | 2021 - Present
 
 PROJECTS
 
-**Ledger CLI** · https://ledger.example.dev · https://github.com/janedoe/ledger
+**Ledger CLI** · https://ledger.example.dev · https://github.com/janedoe/ledger · https://www.café-ledger.de
 Rust · SQLite · Clap
 A double-entry bookkeeping tool for freelancers.
 

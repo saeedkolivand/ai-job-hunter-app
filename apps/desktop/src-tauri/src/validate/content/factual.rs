@@ -600,11 +600,21 @@ pub fn urls_in(text: &str) -> Vec<String> {
 /// and `github.com/janedoe/ledger` are the same link written two ways, and
 /// telling a candidate their own URL was "missing or altered" because the model
 /// dropped the scheme is the false Critical this key exists to prevent.
+///
+/// **Never index a `&str` by a fixed byte offset here.** URL text in a résumé is
+/// arbitrary UTF-8 (`www.café-berlin.de`, `ab.com/éx`), and `&s[..8]` panics the
+/// moment a multibyte char straddles byte 8. Release builds are `panic = "abort"`,
+/// so that panic killed the whole generation before the document was saved. Every
+/// boundary this function cuts at is therefore either byte-compared on
+/// `as_bytes()` (below) or derived from a char-aware API (`trim*`, `split_once`).
 pub fn canonical_link(raw: &str) -> String {
     let mut s = raw.trim().trim_end_matches(['.', ',', ';', ':']);
     for scheme in ["https://", "http://"] {
-        if s.len() >= scheme.len() && s[..scheme.len()].eq_ignore_ascii_case(scheme) {
-            s = &s[scheme.len()..];
+        // Byte-compare the prefix; only slice once it is known to BE the scheme.
+        if s.len() >= scheme.len()
+            && s.as_bytes()[..scheme.len()].eq_ignore_ascii_case(scheme.as_bytes())
+        {
+            s = &s[scheme.len()..]; // Safe: the matched prefix is pure ASCII.
             break;
         }
     }

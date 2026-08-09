@@ -18,7 +18,7 @@ Backend Developer | Globex Logistics | 2018 - 2021
 
 PROJECTS
 
-• Ledger CLI · https://ledger.example.dev · https://github.com/janedoe/ledger
+• Ledger CLI · https://ledger.example.dev · https://github.com/janedoe/ledger · https://www.café-ledger.de
 
 SKILLS
 
