@@ -24,7 +24,10 @@ use serde::{Deserialize, Serialize};
 use crate::export::parser::{parse_resume, strip_md};
 use crate::export::types::{DocumentType, ExportFormat, ExportRequest, LineKind};
 
-static EMAIL_RE: LazyLock<Regex> =
+/// The single "is this a real email address" test in the crate. `pub(crate)`
+/// so the content validators police a genuine address rather than a bare `@`
+/// (a body line mentioning "@channel" is not a contact block).
+pub(crate) static EMAIL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[\w.+-]+@[\w-]+\.[\w.-]+").unwrap());
 
 /// How serious an export issue is. Only [`Severity::Critical`] issues can block.

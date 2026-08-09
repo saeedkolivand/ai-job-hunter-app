@@ -15,6 +15,7 @@ use crate::documents::evidence::{years_in, SectionKind};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::{is_contact_shaped, is_first_line_contact_shaped};
 use crate::export::types::{LineKind, ParsedLine};
+use crate::validate::EMAIL_RE;
 
 use super::{
     issue, Analysis, ContentIssue, Section, ATS_BULLET_COUNT, ATS_HEADER_IN_BODY,
@@ -86,22 +87,30 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 }
 
 /// True when a run of lines starting at `i` is a CONTACT BLOCK rather than one
-/// line that happens to hold an email.
+/// line that happens to hold an `@`.
 ///
 /// Two accepted shapes, both mirroring `export::parser`'s own contact rules so
 /// this cannot drift from what the renderer treats as a header:
 ///
-/// 1. A one-line block — an email or phone (`is_first_line_contact_shaped`)
-///    PLUS at least two `|`/`·` separators, i.e. the classic
-///    "Jane Doe · jane@x.com · +49 …".
-/// 2. A two-line block — an email/phone line adjacent to a short, punctuation-
-///    free line (a name).
+/// 1. A one-line block — a real email or a phone PLUS at least two `|`/`·`
+///    separators, i.e. the classic "Jane Doe · jane@x.com · +49 …".
+/// 2. A two-line block — a real email/phone line at the TOP of a section,
+///    directly under a short, punctuation-free line (a name).
 ///
-/// A single body line mentioning an address is deliberately NOT a match: that
-/// is the false positive that would make a Critical unusable. Neither is a
-/// bullet or a job entry — a header block is never either, and `PHONE_RE`
-/// happily matches a date range (`2018 - 2021` is a digit followed by eight
-/// digits, spaces and hyphens), which would otherwise make every
+/// Both narrowings exist because this is a Critical and both false positives
+/// were reproduced on truthful documents:
+///
+/// * "an email" is `validate::EMAIL_RE`, not `contains('@')`. A bullet reading
+///   "owned the @payments rotation" carries an `@` and no address.
+/// * the name-like neighbour must be the section's FIRST line. A header block
+///   opens a document, so a candidate name can only precede it; matching any
+///   adjacent short line made a two-line reference, an award, or a bullet
+///   followed by a terse note into a "second contact block".
+///
+/// A single body line mentioning an address is deliberately NOT a match, and
+/// neither is a bullet or a job entry — a header block is never either, and
+/// `PHONE_RE` happily matches a date range (`2018 - 2021` is a digit followed by
+/// eight digits, spaces and hyphens), which would otherwise make every
 /// pipe-separated employment line a "contact block".
 fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     let line = lines[i];
@@ -111,11 +120,13 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     ) {
         return false;
     }
-    let has_email = line.text.contains('@');
-    // A phone shape only counts when the line carries no year: a date span is
-    // not a phone number, whatever the regex thinks.
-    let has_phone =
-        !has_email && is_first_line_contact_shaped(&line.text) && years_in(&line.text).is_empty();
+    let has_email = EMAIL_RE.is_match(&line.text);
+    // A phone shape only counts on a line with no stray `@` (that would be an
+    // address this check just rejected) and no year: a date span is not a phone
+    // number, whatever the regex thinks.
+    let has_phone = !line.text.contains('@')
+        && is_first_line_contact_shaped(&line.text)
+        && years_in(&line.text).is_empty();
     if !(has_email || has_phone) {
         return false;
     }
@@ -137,16 +148,17 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
             && !t.chars().any(|c| c.is_ascii_digit())
             && super::word_count(t) <= 5
     };
-    let before = i.checked_sub(1).map(|p| lines[p]).is_some_and(name_like);
-    let after = lines.get(i + 1).copied().is_some_and(name_like);
-    before || after
+    // Exactly the second line, under the section's first line.
+    i == 1 && name_like(lines[0])
 }
 
 /// `ats.header_in_body` — a second contact block inside the document.
 ///
-/// Critical: a parser that finds two header blocks routinely attributes the
-/// whole document to the wrong one, and the candidate never learns why nobody
-/// called. Scanned only in sections AFTER the first (section 0 IS the header).
+/// Critical: many parsers, on finding two header blocks, attribute the whole
+/// document to one of them, and the candidate never learns why nobody called.
+/// (Behaviour differs per vendor — see the job-match standards; there is no
+/// single "the ATS" that does this.) Scanned only in sections AFTER the first
+/// (section 0 IS the header).
 fn header_in_body_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let mut issues = Vec::new();
     for section in ctx.generated_sections.iter().skip(1) {
@@ -160,9 +172,9 @@ fn header_in_body_issues(ctx: &Analysis) -> Vec<ContentIssue> {
                 issues.push(issue(
                     ATS_HEADER_IN_BODY,
                     section.heading.as_deref(),
-                    "A second contact block appears in the body of the document. Parsers pick \
-                     one header and attribute everything to it — keep contact details in the \
-                     header only."
+                    "A second contact block appears in the body of the document. Many parsers \
+                     pick one header and attribute everything to it — keep contact details in \
+                     the header only."
                         .to_string(),
                     Some(lines[i].text.clone()),
                 ));

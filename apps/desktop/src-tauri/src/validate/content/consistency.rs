@@ -136,7 +136,14 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         .iter()
         .flat_map(|l| ctx.tokens(&l.text))
         .collect();
-    let mut missing: Vec<String> = claimed.difference(&demonstrated).cloned().collect();
+    // Tokens are STEMMED when the languages align, so map every one back to a
+    // readable form before it reaches the user: "kubernet is listed under
+    // skills" is a finding nobody can act on. Sorted on the display form so the
+    // report reads alphabetically as printed.
+    let mut missing: Vec<String> = claimed
+        .difference(&demonstrated)
+        .map(|token| ctx.display(token))
+        .collect();
     missing.sort(); // Deterministic: the sets above are unordered.
     missing
         .into_iter()
@@ -170,7 +177,11 @@ enum ProjectTier {
 ///
 /// An entry begins at a line that names a project: a bold run (`**Name**`) or a
 /// bullet. Everything up to the next such line belongs to it.
-fn project_entries(section: &Section) -> Vec<Vec<&ParsedLine>> {
+///
+/// `pub(super)` because `factual::project_links` needs the same grouping to know
+/// which line is the stack line — two graders disagreeing about where an entry
+/// starts is how a structure warning and a link Critical contradict each other.
+pub(super) fn project_entries(section: &Section) -> Vec<Vec<&ParsedLine>> {
     let mut entries: Vec<Vec<&ParsedLine>> = Vec::new();
     for line in section
         .lines

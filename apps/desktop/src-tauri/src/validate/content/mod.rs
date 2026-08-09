@@ -29,19 +29,26 @@
 //!
 //! Pure L1: no Tauri, no `AppHandle`, no emit, no I/O.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
 
 use crate::documents::evidence::{classify_section, SectionKind};
 use crate::documents::keywords::{
-    keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
+    detect_locale_tag, display_forms, keyword_coverage, keywords, keywords_normalized,
+    languages_align, make_stemmer,
 };
-use crate::export::parser::parse_resume;
+use crate::export::parser::{is_first_line_contact_shaped, parse_resume};
 use crate::export::types::{LineKind, ParsedLine};
 use crate::observability::Span;
-use crate::validate::Severity;
+use crate::validate::{Severity, EMAIL_RE};
+
+/// The word-boundary matcher every lexicon-style comparison in this module uses.
+/// Re-exported rather than reimplemented: `documents::evidence` compares
+/// `PRESENT_MARKERS` with the same function, so a date marker and a voice
+/// lexicon entry can never disagree about what a word boundary is.
+pub(crate) use crate::documents::evidence::contains_word as contains_phrase;
 
 mod alignment;
 mod ats;
@@ -269,6 +276,9 @@ pub(crate) struct Analysis<'a> {
     pub job_keywords: HashSet<String>,
     pub generated_keywords: HashSet<String>,
     pub source_keywords: HashSet<String>,
+    /// Stem → readable, unstemmed form for every token in this report's three
+    /// documents. Empty when nothing was stemmed. See [`Analysis::display`].
+    display: HashMap<String, String>,
     /// The generated text is not in the target language. Every posting
     /// comparison is suppressed while this holds — coverage across two
     /// languages is noise, and a cascade of derived warnings would bury the one
@@ -280,9 +290,13 @@ impl<'a> Analysis<'a> {
     pub fn new(input: &'a ContentInput<'a>) -> Self {
         let lang = normalize_language(input.target_language);
         // ONE alignment decision for every résumé↔posting comparison in this
-        // report — the same `languages_align` kernel `score_one` and
-        // `rank_bullets` route through, so a quality report can never
-        // contradict the match score shown for the same pair.
+        // report, taken by the same `languages_align` kernel `score_one` and
+        // `rank_bullets` route through. What that guarantees is SYMMETRIC
+        // NORMALIZATION — both sides of every comparison here are stemmed, or
+        // neither is, on the same rule the match score uses. It does not make
+        // this report's numbers equal to the match score: they count different
+        // corpora (a generated document vs. a stored résumé) and round
+        // differently.
         let aligned = languages_align(input.job_ad, &lang);
         let stemmer = make_stemmer(input.job_ad);
         let tokens = |text: &str| {
@@ -292,6 +306,18 @@ impl<'a> Analysis<'a> {
                 keywords_normalized(text)
             }
         };
+        // Stems are an implementation detail of the comparison and must never
+        // reach a message — see [`Analysis::display`]. Built over all three
+        // documents because a finding can name a token from any of them.
+        let display = if aligned {
+            let corpus = format!(
+                "{}\n{}\n{}",
+                input.generated, input.source_resume, input.job_ad
+            );
+            display_forms(&corpus, &stemmer)
+        } else {
+            HashMap::new()
+        };
         Self {
             lang: lang.clone(),
             generated_sections: split_sections(input.generated),
@@ -299,7 +325,8 @@ impl<'a> Analysis<'a> {
             job_keywords: tokens(input.job_ad),
             generated_keywords: tokens(input.generated),
             source_keywords: tokens(input.source_resume),
-            language_mismatch: is_language_mismatch(input.generated, &lang),
+            language_mismatch: language_mismatch_for(input, &lang),
+            display,
             aligned,
             stemmer,
             input,
@@ -313,6 +340,21 @@ impl<'a> Analysis<'a> {
         } else {
             keywords_normalized(text)
         }
+    }
+
+    /// The readable form of a token, for interpolation into a user-facing
+    /// `message` or `evidence`.
+    ///
+    /// [`Analysis::tokens`] stems when the languages align, so a token taken
+    /// straight from a comparison reads as `kubernet`, `develop`, `entwickl`.
+    /// Telling a user their résumé never demonstrates "kubernet" is a finding
+    /// they cannot act on and does not trust. Every token that reaches a
+    /// message goes through here first.
+    pub fn display(&self, token: &str) -> String {
+        self.display
+            .get(token)
+            .cloned()
+            .unwrap_or_else(|| token.to_string())
     }
 
     /// Coverage of the posting by `tokens`, 0–100. `None` when the posting has
@@ -365,6 +407,28 @@ pub(crate) fn is_language_mismatch(text: &str, lang: &str) -> bool {
     significant >= MIN_CHARS_FOR_LANGUAGE_CHECK && !languages_align(text, lang)
 }
 
+/// Whether this report may raise `content.language_mismatch`.
+///
+/// The generated text reading as the wrong language is necessary but NOT
+/// sufficient. The candidate's own source résumé is the control: it was written
+/// by a human in the language they meant, so when the detector reads BOTH
+/// documents as the same "wrong" language, the detector is what is wrong —
+/// `whatlang` routinely calls a terse, tech-heavy English résumé Dutch,
+/// Norwegian or Tagalog. Firing there produces a Critical the user cannot act on
+/// ("re-generate it in English" — it *is* in English) and, worse, blanks
+/// `keywordCoverage` and suppresses every alignment finding along with it.
+///
+/// A genuinely mis-generated document does not look like its source, so the
+/// real defect (an English source, a German output) still fires.
+fn language_mismatch_for(input: &ContentInput, lang: &str) -> bool {
+    if !is_language_mismatch(input.generated, lang) {
+        return false;
+    }
+    let source_reads_the_same_way = is_language_mismatch(input.source_resume, lang)
+        && detect_locale_tag(input.source_resume) == detect_locale_tag(input.generated);
+    !source_reads_the_same_way
+}
+
 /// Split a document into sections at its headings. The leading band before the
 /// first heading (name + contact) is always section 0 with `heading: None`, so
 /// "is this in a non-first section?" is just an index test.
@@ -390,19 +454,19 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
 
 // ── Small shared text helpers ───────────────────────────────────────────────
 
-/// True when `needle` (lowercase) occurs in `haystack` (lowercase) at word
-/// boundaries on both ends — so `vital` does not fire on `revitalize` and
-/// `not just` does not fire inside `cannot justify`.
-pub(crate) fn contains_phrase(haystack_lower: &str, needle_lower: &str) -> bool {
-    if needle_lower.is_empty() {
-        return false;
+/// A line that really does carry contact details: a genuine email address, or a
+/// phone shape on a line with no `@` at all.
+///
+/// `export::parser::is_first_line_contact_shaped` accepts a bare `@`, which any
+/// body line mentioning a Slack handle or a `@decorator` satisfies. Both checks
+/// that can hide a candidate's own numbers behind "this is the header" — the
+/// contact-cluster Critical and the metric-extraction skip — route through this
+/// instead, so neither can be evaded by writing `@` in a bullet.
+pub(crate) fn has_real_contact_match(text: &str) -> bool {
+    if text.contains('@') {
+        return EMAIL_RE.is_match(text);
     }
-    let is_word = |c: char| c.is_alphanumeric() || c == '_';
-    haystack_lower.match_indices(needle_lower).any(|(i, m)| {
-        let before = haystack_lower[..i].chars().next_back();
-        let after = haystack_lower[i + m.len()..].chars().next();
-        before.is_none_or(|c| !is_word(c)) && after.is_none_or(|c| !is_word(c))
-    })
+    is_first_line_contact_shaped(text)
 }
 
 /// Split prose into sentences on `.`/`!`/`?`.

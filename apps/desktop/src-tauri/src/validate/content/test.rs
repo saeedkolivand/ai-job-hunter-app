@@ -20,6 +20,8 @@ use super::*;
 const EN_SOURCE: &str = include_str!("fixtures/en_source_resume.txt");
 const EN_JOB_AD: &str = include_str!("fixtures/en_job_ad.txt");
 const EN_CLEAN: &str = include_str!("fixtures/en_generated_clean.txt");
+const EN_PARAPHRASED: &str = include_str!("fixtures/en_generated_paraphrased.txt");
+const DE_PARAPHRASED: &str = include_str!("fixtures/de_generated_paraphrased.txt");
 const EN_FABRICATED_METRIC: &str = include_str!("fixtures/en_generated_fabricated_metric.txt");
 const EN_DROPPED_ROLE: &str = include_str!("fixtures/en_generated_dropped_role.txt");
 const EN_ALTERED_LINK: &str = include_str!("fixtures/en_generated_altered_project_link.txt");
@@ -152,6 +154,55 @@ fn clean_german_resume_produces_no_issues_at_all() {
         report.issues.is_empty(),
         "a clean German résumé must produce no findings; got {:#?}",
         report.issues
+    );
+}
+
+/// The byte-copy fixtures above only prove the validators do not fire on text
+/// they have already seen. Real output is a PARAPHRASE: the same facts, reworded
+/// bullets, links written in a different but equivalent form, company names
+/// shortened, an open-ended span resolved to a concrete year. Every one of those
+/// is a legitimate tailoring decision, and every one of them produced a false
+/// Critical before this pass.
+///
+/// Criticals are the bar here (not "no issues at all"): a rewording may
+/// legitimately move a Warning, but nothing about restating a true fact may ever
+/// say the candidate fabricated something.
+#[test]
+fn paraphrased_but_truthful_resume_raises_no_criticals() {
+    let report = en_resume(EN_PARAPHRASED, &en_requirements());
+    let criticals: Vec<&ContentIssue> = report
+        .issues
+        .iter()
+        .filter(|i| i.severity == Severity::Critical)
+        .collect();
+    assert!(
+        criticals.is_empty(),
+        "a truthful paraphrase must never be accused of fabrication; got {criticals:#?}"
+    );
+    assert!(report.ok);
+}
+
+/// The same guard in German. The stemmer, the heading classifier and the
+/// function-word filter all switch language here, and the shortened company
+/// names are the ones a German résumé actually carries.
+#[test]
+fn paraphrased_but_truthful_german_resume_raises_no_criticals() {
+    let report = validate_content(&ContentInput {
+        generated: DE_PARAPHRASED,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &["Docker und Kubernetes im Produktivbetrieb".to_string()],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let criticals: Vec<&ContentIssue> = report
+        .issues
+        .iter()
+        .filter(|i| i.severity == Severity::Critical)
+        .collect();
+    assert!(
+        criticals.is_empty(),
+        "a truthful German paraphrase must never be accused of fabrication; got {criticals:#?}"
     );
 }
 
@@ -535,6 +586,392 @@ fn header_in_body_needs_a_contact_cluster_not_just_an_email() {
     );
 }
 
+// ── False-positive regressions (one per reproduced Critical) ────────────────
+//
+// Every test below is a document that states nothing but the truth and was
+// nonetheless issued a Critical. Each names the mechanism that produced it.
+
+/// H1a — a `·`-separated STACK line is a technology list, not a link list.
+/// `Socket.IO` is a bare `.io` host, `Bun.sh` a bare `.sh` host, and trimming
+/// one technology out of the stack while tailoring reported the other as a
+/// project link that had been "missing or altered".
+#[test]
+fn stack_line_library_names_are_never_read_as_project_links() {
+    assert!(
+        factual::urls_in("Node.js · Socket.IO · Bun.sh · Deno.dev").is_empty(),
+        "library names are not links; got {:?}",
+        factual::urls_in("Node.js · Socket.IO · Bun.sh · Deno.dev")
+    );
+    // …while a real link in any of the accepted forms still is one.
+    for real in [
+        "https://ledger.example.dev",
+        "www.ledger.example.dev",
+        "github.com/janedoe/ledger",
+        "ledger.example.dev/docs",
+    ] {
+        assert_eq!(
+            factual::urls_in(real).len(),
+            1,
+            "{real} must still be recognised as a link"
+        );
+    }
+
+    let source = "PROJECTS\n\n\
+                  **Chat Relay** · https://relay.example.dev\n\
+                  Node.js · Socket.IO · Bun.sh\n\
+                  A tiny websocket relay.\n";
+    // Tailoring dropped one technology from the stack line. Nothing else moved.
+    let trimmed = "PROJECTS\n\n\
+                   **Chat Relay** · https://relay.example.dev\n\
+                   Node.js · Socket.IO\n\
+                   A tiny websocket relay.\n";
+    silent(
+        &report_for(trimmed, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+}
+
+/// H1b — the same link written a different way is the same link. Compared on a
+/// canonical key (scheme dropped, host lowercased, trailing `/` removed,
+/// markdown href unwrapped); still REPORTED verbatim when it genuinely differs.
+#[test]
+fn normalized_link_forms_are_not_altered_links() {
+    assert_eq!(
+        factual::canonical_link("HTTPS://GitHub.com/janedoe/ledger/"),
+        "github.com/janedoe/ledger"
+    );
+    assert_eq!(
+        factual::canonical_link("github.com/janedoe/ledger"),
+        factual::canonical_link("https://github.com/janedoe/ledger")
+    );
+
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://ledger.example.dev · https://github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    for (name, generated) in [
+        (
+            "scheme dropped",
+            "PROJECTS\n\n\
+             **Ledger CLI** · ledger.example.dev/ · github.com/janedoe/ledger\n\
+             Rust · SQLite\n",
+        ),
+        (
+            "trailing slash + host case",
+            "PROJECTS\n\n\
+             **Ledger CLI** · https://ledger.example.dev/ · HTTPS://GitHub.com/janedoe/ledger\n\
+             Rust · SQLite\n",
+        ),
+        (
+            "markdown links",
+            "PROJECTS\n\n\
+             **Ledger CLI** · [Website](https://ledger.example.dev) · \
+             [GitHub](https://github.com/janedoe/ledger)\n\
+             Rust · SQLite\n",
+        ),
+    ] {
+        let report = report_for(generated, source, EN_JOB_AD, &[]);
+        assert!(
+            !codes(&report).contains(&FACTUAL_ALTERED_PROJECT_LINK),
+            "{name} is the same link written differently; got {:#?}",
+            report
+                .issues
+                .iter()
+                .filter(|i| i.code == FACTUAL_ALTERED_PROJECT_LINK)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // A genuinely different path is still Critical, and the evidence quotes the
+    // span verbatim rather than the canonical key.
+    let altered = "PROJECTS\n\n\
+                   **Ledger CLI** · https://ledger.example.dev · \
+                   https://github.com/someone-else/ledger\n\
+                   Rust · SQLite\n";
+    let report = report_for(altered, source, EN_JOB_AD, &[]);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_ALTERED_PROJECT_LINK)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        evidence.contains(&"https://github.com/someone-else/ledger"),
+        "evidence must be the verbatim span, not the comparison key; got {evidence:?}"
+    );
+}
+
+/// H2 — a shortened company name is normal tailoring, not a dropped role.
+/// "IBM Deutschland GmbH" has exactly one 4+ character token that is not a legal
+/// form — "deutschland" — so writing the employer as "IBM" made the entry look
+/// like it had vanished.
+#[test]
+fn shortened_company_names_are_not_dropped_roles() {
+    let source = "EXPERIENCE\n\n\
+                  Software Engineer | IBM Deutschland GmbH | 2018 - 2021\n\
+                  - Built the billing service in Java\n\n\
+                  Senior Developer | SAP Deutschland SE | 2015 - 2018\n\
+                  - Ran the integration platform\n";
+    let shortened = "EXPERIENCE\n\n\
+                     Software Engineer | IBM | 2018 - 2021\n\
+                     - Built the billing service in Java\n\n\
+                     Senior Developer | SAP | 2015 - 2018\n\
+                     - Ran the integration platform\n";
+    silent(
+        &report_for(shortened, source, EN_JOB_AD, &[]),
+        FACTUAL_DROPPED_ROLE,
+    );
+
+    // A genuinely dropped employer still fires — and geography alone does NOT
+    // count as evidence that it survived.
+    let dropped = "EXPERIENCE\n\n\
+                   Software Engineer | IBM | 2018 - 2021\n\
+                   - Built the billing service in Java\n\
+                   - Worked with colleagues across Deutschland\n";
+    let report = report_for(dropped, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_DROPPED_ROLE);
+    assert_eq!(hits.len(), 1, "only the SAP entry is gone; got {hits:#?}");
+    assert!(hits[0]
+        .evidence
+        .as_deref()
+        .is_some_and(|e| e.contains("SAP")));
+
+    // A two-character token still needs a word boundary: "SAP" is not evidenced
+    // by "sapphire".
+    let lookalike = "EXPERIENCE\n\n\
+                     Software Engineer | IBM | 2018 - 2021\n\
+                     - Built the sapphire billing service in Java\n";
+    fired(
+        &report_for(lookalike, source, EN_JOB_AD, &[]),
+        FACTUAL_DROPPED_ROLE,
+    );
+}
+
+/// H3 — when the detector reads the SOURCE the same "wrong" way it reads the
+/// output, the detector is the unreliable party, not the document. Firing there
+/// produced a Critical the user cannot act on AND blanked `keywordCoverage`,
+/// taking every alignment finding down with it.
+#[test]
+fn language_critical_is_withheld_when_the_source_reads_the_same_way() {
+    // Both documents are German; the target language says English.
+    let report = validate_content(&ContentInput {
+        generated: DE_CLEAN,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    assert!(
+        !codes(&report).contains(&CONTENT_LANGUAGE_MISMATCH),
+        "source and output detect identically — that is a detector disagreement, \
+         not a generation defect; got {:?}",
+        codes(&report)
+    );
+    assert!(
+        report.metrics.keyword_coverage.is_some(),
+        "the metrics must survive a withheld language Critical"
+    );
+
+    // The real defect — an English source, a German output — still fires.
+    let real = en_resume(EN_WRONG_LANGUAGE, &en_requirements());
+    let hits = fired(&real, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// H4 — "still there" is spelled in more than one way. A source that writes
+/// `seit 2021`, `since 2021` or a bare `2021 –` carries no `Present` marker, and
+/// the old `|| !source_open_ended` arm turned every one of those into a Critical
+/// the moment the output resolved the span to a concrete year.
+#[test]
+fn open_ended_spans_without_a_present_marker_resolve_cleanly() {
+    use crate::documents::evidence::is_open_ended;
+    for span in ["2021 - Present", "seit 2021", "since 2021", "2021 –"] {
+        assert!(is_open_ended(span), "{span:?} is an open-ended span");
+    }
+    for closed in ["2018 - 2021", "Jan 2018 to Mar 2021", "presented in 2019"] {
+        assert!(!is_open_ended(closed), "{closed:?} has an end");
+    }
+
+    for source_span in ["seit 2021", "since 2021", "2021 –"] {
+        let source = format!(
+            "EXPERIENCE\n\nSenior Engineer | Acme Payments | {source_span}\n\
+             - Shipped the ledger service\n"
+        );
+        let resolved = "EXPERIENCE\n\nSenior Engineer | Acme Payments | 2021 - 2026\n\
+                        - Shipped the ledger service\n";
+        silent(
+            &report_for(resolved, &source, EN_JOB_AD, &[]),
+            FACTUAL_UNSUPPORTED_DATE,
+        );
+    }
+
+    // An invented EARLIER year still has no explanation.
+    let source = "EXPERIENCE\n\nSenior Engineer | Acme Payments | seit 2021\n\
+                  - Shipped the ledger service\n";
+    let backdated = "EXPERIENCE\n\nSenior Engineer | Acme Payments | 2015 - 2026\n\
+                     - Shipped the ledger service\n";
+    let report = report_for(backdated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSUPPORTED_DATE);
+    assert_eq!(hits[0].evidence.as_deref(), Some("2015"));
+}
+
+/// H5 — every present-tense marker hides inside an ordinary word. Matched as
+/// substrings, "presented", "knowledge", "currently" and "actually" all turned
+/// an ordinary bullet into a date context, and any year in it into a Critical.
+#[test]
+fn present_markers_only_match_whole_words() {
+    use crate::documents::evidence::looks_like_date_span;
+    for prose in [
+        "presented the roadmap to the board",
+        "knowledge sharing across the team",
+        "currently owned by the platform group",
+        "actually shipped ahead of schedule",
+    ] {
+        assert!(
+            !looks_like_date_span(prose),
+            "{prose:?} is prose, not a date span"
+        );
+    }
+    assert!(looks_like_date_span("2021 - Present"));
+    assert!(looks_like_date_span("Heute"));
+
+    // End to end: a truthful bullet with a year the source does not carry, in a
+    // line whose only "date marker" is the word "Presented".
+    let source = "EXPERIENCE\n\nAcme Payments | 2020 - 2021\n\
+                  - Shipped the ledger service\n";
+    let generated = "EXPERIENCE\n\nAcme Payments | 2020 - 2021\n\
+                     - Presented the 2019 roadmap review to the board\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSUPPORTED_DATE,
+    );
+}
+
+/// H6 — the contact-cluster Critical needs a REAL address, and the name-like
+/// line has to be the section's first. A stray `@` in a bullet and a short line
+/// anywhere next to it were enough to claim the document had two headers.
+#[test]
+fn header_in_body_needs_a_real_address_directly_under_the_heading() {
+    // An `@` that is not an address.
+    let handle = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+                  Acme | 2021 - Present\n\
+                  On call\nOwned the @payments rotation for two years\n";
+    silent(
+        &report_for(handle, handle, EN_JOB_AD, &[]),
+        ATS_HEADER_IN_BODY,
+    );
+
+    // A real address deeper inside a section, under a body line rather than at
+    // the top of it.
+    let body_address = "Jane Doe\njane@example.com\n\nPUBLICATIONS\n\n\
+                        Scaling ledgers under load\n\
+                        Rust Conf\n\
+                        Recordings are available from talks@rustconf.example.com\n";
+    silent(
+        &report_for(body_address, body_address, EN_JOB_AD, &[]),
+        ATS_HEADER_IN_BODY,
+    );
+
+    // The real thing — a name on the section's first line, an address under it.
+    let cluster = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+                   Acme | 2021 - Present\n- Led the migration\n\n\
+                   REFERENCES\n\nJohn Smith\njohn.smith@acme.example.com\n";
+    let report = report_for(cluster, cluster, EN_JOB_AD, &[]);
+    let hits = fired(&report, ATS_HEADER_IN_BODY);
+    assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// M1 — a restated number is not a fabricated one. `10k` and `10,000` are the
+/// same figure; so are "doubled" and "2x".
+#[test]
+fn restated_numbers_are_not_fabricated_metrics() {
+    let source = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                  - Handled 10k requests per second at peak\n\
+                  - Doubled throughput on the ledger service\n";
+    let restated = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                    - Handled 10,000 requests per second at peak\n\
+                    - Lifted throughput 2x on the ledger service\n";
+    silent(
+        &report_for(restated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // Millisecond figures must not read as millions: `480ms` is 480, not
+    // 480 000 000, and inventing that expansion would silence a real check.
+    let latency = "EXPERIENCE\n\nAcme | 2021 - Present\n- Cut latency from 480ms to 90ms\n";
+    let invented = "EXPERIENCE\n\nAcme | 2021 - Present\n- Cut latency from 480ms to 250ms\n";
+    let report = report_for(invented, latency, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("250"));
+}
+
+/// M2 — the metric check skipped anything `is_contact_shaped` accepted, which
+/// includes any line with two `·` separators or the word "website". A body
+/// bullet was therefore exempt from the fabricated-metric Critical entirely.
+#[test]
+fn a_separator_laden_body_bullet_stays_metric_checkable() {
+    let source = "EXPERIENCE\n\nAcme | 2021 - Present\n- Rebuilt the marketing website\n";
+    let evasive = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                   - Rebuilt the marketing website · cut page weight · shipped 12000 pages\n";
+    let report = report_for(evasive, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("12000"));
+
+    // The header band is still skipped: a phone number is not a claim of impact.
+    let header = "Jane Doe\njane@example.com | +49 30 1234567 | 10115 Berlin\n\n\
+                  EXPERIENCE\n\nAcme | 2021 - Present\n- Led the migration\n";
+    silent(
+        &report_for(header, header, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+}
+
+/// M5 — a Snowball stem must never reach the user. "kubernet is listed under
+/// skills but never appears in your experience" is a finding nobody can act on.
+#[test]
+fn user_facing_messages_carry_readable_words_not_stems() {
+    let doc = "EXPERIENCE\n\nAcme | 2021 - Present\n- Shipped Docker containers to production\n\n\
+               SKILLS\n\nDocker · Kubernetes\n";
+    let report = report_for(doc, doc, EN_JOB_AD, &[]);
+    let hits = fired(&report, CONSISTENCY_SKILL_NOT_DEMONSTRATED);
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("kubernetes"),
+        "the evidence must be the readable word, not the stem"
+    );
+    assert!(
+        hits[0].message.contains("\"kubernetes\""),
+        "the message must quote the readable word too; got {:?}",
+        hits[0].message
+    );
+}
+
+/// M6 — coverage moves in whole keyword steps, so any drop at all fired on every
+/// legitimate edit. Only a drop of at least
+/// [`alignment::MIN_COVERAGE_DROP_POINTS`] percentage points is reported.
+#[test]
+fn low_coverage_tolerates_a_drop_smaller_than_the_threshold() {
+    // 25 posting keywords → each one is worth exactly 4 percentage points.
+    let words: Vec<String> = (0..25).map(|i| format!("skillword{i}")).collect();
+    let job = words.join(" ");
+    let resume = |kept: usize| {
+        format!(
+            "EXPERIENCE\n\nAcme | 2021 - Present\n- Delivered {}\n",
+            words[..kept].join(" ")
+        )
+    };
+    let source = resume(25);
+
+    // One keyword lost = 4 points, under the threshold.
+    silent(
+        &report_for(&resume(24), &source, &job, &[]),
+        ALIGNMENT_LOW_COVERAGE,
+    );
+    // Two = 8 points, over it.
+    fired(
+        &report_for(&resume(23), &source, &job, &[]),
+        ALIGNMENT_LOW_COVERAGE,
+    );
+}
+
 // ── One test per remaining validator, each with its boundary ────────────────
 
 /// Coverage is a REGRESSION check: dropping the posting's vocabulary during
@@ -901,6 +1338,88 @@ fn code_table_is_complete_and_unique() {
     );
 }
 
+/// The serialized shape of a report IS a wire contract: `ContentReportPayload`
+/// in `packages/shared/src/ipc/contracts/resume.ts` is a hand-written mirror of
+/// this struct, and nothing in the build compares the two. This test pins the
+/// exact key set and the exact serialization of the three fields that are
+/// `Option` on the Rust side.
+///
+/// `section`, `evidence` and `keywordCoverage` serialize as `null`, NOT omitted
+/// — there is no `skip_serializing_if` on them, and the renderer's types say
+/// `string | null`. If a future edit adds one, TypeScript will keep compiling
+/// and every `report.metrics.keywordCoverage === null` branch will silently stop
+/// matching. That is what this test is here to catch.
+#[test]
+fn serialized_report_matches_the_typescript_wire_mirror() {
+    let report = ContentReport {
+        ok: false,
+        issues: vec![
+            ContentIssue {
+                severity: Severity::Critical,
+                code: FACTUAL_UNSOURCED_METRIC,
+                section: None,
+                message: "m".to_string(),
+                evidence: None,
+            },
+            ContentIssue {
+                severity: Severity::Warning,
+                code: ALIGNMENT_LOW_COVERAGE,
+                section: Some("Experience".to_string()),
+                message: "m".to_string(),
+                evidence: Some("40% vs 60%".to_string()),
+            },
+        ],
+        metrics: ContentMetrics {
+            keyword_coverage: None,
+            top_requirement_hits: 3,
+            duplicate_ratio: 0.25,
+            roles_source: 2,
+            roles_output: 1,
+        },
+    };
+    let value = serde_json::to_value(&report).expect("a report must serialize");
+
+    let keys = |v: &serde_json::Value| -> Vec<String> {
+        let mut k: Vec<String> = v
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::from)
+            .collect();
+        k.sort();
+        k
+    };
+    assert_eq!(keys(&value), ["issues", "metrics", "ok"]);
+    assert_eq!(
+        keys(&value["issues"][0]),
+        ["code", "evidence", "message", "section", "severity"],
+        "an issue's key set is the renderer's contract"
+    );
+    assert_eq!(
+        keys(&value["metrics"]),
+        [
+            "duplicateRatio",
+            "keywordCoverage",
+            "rolesOutput",
+            "rolesSource",
+            "topRequirementHits"
+        ],
+        "metrics keys are camelCase on the wire"
+    );
+
+    // Severity is lowercase, matching `'critical' | 'warning'` in TS.
+    assert_eq!(value["issues"][0]["severity"], "critical");
+    assert_eq!(value["issues"][1]["severity"], "warning");
+
+    // The three nullable fields are PRESENT and null, never absent.
+    assert!(value["issues"][0]["section"].is_null());
+    assert!(value["issues"][0]["evidence"].is_null());
+    assert!(value["metrics"]["keywordCoverage"].is_null());
+    assert_eq!(value["issues"][1]["section"], "Experience");
+    assert_eq!(value["issues"][1]["evidence"], "40% vs 60%");
+    assert_eq!(value["issues"][1]["code"], ALIGNMENT_LOW_COVERAGE);
+}
+
 /// Every issue must carry evidence a user can check for themselves, or a
 /// document-wide finding with a message that stands alone.
 #[test]
@@ -971,6 +1490,7 @@ fn factual_and_alignment_thresholds_are_pinned() {
     assert_eq!(factual::MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS, 4);
     assert_eq!(factual::MIN_WORDS_IN_LETTER_BODY_LINE, 8);
     assert_eq!(alignment::TOP_REQUIREMENT_MATCH_RATIO, 0.5);
+    assert_eq!(alignment::MIN_COVERAGE_DROP_POINTS, 5.0);
     assert_eq!(consistency::MAX_PROJECT_DESCRIPTION_LINES, 3);
     assert_eq!(MIN_CHARS_FOR_LANGUAGE_CHECK, 120);
 }

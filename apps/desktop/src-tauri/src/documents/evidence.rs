@@ -22,7 +22,9 @@
 //! works offline.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
+use regex::Regex;
 use rust_stemmers::Stemmer;
 use serde::Serialize;
 
@@ -91,12 +93,16 @@ struct JobVocabulary {
     keywords: HashSet<String>,
     /// Stem → readable, unstemmed display form for every posting keyword.
     display: HashMap<String, String>,
+    /// The posting's own detected language tag — picks the [`function_words`]
+    /// list the present/absent split is filtered with.
+    lang: &'static str,
 }
 
 impl JobVocabulary {
     fn new(resume_text: &str, job_text: &str) -> Self {
         let aligned = languages_align(job_text, detect_locale_tag(resume_text));
         let stemmer = make_stemmer(job_text);
+        let lang = detect_locale_tag(job_text);
         let keywords = if aligned {
             keywords(job_text, &stemmer)
         } else {
@@ -117,7 +123,17 @@ impl JobVocabulary {
             stemmer,
             keywords,
             display,
+            lang,
         }
+    }
+
+    /// The readable form of a keyword — the unstemmed token the posting used,
+    /// falling back to the key itself.
+    fn readable(&self, token: &str) -> String {
+        self.display
+            .get(token)
+            .cloned()
+            .unwrap_or_else(|| token.to_string())
     }
 
     /// This side's tokens, normalized the same way the posting's were.
@@ -134,12 +150,7 @@ impl JobVocabulary {
         let mut hits: Vec<String> = self
             .tokens(text)
             .intersection(&self.keywords)
-            .map(|stem| {
-                self.display
-                    .get(stem)
-                    .cloned()
-                    .unwrap_or_else(|| stem.clone())
-            })
+            .map(|stem| self.readable(stem))
             .collect();
         hits.sort();
         EvidenceBullet {
@@ -236,6 +247,10 @@ const PROJECT_HEADINGS: &[&str] = &["project", "projekt", "projet", "proyecto", 
 const SKILLS_HEADINGS: &[&str] = &[
     "skill",
     "competenc",
+    // Italian "COMPETENZE" — `competenc` (English "competencies") does not
+    // cover it, and a missed skills heading silently disables every
+    // skills-section check on an Italian résumé.
+    "competenz",
     "fähigkeit",
     "kenntnis",
     "kompetenz",
@@ -340,18 +355,71 @@ pub fn split_entry(line: &ParsedLine) -> (String, String, String) {
 }
 
 /// Present-tense markers a date span can end with, in the languages the résumé
-/// pipeline supports. Lowercased comparison.
+/// pipeline supports.
+///
+/// **Always matched with [`contains_word`], never as a bare substring.** Every
+/// entry here hides inside an ordinary word: `present` in "presented", `now` in
+/// "knowledge", `current` in "currently", `actual` in "actually". A substring
+/// comparison turns each of those into a date context and, downstream, into a
+/// false `factual.unsupported_date` Critical on a truthful bullet.
 pub const PRESENT_MARKERS: &[&str] = &[
     "present", "current", "now", "ongoing", "heute", "aktuell", "laufend", "actuel", "actual",
     "attuale", "heden", "atual",
 ];
 
-/// True when `s` carries a year (1900–2099) or a present-tense marker — the
-/// shape a date span has. Shared with the content validators so "what counts as
-/// a date" is decided in one place.
-pub fn looks_like_date_span(s: &str) -> bool {
+/// Openers that make a span open-ended without naming a present-tense word:
+/// `since 2021`, `seit 2021`, `from 2021`. Matched only when a year follows
+/// immediately (optionally through a month), so the ordinary English
+/// preposition in "cut costs from 2019 baselines" is not read as a date span.
+static OPEN_ENDED_OPENER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:since|seit|from|ab|depuis|desde|dal|vanaf|sinds)\s+(?:\p{L}+\.?\s+)?(?:19|20)\d{2}\b")
+        .unwrap()
+});
+
+/// True when `needle` (lowercase) occurs in `haystack` (lowercase) at word
+/// boundaries on both ends — so `vital` does not fire on `revitalize` and
+/// `not just` does not fire inside `cannot justify`.
+///
+/// One boundary rule for every lexicon-style match in the résumé pipeline:
+/// `validate::content` re-exports this as `contains_phrase`, and
+/// [`PRESENT_MARKERS`] is compared through it on both surfaces.
+pub fn contains_word(haystack_lower: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return false;
+    }
+    let is_word = |c: char| c.is_alphanumeric() || c == '_';
+    haystack_lower.match_indices(needle_lower).any(|(i, m)| {
+        let before = haystack_lower[..i].chars().next_back();
+        let after = haystack_lower[i + m.len()..].chars().next();
+        before.is_none_or(|c| !is_word(c)) && after.is_none_or(|c| !is_word(c))
+    })
+}
+
+/// True when `s` names a span with **no end date**.
+///
+/// Three shapes, because résumés spell "still there" in more than one way and a
+/// validator that only knows `Present` treats every other spelling as a closed
+/// span:
+///
+/// 1. a present-tense marker (`2021 – Present`, `2021 – Heute`), word-bounded;
+/// 2. an open-ended opener with a year (`since 2021`, `seit 2021`, `from 2021`);
+/// 3. a trailing dash with a year in front of it (`2021 –`).
+pub fn is_open_ended(s: &str) -> bool {
     let lower = s.to_lowercase();
-    !years_in(s).is_empty() || PRESENT_MARKERS.iter().any(|m| lower.contains(m))
+    if PRESENT_MARKERS.iter().any(|m| contains_word(&lower, m)) {
+        return true;
+    }
+    if years_in(s).is_empty() {
+        return false;
+    }
+    OPEN_ENDED_OPENER_RE.is_match(s) || lower.trim_end().ends_with(['-', '–', '—'])
+}
+
+/// True when `s` carries a year (1900–2099) or reads as an open-ended span —
+/// the shape a date span has. Shared with the content validators so "what
+/// counts as a date" is decided in one place.
+pub fn looks_like_date_span(s: &str) -> bool {
+    !years_in(s).is_empty() || is_open_ended(s)
 }
 
 /// Every 1900–2099 year in `s`, in order, deduplicated by position (not value).
@@ -384,6 +452,109 @@ pub fn years_in(s: &str) -> Vec<u32> {
         }
     }
     out
+}
+
+/// Function words and posting filler that are not skills, per language.
+///
+/// **Deliberately LOCAL to this module — do not move these into
+/// `documents::keywords::STOPWORDS`.** That list feeds the scoring kernel and is
+/// pinned to the match-score formula version: adding a word to it changes every
+/// document's keyword set and silently invalidates every cached match score.
+/// `skills_present`/`skills_absent` are a NEW, display-only surface, so the
+/// filter belongs here, where it can only affect what the user reads.
+///
+/// `STOPWORDS` itself is English-only, which is why a German posting fills the
+/// gap list with "unsere", "hinter" and "bereits" instead of skills. Entries are
+/// the *unstemmed, normalized* forms (what [`display_forms`] yields), because
+/// the split happens on stems when the languages align.
+const FUNCTION_WORDS_DE: &[&str] = &[
+    // Determiners, pronouns and prepositions that survive the ≥4-char filter.
+    "aber",
+    "auch",
+    "beim",
+    "dabei",
+    "damit",
+    "dann",
+    "dass",
+    "dein",
+    "deine",
+    "diese",
+    "diesem",
+    "diesen",
+    "dieser",
+    "dieses",
+    "durch",
+    "eine",
+    "einem",
+    "einen",
+    "einer",
+    "eines",
+    "hinter",
+    "ihre",
+    "ihrem",
+    "ihren",
+    "ihnen",
+    "jede",
+    "jeden",
+    "mehr",
+    "nach",
+    "noch",
+    "oder",
+    "ohne",
+    "schon",
+    "sehr",
+    "selbst",
+    "sowie",
+    "unser",
+    "unsere",
+    "unserem",
+    "unseren",
+    "unter",
+    "wenn",
+    "zwischen", // Copulas and modals.
+    "haben",
+    "hast",
+    "hatte",
+    "kann",
+    "können",
+    "muss",
+    "müssen",
+    "sein",
+    "seine",
+    "sind",
+    "sollte",
+    "sollten",
+    "werden",
+    "wird",
+    "wurde",
+    "wurden", // Posting filler — the German
+    // half of the English filler `STOPWORDS` already drops ("experience",
+    // "skills", "requirements", …).
+    "anforderungen",
+    "aufgaben",
+    "bereits",
+    "bieten",
+    "erfahrung",
+    "erfahrene",
+    "erfahrungen",
+    "gerne",
+    "gute",
+    "guten",
+    "idealerweise",
+    "kenntnisse",
+    "profil",
+    "suchen",
+    "voraussetzungen",
+    "wünschenswert",
+];
+
+/// The function-word list for `lang`, empty for languages with no list yet
+/// (English is already covered by the kernel's own `STOPWORDS`).
+fn function_words(lang: &str) -> &'static [&'static str] {
+    match lang {
+        "de" => FUNCTION_WORDS_DE,
+        _ => &[],
+    }
 }
 
 /// Structure the source résumé into the evidence a generation prompt is allowed
@@ -439,7 +610,12 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                 SectionKind::Education => set.education.push(line.text.clone()),
                 _ => {}
             },
-            LineKind::Text | LineKind::JobEntry
+            // `Contact` belongs here: `export::parser` classifies any line
+            // carrying a phone-shaped digit run as Contact, and a degree line
+            // with a date span ("BSc Computer Science, TU Berlin, 2014 - 2018")
+            // satisfies `PHONE_RE`. Without this arm the only education entries
+            // that survived were the ones with no dates on them.
+            LineKind::Text | LineKind::JobEntry | LineKind::Contact
                 if section == SectionKind::Education && !line.text.trim().is_empty() =>
             {
                 set.education.push(line.text.clone())
@@ -455,22 +631,22 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     }
 
     let resume_tokens = vocab.tokens(source_resume);
-    let readable = |stem: &String| {
-        vocab
-            .display
-            .get(stem)
-            .cloned()
-            .unwrap_or_else(|| stem.clone())
-    };
+    // Filter BEFORE the split, on the readable form, so a function word cannot
+    // land on either side: "unsere" reported as a missing SKILL is worse than
+    // useless, it makes the honest gap list look broken.
+    let stop = function_words(vocab.lang);
+    let skill_like = |token: &&String| !stop.contains(&vocab.readable(token).as_str());
     set.skills_present = vocab
         .keywords
         .intersection(&resume_tokens)
-        .map(readable)
+        .filter(skill_like)
+        .map(|t| vocab.readable(t))
         .collect();
     set.skills_absent = vocab
         .keywords
         .difference(&resume_tokens)
-        .map(readable)
+        .filter(skill_like)
+        .map(|t| vocab.readable(t))
         .collect();
     set.skills_present.sort();
     set.skills_absent.sort();
@@ -754,6 +930,135 @@ BSc Computer Science, TU Berlin
             set.roles[0].bullets.iter().all(|b| b.score == 0.0),
             "with no posting vocabulary every bullet scores zero"
         );
+    }
+
+    /// A degree line with a date span on it is the NORMAL shape, and
+    /// `export::parser` classifies it `Contact` because `PHONE_RE` matches
+    /// "2014 - 2018". Before that arm existed, the only education entries that
+    /// reached the evidence set were the ones with no dates — so a prompt built
+    /// from this set was told the candidate had an undated degree, or none.
+    #[test]
+    fn education_entries_with_date_spans_are_kept() {
+        let resume = "EXPERIENCE\n\n\
+                      Senior Engineer | Acme | 2021 - 2024\n\
+                      - Shipped the ledger service\n\n\
+                      EDUCATION\n\n\
+                      BSc Computer Science, TU Berlin, 2014 - 2018\n\
+                      MSc Distributed Systems, TU Berlin, 2018 - 2020\n";
+        let set = extract_evidence(resume, "backend engineer computer science");
+        assert_eq!(
+            set.education.len(),
+            2,
+            "both degrees carry a date span and both must survive; got {:?}",
+            set.education
+        );
+        assert!(set.education.iter().any(|e| e.contains("BSc")));
+        assert!(set.education.iter().any(|e| e.contains("MSc")));
+        assert!(
+            !set.roles
+                .iter()
+                .any(|r| r.bullets.iter().any(|b| b.text.contains("BSc"))),
+            "an education line must never attach to an experience role"
+        );
+    }
+
+    /// The kernel's `STOPWORDS` list is English-only, so a German posting filled
+    /// the honest gap list with "unsere", "hinter" and "sehr". Those are not
+    /// skills, and a gap list full of them reads as broken. Filtered LOCALLY —
+    /// `STOPWORDS` feeds the scoring kernel and is formula-version-pinned.
+    #[test]
+    fn german_function_words_never_reach_the_skills_split() {
+        let job = "Wir suchen eine erfahrene Backend-Entwicklerin für unsere \
+                   Container-Plattform und die Dienste hinter dem Bezahlvorgang. Du \
+                   betreibst Kubernetes unter Last und schreibst Rust. Sehr gute \
+                   Kenntnisse in Docker sind eine Anforderung.";
+        let resume = "BERUFSERFAHRUNG\n\n\
+                      Senior Backend Engineer | Acme | 2021 - Heute\n\
+                      - Docker-Container auf einem Kubernetes-Cluster betrieben\n";
+        let set = extract_evidence(resume, job);
+        let listed: Vec<&String> = set
+            .skills_present
+            .iter()
+            .chain(set.skills_absent.iter())
+            .collect();
+        for function_word in [
+            "unsere", "hinter", "unter", "sehr", "gute", "eine", "suchen",
+        ] {
+            assert!(
+                !listed.iter().any(|s| s.as_str() == function_word),
+                "{function_word:?} is a function word, not a skill; got {listed:?}"
+            );
+        }
+        // The real vocabulary is untouched.
+        assert!(
+            set.skills_present.iter().any(|s| s == "kubernetes"),
+            "got {:?}",
+            set.skills_present
+        );
+        assert!(
+            set.skills_absent.iter().any(|s| s == "rust"),
+            "got {:?}",
+            set.skills_absent
+        );
+    }
+
+    /// The filter must stay OUT of the scored bullet path: `hits` (and therefore
+    /// `score`) drives the trim panel's wire payload and its ranking, and the
+    /// scoring kernel owns that vocabulary.
+    #[test]
+    fn the_function_word_filter_does_not_touch_bullet_scores() {
+        let job = "Wir suchen eine erfahrene Entwicklerin für unsere Container-Plattform \
+                   mit Kubernetes und Docker.";
+        let resume = "BERUFSERFAHRUNG\n\n\
+                      Senior Engineer | Acme | 2021 - Heute\n\
+                      - Unsere Container-Plattform mit Kubernetes betrieben\n";
+        let ranked = rank_bullets(resume, job);
+        assert!(
+            ranked[0].hits.iter().any(|h| h == "unsere"),
+            "bullet hits come from the scoring kernel and must be left alone; got {:?}",
+            ranked[0].hits
+        );
+    }
+
+    #[test]
+    fn open_ended_spans_are_recognised_in_every_spelling() {
+        for open in [
+            "2021 - Present",
+            "2021 – Heute",
+            "seit 2021",
+            "since Jan 2021",
+            "from 2019",
+            "2021 –",
+            "2021 -",
+        ] {
+            assert!(is_open_ended(open), "{open:?} has no end date");
+        }
+        for closed in [
+            "2018 - 2021",
+            "Jan 2018 to Mar 2021",
+            "presented the roadmap",
+            "knowledge sharing",
+            "currently",
+            "actually shipped it",
+            "since the rewrite",
+        ] {
+            assert!(!is_open_ended(closed), "{closed:?} is not an open span");
+        }
+    }
+
+    #[test]
+    fn contains_word_respects_boundaries() {
+        assert!(contains_word("this is vital work", "vital"));
+        assert!(!contains_word("we revitalized the pipeline", "vital"));
+        assert!(contains_word("not just faster, but cheaper", "not just"));
+        assert!(!contains_word("", "vital"));
+        assert!(!contains_word("anything", ""));
+    }
+
+    #[test]
+    fn italian_skills_heading_is_classified() {
+        assert_eq!(classify_section("COMPETENZE"), SectionKind::Skills);
+        assert_eq!(classify_section("Competenze tecniche"), SectionKind::Skills);
     }
 
     #[test]

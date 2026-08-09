@@ -16,6 +16,16 @@ use super::{
 /// of its words, never all of them.
 pub const TOP_REQUIREMENT_MATCH_RATIO: f64 = 0.5;
 
+/// How many PERCENTAGE POINTS of coverage a generated document may lose against
+/// the source before it is worth reporting.
+///
+/// Coverage is a share of a posting's keyword set, so on a typical 40-keyword ad
+/// one dropped word moves it 2.5 points. Firing on any drop at all reported
+/// every legitimate edit — a bullet reworded, a redundant line cut — as
+/// "something relevant was dropped". A drop only means something once it is
+/// bigger than the granularity of the measure.
+pub const MIN_COVERAGE_DROP_POINTS: f64 = 5.0;
+
 /// How well one side of the report answers a single requirement, 0.0–1.0.
 ///
 /// `None` when the requirement has no extractable keywords ("Team player!") —
@@ -44,12 +54,12 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, u32) {
     let mut issues = Vec::new();
 
     // `alignment.low_coverage` — tailoring made the document match the posting
-    // LESS well than the candidate's untouched résumé already did.
+    // MEANINGFULLY less well than the candidate's untouched résumé already did.
     if let (Some(generated), Some(source)) = (
         ctx.coverage(&ctx.generated_keywords),
         ctx.coverage(&ctx.source_keywords),
     ) {
-        if generated < source {
+        if source - generated >= MIN_COVERAGE_DROP_POINTS {
             issues.push(issue(
                 ALIGNMENT_LOW_COVERAGE,
                 None,
