@@ -47,7 +47,7 @@ use crate::validate::content::{
 };
 use crate::validate::Severity;
 
-use super::tools::{fenced, AgentTool, ToolContext, ToolKind, RESUME_CAP};
+use super::tools::{fenced, AgentTool, ToolContext, ToolKind, JOB_CAP, RESUME_CAP};
 
 // ── Shared caps ────────────────────────────────────────────────────────────
 
@@ -99,11 +99,37 @@ const EVIDENCE_SEARCH_LIMIT: usize = 12;
 /// job.
 const TRIM_SUGGESTIONS_LIMIT: usize = 10;
 
-/// Generous ceiling on a fenced tool-result summary. Every summary here is
-/// already limited to a handful of items, so this is a defensive backstop,
-/// not an expected truncation point — reuses [`RESUME_CAP`]'s magnitude
-/// rather than inventing a new number.
-const SUMMARY_CAP: usize = RESUME_CAP;
+/// Worst-case JSON chars ONE compact issue can contribute to
+/// `validate_resume`'s summary body — the only summary shape whose size
+/// scales with [`MAX_ISSUES`] (`search_candidate_evidence`/
+/// `get_trim_suggestions` are bounded by their own much-smaller item limits
+/// instead). Every clamped text field at its cap
+/// ([`SECTION_CAP`] + [`MESSAGE_CAP`] + [`EVIDENCE_CAP`]), plus 40 chars of
+/// headroom for `code` (the longest registered
+/// [`crate::validate::content::CONTENT_ISSUE_CODES`] entry today,
+/// `consistency.skill_not_demonstrated`, is 34), plus 60 chars for the
+/// object's own JSON syntax (keys/quotes/colons/commas/braces — measured at
+/// ~52: `{"code":"…","section":"…","message":"…","evidence":"…"},`).
+const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 40 + 60;
+
+/// Ceiling on a fenced tool-result summary, DERIVED rather than guessed —
+/// `MAX_ISSUES` issues at [`PER_ISSUE_WORST_CASE`] each, plus 500 chars of
+/// headroom for the summary's own envelope (`ok`/`criticals`/`warnings`/
+/// `truncated` fields, the `issues` array's brackets — measured at ~70).
+///
+/// This used to just reuse [`RESUME_CAP`]'s magnitude (8,000) on the theory
+/// that a "handful of items" summary could never approach it — but
+/// [`MAX_ISSUES`] (20) issues each at their per-field caps serialize to
+/// ~13KB, comfortably PAST that number: `fenced()`'s hard char-cap
+/// (`body.chars().take(cap)`) would silently cut the JSON body mid-string,
+/// not at an issue boundary, producing an unparseable tool result — the
+/// opposite of the "never a mid-string cut" promise the doc comments on
+/// [`MAX_ISSUES`]/[`compact_content_report`] make.
+/// `summary_cap_holds_the_real_worst_case_without_truncating_the_json` pins
+/// this arithmetic against the REAL longest registered code and the REAL
+/// per-field caps, so a future cap change that outgrows this budget fails a
+/// test instead of silently truncating JSON.
+const SUMMARY_CAP: usize = MAX_ISSUES * PER_ISSUE_WORST_CASE + 500;
 
 // ── Pure arg parsing (unit-testable without an AppHandle) ───────────────────
 
@@ -147,6 +173,32 @@ fn clamp_chars(s: &str, cap: usize) -> String {
 /// Cap `s` to [`EVIDENCE_CAP`] chars, char-boundary safe.
 fn clamp_evidence(s: &str) -> String {
     clamp_chars(s, EVIDENCE_CAP)
+}
+
+/// Clamp the candidate's server-loaded résumé text to [`RESUME_CAP`] — the
+/// SAME cap `super::tools::grounded_user_msg` clamps the model's OWN view of
+/// the résumé to before a drafting tool ever runs. Every handler in this
+/// module that reads the résumé (directly, or as the fallback when no
+/// `draft`/query text was supplied) routes through here, for two reasons:
+///
+/// 1. **Correctness (HIGH)** — `validate_resume` used to compare a
+///    `RESUME_CAP`-clamped model draft against the FULL, unclamped stored
+///    résumé; a role starting past the cap fired a false `factual.dropped_role`
+///    Critical for a role the drafting tool was never shown. Clamping BOTH
+///    sides to the same cap keeps them looking at the same universe.
+/// 2. **Perf (MEDIUM)** — a server-loaded résumé is otherwise unbounded, and
+///    feeds a CPU-bound analysis pass (`validate_content`/`extract_evidence`/
+///    `rank_bullets`) inline on the tokio runtime.
+fn clamped_resume_text(text: &str) -> String {
+    clamp_chars(text, RESUME_CAP)
+}
+
+/// Clamp a cached job posting's text to [`JOB_CAP`] for the same perf reason
+/// as [`clamped_resume_text`] — scraped posting text is unbounded too.
+/// Mirrors `super::tools::research_company_handler`'s own
+/// `.chars().take(JOB_CAP)` clamp.
+fn clamped_job_text(text: &str) -> String {
+    clamp_chars(text, JOB_CAP)
 }
 
 /// Compact a [`ContentReport`] into what `validate_resume` actually returns
@@ -321,22 +373,29 @@ fn validate_resume_handler(
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
             .ok_or_else(|| AppError::Validation(format!("resume not found: {}", ctx.resume_id)))?;
+        // HIGH + MEDIUM fix — see `clamped_resume_text`'s doc.
+        let source_text = clamped_resume_text(&source.text);
         // M-5 fix: an absent/empty draft validates the candidate's CURRENT
         // saved résumé against the job posting — the same
         // "check-the-baseline" fallback `get_trim_suggestions` already has
-        // (see `optional_draft_arg`'s doc).
+        // (see `optional_draft_arg`'s doc). Falls back to the SAME clamped
+        // view as `source_text`, not the raw unclamped text — otherwise this
+        // fallback would compare the full résumé against a truncated copy of
+        // itself and reintroduce the exact false-Critical class the clamp
+        // above exists to prevent.
         let draft = if draft_arg.is_empty() {
-            source.text.clone()
+            source_text.clone()
         } else {
             draft_arg
         };
         let job_ad = job_text_for(&app, &ctx.job_id).ok_or_else(|| {
             AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
         })?;
+        let job_ad = clamped_job_text(&job_ad);
         let lang = detect_locale_tag(&job_ad);
         let input = ContentInput {
             generated: &draft,
-            source_resume: &source.text,
+            source_resume: &source_text,
             job_ad: &job_ad,
             // No per-job "top requirements" are resolved server-side today
             // (that extraction is client-side, fed only through the save-time
@@ -367,14 +426,18 @@ fn search_candidate_evidence_handler(
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
             .ok_or_else(|| AppError::Validation(format!("resume not found: {}", ctx.resume_id)))?;
+        // MEDIUM perf fix — see `clamped_resume_text`'s doc.
+        let source_text = clamped_resume_text(&source.text);
+        // `query` is already bounded to `QUERY_CAP` (200 chars, far under
+        // `JOB_CAP`) by `optional_query_arg` — one clamp per input, not two.
         let scoring_text = if query.is_empty() {
-            job_text_for(&app, &ctx.job_id).ok_or_else(|| {
+            clamped_job_text(&job_text_for(&app, &ctx.job_id).ok_or_else(|| {
                 AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
-            })?
+            })?)
         } else {
             query
         };
-        let set = extract_evidence(&source.text, &scoring_text);
+        let set = extract_evidence(&source_text, &scoring_text);
         Ok(fenced_summary(
             "search_candidate_evidence_result",
             &compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT),
@@ -429,13 +492,17 @@ fn get_trim_suggestions_handler(
         let job_ad = job_text_for(&app, &ctx.job_id).ok_or_else(|| {
             AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
         })?;
+        // MEDIUM perf fix — see `clamped_resume_text`'s/`clamped_job_text`'s doc.
+        let job_ad = clamped_job_text(&job_ad);
         let text = if draft_arg.is_empty() {
-            app.state::<DocumentStore>()
-                .get(&ctx.resume_id)
-                .ok_or_else(|| {
-                    AppError::Validation(format!("resume not found: {}", ctx.resume_id))
-                })?
-                .text
+            clamped_resume_text(
+                &app.state::<DocumentStore>()
+                    .get(&ctx.resume_id)
+                    .ok_or_else(|| {
+                        AppError::Validation(format!("resume not found: {}", ctx.resume_id))
+                    })?
+                    .text,
+            )
         } else {
             draft_arg
         };
@@ -646,6 +713,118 @@ mod tests {
                 .chars()
                 .count(),
             QUERY_CAP
+        );
+    }
+
+    /// MEDIUM perf fix: every handler that reads a server-loaded résumé must
+    /// clamp it through here before it feeds a CPU-bound analysis pass.
+    #[test]
+    fn clamped_resume_text_clamps_to_resume_cap() {
+        let huge = "x".repeat(RESUME_CAP + 500);
+        assert_eq!(clamped_resume_text(&huge).chars().count(), RESUME_CAP);
+        assert_eq!(clamped_resume_text("short"), "short");
+    }
+
+    /// MEDIUM perf fix: same discipline for a cached job posting's text.
+    #[test]
+    fn clamped_job_text_clamps_to_job_cap() {
+        let huge = "x".repeat(JOB_CAP + 500);
+        assert_eq!(clamped_job_text(&huge).chars().count(), JOB_CAP);
+        assert_eq!(clamped_job_text("short"), "short");
+    }
+
+    // ── HIGH FINDING 1: validate_resume must clamp source_resume too ────────
+
+    /// HIGH (PR #963 round 3): a résumé longer than `RESUME_CAP` used to
+    /// compare the model's `RESUME_CAP`-clamped draft against the FULL,
+    /// unclamped stored résumé (`source_resume: &source.text` in the pre-fix
+    /// handler) — a role starting past the cap the drafting tool was never
+    /// shown then fired a `factual.dropped_role` Critical the model could
+    /// never have avoided.
+    ///
+    /// Reproduces BOTH halves through the real `validate::content` check, via
+    /// the exact `clamped_resume_text`/`RESUME_CAP` primitives
+    /// `validate_resume_handler` now uses: the UNCLAMPED comparison (what the
+    /// pre-fix handler did) fires the false Critical; clamping
+    /// `source_resume` to the SAME cap the draft was grounded in (what the
+    /// handler does now) makes it disappear, because the second role then
+    /// never enters `source_sections` at all — consistent with the drafting
+    /// tool's own truncated view.
+    ///
+    /// Mutation-checked: commenting out the `clamp_chars` call inside
+    /// `clamped_resume_text` (using the raw, unclamped `full_source` for BOTH
+    /// `generated` and `source_resume` below) makes `fixed_hits` non-empty
+    /// and this test fails — restored before landing.
+    #[test]
+    fn validate_resume_must_clamp_source_resume_to_avoid_a_false_dropped_role_critical() {
+        let filler = "- Maintained routine internal tooling and did ordinary engineering work.\n"
+            .repeat(150);
+        let prefix = format!("EXPERIENCE\n\nSenior Engineer | Initech | 2015 - 2019\n{filler}\n");
+        assert!(
+            prefix.chars().count() > RESUME_CAP,
+            "the fixture must push the second role PAST the cap for this test to mean anything"
+        );
+        let full_source = format!(
+            "{prefix}\nStaff Engineer | Globex Corporation | 2019 - Present\n\
+             - Led the platform migration\n"
+        );
+        // The model's draft only ever saw the first RESUME_CAP chars — mirrors
+        // `grounded_user_msg`'s own `fenced("candidate_resume", resume, RESUME_CAP)`
+        // in `super::tools`.
+        let draft = clamped_resume_text(&full_source);
+        assert!(
+            !draft.contains("Globex"),
+            "the fixture must actually cut the Globex entry out of the draft's view"
+        );
+
+        // BUG reproduction: the pre-fix handler passed the FULL, unclamped
+        // résumé as `source_resume`.
+        let buggy_report = validate_content(&ContentInput {
+            generated: &draft,
+            source_resume: &full_source,
+            job_ad: "Staff engineer role.",
+            top_requirements: &[],
+            target_language: "en",
+            doc_kind: DocKind::Resume,
+        });
+        let buggy_hits: Vec<&ContentIssue> = buggy_report
+            .issues
+            .iter()
+            .filter(|i| i.code == crate::validate::content::FACTUAL_DROPPED_ROLE)
+            .collect();
+        assert_eq!(
+            buggy_hits.len(),
+            1,
+            "the unclamped comparison must reproduce the false Critical; got {buggy_hits:#?}"
+        );
+        assert!(
+            buggy_hits[0]
+                .evidence
+                .as_deref()
+                .is_some_and(|e| e.contains("Globex")),
+            "the false Critical must name the role the draft was never shown"
+        );
+
+        // FIX: clamp `source_resume` to the same cap the draft was grounded
+        // in — exactly what `validate_resume_handler` does now.
+        let clamped_source = clamped_resume_text(&full_source);
+        let fixed_report = validate_content(&ContentInput {
+            generated: &draft,
+            source_resume: &clamped_source,
+            job_ad: "Staff engineer role.",
+            top_requirements: &[],
+            target_language: "en",
+            doc_kind: DocKind::Resume,
+        });
+        let fixed_hits: Vec<&ContentIssue> = fixed_report
+            .issues
+            .iter()
+            .filter(|i| i.code == crate::validate::content::FACTUAL_DROPPED_ROLE)
+            .collect();
+        assert!(
+            fixed_hits.is_empty(),
+            "clamping both sides to the same cap must not report a role the tool never showed \
+             the model; got {fixed_hits:#?}"
         );
     }
 
@@ -1049,5 +1228,65 @@ mod tests {
         assert_eq!(result.matches("<job_posting>").count(), 0);
         assert_eq!(result.matches("</job_posting>").count(), 0);
         assert!(result.contains("< job_posting>") || result.contains("< /job_posting>"));
+    }
+
+    // ── MEDIUM FINDING 3: SUMMARY_CAP must hold the real worst case ────────
+
+    /// MEDIUM (PR #963 round 3): the doc comment on `SUMMARY_CAP` used to
+    /// call it an "unreachable backstop" while it was smaller than the
+    /// module's own worst case — `MAX_ISSUES` issues, each at every
+    /// per-field cap, serialize to well over the old 8,000-char value, so
+    /// `fenced()`'s hard `body.chars().take(cap)` truncated the JSON body
+    /// mid-string on a crafted draft that tripped that many checks.
+    ///
+    /// Builds the ACTUAL worst case — `MAX_ISSUES` issues, each with a
+    /// `section`/`message`/`evidence` at its cap and the REAL longest
+    /// registered [`crate::validate::content::CONTENT_ISSUE_CODES`] entry —
+    /// and asserts the fenced summary still contains the complete, parseable
+    /// JSON body with every issue intact, not a mid-string cut.
+    #[test]
+    fn summary_cap_holds_the_real_worst_case_without_truncating_the_json() {
+        let longest_code = crate::validate::content::CONTENT_ISSUE_CODES
+            .iter()
+            .map(|(code, _)| *code)
+            .max_by_key(|c| c.len())
+            .expect("CONTENT_ISSUE_CODES is never empty");
+        let issues: Vec<crate::validate::content::ContentIssue> = (0..MAX_ISSUES)
+            .map(|_| crate::validate::content::ContentIssue {
+                severity: Severity::Warning,
+                code: longest_code,
+                section: Some("s".repeat(SECTION_CAP + 50)),
+                message: "m".repeat(MESSAGE_CAP + 50),
+                evidence: Some("e".repeat(EVIDENCE_CAP + 50)),
+            })
+            .collect();
+        let report = ContentReport {
+            ok: false,
+            issues,
+            metrics: ContentMetrics::default(),
+        };
+        let compact = compact_content_report(&report);
+        let wrapped = fenced_summary("validate_resume_result", &compact);
+        let result = wrapped["result"].as_str().unwrap();
+        assert!(
+            result.trim_end().ends_with("</validate_resume_result>"),
+            "the closing tag must survive uncut — a mid-string truncation would drop it; \
+             got a result ending: {:?}",
+            &result[result.len().saturating_sub(60)..]
+        );
+        let inner = result
+            .trim_start_matches("<validate_resume_result>\n")
+            .trim_end()
+            .trim_end_matches("</validate_resume_result>")
+            .trim();
+        assert!(
+            serde_json::from_str::<Value>(inner).is_ok(),
+            "the worst-case summary must still be valid, unclipped JSON; got: {inner}"
+        );
+        assert_eq!(
+            inner.matches("\"code\"").count(),
+            MAX_ISSUES,
+            "all MAX_ISSUES issues must survive whole, not be cut mid-array"
+        );
     }
 }
