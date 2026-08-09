@@ -169,8 +169,9 @@ pub fn make_stemmer(text: &str) -> Stemmer {
 ///
 /// Single source of this decision. Every consumer of the keyword kernel that
 /// intersects a résumé against a posting MUST route through it, or two surfaces
-/// scoring the same pair will disagree — see `score_one` and
-/// `rank_trim_candidates` in `commands/match_resume.rs`.
+/// scoring the same pair will disagree — see `commands::match_resume::score_one`,
+/// `documents::evidence::rank_bullets` (the trim panel + evidence extraction),
+/// and `validate::content::Analysis` (the quality report).
 pub fn languages_align(job_text: &str, resume_locale: &str) -> bool {
     match detect(job_text).map(|i| i.lang()) {
         Some(Lang::Deu) => resume_locale.starts_with("de"),
