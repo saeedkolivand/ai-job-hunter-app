@@ -1343,7 +1343,7 @@ fn code_table_is_complete_and_unique() {
     }
     assert_eq!(
         CONTENT_ISSUE_CODES.len(),
-        24,
+        25,
         "the code vocabulary changed — update the renderer's i18n keys too"
     );
     let criticals = CONTENT_ISSUE_CODES
@@ -1436,6 +1436,61 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
     assert_eq!(value["issues"][1]["section"], "Experience");
     assert_eq!(value["issues"][1]["evidence"], "40% vs 60%");
     assert_eq!(value["issues"][1]["code"], ALIGNMENT_LOW_COVERAGE);
+}
+
+/// M-3: an uncapped `issues` list can grow the serialized report past the
+/// save path's `QUALITY_REPORT_MAX_BYTES` (256 KiB) clamp, which then
+/// truncates it mid-JSON, fails to parse, and silently discards a fresh
+/// report. `MAX_CONTENT_ISSUES` bounds the list at the source so that clamp
+/// is never reached — proved here by pinning both the cap AND that a
+/// pathological duplicate-bullet flood past it still: stays `ok` exactly
+/// when it should, truncates to the cap plus one trailing marker, and
+/// serializes comfortably under the byte clamp.
+#[test]
+fn oversized_issue_list_is_capped_with_a_visible_truncation_marker() {
+    assert_eq!(MAX_CONTENT_ISSUES, 200);
+
+    // Start from the CLEAN fixture (so every factual/structure check that
+    // compares against the source résumé stays satisfied — zero Criticals),
+    // then append one clique of 250 byte-identical bullets.
+    // `duplicates::validate` marks every bullet after the first as "involved"
+    // once it matches an earlier one, so a clique of k identical bullets
+    // fires k-1 `duplicate.bullet` Warnings — 249 here, comfortably past the
+    // cap, from only 250 extra bullets (well under
+    // `duplicates::MAX_DUP_BULLETS` = 400, so this test stays orthogonal to
+    // the M-2 fix).
+    let mut generated = EN_CLEAN.to_string();
+    for _ in 0..250 {
+        generated
+            .push_str("- Delivered feature rollout across the payments platform for the team
+");
+    }
+
+    let report = en_resume(&generated, &en_requirements());
+
+    assert_eq!(
+        report.issues.len(),
+        MAX_CONTENT_ISSUES + 1,
+        "must truncate to the cap plus exactly one trailing marker"
+    );
+    let marker = report.issues.last().expect("at least one issue");
+    assert_eq!(marker.code, REPORT_TRUNCATED);
+    assert_eq!(marker.severity, Severity::Warning);
+    assert!(
+        !marker.message.trim().is_empty() && marker.evidence.is_some(),
+        "the marker itself must still be evidence-backed and advisory"
+    );
+    assert!(
+        report.ok,
+        "no Critical was ever produced here, so truncating warnings must not flip ok"
+    );
+
+    let bytes = serde_json::to_vec(&report).expect("report must serialize");
+    assert!(
+        bytes.len() < 256 * 1024,
+        "capped report must stay comfortably under the save path's byte clamp, got {} bytes",
+        bytes.len()
+    );
 }
 
 /// Every issue must carry evidence a user can check for themselves, or a

@@ -94,6 +94,10 @@ pub const VOICE_LOW_BURSTINESS: &str = "voice.low_burstiness";
 pub const VOICE_RULE_OF_THREE_DENSITY: &str = "voice.rule_of_three_density";
 pub const VOICE_EM_DASH_OVERUSE: &str = "voice.em_dash_overuse";
 pub const VOICE_GENERIC_LETTER: &str = "voice.generic_letter";
+/// Synthetic marker appended when [`MAX_CONTENT_ISSUES`] truncates the issue
+/// list — never emitted by a real check, so it's registered like any other
+/// code (i18n key + severity) rather than special-cased.
+pub const REPORT_TRUNCATED: &str = "report.truncated";
 
 /// Every code this module can emit, with its severity. The single table the
 /// renderer enumerates for i18n keys and the constructor reads for severity.
@@ -125,6 +129,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (VOICE_RULE_OF_THREE_DENSITY, Severity::Warning),
     (VOICE_EM_DASH_OVERUSE, Severity::Warning),
     (VOICE_GENERIC_LETTER, Severity::Warning),
+    (REPORT_TRUNCATED, Severity::Warning),
 ];
 
 /// The severity registered for `code`.
@@ -239,6 +244,21 @@ pub(crate) fn issue(
 /// language mismatch on a two-line draft would be a false accusation, so the
 /// check goes quiet instead.
 pub const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
+
+/// Hard cap on [`ContentReport::issues`]' length. M-3: without this, a
+/// pathological/hostile "generated" document (thousands of forged roles,
+/// duplicate bullets, etc.) can grow the serialized report toward ~1MB —
+/// well past the save path's `QUALITY_REPORT_MAX_BYTES` (256 KiB,
+/// `commands::ai_generations::ai_generations_save`) byte clamp. That clamp
+/// truncates mid-JSON, the stored blob becomes unparseable, and
+/// `ai_generations::merge_quality_report` then silently falls back to
+/// keeping the OLD stored report — a fresh report just vanishes with no
+/// error anywhere. Capping the issue list here, at the source, keeps the
+/// serialized report comfortably under that clamp so the truncate-then-fail
+/// path is unreachable. Mirrors `agent::tools_quality::MAX_ISSUES`'s
+/// count-cap discipline, sized higher (200 vs. 20) because this report is
+/// the FULL quality-report panel's data, not a token-budgeted tool summary.
+pub const MAX_CONTENT_ISSUES: usize = 200;
 
 // ── Analysis context ────────────────────────────────────────────────────────
 
@@ -571,6 +591,9 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
         roles_output: factual::count_roles(&ctx.generated_sections) as u32,
     };
 
+    // `ok` reads the criticals count from the FULL, pre-truncation list —
+    // capping the visible `issues` below must never flip a genuinely-blocking
+    // report to "ok".
     let criticals = issues
         .iter()
         .filter(|i| i.severity == Severity::Critical)
@@ -580,6 +603,26 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
         &format!("issues={} criticals={criticals}", issues.len()),
         true,
     );
+
+    // M-3 fix: cap the issue list at MAX_CONTENT_ISSUES (see its doc) so the
+    // serialized report can't blow the save path's byte clamp. Criticals sort
+    // first so a pathological warning flood can never push a real Critical
+    // out of the visible list — only warnings are ever silently cut, and the
+    // trailing REPORT_TRUNCATED marker says so instead of a silent drop.
+    if issues.len() > MAX_CONTENT_ISSUES {
+        let dropped = issues.len() - MAX_CONTENT_ISSUES;
+        issues.sort_by_key(|i| i.severity != Severity::Critical);
+        issues.truncate(MAX_CONTENT_ISSUES);
+        issues.push(issue(
+            REPORT_TRUNCATED,
+            None,
+            format!(
+                "{dropped} more issue{} found but not shown here — this document has an                  unusually large number of findings.",
+                if dropped == 1 { "" } else { "s" }
+            ),
+            Some(dropped.to_string()),
+        ));
+    }
 
     ContentReport {
         ok: criticals == 0,
