@@ -1553,6 +1553,90 @@ fn oversized_issue_list_is_capped_with_a_visible_truncation_marker() {
     );
 }
 
+/// M-3 bounds issue *count* ([`MAX_CONTENT_ISSUES`]); this pins that `issue()`
+/// also bounds issue *size* — `message`/`evidence` clamp to
+/// [`ISSUE_MESSAGE_MAX_BYTES`]/[`ISSUE_EVIDENCE_MAX_BYTES`], UTF-8
+/// char-boundary safe even when the byte cut lands mid-character, and the
+/// clamped result carries a visible `…` marker instead of silently losing its
+/// tail. `é` is a 2-byte character and the cap (400) minus the marker's 3
+/// bytes (397) is odd, so the cut provably lands mid-character — proving the
+/// clamp walks back to a real boundary instead of splitting one.
+#[test]
+fn issue_message_and_evidence_are_clamped_to_their_byte_caps() {
+    let long_message = "é".repeat(300); // 600 bytes, well past the 400-byte cap
+    let long_evidence = "é".repeat(300);
+    assert!(long_message.len() > ISSUE_MESSAGE_MAX_BYTES);
+    assert!(long_evidence.len() > ISSUE_EVIDENCE_MAX_BYTES);
+
+    let built = issue(
+        ATS_LONG_BULLET,
+        None,
+        long_message.clone(),
+        Some(long_evidence.clone()),
+    );
+
+    assert!(
+        built.message.len() <= ISSUE_MESSAGE_MAX_BYTES,
+        "message must be clamped to the cap, got {} bytes",
+        built.message.len()
+    );
+    assert!(
+        built.message.ends_with('…'),
+        "a clamped message must carry the truncation marker"
+    );
+    let message_prefix = built.message.trim_end_matches('…');
+    assert!(
+        long_message.starts_with(message_prefix),
+        "the clamped message must be an exact, unbroken prefix of the original"
+    );
+
+    let evidence = built.evidence.expect("evidence must survive clamping");
+    assert!(
+        evidence.len() <= ISSUE_EVIDENCE_MAX_BYTES,
+        "evidence must be clamped to the cap, got {} bytes",
+        evidence.len()
+    );
+    assert!(
+        evidence.ends_with('…'),
+        "a clamped evidence span must carry the truncation marker"
+    );
+    let evidence_prefix = evidence.trim_end_matches('…');
+    assert!(
+        long_evidence.starts_with(evidence_prefix),
+        "the clamped evidence must be an exact, unbroken prefix of the original"
+    );
+}
+
+/// The reviewer's exact failure shape: `ats.long_bullet` fires *because* a
+/// bullet is long, and used to quote it verbatim as `evidence` — so a single
+/// pathological (but count-legal, well under `MAX_CONTENT_ISSUES`) bullet
+/// could still blow the byte clamp on its own. Pins that the per-issue clamp
+/// in `issue()` catches what the count cap (M-3) cannot.
+#[test]
+fn long_bullet_evidence_is_clamped_even_though_the_bullet_is_long() {
+    let long_bullet = format!("- {}\n", "word ".repeat(400)); // ~2KB bullet
+    assert!(long_bullet.len() > 2000);
+
+    let mut generated = EN_CLEAN.to_string();
+    generated.push_str(&long_bullet);
+
+    let report = en_resume(&generated, &en_requirements());
+    let hits = fired(&report, ATS_LONG_BULLET);
+
+    for issue in hits {
+        let evidence = issue
+            .evidence
+            .as_ref()
+            .expect("ats.long_bullet must carry the offending bullet as evidence");
+        assert!(
+            evidence.len() <= ISSUE_EVIDENCE_MAX_BYTES,
+            "evidence for a {}-byte bullet must still clamp to the cap, got {} bytes",
+            long_bullet.len(),
+            evidence.len()
+        );
+    }
+}
+
 /// Every issue must carry evidence a user can check for themselves, or a
 /// document-wide finding with a message that stands alone.
 #[test]

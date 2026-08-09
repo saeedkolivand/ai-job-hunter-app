@@ -222,7 +222,51 @@ pub struct ContentReport {
     pub metrics: ContentMetrics,
 }
 
+/// Byte cap on [`ContentIssue::message`], enforced in [`issue`]. [`MAX_CONTENT_ISSUES`]
+/// (M-3) bounds the issue *count*, not the *size* of any one issue — and
+/// `ats.long_bullet` / `ats.header_in_body` / `duplicate.bullet` all quote an
+/// offending span verbatim (`long_bullet` fires *because* the bullet is long,
+/// so its evidence is unbounded by construction). Sized together with
+/// [`ISSUE_EVIDENCE_MAX_BYTES`]: `MAX_CONTENT_ISSUES` (200) ×
+/// (`ISSUE_MESSAGE_MAX_BYTES` + `ISSUE_EVIDENCE_MAX_BYTES` + ~150 bytes of
+/// JSON overhead for the rest of a `ContentIssue`) ≈ 190 KB per sub-report —
+/// comfortably under `QUALITY_REPORT_MAX_BYTES` (256 KiB,
+/// `commands::ai_generations::ai_generations_save`) for realistic content even
+/// though the persisted wrapper also holds a second sub-report, so the save
+/// path's source byte-clamp stays unreachable — exactly the path M-3 exists to
+/// make unreachable.
+pub const ISSUE_MESSAGE_MAX_BYTES: usize = 400;
+
+/// Byte cap on [`ContentIssue::evidence`]. See [`ISSUE_MESSAGE_MAX_BYTES`] for
+/// the arithmetic this is sized against.
+pub const ISSUE_EVIDENCE_MAX_BYTES: usize = 400;
+
+/// `…` truncation marker appended by [`clamp_issue_text`] when it cuts
+/// anything, so a clamped span reads as visibly cut rather than as the whole
+/// span. Its bytes come out of the budget (not added on top), so the result
+/// never exceeds `max` — the arithmetic on [`ISSUE_MESSAGE_MAX_BYTES`] stays
+/// exact.
+const TRUNCATION_MARKER: &str = "…";
+
+/// Clamp `s` to at most `max` bytes, UTF-8 char-boundary safe (delegates to
+/// [`crate::applications::clamp_to_bytes`] rather than forking a second
+/// truncation routine), reserving room for [`TRUNCATION_MARKER`] so a cut
+/// result is still at most `max` bytes, never `max` bytes plus the marker.
+fn clamp_issue_text(s: String, max: usize) -> String {
+    if s.len() <= max {
+        return s;
+    }
+    let budget = max.saturating_sub(TRUNCATION_MARKER.len());
+    let mut clamped = crate::applications::clamp_to_bytes(s, budget);
+    clamped.push_str(TRUNCATION_MARKER);
+    clamped
+}
+
 /// Build an issue, reading its severity from [`CONTENT_ISSUE_CODES`].
+///
+/// `message` and `evidence` are clamped to [`ISSUE_MESSAGE_MAX_BYTES`] /
+/// [`ISSUE_EVIDENCE_MAX_BYTES`] here, at the one chokepoint every call site
+/// routes through, so no validator has to remember to bound its own span.
 pub(crate) fn issue(
     code: &'static str,
     section: Option<&str>,
@@ -233,8 +277,8 @@ pub(crate) fn issue(
         severity: severity_for(code),
         code,
         section: section.map(str::to_string),
-        message: message.into(),
-        evidence,
+        message: clamp_issue_text(message.into(), ISSUE_MESSAGE_MAX_BYTES),
+        evidence: evidence.map(|e| clamp_issue_text(e, ISSUE_EVIDENCE_MAX_BYTES)),
     }
 }
 
