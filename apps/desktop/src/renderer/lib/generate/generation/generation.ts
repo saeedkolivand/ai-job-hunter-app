@@ -801,6 +801,11 @@ export async function researchCompany(jobAd: string, company?: string): Promise<
       // The AI-extracted company name is far more reliable than the backend's
       // heuristic job-ad scan (which can grab a tagline), so send it when known.
       company: company?.trim() || undefined,
+      // Same effort the generation request carries — the backend's deadline
+      // around search + synthesis scales with it. Without this a reasoning model
+      // never finishes research inside the flat bound, and the cover letter is
+      // written with no company knowledge and no visible failure.
+      effort: resolveActiveProvider().providerSettings?.effort,
     });
     return res?.brief ?? '';
   } catch {
@@ -863,6 +868,7 @@ export async function lookupSalaryRange(
       location: location.trim() || undefined,
       country: country?.trim() || undefined,
       currency: currency?.trim() || undefined,
+      effort: resolveActiveProvider().providerSettings?.effort,
     });
     return res ?? undefined;
   } catch {

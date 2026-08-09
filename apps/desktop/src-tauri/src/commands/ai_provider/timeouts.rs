@@ -114,6 +114,29 @@ pub const WEB_SEARCH: Duration = Duration::from_secs(25);
 /// call that backs the Ollama-family research path.
 pub const OLLAMA_WEB_SEARCH: Duration = Duration::from_secs(15);
 
+/// BASELINE for the OUTER bound on a whole research pass — search **plus** the
+/// model's synthesis of the results — held by `CompanyResearch::enrich_with` and
+/// `SalaryResearch`. Every call site uses [`research_deadline`], never this
+/// constant directly, for the same reason [`STREAM`] has [`stream_deadline`]:
+/// synthesis is a model call, so its cost scales with reasoning effort.
+///
+/// This wraps [`WEB_SEARCH`]/[`OLLAMA_WEB_SEARCH`] *and* a completion, so it must
+/// exceed their sum or it becomes the binding constraint and the inner bounds
+/// (which produce actionable errors) never get to fire. The previous flat 25s
+/// was barely above the 25s [`WEB_SEARCH`] bound alone: a 2026-08-08 support
+/// bundle shows a reasoning model taking 9.2s for synthesis at idle, and all six
+/// research calls in a concurrent batch timing out — every one of those cover
+/// letters shipped with no company knowledge at all.
+pub const RESEARCH_BASELINE: Duration = Duration::from_secs(90);
+
+/// The actual deadline for one research pass: [`RESEARCH_BASELINE`] scaled by
+/// [`effort_multiplier`], exactly as [`stream_deadline`] scales [`STREAM`].
+/// Shares the one generated multiplier table, so a new effort tier is picked up
+/// here for free.
+pub fn research_deadline(effort: Option<&str>) -> Duration {
+    Duration::from_secs_f64(RESEARCH_BASELINE.as_secs_f64() * effort_multiplier(effort))
+}
+
 // ── Model discovery & health ────────────────────────────────────────────────────
 
 /// Listing models / validating a key (`list_models`, `test_key`): a quick GET to
@@ -196,5 +219,55 @@ mod tests {
     #[test]
     fn stream_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
         assert_eq!(stream_deadline(Some("ultra-mega-think")), STREAM);
+    }
+
+    // ── research_deadline ───────────────────────────────────────────────────
+    //
+    // Same contract as `stream_deadline`, and for the same reason: the thing it
+    // bounds ends in a model call. A flat 25s here meant every research call in
+    // a reported reasoning-model session timed out, and each cover letter was
+    // written with no company knowledge and no visible failure.
+
+    #[test]
+    fn research_deadline_exceeds_the_inner_search_bounds_it_wraps() {
+        // It wraps a web search AND a synthesis completion. If the outer bound
+        // isn't clear of the inner ones, it fires first and the actionable inner
+        // error never surfaces. The old flat 25s was EQUAL to `WEB_SEARCH`.
+        assert!(
+            research_deadline(None) > WEB_SEARCH,
+            "the outer research bound must clear the cloud web-search bound"
+        );
+        assert!(research_deadline(None) > OLLAMA_WEB_SEARCH);
+    }
+
+    #[test]
+    fn research_deadline_is_monotonically_nondecreasing_by_effort_tier() {
+        // Vendors' ascending order — `max` is the TOP tier, above `xhigh`.
+        let tiers = [
+            None,
+            Some("minimal"),
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ];
+        let mut prev = Duration::from_secs(0);
+        for effort in tiers {
+            let d = research_deadline(effort);
+            assert!(
+                d >= prev,
+                "research_deadline({effort:?}) = {d:?} must be >= the previous tier's {prev:?}"
+            );
+            prev = d;
+        }
+        // Not vacuously true: the top tier must actually exceed the baseline.
+        assert!(research_deadline(Some("max")) > research_deadline(None));
+    }
+
+    #[test]
+    fn research_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
+        assert_eq!(research_deadline(Some("ultra-mega-think")), RESEARCH_BASELINE);
+        assert_eq!(research_deadline(None), RESEARCH_BASELINE);
     }
 }

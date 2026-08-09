@@ -10,10 +10,6 @@ use crate::pipeline::Completer;
 
 const CACHE_NS: &str = "company_brief";
 const TTL_SECS: i64 = 7 * 24 * 3600;
-/// Hard cap on a single research call so generation never stalls on a slow or
-/// hung provider search. Provider-agnostic — applied once here, around the
-/// active provider's own `research()`.
-const RESEARCH_TIMEOUT_SECS: u64 = 25;
 
 /// Company-research enricher: resolve company → cache check → the **active
 /// provider's own** web search + brief synthesis (via [`Completer::research`]) →
@@ -29,11 +25,21 @@ impl CompanyResearch {
     /// job-ad extraction, which frequently grabs a tagline ("…platform built for
     /// the era of agentic commerce") rather than the company. Falls back to the
     /// heuristic extraction only when the override is absent/empty.
+    ///
+    /// `deadline` bounds the whole pass (search + synthesis) and is INJECTED by
+    /// the L3 caller — which derives it from the request's reasoning effort via
+    /// `timeouts::research_deadline` — rather than resolved here, for the same
+    /// reason `SalaryResearch::enrich` takes its `cache`: this module must not
+    /// reach up into `commands` (R7), and an injected bound is directly
+    /// testable. A FLAT bound was the bug: synthesis is a model call, so its
+    /// cost scales with the model's reasoning budget, and a reasoning model's
+    /// research never finished inside the old fixed 25s.
     pub async fn enrich_with(
         &self,
         completer: &Completer,
         job_ad: &str,
         company_override: Option<&str>,
+        deadline: Duration,
     ) -> EnrichmentResult {
         let meta = extractor::extract(job_ad);
         let company = company_override
@@ -69,7 +75,7 @@ impl CompanyResearch {
         // Provider-native research, bounded so generation never stalls. Any
         // failure / timeout / unconfigured provider yields an empty brief.
         let brief = match tokio::time::timeout(
-            Duration::from_secs(RESEARCH_TIMEOUT_SECS),
+            deadline,
             completer.research(&company, &meta.role),
         )
         .await
@@ -80,7 +86,11 @@ impl CompanyResearch {
                 String::new()
             }
             Err(_) => {
-                tracing::warn!("research: timed out for {company}");
+                tracing::warn!(
+                    company = %company,
+                    deadline_secs = deadline.as_secs(),
+                    "research: timed out"
+                );
                 String::new()
             }
         };

@@ -288,7 +288,9 @@ fn research_company_handler(
         // Routing is backend-owned now (task #16): `ai_research_company` resolves
         // the active provider from the store, so the agent's `ctx` provider/model/
         // base_url are no longer threaded through this shared command.
-        Ok(crate::commands::ai::ai_research_company(app, job_ad, None).await)
+        // `effort: None` — the agent loop has no per-request effort of its own, so
+        // research runs on the unscaled baseline deadline.
+        Ok(crate::commands::ai::ai_research_company(app, job_ad, None, None).await)
     })
 }
 

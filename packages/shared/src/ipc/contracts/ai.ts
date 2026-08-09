@@ -89,6 +89,11 @@ export interface AiContract {
     jobAd: string;
     /** Accurate AI-extracted company name; preferred over heuristic job-ad extraction. */
     company?: string;
+    /** The SAME reasoning-effort value a generation request carries. Sizes the
+     *  backend's deadline around search + synthesis — synthesis is a model call,
+     *  so its cost scales with the model's reasoning budget. Omit for the
+     *  unscaled baseline. */
+    effort?: string;
   }): Promise<{ company: string; brief: string }>;
 
   /**
@@ -112,6 +117,8 @@ export interface AiContract {
      *  hallucinate one; omitted when the country is unknown, which preserves
      *  today's unconstrained "local currency for that location" behavior. */
     currency?: string;
+    /** See `researchCompany.effort` — the same deadline scaling applies here. */
+    effort?: string;
   }): Promise<SalaryRange | null>;
 
   /**

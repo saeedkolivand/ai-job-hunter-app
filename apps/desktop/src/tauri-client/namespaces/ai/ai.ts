@@ -34,20 +34,32 @@ export const ai = {
       providers: Record<string, { model?: string; baseUrl?: string }>;
     };
   }) => invoke('ai_seed_active_config', { config }),
-  researchCompany: ({ jobAd, company }: { jobAd: string; company?: string }) =>
-    invoke('ai_research_company', { jobAd, company }),
+  // `effort` on both research calls: the backend's deadline around
+  // search + synthesis scales with it, the same way the generation stream
+  // deadline does. Omitting it leaves the unscaled baseline.
+  researchCompany: ({
+    jobAd,
+    company,
+    effort,
+  }: {
+    jobAd: string;
+    company?: string;
+    effort?: string;
+  }) => invoke('ai_research_company', { jobAd, company, effort }),
   lookupSalary: ({
     role,
     company,
     location,
     country,
     currency,
+    effort,
   }: {
     role: string;
     company?: string;
     location?: string;
     country?: string;
     currency?: string;
+    effort?: string;
   }) =>
     invoke('ai_lookup_salary', {
       role,
@@ -55,6 +67,7 @@ export const ai = {
       location,
       country,
       currency,
+      effort,
     }),
   researchAnswer: ({
     question,
