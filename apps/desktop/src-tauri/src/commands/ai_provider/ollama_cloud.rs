@@ -110,6 +110,24 @@ impl AiProvider for OllamaCloudClient {
             .await
     }
 
+    /// Delegated, NOT reimplemented with local Ollama's native `format` field:
+    /// Ollama Cloud is reached over its **OpenAI-compatible** `/v1` endpoint
+    /// (see this module's doc comment), which takes `response_format` — the
+    /// `/api/chat`-only `format` key would be ignored there, silently dropping
+    /// the constraint. The inner client's own `supports_response_format` gate
+    /// admits `ProviderId::OllamaCloud` for exactly this call.
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        self.inner
+            .complete_structured(app, req, schema_hint, schema)
+            .await
+    }
+
     fn has_native_search(&self, _model: &str) -> bool {
         // Advertises web search for the family, but the MODEL never searches —
         // the hosted Web Search API does, through `native_searcher`.

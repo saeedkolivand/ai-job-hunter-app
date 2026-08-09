@@ -15,6 +15,7 @@ use crate::events::{emit_event, JobEvent, JOBS_EVENT};
 
 use super::research::SearchResult;
 use super::stream::{stream_response, StreamPiece};
+use super::structured;
 use super::timeouts;
 use super::{
     model_entry, parse_rfc3339_millis, resolve_intent, single_shot_turn, AgentTurn,
@@ -291,7 +292,7 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        complete_impl(model, system, user, temperature)
+        complete_impl(model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -304,7 +305,31 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        complete_impl(model, system, user, temperature).await
+        complete_impl(model, system, user, temperature, None).await
+    }
+
+    /// Native constrained decoding via Ollama's `format` field: the caller's
+    /// JSON Schema verbatim when there is one, else `"json"` (valid-JSON only)
+    /// — see [`structured::ollama_format`]. Applies to every local model:
+    /// constrained decoding is enforced by the SERVER's sampler, not by model
+    /// training, so unlike `tools` there is no per-family allowlist to gate on
+    /// (`capabilities().supports_json_mode` is already `true` for all).
+    async fn complete_structured(
+        &self,
+        _app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        let (system, user) = structured::structured_prompt(req, schema_hint);
+        complete_impl(
+            &req.model,
+            &system,
+            &user,
+            structured::structured_temperature(self, req),
+            Some(structured::ollama_format(schema)),
+        )
+        .await
     }
 
     fn has_native_search(&self, _model: &str) -> bool {
@@ -1072,21 +1097,17 @@ async fn stream_chat(
     .await
 }
 
-/// Shared body of [`AiProvider::complete`]/[`AiProvider::complete_with_usage`]
-/// for [`OllamaClient`]: one non-streaming `/api/chat` call, parsed once into
-/// `(text, usage)` so the two trait methods never duplicate the HTTP
-/// round-trip. A free function (no `&self`) since `OllamaClient` is a unit
-/// struct with no other state.
-async fn complete_impl(
+/// Build the non-streaming `/api/chat` body shared by `complete`/
+/// `complete_with_usage`/`complete_structured`. Pure + unit-tested — `format`
+/// is Ollama's own constrained-decoding field (a JSON Schema, or the `"json"`
+/// string), `Some` only on the structured path.
+fn build_complete_body(
     model: &str,
     system: &str,
     user: &str,
     temperature: Option<f64>,
-) -> AppResult<(String, Usage)> {
-    let base = host();
-    let endpoint = format!("{base}/api/chat");
-    let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
-
+    format: Option<Value>,
+) -> Value {
     let mut body = json!({
         "model": model,
         "stream": false,
@@ -1098,7 +1119,30 @@ async fn complete_impl(
     if let Some(t) = temperature {
         body["options"] = json!({ "temperature": t });
     }
+    if let Some(format) = format {
+        body["format"] = format;
+    }
     body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
+    body
+}
+
+/// Shared body of [`AiProvider::complete`]/[`AiProvider::complete_with_usage`]
+/// for [`OllamaClient`]: one non-streaming `/api/chat` call, parsed once into
+/// `(text, usage)` so the two trait methods never duplicate the HTTP
+/// round-trip. A free function (no `&self`) since `OllamaClient` is a unit
+/// struct with no other state.
+async fn complete_impl(
+    model: &str,
+    system: &str,
+    user: &str,
+    temperature: Option<f64>,
+    format: Option<Value>,
+) -> AppResult<(String, Usage)> {
+    let base = host();
+    let endpoint = format!("{base}/api/chat");
+    let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
+
+    let body = build_complete_body(model, system, user, temperature, format);
 
     let resp = match super::retry::send_with_retry(|| {
         crate::net::http::shared()

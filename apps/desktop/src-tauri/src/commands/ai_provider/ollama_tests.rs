@@ -638,3 +638,47 @@ fn first_chat_model_is_none_when_only_embedding_models_are_installed() {
     assert_eq!(super::first_chat_model(&body), None);
     assert_eq!(super::first_chat_model(&serde_json::json!({})), None);
 }
+
+// ── Structured output (`complete_structured`) ─────────────────────────────────
+
+#[test]
+fn complete_body_carries_the_schema_in_ollamas_own_format_field() {
+    // Ollama's constrained-decoding key is `format` (NOT OpenAI's
+    // `response_format`), and it takes the JSON Schema verbatim — no dialect
+    // translation. Mutation check: drop the `format` insert in
+    // `build_complete_body` and this fails.
+    let schema = json!({ "type": "object", "properties": { "score": { "type": "integer" } } });
+    let body = super::build_complete_body(
+        "llama3.1:8b",
+        "sys",
+        "user",
+        Some(0.3),
+        Some(super::structured::ollama_format(Some(&schema))),
+    );
+    assert_eq!(body["format"], schema);
+    assert_eq!(body["stream"], json!(false));
+}
+
+#[test]
+fn complete_body_falls_back_to_the_json_format_string_without_a_schema() {
+    let body = super::build_complete_body(
+        "llama3.1:8b",
+        "sys",
+        "user",
+        None,
+        Some(super::structured::ollama_format(None)),
+    );
+    assert_eq!(body["format"], json!("json"));
+}
+
+#[test]
+fn complete_body_omits_format_entirely_on_the_plain_completion_path() {
+    // `complete`/`complete_with_usage` pass `None` — an unconstrained call must
+    // stay byte-identical to what it sent before structured output existed.
+    let body = super::build_complete_body("llama3.1:8b", "sys", "user", Some(0.3), None);
+    assert!(
+        body.get("format").is_none(),
+        "plain completions must not start asking for JSON: {body}"
+    );
+    assert_eq!(body["options"]["temperature"], json!(0.3));
+}
