@@ -251,4 +251,90 @@ describe('parseQualityReport', () => {
       resume: OK_REPORT,
     });
   });
+
+  // Security finding M-1: these are the exact malformed persisted shapes that
+  // crashed the whole app (only the root ErrorBoundary caught it) — the cast
+  // in `parseQualityReport` skipped shape validation entirely. None of these
+  // may ever throw; a malformed report degrades to `null`.
+  describe('malformed persisted reports never throw (M-1)', () => {
+    const malformed = [
+      ['non-array issues (a number)', '{"resume":{"issues":42}}'],
+      ['a boolean in place of the sub-report object', '{"resume":true}'],
+      ['a plain object instead of an issues array', '{"resume":{"issues":{"a":1}}}'],
+      ['a string instead of an issues array', '{"resume":{"issues":"abc"}}'],
+    ] as const;
+
+    it.each(malformed)('returns null, never throws, for: %s', (_desc, raw) => {
+      expect(() => parseQualityReport(raw)).not.toThrow();
+      expect(parseQualityReport(raw)).toBeNull();
+    });
+
+    it('drops just the malformed resume sub-report when schemaVersion is present and valid', () => {
+      const raw = JSON.stringify({
+        schemaVersion: 1,
+        pipeline: 'fast',
+        generatedAt: 1,
+        resume: { issues: 42 },
+      });
+      const result = parseQualityReport(raw);
+      expect(() => parseQualityReport(raw)).not.toThrow();
+      expect(result?.resume).toBeUndefined();
+    });
+
+    it('drops a sub-report whose issues array contains a malformed entry, keeping the valid entries', () => {
+      const raw = JSON.stringify({
+        schemaVersion: 1,
+        pipeline: 'fast',
+        generatedAt: 1,
+        resume: {
+          ok: true,
+          issues: [
+            {
+              severity: 'critical',
+              code: 'factual.dropped_role',
+              section: null,
+              message: 'ok entry',
+              evidence: null,
+            },
+            { severity: 'nonsense', code: 123 },
+          ],
+          metrics: OK_REPORT.metrics,
+        },
+      });
+      const result = parseQualityReport(raw);
+      expect(result?.resume?.issues).toEqual([
+        {
+          severity: 'critical',
+          code: 'factual.dropped_role',
+          section: null,
+          message: 'ok entry',
+          evidence: null,
+        },
+      ]);
+    });
+
+    it('treats schemaVersion 2 as absent (forward-compatible, not pattern-matched against v1 fields)', () => {
+      const raw = JSON.stringify({
+        schemaVersion: 2,
+        pipeline: 'fast',
+        generatedAt: 1,
+        resume: OK_REPORT,
+      });
+      expect(() => parseQualityReport(raw)).not.toThrow();
+      expect(parseQualityReport(raw)).toBeNull();
+    });
+
+    it('keeps a valid resume report while dropping a malformed cover letter report', () => {
+      const raw = JSON.stringify({
+        schemaVersion: 1,
+        pipeline: 'fast',
+        generatedAt: 1,
+        resume: OK_REPORT,
+        coverLetter: { issues: 42 },
+      });
+      const result = parseQualityReport(raw);
+      expect(result?.resume).toEqual(OK_REPORT);
+      expect(result?.coverLetter).toBeUndefined();
+    });
+  });
 });

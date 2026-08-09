@@ -154,18 +154,96 @@ export function serializeQualityReport(report: QualityReport | null): string | u
   return report ? JSON.stringify(report) : undefined;
 }
 
+type ContentIssue = ContentReportPayload['issues'][number];
+type ContentMetrics = ContentReportPayload['metrics'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+/** One issue entry's expected shape; a malformed entry is dropped rather than
+ *  letting a bad `code`/`section`/`evidence` type reach the panel. */
+function parseIssue(value: unknown): ContentIssue | null {
+  if (!isRecord(value)) return null;
+  const { severity, code, section, message, evidence } = value;
+  if (severity !== 'critical' && severity !== 'warning') return null;
+  if (typeof code !== 'string' || typeof message !== 'string') return null;
+  if (!isNullableString(section) || !isNullableString(evidence)) return null;
+  return { severity, code, section, message, evidence };
+}
+
+function parseMetrics(value: unknown): ContentMetrics | null {
+  if (!isRecord(value)) return null;
+  const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  return {
+    keywordCoverage: typeof value.keywordCoverage === 'number' ? value.keywordCoverage : null,
+    topRequirementHits: num(value.topRequirementHits),
+    duplicateRatio: num(value.duplicateRatio),
+    rolesSource: num(value.rolesSource),
+    rolesOutput: num(value.rolesOutput),
+  };
+}
+
+/**
+ * Validate one sub-report (`resume`/`coverLetter`) defensively — required so
+ * a malformed persisted value (`{"issues":42}`, `{"issues":"abc"}`, a bare
+ * boolean…) can never reach `QualityBadge`/`QualityReportPanel`, both of
+ * which assume `issues` is a real array. Security finding M-1: an
+ * unvalidated cast here crashed the whole app (only the root ErrorBoundary
+ * caught it) every time that record's TailorFlow was opened. A malformed
+ * sub-report drops to `undefined` — never thrown.
+ */
+function parseSubReport(value: unknown): ContentReportPayload | undefined {
+  if (!isRecord(value) || !Array.isArray(value.issues)) return undefined;
+  const metrics = parseMetrics(value.metrics);
+  if (!metrics) return undefined;
+  const issues = value.issues
+    .map(parseIssue)
+    .filter((issue): issue is ContentIssue => issue !== null);
+  return { ok: typeof value.ok === 'boolean' ? value.ok : issues.length === 0, issues, metrics };
+}
+
 /**
  * Parse a persisted `AiGenerationRecord.qualityReport` string back into a
- * {@link QualityReport} for cold-entry hydration. Absent/empty/the Rust-side
- * `'{}'` placeholder, or anything that doesn't parse as an object, all become
- * `null` — never throws.
+ * {@link QualityReport} for cold-entry hydration. Total: any input — absent,
+ * empty, the Rust-side `'{}'` placeholder, invalid JSON, or a malformed shape
+ * at any level — resolves to `null` (or a partial report with the malformed
+ * sub-report dropped), never a thrown exception.
+ *
+ * `schemaVersion` gates the whole shape: anything other than `1` (missing,
+ * wrong type, a future v2…) is treated as absent rather than pattern-matched
+ * against v1 field names — forward-compatible without a throw.
  */
 export function parseQualityReport(raw: string | undefined): QualityReport | null {
   if (!raw || raw === EMPTY_REPORT_PLACEHOLDER) return null;
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as QualityReport) : null;
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (!isRecord(parsed) || parsed.schemaVersion !== 1) return null;
+
+  const resume = parseSubReport(parsed.resume);
+  const coverLetter = parseSubReport(parsed.coverLetter);
+  const hash = isRecord(parsed.sourceTextHash) ? parsed.sourceTextHash : undefined;
+  const sourceTextHash = hash
+    ? {
+        resume: typeof hash.resume === 'number' ? hash.resume : undefined,
+        coverLetter: typeof hash.coverLetter === 'number' ? hash.coverLetter : undefined,
+      }
+    : undefined;
+
+  return {
+    schemaVersion: 1,
+    pipeline: 'fast',
+    generatedAt: typeof parsed.generatedAt === 'number' ? parsed.generatedAt : 0,
+    ...(resume ? { resume } : {}),
+    ...(coverLetter ? { coverLetter } : {}),
+    ...(sourceTextHash ? { sourceTextHash } : {}),
+  };
 }

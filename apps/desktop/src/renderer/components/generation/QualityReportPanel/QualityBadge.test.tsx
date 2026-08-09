@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
 
-import { hashText, type QualityReport } from '@/lib/generate';
+import { hashText, parseQualityReport, type QualityReport } from '@/lib/generate';
 
 import { QualityBadge } from './QualityBadge';
 
@@ -73,6 +73,31 @@ describe('QualityBadge', () => {
     render(<QualityBadge report={report({ resume: WITH_ISSUES })} docKind="resume" />);
 
     expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  // Security finding M-1: a malformed persisted `quality_report` column value
+  // must never crash the renderer past `parseQualityReport`'s shape guard —
+  // this exercises the real hydration path end to end (persisted string →
+  // parse → render) rather than asserting on `parseQualityReport` alone.
+  it('renders without throwing when hydrated from a malformed persisted report', async () => {
+    const user = userEvent.setup();
+    const malformed = parseQualityReport('{"schemaVersion":1,"resume":{"issues":42}}');
+
+    expect(() => render(<QualityBadge report={malformed} docKind="resume" />)).not.toThrow();
+    // No report survived validation for this docKind — the badge renders nothing.
+    expect(screen.queryByRole('button')).toBeNull();
+
+    const { container } = render(
+      <QualityBadge
+        report={parseQualityReport(
+          JSON.stringify({ schemaVersion: 1, resume: CLEAN, coverLetter: { issues: 42 } })
+        )}
+        docKind="resume"
+      />
+    );
+    expect(container).not.toBeEmptyDOMElement();
     await user.click(screen.getByRole('button'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
