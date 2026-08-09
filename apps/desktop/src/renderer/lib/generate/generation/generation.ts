@@ -51,6 +51,7 @@ import {
   resolveMarket,
   type RewriteDocType,
   type SalaryRange,
+  sanitizeCompanyName,
   validateMetadata,
 } from '@ajh/prompts/generate';
 import type { ContactProfile, GitHubRepo } from '@ajh/shared';
@@ -191,17 +192,32 @@ export async function extractMetadata(
         mismatch: clientSideDetection.mismatch,
       };
     }
-  } catch {
-    /* fall through */
+    console.warn('[extractMetadata] model returned unparseable JSON — using heuristics', {
+      model,
+      rawLength: raw.length,
+    });
+  } catch (err) {
+    // Never silent: the heuristics below are materially worse than the model,
+    // and a run that quietly took this path produced cover letters addressed to
+    // a job-ad heading. Which path ran has to be visible in the log.
+    console.warn('[extractMetadata] extraction failed — using heuristics', {
+      model,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   const nameMatch = resume.match(/^([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/m);
-  const titleMatch = jobAd.match(/(?:position|role|title|job)[:\s]+([^\n]+)/i);
-  const companyMatch = jobAd.match(/(?:at|@|company|employer|firm)[:\s]+([^\n,]+)/i);
+  // `\b` on every word alternative. Without it `at` matched inside "Wh(at) You'll
+  // Do" / "gre(at) experience" / Dutch "d(at) je zelf", and `job` inside "jobs",
+  // so the capture ran from mid-word to the next comma or newline.
+  const titleMatch = jobAd.match(/\b(?:position|role|title|job)[:\s]+([^\n]+)/i);
+  const companyMatch = jobAd.match(/(?:\b(?:at|company|employer|firm)|@)[:\s]+([^\n,]+)/i);
   return {
     candidateName: nameMatch?.[1] ?? '',
     jobTitle: titleMatch?.[1]?.trim() ?? '',
-    companyName: companyMatch?.[1]?.trim() ?? '',
+    // Same gate the model's own output goes through — this regex is the WORSE
+    // of the two sources, so it certainly does not get to skip validation.
+    companyName: sanitizeCompanyName(companyMatch?.[1]),
     resumeLanguage: clientSideDetection.resumeName,
     jobAdLanguage: clientSideDetection.jobAdName,
     mismatch: clientSideDetection.mismatch,

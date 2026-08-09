@@ -62,6 +62,82 @@ function isBlank(v: unknown): boolean {
   return typeof v !== 'string' || v.trim() === '';
 }
 
+/** Job-ad section headings that a naive extractor (LLM or regex) returns as if
+ *  they were the employer. Normalized to lowercase with apostrophes stripped so
+ *  `You'll Do` / `You´ll Do` / `you ll do` all match one entry. */
+const HEADING_DENYLIST = new Set([
+  'about us',
+  'about the company',
+  'about the role',
+  'apply now',
+  'benefits',
+  'jetzt bewerben',
+  'job description',
+  'our company',
+  'requirements',
+  'responsibilities',
+  'the company',
+  'the position',
+  'the role',
+  'what you ll do',
+  'who we are',
+  'you ll do',
+  'your role',
+  'your tasks',
+]);
+
+/**
+ * Reject a "company name" that is obviously a sentence, a heading, or markup
+ * rather than an employer — returning `''`, which every downstream consumer
+ * already treats as "no company known" (`CompanyResearch::enrich_with` skips
+ * research entirely on an empty name).
+ *
+ * This runs on BOTH sources of the field: the model's own JSON and the regex
+ * fallback in `extractMetadata`. Neither is trustworthy — a 2026-08-08 support
+ * bundle had six consecutive generations research `You'll Do`,
+ * `experience **fast`, and `a **bootstrapped AI platform and consulting
+ * studio** based in Munich`, each of which then anchored a cover letter.
+ *
+ * Deliberately conservative: it only rejects shapes a real employer name cannot
+ * have. Lowercase-initial brands (`eBay`, `iRobot`, `xAI`) and possessives
+ * (`Macy's`, `L'Oréal`) survive; the leading-lowercase test requires a
+ * lowercase SECOND character too, and the contraction test matches only
+ * pronoun contractions.
+ */
+export function sanitizeCompanyName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const name = value.trim();
+  if (!name) return '';
+
+  // A real employer name is short. The longest legitimate one seen in the wild
+  // ("CHECK24 Vergleichsportal für Versicherungen GmbH") is 48 chars / 5 words.
+  if (name.length > 60) return '';
+  if (name.split(/\s+/).length > 6) return '';
+
+  // Markdown, links, and code fences — the ad's formatting leaked through.
+  if (/[*`_]{2}|\[|\]\(|https?:\/\//.test(name)) return '';
+
+  // Prose, not a name. A trailing `.` is NOT disqualifying — "Acme Inc." is a
+  // real name — but `!?:;` are, and so is an interior sentence break. The
+  // `\w{3,}` before that break is what keeps abbreviations ("St. Jude Medical",
+  // "A.P. Moller") from tripping it.
+  if (/[!?:;]$/.test(name) || /\w{3,}[.!?][\s"']/.test(name)) return '';
+
+  // Pronoun contractions only ever appear in ad copy ("What You'll Do",
+  // "…their product. You'll sit at…"), never in a company name.
+  if (/\b(?:you|we|they|i)['’](?:ll|re|ve|d|m)\b/i.test(name)) return '';
+
+  // Mid-sentence fragment: starts lowercase AND continues lowercase.
+  if (/^\p{Ll}\p{Ll}/u.test(name)) return '';
+  // A single lowercase word ("experience", "je") is a fragment too.
+  if (/^\p{Ll}(?:\s|$)/u.test(name)) return '';
+
+  const normalized = name.toLowerCase().replace(/['’´]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (HEADING_DENYLIST.has(normalized)) return '';
+
+  return name;
+}
+
 export function validateMetadata(raw: string): GenerationMeta | null {
   try {
     const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
@@ -73,7 +149,10 @@ export function validateMetadata(raw: string): GenerationMeta | null {
     return {
       candidateName: parsed.candidateName ?? '',
       jobTitle: parsed.jobTitle ?? '',
-      companyName: parsed.companyName ?? '',
+      // Gated, not trusted: the model returns an ad heading ("You'll Do") as the
+      // employer often enough that an ungated value reaches company research and
+      // the cover letter's opening line.
+      companyName: sanitizeCompanyName(parsed.companyName),
       resumeLanguage,
       jobAdLanguage,
       // Only a mismatch when BOTH sides are known and actually differ. Without

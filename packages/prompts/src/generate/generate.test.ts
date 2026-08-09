@@ -28,6 +28,7 @@ import {
   MODES,
   parseLinksFromResume,
   resumeMentions,
+  sanitizeCompanyName,
   urlToFriendlyLabel,
   validateMetadata,
 } from './index';
@@ -2197,7 +2198,76 @@ describe('extractPlainText', () => {
   });
 });
 
+describe('sanitizeCompanyName', () => {
+  // Every string below was pulled verbatim from a real support bundle
+  // (ajh-diagnostics-2026-08-08). Six consecutive generations researched — and
+  // then addressed a cover letter to — one of these instead of the employer.
+  it.each([
+    ["You'll Do", 'the "What You\'ll Do" heading, matched by an unbounded `at`'],
+    ['experience **fast', 'a mid-sentence fragment from "great experience **fast'],
+    [
+      "the core of their product. You'll sit at the intersection of design",
+      'a full sentence spanning a sentence break',
+    ],
+    [
+      'a **bootstrapped AI platform and consulting studio** based in Munich',
+      'markdown-bolded ad copy',
+    ],
+    ['je zelf prettig vindt werken', 'a Dutch fragment matched inside "dat je zelf"'],
+    ['Please note: Fluent Dutch language skills are required for this role.', 'a prose caveat'],
+    ['[← Alle offenen Stellen](/karriere)', 'a markdown nav link'],
+    ['Jetzt bewerben', 'an apply-button label'],
+    ['About Us', 'a section heading'],
+  ])('rejects %j (%s)', (input) => {
+    expect(sanitizeCompanyName(input)).toBe('');
+  });
+
+  // The gate is worthless if it eats real employers. Each of these appeared in
+  // the same bundle as a CORRECTLY extracted company.
+  it.each([
+    'Codefield',
+    'Charité',
+    'Charité – Universitätsmedizin Berlin',
+    'Münz Media',
+    'MLP praxero GmbH',
+    'CHECK24 Vergleichsportal für Versicherungen GmbH',
+    'Redcare Pharmacy',
+    'Holland Casino',
+    'Sensys Gatso',
+    'IntegrityNext',
+    'Acme Corp',
+    // Lowercase-initial brands and possessives must survive the fragment and
+    // contraction tests respectively.
+    'eBay',
+    'iRobot',
+    'xAI',
+    "Macy's",
+    "L'Oréal",
+    // A trailing period is an abbreviation, not a sentence end.
+    'Acme Inc.',
+    'St. Jude Medical',
+  ])('keeps %j', (input) => {
+    expect(sanitizeCompanyName(input)).toBe(input);
+  });
+
+  it('trims surrounding whitespace and rejects non-strings', () => {
+    expect(sanitizeCompanyName('  Codefield  ')).toBe('Codefield');
+    expect(sanitizeCompanyName('')).toBe('');
+    expect(sanitizeCompanyName(undefined)).toBe('');
+    expect(sanitizeCompanyName(null)).toBe('');
+    expect(sanitizeCompanyName(42)).toBe('');
+  });
+});
+
 describe('validateMetadata', () => {
+  it('gates the company name the model itself returns', () => {
+    // The model — not just the regex fallback — is a source of these. Passing
+    // `parsed.companyName ?? ''` straight through is what let "You'll Do" reach
+    // company research.
+    expect(validateMetadata('{"companyName":"You\'ll Do"}')?.companyName).toBe('');
+    expect(validateMetadata('{"companyName":"Codefield"}')?.companyName).toBe('Codefield');
+  });
+
   it('parses well-formed JSON and applies defaults', () => {
     const meta = validateMetadata('{"candidateName":"Jane","jobTitle":"Dev","jobAdLanguage":"de"}');
     expect(meta?.candidateName).toBe('Jane');
