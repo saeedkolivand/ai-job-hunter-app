@@ -963,8 +963,9 @@ pub fn run() {
             // agent ("prep this application" flow + human-in-the-loop confirm gate)
             commands::agent::agent_run,
             commands::agent::agent_confirm,
-            // resume extraction
+            // resume extraction + content-quality checks
             commands::resume::extract_resume,
+            commands::resume::resume_validate_content,
             // documents
             commands::documents::documents_list,
             commands::documents::documents_import,

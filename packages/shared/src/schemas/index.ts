@@ -281,6 +281,24 @@ export const ResumeTrimSuggestionsRequestSchema = z.object({
 });
 
 /**
+ * Request for `resume:validateContent` — deterministic content-quality checks
+ * (factual accuracy, ATS structure, AI-voice tells) on an already-generated
+ * résumé/letter against its source résumé and the job ad. See
+ * `validate::content::{ContentInput, validate_content}` (Rust, L1 — no AI call,
+ * safe to run on every save). Same size caps as
+ * `ResumeTrimSuggestionsRequestSchema` — this reads the same kind of text.
+ */
+export const ResumeValidateContentSchema = z.object({
+  generated: z.string().min(1).max(200_000),
+  source: z.string().min(1).max(200_000),
+  jobAd: z.string().max(200_000),
+  topRequirements: z.array(z.string().max(300)).max(50),
+  targetLanguage: z.string().max(32),
+  docKind: z.enum(['resume', 'coverLetter']),
+});
+export type ResumeValidateContentRequest = z.infer<typeof ResumeValidateContentSchema>;
+
+/**
  * Request for the "prep this application" agentic flow (`agent.run`). Carries ONLY
  * the résumé + job identity: routing (provider/model/baseUrl) is BACKEND-OWNED —
  * the agent loop and every tool provider call resolve the active provider from the

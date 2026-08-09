@@ -327,6 +327,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     resume: {
       extractText: noop,
+      validateContent: noop,
     },
 
     support: {

@@ -41,6 +41,7 @@ import {
   ReferralUpsertSchema,
   ResumeExtractTextSchema,
   ResumeTrimSuggestionsRequestSchema,
+  ResumeValidateContentSchema,
   ScrapeBoardsRequestSchema,
   ScrapeUrlRequestSchema,
 } from '../src/schemas/index.js';
@@ -103,6 +104,7 @@ const MODULES: ModuleSpec[] = [
         schema: ResumeExtractTextSchema,
         fieldOverrides: { bytes: 'Vec<u8>' },
       },
+      { rustName: 'ResumeValidateContentRequest', schema: ResumeValidateContentSchema },
     ],
   },
   {
