@@ -124,6 +124,68 @@ describe('awaitAiStream — poll fallback', () => {
   });
 });
 
+describe('awaitAiStream — a queued job does not burn its stream deadline', () => {
+  /** `jobs.get` reports `queued` for the first `queuedPolls` calls, then
+   *  `completed` — the backend shape while a generation is parked behind the
+   *  `ai_generate` concurrency limiter and then finally runs. */
+  function makeQueuedApi(queuedPolls: number, persisted: string) {
+    let calls = 0;
+    return {
+      ai: { onStream: () => () => {} },
+      jobs: {
+        get: vi.fn().mockImplementation(() => {
+          calls += 1;
+          return Promise.resolve(
+            calls <= queuedPolls
+              ? { status: 'queued' }
+              : { status: 'completed', result: { done: true, text: persisted } }
+          );
+        }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
+    } as unknown as AppClient;
+  }
+
+  it('re-arms the timeout while queued, so a wait longer than the deadline still succeeds', async () => {
+    // `timeoutMs` bounds the STREAM, not the wait for a slot. Six generations
+    // fired in a minute meant later ones sat parked for minutes; without
+    // re-arming they would reject on a deadline they never had a chance to
+    // beat, having never sent a request. 5 polls at 4ms with a 10ms deadline is
+    // 20ms of queueing — twice the deadline.
+    const api = makeQueuedApi(5, 'the generation that eventually ran');
+
+    await expect(
+      awaitAiStream(api, 'job-queued', { pollIntervalMs: 4, timeoutMs: 10 })
+    ).resolves.toBe('the generation that eventually ran');
+  });
+
+  it('reports the queued state to the caller while parked', async () => {
+    const onQueued = vi.fn();
+    const api = makeQueuedApi(2, 'done at last');
+
+    await awaitAiStream(api, 'job-queued-cb', { pollIntervalMs: 1, timeoutMs: 5_000, onQueued });
+
+    expect(onQueued).toHaveBeenCalled();
+  });
+
+  it('does NOT re-arm once the job leaves the queue', async () => {
+    // The re-arm must be scoped to `queued` only — a job that reports `running`
+    // forever is genuinely stuck and must still hit its deadline, or the
+    // timeout stops protecting anything.
+    const api = {
+      ai: { onStream: () => () => {} },
+      jobs: {
+        get: vi.fn().mockResolvedValue({ status: 'running' }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      },
+    } as unknown as AppClient;
+
+    await expect(
+      awaitAiStream(api, 'job-stuck', { pollIntervalMs: 1, timeoutMs: 20 })
+    ).rejects.toThrow('Generation timed out. Please try again.');
+  });
+});
+
 describe('awaitAiStream — empty completion rejects (both resolve paths)', () => {
   // The generation pipeline treated ANY resolve as success, including an empty
   // one — an empty document was then silently persisted and shown with no

@@ -56,6 +56,25 @@ pub fn job_start_exclusive(
     existing
 }
 
+/// Park a job behind the concurrency limiter: status → `queued`, emitting
+/// `job.queued` with how many callers are ahead of it.
+///
+/// The renderer suspends its stream deadline while a job is `queued` — see
+/// `awaitAiStream`. Without that, a generation waiting its turn in a batch
+/// counts down and fails having never sent a request.
+pub fn job_queued(app: &AppHandle, id: &str, ahead: usize) {
+    app.state::<Mutex<JobTracker>>().lock().set_waiting(id, true);
+    emit_job_event(app, "job.queued", id, Some(json!({ "ahead": ahead })));
+}
+
+/// The counterpart to [`job_queued`]: a slot opened up, status → `running`.
+pub fn job_dequeued(app: &AppHandle, id: &str) {
+    app.state::<Mutex<JobTracker>>()
+        .lock()
+        .set_waiting(id, false);
+    emit_job_event(app, "job.started", id, None);
+}
+
 /// Update a job's progress (0.0–1.0) and emit `job.progress`.
 pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
     app.state::<Mutex<JobTracker>>()

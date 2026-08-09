@@ -82,7 +82,11 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
             ? 'amber'
             : 'blue';
 
-      if (['job.completed', 'job.failed', 'job.cancelled', 'job.started'].includes(event.type)) {
+      if (
+        ['job.completed', 'job.failed', 'job.cancelled', 'job.started', 'job.queued'].includes(
+          event.type
+        )
+      ) {
         const verb =
           event.type === 'job.completed'
             ? '✓'
@@ -90,13 +94,25 @@ export function useActivityFeed(allJobs: JobRecord[], kindLabelMap: Record<strin
               ? '✕'
               : event.type === 'job.cancelled'
                 ? '⊘'
-                : '▸';
+                : event.type === 'job.queued'
+                  ? '⏸'
+                  : '▸';
+        // `job.queued` only ever fires when the job actually parked behind the
+        // concurrency limiter, and carries how many are ahead of it — without
+        // that number a batch of generations looks identical to one hung run.
+        const ahead = (event.data as { ahead?: number } | undefined)?.ahead;
+        const suffix =
+          event.type === 'job.queued' && typeof ahead === 'number'
+            ? ahead > 0
+              ? ` (queued, ${ahead} ahead)`
+              : ' (queued)'
+            : '';
         setLiveActivity((prev) =>
           [
             {
               id: `${event.jobId}-${event.ts}`,
               time: event.ts,
-              text: `${verb} ${kindLabel}`,
+              text: `${verb} ${kindLabel}${suffix}`,
               tone,
             },
             ...prev,
