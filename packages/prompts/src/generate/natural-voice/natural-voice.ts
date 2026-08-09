@@ -90,6 +90,141 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
 - Konkret statt abstrakt: benenne die reale Sache und was sich geändert hat, nicht Adjektive.`;
 
 /**
+ * Discrete, lowercase, substring-matchable word/phrase lists for the Rust
+ * content validator's `voice.ai_tell_lexical` / `voice.ai_tell_prose` /
+ * `voice.template_opener` checks
+ * (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`, generated from
+ * these exact arrays by `packages/prompts/scripts/gen-prompts-rust.ts` — run
+ * `pnpm gen:prompts` after editing any of them). Deliberately kept separate
+ * from the {@link ANTI_AI_TELL_LEXICAL_EN}-style prompt prose above (which
+ * reads as a sentence and carries parenthetical asides like "landscape
+ * (abstract)" that would be invalid validator match targets): these are the
+ * two representations of ONE editorial decision (which words/phrases count as
+ * an AI tell) and must be updated together when that decision changes. The
+ * prompt instructs the model with the prose; the validator checks the
+ * generated output against these arrays, so the check never drifts from what
+ * a DIFFERENT list would flag.
+ */
+export const AI_TELL_LEXICAL_WORDS_EN = [
+  // AI vocabulary
+  'delve',
+  'leverage',
+  'robust',
+  'seamless',
+  'cutting-edge',
+  'tapestry',
+  'testament',
+  'realm',
+  'underscore',
+  'showcase',
+  'foster',
+  'intricate',
+  'pivotal',
+  'vibrant',
+  'garner',
+  'vital',
+  'crucial',
+  'harness',
+  'elevate',
+  'streamline',
+  'unlock',
+  'empower',
+  // Promotional / inflated self-adjectives
+  'passionate',
+  'results-driven',
+  'proven track record',
+  'team player',
+  'go-getter',
+  'synergy',
+  'detail-oriented',
+  'world-class',
+  // Vague attributions / weasel words
+  'studies show',
+  'experts say',
+  'industry reports',
+  'it is widely known',
+  // Filler phrases
+  'in order to',
+  'due to the fact that',
+  'at this point in time',
+  'has the ability to',
+];
+
+/** German (de) twin of {@link AI_TELL_LEXICAL_WORDS_EN} — the actual KI-Floskeln, not a translation. */
+export const AI_TELL_LEXICAL_WORDS_DE = [
+  'darüber hinaus',
+  'nahtlos',
+  'robust',
+  'spielt eine entscheidende rolle',
+  'in der heutigen zeit',
+  'in der heutigen welt',
+  'in einem dynamischen umfeld',
+  'mit großer begeisterung',
+  'leidenschaft für',
+  'eine spannende herausforderung',
+  'maßgeschneidert',
+  'eintauchen in',
+  // Werbliches Eigenlob
+  'ergebnisorientiert',
+  'teamplayer',
+  'nachgewiesene erfolgsbilanz',
+  'detailorientiert',
+  'weltklasse',
+  // Vage Verweise
+  'studien zeigen',
+  'experten sagen',
+  'es ist allgemein bekannt',
+];
+
+/** Prose-only patterns (connected writing only) — negative parallelisms, "-ing" depth-faking, hedging preambles. */
+export const AI_TELL_PROSE_WORDS_EN = [
+  'not just',
+  'not only',
+  "it's not about",
+  'it is not about',
+  'highlighting',
+  'showcasing',
+  'underscoring',
+  'it is important to note',
+  'generally speaking',
+  'with that in mind',
+  'building on this',
+];
+
+/** German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. */
+export const AI_TELL_PROSE_WORDS_DE = ['nicht nur', 'sondern auch', 'erfolgte durch'];
+
+/**
+ * Stock cover-letter openers — the phrases a letter that could have been
+ * addressed to anyone starts with. Single source for BOTH the letter
+ * prompt's opener ban (see `LETTER_SPECIFICS` in
+ * `packages/prompts/src/generate/cover-letter/cover-letter.ts`) and the Rust
+ * validator's `voice.template_opener` check, generated as above.
+ */
+export const TEMPLATE_OPENERS_EN = [
+  'i am writing to apply',
+  'i am writing to express',
+  'i am writing in response to',
+  'i am excited to apply',
+  'i would like to apply for the position',
+  'please accept this letter',
+  'with great interest i read',
+  'i hope this message finds you well',
+  'i hope this email finds you well',
+  'as a passionate',
+];
+
+/** German (de) twin of {@link TEMPLATE_OPENERS_EN} (Standardfloskeln). */
+export const TEMPLATE_OPENERS_DE = [
+  'hiermit bewerbe ich mich',
+  'hiermit möchte ich mich bewerben',
+  'mit großem interesse habe ich ihre stellenanzeige',
+  'mit großem interesse habe ich gelesen',
+  'auf ihre stellenanzeige hin',
+  'wie ihrer stellenanzeige zu entnehmen ist',
+];
+
+/**
  * English display names for the generic-directive locales, purely so the
  * directive reads naturally ("in French" not "in fr"). Falls back to the raw
  * ISO-639-1 code for anything not listed — a newly-added `OUTPUT_LANGUAGES` entry

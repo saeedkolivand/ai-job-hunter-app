@@ -20,6 +20,8 @@ import {
   antiAiTellProse,
   HUMANIZE_PROSE,
   type OutputTone,
+  TEMPLATE_OPENERS_DE,
+  TEMPLATE_OPENERS_EN,
   toneDirective,
 } from '../natural-voice/index.js';
 
@@ -100,8 +102,27 @@ const LETTER_HONESTY = `HONESTY (match, never bluff; this overrides everything e
  * not a style suggestion, and stays inside the honesty contract above: every
  * specific still has to already exist in the résumé or job ad.
  */
+
+/**
+ * Capitalizes a lowercase, validator-matched opener phrase (see
+ * {@link TEMPLATE_OPENERS_EN}) into a readable inline prompt example. Only the
+ * first letter changes; good enough for an illustrative quote, not a full
+ * sentence-case renderer.
+ */
+function capitalizeOpener(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+// The two English examples plus one German example quoted in LETTER_SPECIFICS
+// below, so the prompt bans exactly what `voice.template_opener`
+// (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`, generated from
+// these same arrays) checks for — single source, never two independently
+// hand-maintained opener lists.
+const [LETTER_OPENER_EXAMPLE_EN_1, LETTER_OPENER_EXAMPLE_EN_2] = TEMPLATE_OPENERS_EN;
+const LETTER_OPENER_EXAMPLE_DE = TEMPLATE_OPENERS_DE[2];
+
 const LETTER_SPECIFICS = `SPECIFICS (never generic): use 2 to 3 concrete, verifiable specifics drawn ONLY from <candidate_resume> and <job_ad> (a real number or metric, a named project or product, a specific technology, or something concrete and employer-specific from the job ad), never a claim so generic it could apply to any candidate at any company.
-OPENING: the first sentence is a specific personal hook tied to THIS résumé and THIS role or company. Never a generic opener ("I am writing to express my interest in...", "I am excited to apply for...") or its equivalent in another language (e.g. a literal "mit großem Interesse habe ich..." in German). Every specific used must already exist in <candidate_resume> or <job_ad>; if you cannot back it, leave it out.`;
+OPENING: the first sentence is a specific personal hook tied to THIS résumé and THIS role or company. Never a generic opener ("${capitalizeOpener(LETTER_OPENER_EXAMPLE_EN_1 ?? '')}...", "${capitalizeOpener(LETTER_OPENER_EXAMPLE_EN_2 ?? '')}...") or its equivalent in another language (e.g. a literal "${capitalizeOpener(LETTER_OPENER_EXAMPLE_DE ?? '')}..." in German). Every specific used must already exist in <candidate_resume> or <job_ad>; if you cannot back it, leave it out.`;
 
 /**
  * Prose-appropriate register per mode. Cover letters are flowing prose, so the
