@@ -792,7 +792,11 @@ export async function synthesizeResume(
  * the cover letter still generates. The returned brief is untrusted reference
  * text — the prompt fences it.
  */
-export async function researchCompany(jobAd: string, company?: string): Promise<string> {
+export async function researchCompany(
+  jobAd: string,
+  company?: string,
+  role?: string
+): Promise<string> {
   try {
     // Routing (provider/model/base_url) is backend-owned (task #16) — the enricher
     // reads the active provider from the store, so nothing is threaded here.
@@ -801,6 +805,9 @@ export async function researchCompany(jobAd: string, company?: string): Promise<
       // The AI-extracted company name is far more reliable than the backend's
       // heuristic job-ad scan (which can grab a tagline), so send it when known.
       company: company?.trim() || undefined,
+      // Same reasoning as `company`: the backend's heuristic falls back to the
+      // ad's first short line, which on a scraped page is an apply button.
+      role: role?.trim() || undefined,
       // Same effort the generation request carries — the backend's deadline
       // around search + synthesis scales with it. Without this a reasoning model
       // never finishes research inside the flat bound, and the cover letter is
@@ -899,7 +906,9 @@ export async function generateCoverLetter(
   const profile = buildProviderProfile(model);
 
   // Opt-in: fetch a company brief and fold it into the prompt's fit paragraph.
-  const companyBrief = opts?.researchCompany ? await researchCompany(jobAd, meta.companyName) : '';
+  const companyBrief = opts?.researchCompany
+    ? await researchCompany(jobAd, meta.companyName, meta.jobTitle)
+    : '';
 
   // Resolve the cover-letter market from the job's country (decision: job
   // location, not ad language) with an optional manual override; the letter is

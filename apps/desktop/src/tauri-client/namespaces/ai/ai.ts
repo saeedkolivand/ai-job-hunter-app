@@ -40,12 +40,14 @@ export const ai = {
   researchCompany: ({
     jobAd,
     company,
+    role,
     effort,
   }: {
     jobAd: string;
     company?: string;
+    role?: string;
     effort?: string;
-  }) => invoke('ai_research_company', { jobAd, company, effort }),
+  }) => invoke('ai_research_company', { jobAd, company, role, effort }),
   lookupSalary: ({
     role,
     company,

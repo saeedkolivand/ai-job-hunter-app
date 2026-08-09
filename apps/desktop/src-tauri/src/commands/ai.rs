@@ -269,6 +269,9 @@ pub async fn ai_research_company(
     app: AppHandle,
     job_ad: String,
     company: Option<String>,
+    // AI-extracted job title. Like `company`, it beats the heuristic, whose last
+    // resort is the ad's first short line — an apply button on a scraped page.
+    role: Option<String>,
     // Sizes the research deadline (`timeouts::research_deadline`): flat 25s meant
     // a reasoning model's research never finished — six for six in one session.
     effort: Option<String>,
@@ -283,7 +286,13 @@ pub async fn ai_research_company(
     // enricher falls back to heuristic job-ad extraction only when it's absent.
     let deadline = super::ai_provider::timeouts::research_deadline(effort.as_deref());
     let result = CompanyResearch
-        .enrich_with(&completer, &job_ad, company.as_deref(), deadline)
+        .enrich_with(
+            &completer,
+            &job_ad,
+            company.as_deref(),
+            role.as_deref(),
+            deadline,
+        )
         .await;
     json!({ "company": result.key, "brief": result.content })
 }

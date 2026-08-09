@@ -89,6 +89,10 @@ export interface AiContract {
     jobAd: string;
     /** Accurate AI-extracted company name; preferred over heuristic job-ad extraction. */
     company?: string;
+    /** Accurate AI-extracted job title; preferred over heuristic job-ad
+     *  extraction, whose last resort is the ad's first short line — on a scraped
+     *  page routinely an apply button ("Jetzt bewerben") or a nav link. */
+    role?: string;
     /** The SAME reasoning-effort value a generation request carries. Sizes the
      *  backend's deadline around search + synthesis — synthesis is a model call,
      *  so its cost scales with the model's reasoning budget. Omit for the

@@ -290,7 +290,7 @@ fn research_company_handler(
         // base_url are no longer threaded through this shared command.
         // `effort: None` — the agent loop has no per-request effort of its own, so
         // research runs on the unscaled baseline deadline.
-        Ok(crate::commands::ai::ai_research_company(app, job_ad, None, None).await)
+        Ok(crate::commands::ai::ai_research_company(app, job_ad, None, None, None).await)
     })
 }
 
