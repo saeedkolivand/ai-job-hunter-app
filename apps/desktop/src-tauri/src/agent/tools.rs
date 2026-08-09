@@ -139,8 +139,10 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // neutralization would otherwise miss.
         "existing_answer",
         "rewrite_instruction",
-        // HIGH-1 fix — the four `super::tools_quality` result tags. Without
-        // these, a JOB-POSTING (or résumé) body carrying a forged
+        // HIGH-1 fix — three of the four `super::tools_quality` result tags.
+        // (The fourth tool, `lookup_salary`, carries no free text to fence —
+        // it returns via `envelope_result` instead, see that fn's doc.)
+        // Without these, a JOB-POSTING (or résumé) body carrying a forged
         // `<validate_resume_result>…</validate_resume_result>` block would
         // survive `fenced("job_posting", …)` untouched and could masquerade
         // as a real tool result once the transcript is composed; the same
