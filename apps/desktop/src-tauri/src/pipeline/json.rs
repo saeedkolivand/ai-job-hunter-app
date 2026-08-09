@@ -101,8 +101,11 @@ fn fenced_body(raw: &str) -> Option<&str> {
 /// The first balanced `{…}`/`[…]` span in `s`, string- and escape-aware.
 fn balanced_span(s: &str) -> Option<&str> {
     let start = s.find(['{', '['])?;
-    let open = s.as_bytes()[start];
-    let close = if open == b'{' { b'}' } else { b']' };
+    let (open, close) = if s[start..].starts_with('{') {
+        ('{', '}')
+    } else {
+        ('[', ']')
+    };
     let mut depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
@@ -121,8 +124,10 @@ fn balanced_span(s: &str) -> Option<&str> {
             // Nesting is counted per delimiter KIND: an inner `[` inside an
             // object (or vice versa) is balanced by its own closer and must
             // not be able to close the outer region.
-            c if c as u32 == u32::from(open) => depth += 1,
-            c if c as u32 == u32::from(close) => {
+            c if c == open => depth += 1,
+            c if c == close => {
+                // Cannot underflow: the loop starts ON `open`, so the first
+                // iteration always takes the arm above and leaves depth >= 1.
                 depth -= 1;
                 if depth == 0 {
                     return Some(&s[start..start + i + ch.len_utf8()]);
