@@ -37,6 +37,12 @@ export {
   VALID_LOCALES,
 } from './locales';
 export {
+  computeQualityReport,
+  parseQualityReport,
+  type QualityReport,
+  serializeQualityReport,
+} from './quality-report';
+export {
   isDesignTier,
   isTwoColumnTemplate,
   LETTER_LAYOUT_IDS,
