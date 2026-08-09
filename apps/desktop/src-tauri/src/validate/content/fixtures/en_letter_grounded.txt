@@ -1,0 +1,19 @@
+Jane Doe
+jane.doe@example.com
+
+Dear Hiring Manager,
+
+Your posting says the payment ledger is Python and the container platform runs
+on Kubernetes. That is the pair I have spent the last three years between.
+
+At Acme Payments I put a Redis cache in front of the ledger service and checkout
+latency went from 480ms to 90ms. The retry scheduler was the other half of it. I
+rewrote it in Rust and failed settlements dropped by 35%. Before that, at Globex
+Logistics, I built the billing API in Python and PostgreSQL, then moved the fleet
+to AWS with Terraform once the warehouse count made manual provisioning silly.
+
+Docker and Kubernetes I know from operating them, not from a course. Happy to
+walk through the settlement rewrite in detail if it is useful.
+
+Best regards,
+Jane Doe

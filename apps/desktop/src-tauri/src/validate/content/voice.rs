@@ -1,0 +1,264 @@
+//! Anti-AI-tell checks — does the output read as machine-written?
+//!
+//! Every rule here mirrors a ban the generation prompt already issued
+//! (`packages/prompts/.../natural-voice.ts`, transcribed into
+//! [`super::lexicon`]), so this is the deterministic check that the prompt was
+//! actually obeyed rather than a second, independent opinion about style.
+//!
+//! All Warnings. Prose taste is not a defect, and a résumé that legitimately
+//! contains the word "robust" is not broken.
+
+use super::lexicon;
+use super::{
+    contains_phrase, flattened_lower, issue, sentences, word_count, Analysis, ContentIssue,
+    VOICE_AI_TELL_LEXICAL, VOICE_EM_DASH_OVERUSE, VOICE_GENERIC_LETTER, VOICE_LOW_BURSTINESS,
+    VOICE_RULE_OF_THREE_DENSITY, VOICE_TEMPLATE_OPENER,
+};
+
+/// Below this many sentences, sentence-length variance is not a signal — three
+/// similar sentences are a coincidence, not a rhythm.
+pub const MIN_SENTENCES_FOR_BURSTINESS: usize = 8;
+
+/// Population standard deviation of sentence length (in words) below which the
+/// rhythm reads as machine-flat. Human prose in a cover letter comfortably
+/// clears this; a model producing uniformly 18-word sentences does not.
+pub const MIN_SENTENCE_LENGTH_STDDEV: f64 = 4.0;
+
+/// "X, Y, and Z" triplets tolerated per ten sentences before the rule-of-three
+/// habit becomes the document's shape.
+pub const MAX_TRIPLETS_PER_TEN_SENTENCES: f64 = 2.0;
+
+/// One clause dash is allowed per this many words.
+pub const EM_DASH_WORDS_PER_ALLOWED: usize = 150;
+
+/// How much of a letter is scanned for a stock opener.
+pub const TEMPLATE_OPENER_SCAN_CHARS: usize = 200;
+
+/// Distinct posting keywords a cover letter must carry before it reads as
+/// written for THIS role. Two, not one: the company name alone routinely
+/// overlaps the posting's vocabulary, and a letter that only name-drops the
+/// employer is exactly the generic letter this catches.
+pub const MIN_JOB_SPECIFIC_TOKENS_IN_LETTER: usize = 2;
+
+/// Conjunctions that close a "X, Y, and Z" triplet, per supported language.
+const TRIPLET_CONJUNCTIONS: &[&str] = &[", and ", ", und ", ", or ", ", oder ", ", sowie "];
+
+/// `voice.ai_tell_lexical` — a banned word or phrase the prompt told the model
+/// not to use.
+///
+/// Both lexicon tiers feed this one code: the lexical list always, and the
+/// prose-pattern list only for connected writing, where those rules apply. The
+/// matched phrase is the issue's evidence, so the user sees exactly what fired.
+fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
+    let haystack = flattened_lower(ctx.input.generated);
+    let lists: Vec<&'static [&'static str]> = if include_prose {
+        vec![
+            lexicon::ai_tell_lexical(&ctx.lang),
+            lexicon::ai_tell_prose(&ctx.lang),
+        ]
+    } else {
+        vec![lexicon::ai_tell_lexical(&ctx.lang)]
+    };
+    let mut hits: Vec<&str> = lists
+        .into_iter()
+        .flatten()
+        .copied()
+        .filter(|phrase| contains_phrase(&haystack, phrase))
+        .collect();
+    hits.sort_unstable();
+    hits.dedup();
+    hits.into_iter()
+        .map(|phrase| {
+            issue(
+                VOICE_AI_TELL_LEXICAL,
+                None,
+                format!(
+                    "\"{phrase}\" is on the AI-tell list the generator was told to avoid. Use \
+                     the plain word for the real thing instead."
+                ),
+                Some(phrase.to_string()),
+            )
+        })
+        .collect()
+}
+
+/// `voice.template_opener` — a letter that opens like every other letter.
+fn template_opener_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    let opening: String = flattened_lower(ctx.input.generated)
+        .chars()
+        .take(TEMPLATE_OPENER_SCAN_CHARS)
+        .collect();
+    lexicon::template_openers(&ctx.lang)
+        .iter()
+        .find(|opener| opening.contains(**opener))
+        .map(|opener| {
+            vec![issue(
+                VOICE_TEMPLATE_OPENER,
+                None,
+                format!(
+                    "The letter opens with \"{opener}\", the same first line thousands of other \
+                     applications use. Open with something only you could write."
+                ),
+                Some((*opener).to_string()),
+            )]
+        })
+        .unwrap_or_default()
+}
+
+/// Population standard deviation of sentence lengths, in words.
+fn sentence_length_stddev(lengths: &[usize]) -> f64 {
+    if lengths.is_empty() {
+        return 0.0;
+    }
+    let n = lengths.len() as f64;
+    let mean = lengths.iter().sum::<usize>() as f64 / n;
+    let variance = lengths
+        .iter()
+        .map(|&l| (l as f64 - mean).powi(2))
+        .sum::<f64>()
+        / n;
+    variance.sqrt()
+}
+
+/// `voice.low_burstiness` — every sentence the same length.
+fn burstiness_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    let lengths: Vec<usize> = sentences(ctx.input.generated)
+        .iter()
+        .map(|s| word_count(s))
+        .filter(|n| *n > 0)
+        .collect();
+    if lengths.len() < MIN_SENTENCES_FOR_BURSTINESS {
+        return Vec::new();
+    }
+    let stddev = sentence_length_stddev(&lengths);
+    if stddev >= MIN_SENTENCE_LENGTH_STDDEV {
+        return Vec::new();
+    }
+    vec![issue(
+        VOICE_LOW_BURSTINESS,
+        None,
+        format!(
+            "Sentence lengths barely vary (standard deviation {stddev:.1} words across \
+             {} sentences). Flat, uniform rhythm is the strongest single AI tell — mix a short \
+             sentence into the long ones.",
+            lengths.len()
+        ),
+        Some(format!("stddev={stddev:.1}")),
+    )]
+}
+
+/// `voice.rule_of_three_density` — ideas forced into groups of three.
+fn rule_of_three_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    let all = sentences(ctx.input.generated);
+    if all.is_empty() {
+        return Vec::new();
+    }
+    let triplets = all
+        .iter()
+        .filter(|s| {
+            let lower = format!("{} ", s.to_lowercase());
+            TRIPLET_CONJUNCTIONS.iter().any(|conj| {
+                // A triplet needs a comma BEFORE the closing conjunction:
+                // "X, Y, and Z", not "X and Y".
+                lower.find(conj).is_some_and(|at| lower[..at].contains(','))
+            })
+        })
+        .count();
+    let per_ten = triplets as f64 * 10.0 / all.len() as f64;
+    if per_ten <= MAX_TRIPLETS_PER_TEN_SENTENCES {
+        return Vec::new();
+    }
+    vec![issue(
+        VOICE_RULE_OF_THREE_DENSITY,
+        None,
+        format!(
+            "{triplets} of {} sentences are \"X, Y, and Z\" triplets. Breaking the pattern once \
+             or twice makes the writing sound like a person.",
+            all.len()
+        ),
+        Some(format!("{per_ten:.1} per 10 sentences")),
+    )]
+}
+
+/// `voice.em_dash_overuse` — the single most-reported AI punctuation tell.
+///
+/// Counts em and en dashes used between clauses only: a tight numeric range
+/// (`2020–2023`) is correct typography and is skipped.
+fn em_dash_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    let text = ctx.input.generated;
+    let chars: Vec<char> = text.chars().collect();
+    let clause_dashes = chars
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c, '—' | '–'))
+        .filter(|(i, _)| {
+            let tight_range = i
+                .checked_sub(1)
+                .and_then(|p| chars.get(p))
+                .is_some_and(|c| c.is_ascii_digit())
+                && chars.get(i + 1).is_some_and(char::is_ascii_digit);
+            !tight_range
+        })
+        .count();
+    let words = word_count(text);
+    let allowed = words / EM_DASH_WORDS_PER_ALLOWED;
+    if clause_dashes <= allowed {
+        return Vec::new();
+    }
+    vec![issue(
+        VOICE_EM_DASH_OVERUSE,
+        None,
+        format!(
+            "{clause_dashes} long dashes across {words} words (about one per \
+             {EM_DASH_WORDS_PER_ALLOWED} words is natural). Replace most with a period, comma, \
+             colon, or parentheses."
+        ),
+        Some(format!("{clause_dashes} dashes / {words} words")),
+    )]
+}
+
+/// `voice.generic_letter` — a letter that could have been sent to anyone.
+///
+/// Measured as distinct posting keywords the letter carries. Nothing about the
+/// role, the product, or the stack means the reader learns nothing they could
+/// not have guessed.
+fn generic_letter_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    if ctx.job_keywords.is_empty() {
+        return Vec::new(); // Nothing to be specific ABOUT.
+    }
+    let specific = ctx
+        .generated_keywords
+        .intersection(&ctx.job_keywords)
+        .count();
+    if specific >= MIN_JOB_SPECIFIC_TOKENS_IN_LETTER {
+        return Vec::new();
+    }
+    vec![issue(
+        VOICE_GENERIC_LETTER,
+        None,
+        format!(
+            "This letter mentions {specific} thing(s) specific to the posting. Name the product, \
+             the stack, or the problem in the ad — otherwise it reads as a template."
+        ),
+        Some(format!("{specific} posting-specific terms")),
+    )]
+}
+
+/// Résumé voice checks: lexical bans only. Prose-flow rules (em-dash, rhythm,
+/// rule-of-three) do not apply to bullets, which are deliberately terse and
+/// same-shaped by ATS convention — running them here would flag every
+/// well-formed résumé.
+pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
+    ai_tell_issues(ctx, false)
+}
+
+/// Cover-letter voice checks: the lexical bans plus every prose-flow rule.
+pub(super) fn validate_letter(ctx: &Analysis) -> Vec<ContentIssue> {
+    let mut issues = ai_tell_issues(ctx, true);
+    issues.extend(template_opener_issues(ctx));
+    issues.extend(burstiness_issues(ctx));
+    issues.extend(rule_of_three_issues(ctx));
+    issues.extend(em_dash_issues(ctx));
+    issues.extend(generic_letter_issues(ctx));
+    issues
+}

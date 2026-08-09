@@ -1,0 +1,21 @@
+Jane Doe
+jane.doe@example.com
+
+Dear Hiring Manager,
+
+I am writing to express my interest in the position at your company. I am a
+passionate and results-driven engineer with a proven track record of delivering
+robust, seamless and cutting-edge solutions. I would love to leverage my skills
+to foster growth, streamline processes and unlock new value for your team.
+
+Throughout my career I have had the opportunity to delve into complex problems,
+navigate an ever-changing landscape and showcase my ability to deliver. Studies
+show that engineers who are detail-oriented, dynamic and collaborative make the
+strongest team players in any organisation today.
+
+I am confident that my experience makes me an excellent fit for this role. I
+would welcome the chance to discuss how I can contribute to your continued
+success and help elevate your engineering culture to the next level.
+
+Sincerely,
+Jane Doe

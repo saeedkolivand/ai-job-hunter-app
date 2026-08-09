@@ -925,3 +925,7 @@ fn strip_xml_tags(xml: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Deterministic content validation of GENERATED text (facts, alignment,
+/// language, voice) — the earlier sibling of this module's rendered-bytes gate.
+pub mod content;

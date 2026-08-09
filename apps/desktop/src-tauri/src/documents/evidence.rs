@@ -192,11 +192,17 @@ pub fn rank_bullets(text: &str, job_text: &str) -> Vec<EvidenceBullet> {
 /// Which broad kind of section a heading names. Classification only — DETECTING
 /// that a line *is* a heading stays `export::parser`'s job; this just buckets the
 /// heading text so evidence lands in the right list.
+///
+/// Public and shared with `validate::content`, which needs the same buckets: two
+/// classifiers disagreeing about what "SKILLS" means would let a validator warn
+/// about a section the evidence extractor filed somewhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SectionKind {
+pub enum SectionKind {
     Experience,
     Education,
     Projects,
+    Skills,
+    Summary,
     Other,
 }
 
@@ -227,8 +233,34 @@ const EDUCATION_HEADINGS: &[&str] = &[
     "formação",
 ];
 const PROJECT_HEADINGS: &[&str] = &["project", "projekt", "projet", "proyecto", "progetti"];
+const SKILLS_HEADINGS: &[&str] = &[
+    "skill",
+    "competenc",
+    "fähigkeit",
+    "kenntnis",
+    "kompetenz",
+    "compétence",
+    "habilidad",
+    "vaardigheden",
+    "technologies",
+    "tech stack",
+];
+const SUMMARY_HEADINGS: &[&str] = &[
+    "summary",
+    "profile",
+    "objective",
+    "about",
+    "zusammenfassung",
+    "profil",
+    "perfil",
+    "profilo",
+    "profiel",
+];
 
-fn classify_section(heading: &str) -> SectionKind {
+/// Bucket a heading. Substring match on the lowercased heading, checked
+/// most-specific-first, so "PROFESSIONAL EXPERIENCE" and "Berufserfahrung" both
+/// land on [`SectionKind::Experience`] without a per-locale word list.
+pub fn classify_section(heading: &str) -> SectionKind {
     let lower = heading.to_lowercase();
     let has = |set: &[&str]| set.iter().any(|k| lower.contains(k));
     if has(EXPERIENCE_HEADINGS) {
@@ -237,6 +269,10 @@ fn classify_section(heading: &str) -> SectionKind {
         SectionKind::Education
     } else if has(PROJECT_HEADINGS) {
         SectionKind::Projects
+    } else if has(SKILLS_HEADINGS) {
+        SectionKind::Skills
+    } else if has(SUMMARY_HEADINGS) {
+        SectionKind::Summary
     } else {
         SectionKind::Other
     }
@@ -259,7 +295,12 @@ fn classify_section(heading: &str) -> SectionKind {
 ///
 /// A label with no separator becomes the company with an empty title — a
 /// following `LineKind::JobTitle` line fills that in.
-fn split_entry(line: &ParsedLine) -> (String, String, String) {
+///
+/// Public so `validate::content` decides "did this employer survive?" against
+/// the same company string the evidence extractor derived. Splitting the label
+/// twice, differently, is how a dropped-role check ends up comparing a job
+/// TITLE against the output and concluding nothing was lost.
+pub fn split_entry(line: &ParsedLine) -> (String, String, String) {
     let label_and_dates = |label: &str, dates: &str| {
         let (title, company) = match label.rsplit_once(',') {
             Some((t, c)) => (t.trim().to_string(), c.trim().to_string()),
@@ -396,7 +437,7 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                     set.projects.push(bullet);
                 }
                 SectionKind::Education => set.education.push(line.text.clone()),
-                SectionKind::Other => {}
+                _ => {}
             },
             LineKind::Text | LineKind::JobEntry
                 if section == SectionKind::Education && !line.text.trim().is_empty() =>
