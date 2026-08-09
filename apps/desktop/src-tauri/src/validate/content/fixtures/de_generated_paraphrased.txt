@@ -17,6 +17,9 @@ Backend Developer | Globex | 2018 - 2021
 - Die Abrechnungsschnittstelle mit Python und PostgreSQL für 40 Lagerstandorte gebaut
 - Die Flotte nach AWS umgezogen und die Bereitstellung mit Terraform beschrieben
 
+IT-Beraterin | IBM | 2015 - 2018
+- Die Abrechnungsdienste für zwei Werke betreut
+
 KENNTNISSE
 
 Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis

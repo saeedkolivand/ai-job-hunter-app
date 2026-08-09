@@ -61,10 +61,15 @@ fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
                 .split_once(['|', '·', '•', ','])
                 .map(|(t, c)| (t.trim().to_string(), c.to_string()))
                 .unwrap_or_else(|| (String::new(), label.to_string()));
+            // The split above keeps the date span inside `company`, so the year
+            // tokens have to go: two unrelated employers that merely ended and
+            // began in the same year shared "2018" and got matched to each
+            // other, reporting the second one's title as drift from the first.
             let tokens = company
                 .split(|c: char| !c.is_alphanumeric())
                 .map(str::to_lowercase)
                 .filter(|t| t.chars().count() >= 4)
+                .filter(|t| !t.chars().any(|c| c.is_ascii_digit()))
                 .collect();
             (tokens, title)
         })

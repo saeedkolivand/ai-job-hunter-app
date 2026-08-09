@@ -879,6 +879,24 @@ fn header_in_body_needs_a_real_address_directly_under_the_heading() {
     assert_eq!(hits[0].severity, Severity::Critical);
 }
 
+/// Two unrelated employers whose spans merely touch the same year are not the
+/// same employer. `titled_entries` keeps the date span inside its company
+/// string, so "Globex … | 2018 - 2021" and "Initech … | 2015 - 2018" shared the
+/// token "2018" and the second entry's title was reported as drift from the
+/// first's.
+#[test]
+fn title_drift_does_not_match_employers_on_a_shared_year() {
+    let doc = "EXPERIENCE\n\n\
+               Backend Developer | Globex Logistics | 2018 - 2021\n\
+               - Built the billing API in Python\n\n\
+               IT Consultant | Initech Systems | 2015 - 2018\n\
+               - Ran the reporting service\n";
+    silent(
+        &report_for(doc, doc, EN_JOB_AD, &[]),
+        CONSISTENCY_TITLE_DRIFT,
+    );
+}
+
 /// M1 — a restated number is not a fabricated one. `10k` and `10,000` are the
 /// same figure; so are "doubled" and "2x".
 #[test]
