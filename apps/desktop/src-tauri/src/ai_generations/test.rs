@@ -243,6 +243,76 @@ fn add_email_draft_migration_backfills_legacy_rows_with_empty_strings() {
     assert_eq!(list[0].email_body, "");
 }
 
+/// A DB created before `add_quality_report` (schema at the previous migration)
+/// must gain the column with a `''` default for every existing row, and a
+/// later save must be able to merge onto that backfilled row: a content-less
+/// save leaves it alone, a save carrying a fresh wrapper replaces it outright
+/// (nothing to merge a key onto — see `merge_quality_report`).
+#[test]
+fn add_quality_report_migration_backfills_legacy_rows_and_a_later_save_replaces_it() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("ai_generations.db");
+    let job_url = "https://acme.com/job/legacy";
+    {
+        // Build the store at the PREVIOUS schema version by running every
+        // migration up to (not including) `add_quality_report`. Looked up BY
+        // NAME rather than "all but the last" so this stays correct
+        // regardless of what gets appended after it.
+        let all = AiGenerationStore::MIGRATIONS;
+        let add_quality_report_idx = all
+            .iter()
+            .position(|m| m.name == "add_quality_report")
+            .expect("add_quality_report must still be registered");
+        let mut conn = crate::db::open(&path).unwrap();
+        crate::db::run_migrations(&mut conn, &all[..add_quality_report_idx]).unwrap();
+        assert!(
+            !crate::db::column_exists(&conn, "ai_generations", "quality_report"),
+            "precondition: the legacy schema has no quality_report column"
+        );
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text, job_url)
+             VALUES ('legacy', 1000, 'R', 'C', ?1)",
+            params![job_url],
+        )
+        .unwrap();
+    }
+
+    // Opening with the full migration list applies `add_quality_report` in
+    // place — the legacy row backfills to ''.
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let list = store.list();
+    assert_eq!(list.len(), 1, "the legacy row must survive the migration");
+    assert_eq!(list[0].id, "legacy");
+    assert_eq!(list[0].quality_report, "", "new column defaults to empty");
+
+    // A content-less (answers-only) save merges into the legacy row and must
+    // leave the backfilled empty report alone.
+    let mut answers_only = record("g-answers", job_url);
+    answers_only.resume_text = String::new();
+    answers_only.cover_letter_text = String::new();
+    answers_only.quality_report = String::new();
+    answers_only.application_answers = vec![answer("why-company")];
+    store.save_application(answers_only).unwrap();
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "a content-less save must leave the backfilled empty report alone"
+    );
+
+    // A résumé save carrying a fresh wrapper report replaces the (unparseable,
+    // empty) existing value outright.
+    let mut resume_save = record("g-resume", job_url);
+    resume_save.cover_letter_text = String::new();
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":42,"resume":{"ok":true}}"#.into();
+    store.save_application(resume_save).unwrap();
+    assert_eq!(
+        store.list()[0].quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":42,"resume":{"ok":true}}"#,
+        "a résumé save must replace the backfilled empty report with its wrapper"
+    );
+}
+
 /// Bring a fresh DB up to JUST BEFORE the repair migration (simulating an
 /// install that generated a résumé/cover letter from a PDF import before PR
 /// #955 fixed `pdf_text_string`), seed a corrupt row with the EXACT byte
@@ -1308,43 +1378,113 @@ fn export_import_round_trip_preserves_the_quality_report() {
     );
 }
 
-/// `quality_report` follows the same pick-non-empty rule as `company_brief`,
-/// but ALSO treats the literal '{}' placeholder (the column's migration
-/// default) as "no report" — a content-less save (answers-only) must not
-/// clobber a real prior report with that placeholder, and a legacy '{}' row
-/// must not block a genuinely fresh incoming report.
+/// A résumé-writing save carries a wrapper with a `resume` key: it overlays
+/// the envelope fields (`schemaVersion`/`pipeline`/`generatedAt`) plus
+/// `resume`, and leaves a stored `coverLetter` sub-report untouched.
 #[test]
-fn merge_picks_a_non_empty_quality_report_and_ignores_the_empty_object_placeholder() {
+fn merge_quality_report_resume_save_overlays_resume_key_and_envelope() {
     let mut existing = record("g1", "https://acme.com/job/1");
-    existing.quality_report = r#"{"ok":true,"issues":[]}"#.into();
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"combined","generatedAt":100,"coverLetter":{"ok":false}}"#
+            .into();
 
-    // Content-less save: no report at all → existing report survives.
-    let mut answers_only = record("g2", "https://acme.com/job/1");
-    answers_only.quality_report = String::new();
+    let mut resume_save = record("g2", "https://acme.com/job/1");
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":200,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, resume_save);
+    let value: serde_json::Value = serde_json::from_str(&merged.quality_report).unwrap();
+    assert_eq!(value["pipeline"], "resume");
+    assert_eq!(value["generatedAt"], 200);
+    assert_eq!(value["resume"]["ok"], true);
     assert_eq!(
-        merge_application(existing.clone(), answers_only).quality_report,
-        r#"{"ok":true,"issues":[]}"#,
-        "an empty incoming report must not clobber a real prior report"
+        value["coverLetter"]["ok"], false,
+        "the coverLetter sub-report from the existing wrapper must survive a résumé-only save"
     );
+}
 
-    // Legacy-placeholder save: incoming is the migration default '{}' → still
-    // treated as "no report", existing report survives.
-    let mut placeholder = record("g3", "https://acme.com/job/1");
-    placeholder.quality_report = "{}".into();
+/// An answers-only save carries no report at all (`quality_report` defaults to
+/// `""`) — the existing wrapper must survive byte-for-byte.
+#[test]
+fn merge_quality_report_content_less_save_keeps_existing_report_untouched() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":100,"resume":{"ok":true}}"#.into();
+
+    let answers_only = record("g2", "https://acme.com/job/1"); // quality_report == ""
+    let merged = merge_application(existing.clone(), answers_only);
+    assert_eq!(merged.quality_report, existing.quality_report);
+}
+
+/// A letter-only save carries a wrapper with a `coverLetter` key: it must
+/// preserve a stored `resume` sub-report rather than clobbering it.
+#[test]
+fn merge_quality_report_letter_save_preserves_stored_resume_key() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":150,"resume":{"ok":false}}"#.into();
+
+    let mut letter_save = record("g2", "https://acme.com/job/1");
+    letter_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"letter","generatedAt":300,"coverLetter":{"ok":true}}"#
+            .into();
+
+    let merged = merge_application(existing, letter_save);
+    let value: serde_json::Value = serde_json::from_str(&merged.quality_report).unwrap();
+    assert_eq!(value["pipeline"], "letter");
+    assert_eq!(value["coverLetter"]["ok"], true);
     assert_eq!(
-        merge_application(existing.clone(), placeholder).quality_report,
-        r#"{"ok":true,"issues":[]}"#,
-        "the '{{}}' placeholder must not clobber a real prior report"
+        value["resume"]["ok"], false,
+        "a letter-only save must not clobber the stored résumé sub-report"
     );
+}
 
-    // A genuinely fresh incoming report wins, even over a legacy '{}' existing.
-    let mut legacy_existing = record("g4", "https://acme.com/job/1");
-    legacy_existing.quality_report = "{}".into();
-    let mut fresh = record("g5", "https://acme.com/job/1");
-    fresh.quality_report = r#"{"ok":false,"issues":[{"code":"factual.dropped_role"}]}"#.into();
+/// A bundle exported before `qualityReport` existed carries no key at all;
+/// `#[serde(default)]` deserializes it to `""`. A later save on that imported
+/// row must not be blocked by the empty placeholder — it's simply unparseable,
+/// same as any other missing report.
+#[test]
+fn merge_quality_report_old_bundle_import_leaves_an_empty_report_a_later_save_can_fill() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let legacy = serde_json::json!([{
+        "id": "old-1", "createdAt": 1, "candidateName": "Jane", "jobTitle": "Engineer",
+        "companyName": "Acme", "resumeLanguage": "en", "jobAdLanguage": "en",
+        "targetLanguage": "en", "mismatch": false, "topRequirements": [],
+        "mode": "ats", "resumeText": "R", "coverLetterText": "C", "jobAd": "",
+        "jobUrl": "https://acme.com/job/1", "board": "linkedin"
+    }]);
+    crate::data_store::DataStore::import(&store, &legacy).unwrap();
+    assert_eq!(store.list()[0].quality_report, "");
+
+    let mut fresh = record("g2", "https://acme.com/job/1");
+    fresh.resume_text = String::new();
+    fresh.cover_letter_text = String::new();
+    fresh.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":500,"resume":{"ok":true}}"#.into();
+    store.save_application(fresh).unwrap();
+
     assert_eq!(
-        merge_application(legacy_existing, fresh).quality_report,
-        r#"{"ok":false,"issues":[{"code":"factual.dropped_role"}]}"#,
-        "a fresh incoming report must overwrite a legacy '{{}}' placeholder"
+        store.list()[0].quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":500,"resume":{"ok":true}}"#
+    );
+}
+
+/// A garbage/corrupt existing value (not parseable JSON at all) must not block
+/// a genuinely fresh incoming report — `incoming` wins outright since there is
+/// nothing to overlay a key onto.
+#[test]
+fn merge_quality_report_unparseable_existing_recovers_via_incoming() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report = "not json at all".into();
+
+    let mut incoming = record("g2", "https://acme.com/job/1");
+    incoming.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":600,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, incoming);
+    assert_eq!(
+        merged.quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":600,"resume":{"ok":true}}"#
     );
 }

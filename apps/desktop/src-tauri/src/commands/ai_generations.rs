@@ -1,7 +1,14 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::applications::clamp_to_bytes;
 use crate::ipc_contracts::ai::{AiGenerationSaveRequest, AiGenerationUpdateRequest};
+
+/// A direct IPC caller (not our own renderer, which never produces a report
+/// bigger than a few KB) could otherwise hand this column an unbounded blob.
+/// 256 KB comfortably covers the largest realistic wrapper (both sub-reports,
+/// dozens of issues each) with headroom to spare.
+const QUALITY_REPORT_MAX_BYTES: usize = 256 * 1024;
 
 #[tauri::command]
 pub async fn ai_generations_list(app: AppHandle) -> Value {
@@ -54,9 +61,12 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         email_body: req.email_body,
         application_id: None,
         // Absent = "this save carries no fresh report" — `save_application`'s
-        // merge (`pick_report`) keeps whatever report is already on the
-        // aggregate for exactly that case.
-        quality_report: req.quality_report.unwrap_or_default(),
+        // merge (`merge_quality_report`) keeps whatever report is already on
+        // the aggregate for exactly that case.
+        quality_report: clamp_to_bytes(
+            req.quality_report.unwrap_or_default(),
+            QUALITY_REPORT_MAX_BYTES,
+        ),
     };
 
     // ADR 0001: the Application aggregate is the source of truth for status +

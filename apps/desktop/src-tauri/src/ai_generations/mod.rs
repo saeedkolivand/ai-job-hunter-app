@@ -93,14 +93,20 @@ pub struct AiGenerationRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub application_id: Option<String>,
-    /// Deterministic content-quality report (`validate::content::ContentReport`,
-    /// serialized JSON; `''`/`'{}'` = no report) from the generation that most
-    /// recently wrote `resume_text`. A save that writes `resume_text` SHOULD carry
-    /// a fresh report — that's the renderer's job, this store just persists what
-    /// it's given. A manual post-save text edit via `AiGenerationUpdateRequest`
-    /// (`update_texts`) deliberately does NOT touch this column: it's a
-    /// generation-time snapshot, and a user's own edit doesn't invalidate it.
-    /// `default` keeps a pre-migration exported bundle importable.
+    /// Serialized JSON wrapper `{schemaVersion, pipeline, generatedAt, resume?,
+    /// coverLetter?}` (renderer-owned shape) holding the deterministic
+    /// content-quality report(s) — `''` = no report at all. A save merges its
+    /// incoming wrapper onto the existing one PER TOP-LEVEL KEY
+    /// (see [`merge_quality_report`]): a letter-only save overlays
+    /// `coverLetter` (plus the envelope fields it always carries) and leaves a
+    /// stored `resume` sub-report untouched, and vice versa. Each sub-report
+    /// may carry its own `sourceTextHash` so the renderer can flag it stale
+    /// against the CURRENT résumé/letter text — this store never clears a
+    /// report on a text edit, so staleness display is entirely the renderer's
+    /// read-time job. A manual post-save text edit via
+    /// `AiGenerationUpdateRequest` (`update_texts`) deliberately does NOT touch
+    /// this column either, for the same reason. `default` keeps a
+    /// pre-migration exported bundle importable.
     #[serde(rename = "qualityReport", default)]
     pub quality_report: String,
 }
@@ -344,17 +350,17 @@ impl AiGenerationStore {
                 Ok(())
             },
         },
-        // Additive: the deterministic content-quality report
-        // (`validate::content::ContentReport`, serialized JSON) from the
-        // generation that most recently wrote `resume_text` — see the field doc
-        // on `AiGenerationRecord::quality_report`. Old rows default to '{}' (an
-        // empty-object placeholder the merge/pick logic treats the same as '',
-        // i.e. "no report"), never touched again unless a future save carries one.
+        // Additive: the deterministic content-quality report — see the field
+        // doc on `AiGenerationRecord::quality_report`. Old rows default to ''
+        // (unparseable by `merge_quality_report`, i.e. "no report"), never
+        // touched again unless a future save carries one. Default is `''`, not
+        // `'{}'`: this migration is still unreleased on this branch, so the
+        // simpler default costs nothing — no shipped build has ever seen it.
         Migration {
             name: "add_quality_report",
             up: |conn| {
                 conn.execute_batch(
-                    "ALTER TABLE ai_generations ADD COLUMN quality_report TEXT NOT NULL DEFAULT '{}';",
+                    "ALTER TABLE ai_generations ADD COLUMN quality_report TEXT NOT NULL DEFAULT '';",
                 )
             },
         },
@@ -661,7 +667,7 @@ impl AiGenerationStore {
     }
 }
 
-/// Map a DB row (the full 22-column projection) to a record. Shared by `list`
+/// Map a DB row (the full 23-column projection) to a record. Shared by `list`
 /// and `find_by_job_url` so the column order lives in one place.
 fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
     let top_req_json: String = row.get(9)?;
@@ -703,23 +709,6 @@ fn merge_application(
     incoming: AiGenerationRecord,
 ) -> AiGenerationRecord {
     let pick = |inc: String, ex: String| if inc.trim().is_empty() { ex } else { inc };
-    // Same pick-non-empty rule as `pick`, but ALSO treats the literal '{}'
-    // placeholder (the column's NOT NULL default, backfilled onto every
-    // pre-migration row) as "carries no report" — otherwise a content-less save
-    // (answers-only, brief-only, …) landing on a legacy row would never see its
-    // '{}' replaced, which is harmless, but a caller that explicitly sent back
-    // '{}' (e.g. a cleared/reset report) must not clobber a real prior report.
-    let pick_report = |inc: String, ex: String| {
-        let is_empty = |s: &str| {
-            let t = s.trim();
-            t.is_empty() || t == "{}"
-        };
-        if is_empty(&inc) {
-            ex
-        } else {
-            inc
-        }
-    };
     // `mismatch` is derived from the resume/jobAd language pair, so it is only
     // meaningful when the incoming save actually carries that pair. An
     // answers-only / interview-only save leaves the language fields blank and its
@@ -784,8 +773,40 @@ fn merge_application(
         email_subject,
         email_body,
         application_id: incoming.application_id.or(existing.application_id),
-        quality_report: pick_report(incoming.quality_report, existing.quality_report),
+        quality_report: merge_quality_report(incoming.quality_report, existing.quality_report),
     }
+}
+
+/// Merge two `quality_report` wrapper blobs — `{schemaVersion, pipeline,
+/// generatedAt, resume?, coverLetter?}` (renderer-owned shape; each sub-report
+/// may itself carry a `sourceTextHash`, see the field doc on
+/// [`AiGenerationRecord::quality_report`]) — by TOP-LEVEL key, so a
+/// letter-only save updates only `coverLetter` (plus the envelope fields it
+/// always carries) and a résumé-only save updates only `resume`, without
+/// wiping whichever sub-report the OTHER save last wrote.
+///
+/// - `incoming` empty or not a parseable JSON object (a content-less save, or
+///   the migration's backfilled `''`) → `existing` is kept verbatim.
+/// - `existing` not a parseable JSON object but `incoming` is (nothing to
+///   overlay a key onto) → `incoming` wins outright.
+/// - Otherwise: every top-level key `incoming` carries — including
+///   `schemaVersion`/`pipeline`/`generatedAt` — overlays the same key on
+///   `existing`; every key only `existing` carries survives untouched.
+fn merge_quality_report(incoming: String, existing: String) -> String {
+    let Some(serde_json::Value::Object(incoming_obj)) =
+        serde_json::from_str::<serde_json::Value>(&incoming).ok()
+    else {
+        return existing;
+    };
+    let Some(serde_json::Value::Object(mut merged)) =
+        serde_json::from_str::<serde_json::Value>(&existing).ok()
+    else {
+        return incoming;
+    };
+    for (key, value) in incoming_obj {
+        merged.insert(key, value);
+    }
+    serde_json::to_string(&serde_json::Value::Object(merged)).unwrap_or(incoming)
 }
 
 pub fn make_generation_id() -> String {
