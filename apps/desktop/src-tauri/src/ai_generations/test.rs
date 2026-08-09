@@ -25,6 +25,7 @@ fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         email_subject: String::new(),
         email_body: String::new(),
         application_id: None,
+        quality_report: String::new(),
     }
 }
 
@@ -110,6 +111,7 @@ fn migration_defaults_link_fields_for_legacy_records() {
     assert!(list[0].interview_questions.is_empty());
     assert_eq!(list[0].email_subject, "");
     assert_eq!(list[0].email_body, "");
+    assert_eq!(list[0].quality_report, "");
 }
 
 /// A backup round-trip must carry the email draft — otherwise restoring a
@@ -1276,5 +1278,73 @@ fn export_import_round_trip_preserves_application_id() {
         dst.remove_for_application(app_id).unwrap(),
         1,
         "application_id must survive export/import so the link still matches"
+    );
+}
+
+// ── quality_report (ADR-007 addendum) ──────────────────────────────────────
+
+/// A backup round-trip must carry the quality report — otherwise restoring a
+/// backup silently drops the deterministic content-quality findings.
+#[test]
+fn export_import_round_trip_preserves_the_quality_report() {
+    let src_dir = TempDir::new().unwrap();
+    let src = AiGenerationStore::open(&src_dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = r#"{"ok":true,"issues":[],"metrics":{}}"#.into();
+    src.insert(&rec).unwrap();
+
+    let exported = crate::data_store::DataStore::export(&src);
+
+    let dst_dir = TempDir::new().unwrap();
+    let dst = AiGenerationStore::open(&dst_dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&dst, &exported).unwrap(),
+        1
+    );
+
+    assert_eq!(
+        dst.list()[0].quality_report,
+        r#"{"ok":true,"issues":[],"metrics":{}}"#
+    );
+}
+
+/// `quality_report` follows the same pick-non-empty rule as `company_brief`,
+/// but ALSO treats the literal '{}' placeholder (the column's migration
+/// default) as "no report" — a content-less save (answers-only) must not
+/// clobber a real prior report with that placeholder, and a legacy '{}' row
+/// must not block a genuinely fresh incoming report.
+#[test]
+fn merge_picks_a_non_empty_quality_report_and_ignores_the_empty_object_placeholder() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report = r#"{"ok":true,"issues":[]}"#.into();
+
+    // Content-less save: no report at all → existing report survives.
+    let mut answers_only = record("g2", "https://acme.com/job/1");
+    answers_only.quality_report = String::new();
+    assert_eq!(
+        merge_application(existing.clone(), answers_only).quality_report,
+        r#"{"ok":true,"issues":[]}"#,
+        "an empty incoming report must not clobber a real prior report"
+    );
+
+    // Legacy-placeholder save: incoming is the migration default '{}' → still
+    // treated as "no report", existing report survives.
+    let mut placeholder = record("g3", "https://acme.com/job/1");
+    placeholder.quality_report = "{}".into();
+    assert_eq!(
+        merge_application(existing.clone(), placeholder).quality_report,
+        r#"{"ok":true,"issues":[]}"#,
+        "the '{{}}' placeholder must not clobber a real prior report"
+    );
+
+    // A genuinely fresh incoming report wins, even over a legacy '{}' existing.
+    let mut legacy_existing = record("g4", "https://acme.com/job/1");
+    legacy_existing.quality_report = "{}".into();
+    let mut fresh = record("g5", "https://acme.com/job/1");
+    fresh.quality_report = r#"{"ok":false,"issues":[{"code":"factual.dropped_role"}]}"#.into();
+    assert_eq!(
+        merge_application(legacy_existing, fresh).quality_report,
+        r#"{"ok":false,"issues":[{"code":"factual.dropped_role"}]}"#,
+        "a fresh incoming report must overwrite a legacy '{{}}' placeholder"
     );
 }

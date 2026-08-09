@@ -39,6 +39,15 @@ export interface AiGenerationRecord {
    * RAW one (they never match for query-id boards like Indeed). Absent when unlinked.
    */
   applicationId?: string;
+  /**
+   * Deterministic content-quality report (serialized `ContentReport` JSON from
+   * `validate::content::validate_content`) for the generation that most
+   * recently wrote `resumeText`/`coverLetterText`. Absent/empty means no report
+   * has been computed yet (or the row predates this field). See ADR-007
+   * addendum — a manual text edit via {@link AiGenerationUpdateRequest}
+   * deliberately never clears this.
+   */
+  qualityReport?: string;
 }
 
 export interface AiGenerationSaveRequest {
@@ -71,6 +80,13 @@ export interface AiGenerationSaveRequest {
    */
   emailSubject?: string;
   emailBody?: string;
+  /**
+   * Deterministic content-quality report to persist alongside this save (see
+   * {@link AiGenerationRecord.qualityReport}). Renderer's job to compute it
+   * (typically right after a resume/cover regeneration) and pass it here; an
+   * absent/empty value leaves whatever report is already on the aggregate.
+   */
+  qualityReport?: string;
 }
 
 /**

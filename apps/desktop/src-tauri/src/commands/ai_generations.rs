@@ -53,6 +53,10 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         email_subject: req.email_subject,
         email_body: req.email_body,
         application_id: None,
+        // Absent = "this save carries no fresh report" — `save_application`'s
+        // merge (`pick_report`) keeps whatever report is already on the
+        // aggregate for exactly that case.
+        quality_report: req.quality_report.unwrap_or_default(),
     };
 
     // ADR 0001: the Application aggregate is the source of truth for status +

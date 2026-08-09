@@ -377,6 +377,12 @@ export const AiGenerationSaveSchema = z.object({
   // strings: the UI edits and copies subject and body independently.
   emailSubject: z.string().default(''),
   emailBody: z.string().default(''),
+  // Deterministic content-quality report (serialized `ContentReport` JSON) for
+  // THIS save's resume/cover text — see ADR-007 addendum. Optional: only a save
+  // that regenerates resume_text carries a fresh one; every other save (answers,
+  // brief, email draft) omits it and the merge keeps whatever report is already
+  // on the aggregate.
+  qualityReport: z.string().optional(),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.

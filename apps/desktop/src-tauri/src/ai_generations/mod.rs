@@ -93,6 +93,16 @@ pub struct AiGenerationRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub application_id: Option<String>,
+    /// Deterministic content-quality report (`validate::content::ContentReport`,
+    /// serialized JSON; `''`/`'{}'` = no report) from the generation that most
+    /// recently wrote `resume_text`. A save that writes `resume_text` SHOULD carry
+    /// a fresh report — that's the renderer's job, this store just persists what
+    /// it's given. A manual post-save text edit via `AiGenerationUpdateRequest`
+    /// (`update_texts`) deliberately does NOT touch this column: it's a
+    /// generation-time snapshot, and a user's own edit doesn't invalidate it.
+    /// `default` keeps a pre-migration exported bundle importable.
+    #[serde(rename = "qualityReport", default)]
+    pub quality_report: String,
 }
 
 /// Repair pre-#955 mojibake in `resume_text`/`cover_letter_text` on every
@@ -334,6 +344,20 @@ impl AiGenerationStore {
                 Ok(())
             },
         },
+        // Additive: the deterministic content-quality report
+        // (`validate::content::ContentReport`, serialized JSON) from the
+        // generation that most recently wrote `resume_text` — see the field doc
+        // on `AiGenerationRecord::quality_report`. Old rows default to '{}' (an
+        // empty-object placeholder the merge/pick logic treats the same as '',
+        // i.e. "no report"), never touched again unless a future save carries one.
+        Migration {
+            name: "add_quality_report",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_generations ADD COLUMN quality_report TEXT NOT NULL DEFAULT '{}';",
+                )
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -368,7 +392,7 @@ impl AiGenerationStore {
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
                     job_url, board, application_answers, company_brief, application_id,
-                    interview_questions, email_subject, email_body
+                    interview_questions, email_subject, email_body, quality_report
              FROM ai_generations ORDER BY created_at DESC",
         )
         .ok()
@@ -392,7 +416,7 @@ impl AiGenerationStore {
                     resume_language, job_ad_language, target_language, mismatch,
                     top_requirements, mode, resume_text, cover_letter_text, job_ad,
                     job_url, board, application_answers, company_brief, application_id,
-                    interview_questions, email_subject, email_body
+                    interview_questions, email_subject, email_body, quality_report
              FROM ai_generations WHERE job_url = ?1 ORDER BY created_at DESC LIMIT 1",
         )
         .ok()
@@ -413,8 +437,8 @@ impl AiGenerationStore {
               resume_language, job_ad_language, target_language, mismatch,
               top_requirements, mode, resume_text, cover_letter_text, job_ad,
               job_url, board, application_answers, company_brief, application_id,
-              interview_questions, email_subject, email_body)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
+              interview_questions, email_subject, email_body, quality_report)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
             params![
                 rec.id,
                 ts_to_db(rec.created_at),
@@ -438,6 +462,7 @@ impl AiGenerationStore {
                 interview_questions_json,
                 rec.email_subject,
                 rec.email_body,
+                rec.quality_report,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -460,7 +485,8 @@ impl AiGenerationStore {
               mismatch = ?8, top_requirements = ?9, mode = ?10, resume_text = ?11,
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
               application_answers = ?16, company_brief = ?17, application_id = ?18,
-              interview_questions = ?19, email_subject = ?20, email_body = ?21
+              interview_questions = ?19, email_subject = ?20, email_body = ?21,
+              quality_report = ?22
              WHERE id = ?1",
             params![
                 rec.id,
@@ -484,6 +510,7 @@ impl AiGenerationStore {
                 interview_questions_json,
                 rec.email_subject,
                 rec.email_body,
+                rec.quality_report,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -663,6 +690,7 @@ fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<AiGenerationRecord> {
         interview_questions: serde_json::from_str(&interview_questions_json).unwrap_or_default(),
         email_subject: row.get(20)?,
         email_body: row.get(21)?,
+        quality_report: row.get(22)?,
     })
 }
 
@@ -675,6 +703,23 @@ fn merge_application(
     incoming: AiGenerationRecord,
 ) -> AiGenerationRecord {
     let pick = |inc: String, ex: String| if inc.trim().is_empty() { ex } else { inc };
+    // Same pick-non-empty rule as `pick`, but ALSO treats the literal '{}'
+    // placeholder (the column's NOT NULL default, backfilled onto every
+    // pre-migration row) as "carries no report" — otherwise a content-less save
+    // (answers-only, brief-only, …) landing on a legacy row would never see its
+    // '{}' replaced, which is harmless, but a caller that explicitly sent back
+    // '{}' (e.g. a cleared/reset report) must not clobber a real prior report.
+    let pick_report = |inc: String, ex: String| {
+        let is_empty = |s: &str| {
+            let t = s.trim();
+            t.is_empty() || t == "{}"
+        };
+        if is_empty(&inc) {
+            ex
+        } else {
+            inc
+        }
+    };
     // `mismatch` is derived from the resume/jobAd language pair, so it is only
     // meaningful when the incoming save actually carries that pair. An
     // answers-only / interview-only save leaves the language fields blank and its
@@ -739,6 +784,7 @@ fn merge_application(
         email_subject,
         email_body,
         application_id: incoming.application_id.or(existing.application_id),
+        quality_report: pick_report(incoming.quality_report, existing.quality_report),
     }
 }
 
@@ -789,8 +835,8 @@ impl DataStore for AiGenerationStore {
                   resume_language, job_ad_language, target_language, mismatch,
                   top_requirements, mode, resume_text, cover_letter_text, job_ad,
                   job_url, board, application_answers, company_brief, application_id,
-                  interview_questions, email_subject, email_body)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
+                  interview_questions, email_subject, email_body, quality_report)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
                 params![
                     rec.id,
                     ts_to_db(rec.created_at),
@@ -814,6 +860,7 @@ impl DataStore for AiGenerationStore {
                     interview_questions_json,
                     rec.email_subject,
                     rec.email_body,
+                    rec.quality_report,
                 ],
             )?;
         }
