@@ -1481,6 +1481,65 @@ fn validation_is_deterministic() {
 fn duplicate_threshold_is_pinned() {
     assert_eq!(duplicates::DUPLICATE_JACCARD_THRESHOLD, 0.8);
     assert_eq!(duplicates::MIN_TOKENS_FOR_DUPLICATE, 4);
+    assert_eq!(duplicates::MAX_DUP_BULLETS, 400);
+}
+
+/// M-2: the near-duplicate scan is O(bullets²) — before [`duplicates::MAX_DUP_BULLETS`],
+/// a malformed/hostile document with thousands of bullet-shaped lines held a
+/// tokio worker for seconds on every save. A pathological bullet count must
+/// both (a) return fast and (b) still flag a genuine duplicate placed well
+/// inside the cap — the cap must never silently disable the check entirely.
+#[test]
+fn pathological_bullet_count_returns_quickly_and_still_flags_a_duplicate_within_the_cap() {
+    let mut generated =
+        String::from("Jane Doe
+
+EXPERIENCE
+
+Engineer | Acme | 2020 - Present
+");
+    // A genuine duplicate pair, placed at the very start — well inside
+    // MAX_DUP_BULLETS regardless of how many filler bullets follow.
+    generated.push_str(
+        "- Cut checkout latency from 480ms to 90ms with a Redis cache in front of the ledger
+",
+    );
+    generated.push_str(
+        "- Cut checkout latency from 480ms to 90ms with a Redis cache in front of the ledger service
+",
+    );
+    // Far more bullets than the cap — a real résumé never has anywhere close
+    // to this many.
+    for i in 0..6_000 {
+        generated.push_str(&format!(
+            "- Delivered feature rollout {i} across the payments platform for the {i} team
+"
+        ));
+    }
+
+    let input = ContentInput {
+        generated: &generated,
+        source_resume: EN_SOURCE,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    };
+    let ctx = Analysis::new(&input);
+
+    let start = std::time::Instant::now();
+    let (issues, ratio) = duplicates::validate(&ctx);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "the pairwise duplicate scan must stay bounded past MAX_DUP_BULLETS bullets,          took {elapsed:?}"
+    );
+    assert!(
+        issues.iter().any(|i| i.code == DUPLICATE_BULLET),
+        "a genuine duplicate well inside the cap must still be flagged"
+    );
+    assert!(ratio > 0.0, "duplicateRatio must reflect the flagged pair");
 }
 
 #[test]
