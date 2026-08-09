@@ -682,7 +682,7 @@
     },
     "companyResearch": {
       "title": "Company Research",
-      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key — only Ollama needs the free Ollama account key below.",
+      "description": "Adds a short, factual company brief to cover letters and application answers, using your active AI provider's own web search. Cloud and CLI providers search with their own key; Ollama needs the free Ollama account key below.",
       "connected": "Connected — Ollama account key stored",
       "remove": "Remove",
       "getKeyAt": "Get a free Ollama key at",
@@ -693,7 +693,20 @@
       "removed": "Ollama key removed.",
       "removeConfirmTitle": "Remove Ollama key?",
       "removeConfirmDesc": "This deletes your saved Ollama account key. Company research stops until you add a key again.",
-      "saveError": "Couldn't save the key."
+      "saveError": "Couldn't save the key.",
+      "fallbackDescription": "Fallback search — used only when your provider has no web search of its own (any OpenAI-compatible server, or Ollama without the key above). A provider that can already search is never switched to Exa.",
+      "exaConnected": "Connected — Exa key stored",
+      "exaGetKeyAt": "Get an Exa key at",
+      "exaKeyPlaceholder": "Paste your Exa API key…",
+      "exaNote": "Pay-as-you-go, with free monthly credit.",
+      "exaSaved": "Exa key saved.",
+      "exaRemoved": "Exa key removed.",
+      "exaRemoveConfirmTitle": "Remove Exa key?",
+      "exaRemoveConfirmDesc": "This deletes your saved Exa key. Providers without their own web search stop producing a company brief.",
+      "showKey": "Show key",
+      "hideKey": "Hide key",
+      "ollamaFieldLabel": "Ollama API key",
+      "exaFieldLabel": "Exa API key"
     },
     "aggregatorKeys": {
       "title": "Job search providers",

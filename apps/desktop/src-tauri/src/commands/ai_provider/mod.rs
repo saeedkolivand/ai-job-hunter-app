@@ -27,6 +27,7 @@ mod ollama_cloud;
 mod openai;
 mod research; // shared company-research prompt spec + helpers used by every `research()`
 mod retry; // bounded exponential backoff for the non-streaming complete/embed paths
+pub mod search; // web-search backends (the retrieval half of research) — NOT AI providers
 mod stream; // shared streaming loop (cancel-check + chunk read + emit + complete) for cloud adapters
 pub(crate) mod timeouts; // semantically-named per-request HTTP timeouts (pure extraction of the magic-number literals)
 
@@ -834,13 +835,47 @@ pub trait AiProvider: Send + Sync {
         Ok((text, Usage::default()))
     }
 
-    /// Produce a ~150-word company-research brief using **this provider's own**
-    /// web search — a native search tool (OpenAI/Anthropic/Gemini), the agent's
-    /// own web tools (CLI agents), or the Ollama Web Search API (Ollama family).
-    /// Returns `""` (never an error) when the provider can't search or isn't
-    /// configured, so research degrades gracefully and generation always proceeds.
-    /// Default: no research. The brief is untrusted reference context — fenced
-    /// downstream and never a source of candidate facts.
+    /// Whether this provider's MODEL performs the search itself, so
+    /// [`Self::research`] is a single native call.
+    ///
+    /// The routing question, asked once in `Completer::research*`. False means
+    /// the search-then-synthesize path runs instead, which is what lets a
+    /// provider with no search of its own use a configured backend.
+    ///
+    /// Defaults to the advertised capability. The Ollama family overrides it to
+    /// `false`: it advertises search for the FAMILY, but the model does not
+    /// search — a separate hosted API does, via [`Self::native_searcher`].
+    fn has_native_search(&self, model: &str) -> bool {
+        self.capabilities(model).supports_web_search
+    }
+
+    /// This provider's OWN search backend, when it is usable right now.
+    ///
+    /// Only the Ollama family implements it: its search is a separate HTTP API
+    /// with its own account key, so "can search" is a runtime question. Providers
+    /// whose model searches for itself override [`Self::research`] and never
+    /// consult this; providers with no search leave both alone and inherit the
+    /// fallback below. A NEW provider needs no change either way.
+    fn native_searcher(
+        &self,
+        _app: &AppHandle,
+        _model: &str,
+    ) -> Option<Box<dyn search::WebSearcher>> {
+        None
+    }
+
+    /// Produce a ~150-word company-research brief with the provider's OWN
+    /// model-side web search.
+    ///
+    /// Only reached when [`Self::has_native_search`] is true —
+    /// `Completer::research` routes everything else through
+    /// [`search::searched_research`]. Implement this ONLY if the model searches
+    /// for itself; a provider that needs an explicit search backend implements
+    /// [`Self::native_searcher`] instead and leaves this alone.
+    ///
+    /// Returns `""` (never an error) when the search finds nothing, so
+    /// generation always proceeds. The brief is untrusted reference context —
+    /// fenced downstream and never a source of candidate facts.
     async fn research(
         &self,
         _app: &AppHandle,

@@ -428,23 +428,9 @@ struct FakeAnswerSearcher {
     calls: std::sync::atomic::AtomicUsize,
 }
 
-fn capabilities_with(supports_web_search: bool) -> crate::commands::ai_provider::ModelCapabilities {
-    crate::commands::ai_provider::ModelCapabilities {
-        supports_temperature: true,
-        supports_system_role: true,
-        supports_streaming: true,
-        supports_reasoning: false,
-        supports_tools: false,
-        supports_json_mode: false,
-        supports_embeddings: false,
-        supports_web_search,
-        token_param: crate::commands::ai_provider::TokenParam::MaxTokens,
-    }
-}
-
 impl crate::commands::ai::AnswerSearcher for FakeAnswerSearcher {
-    fn capabilities(&self) -> crate::commands::ai_provider::ModelCapabilities {
-        capabilities_with(self.supports_web_search)
+    fn research_available(&self) -> bool {
+        self.supports_web_search
     }
 
     async fn research_answer(
@@ -505,8 +491,8 @@ async fn fetch_web_notes_charges_the_daily_budget_then_returns_the_matched_role_
 async fn fetch_web_notes_degrades_to_empty_when_the_search_fails() {
     struct ErrSearcher;
     impl crate::commands::ai::AnswerSearcher for ErrSearcher {
-        fn capabilities(&self) -> crate::commands::ai_provider::ModelCapabilities {
-            capabilities_with(true)
+        fn research_available(&self) -> bool {
+            true
         }
         async fn research_answer(
             &self,
