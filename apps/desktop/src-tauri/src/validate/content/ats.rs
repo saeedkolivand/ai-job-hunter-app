@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use crate::documents::evidence::{years_in, SectionKind};
+use crate::documents::evidence::{function_words, years_in, SectionKind};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::{is_contact_shaped, is_first_line_contact_shaped};
 use crate::export::types::{LineKind, ParsedLine};
@@ -51,8 +51,22 @@ const REQUIRED_SECTIONS: &[(SectionKind, &str)] = &[
 ];
 
 /// `ats.keyword_density` — one keyword repeated past the stuffing threshold.
+///
+/// The counted tokens are filtered through [`function_words`] for the target
+/// language first. The kernel's own `STOPWORDS` is English-only and its length
+/// test counts BYTES, so every German function word wide enough to survive it
+/// (`durch`, `eine`, `werden`, `wurde`, `sowie`, and `für` at four bytes)
+/// counted as a keyword — and ordinary German prose, which repeats those the
+/// way English repeats "the", was accused of keyword stuffing. Same list the
+/// evidence extractor keeps function words out of the skills gap with: a word
+/// that is not a skill is not a stuffed keyword either. Filtering happens
+/// BEFORE `total`, so the density denominator is content words only.
 fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let tokens = keywords_normalized_list(ctx.input.generated);
+    let stop = function_words(&ctx.lang);
+    let tokens: Vec<String> = keywords_normalized_list(ctx.input.generated)
+        .into_iter()
+        .filter(|t| !stop.contains(&t.as_str()))
+        .collect();
     if tokens.is_empty() {
         return Vec::new();
     }

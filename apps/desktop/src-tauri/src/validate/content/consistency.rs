@@ -7,10 +7,10 @@
 
 use std::collections::HashSet;
 
-use crate::documents::evidence::{years_in, SectionKind};
+use crate::documents::evidence::{identity_tokens, years_in, SectionKind};
 use crate::export::types::{LineKind, ParsedLine};
 
-use super::factual::MAX_SCANNED_ENTRIES;
+use super::factual::{MAX_SCANNED_ENTRIES, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS};
 use super::{
     issue, Analysis, ContentIssue, Section, CONSISTENCY_DATE_ORDER, CONSISTENCY_PROJECT_STRUCTURE,
     CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONSISTENCY_TITLE_DRIFT,
@@ -70,14 +70,19 @@ fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
                 .split_once(['|', '·', '•', ','])
                 .map(|(t, c)| (t.trim().to_string(), c.to_string()))
                 .unwrap_or_else(|| (String::new(), label.to_string()));
-            // The split above keeps the date span inside `company`, so the year
-            // tokens have to go: two unrelated employers that merely ended and
-            // began in the same year shared "2018" and got matched to each
-            // other, reporting the second one's title as drift from the first.
-            let tokens = company
-                .split(|c: char| !c.is_alphanumeric())
-                .map(str::to_lowercase)
-                .filter(|t| t.chars().count() >= 4)
+            // Only tokens that name a SPECIFIC employer may match two entries to
+            // each other, so the identity set is `documents::evidence`'s —
+            // the same legal-form and geography exclusions `factual` decides
+            // survival on. Sharing a "GmbH" (or a "Berlin") made two unrelated
+            // employers the same employer, and the second entry's title was
+            // then reported as drift from the first one's on a document that
+            // was byte-identical to its source.
+            //
+            // Digits go on top of that, and only here: the split above keeps
+            // the date span inside `company`, so two unrelated employers that
+            // merely ended and began in the same year shared "2018".
+            let tokens = identity_tokens(&company, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS)
+                .into_iter()
                 .filter(|t| !t.chars().any(|c| c.is_ascii_digit()))
                 .collect();
             (tokens, title)

@@ -43,12 +43,44 @@ pub const MIN_JOB_SPECIFIC_TOKENS_IN_LETTER: usize = 2;
 /// Conjunctions that close a "X, Y, and Z" triplet, per supported language.
 const TRIPLET_CONJUNCTIONS: &[&str] = &[", and ", ", und ", ", or ", ", oder ", ", sowie "];
 
+/// German adjective/participle endings the [`lexicon`]'s DE entries may carry.
+///
+/// The lexicon is GENERATED from `natural-voice.ts` and stores uninflected
+/// stems ("nahtlos", "robust", "maßgeschneidert"), while German writes the
+/// declined form ("nahtlose Integration", "robuste Systeme", "maßgeschneiderte
+/// Lösungen"). [`contains_phrase`] requires a word boundary at both ends, so
+/// the entire German half of the lexical check matched nothing on real output.
+///
+/// This is the full weak/strong declension paradigm and nothing else — a
+/// bounded suffix, never an open-ended prefix match, so "roberta" still cannot
+/// fire "robert".
+const DE_INFLECTION_SUFFIXES: &[&str] = &["e", "em", "en", "er", "es"];
+
+/// [`contains_phrase`], plus a bounded inflection suffix for German.
+///
+/// DE-only by construction: for every other language this is exactly
+/// `contains_phrase`, so English keeps the both-ends word boundary it has
+/// always had ("harnesses" does not fire the banned "harness"). Matching the
+/// suffixed form through `contains_phrase` rather than loosening the boundary
+/// rule keeps ONE definition of a word boundary in the pipeline.
+fn contains_lexicon_phrase(haystack: &str, phrase: &str, lang: &str) -> bool {
+    contains_phrase(haystack, phrase)
+        || (lang == "de"
+            && DE_INFLECTION_SUFFIXES
+                .iter()
+                .any(|suffix| contains_phrase(haystack, &format!("{phrase}{suffix}"))))
+}
+
 /// `voice.ai_tell_lexical` — a banned word or phrase the prompt told the model
 /// not to use.
 ///
 /// Both lexicon tiers feed this one code: the lexical list always, and the
 /// prose-pattern list only for connected writing, where those rules apply. The
-/// matched phrase is the issue's evidence, so the user sees exactly what fired.
+/// matched LEXICON ENTRY is the issue's evidence, so the user sees which ban
+/// fired — for German that is the uninflected stem ("nahtlos") even when the
+/// document wrote "nahtlose", because the entry is what the prompt banned and
+/// the inflected form is still findable from it (see
+/// [`contains_lexicon_phrase`]).
 ///
 /// ## Scoped exactly like the prompt that issued the ban
 ///
@@ -77,8 +109,12 @@ fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
         .into_iter()
         .flatten()
         .copied()
-        .filter(|phrase| contains_phrase(&haystack, phrase))
-        .filter(|phrase| !contains_phrase(&source, phrase))
+        // Both sides go through the same matcher: an inflected form the
+        // candidate's own résumé already uses must exempt the stem exactly as a
+        // verbatim one does, or the DE tolerance would turn the source
+        // exemption into a one-way ratchet.
+        .filter(|phrase| contains_lexicon_phrase(&haystack, phrase, &ctx.lang))
+        .filter(|phrase| !contains_lexicon_phrase(&source, phrase, &ctx.lang))
         .collect();
     hits.sort_unstable();
     hits.dedup();

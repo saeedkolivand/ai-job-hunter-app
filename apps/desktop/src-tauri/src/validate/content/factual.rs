@@ -10,7 +10,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::documents::evidence::{split_entry, years_in, SectionKind, PRESENT_MARKERS};
+use crate::documents::evidence::{
+    identity_tokens, split_entry, years_in, SectionKind, LEGAL_FORMS, PRESENT_MARKERS,
+};
 use crate::documents::keywords::{keywords_normalized, SHORT_TECH_TERMS, SYNONYMS};
 use crate::export::types::LineKind;
 
@@ -24,6 +26,11 @@ use super::{
 /// enough to decide a role went missing. "AG", "Inc" or "The" appearing
 /// nowhere in the output proves nothing.
 pub const MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS: usize = 4;
+
+/// Minimum characters of a company token that counts as EVIDENCE the entry
+/// survived. Two, not four — see [`survival_tokens`] for why the two bars
+/// differ.
+pub const MIN_SURVIVAL_COMPANY_TOKEN_CHARS: usize = 2;
 
 /// Hard cap on how many employment entries the entry-vs-document scans consider
 /// — [`dropped_role_issues`] here and `consistency::title_drift_issues`, which
@@ -320,63 +327,16 @@ fn word_numbers(text: &str) -> HashSet<String> {
         .collect()
 }
 
-/// Legal-form suffixes: they name a corporate structure, never an employer.
-/// "GmbH" appearing in the output proves nothing about which GmbH.
-const LEGAL_FORMS: &[&str] = &[
-    "gmbh",
-    "corp",
-    "corporation",
-    "limited",
-    "incorporated",
-    "holding",
-    "group",
-    "company",
-    "inc",
-    "ltd",
-    "llc",
-    "plc",
-    "ag",
-    "kg",
-    "se",
-    "bv",
-    "nv",
-    "sa",
-    "srl",
-    "spa",
-];
-
-/// Country/region tokens a subsidiary's legal name carries. Same argument as
-/// [`LEGAL_FORMS`]: "Deutschland" in the output is not evidence that *this*
-/// employer survived, so neither may be the SOLE reason an entry is spared.
-const GEOGRAPHY_TOKENS: &[&str] = &[
-    "deutschland",
-    "germany",
-    "österreich",
-    "austria",
-    "schweiz",
-    "switzerland",
-    "europe",
-    "europa",
-    "emea",
-    "apac",
-    "dach",
-    "international",
-    "global",
-    "worldwide",
-    "berlin",
-    "münchen",
-    "munich",
-    "hamburg",
-    "wien",
-    "zürich",
-];
-
 /// Company tokens distinctive enough to decide whether an entry is CHECKABLE at
 /// all.
 ///
-/// Lowercased alphanumeric tokens of `MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS`+
+/// Lowercased alphanumeric tokens of [`MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS`]+
 /// characters, minus legal-form suffixes that carry no identity. An entry with
 /// none of these is skipped rather than guessed at.
+///
+/// Geography is deliberately NOT excluded here — it is what makes "IBM
+/// Deutschland GmbH" a checkable entry at all — which is why this cannot simply
+/// be [`identity_tokens`].
 fn distinctive_tokens(company: &str) -> Vec<String> {
     company
         .split(|c: char| !c.is_alphanumeric())
@@ -386,8 +346,9 @@ fn distinctive_tokens(company: &str) -> Vec<String> {
         .collect()
 }
 
-/// Company tokens that count as EVIDENCE the entry survived — down to two
-/// characters, because that is how short a real employer's name gets.
+/// Company tokens that count as EVIDENCE the entry survived — down to
+/// [`MIN_SURVIVAL_COMPANY_TOKEN_CHARS`] characters, because that is how short a
+/// real employer's name gets.
 ///
 /// The asymmetry with [`distinctive_tokens`] is the whole point. Deciding an
 /// entry is checkable needs a distinctive 4+ character token; deciding it
@@ -397,16 +358,12 @@ fn distinctive_tokens(company: &str) -> Vec<String> {
 /// never says it.
 ///
 /// Legal forms and geography are excluded here for the opposite reason they are
-/// excluded above: they must never be the sole evidence of survival, since every
-/// German résumé mentions "GmbH" and "Berlin" somewhere.
+/// kept above: they must never be the sole evidence of survival, since every
+/// German résumé mentions "GmbH" and "Berlin" somewhere. The lists live in
+/// `documents::evidence` so `consistency::titled_entries` matches employers on
+/// the same identity tokens this decides survival on.
 fn survival_tokens(company: &str) -> Vec<String> {
-    company
-        .split(|c: char| !c.is_alphanumeric())
-        .map(str::to_lowercase)
-        .filter(|t| t.chars().count() >= 2)
-        .filter(|t| !LEGAL_FORMS.contains(&t.as_str()))
-        .filter(|t| !GEOGRAPHY_TOKENS.contains(&t.as_str()))
-        .collect()
+    identity_tokens(company, MIN_SURVIVAL_COMPANY_TOKEN_CHARS)
 }
 
 /// Whether `company` still appears in the generated text.
@@ -456,8 +413,8 @@ pub(super) fn count_roles(sections: &[Section]) -> usize {
 /// "did this entry survive?" are different questions:
 ///
 /// * **CHECKABLE** needs a distinctive company token — 4+ characters, legal
-///   forms removed ([`distinctive_tokens`]). An entry with none is skipped
-///   rather than guessed at.
+///   forms removed ([`distinctive_tokens`]) — AND at least one survival token
+///   to look for. An entry with neither is skipped rather than guessed at.
 /// * **SURVIVED** accepts any company token of two characters or more
 ///   ([`company_survives`]). A shortened company name is normal tailoring: "IBM
 ///   Deutschland GmbH" written as "IBM", "SAP SE" as "SAP". Requiring the
@@ -481,8 +438,15 @@ fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         // [`MAX_SCANNED_ENTRIES`].
         .take(MAX_SCANNED_ENTRIES)
         .filter_map(|(company, dates)| {
-            if distinctive_tokens(&company).is_empty() {
-                return None; // Not checkable — never guessed at.
+            // Not checkable — never guessed at. BOTH halves are required: an
+            // entry with no distinctive token cannot be identified, and one
+            // with no SURVIVAL token has no evidence that could ever spare it,
+            // so `company_survives` would answer false however faithful the
+            // output is. "Deutschland GmbH", "Global Group" and a bare "Berlin"
+            // are all in the second bucket, and each produced an unavoidable
+            // Critical while the employer sat verbatim in the document.
+            if distinctive_tokens(&company).is_empty() || survival_tokens(&company).is_empty() {
+                return None;
             }
             if company_survives(&generated_lower, &company) {
                 return None;

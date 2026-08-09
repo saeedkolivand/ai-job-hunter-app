@@ -1524,6 +1524,214 @@ fn entry_scans_are_capped_like_the_duplicate_scan() {
     );
 }
 
+// ── Round-4 regressions (one per reproduced review finding) ─────────────────
+
+/// R4-F1 — an employer whose name reduces to NOTHING but geography and a legal
+/// form ("Deutschland GmbH", "Global Group", a bare "Berlin") is still
+/// CHECKABLE (`distinctive_tokens` keeps "deutschland"/"global"/"berlin") but
+/// has an EMPTY survival-token list, so `company_survives` answered false
+/// whatever the document said. The result was an unavoidable Critical claiming
+/// the role had vanished while the employer sat VERBATIM in the output.
+///
+/// Same family as `shortened_company_names_are_not_dropped_roles`: no possible
+/// evidence means no accusation.
+#[test]
+fn companies_made_only_of_geography_and_legal_form_are_never_dropped_roles() {
+    for company in ["Deutschland GmbH", "Global Group", "Berlin"] {
+        let doc = format!(
+            "EXPERIENCE\n\n\
+             Software Engineer | {company} | 2018 - 2021\n\
+             - Built the billing service in Java\n"
+        );
+        // Source and output are byte-identical: there is nothing to accuse.
+        silent(
+            &report_for(&doc, &doc, EN_JOB_AD, &[]),
+            FACTUAL_DROPPED_ROLE,
+        );
+    }
+
+    // The check still works where evidence is POSSIBLE: one identity token
+    // ("acme"), and the output never says it.
+    let source = "EXPERIENCE\n\n\
+                  Software Engineer | Acme Deutschland GmbH | 2018 - 2021\n\
+                  - Built the billing service in Java\n";
+    let dropped = "EXPERIENCE\n\n\
+                   Software Engineer | Globex | 2018 - 2021\n\
+                   - Built the billing service in Java\n";
+    fired(
+        &report_for(dropped, source, EN_JOB_AD, &[]),
+        FACTUAL_DROPPED_ROLE,
+    );
+}
+
+/// R4-F3 — `titled_entries` stripped digits from its identity tokens but not
+/// legal forms or geography, so two UNRELATED employers that merely share
+/// "GmbH" (or a city) matched as the same employer and their titles were
+/// compared. Reproduced on a document that is byte-identical to its source:
+/// the second entry's title was reported as drift from the FIRST entry's.
+#[test]
+fn title_drift_does_not_match_employers_on_a_shared_legal_form_or_city() {
+    for shared in ["GmbH", ", Berlin"] {
+        let doc = format!(
+            "EXPERIENCE\n\n\
+             Senior Engineer | Northwind Systems {shared} | 2018 - 2021\n\
+             - Ran the integration platform\n\n\
+             Product Manager | Vitesse Logistics {shared} | 2015 - 2018\n\
+             - Owned the roadmap for the carrier portal\n"
+        );
+        silent(
+            &report_for(&doc, &doc, EN_JOB_AD, &[]),
+            CONSISTENCY_TITLE_DRIFT,
+        );
+    }
+}
+
+/// R4-F4 — `ats.keyword_density` counted tokens filtered by an ENGLISH-only
+/// stopword list and a BYTE-length test, so ordinary German function words
+/// ("werden", "wurde", "durch", "für") counted toward the stuffing thresholds
+/// and a truthful German résumé was accused of keyword stuffing.
+///
+/// The fixture is a realistic German résumé, not a synthetic repeat: passive
+/// voice ("wurde … umgestellt") and "verantwortlich für" are how German
+/// résumés are written.
+#[test]
+fn ordinary_german_prose_is_not_keyword_stuffing() {
+    let resume = "\
+Max Mustermann
+max.mustermann@example.de | +49 30 1234567
+
+BERUFSERFAHRUNG
+
+Senior Backend Engineer | Nordwind Systeme | 2021 - Heute
+- Verantwortlich für die Zahlungsplattform, die von vier Teams genutzt wird
+- Die Abrechnung wurde auf Rust umgestellt, wodurch die Wartezeit sank
+- Der Betrieb wurde auf Kubernetes umgezogen und durch Terraform beschrieben
+- Verantwortlich für die Bereitschaft und für das Monitoring der Dienste
+
+Backend Developer | Globex Logistik | 2018 - 2021
+- Die Schnittstelle wurde in Python neu gebaut und durch Tests abgesichert
+- Verantwortlich für die Migration zu AWS, die in drei Etappen erfolgte
+- Die Datenbank wurde durch PostgreSQL ersetzt und durch Redis entlastet
+
+KENNTNISSE
+
+Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis
+
+AUSBILDUNG
+
+BSc Informatik, TU Berlin, 2014 - 2018
+";
+    let report = validate_content(&ContentInput {
+        generated: resume,
+        source_resume: resume,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let stuffing: Vec<&str> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == ATS_KEYWORD_DENSITY)
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        stuffing.is_empty(),
+        "German function words must not read as stuffed keywords; got {stuffing:?}"
+    );
+
+    // The check still catches real stuffing in German: a genuine skill token
+    // repeated past the occurrence ceiling is not a function word.
+    let stuffed = resume.replace(
+        "- Verantwortlich für die Bereitschaft und für das Monitoring der Dienste",
+        "- Kubernetes Kubernetes Kubernetes Kubernetes Kubernetes Kubernetes Kubernetes",
+    );
+    fired(
+        &validate_content(&ContentInput {
+            generated: &stuffed,
+            source_resume: &stuffed,
+            job_ad: DE_JOB_AD,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::Resume,
+        }),
+        ATS_KEYWORD_DENSITY,
+    );
+}
+
+/// R4-F5 — the generated DE lexicon stores UNINFLECTED stems ("nahtlos",
+/// "robust", "maßgeschneidert") and `contains_phrase` requires a word boundary
+/// at BOTH ends, so the forms German actually writes — "nahtlose Integration",
+/// "robuste Systeme", "maßgeschneiderte Lösungen" — never matched. The whole
+/// German half of the AI-tell check was dead on real output.
+#[test]
+fn german_ai_tells_fire_on_inflected_forms() {
+    let letter = "Sehr geehrte Damen und Herren,\n\n\
+                  Ihre Plattform braucht eine nahtlose Integration der Zahlungsdienste. \
+                  Ich habe robuste Systeme für den Zahlungsverkehr gebaut und \
+                  maßgeschneiderte Lösungen für zwei Werke betreut.\n\n\
+                  Mit freundlichen Grüßen\nJana Mustermann\n";
+    let report = validate_content(&ContentInput {
+        generated: letter,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::CoverLetter,
+    });
+    let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    for stem in ["nahtlos", "robust", "maßgeschneidert"] {
+        assert!(
+            evidence.contains(&stem),
+            "the inflected form of {stem:?} must fire; got {evidence:?}"
+        );
+    }
+}
+
+/// The other half of R4-F5: the inflection tolerance is DE-only. English
+/// matching keeps the exact both-ends word boundary it has always had, so
+/// "harnesses" still does not fire the banned "harness".
+#[test]
+fn english_ai_tell_matching_is_unchanged_by_the_german_inflection_rule() {
+    let letter = "Dear Hiring Manager,\n\n\
+                  Your team harnesses a lot of data. I spent eight years on payment \
+                  systems and shipped a ledger that settles twelve thousand orders a \
+                  day. I read the posting twice before writing this.\n\n\
+                  Best regards,\nJane Doe\n";
+    silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
+}
+
+/// R4-F7 — [`issue`] clamped `message` and `evidence` but copied `section`
+/// VERBATIM, and an ATX heading (`# …`) has no length rule of its own. 200
+/// per-line issues each carrying a 1 KB heading blew the byte budget the cap
+/// exists to keep, so the arithmetic in [`ISSUE_MESSAGE_MAX_BYTES`]' doc was
+/// simply wrong.
+#[test]
+fn a_pathological_section_heading_is_clamped_like_the_message_and_evidence() {
+    let heading = "Sonstige Tätigkeiten ".repeat(200); // ~4 KB, multibyte.
+    let generated = format!(
+        "# {heading}\n\n- {}\n",
+        "x".repeat(ats::MAX_BULLET_CHARS + 50)
+    );
+    let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+    let section = fired(&report, ATS_LONG_BULLET)[0]
+        .section
+        .as_deref()
+        .expect("a long bullet under a heading reports its section");
+    assert!(
+        section.len() <= ISSUE_SECTION_MAX_BYTES,
+        "section must be clamped like every other issue field; got {} bytes",
+        section.len()
+    );
+    assert!(
+        section.ends_with('…'),
+        "a clamped section must read as visibly cut; got {section:?}"
+    );
+}
+
 // ── Contract + vocabulary ───────────────────────────────────────────────────
 
 /// `ok` is exactly "no Criticals" — nothing else may clear or set it.
@@ -1747,17 +1955,40 @@ fn oversized_issue_list_is_capped_with_a_visible_truncation_marker() {
 /// bytes (397) is odd, so the cut provably lands mid-character — proving the
 /// clamp walks back to a real boundary instead of splitting one.
 #[test]
-fn issue_message_and_evidence_are_clamped_to_their_byte_caps() {
+fn issue_text_fields_are_clamped_to_their_byte_caps() {
     let long_message = "é".repeat(300); // 600 bytes, well past the 400-byte cap
     let long_evidence = "é".repeat(300);
+    let long_section = "é".repeat(300);
     assert!(long_message.len() > ISSUE_MESSAGE_MAX_BYTES);
     assert!(long_evidence.len() > ISSUE_EVIDENCE_MAX_BYTES);
+    assert!(long_section.len() > ISSUE_SECTION_MAX_BYTES);
 
     let built = issue(
         ATS_LONG_BULLET,
-        None,
+        Some(&long_section),
         long_message.clone(),
         Some(long_evidence.clone()),
+    );
+
+    // `section` is a heading copied out of the generated document, so it is
+    // exactly as untrusted as the other two — and an ATX heading has no length
+    // rule of its own anywhere in the parser.
+    let section = built
+        .section
+        .clone()
+        .expect("section must survive clamping");
+    assert!(
+        section.len() <= ISSUE_SECTION_MAX_BYTES,
+        "section must be clamped to the cap, got {} bytes",
+        section.len()
+    );
+    assert!(
+        section.ends_with('…'),
+        "a clamped section must carry the truncation marker"
+    );
+    assert!(
+        long_section.starts_with(section.trim_end_matches('…')),
+        "the clamped section must be an exact, unbroken prefix of the original"
     );
 
     assert!(
@@ -1942,6 +2173,9 @@ fn voice_thresholds_are_pinned() {
 #[test]
 fn factual_and_alignment_thresholds_are_pinned() {
     assert_eq!(factual::MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS, 4);
+    // The asymmetry is load-bearing: raising this to the distinctive bar is
+    // what turned "IBM Deutschland GmbH" written as "IBM" into a Critical.
+    assert_eq!(factual::MIN_SURVIVAL_COMPANY_TOKEN_CHARS, 2);
     assert_eq!(factual::MIN_WORDS_IN_LETTER_BODY_LINE, 8);
     assert_eq!(alignment::TOP_REQUIREMENT_MATCH_RATIO, 0.5);
     assert_eq!(alignment::MIN_COVERAGE_DROP_POINTS, 5.0);

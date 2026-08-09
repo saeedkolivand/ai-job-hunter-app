@@ -226,20 +226,42 @@ pub struct ContentReport {
 /// (M-3) bounds the issue *count*, not the *size* of any one issue — and
 /// `ats.long_bullet` / `ats.header_in_body` / `duplicate.bullet` all quote an
 /// offending span verbatim (`long_bullet` fires *because* the bullet is long,
-/// so its evidence is unbounded by construction). Sized together with
-/// [`ISSUE_EVIDENCE_MAX_BYTES`]: `MAX_CONTENT_ISSUES` (200) ×
-/// (`ISSUE_MESSAGE_MAX_BYTES` + `ISSUE_EVIDENCE_MAX_BYTES` + ~150 bytes of
-/// JSON overhead for the rest of a `ContentIssue`) ≈ 190 KB per sub-report —
-/// comfortably under `QUALITY_REPORT_MAX_BYTES` (256 KiB,
-/// `commands::ai_generations::ai_generations_save`) for realistic content even
-/// though the persisted wrapper also holds a second sub-report, so the save
-/// path's source byte-clamp stays unreachable — exactly the path M-3 exists to
-/// make unreachable.
+/// so its evidence is unbounded by construction).
+///
+/// Sized together with [`ISSUE_EVIDENCE_MAX_BYTES`] and
+/// [`ISSUE_SECTION_MAX_BYTES`], which are the OTHER two fields carrying text
+/// copied out of an untrusted document. Worst case per sub-report:
+/// `MAX_CONTENT_ISSUES` (200) × (400 + 400 + 120 + ~150 bytes of JSON overhead
+/// for the rest of a `ContentIssue`) ≈ 214 KB, against
+/// `QUALITY_REPORT_MAX_BYTES` (256 KiB,
+/// `commands::ai_generations::ai_generations_save`) for a wrapper that also
+/// holds a second sub-report.
+///
+/// The point of the arithmetic is that every term in it is BOUNDED — that is
+/// what keeps the save path's drop-to-sentinel branch off the table for
+/// realistic content, where an issue's message is one sentence and its section
+/// a two-word heading, and what keeps even a hostile document at a fixed
+/// multiple of these constants instead of at the length of whatever the model
+/// emitted. `section` was the term that broke it: it was copied verbatim, and
+/// an ATX heading (`# …`) has no length rule anywhere in the parser, so a 1 KB
+/// heading multiplied by the per-line issues underneath it made the total
+/// unbounded and the claim false.
 pub const ISSUE_MESSAGE_MAX_BYTES: usize = 400;
 
 /// Byte cap on [`ContentIssue::evidence`]. See [`ISSUE_MESSAGE_MAX_BYTES`] for
 /// the arithmetic this is sized against.
 pub const ISSUE_EVIDENCE_MAX_BYTES: usize = 400;
+
+/// Byte cap on [`ContentIssue::section`]. Much smaller than the other two
+/// because a section LABEL is short — "PROFESSIONAL EXPERIENCE" is 23 bytes and
+/// the longest heading any template renders is well inside this — while the
+/// value itself is untrusted: `section` is a heading line copied out of the
+/// generated document, and an ATX heading (`# …`) has no length rule anywhere
+/// in the parser. Unclamped, one 1 KB heading multiplied by the per-line issues
+/// under it (`ats.long_bullet`, `duplicate.bullet`, …) put the serialized
+/// report back over the save path's clamp that [`MAX_CONTENT_ISSUES`] exists to
+/// keep it under. Folded into that arithmetic in [`ISSUE_MESSAGE_MAX_BYTES`].
+pub const ISSUE_SECTION_MAX_BYTES: usize = 120;
 
 /// `…` truncation marker appended by [`clamp_issue_text`] when it cuts
 /// anything, so a clamped span reads as visibly cut rather than as the whole
@@ -264,9 +286,11 @@ fn clamp_issue_text(s: String, max: usize) -> String {
 
 /// Build an issue, reading its severity from [`CONTENT_ISSUE_CODES`].
 ///
-/// `message` and `evidence` are clamped to [`ISSUE_MESSAGE_MAX_BYTES`] /
-/// [`ISSUE_EVIDENCE_MAX_BYTES`] here, at the one chokepoint every call site
-/// routes through, so no validator has to remember to bound its own span.
+/// All THREE untrusted fields — `message`, `evidence` and `section` — are
+/// clamped here, at the one chokepoint every call site routes through, so no
+/// validator has to remember to bound its own span. `section` is untrusted for
+/// the same reason the other two are: it is a heading line copied out of the
+/// generated document.
 pub(crate) fn issue(
     code: &'static str,
     section: Option<&str>,
@@ -276,7 +300,7 @@ pub(crate) fn issue(
     ContentIssue {
         severity: severity_for(code),
         code,
-        section: section.map(str::to_string),
+        section: section.map(|s| clamp_issue_text(s.to_string(), ISSUE_SECTION_MAX_BYTES)),
         message: clamp_issue_text(message.into(), ISSUE_MESSAGE_MAX_BYTES),
         evidence: evidence.map(|e| clamp_issue_text(e, ISSUE_EVIDENCE_MAX_BYTES)),
     }

@@ -319,6 +319,135 @@ pub fn classify_section(heading: &str) -> SectionKind {
     }
 }
 
+/// Legal-form suffixes: they name a corporate structure, never an employer.
+/// "GmbH" appearing in a document proves nothing about which GmbH.
+pub const LEGAL_FORMS: &[&str] = &[
+    "gmbh",
+    "corp",
+    "corporation",
+    "limited",
+    "incorporated",
+    "holding",
+    "group",
+    "company",
+    "inc",
+    "ltd",
+    "llc",
+    "plc",
+    "ag",
+    "kg",
+    "se",
+    "bv",
+    "nv",
+    "sa",
+    "srl",
+    "spa",
+];
+
+/// Country/region/city tokens an employer's legal name — or an entry line's
+/// location column — carries. Same argument as [`LEGAL_FORMS`]: "Deutschland"
+/// or "Berlin" identifies no particular employer, so neither may be the SOLE
+/// reason `validate::content` decides an entry survived, and a comma-tail made
+/// of nothing but these is a location rather than a company (see
+/// [`split_entry`]).
+pub const GEOGRAPHY_TOKENS: &[&str] = &[
+    "deutschland",
+    "germany",
+    "österreich",
+    "austria",
+    "schweiz",
+    "switzerland",
+    "europe",
+    "europa",
+    "emea",
+    "apac",
+    "dach",
+    "international",
+    "global",
+    "worldwide",
+    "berlin",
+    "münchen",
+    "munich",
+    "hamburg",
+    "wien",
+    "zürich",
+];
+
+/// The lowercased alphanumeric runs in `text`, in order.
+fn word_tokens(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// The tokens of `company` that name a SPECIFIC employer: alphanumeric runs of
+/// `min_chars`+ characters, with legal forms and geography removed.
+///
+/// One helper, two questions, deliberately — they differ only in that
+/// threshold. `validate::content::factual` asks "could anything in the
+/// generated document evidence this employer?" and accepts two characters
+/// ("SAP" is a real name); `validate::content::consistency` asks "are these two
+/// entries the same employer?" and needs a distinctive four. Keeping a second
+/// copy of the exclusion lists beside either question is exactly how one of
+/// them silently kept "Berlin" and started matching two unrelated Berlin
+/// employers to each other.
+pub fn identity_tokens(company: &str, min_chars: usize) -> Vec<String> {
+    word_tokens(company)
+        .into_iter()
+        .filter(|t| t.chars().count() >= min_chars)
+        .filter(|t| !LEGAL_FORMS.contains(&t.as_str()))
+        .filter(|t| !GEOGRAPHY_TOKENS.contains(&t.as_str()))
+        .collect()
+}
+
+/// Whether `text` carries a corporate legal form.
+fn has_legal_form(text: &str) -> bool {
+    word_tokens(text)
+        .iter()
+        .any(|t| LEGAL_FORMS.contains(&t.as_str()))
+}
+
+/// Split the two-space form's label into `(company, title)`.
+///
+/// This form is the extracted-PDF shape, and its comma tail is a LOCATION far
+/// more often than a company — the title usually sits on the line BELOW, which
+/// is what [`extract_evidence`]'s `LineKind::JobTitle` arm exists to pick up.
+/// Reusing the parenthesized form's title-first "split at the last comma" rule
+/// here named the CITY as the employer, and `validate::content` then went
+/// looking for that city in the generated document and raised a
+/// `factual.dropped_role` Critical when a tailored résumé left it out.
+///
+/// Only two signals are trusted, both from lists this module already owns, and
+/// anything they cannot resolve keeps the title-first reading:
+///
+/// * a tail made of nothing but [`GEOGRAPHY_TOKENS`] is a location, however
+///   many segments it runs to (`Globex Logistics, Munich, Germany`);
+/// * failing that, a legal form in the HEAD and none in the tail
+///   (`Nordwind Systeme GmbH, Ingolstadt`) — an unlisted city cannot be told
+///   from a company by shape, so that is the only evidence left.
+fn split_two_space_label(label: &str) -> (String, String) {
+    let mut label = label.trim();
+    while let Some((head, tail)) = label.rsplit_once(',') {
+        let tail_tokens = word_tokens(tail);
+        let is_location = !tail_tokens.is_empty()
+            && tail_tokens
+                .iter()
+                .all(|t| GEOGRAPHY_TOKENS.contains(&t.as_str()));
+        if !is_location {
+            break;
+        }
+        label = head.trim();
+    }
+    match label.rsplit_once(',') {
+        Some((head, tail)) if has_legal_form(head) && !has_legal_form(tail) => {
+            (head.trim().to_string(), String::new())
+        }
+        Some((title, company)) => (company.trim().to_string(), title.trim().to_string()),
+        None => (label.to_string(), String::new()),
+    }
+}
+
 /// Split an entry line into `(company, title, dates)`.
 ///
 /// HEURISTIC, and deliberately a conservative one — a wrong split must never
@@ -326,7 +455,8 @@ pub fn classify_section(heading: &str) -> SectionKind {
 /// `LineKind::JobEntry` forms `export::parser` produces:
 ///
 /// 1. Two-space form (`Acme Corp    2021 – Present`): the parser already split
-///    the date into `right_text`, so `text` is the entry label.
+///    the date into `right_text`, so `text` is the entry label, split by
+///    [`split_two_space_label`]'s company-first rule.
 /// 2. Pipe/middot form (`Senior Engineer | Acme Corp | 2021 – Present`): the
 ///    date-shaped segment is the span, the first segment is the title and the
 ///    second the company (the order every template in this repo renders).
@@ -351,7 +481,8 @@ pub fn split_entry(line: &ParsedLine) -> (String, String, String) {
     };
 
     if let Some(dates) = line.right_text.as_deref() {
-        return label_and_dates(&line.text, dates);
+        let (company, title) = split_two_space_label(&line.text);
+        return (company, title, dates.trim().to_string());
     }
 
     let separators = ['|', '·', '•'];
@@ -515,6 +646,9 @@ const FUNCTION_WORDS_DE: &[&str] = &[
     "einen",
     "einer",
     "eines",
+    // Four BYTES, so the kernel's `w.len() > 3` filter never drops it however
+    // short it reads — and it is the commonest preposition in the language.
+    "für",
     "hinter",
     "ihre",
     "ihrem",
@@ -570,17 +704,56 @@ const FUNCTION_WORDS_DE: &[&str] = &[
     "kenntnisse",
     "profil",
     "suchen",
+    // "Verantwortlich für …" opens half the bullets in a German résumé. It
+    // names no skill, and counted as a keyword it read as stuffing.
+    "verantwortlich",
     "voraussetzungen",
     "wünschenswert",
 ];
 
 /// The function-word list for `lang`, empty for languages with no list yet
 /// (English is already covered by the kernel's own `STOPWORDS`).
-fn function_words(lang: &str) -> &'static [&'static str] {
+///
+/// `pub(crate)` for `validate::content::ats`, whose keyword-density check counts
+/// tokens through the same English-only `STOPWORDS` plus a BYTE-length filter —
+/// so `durch`, `werden` and `wurde` all counted as keywords and ordinary German
+/// prose was accused of stuffing. One list, both surfaces: a word that is not a
+/// skill in the gap list is not a stuffed keyword either.
+pub(crate) fn function_words(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => FUNCTION_WORDS_DE,
         _ => &[],
     }
+}
+
+/// Attach one experience line to the entry above it, opening an UNATTRIBUTED
+/// bucket when no entry has parsed yet.
+///
+/// A résumé whose entry lines the parser does not recognise as `JobEntry` — no
+/// pipe form, no two-space date column, no parenthesized span, e.g. a plain
+/// "Acme Payments — Senior Backend Engineer" with the dates on the next line —
+/// used to lose its ENTIRE experience section here: `checked_sub` on an empty
+/// `roles` discarded every bullet silently, and the prompt was then told the
+/// candidate had no experience to draw on.
+///
+/// The bucket carries EMPTY `company`/`title`/`dates` rather than a guessed
+/// employer: inventing a company name is the one thing this module may never
+/// do, and every consumer either flattens `roles[].bullets` (the agent's
+/// evidence tool) or reads the fields it does have. An empty company reads as
+/// "unattributed" to per-company logic instead of colliding with a real one.
+fn attach_to_role(roles: &mut Vec<EvidenceRole>, vocab: &JobVocabulary, text: &str) {
+    if roles.is_empty() {
+        roles.push(EvidenceRole {
+            company: String::new(),
+            title: String::new(),
+            dates: String::new(),
+            bullets: Vec::new(),
+        });
+    }
+    let role_idx = roles.len() - 1;
+    let bullet_idx = roles[role_idx].bullets.len();
+    let bullet = vocab.bullet(format!("r{role_idx}b{bullet_idx}"), text);
+    roles[role_idx].bullets.push(bullet);
 }
 
 /// Structure the source résumé into the evidence a generation prompt is allowed
@@ -622,13 +795,7 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                 }
             }
             LineKind::Bullet => match section {
-                SectionKind::Experience => {
-                    if let Some(role_idx) = set.roles.len().checked_sub(1) {
-                        let bullet_idx = set.roles[role_idx].bullets.len();
-                        let bullet = vocab.bullet(format!("r{role_idx}b{bullet_idx}"), &line.text);
-                        set.roles[role_idx].bullets.push(bullet);
-                    }
-                }
+                SectionKind::Experience => attach_to_role(&mut set.roles, &vocab, &line.text),
                 SectionKind::Projects => {
                     let bullet = vocab.bullet(format!("p{}", set.projects.len()), &line.text);
                     set.projects.push(bullet);
@@ -636,6 +803,17 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                 SectionKind::Education => set.education.push(line.text.clone()),
                 _ => {}
             },
+            // A content line under Experience the parser recognised as none of
+            // the above — the same "never discard the section" rule as the
+            // Projects arm below, and the other half of the orphan-bullet fix
+            // in [`attach_to_role`]: when the entry line itself did not parse,
+            // dropping it too would lose the employer's name as well as the
+            // bullets under it.
+            LineKind::Text
+                if section == SectionKind::Experience && !line.text.trim().is_empty() =>
+            {
+                attach_to_role(&mut set.roles, &vocab, &line.text)
+            }
             // `Contact` belongs here: `export::parser` classifies any line
             // carrying a phone-shaped digit run as Contact, and a degree line
             // with a date span ("BSc Computer Science, TU Berlin, 2014 - 2018")
@@ -1016,7 +1194,7 @@ BSc Computer Science, TU Berlin
             .chain(set.skills_absent.iter())
             .collect();
         for function_word in [
-            "unsere", "hinter", "unter", "sehr", "gute", "eine", "suchen",
+            "unsere", "hinter", "unter", "sehr", "gute", "eine", "suchen", "für",
         ] {
             assert!(
                 !listed.iter().any(|s| s.as_str() == function_word),
@@ -1221,5 +1399,89 @@ BSc Computer Science, TU Berlin
         assert_eq!(company, "Acme Corporation");
         assert_eq!(title, "");
         assert_eq!(dates, "2021 - Present");
+    }
+
+    /// The two-space form is the extracted-PDF shape, where the comma tail is a
+    /// LOCATION far more often than a company. Reusing the parenthesized form's
+    /// title-first "split at the last comma" rule named the CITY as the
+    /// employer — and `validate::content` then went looking for that city in
+    /// the generated document and raised a `factual.dropped_role` Critical when
+    /// a tailored résumé (reasonably) left the location out.
+    #[test]
+    fn two_space_form_names_the_company_not_the_city() {
+        let split = |line: &str| {
+            let text = format!("EXPERIENCE\n\n{line}\n");
+            let parsed = parse_resume(&text);
+            let entry = parsed
+                .lines
+                .iter()
+                .find(|l| matches!(l.kind, LineKind::JobEntry))
+                .unwrap_or_else(|| panic!("{line:?} must parse as a JobEntry"))
+                .clone();
+            split_entry(&entry)
+        };
+
+        // A known city as the tail.
+        let (company, title, dates) = split("Acme GmbH, Berlin    2021 - Present");
+        assert_eq!(company, "Acme GmbH");
+        assert_eq!(title, "");
+        assert_eq!(dates, "2021 - Present");
+
+        // An UNLISTED city: the legal form in the head is the evidence.
+        let (company, title, _) = split("Nordwind Systeme GmbH, Ingolstadt    2018 - 2021");
+        assert_eq!(company, "Nordwind Systeme GmbH");
+        assert_eq!(title, "");
+
+        // City plus country.
+        let (company, _, _) = split("Globex Logistics, Munich, Germany    2018 - 2021");
+        assert_eq!(company, "Globex Logistics");
+
+        // Nothing says otherwise → the title-first reading is untouched.
+        let (company, title, _) = split("Senior Engineer, Acme Corp    2021 - Present");
+        assert_eq!(company, "Acme Corp");
+        assert_eq!(title, "Senior Engineer");
+    }
+
+    /// An experience section whose entry line does not parse as a `JobEntry`
+    /// (no pipe form, no two-space date column, no parenthesized span) used to
+    /// lose its ENTIRE experience section: `checked_sub` on an empty `roles`
+    /// silently discarded every bullet, and the prompt was then told the
+    /// candidate had no experience at all.
+    #[test]
+    fn experience_bullets_survive_an_unparsed_entry_line() {
+        let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Acme Payments — Senior Backend Engineer
+2021 to Present
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+        let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+        let texts: Vec<&str> = set
+            .roles
+            .iter()
+            .flat_map(|r| r.bullets.iter())
+            .map(|b| b.text.as_str())
+            .collect();
+        assert!(
+            texts.iter().any(|t| t.contains("Docker")),
+            "an orphan bullet under Experience must still be evidence; got {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.contains("Redis")),
+            "every orphan bullet lands in the same bucket; got {texts:?}"
+        );
+        // The bucket is UNATTRIBUTED, never a company the résumé never named.
+        assert!(
+            set.roles
+                .iter()
+                .all(|r| r.company.is_empty() || !r.bullets.is_empty()),
+            "no empty role may be invented; got {:?}",
+            set.roles
+        );
     }
 }
