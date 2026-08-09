@@ -1378,6 +1378,38 @@ fn export_import_round_trip_preserves_the_quality_report() {
     );
 }
 
+/// L-5: `import` is a write path for a user-supplied backup FILE — just as
+/// untrusted as the IPC save path, which already clamps `quality_report`
+/// (`commands::ai_generations::ai_generations_save`). Before this fix,
+/// `import` wrote the bundle's `quality_report` straight to the column with
+/// no cap at all, unlike every other write path for this column.
+#[test]
+fn import_clamps_an_oversized_quality_report() {
+    let huge = "x".repeat(QUALITY_REPORT_MAX_BYTES + 10_000);
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = huge.clone();
+    let bundle = serde_json::json!([rec]);
+
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&store, &bundle).unwrap(),
+        1
+    );
+
+    let imported = store.list();
+    assert_eq!(imported.len(), 1);
+    assert!(
+        imported[0].quality_report.len() <= QUALITY_REPORT_MAX_BYTES,
+        "an oversized bundle's quality_report must be clamped on import, got {} bytes",
+        imported[0].quality_report.len()
+    );
+    assert_ne!(
+        imported[0].quality_report, huge,
+        "the raw oversized blob must not reach storage unclamped"
+    );
+}
+
 /// A résumé-writing save carries a wrapper with a `resume` key: it overlays
 /// the envelope fields (`schemaVersion`/`pipeline`/`generatedAt`) plus
 /// `resume`, and leaves a stored `coverLetter` sub-report untouched.

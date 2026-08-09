@@ -1,14 +1,9 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::ai_generations::QUALITY_REPORT_MAX_BYTES;
 use crate::applications::clamp_to_bytes;
 use crate::ipc_contracts::ai::{AiGenerationSaveRequest, AiGenerationUpdateRequest};
-
-/// A direct IPC caller (not our own renderer, which never produces a report
-/// bigger than a few KB) could otherwise hand this column an unbounded blob.
-/// 256 KB comfortably covers the largest realistic wrapper (both sub-reports,
-/// dozens of issues each) with headroom to spare.
-const QUALITY_REPORT_MAX_BYTES: usize = 256 * 1024;
 
 #[tauri::command]
 pub async fn ai_generations_list(app: AppHandle) -> Value {

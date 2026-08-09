@@ -5,9 +5,20 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::applications::clamp_to_bytes;
 use crate::data_store::DataStore;
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
+
+/// A direct IPC caller or a hostile/malformed backup bundle (the `import`
+/// path below) could otherwise hand this column an unbounded blob. 256 KB
+/// comfortably covers the largest realistic wrapper (both sub-reports,
+/// dozens of issues each) with headroom to spare. The single source of
+/// truth for both write paths that persist `quality_report`
+/// (`commands::ai_generations::ai_generations_save` and
+/// [`AiGenerationStore::import`] below) — the data layer owns the column, so
+/// the cap lives here rather than duplicated per caller.
+pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 256 * 1024;
 
 /// One answered application question, stored on the application record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -850,6 +861,13 @@ impl DataStore for AiGenerationStore {
             // needs the same repair applied explicitly.
             let (resume_text, cover_letter_text) =
                 repaired_generation_texts(&rec.resume_text, &rec.cover_letter_text);
+            // L-5: the IPC save path (`commands::ai_generations::ai_generations_save`)
+            // already clamps `quality_report` to QUALITY_REPORT_MAX_BYTES; a
+            // restored backup bundle is an equally untrusted write path (a
+            // user-supplied file, not our own renderer) and must get the same
+            // clamp, not just whatever byte count the bundle happened to carry.
+            let quality_report =
+                clamp_to_bytes(rec.quality_report.clone(), QUALITY_REPORT_MAX_BYTES);
             tx.execute(
                 "INSERT INTO ai_generations
                  (id, created_at, candidate_name, job_title, company_name,
@@ -881,7 +899,7 @@ impl DataStore for AiGenerationStore {
                     interview_questions_json,
                     rec.email_subject,
                     rec.email_body,
-                    rec.quality_report,
+                    quality_report,
                 ],
             )?;
         }
