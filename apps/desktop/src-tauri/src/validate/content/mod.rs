@@ -401,10 +401,22 @@ impl<'a> Analysis<'a> {
 
 /// Narrow any incoming language value to a 2-letter lowercase code, defaulting
 /// to `"en"`. Mirrors `normalizeLanguageCode` in `natural-voice.ts`.
+///
+/// L-3 fix: filters to alphanumeric characters BEFORE taking the first 2 —
+/// `.trim()` only strips LEADING/TRAILING whitespace, so a control character
+/// in the middle (`"a\nb"`) used to survive into the 2-char result (`"a\n"`).
+/// That result is interpolated into this module's `validate:content` span
+/// text (`format!("kind={} lang={}", …)`) and becomes `ctx.lang`, which
+/// reaches `content.language_mismatch`'s user-facing `evidence` — a raw
+/// newline in either is a log-injection primitive (ADR-027-adjacent).
+/// Filtering to alphanumeric also makes a tag like `"en-US"`/`"de_DE"`
+/// resolve identically to before (the separator was never part of the first
+/// 2 characters anyway).
 pub(crate) fn normalize_language(language: &str) -> String {
     let code: String = language
         .trim()
         .chars()
+        .filter(|c| c.is_alphanumeric())
         .take(2)
         .collect::<String>()
         .to_lowercase();
@@ -617,7 +629,8 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
             REPORT_TRUNCATED,
             None,
             format!(
-                "{dropped} more issue{} found but not shown here — this document has an                  unusually large number of findings.",
+                "{dropped} more issue{} found but not shown here — this document has an \
+                 unusually large number of findings.",
                 if dropped == 1 { "" } else { "s" }
             ),
             Some(dropped.to_string()),

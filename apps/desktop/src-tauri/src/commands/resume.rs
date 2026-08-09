@@ -26,6 +26,12 @@ const TOP_REQUIREMENTS_CAP: usize = 50;
 /// Per-requirement byte cap — matches the Zod schema's `.max(300)` (renderer-side
 /// only; this is the server-side mirror).
 const TOP_REQUIREMENT_BYTES_CAP: usize = 300;
+/// Matches the Zod schema's `targetLanguage.max(32)` (renderer-side only;
+/// this is the server-side mirror) — the same trust-boundary treatment every
+/// other field on this command already gets. `normalize_language` itself
+/// only ever reads the first 2 alphanumeric characters, but a direct IPC
+/// caller could otherwise hand this an unbounded string.
+const TARGET_LANGUAGE_CAP: usize = 32;
 
 /// Deterministic content-quality checks (factual accuracy, ATS structure,
 /// AI-voice tells) on an already-generated résumé/letter against its source
@@ -63,6 +69,7 @@ pub async fn resume_validate_content(
         .take(TOP_REQUIREMENTS_CAP)
         .map(|r| clamp_to_bytes(r, TOP_REQUIREMENT_BYTES_CAP))
         .collect();
+    let target_language = clamp_to_bytes(req.target_language, TARGET_LANGUAGE_CAP);
 
     // `validate_content` owns its own `Span` (codes/counts only, ADR-027) — no
     // command-level span duplicating it on top.
@@ -71,7 +78,7 @@ pub async fn resume_validate_content(
         source_resume: &source,
         job_ad: &job_ad,
         top_requirements: &top_requirements,
-        target_language: &req.target_language,
+        target_language: &target_language,
         doc_kind,
     }))
 }
@@ -138,6 +145,29 @@ mod test {
             "top_requirement_hits={} must not exceed TOP_REQUIREMENTS_CAP={TOP_REQUIREMENTS_CAP}",
             report.metrics.top_requirement_hits
         );
+    }
+
+    /// The Zod schema caps `targetLanguage` at 32 chars client-side
+    /// (`.max(32)`); serde enforces nothing, so the command clamps its own
+    /// copy (`TARGET_LANGUAGE_CAP`) — the same trust-boundary treatment
+    /// every other field on this command gets. Mirrors
+    /// `oversized_inputs_are_clamped_rather_than_processed_whole`'s
+    /// multi-byte-boundary shape.
+    #[tokio::test]
+    async fn oversized_target_language_is_clamped_not_processed_whole() {
+        let huge = "a".repeat(TARGET_LANGUAGE_CAP - 1) + "\u{1F600}" + &"b".repeat(5_000);
+        assert!(huge.len() > TARGET_LANGUAGE_CAP);
+
+        resume_validate_content(ResumeValidateContentRequest {
+            generated: "Jane Doe\nSoftware Engineer".into(),
+            source: "Jane Doe\nSoftware Engineer".into(),
+            job_ad: "We need a software engineer.".into(),
+            top_requirements: vec![],
+            target_language: huge,
+            doc_kind: "resume".into(),
+        })
+        .await
+        .expect("must not error on an oversized-but-clamped targetLanguage");
     }
 
     /// `docKind: "coverLetter"` must route to the letter ruleset — prose voice
