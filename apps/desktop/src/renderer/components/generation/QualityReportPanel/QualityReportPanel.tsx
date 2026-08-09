@@ -182,16 +182,25 @@ export function QualityReportPanel({
                     : '—'}
                 </dd>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt>{t('quality.panel.metrics.topRequirementHits')}</dt>
-                <dd className="font-medium text-foreground/85">{metrics.topRequirementHits}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt>{t('quality.panel.metrics.duplicateRatio')}</dt>
-                <dd className="font-medium text-foreground/85">
-                  {Math.round(metrics.duplicateRatio * 100)}%
-                </dd>
-              </div>
+              {/* The CoverLetter arm of validate_content returns these three as
+                  hard constants, not measurements (alignment/duplicates never
+                  run for a letter) — rendering them would claim "0 requirements
+                  covered" as fact. Only keywordCoverage is genuinely computed
+                  for both kinds. */}
+              {docKind === 'resume' && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt>{t('quality.panel.metrics.topRequirementHits')}</dt>
+                  <dd className="font-medium text-foreground/85">{metrics.topRequirementHits}</dd>
+                </div>
+              )}
+              {docKind === 'resume' && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt>{t('quality.panel.metrics.duplicateRatio')}</dt>
+                  <dd className="font-medium text-foreground/85">
+                    {Math.round(metrics.duplicateRatio * 100)}%
+                  </dd>
+                </div>
+              )}
               {docKind === 'resume' && (
                 <div className="flex items-center justify-between gap-2">
                   <dt>{t('quality.panel.metrics.roles')}</dt>

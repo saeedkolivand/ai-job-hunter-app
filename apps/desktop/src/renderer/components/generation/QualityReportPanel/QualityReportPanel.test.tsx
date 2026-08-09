@@ -162,14 +162,20 @@ describe('QualityReportPanel', () => {
     expect(within(footer).getByText(/3.*2/)).toBeInTheDocument();
   });
 
-  it('hides the roles row for a cover letter — role counts describe résumés only', () => {
+  it('shows only keyword coverage for a cover letter — the other metrics are hard constants, not measurements', () => {
     render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="coverLetter" />);
     const footer = screen
       .getByRole('heading', { level: 3, name: /metrics/i })
       .closest('div') as HTMLElement;
+    // keywordCoverage is genuinely computed for letters — stays.
     expect(within(footer).getByText('62%')).toBeInTheDocument();
+    // rolesSource→rolesOutput, topRequirementHits, duplicateRatio are the
+    // CoverLetter arm's (0, 0.0, 0, 0) constants — rendering them would state
+    // "0 requirements covered" as fact. All three rows hidden.
     expect(within(footer).queryByText(/roles/i)).toBeNull();
     expect(within(footer).queryByText(/3.*2/)).toBeNull();
+    expect(within(footer).queryByText('2')).toBeNull(); // topRequirementHits value
+    expect(within(footer).queryByText('25%')).toBeNull(); // duplicateRatio value
   });
 
   it('titles the dialog per docKind', () => {
