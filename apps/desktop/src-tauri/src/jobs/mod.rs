@@ -259,6 +259,32 @@ impl JobTracker {
         }
     }
 
+    /// Move a live job between [`JobStatus::Queued`] and [`JobStatus::Running`].
+    ///
+    /// Only those two: a job parked behind the concurrency limiter has not
+    /// started yet, and the renderer must be able to tell that apart from a
+    /// started-but-slow job — otherwise its stream deadline counts down while the
+    /// job is still waiting its turn, and a legitimately queued generation fails
+    /// having never issued a request. Terminal states go through
+    /// [`Self::complete`] / [`Self::fail`] / [`Self::cancel`], which also stamp
+    /// `finished_at`; a no-op here for an already-finished job keeps a late
+    /// transition from resurrecting one.
+    pub fn set_waiting(&mut self, id: &str, queued: bool) {
+        let record = match self.jobs.get_mut(id) {
+            Some(job) if matches!(job.status, JobStatus::Queued | JobStatus::Running) => {
+                job.status = if queued {
+                    JobStatus::Queued
+                } else {
+                    JobStatus::Running
+                };
+                job.updated_at = now_ms();
+                job.clone()
+            }
+            _ => return,
+        };
+        self.persist_upsert(&record);
+    }
+
     pub fn update_progress(&mut self, id: &str, p: f64) {
         let record = match self.jobs.get_mut(id) {
             Some(job) => {

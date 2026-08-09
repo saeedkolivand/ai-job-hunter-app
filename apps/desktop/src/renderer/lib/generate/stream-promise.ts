@@ -72,6 +72,11 @@ export interface AwaitAiStreamOptions {
   onToken?: (tok: string) => void;
   /** Called with each reasoning/thinking token. */
   onThinking?: (tok: string) => void;
+  /** Called on every poll where the backend job is still parked behind the
+   *  concurrency limiter, so the UI can say "queued" instead of showing a
+   *  generation that appears to be running but has sent no request. Fires
+   *  repeatedly while queued — callers should treat it as a state, not an event. */
+  onQueued?: () => void;
   /** AbortSignal — honours both pre-registration and post-registration cancels. */
   signal?: AbortSignal;
   /** Override the poll interval (ms). Defaults to `JOB_POLL_INTERVAL_MS`. */
@@ -113,6 +118,7 @@ export function awaitAiStream(
   const {
     onToken,
     onThinking,
+    onQueued,
     signal,
     pollIntervalMs = JOB_POLL_INTERVAL_MS,
     timeoutMs = computeStreamTimeoutMs(opts.effort),
@@ -211,13 +217,17 @@ export function awaitAiStream(
     // timeout we FAIL the run (never persist truncated output as success) and
     // cancel the backend job so the server-side slot is freed instead of left
     // occupied until the job finishes on its own.
-    timeoutId = setTimeout(() => {
-      off();
-      void api.jobs.cancel(jobId).catch(() => {});
-      splitter.flush();
-      cleanup();
-      reject(new Error('Generation timed out. Please try again.'));
-    }, timeoutMs);
+    const armTimeout = () => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        off();
+        void api.jobs.cancel(jobId).catch(() => {});
+        splitter.flush();
+        cleanup();
+        reject(new Error('Generation timed out. Please try again.'));
+      }, timeoutMs);
+    };
+    armTimeout();
 
     // Job-status poll — fallback for a missed `done` event (empty final delta).
     poll = setInterval(() => {
@@ -229,6 +239,16 @@ export function awaitAiStream(
           result?: { text: string };
         } | null;
         if (!job) return;
+        if (job.status === 'queued') {
+          // Parked behind the backend concurrency limiter — it has not issued a
+          // request yet, so `timeoutMs` (a STREAM deadline) must not be counting
+          // down. Re-arming each poll keeps a full deadline available from the
+          // moment the job actually starts. Without this a queued generation in
+          // a batch fails on a timeout it never had a chance to beat.
+          armTimeout();
+          onQueued?.();
+          return;
+        }
         if (job.status === 'failed' || job.status === 'cancelled') {
           off();
           cleanup();

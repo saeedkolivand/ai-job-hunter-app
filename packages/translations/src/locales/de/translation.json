@@ -428,6 +428,10 @@
       "matchResume": "Lebenslauf-Match",
       "autopilotRun": "Autopilot-Lauf"
     },
+    "activity": {
+      "queued": "in Warteschlange",
+      "queuedWithCount": "in Warteschlange, {{count}} davor"
+    },
     "jobKindsShort": {
       "aiGenerate": "KI",
       "aiEmbed": "Embed",
@@ -1467,6 +1471,7 @@
       "generate": "Generieren",
       "generating": "Generiere…",
       "generatingHint": "Das kann einen Moment dauern – wir passen an die Stellenanzeige an.",
+      "reasoningHeavyHint": "Dieses Modell wendet weit mehr für internes Nachdenken auf als für das Dokument. Rechne mit mehreren Minuten – es arbeitet, es hängt nicht.",
       "cancel": "Abbrechen",
       "analyzing": "Stellenbeschreibung wird analysiert…",
       "writingResume": "Lebenslauf wird geschrieben…",

@@ -18,7 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
 
-import { installConsoleLogBridge } from './log-bridge';
+import { installConsoleLogBridge, resetLogBridgeState, shouldForward } from './log-bridge';
 
 describe('installConsoleLogBridge', () => {
   const original = { warn: console.warn, error: console.error };
@@ -106,5 +106,56 @@ describe('installConsoleLogBridge', () => {
     // Let the rejected forward promise's microtask settle — a missing `.catch`
     // in the bridge would surface as an unhandled rejection here.
     await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});
+
+describe('stale-callback suppression', () => {
+  const original = { warn: console.warn };
+
+  beforeEach(() => {
+    invoke.mockReset().mockResolvedValue(undefined);
+    resetLogBridgeState();
+  });
+
+  afterEach(() => {
+    console.warn = original.warn;
+  });
+
+  // Tauri's runtime warns once per event dispatched to a stale callback id —
+  // one warning PER STREAMED DELTA, from Tauri internals, so there is no call
+  // site to fix. A real support bundle was 27,178 of 27,601 lines (98.5%) this
+  // single message, from two ids, burying eight genuinely-failed provider calls.
+  const STALE =
+    "[TAURI] Couldn't find callback id 220837889. This might happen when the app is reloaded " +
+    'while Rust is running an asynchronous operation.';
+
+  it('forwards the first occurrence — the condition is still worth knowing about', () => {
+    expect(shouldForward(STALE)).toBe(true);
+  });
+
+  it('drops every occurrence after the first, including a different id', () => {
+    expect(shouldForward(STALE)).toBe(true);
+    expect(shouldForward(STALE)).toBe(false);
+    expect(shouldForward(STALE.replace('220837889', '2830120250'))).toBe(false);
+  });
+
+  it('never suppresses an ordinary app warning', () => {
+    expect(shouldForward('[runTailor] failed {"error":"rate limit"}')).toBe(true);
+    expect(shouldForward('[runTailor] failed {"error":"rate limit"}')).toBe(true);
+    // Not even once the stale-callback notice has latched.
+    shouldForward(STALE);
+    expect(shouldForward('[export] done')).toBe(true);
+  });
+
+  it('keeps the suppressed message in devtools — only the IPC copy is dropped', () => {
+    const spy = vi.fn();
+    console.warn = spy;
+    installConsoleLogBridge();
+
+    console.warn(STALE);
+    console.warn(STALE);
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

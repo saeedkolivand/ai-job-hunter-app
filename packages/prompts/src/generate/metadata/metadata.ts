@@ -62,6 +62,121 @@ function isBlank(v: unknown): boolean {
   return typeof v !== 'string' || v.trim() === '';
 }
 
+/** Job-ad section headings that a naive extractor (LLM or regex) returns as if
+ *  they were the employer. Normalized to lowercase with apostrophes stripped so
+ *  `You'll Do` / `You´ll Do` / `you ll do` all match one entry. */
+const HEADING_DENYLIST = new Set([
+  'about us',
+  'about the company',
+  'about the role',
+  'apply now',
+  'benefits',
+  'jetzt bewerben',
+  'job description',
+  'our company',
+  'requirements',
+  'responsibilities',
+  'the company',
+  'the position',
+  'the role',
+  'what you ll do',
+  'who we are',
+  'you ll do',
+  'your role',
+  'your tasks',
+]);
+
+/**
+ * Reject a "company name" that is obviously a sentence, a heading, or markup
+ * rather than an employer — returning `''`, which every downstream consumer
+ * already treats as "no company known" (`CompanyResearch::enrich_with` skips
+ * research entirely on an empty name).
+ *
+ * This runs on BOTH sources of the field: the model's own JSON and the regex
+ * fallback in `extractMetadata`. Neither is trustworthy — a 2026-08-08 support
+ * bundle had six consecutive generations research `You'll Do`,
+ * `experience **fast`, and `a **bootstrapped AI platform and consulting
+ * studio** based in Munich`, each of which then anchored a cover letter.
+ *
+ * Deliberately conservative: it only rejects shapes a real employer name cannot
+ * have. Lowercase-initial brands (`eBay`, `iRobot`, `xAI`) and possessives
+ * (`Macy's`, `L'Oréal`) survive; the leading-lowercase test requires a
+ * lowercase SECOND character too, and the contraction test matches only
+ * pronoun contractions.
+ */
+export function sanitizeCompanyName(value: unknown): string {
+  // A real employer name is short. The longest legitimate one seen in the wild
+  // ("CHECK24 Vergleichsportal für Versicherungen GmbH") is 48 chars / 5 words.
+  return sanitizeSubject(value, { maxChars: 60, maxWords: 6 });
+}
+
+/** Size limits for one [`sanitizeSubject`] caller. */
+interface SubjectLimits {
+  maxChars: number;
+  maxWords: number;
+}
+
+/**
+ * The shared gate behind [`sanitizeCompanyName`] and [`sanitizeJobTitle`].
+ *
+ * Both fields end up as the SUBJECT of a provider web search and as prose in the
+ * cover letter's opening, so both fail the same way: a heading or a sentence
+ * there produces a confident brief about the wrong thing. Gating only the
+ * company left the identical hole open for the title — a reported session
+ * searched for `Jetzt bewerben` and `[← Alle offenen Stellen](/karriere)` as the
+ * ROLE while the company was already being gated.
+ *
+ * The size limits are per-caller because the two fields genuinely differ: an
+ * employer name is short, a job title routinely is not. They were briefly shared
+ * and it made the title's own (larger) ceiling dead code.
+ */
+function sanitizeSubject(value: unknown, limits: SubjectLimits): string {
+  if (typeof value !== 'string') return '';
+  const name = value.trim();
+  if (!name) return '';
+
+  if (name.length > limits.maxChars) return '';
+  if (name.split(/\s+/).length > limits.maxWords) return '';
+
+  // Markdown, links, and code fences — the ad's formatting leaked through.
+  if (/[*`_]{2}|\[|\]\(|https?:\/\//.test(name)) return '';
+
+  // Prose, not a name. A trailing `.` is NOT disqualifying — "Acme Inc." is a
+  // real name — but `!?:;` are, and so is an interior sentence break. The
+  // `\w{3,}` before that break is what keeps abbreviations ("St. Jude Medical",
+  // "A.P. Moller") from tripping it.
+  if (/[!?:;]$/.test(name) || /\w{3,}[.!?][\s"']/.test(name)) return '';
+
+  // Pronoun contractions only ever appear in ad copy ("What You'll Do",
+  // "…their product. You'll sit at…"), never in a company name.
+  if (/\b(?:you|we|they|i)['’](?:ll|re|ve|d|m)\b/i.test(name)) return '';
+
+  // Mid-sentence fragment: starts lowercase AND continues lowercase.
+  if (/^\p{Ll}\p{Ll}/u.test(name)) return '';
+  // A single lowercase word ("experience", "je") is a fragment too.
+  if (/^\p{Ll}(?:\s|$)/u.test(name)) return '';
+
+  const normalized = name.toLowerCase().replace(/['’´]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (HEADING_DENYLIST.has(normalized)) return '';
+
+  return name;
+}
+
+/**
+ * A job title, gated on the same SHAPE rules as the company name but with its
+ * own size limits — see [`sanitizeSubject`].
+ *
+ * Titles are legitimately longer and wordier than employer names ("Senior Staff
+ * Software Engineer, Platform Infrastructure and Developer Experience" is 68
+ * chars / 9 words), so they get 80 chars / 10 words rather than 60 / 6. An
+ * earlier version applied its 80-char check on top of the company's 60-char one,
+ * which made the larger ceiling dead: everything over 60 was still dropped, and
+ * the 6-word company cap rejected any 7-word title.
+ */
+export function sanitizeJobTitle(value: unknown): string {
+  return sanitizeSubject(value, { maxChars: 80, maxWords: 10 });
+}
+
 export function validateMetadata(raw: string): GenerationMeta | null {
   try {
     const jsonStr = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
@@ -72,8 +187,13 @@ export function validateMetadata(raw: string): GenerationMeta | null {
     const jobAdLanguage = toLanguage(parsed.jobAdLanguage);
     return {
       candidateName: parsed.candidateName ?? '',
-      jobTitle: parsed.jobTitle ?? '',
-      companyName: parsed.companyName ?? '',
+      // Gated for the same reason `companyName` is: it is the other half of the
+      // subject a provider web search runs on.
+      jobTitle: sanitizeJobTitle(parsed.jobTitle),
+      // Gated, not trusted: the model returns an ad heading ("You'll Do") as the
+      // employer often enough that an ungated value reaches company research and
+      // the cover letter's opening line.
+      companyName: sanitizeCompanyName(parsed.companyName),
       resumeLanguage,
       jobAdLanguage,
       // Only a mismatch when BOTH sides are known and actually differ. Without
