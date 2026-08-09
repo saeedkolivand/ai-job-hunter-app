@@ -237,11 +237,34 @@ const EDUCATION_HEADINGS: &[&str] = &[
     "academic",
     "ausbildung",
     "bildung",
-    "formation",
-    "formación",
-    "formazione",
     "opleiding",
+];
+
+/// Education stems that are also the tail of an ordinary word, matched with
+/// [`contains_word`] instead of as a bare substring.
+///
+/// `formation` hides inside `information` — and `formación`/`formação`/
+/// `formazione` inside `información`/`informação`/`informazione` — so the
+/// "PERSONAL INFORMATION" heading that opens half the CVs in Europe classified
+/// as EDUCATION, filing the candidate's phone number and email as a degree.
+/// Both the singular and the plural are listed because the word-boundary rule
+/// is exact at BOTH ends: without `formations`, a French "FORMATIONS" heading
+/// would stop classifying, and adding it to the substring list above would
+/// re-open the collision on `informations`.
+///
+/// Only these stems are word-bounded. Every other entry stays a substring
+/// because German compounds a heading straight into a longer word
+/// (`Weiterbildung` → `bildung`, `Berufsausbildung` → `ausbildung`), which a
+/// both-ends boundary would break.
+const EDUCATION_HEADINGS_WORD_BOUNDED: &[&str] = &[
+    "formation",
+    "formations",
+    "formación",
+    "formaciones",
     "formação",
+    "formações",
+    "formazione",
+    "formazioni",
 ];
 const PROJECT_HEADINGS: &[&str] = &["project", "projekt", "projet", "proyecto", "progetti"];
 const SKILLS_HEADINGS: &[&str] = &[
@@ -274,13 +297,16 @@ const SUMMARY_HEADINGS: &[&str] = &[
 
 /// Bucket a heading. Substring match on the lowercased heading, checked
 /// most-specific-first, so "PROFESSIONAL EXPERIENCE" and "Berufserfahrung" both
-/// land on [`SectionKind::Experience`] without a per-locale word list.
+/// land on [`SectionKind::Experience`] without a per-locale word list. The
+/// exception is [`EDUCATION_HEADINGS_WORD_BOUNDED`], whose stems are substrings
+/// of ordinary words and are therefore matched with [`contains_word`].
 pub fn classify_section(heading: &str) -> SectionKind {
     let lower = heading.to_lowercase();
     let has = |set: &[&str]| set.iter().any(|k| lower.contains(k));
+    let has_word = |set: &[&str]| set.iter().any(|k| contains_word(&lower, k));
     if has(EXPERIENCE_HEADINGS) {
         SectionKind::Experience
-    } else if has(EDUCATION_HEADINGS) {
+    } else if has(EDUCATION_HEADINGS) || has_word(EDUCATION_HEADINGS_WORD_BOUNDED) {
         SectionKind::Education
     } else if has(PROJECT_HEADINGS) {
         SectionKind::Projects
@@ -620,7 +646,15 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
             {
                 set.education.push(line.text.clone())
             }
-            LineKind::Text | LineKind::JobEntry
+            // `Contact` belongs here for the same reason it belongs on the
+            // Education arm above: `export::parser` classifies any line carrying
+            // a `github.com`/`portfolio` URL — or two `·` separators — as
+            // Contact, which is precisely the owner-locked projects format
+            // ("**Ledger CLI** · site · repo", then a "Rust · SQLite" stack
+            // line). Without it, the only project lines that survived were the
+            // bulleted ones and the prose description, so a prompt built from
+            // this set was told the project had no link and no stack.
+            LineKind::Text | LineKind::JobEntry | LineKind::Contact
                 if section == SectionKind::Projects && !line.text.trim().is_empty() =>
             {
                 let bullet = vocab.bullet(format!("p{}", set.projects.len()), &line.text);
@@ -1053,6 +1087,106 @@ BSc Computer Science, TU Berlin
         assert!(contains_word("not just faster, but cheaper", "not just"));
         assert!(!contains_word("", "vital"));
         assert!(!contains_word("anything", ""));
+    }
+
+    /// A projects entry whose links live on a non-bulleted title line is the
+    /// owner-locked format's NORMAL shape, and `export::parser` classifies it
+    /// `Contact` (a `github.com` URL, or two `·` separators, is all it takes).
+    /// The Education arm above already had `LineKind::Contact` added for exactly
+    /// this reason; the Projects arm did not, so the line naming the project and
+    /// its repository was silently dropped from the evidence set — a generation
+    /// prompt was told the candidate's project had no link and no stack.
+    #[test]
+    fn project_lines_carrying_links_are_kept_as_evidence() {
+        let resume = "EXPERIENCE\n\n\
+                      Senior Engineer | Acme | 2021 - 2024\n\
+                      - Shipped the ledger service\n\n\
+                      PROJECTS\n\n\
+                      **Ledger CLI** · https://ledger.example.dev · github.com/janedoe/ledger\n\
+                      Rust · SQLite · Clap\n\
+                      A double-entry bookkeeping tool for freelancers.\n";
+        let set = extract_evidence(resume, "rust backend engineer bookkeeping ledger");
+        assert!(
+            set.projects
+                .iter()
+                .any(|p| p.text.contains("github.com/janedoe/ledger")),
+            "the project's title + link line must reach the evidence set; got {:?}",
+            set.projects
+        );
+        assert!(
+            set.projects.iter().any(|p| p.text.contains("SQLite")),
+            "the `·`-separated stack line is also Contact-shaped and must survive; got {:?}",
+            set.projects
+        );
+        // Ids stay dense and document-ordered across the newly-kept lines.
+        let ids: Vec<&str> = set.projects.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["p0", "p1", "p2"], "got {ids:?}");
+        assert!(
+            !set.roles
+                .iter()
+                .any(|r| r.bullets.iter().any(|b| b.text.contains("Ledger CLI"))),
+            "a projects line must never attach to an experience role"
+        );
+    }
+
+    /// `classify_section` matches substrings, and "formation" hides inside
+    /// "information" (as do `formación`/`formação`/`formazione` inside
+    /// `información`/`informação`/`informazione`). So the "PERSONAL INFORMATION"
+    /// heading that heads half the CVs in Europe classified as EDUCATION — and,
+    /// with the Contact arm above, filed the candidate's phone number and email
+    /// as a degree.
+    #[test]
+    fn personal_information_headings_are_not_education() {
+        for heading in [
+            "PERSONAL INFORMATION",
+            "Personal Information",
+            "Información personal",
+            "Informação pessoal",
+            "Informazioni personali",
+        ] {
+            assert_ne!(
+                classify_section(heading),
+                SectionKind::Education,
+                "{heading:?} is a contact block, not education"
+            );
+        }
+        // The real headings these stems exist for still classify.
+        for heading in [
+            "FORMATION",
+            "Formation académique",
+            "Formations",
+            "Formación académica",
+            "Formação acadêmica",
+            "Formazione",
+            "Ausbildung",
+            "Weiterbildung",
+            "EDUCATION",
+        ] {
+            assert_eq!(
+                classify_section(heading),
+                SectionKind::Education,
+                "{heading:?} names an education section"
+            );
+        }
+    }
+
+    /// The same defect end to end: the contact block under a "PERSONAL
+    /// INFORMATION" heading was handed to the prompt as the candidate's
+    /// education.
+    #[test]
+    fn a_personal_information_block_is_never_extracted_as_education() {
+        let resume = "Jane Doe\n\n\
+                      EXPERIENCE\n\n\
+                      Senior Engineer | Acme | 2021 - 2024\n\
+                      - Shipped the ledger service\n\n\
+                      PERSONAL INFORMATION\n\n\
+                      jane.doe@example.com | +49 30 1234567\n";
+        let set = extract_evidence(resume, "backend engineer ledger");
+        assert!(
+            set.education.is_empty(),
+            "a contact block is not a degree; got {:?}",
+            set.education
+        );
     }
 
     #[test]

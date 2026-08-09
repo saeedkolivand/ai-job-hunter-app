@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use crate::documents::evidence::{years_in, SectionKind};
 use crate::export::types::{LineKind, ParsedLine};
 
+use super::factual::MAX_SCANNED_ENTRIES;
 use super::{
     issue, Analysis, ContentIssue, Section, CONSISTENCY_DATE_ORDER, CONSISTENCY_PROJECT_STRUCTURE,
     CONSISTENCY_SKILL_NOT_DEMONSTRATED, CONSISTENCY_TITLE_DRIFT,
@@ -46,13 +47,21 @@ fn date_order_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     issues
 }
 
-/// `(company-token set, title)` for every employment entry in `sections`.
+/// `(company-token set, title)` for every employment entry in `sections`, up to
+/// [`MAX_SCANNED_ENTRIES`].
+///
+/// The cap is here rather than at the call site because BOTH sides of
+/// [`title_drift_issues`]' comparison come through this function, and the loop
+/// it feeds is O(generated entries × source entries). Same rationale, same
+/// constant, as `factual::dropped_role_issues` — imported rather than
+/// re-declared so the two scans can never disagree about the bound.
 fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
     sections
         .iter()
         .filter(|s| s.kind == SectionKind::Experience)
         .flat_map(|s| s.lines.iter())
         .filter(|l| matches!(l.kind, LineKind::JobEntry))
+        .take(MAX_SCANNED_ENTRIES)
         .map(|l| {
             let label = l.text.as_str();
             // "Senior Engineer | Acme Corp | 2021 – Present" and

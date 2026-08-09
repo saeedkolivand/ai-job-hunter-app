@@ -25,6 +25,20 @@ use super::{
 /// nowhere in the output proves nothing.
 pub const MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS: usize = 4;
 
+/// Hard cap on how many employment entries the entry-vs-document scans consider
+/// — [`dropped_role_issues`] here and `consistency::title_drift_issues`, which
+/// imports this constant rather than picking its own.
+///
+/// Both are O(entries × document): the first substring-searches the whole
+/// generated text once per SOURCE entry, the second compares every generated
+/// entry against every source entry. Neither input is trusted or small (the save
+/// path admits ~200KB of each), so an entry count is bounded before the
+/// expensive thing, exactly as `duplicates::MAX_DUP_BULLETS` bounds the O(n²)
+/// near-duplicate scan for the same reason. A real résumé has a dozen roles; the
+/// cap only ever bites on already-broken input, and it caps the SCAN, never
+/// `count_roles` — the `rolesSource`/`rolesOutput` metric stays honest.
+pub const MAX_SCANNED_ENTRIES: usize = 200;
+
 /// A digit-bearing claim of impact. Only these three shapes are checked; a bare
 /// one- or two-digit number ("3 engineers") is far too common to police.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -215,11 +229,18 @@ fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
         .chain(suffixed_numbers(truth))
         .chain(word_numbers(truth))
         .collect();
+    // Deduplicated on the NORMALIZED number, the same key the sourcing decision
+    // above is taken on. The raw span is not that key: `PERCENT_RE` and
+    // `INTEGER_RE` both match a three-digit percentage, yielding "150%" and
+    // "150" for one fabricated figure — two Criticals about the same span, on
+    // the family whose whole design rule is that a wrong Critical is worse than
+    // a missed one. The first spelling encountered wins, so the evidence still
+    // quotes the unit the document actually wrote ("150%", not "150").
     let mut seen = HashSet::new();
     metrics_in(generated)
         .into_iter()
         .filter(|m| !sourced.contains(&m.number))
-        .filter(|m| seen.insert(m.raw.clone()))
+        .filter(|m| seen.insert(m.number.clone()))
         .map(|m| {
             issue(
                 FACTUAL_UNSOURCED_METRIC,
@@ -455,6 +476,10 @@ fn dropped_role_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let generated_lower = ctx.input.generated.to_lowercase();
     entries(&ctx.source_sections)
         .into_iter()
+        // Bound the scan before the expensive part: each surviving entry
+        // substring-searches the whole generated document. See
+        // [`MAX_SCANNED_ENTRIES`].
+        .take(MAX_SCANNED_ENTRIES)
         .filter_map(|(company, dates)| {
             if distinctive_tokens(&company).is_empty() {
                 return None; // Not checkable — never guessed at.

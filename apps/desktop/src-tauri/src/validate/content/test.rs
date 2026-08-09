@@ -1339,6 +1339,191 @@ fn generic_letter_warns_when_nothing_is_posting_specific() {
     silent(&en_letter(EN_LETTER_GROUNDED), VOICE_GENERIC_LETTER);
 }
 
+// ── Round-3 regressions (one per reproduced review finding) ─────────────────
+
+/// F1 — every other doc-kind-specific metric is zeroed for a cover letter
+/// (`topRequirementHits`, `duplicateRatio`), but the role counts were computed
+/// unconditionally. A letter has no employment entries, so the quality panel
+/// rendered a "2 → 0" roles DROP — a résumé-shaped number, and an alarming one,
+/// on a perfectly good letter.
+#[test]
+fn cover_letter_metrics_carry_no_role_counts() {
+    let report = en_letter(EN_LETTER_GROUNDED);
+    assert_eq!(
+        (report.metrics.roles_source, report.metrics.roles_output),
+        (0, 0),
+        "a letter has no employment entries to count on either side"
+    );
+    // The same source résumé really does carry two roles, so this is the letter
+    // arm zeroing them rather than an empty fixture proving nothing.
+    assert_eq!(
+        en_resume(EN_CLEAN, &en_requirements()).metrics.roles_source,
+        2
+    );
+}
+
+/// F2 — `voice.generic_letter` measures the letter against the POSTING, so it
+/// is a posting comparison and owes the module's own invariant: once the output
+/// is not in the target language, every posting comparison is suppressed
+/// (`alignment::validate` returns early on exactly this). Across two languages
+/// the letter shares no vocabulary with the ad, so the check reported "0 things
+/// specific to the posting" underneath the one finding that matters.
+#[test]
+fn generic_letter_is_suppressed_on_a_language_mismatch() {
+    let german_letter = "Sehr geehrte Damen und Herren, hiermit bewerbe ich mich auf die \
+                         ausgeschriebene Stelle in Ihrem Haus. Über eine Rückmeldung von Ihnen \
+                         würde ich mich sehr freuen und stehe für ein Gespräch gerne zur \
+                         Verfügung. Mit freundlichen Grüßen, Jane Doe";
+    let report = en_letter(german_letter);
+    fired(&report, CONTENT_LANGUAGE_MISMATCH);
+    silent(&report, VOICE_GENERIC_LETTER);
+
+    // …and a same-language letter that really is generic still fires, so the
+    // guard suppresses the cascade rather than the check.
+    let generic = "Dear Hiring Manager, I would be a great addition to your organisation and \
+                   look forward to hearing from you soon. Best regards, Jane";
+    fired(&en_letter(generic), VOICE_GENERIC_LETTER);
+}
+
+/// F3 — the prompt's own ban is scoped: "Applies to any words YOU introduce,
+/// never to exact job-ad keywords already grounded in the résumé"
+/// (`natural-voice.ts`, the single source `lexicon.rs` is generated from). A
+/// phrase the candidate's own résumé already uses is not a word the model
+/// introduced, so flagging it made the validator stricter than the prompt it
+/// exists to check — and told a finance candidate their own "leverage
+/// calculator" was an AI tell.
+///
+/// The exemption is per-PHRASE: a source containing "leverage" exempts
+/// "leverage" and nothing else.
+#[test]
+fn ai_tell_phrases_already_in_the_source_resume_are_exempt() {
+    let source = "EXPERIENCE\n\nQuant Developer | Acme Capital | 2021 - Present\n\
+                  - Built the leverage calculator the trading desk prices margin with\n";
+    let generated = "EXPERIENCE\n\nQuant Developer | Acme Capital | 2021 - Present\n\
+                     - Rebuilt the leverage calculator behind a seamless margin workflow\n";
+    let report = report_for(generated, source, EN_JOB_AD, &[]);
+    let phrases: Vec<&str> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == VOICE_AI_TELL_LEXICAL)
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        !phrases.contains(&"leverage"),
+        "the source résumé already says \"leverage\" — the model did not introduce it; \
+         got {phrases:?}"
+    );
+    assert!(
+        phrases.contains(&"seamless"),
+        "\"seamless\" appears nowhere in the source, so the ban still applies to it; \
+         got {phrases:?}"
+    );
+}
+
+/// F4 — `PERCENT_RE` and `INTEGER_RE` both capture a fabricated figure of 100
+/// or more written with a percent sign ("150%" and "150"), and the dedupe key
+/// was the RAW matched text, so one invented number produced two Criticals on
+/// the same span. Sourcing is decided on the normalized number, so the dedupe
+/// has to be too.
+#[test]
+fn one_fabricated_percentage_produces_exactly_one_critical() {
+    let source = "EXPERIENCE\n\nAcme | 2021 - Present\n- Cut checkout latency from 480ms to 90ms\n";
+    let three_digit =
+        "EXPERIENCE\n\nAcme | 2021 - Present\n- Grew signups 150% after the rewrite\n";
+    let report = report_for(three_digit, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(
+        hits.len(),
+        1,
+        "one invented figure is one finding, not one per regex that saw it; got {hits:#?}"
+    );
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("150%"),
+        "the evidence must still quote the span exactly as written"
+    );
+
+    // A two-digit percentage never had the collision (`INTEGER_RE` needs three
+    // significant digits) and must keep firing exactly once — the dedupe change
+    // must not swallow a second, genuinely DIFFERENT number.
+    let two_numbers = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                       - Grew signups 72% and cut refunds 150% after the rewrite\n";
+    let report = report_for(two_numbers, source, EN_JOB_AD, &[]);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_UNSOURCED_METRIC)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert_eq!(
+        evidence,
+        vec!["72%", "150%"],
+        "two different invented figures are two findings"
+    );
+}
+
+/// F5 — `dropped_role_issues` searches the whole generated document once per
+/// SOURCE entry, and `title_drift_issues` compares every generated entry
+/// against every source entry: both are O(entries × document) over inputs that
+/// admit 200KB each. The sibling near-duplicate scan was explicitly capped for
+/// the same risk class ([`duplicates::MAX_DUP_BULLETS`]); this pins the
+/// analogous entry cap and proves it BITES without disabling either check.
+#[test]
+fn entry_scans_are_capped_like_the_duplicate_scan() {
+    assert_eq!(factual::MAX_SCANNED_ENTRIES, 200);
+    let over = factual::MAX_SCANNED_ENTRIES + 50;
+    let doc = |title: &str| {
+        let mut out = String::from("EXPERIENCE\n\n");
+        for i in 0..over {
+            out.push_str(&format!(
+                "{title} | Zetacorp{i} Systems | 2010 - 2011\n- Shipped release {i}\n\n"
+            ));
+        }
+        out
+    };
+    let source = doc("Backend Engineer");
+    let count = |issues: Vec<ContentIssue>, code: &str| {
+        issues.into_iter().filter(|i| i.code == code).count()
+    };
+
+    // `factual.dropped_role`: the generated document mentions none of them.
+    let none_survive = "EXPERIENCE\n\nBackend Engineer | Different Employer | 2020 - 2021\n\
+                        - Shipped one thing\n";
+    let input = ContentInput {
+        generated: none_survive,
+        source_resume: &source,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    };
+    assert_eq!(
+        count(
+            factual::validate(&Analysis::new(&input)),
+            FACTUAL_DROPPED_ROLE
+        ),
+        factual::MAX_SCANNED_ENTRIES,
+        "the dropped-role scan must stop AT the cap — and not before it"
+    );
+
+    // `consistency.title_drift`: the same employers, a wholly different title.
+    let drifted = doc("Pastry Chef");
+    let input = ContentInput {
+        generated: &drifted,
+        source_resume: &source,
+        job_ad: EN_JOB_AD,
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    };
+    assert_eq!(
+        count(
+            consistency::validate(&Analysis::new(&input)),
+            CONSISTENCY_TITLE_DRIFT
+        ),
+        factual::MAX_SCANNED_ENTRIES,
+        "the title-drift scan must stop AT the cap — and not before it"
+    );
+}
+
 // ── Contract + vocabulary ───────────────────────────────────────────────────
 
 /// `ok` is exactly "no Criticals" — nothing else may clear or set it.

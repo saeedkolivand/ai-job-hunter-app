@@ -618,10 +618,14 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
     let mut issues = Vec::new();
     issues.extend(language_issues(&ctx));
 
-    let (top_requirement_hits, duplicate_ratio) = match input.doc_kind {
+    // Every doc-kind-specific metric is decided in this one match, letter arm
+    // included: a cover letter has no employment entries, so reporting the
+    // SOURCE résumé's role count next to the letter's own zero rendered a
+    // "2 → 0" roles drop in the quality panel on a perfectly good letter.
+    let (top_requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
         DocKind::CoverLetter => {
             issues.extend(letter::validate(&ctx));
-            (0, 0.0)
+            (0, 0.0, 0, 0)
         }
         DocKind::Resume => {
             issues.extend(factual::validate(&ctx));
@@ -632,7 +636,12 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
             issues.extend(duplicate_issues);
             issues.extend(ats::validate(&ctx));
             issues.extend(voice::validate(&ctx));
-            (hits, ratio)
+            (
+                hits,
+                ratio,
+                factual::count_roles(&ctx.source_sections) as u32,
+                factual::count_roles(&ctx.generated_sections) as u32,
+            )
         }
     };
 
@@ -643,8 +652,8 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
             .flatten(),
         top_requirement_hits,
         duplicate_ratio,
-        roles_source: factual::count_roles(&ctx.source_sections) as u32,
-        roles_output: factual::count_roles(&ctx.generated_sections) as u32,
+        roles_source,
+        roles_output,
     };
 
     // `ok` reads the criticals count from the FULL, pre-truncation list —

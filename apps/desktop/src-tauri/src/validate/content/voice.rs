@@ -49,8 +49,22 @@ const TRIPLET_CONJUNCTIONS: &[&str] = &[", and ", ", und ", ", or ", ", oder ", 
 /// Both lexicon tiers feed this one code: the lexical list always, and the
 /// prose-pattern list only for connected writing, where those rules apply. The
 /// matched phrase is the issue's evidence, so the user sees exactly what fired.
+///
+/// ## Scoped exactly like the prompt that issued the ban
+///
+/// `natural-voice.ts` scopes it in its first line — "Applies to any words YOU
+/// introduce, never to exact job-ad keywords already grounded in the résumé" —
+/// so a phrase the candidate's OWN résumé already uses is out of scope by
+/// construction: the model did not introduce it, it carried it over. Flagging it
+/// anyway made this check stricter than the prompt it exists to verify, and told
+/// a finance candidate that their own "leverage calculator" was an AI tell.
+///
+/// The exemption is per-PHRASE, matched with the same word-boundary rule as the
+/// hit itself: a source that says "leverage" exempts "leverage" and nothing
+/// else, so every other entry on the list still fires in the same document.
 fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
     let haystack = flattened_lower(ctx.input.generated);
+    let source = flattened_lower(ctx.input.source_resume);
     let lists: Vec<&'static [&'static str]> = if include_prose {
         vec![
             lexicon::ai_tell_lexical(&ctx.lang),
@@ -64,6 +78,7 @@ fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
         .flatten()
         .copied()
         .filter(|phrase| contains_phrase(&haystack, phrase))
+        .filter(|phrase| !contains_phrase(&source, phrase))
         .collect();
     hits.sort_unstable();
     hits.dedup();
@@ -222,9 +237,17 @@ fn em_dash_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// Measured as distinct posting keywords the letter carries. Nothing about the
 /// role, the product, or the stack means the reader learns nothing they could
 /// not have guessed.
+///
+/// This is a POSTING COMPARISON, so it obeys the same
+/// [`Analysis::posting_comparable`] gate `alignment::validate` does: nothing
+/// extractable on the posting side, or an output that is not in the target
+/// language, and it goes quiet. Counting an English ad's keywords in a German
+/// letter yields ~0 every time — a guaranteed "this letter is generic" warning
+/// stacked under the one finding that actually explains it, which is exactly the
+/// cascade the language Critical suppresses everywhere else.
 fn generic_letter_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if ctx.job_keywords.is_empty() {
-        return Vec::new(); // Nothing to be specific ABOUT.
+    if !ctx.posting_comparable() {
+        return Vec::new(); // Nothing to be specific ABOUT, or not comparable.
     }
     let specific = ctx
         .generated_keywords
