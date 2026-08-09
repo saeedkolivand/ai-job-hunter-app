@@ -192,12 +192,14 @@ export function QualityReportPanel({
                   {Math.round(metrics.duplicateRatio * 100)}%
                 </dd>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt>{t('quality.panel.metrics.roles')}</dt>
-                <dd className="font-medium text-foreground/85">
-                  {metrics.rolesSource} → {metrics.rolesOutput}
-                </dd>
-              </div>
+              {docKind === 'resume' && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt>{t('quality.panel.metrics.roles')}</dt>
+                  <dd className="font-medium text-foreground/85">
+                    {metrics.rolesSource} → {metrics.rolesOutput}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
         )}

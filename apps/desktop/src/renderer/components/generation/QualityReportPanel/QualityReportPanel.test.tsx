@@ -162,6 +162,16 @@ describe('QualityReportPanel', () => {
     expect(within(footer).getByText(/3.*2/)).toBeInTheDocument();
   });
 
+  it('hides the roles row for a cover letter — role counts describe résumés only', () => {
+    render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="coverLetter" />);
+    const footer = screen
+      .getByRole('heading', { level: 3, name: /metrics/i })
+      .closest('div') as HTMLElement;
+    expect(within(footer).getByText('62%')).toBeInTheDocument();
+    expect(within(footer).queryByText(/roles/i)).toBeNull();
+    expect(within(footer).queryByText(/3.*2/)).toBeNull();
+  });
+
   it('titles the dialog per docKind', () => {
     const { rerender } = render(
       <QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="resume" />
