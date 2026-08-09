@@ -274,6 +274,14 @@ export function useGeneration(
               : t('aiGenerate.toast.resumeReady'),
       });
     } catch (err) {
+      // Ownership guard (mirrors the `finally` guard below): a Regenerate click
+      // may have already aborted this run's controller and started its own —
+      // the newer run owns the UI now, so a stale run's late rejection must
+      // never stomp its in-flight state (stage/buffers/stage rotation).
+      if (abortControllerRef.current !== controller) {
+        console.warn('[handleGenerate] superseded, error handling skipped', { target });
+        return;
+      }
       stopStageRotation();
       setStreamBuffer('');
       setGenStep(null);

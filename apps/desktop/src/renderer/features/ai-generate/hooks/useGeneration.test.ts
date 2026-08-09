@@ -381,3 +381,52 @@ describe('useGeneration — stale-persist guard (Regenerate/reset during validat
     expect(abortControllerRef.current).toBeNull();
   });
 });
+
+describe('useGeneration — supersede while a stream is in flight (catch race)', () => {
+  it('a Regenerate click during the cover-letter stream leaves the newer run untouched when the stale stream later rejects', async () => {
+    // Run #1's cover-letter stream hangs until we reject it late; run #2's own
+    // cover-letter call also hangs, so run #2 is still mid-flight (not yet
+    // finished) when run #1's stale rejection lands.
+    let rejectRun1Cover!: (err: Error) => void;
+    let resolveRun2Cover!: (r: { text: string; companyBrief: string }) => void;
+    vi.mocked(generateCoverLetter)
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectRun1Cover = reject)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveRun2Cover = resolve)));
+    const { handleGenerate, m } = setup('both');
+
+    const first = handleGenerate();
+    // Résumé already revealed (progressive reveal); run #1's cover letter is
+    // mid-stream.
+    await vi.waitFor(() => expect(generateCoverLetter).toHaveBeenCalledTimes(1));
+
+    // Regenerate clicked while run #1's cover letter is still streaming — this
+    // aborts run #1's controller and takes over the ref.
+    const second = handleGenerate();
+    // Run #2's own résumé resolves and it reaches its own cover-letter call,
+    // still mid-flight.
+    await vi.waitFor(() => expect(generateCoverLetter).toHaveBeenCalledTimes(2));
+
+    const stageCallsBefore = m.setStage.mock.calls.length;
+    const stopRotationCallsBefore = m.stopStageRotation.mock.calls.length;
+    const streamBufferCallsBefore = m.setStreamBuffer.mock.calls.length;
+    const genStepCallsBefore = m.setGenStep.mock.calls.length;
+
+    // Run #1's aborted stream finally rejects — its own supersession, nothing
+    // to do with run #2's still-in-flight generation.
+    rejectRun1Cover(new Error('cover boom — stale'));
+    await first;
+
+    // The superseded run's catch must be a no-op: none of run #2's in-flight
+    // UI state gets stomped by run #1's late rejection.
+    expect(m.setStage.mock.calls.length).toBe(stageCallsBefore);
+    expect(m.stopStageRotation.mock.calls.length).toBe(stopRotationCallsBefore);
+    expect(m.setStreamBuffer.mock.calls.length).toBe(streamBufferCallsBefore);
+    expect(m.setGenStep.mock.calls.length).toBe(genStepCallsBefore);
+    expect(stageCalls(m).at(-1)).toBe('done'); // still run #2's progressive reveal
+    expect(m.setIsGenerating).toHaveBeenLastCalledWith(true); // run #2 still in flight
+
+    // Clean up run #2 so no promise is left dangling past the test.
+    resolveRun2Cover({ text: 'COVER', companyBrief: 'BRIEF' });
+    await second;
+  });
+});
