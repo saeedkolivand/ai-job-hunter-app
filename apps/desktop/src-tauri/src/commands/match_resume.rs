@@ -7,16 +7,15 @@ use tauri::{AppHandle, Manager};
 
 use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
 use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
+use crate::documents::evidence::{rank_bullets, EvidenceBullet};
 use crate::documents::keywords::{
-    apply_stemmer, detect_locale_tag, display_forms, keyword_coverage, keywords,
-    keywords_normalized, languages_align, make_stemmer, readable_gaps,
+    apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, languages_align,
+    make_stemmer, readable_gaps,
 };
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
     MatchScoreKey,
 };
-use crate::export::parser::parse_resume;
-use crate::export::types::LineKind;
 use crate::ipc_contracts::matching::{MatchResumeRequest, ResumeTrimSuggestionsRequest};
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
 use crate::locale::LocaleProfile;
@@ -455,83 +454,23 @@ pub struct TrimCandidate {
     pub score: usize,
 }
 
-/// Rank a résumé's bullets weakest-first for a given posting.
+/// Wire shim: the ranking itself lives in `documents::evidence::rank_bullets`
+/// (the same scorer now also feeds evidence extraction), and this narrows an
+/// [`EvidenceBullet`] back to the three fields the `match:trimSuggestions`
+/// payload has always carried.
 ///
-/// Deliberately embedding-free: it reuses the same `documents::keywords` kernel
-/// (and the same JD-derived stemmer) as [`score_one`], so the panel can never
-/// disagree with the match score the user sees on the same pair. Zero model
-/// calls, works offline.
-///
-/// Only `LineKind::Bullet` lines are candidates — section headers, job entries
-/// and the contact block are structural, and cutting them to save space is never
-/// the right advice.
-///
-/// Returns empty when the posting has no extractable keywords, mirroring
-/// `keyword_coverage`'s `None`: with nothing to score against, every line would
-/// tie at zero and the ranking would be noise dressed up as a recommendation.
-fn rank_trim_candidates(resume_text: &str, job_text: &str) -> Vec<TrimCandidate> {
-    // Symmetric normalization, exactly as `score_one` does it: stem BOTH sides
-    // with the JD-derived stemmer when the languages align, leave BOTH
-    // normalized-only when they diverge. Stemming one side alone mutates
-    // language-neutral tech tokens on that side only and matches neither set.
-    //
-    // The résumé's language is DETECTED here rather than read from a stored
-    // locale — this path scores generator output that was never persisted, so
-    // there is no `DocumentRecord::locale` to consult. The request's `locale` is
-    // the export MARKET (`us`/`dach`), not a language; using it here would be a
-    // different concept wearing the same word.
-    let aligned = languages_align(job_text, detect_locale_tag(resume_text));
-    let stemmer = make_stemmer(job_text);
-    let job_keywords = if aligned {
-        keywords(job_text, &stemmer)
-    } else {
-        keywords_normalized(job_text)
-    };
-    if job_keywords.is_empty() {
-        return Vec::new();
+/// `id` is dropped and `score` narrows from `f64` to `usize` deliberately: the
+/// score is a hit COUNT (always a non-negative whole number), and `usize` is
+/// what the existing TS `TrimCandidate` expects — a widened `1.0` would be a
+/// silent wire change. Pinned by `trim_candidate_wire_shape_is_unchanged`.
+impl From<EvidenceBullet> for TrimCandidate {
+    fn from(bullet: EvidenceBullet) -> Self {
+        Self {
+            text: bullet.text,
+            hits: bullet.hits,
+            score: bullet.score as usize,
+        }
     }
-    // Display forms are keyed on whatever the JD side produced, so they must be
-    // built the same way — a stemmed map would miss every unstemmed hit.
-    let display = if aligned {
-        display_forms(job_text, &stemmer)
-    } else {
-        keywords_normalized(job_text)
-            .into_iter()
-            .map(|t| (t.clone(), t))
-            .collect()
-    };
-
-    let mut candidates: Vec<TrimCandidate> = parse_resume(resume_text)
-        .lines
-        .into_iter()
-        .filter(|line| matches!(line.kind, LineKind::Bullet))
-        .map(|line| {
-            let line_words = if aligned {
-                keywords(&line.text, &stemmer)
-            } else {
-                keywords_normalized(&line.text)
-            };
-            let mut hits: Vec<String> = line_words
-                .intersection(&job_keywords)
-                .map(|stem| display.get(stem).cloned().unwrap_or_else(|| stem.clone()))
-                .collect();
-            hits.sort();
-            TrimCandidate {
-                score: hits.len(),
-                hits,
-                text: line.text,
-            }
-        })
-        .collect();
-
-    // Weakest first. Among lines carrying equally little, the LONGEST goes first:
-    // same loss to the reader, most space recovered.
-    candidates.sort_by(|a, b| {
-        a.score
-            .cmp(&b.score)
-            .then_with(|| b.text.len().cmp(&a.text.len()))
-    });
-    candidates
 }
 
 /// Advisory trim panel: which bullets are carrying the least weight for this
@@ -550,9 +489,13 @@ pub async fn resume_trim_suggestions(req: ResumeTrimSuggestionsRequest) -> Value
     let resume_text = clamp_to_bytes(req.resume_text, MAX_JOB_DESCRIPTION_BYTES);
     let job_text = clamp_to_bytes(req.job_text, MAX_JOB_DESCRIPTION_BYTES);
     let profile = LocaleProfile::get(req.locale.as_deref().unwrap_or("en"));
+    let lines: Vec<TrimCandidate> = rank_bullets(&resume_text, &job_text)
+        .into_iter()
+        .map(TrimCandidate::from)
+        .collect();
     json!({
         "maxPages": profile.max_pages,
-        "lines": rank_trim_candidates(&resume_text, &job_text),
+        "lines": lines,
     })
 }
 
@@ -1092,125 +1035,59 @@ mod test {
         );
     }
 
-    // ── rank_trim_candidates ─────────────────────────────────────────────────
+    // ── trim suggestions (ranking itself lives in documents::evidence) ───────
 
-    const RESUME: &str = "\
-EXPERIENCE
-
-Senior Engineer, Acme
-- Built and shipped Docker containers onto a Kubernetes cluster
-- Organised the team offsite and the summer party for forty people
-- Ran the weekly standup
-";
-
-    /// The whole point: a bullet the posting never mentions must rank BELOW one
-    /// full of the posting's vocabulary, so the weakest-first list is cuttable
-    /// from the top.
+    /// The `match:trimSuggestions` payload must stay wire-identical after the
+    /// scorer moved into `documents::evidence`: three camelCase fields, `score`
+    /// as a JSON INTEGER (not `1.0`), and the same weakest-first ordering.
+    /// Compares the serialized shim output against the `EvidenceBullet` the
+    /// shared scorer produced, so a field rename or a widened numeric type on
+    /// either side fails here.
     #[test]
-    fn irrelevant_bullets_rank_below_keyword_bearing_ones() {
-        let job = "We need a backend engineer with strong Docker and Kubernetes experience \
-                   to own our container platform.";
-        let ranked = rank_trim_candidates(RESUME, job);
-
-        assert_eq!(ranked.len(), 3, "all three bullets are candidates");
-        assert!(
-            ranked[0].text.contains("offsite"),
-            "the offsite bullet carries none of the posting's vocabulary and must rank first \
-             for cutting; got {:?}",
-            ranked[0].text
-        );
-        let docker = ranked
-            .iter()
-            .position(|c| c.text.contains("Docker"))
-            .expect("the Docker bullet must be present");
-        assert_eq!(
-            docker, 2,
-            "the Docker bullet is the strongest — cut it last"
-        );
-        assert!(ranked[docker].score > 0);
-        // Hits are surfaced unstemmed — "kubernetes", never the stem "kubernet".
-        assert!(
-            ranked[docker].hits.iter().any(|h| h == "kubernetes"),
-            "hits must be readable display forms, not Snowball stems; got {:?}",
-            ranked[docker].hits
-        );
-    }
-
-    /// Ties break on length: two equally worthless bullets, the longer one frees
-    /// more space, so it is offered first.
-    #[test]
-    fn equally_weak_bullets_are_ordered_longest_first() {
-        let job = "Docker and Kubernetes platform engineering.";
-        let ranked = rank_trim_candidates(RESUME, job);
-        let zeroes: Vec<&TrimCandidate> = ranked.iter().filter(|c| c.score == 0).collect();
-        assert!(
-            zeroes.len() >= 2,
-            "expected at least two zero-scoring lines"
-        );
-        assert!(
-            zeroes[0].text.len() >= zeroes[1].text.len(),
-            "equal-score lines must be ordered longest-first; got {:?} before {:?}",
-            zeroes[0].text,
-            zeroes[1].text
-        );
-    }
-
-    /// `SHORT_TECH_TERMS` bypass stemming (aws → aw would be corruption). The
-    /// panel must surface them intact, same as the match score does.
-    #[test]
-    fn short_tech_terms_survive_intact() {
-        let resume = "EXPERIENCE\n\n- Migrated the fleet to AWS and wrote the Go services\n";
-        let job = "Hiring an engineer fluent in AWS and Go.";
-        let ranked = rank_trim_candidates(resume, job);
-        let hits = &ranked[0].hits;
-        assert!(hits.iter().any(|h| h == "aws"), "got {hits:?}");
-        assert!(hits.iter().any(|h| h == "go"), "got {hits:?}");
-    }
-
-    /// The invariant the whole panel rests on: it must never disagree with the
-    /// match score for the same pair. A cross-language pair is where that breaks
-    /// — `score_one` leaves BOTH sides unstemmed there, so ranking must too.
-    /// Before this, ranking always stemmed with the JD stemmer and a German
-    /// posting against an English résumé scored a shared tech token on one side
-    /// only. Both now route through `languages_align`.
-    #[test]
-    fn cross_language_pair_ranks_symmetrically_like_score_one() {
-        // German JD, English résumé — divergent, so neither side may be stemmed.
-        let job = "Wir suchen einen erfahrenen Entwickler mit Kubernetes und Docker \
-                   für unsere Container-Plattform in München.";
+    fn trim_candidate_wire_shape_is_unchanged() {
         let resume = "EXPERIENCE\n\n\
-                      - Shipped kubernetes clusters and docker containers to production\n\
+                      - Built and shipped Docker containers onto a Kubernetes cluster\n\
                       - Organised the team offsite and the summer party for forty people\n";
+        let job = "Backend engineer with strong Docker and Kubernetes experience.";
 
-        assert!(
-            !languages_align(job, detect_locale_tag(resume)),
-            "fixture must actually be a divergent pair, or this test proves nothing"
-        );
+        let ranked = rank_bullets(resume, job);
+        assert_eq!(ranked.len(), 2, "both bullets are candidates");
 
-        let ranked = rank_trim_candidates(resume, job);
-        let tech = ranked
+        let lines: Vec<TrimCandidate> = ranked
             .iter()
-            .find(|c| c.text.contains("kubernetes"))
-            .expect("the tech bullet must be a candidate");
-        assert!(
-            tech.score > 0,
-            "shared tech tokens must still match across languages when both sides \
-             stay unstemmed; got {:?}",
-            tech.hits
-        );
-        assert!(
-            ranked[0].text.contains("offsite"),
-            "the JD-irrelevant bullet must still rank first for cutting; got {:?}",
-            ranked[0].text
-        );
-    }
+            .cloned()
+            .map(TrimCandidate::from)
+            .collect::<Vec<_>>();
+        let wire = serde_json::to_value(&lines).expect("TrimCandidate must serialize");
+        let first = &wire[0];
 
-    /// A posting with nothing extractable yields no ranking rather than a
-    /// ranking in which everything ties at zero — mirrors `keyword_coverage`
-    /// returning `None` instead of 0%.
-    #[test]
-    fn keywordless_posting_yields_no_suggestions() {
-        assert!(rank_trim_candidates(RESUME, "!!! ??? ...").is_empty());
+        // Exactly the three historical fields — no `id` leaking onto the wire.
+        // `serde_json::Value` stores its map sorted, so compare against the
+        // sorted field set rather than declaration order.
+        let keys: Vec<&str> = first
+            .as_object()
+            .expect("each line is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["hits", "score", "text"],
+            "the trim payload's field set must not change; got {keys:?}"
+        );
+        assert!(
+            first["score"].is_u64(),
+            "score must serialize as an integer, not a float; got {}",
+            first["score"]
+        );
+
+        // Ordering and values still come straight from the shared scorer.
+        assert_eq!(first["text"], ranked[0].text);
+        assert_eq!(first["score"].as_u64().unwrap() as f64, ranked[0].score);
+        assert!(
+            first["text"].as_str().unwrap().contains("offsite"),
+            "weakest-first ordering must survive the shim; got {first}"
+        );
     }
 
     /// The request schema's `.max(200_000)` is zod — renderer-side only. serde
@@ -1254,23 +1131,5 @@ Senior Engineer, Acme
                 profile.max_pages
             );
         }
-    }
-
-    /// Only bullets are cuttable. Section headers and the name/contact block are
-    /// structural — never offer them.
-    #[test]
-    fn only_bullets_are_candidates() {
-        let job = "Docker and Kubernetes platform engineering.";
-        let ranked = rank_trim_candidates(RESUME, job);
-        assert!(
-            !ranked.iter().any(|c| c.text.contains("EXPERIENCE")),
-            "section headers must not be offered for cutting"
-        );
-        assert!(
-            !ranked
-                .iter()
-                .any(|c| c.text.contains("Senior Engineer, Acme")),
-            "job entries must not be offered for cutting"
-        );
     }
 }

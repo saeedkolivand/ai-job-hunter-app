@@ -240,7 +240,23 @@ pub fn detect_locale_tag(text: &str) -> &'static str {
 /// Store this in the DB - apply apply_stemmer at match time to stay
 /// language-agnostic (the stemmer language is detected from the JD, not the
 /// resume, so caching a pre-stemmed set would bake in the wrong language).
+///
+/// A thin `collect()` over [`keywords_normalized_list`] so the set form and the
+/// occurrence-counting list form can never drift apart.
 pub fn keywords_normalized(text: &str) -> HashSet<String> {
+    keywords_normalized_list(text).into_iter().collect()
+}
+
+/// Duplicate-preserving, document-ordered form of [`keywords_normalized`] — the
+/// SAME tokenizer, synonym collapse and filter, returning every surviving token
+/// instead of deduplicating them.
+///
+/// Exists for the consumers that must count *repeats* rather than membership
+/// (the ATS keyword-density check in `validate::content::ats`). Deliberately the
+/// single implementation of the pipeline, with `keywords_normalized` delegating
+/// to it: a second tokenizer written "just to count" is exactly the fork the
+/// keyword kernel exists to prevent.
+pub fn keywords_normalized_list(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '+' && c != '#' && c != '/')
         .map(|w| w.to_lowercase())
         .filter(|w| !w.is_empty())
@@ -730,6 +746,33 @@ mod test {
             keyword_coverage(&keywords(job, &stemmer), &keywords(resume, &stemmer))
                 .expect("non-empty job must return Some");
         assert_eq!(coverage_score(resume, job), kernel);
+    }
+
+    /// `keywords_normalized` must stay a pure `collect()` over
+    /// `keywords_normalized_list` — one tokenizer, two shapes. If someone
+    /// re-implements either side, the sets diverge and this fails.
+    #[test]
+    fn normalized_list_collects_to_the_normalized_set() {
+        let text = "Rust and rust with TypeScript, TypeScript and AWS aws experience";
+        let from_list: HashSet<String> = keywords_normalized_list(text).into_iter().collect();
+        assert_eq!(from_list, keywords_normalized(text));
+    }
+
+    /// The list form keeps duplicates (that is its whole reason to exist) while
+    /// the set form collapses them.
+    #[test]
+    fn normalized_list_preserves_repeats() {
+        let list = keywords_normalized_list("rust rust rust docker");
+        assert_eq!(
+            list.iter().filter(|t| *t == "rust").count(),
+            3,
+            "repeats must survive in the list form; got {list:?}"
+        );
+        assert_eq!(
+            keywords_normalized("rust rust rust docker").len(),
+            2,
+            "the set form still deduplicates"
+        );
     }
 
     /// Round-trip invariant: apply_stemmer(keywords_normalized(text), stemmer)
