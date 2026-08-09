@@ -2,30 +2,42 @@
  * Unit coverage for the pure helpers in gen-prompts-rust.ts (ai-provider-expert
  * L-1). The script itself only runs its `main()` when invoked directly (see the
  * `import.meta.url` guard at the bottom of that file), so importing it here for
- * `hasControlChar`/`rustArray` does not write to `lexicon.rs` as a side effect.
+ * `hasRustUnsafeChar`/`rustArray` does not write to `lexicon.rs` as a side effect.
  */
 import { describe, expect, it } from 'vitest';
 
-import { hasControlChar, rustArray } from './gen-prompts-rust.js';
+import { hasRustUnsafeChar, rustArray } from './gen-prompts-rust.js';
 
 const NEWLINE = String.fromCharCode(10);
 const TAB = String.fromCharCode(9);
 const NUL = String.fromCharCode(0);
 const DEL = String.fromCharCode(127);
+const LONE_HIGH = String.fromCharCode(0xd800);
+const LONE_LOW = String.fromCharCode(0xdc00);
 
-describe('hasControlChar', () => {
+describe('hasRustUnsafeChar', () => {
   it('is false for ordinary words and phrases', () => {
-    expect(hasControlChar('leverage')).toBe(false);
-    expect(hasControlChar('it is not about')).toBe(false);
-    expect(hasControlChar('mit großem interesse')).toBe(false);
-    expect(hasControlChar('')).toBe(false);
+    expect(hasRustUnsafeChar('leverage')).toBe(false);
+    expect(hasRustUnsafeChar('it is not about')).toBe(false);
+    expect(hasRustUnsafeChar('mit großem interesse')).toBe(false);
+    expect(hasRustUnsafeChar('')).toBe(false);
   });
 
   it('is true for a newline, tab, null byte, or DEL', () => {
-    expect(hasControlChar(`bad${NEWLINE}entry`)).toBe(true);
-    expect(hasControlChar(`bad${TAB}entry`)).toBe(true);
-    expect(hasControlChar(`bad${NUL}entry`)).toBe(true);
-    expect(hasControlChar(`bad${DEL}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(`bad${NEWLINE}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(`bad${TAB}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(`bad${NUL}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(`bad${DEL}entry`)).toBe(true);
+  });
+
+  it('is true for a lone surrogate (stringify escapes it as \\uXXXX)', () => {
+    expect(hasRustUnsafeChar(`bad${LONE_HIGH}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(`bad${LONE_LOW}entry`)).toBe(true);
+    expect(hasRustUnsafeChar(LONE_HIGH)).toBe(true); // high surrogate at end-of-string
+  });
+
+  it('is false for a well-formed astral pair (emitted as a raw char)', () => {
+    expect(hasRustUnsafeChar('emoji 😀 entry')).toBe(false);
   });
 });
 

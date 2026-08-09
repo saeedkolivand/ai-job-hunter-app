@@ -14,7 +14,8 @@ import type { ContentReportPayload } from '@ajh/shared/ipc';
 import { getClient } from '../app-client';
 import { errorDetail } from '../error-class';
 
-/** Sentinel Rust's `pick_report` merge treats as "no report" alongside `''`. */
+/** Sentinel treated as "no report" here; Rust's `merge_quality_report` no-ops
+ *  on it not by special case but because an empty object overlays no keys. */
 const EMPTY_REPORT_PLACEHOLDER = '{}';
 
 /**

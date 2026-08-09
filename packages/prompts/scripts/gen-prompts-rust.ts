@@ -33,17 +33,26 @@ const REPO_ROOT = resolve(HERE, '../../..');
 const OUT_FILE = 'apps/desktop/src-tauri/src/validate/content/lexicon.rs';
 
 /**
- * True when `entry` contains a C0 control character or DEL. `JSON.stringify`
- * escapes those as `\uXXXX`, which is valid JSON but NOT a valid Rust string
- * escape (Rust needs the bracketed `\u{XXXX}` form) — a control character
- * surviving into an emitted array would produce Rust source that fails to
- * compile with a confusing "unknown character escape" error far from its
- * actual cause. Exported for its own unit test.
+ * True when `entry` contains a character `JSON.stringify` would emit as a
+ * `\uXXXX` escape: a C0 control character, DEL, or a LONE surrogate
+ * (well-formed stringify, ES2019+, escapes unpaired surrogates the same way;
+ * valid pairs come out as raw astral chars, which Rust accepts). `\uXXXX` is
+ * valid JSON but NOT a valid Rust string escape (Rust needs the bracketed
+ * `\u{XXXX}` form) — such a character surviving into an emitted array would
+ * produce Rust source that fails to compile with a confusing "unknown
+ * character escape" error far from its actual cause. Exported for its own
+ * unit test.
  */
-export function hasControlChar(entry: string): boolean {
+export function hasRustUnsafeChar(entry: string): boolean {
   for (let i = 0; i < entry.length; i += 1) {
     const code = entry.charCodeAt(i);
     if (code <= 0x1f || code === 0x7f) return true;
+    if (code >= 0xd800 && code <= 0xdfff) {
+      // NaN comparisons at end-of-string correctly read as "not a pair".
+      const next = entry.charCodeAt(i + 1);
+      if (code >= 0xdc00 || !(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i += 1; // valid surrogate pair — emitted as a raw astral char
+    }
   }
   return false;
 }
@@ -57,15 +66,15 @@ export function hasControlChar(entry: string): boolean {
  * (CI) is the backstop if a future word list ever lands outside that shape.
  *
  * Throws (rather than silently emitting invalid Rust) if any entry contains a
- * control character — see {@link hasControlChar}.
+ * control character or lone surrogate — see {@link hasRustUnsafeChar}.
  */
 export function rustArray(name: string, entries: readonly string[]): string {
-  const offender = entries.find(hasControlChar);
+  const offender = entries.find(hasRustUnsafeChar);
   if (offender !== undefined) {
     throw new Error(
       `gen-prompts-rust: ${name} entry ${JSON.stringify(offender)} contains a control ` +
-        "character — JSON.stringify's \\uXXXX escaping is not valid Rust string-literal " +
-        'syntax (Rust needs \\u{XXXX}). Fix the array entry in natural-voice.ts and rerun.'
+        "character or lone surrogate — JSON.stringify's \\uXXXX escaping is not valid Rust " +
+        'string-literal syntax (Rust needs \\u{XXXX}). Fix the entry in natural-voice.ts and rerun.'
     );
   }
   const items = entries.map((e) => JSON.stringify(e));
@@ -162,7 +171,7 @@ function main(): void {
 }
 
 // Only run when executed directly (`tsx scripts/gen-prompts-rust.ts`), not when
-// imported by a test for its pure helpers (`hasControlChar`/`rustArray`) — a
+// imported by a test for its pure helpers (`hasRustUnsafeChar`/`rustArray`) — a
 // bare top-level call would otherwise overwrite `lexicon.rs` as a side effect
 // of running the test suite.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
