@@ -39,6 +39,20 @@ const WITH_ISSUES: ContentReportPayload = {
   metrics: METRICS,
 };
 
+const WARNING_ONLY: ContentReportPayload = {
+  ok: false,
+  issues: [
+    {
+      severity: 'warning',
+      code: 'duplicate.bullet',
+      section: 'Experience',
+      message: 'y',
+      evidence: null,
+    },
+  ],
+  metrics: METRICS,
+};
+
 const TEXT = 'the validated document text';
 
 /** A slot for `TEXT` — the badge is NOT stale as long as `currentText` matches. */
@@ -83,6 +97,23 @@ describe('QualityBadge', () => {
     const button = screen.getByRole('button');
     expect(button.textContent).toMatch(/2/);
     expect(button.textContent).toMatch(/1/);
+  });
+
+  // Issues present but none critical must land on the WARNING chip, not the
+  // DANGER chip the report-with-a-critical case above renders — same
+  // "issues present" branch, different severity mix.
+  it('renders the warning (not danger) variant when issues are present but none are critical', () => {
+    render(
+      <QualityBadge
+        report={report({ resume: slot(WARNING_ONLY) })}
+        docKind="resume"
+        currentText={TEXT}
+      />
+    );
+    const button = screen.getByRole('button');
+    expect(button.className).toContain('border-amber-500/25');
+    expect(button.className).not.toContain('border-red-500/25');
+    expect(button.textContent).toMatch(/0 critical/);
   });
 
   it('opens the quality report panel on click, scoped to the right document', async () => {
