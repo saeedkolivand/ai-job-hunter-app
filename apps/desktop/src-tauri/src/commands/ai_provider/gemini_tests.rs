@@ -14,10 +14,10 @@ use super::{
     build_chat_stream_body, build_embed_body, gemini_effective_temperature, gemini_effort_levels,
     gemini_is_v3_or_later, gemini_omits_sampling_params, gemini_supports_thinking, join_parts_text,
     parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
-    parse_gemini_usage, parse_model_page, resolve_intent, validate_gemini_key, AiProvider,
-    GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece, DETERMINISTIC_TEMPERATURE,
-    EMBED_OUTPUT_DIMENSIONALITY, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
-    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    parse_gemini_usage, parse_model_page, resolve_intent, structured, validate_gemini_key,
+    AiProvider, GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece,
+    DETERMINISTIC_TEMPERATURE, EMBED_OUTPUT_DIMENSIONALITY, PROSE_FREQUENCY_PENALTY,
+    PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{AiGenerateRequest, StopReason, ToolCall};
 use crate::error::AppError;
@@ -1149,4 +1149,57 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
         .await
         .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
     assert!(matches!(err, AppError::Network(_)));
+}
+
+// ── Structured output (`complete_structured`) ─────────────────────────────────
+
+#[test]
+fn complete_body_carries_response_mime_type_and_the_translated_response_schema() {
+    // Gemini's constrained-decoding keys live under `generationConfig` and the
+    // schema is an OpenAPI-3.0 subset — an UPPERCASE type, not JSON Schema's
+    // lowercase one. Mutation check: drop either insert in
+    // `build_complete_body`, or lowercase the type in
+    // `structured::gemini_response_schema`, and this fails.
+    let schema = json!({ "type": "object", "properties": { "score": { "type": "integer" } } });
+    let body = super::build_complete_body(
+        "gemini-2.5-flash",
+        "sys",
+        "user",
+        Some(0.3),
+        true,
+        structured::gemini_response_schema(&schema),
+    );
+    let config = &body["generationConfig"];
+    assert_eq!(config["responseMimeType"], json!("application/json"));
+    assert_eq!(config["responseSchema"]["type"], json!("OBJECT"));
+    assert_eq!(
+        config["responseSchema"]["properties"]["score"]["type"],
+        json!("INTEGER")
+    );
+    assert_eq!(body["systemInstruction"]["parts"][0]["text"], json!("sys"));
+}
+
+#[test]
+fn complete_body_keeps_json_mode_when_the_schema_cannot_be_translated() {
+    // A union type has no OpenAPI-subset equivalent: JSON mode still applies,
+    // but no half-translated shape constraint is ever sent.
+    let schema = json!({ "type": "object", "properties": { "n": { "type": ["string", "null"] } } });
+    let translated = structured::gemini_response_schema(&schema);
+    assert!(translated.is_none());
+    let body = super::build_complete_body("gemini-2.5-flash", "", "user", None, true, translated);
+    let config = &body["generationConfig"];
+    assert_eq!(config["responseMimeType"], json!("application/json"));
+    assert!(config.get("responseSchema").is_none());
+}
+
+#[test]
+fn complete_body_omits_both_json_fields_on_the_plain_completion_path() {
+    // `complete`/`complete_with_usage` pass `(false, None)` — an unconstrained
+    // call must stay byte-identical to what it sent before structured output.
+    let body =
+        super::build_complete_body("gemini-2.5-flash", "sys", "user", Some(0.3), false, None);
+    let config = &body["generationConfig"];
+    assert!(config.get("responseMimeType").is_none(), "{body}");
+    assert!(config.get("responseSchema").is_none(), "{body}");
+    assert_eq!(config["temperature"], json!(0.3));
 }
