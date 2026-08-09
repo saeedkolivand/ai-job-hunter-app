@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786272000582,
+  "lastUpdate": 1786276973095,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6461,6 +6461,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 169735,
             "range": "± 8357",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cc73af992b74eeeeb2ed9378edeb646088997dd6",
+          "message": "feat: add exa as a fallback web-search backend for company research (#961)\n\n* feat: add a pluggable web-search backend with exa as the fallback\n\nCompany research runs on the active AI provider's own web search, which leaves a\nwhole population with nothing: local Ollama without an ollama.com account key,\nevery `openai-compatible` gateway, and any provider whose search isn't wired up.\nThey get a silently empty brief, and the cover letter is written with no company\nknowledge - indistinguishable from one written with a full brief.\n\nThe seam was already there. `research.rs` is provider-agnostic (SearchResult,\nthe query builders, the synth prompts, the injection guard), and the three\n`ollama_research*` functions were each \"search -> if empty return '' ->\nsynthesize with the provider's own model\". Only the search step was ever\nOllama-specific.\n\nSo this extracts that step behind a `WebSearcher` trait, moves the three\npipelines to `search/` as `searched_research*`, and adds `ExaSearcher`\n(api.exa.ai/search, `ai:exa` key). All three research facets - company, salary,\nper-question answers - gain the fallback at once.\n\nSelection is FALLBACK-ONLY and decided from configuration before any call: a\nprovider that can already search keeps using its own, even with an Exa key\nstored, so nobody silently starts paying a second vendor. A native search that\nruns and returns empty is NOT retried against Exa - one pass, one search, one\nvendor sees the query. `resolve_search_backend` is a pure predicate so that\npolicy is testable, and inverting it fails a test.\n\nSynthesis deliberately stays on the user's own model. Exa's own answer endpoint\nwould be fewer calls but would bypass both `SYNTH_SYSTEM`'s prompt-injection\nguard (search results are attacker-reachable text) and the `is_no_info` filter.\n\nThe fallback lands on the trait's DEFAULT `research()`, so providers with native\nsearch override it and are untouched, and a new provider with no search inherits\nit for free - no per-provider change either way.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* feat: report whether research can actually run, and add the exa key ui\n\n`supportsWebSearch` reported what a provider ADVERTISES. Local Ollama advertises\nweb search for the family, so a keyless install showed the \"search company\"\ntoggle ON and returned an empty brief every single time - a state the user\ncannot act on, because nothing told them a key was missing.\n\nIt now answers whether a search backend is CONFIGURED: the provider's own model\nsearches, or its searcher has a key, or a fallback backend does. Keyless Ollama\nreads false, which is the truth.\n\nThree parts:\n\n- `search::research_available` is the single source, used by both the renderer\n  probe and the server-side per-question gate. That gate previously read the\n  static capability, so it would have skipped (and mis-charged) a keyless\n  install that has a working fallback - the trait method is now\n  `research_available()`, which is also what the test fakes assert on, so the\n  two can't drift.\n\n- `ai_model_capabilities` takes `AppHandle` to read stored keys. The renderer\n  signature is unchanged (Tauri injects it), but the key mutations now\n  invalidate the capabilities query: it caches with a VERY_LONG staleTime, so\n  without that, adding a key left the toggle wrong until restart.\n\n- Settings → Company Research grows a second key slot. The existing field was\n  hardcoded to `ollama-cloud`; the two differ only in labels and credential\n  slot, so it is parameterised rather than copied. Both go through the existing\n  key IPC, which already accepts an arbitrary slot name - no new commands.\n\nThe section copy states the fallback-only rule explicitly, so a user adding an\nExa key knows it will not take over from a provider that already searches.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* docs: record the search-backend axis and refresh the stale limit docs\n\nADR-0023 records why web search is a separate axis from generation, and the three\nsub-decisions that each had a real alternative: fallback-only (not Exa-preferred),\nno second chance on an empty native search, and synthesis staying on the user's\nown model rather than using Exa's answer endpoint - which would bypass both the\nprompt-injection guard and the no-info filter.\n\nADR-0005 needs no amendment and the ADR says so explicitly: Exa is a new vendor\ninside the already-enumerated class 3 (web search, opt-in), not a new egress\nclass, and it receives exactly what the current search already does. Its\nconsequence - keep the enumeration accurate - is honoured in README and\nSECURITY, which now name Exa within that class.\n\n`docs/CONTEXT.md` gains **search backend**, the term this feature creates: it\nretrieves, it cannot generate, and it is not an AI provider. Without it, \"search\nprovider\" would have drifted into use for something deliberately absent from\n`ProviderId` and the provider picker.\n\nTwo fixes to `anti-abuse-limits.md` that were already stale, one of them my own:\n\n- The concurrency guard stopped being a counter in #960 and became a semaphore\n  permit with two admission styles (reject vs wait), and I did not update the\n  doc then.\n- The daily ceiling is keyed by VENDOR, not by `ProviderId` - which is what lets\n  a search backend charge its own bucket instead of spending the AI provider's.\n\nAlso replaced two line-number references with symbol names; they had already\ndrifted and would drift again.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n* fix: route research in one place so gateways actually reach the fallback\n\nThe AI review caught a HIGH that undoes half this PR's purpose, and it was\nright. `OpenAiClient` overrides research()/research_salary()/research_answer()\nfor EVERY id it serves, and those call `web_search_complete`, which returns \"\"\nwhen `!supports_web_search()`. So an openai-compatible gateway never reached the\nnew default and got no research at all - while `research_available` now reported\ntrue for it, meaning the toggle would say ON and still produce nothing. That is\nprecisely the bug this PR set out to fix, reintroduced somewhere else.\n\nThe per-provider shape is what failed, so the fix is structural rather than\nthree more fall-throughs. `Completer` is the single caller of all three research\nmethods, so the decision lives there now: `has_native_search()` picks the native\ncall or the shared search-then-synthesize path, once, for every provider and\nevery facet. A provider can no longer forget to fall through, because it no\nlonger participates in the choice.\n\nThat let a lot go away. `AiProvider::research*` are back to meaning only \"the\nmodel searches for itself\", the Ollama family's six research overrides are gone\n(the router sends them down the shared path, where `native_searcher` picks the\nWeb Search API), and `needs_explicit_searcher` collapsed into `has_native_search`\n- one concept where there were two. Ollama Cloud gained the searcher hook it was\nsilently missing: it would have fallen through to Exa despite having its own.\n\nThree tests pin the routing per provider family, and dropping either the\n`has_native_search` override or the capability term fails them.\n\nAlso from the review: `OllamaSearcher` caches its key (three keychain reads per\nresearch pass became one) and honours `limit` rather than hardcoding 5 while\n`ExaSearcher` honoured it; `searcher_for` builds the Exa searcher once; the key\nfield and its icon-only reveal button gained accessible names; and the\ncapability probe's \"static, network-free\" claim is corrected in both the Rust\nand TS docs, since it now reads the keychain.\n\nTwo docs findings applied: `docs/**` must point at owning sources rather than\ncopy them, so the glossary entry drops the implementation detail and\nanti-abuse-limits.md drops the constant table that had already drifted.\n\nCo-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-08-09T13:51:51+02:00",
+          "tree_id": "770a1fe6b380ad6bce20d0f16c03978fb38d268f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/cc73af992b74eeeeb2ed9378edeb646088997dd6"
+        },
+        "date": 1786276972034,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2161286,
+            "range": "± 20782",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2578659,
+            "range": "± 30350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 294660,
+            "range": "± 8923",
             "unit": "ns/iter"
           }
         ]
