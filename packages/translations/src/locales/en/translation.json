@@ -1510,6 +1510,9 @@
         "rule_of_three_density": "Several three-item lists in a row can read as formulaic.",
         "em_dash_overuse": "Frequent em dashes here can read as AI-generated.",
         "generic_letter": "This letter reads generically — consider adding a specific detail about the role or company."
+      },
+      "report": {
+        "truncated": "Some issues aren't shown — the full check found more than fit in this report."
       }
     }
   },

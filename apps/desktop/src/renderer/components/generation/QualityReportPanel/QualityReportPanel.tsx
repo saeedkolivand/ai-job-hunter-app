@@ -53,8 +53,9 @@ function groupBySection(issues: ContentIssue[]): [SectionKey, ContentIssue[]][] 
  * validator's own posture (`validate::content`).
  *
  * A code with no matching `quality.issue.<code>` translation (a future Rust
- * check this build predates) falls back to `quality.fallback` rather than
- * ever rendering a raw i18n key.
+ * check this build predates) falls back to the issue's own Rust-authored
+ * `message` when present, and only to the generic `quality.fallback` when
+ * that's also empty — never a raw i18n key.
  */
 export function QualityReportPanel({
   open,
@@ -71,9 +72,10 @@ export function QualityReportPanel({
   const groups = useMemo(() => groupBySection(report?.issues ?? []), [report]);
   const metrics = report?.metrics;
 
-  const messageFor = (code: string) => {
+  const messageFor = (code: string, message: string) => {
     const key = `quality.issue.${code}`;
-    return i18n.exists(key) ? t(key) : t('quality.fallback');
+    if (i18n.exists(key)) return t(key);
+    return message || t('quality.fallback');
   };
 
   return (
@@ -151,7 +153,9 @@ export function QualityReportPanel({
                         <AlertTriangle size={10} /> {t('quality.panel.warning')}
                       </span>
                     )}
-                    <p className="mt-1.5 text-xs text-foreground/70">{messageFor(issue.code)}</p>
+                    <p className="mt-1.5 text-xs text-foreground/70">
+                      {messageFor(issue.code, issue.message)}
+                    </p>
                     {issue.evidence && (
                       <blockquote className="mt-1.5 border-l-2 border-white/10 pl-2 text-[11px] italic text-foreground/45">
                         “{issue.evidence}”

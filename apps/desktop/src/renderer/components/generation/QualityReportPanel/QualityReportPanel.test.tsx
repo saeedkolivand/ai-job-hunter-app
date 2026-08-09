@@ -89,7 +89,7 @@ describe('QualityReportPanel', () => {
     expect(screen.getByText(/Acme Corp — Senior Engineer/)).toBeInTheDocument();
   });
 
-  it('falls back to the generic message for an unknown/future issue code', () => {
+  it('falls back to its own Rust-authored message for an unknown/future issue code that has one', () => {
     const withUnknownCode: ContentReportPayload = {
       ok: false,
       issues: [
@@ -97,7 +97,7 @@ describe('QualityReportPanel', () => {
           severity: 'warning',
           code: 'future.not_yet_translated',
           section: null,
-          message: 'irrelevant',
+          message: 'a genuinely useful explanation the Rust validator wrote',
           evidence: null,
         },
       ],
@@ -106,7 +106,49 @@ describe('QualityReportPanel', () => {
     render(<QualityReportPanel open onClose={vi.fn()} report={withUnknownCode} docKind="resume" />);
     // Never a raw i18n key leaking onto the screen.
     expect(screen.queryByText('quality.issue.future.not_yet_translated')).toBeNull();
+    expect(
+      screen.getByText(/a genuinely useful explanation the rust validator wrote/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/deterministic check flagged this/i)).toBeNull();
+  });
+
+  it('falls back to the generic message for a message-less unknown/future issue code', () => {
+    const withUnknownCode: ContentReportPayload = {
+      ok: false,
+      issues: [
+        {
+          severity: 'warning',
+          code: 'future.not_yet_translated',
+          section: null,
+          message: '',
+          evidence: null,
+        },
+      ],
+      metrics: METRICS,
+    };
+    render(<QualityReportPanel open onClose={vi.fn()} report={withUnknownCode} docKind="resume" />);
+    expect(screen.queryByText('quality.issue.future.not_yet_translated')).toBeNull();
     expect(screen.getByText(/deterministic check flagged this/i)).toBeInTheDocument();
+  });
+
+  it('maps the truncated-report marker to its own i18n key, not the raw Rust message', () => {
+    const truncated: ContentReportPayload = {
+      ok: true,
+      issues: [
+        {
+          severity: 'warning',
+          code: 'report.truncated',
+          section: null,
+          message:
+            '49 more issues found but not shown here — this document has an unusually large number of findings.',
+          evidence: '49',
+        },
+      ],
+      metrics: METRICS,
+    };
+    render(<QualityReportPanel open onClose={vi.fn()} report={truncated} docKind="resume" />);
+    expect(screen.getByText(/more than fit in this report/i)).toBeInTheDocument();
+    expect(screen.queryByText(/49 more issues found/i)).toBeNull();
   });
 
   it('renders a metrics footer with keyword coverage, requirement hits, duplicates, and roles', () => {

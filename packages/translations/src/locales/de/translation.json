@@ -1514,6 +1514,9 @@
         "rule_of_three_density": "Mehrere Dreier-Listen hintereinander können formelhaft wirken.",
         "em_dash_overuse": "Häufige Gedankenstriche hier können KI-generiert wirken.",
         "generic_letter": "Dieses Anschreiben wirkt generisch — erwäge, ein konkretes Detail zur Rolle oder Firma hinzuzufügen."
+      },
+      "report": {
+        "truncated": "Einige Probleme werden nicht angezeigt — die vollständige Prüfung hat mehr gefunden, als in diesen Bericht passen."
       }
     }
   },
