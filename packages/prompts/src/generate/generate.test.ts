@@ -2283,13 +2283,45 @@ describe('sanitizeJobTitle', () => {
     expect(sanitizeJobTitle(input)).toBe('');
   });
 
+  it.each(['Senior Backend Engineer', 'Staff Software Engineer, Payments Platform'])(
+    'keeps %j',
+    (input) => {
+      expect(sanitizeJobTitle(input)).toBe(input);
+    }
+  );
+
+  // The band the first version of these tests missed entirely, which is why the
+  // bug survived them: `sanitizeJobTitle` applied its 80-char check on TOP of
+  // the company's 60-char one, so the larger ceiling was dead code and the
+  // 6-word company cap rejected any 7-word title. Every case below sits in
+  // 61-80 chars and/or 7-10 words — none of the original cases did.
   it.each([
-    'Senior Backend Engineer',
-    'Staff Software Engineer, Payments Platform',
-    // Longer than a company name is allowed to be — titles legitimately are.
-    'Senior Staff Software Engineer, Platform Infrastructure',
-  ])('keeps %j', (input) => {
-    expect(sanitizeJobTitle(input)).toBe(input);
+    ['Senior Staff Software Engineer for Platform Infrastructure Group', 64, 9],
+    ['Senior Staff Software Engineer Platform Infrastructure Lead', 59, 8],
+    ['Principal Engineer, Developer Experience and Build Infrastructure', 65, 8],
+  ])('keeps the longer/wordier real title %j (%i chars, %i words)', (input) => {
+    expect(sanitizeJobTitle(input as string)).toBe(input);
+  });
+
+  it('pins the title caps exactly, and that they differ from the company caps', () => {
+    // 80/10 for a title...
+    expect(sanitizeJobTitle('A'.repeat(80))).toBe('A'.repeat(80));
+    expect(sanitizeJobTitle('A'.repeat(81))).toBe('');
+    const tenWords = 'Aa Bb Cc Dd Ee Ff Gg Hh Ii Jj';
+    expect(sanitizeJobTitle(tenWords)).toBe(tenWords);
+    expect(sanitizeJobTitle(`${tenWords} Kk`)).toBe('');
+
+    // ...but 60/6 for a company. If these two ever collapse back onto one set of
+    // limits, the larger ceiling silently becomes dead code again.
+    expect(sanitizeCompanyName('A'.repeat(80))).toBe('');
+    expect(sanitizeCompanyName(tenWords)).toBe('');
+  });
+
+  it('still applies every SHAPE rule to a title, not just the size caps', () => {
+    // The looser limits must not loosen the actual gate.
+    expect(sanitizeJobTitle("What You'll Do")).toBe('');
+    expect(sanitizeJobTitle('**Senior Engineer**')).toBe('');
+    expect(sanitizeJobTitle('about us')).toBe('');
   });
 });
 

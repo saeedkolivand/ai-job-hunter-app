@@ -105,7 +105,15 @@ const HEADING_DENYLIST = new Set([
  * pronoun contractions.
  */
 export function sanitizeCompanyName(value: unknown): string {
-  return sanitizeSubject(value);
+  // A real employer name is short. The longest legitimate one seen in the wild
+  // ("CHECK24 Vergleichsportal für Versicherungen GmbH") is 48 chars / 5 words.
+  return sanitizeSubject(value, { maxChars: 60, maxWords: 6 });
+}
+
+/** Size limits for one [`sanitizeSubject`] caller. */
+interface SubjectLimits {
+  maxChars: number;
+  maxWords: number;
 }
 
 /**
@@ -117,16 +125,18 @@ export function sanitizeCompanyName(value: unknown): string {
  * company left the identical hole open for the title — a reported session
  * searched for `Jetzt bewerben` and `[← Alle offenen Stellen](/karriere)` as the
  * ROLE while the company was already being gated.
+ *
+ * The size limits are per-caller because the two fields genuinely differ: an
+ * employer name is short, a job title routinely is not. They were briefly shared
+ * and it made the title's own (larger) ceiling dead code.
  */
-function sanitizeSubject(value: unknown): string {
+function sanitizeSubject(value: unknown, limits: SubjectLimits): string {
   if (typeof value !== 'string') return '';
   const name = value.trim();
   if (!name) return '';
 
-  // A real employer name is short. The longest legitimate one seen in the wild
-  // ("CHECK24 Vergleichsportal für Versicherungen GmbH") is 48 chars / 5 words.
-  if (name.length > 60) return '';
-  if (name.split(/\s+/).length > 6) return '';
+  if (name.length > limits.maxChars) return '';
+  if (name.split(/\s+/).length > limits.maxWords) return '';
 
   // Markdown, links, and code fences — the ad's formatting leaked through.
   if (/[*`_]{2}|\[|\]\(|https?:\/\//.test(name)) return '';
@@ -153,14 +163,18 @@ function sanitizeSubject(value: unknown): string {
 }
 
 /**
- * A job title, gated exactly like the company name — see [`sanitizeSubject`].
- * Slightly more permissive on length: titles are legitimately longer than
- * company names ("Senior Staff Software Engineer, Payments Platform").
+ * A job title, gated on the same SHAPE rules as the company name but with its
+ * own size limits — see [`sanitizeSubject`].
+ *
+ * Titles are legitimately longer and wordier than employer names ("Senior Staff
+ * Software Engineer, Platform Infrastructure and Developer Experience" is 68
+ * chars / 9 words), so they get 80 chars / 10 words rather than 60 / 6. An
+ * earlier version applied its 80-char check on top of the company's 60-char one,
+ * which made the larger ceiling dead: everything over 60 was still dropped, and
+ * the 6-word company cap rejected any 7-word title.
  */
 export function sanitizeJobTitle(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  if (value.trim().length > 80) return '';
-  return sanitizeSubject(value);
+  return sanitizeSubject(value, { maxChars: 80, maxWords: 10 });
 }
 
 export function validateMetadata(raw: string): GenerationMeta | null {
