@@ -10,14 +10,31 @@ use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
 /// A direct IPC caller or a hostile/malformed backup bundle (the `import`
-/// path below) could otherwise hand this column an unbounded blob. 256 KB
-/// comfortably covers the largest realistic wrapper (both sub-reports,
-/// dozens of issues each) with headroom to spare. The single source of
-/// truth for both write paths that persist `quality_report`
-/// (`commands::ai_generations::ai_generations_save` and
+/// path below) could otherwise hand this column an unbounded blob.
+///
+/// This caps the WRAPPER (`{schemaVersion, pipeline, generatedAt, resume?,
+/// coverLetter?}`), not one sub-report — the wrapper legitimately holds TWO
+/// of them (résumé + cover letter), each up to its own documented worst
+/// case. Per `validate::content::ISSUE_MESSAGE_MAX_BYTES`'s arithmetic, one
+/// sub-report tops out around `MAX_CONTENT_ISSUES` (200) ×
+/// (400 + 400 + 120 + ~150 bytes of JSON overhead) ≈ 214 KB, so two
+/// sub-reports alone already run ≈ 428 KB — past a 256 KiB cap, which would
+/// silently drop a LEGITIMATE worst-case wrapper to the empty sentinel (see
+/// [`sanitize_quality_report`]) on exactly the documents this cap exists to
+/// allow. 512 KiB covers 2 × ~214 KB sub-report worst case plus the envelope
+/// fields and the per-slot `sourceTextHash`es (well under 100 KB combined)
+/// with headroom to spare.
+///
+/// Dropping per-slot instead of the whole wrapper (persist whichever
+/// sub-report fits, drop only the other) was considered and rejected: it's
+/// real machinery (partial-parse, partial-merge, a partial-drop log) for a
+/// defect that a correctly-sized flat cap already closes.
+///
+/// The single source of truth for both write paths that persist
+/// `quality_report` (`commands::ai_generations::ai_generations_save` and
 /// [`AiGenerationStore::import`] below) — the data layer owns the column, so
 /// the cap lives here rather than duplicated per caller.
-pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 256 * 1024;
+pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 512 * 1024;
 
 /// Guard an incoming `quality_report` blob against exceeding
 /// [`QUALITY_REPORT_MAX_BYTES`] on write. A byte-position clamp

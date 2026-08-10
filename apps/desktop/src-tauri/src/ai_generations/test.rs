@@ -1465,6 +1465,54 @@ fn sanitize_quality_report_leaves_an_in_budget_report_untouched() {
     assert_eq!(sanitize_quality_report(small.into(), "test"), small);
 }
 
+/// Regression for the finding this fix closes: `QUALITY_REPORT_MAX_BYTES`
+/// guards the WRAPPER, which legitimately holds two sub-reports (résumé +
+/// cover letter), not one. Builds two synthetic sub-reports at the exact
+/// worst-case byte count `validate::content::ISSUE_MESSAGE_MAX_BYTES`'s doc
+/// computes per sub-report (`MAX_CONTENT_ISSUES` issues × the three
+/// clamped-field byte caps + JSON overhead) and asserts the resulting
+/// two-sub-report wrapper survives `sanitize_quality_report` byte-for-byte —
+/// the exact document the cap is sized to allow, not silently dropped to the
+/// empty sentinel.
+#[test]
+fn sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_worst_case_size() {
+    use crate::validate::content::{
+        ISSUE_EVIDENCE_MAX_BYTES, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES,
+        MAX_CONTENT_ISSUES,
+    };
+    // Mirrors `ISSUE_MESSAGE_MAX_BYTES`'s doc arithmetic (≈214 KB per
+    // sub-report). The `~150` JSON-overhead term there is deliberately
+    // approximate (not a named constant), so this pads past it slightly to
+    // stay a genuine worst case rather than an optimistic one.
+    let per_issue_overhead_bytes = 150;
+    let sub_report_worst_case_bytes = MAX_CONTENT_ISSUES
+        * (ISSUE_MESSAGE_MAX_BYTES
+            + ISSUE_EVIDENCE_MAX_BYTES
+            + ISSUE_SECTION_MAX_BYTES
+            + per_issue_overhead_bytes);
+
+    let wrapper = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "combined",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(sub_report_worst_case_bytes) },
+        "coverLetter": { "blob": "x".repeat(sub_report_worst_case_bytes) }
+    })
+    .to_string();
+
+    assert!(
+        wrapper.len() < QUALITY_REPORT_MAX_BYTES,
+        "a legitimate two-sub-report wrapper at the documented worst case must fit \
+         under the cap — this is exactly what QUALITY_REPORT_MAX_BYTES is sized to allow"
+    );
+    assert_eq!(
+        sanitize_quality_report(wrapper.clone(), "test"),
+        wrapper,
+        "a wrapper with two near-worst-case sub-reports must persist intact, not be \
+         dropped to the empty sentinel"
+    );
+}
+
 /// End-to-end proof for the save path: `ai_generations_save` runs the
 /// incoming `quality_report` through `sanitize_quality_report` (simulated
 /// here exactly as the command does) BEFORE building the record it hands to
