@@ -36,7 +36,7 @@ use regex::Regex;
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
 
-use crate::documents::evidence::{classify_section, SectionKind};
+use crate::documents::evidence::{classify_section, years_in, SectionKind};
 use crate::documents::keywords::{
     display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
 };
@@ -610,17 +610,91 @@ fn significant_chars(text: &str) -> usize {
     text.chars().filter(|c| !c.is_whitespace()).count()
 }
 
+/// How many words a line may run to and still read as a HEADING rather than as
+/// content. Four covers "Beruflicher Werdegang", "Weitere technische
+/// Kenntnisse" and "Compétences techniques"; past that a line is a sentence.
+const MAX_PROMOTED_HEADING_WORDS: usize = 4;
+
+/// Whether a line `export::parser` did NOT classify as a heading should be read
+/// as one anyway.
+///
+/// `parse_resume`'s heading test is an EXACT match against its own
+/// `SECTION_NAMES` list, an ATX `#` marker, or ALL-CAPS. Between them those
+/// cover a lot — every ALL-CAPS heading in any language, and the exact
+/// single-word entries "Berufserfahrung", "Ausbildung", "Formation",
+/// "Expérience professionnelle" — but they miss every Title-Case heading
+/// OUTSIDE that exact list: "Beruflicher Werdegang", "Berufliche Erfahrung",
+/// "Technische Kenntnisse", "Kurzprofil", "Compétences techniques".
+/// `documents::evidence::classify_section` classifies all five correctly from
+/// the shared multilingual heading lexicon, so the vocabulary is not missing —
+/// only this module's access to it was.
+///
+/// What that cost is not cosmetic: a résumé whose headings are all Title-Case
+/// collapses into ONE section, `factual::metric_lines` reads `has_headings` as
+/// false, and the COVER-LETTER rules (the 8-word body latch) run over a résumé
+/// — deleting every short source line, the candidate's own figures included,
+/// which turns restating them into a fabrication Critical.
+///
+/// The lexicon alone is not enough to promote on, because it is a SUBSTRING
+/// match built for text the parser already decided was a heading: "Improved
+/// user experience by 20%" carries `experience` and "Cloud Kubernetes Docker"
+/// carries `cloud`. So a promoted line must also LOOK like a heading, on
+/// signals that hold in every language this pipeline supports:
+///
+/// * the parser left it as plain `Text`/`Name` — never a bullet, entry,
+///   contact, job title or existing heading;
+/// * it opens a block (first line, or preceded by a blank), which is where a
+///   heading sits and where a line in the middle of a list does not;
+/// * at most [`MAX_PROMOTED_HEADING_WORDS`] words and 60 characters;
+/// * no digits and no sentence/column punctuation. The digit rule is
+///   load-bearing beyond shape: a promoted line leaves the section's `lines`,
+///   so this guarantees promotion can never remove a FIGURE from the source's
+///   metric set, which is `factual::metric_lines`' second invariant.
+fn reads_as_heading(line: &ParsedLine) -> bool {
+    if !matches!(line.kind, LineKind::Text | LineKind::Name) {
+        return false;
+    }
+    let text = line.text.trim();
+    !text.is_empty()
+        && text.chars().count() <= 60
+        && word_count(text) <= MAX_PROMOTED_HEADING_WORDS
+        && !text.chars().any(|c| c.is_ascii_digit())
+        && !text.contains([
+            '.', ',', ';', ':', '!', '?', '|', '·', '•', '@', '(', ')', '/',
+        ])
+        && classify_section(text) != SectionKind::Other
+}
+
 /// Split a document into sections at its headings. The leading band before the
 /// first heading (name + contact) is always section 0 with `heading: None`, so
 /// "is this in a non-first section?" is just an index test.
+///
+/// A line the parser did not recognise is promoted to a heading by
+/// [`reads_as_heading`] — but ONLY in a document where the parser found no
+/// heading at all. That gate is the same "no better signal was available" rule
+/// `documents::evidence`'s unclassified-section fallback uses: a document the
+/// parser already sectioned is not the failure this repairs, and promoting a
+/// mid-document line on a substring lexicon could otherwise split a role in
+/// half. The residual it leaves is a MIXED document (one recognised heading
+/// plus three Title-Case ones), which still under-sections; that is a partial
+/// degrade instead of a total collapse, and widening it needs a per-section
+/// rule rather than a document-wide one.
 pub(crate) fn split_sections(text: &str) -> Vec<Section> {
+    let lines = parse_resume(text).lines;
+    let parser_found_headings = lines
+        .iter()
+        .any(|l| matches!(l.kind, LineKind::SectionHeader));
     let mut sections = vec![Section {
         heading: None,
         kind: SectionKind::Other,
         lines: Vec::new(),
     }];
-    for line in parse_resume(text).lines {
-        if matches!(line.kind, LineKind::SectionHeader) {
+    let mut opens_a_block = true;
+    for line in lines {
+        let is_heading = matches!(line.kind, LineKind::SectionHeader)
+            || (!parser_found_headings && opens_a_block && reads_as_heading(&line));
+        opens_a_block = matches!(line.kind, LineKind::Blank);
+        if is_heading {
             sections.push(Section {
                 kind: classify_section(&line.text),
                 heading: Some(line.text.clone()),
@@ -667,11 +741,29 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
 static HEADER_PHONE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[+(]\s*\d[\d\s\-./()]{5,}\d|\d{7,}").unwrap());
 
-/// Whether `text` carries a header-shaped phone number. See
+/// Whether `text` carries a header-shaped phone number **and no year**. See
 /// [`HEADER_PHONE_RE`]; `pub(crate)` so `ats::is_contact_cluster` and
 /// [`has_real_contact_match`] cannot drift apart again.
+///
+/// ## Why the year test is part of the SHAPE, not of a call site
+///
+/// The `[+(]` arm matches a parenthesized DATE SPAN exactly as readily as an
+/// area code: `(2019 - 2021)` is `(`, a digit, eight separator-or-digit
+/// characters and a digit. `ats::is_contact_cluster` carried its own
+/// `years_in(…).is_empty()` clause against precisely that, and the other
+/// caller — [`has_real_contact_match`] — did not, so the two answers to one
+/// question disagreed. A pre-heading line carrying a span ("Contract work
+/// (2019 - 2021): 1 200 000 EUR in payment volume") was read as contact details
+/// and struck out of the SOURCE's metric set, and restating its figure came
+/// back as a fabrication Critical. One helper, one guard, both callers.
+///
+/// *Cost, accepted:* a header phone number that happens to contain a 1900–2099
+/// four-digit run ("+49 30 2019 1234") is no longer read as contact details.
+/// That is a missed skip — this family's chosen direction of error — and a
+/// header block essentially always carries an email as well, which every caller
+/// tests separately.
 pub(crate) fn looks_like_header_phone(text: &str) -> bool {
-    HEADER_PHONE_RE.is_match(text)
+    HEADER_PHONE_RE.is_match(text) && years_in(text).is_empty()
 }
 
 /// A line that really does carry contact details: a genuine email address, or a

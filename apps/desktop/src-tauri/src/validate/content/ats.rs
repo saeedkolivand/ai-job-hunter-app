@@ -11,9 +11,7 @@
 
 use std::collections::HashMap;
 
-use crate::documents::evidence::{
-    function_words, has_curated_function_words, years_in, SectionKind,
-};
+use crate::documents::evidence::{function_words, has_curated_function_words, SectionKind};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::is_contact_shaped;
 use crate::export::types::{LineKind, ParsedLine};
@@ -142,9 +140,10 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// eight digits, spaces and hyphens), which would otherwise make every
 /// pipe-separated employment line a "contact block". The phone half is
 /// [`super::looks_like_header_phone`] rather than the parser's own rule, for the
-/// reason stated there; the two halves are applied separately here (rather than
-/// through `super::has_real_contact_match`) because this check additionally has
-/// to reject a year-bearing line.
+/// reason stated there — including the year test, which now lives in that
+/// helper. The two halves are still applied separately here (rather than
+/// through `super::has_real_contact_match`) because this check has to know
+/// WHICH of the two matched.
 fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     let line = lines[i];
     if !matches!(
@@ -154,12 +153,12 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
         return false;
     }
     let has_email = EMAIL_RE.is_match(&line.text);
-    // A phone shape only counts on a line with no stray `@` (that would be an
-    // address this check just rejected) and no year: a date span is not a phone
-    // number, whatever the regex thinks.
-    let has_phone = !line.text.contains('@')
-        && looks_like_header_phone(&line.text)
-        && years_in(&line.text).is_empty();
+    // A phone shape only counts on a line with no stray `@` — that would be an
+    // address this check just rejected. The "and no year" half used to live
+    // here as a second clause; it is now inside
+    // [`super::looks_like_header_phone`], because the other caller of that
+    // helper needed it just as much and did not have it.
+    let has_phone = !line.text.contains('@') && looks_like_header_phone(&line.text);
     if !(has_email || has_phone) {
         return false;
     }

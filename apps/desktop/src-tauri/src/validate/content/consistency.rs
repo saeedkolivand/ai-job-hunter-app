@@ -128,6 +128,26 @@ fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
 /// the two titles share NO content token at all: "Senior Engineer" → "Staff
 /// Engineer" is a promotion the candidate may have had, while "Senior Engineer"
 /// → "Product Manager" is the drift worth surfacing.
+///
+/// ## Every role at that employer, not the first one
+///
+/// This used to compare against the FIRST source entry whose company tokens
+/// intersected — and a candidate who held two roles at one employer (a
+/// promotion, an internal move: the commonest thing on a résumé) has TWO source
+/// entries under that identity. The second generated entry was then measured
+/// against the first source entry's title and reported as drift on a document
+/// byte-identical to its source.
+///
+/// So the comparison is against the whole set: the title has drifted only when
+/// it is disjoint from EVERY title the source records at that employer. That is
+/// strictly more conservative — a single-role employer behaves exactly as
+/// before — and it costs one real finding shape, stated rather than hidden: if
+/// the generated document renames role A to role B's title while the source
+/// holds both, the rename is invisible. A résumé that lists both titles has
+/// already told the reader the candidate held both.
+///
+/// The message quotes the FIRST source title at that employer (document order),
+/// so a multi-role employer still produces a stable, reproducible report.
 fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let source = titled_entries(&ctx.source_sections);
     let mut issues = Vec::new();
@@ -135,28 +155,37 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         if title.trim().is_empty() || company.is_empty() {
             continue;
         }
-        let Some((_, source_title)) = source
+        let generated_tokens = ctx.tokens(&title);
+        if generated_tokens.is_empty() {
+            continue;
+        }
+        // Every source title at this employer that can actually be compared. An
+        // empty token set is not evidence of anything (the round-4/5 rule), so
+        // such a title neither matches nor accuses.
+        let comparable: Vec<(&str, HashSet<String>)> = source
             .iter()
-            .find(|(c, t)| !t.trim().is_empty() && !c.is_disjoint(&company))
-        else {
+            .filter(|(c, t)| !t.trim().is_empty() && !c.is_disjoint(&company))
+            .map(|(_, t)| (t.as_str(), ctx.tokens(t)))
+            .filter(|(_, tokens)| !tokens.is_empty())
+            .collect();
+        let Some((source_title, _)) = comparable.first() else {
             continue;
         };
-        let generated_tokens = ctx.tokens(&title);
-        let source_tokens = ctx.tokens(source_title);
-        if generated_tokens.is_empty() || source_tokens.is_empty() {
+        if comparable
+            .iter()
+            .any(|(_, tokens)| !generated_tokens.is_disjoint(tokens))
+        {
             continue;
         }
-        if generated_tokens.is_disjoint(&source_tokens) {
-            issues.push(issue(
-                CONSISTENCY_TITLE_DRIFT,
-                Some("Experience"),
-                format!(
-                    "Your source résumé calls this role \"{source_title}\" but the generated \
-                     document calls it \"{title}\". Use the title your employer actually gave you."
-                ),
-                Some(format!("{source_title} → {title}")),
-            ));
-        }
+        issues.push(issue(
+            CONSISTENCY_TITLE_DRIFT,
+            Some("Experience"),
+            format!(
+                "Your source résumé calls this role \"{source_title}\" but the generated \
+                 document calls it \"{title}\". Use the title your employer actually gave you."
+            ),
+            Some(format!("{source_title} → {title}")),
+        ));
     }
     issues
 }

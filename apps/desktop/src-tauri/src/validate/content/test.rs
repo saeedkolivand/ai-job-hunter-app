@@ -3654,3 +3654,183 @@ fn a_figure_alone_on_a_source_line_still_sources_its_restatement() {
     // (direction 3), which a "claims side only" fix would have turned red —
     // which is why this rule is scoped by band rather than by side alone.
 }
+
+/// R11-F1 / R11-F5(b) — [`HEADER_PHONE_RE`]'s `[+(]` arm reads a parenthesized
+/// DATE SPAN as an area code followed by digits: "(2019 - 2021)" is `(`, a
+/// digit, eight more separator-or-digit characters and a digit.
+/// `ats::is_contact_cluster` already refused a year-bearing line; the OTHER
+/// caller, [`has_real_contact_match`], did not — so a pre-heading line carrying
+/// a date span was struck out of the SOURCE's metric set, and restating its
+/// figure came back as a fabrication Critical.
+///
+/// The guard therefore belongs to the shape test itself, not to one call site:
+/// a date span is not a phone number wherever the question is asked.
+#[test]
+fn a_parenthesized_date_span_is_not_a_header_phone() {
+    assert!(!looks_like_header_phone("Beratung (2019 - 2021)"));
+    assert!(!has_real_contact_match("Beratung (2019 - 2021)"));
+    // The two forms the shape test exists for still match.
+    assert!(looks_like_header_phone("+49 30 1234567"));
+    assert!(has_real_contact_match("Jane Doe | +49 (0)30 1234567"));
+    assert!(has_real_contact_match("jane@example.com"));
+
+    // End to end: the figure sits on a pre-heading line that also carries a
+    // parenthesized span — the shape a freelance/contract summary has.
+    let source = "Jane Doe\n\
+                  jane@example.com | +49 30 1234567\n\n\
+                  Contract work (2019 - 2021): 1 200 000 EUR in payment volume\n\n\
+                  EXPERIENCE\n\n\
+                  Senior Engineer | Acme Payments | 2021 - Present\n\
+                  - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    let restated = "Jane Doe\n\
+                    jane@example.com | +49 30 1234567\n\n\
+                    EXPERIENCE\n\n\
+                    Senior Engineer | Acme Payments | 2021 - Present\n\
+                    - Moved 1 200 000 EUR of payment volume onto the new rails\n\
+                    - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    silent(
+        &report_for(restated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The guard: a genuine header line is still contact details, so its digits
+    // still cannot source a body claim.
+    let phone_source = "Jane Doe\n\
+                        jane@example.com | +49 30 1234567\n\n\
+                        EXPERIENCE\n\n\
+                        Senior Engineer | Acme Payments | 2021 - Present\n\
+                        - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    let borrowed = "Jane Doe\n\
+                    jane@example.com | +49 30 1234567\n\n\
+                    EXPERIENCE\n\n\
+                    Senior Engineer | Acme Payments | 2021 - Present\n\
+                    - Handled 1234567 disputes in the first quarter\n";
+    fired(
+        &report_for(borrowed, phone_source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The OTHER caller keeps the behaviour its own now-deleted `years_in`
+    // clause bought: an employer line followed by a bare date column is not a
+    // second contact block. This is the assertion that makes moving the guard
+    // into the shape test provably behaviour-preserving for `ats`, rather than
+    // just "the suite still passes".
+    let date_column = "Jane Doe\n\
+                       jane@example.com\n\n\
+                       EXPERIENCE\n\n\
+                       Acme Payments\n\
+                       2018 - 2021\n\
+                       - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    silent(
+        &report_for(date_column, date_column, EN_JOB_AD, &[]),
+        ATS_HEADER_IN_BODY,
+    );
+}
+
+/// R11-F2 — `title_drift_issues` paired a generated entry with only the FIRST
+/// source entry sharing company tokens, so two roles at the SAME employer — a
+/// promotion, an internal move, the commonest thing on a résumé — reported the
+/// second one as drift on a document byte-identical to its source.
+#[test]
+fn title_drift_tolerates_a_second_role_at_the_same_employer() {
+    let resume = "EXPERIENCE\n\n\
+                  Senior Engineer, Acme Corp (Jan 2021 - Mar 2023)\n\
+                  - Shipped Docker containers to production\n\n\
+                  Product Manager, Acme Corp (Jan 2018 - Dec 2020)\n\
+                  - Ran the reporting service\n";
+    silent(
+        &report_for(resume, resume, EN_JOB_AD, &[]),
+        CONSISTENCY_TITLE_DRIFT,
+    );
+
+    // The guard: a title the source never gave this employer STILL fires. The
+    // rule is "disjoint from EVERY source title at that employer", not "skip
+    // employers with more than one role".
+    let invented = "EXPERIENCE\n\n\
+                    Chief Revenue Officer, Acme Corp (Jan 2021 - Mar 2023)\n\
+                    - Shipped Docker containers to production\n";
+    let report = report_for(invented, resume, EN_JOB_AD, &[]);
+    let hits = fired(&report, CONSISTENCY_TITLE_DRIFT);
+    assert_eq!(hits.len(), 1, "one entry, one finding; got {hits:?}");
+}
+
+/// R11-F5(a) — `split_sections` inherits `export::parser`'s heading detection:
+/// an EXACT `SECTION_NAMES` entry, an ATX marker, or ALL-CAPS. A Title-Case
+/// heading that is not literally in that list is invisible, the whole résumé
+/// collapses into ONE section, `has_headings` goes false, and `metric_lines`
+/// then runs the COVER-LETTER rules (the 8-word body latch) over a résumé —
+/// eating every short source line, figures included.
+///
+/// **The reviewer's own examples are not the failing ones**, and that is worth
+/// keeping written down: "Berufserfahrung", "Ausbildung", "Formation" and
+/// "Expérience professionnelle" are all in `SECTION_NAMES` and match
+/// case-insensitively. What fails is every Title-Case heading OUTSIDE that
+/// exact list — "Beruflicher Werdegang", "Berufliche Erfahrung", "Technische
+/// Kenntnisse", "Kurzprofil", "Compétences techniques" — each of which
+/// `documents::evidence::classify_section` already classifies correctly.
+#[test]
+fn a_title_cased_german_heading_still_sections_the_source() {
+    let source = "Jana Mustermann\n\
+                  jana.mustermann@example.com | +49 30 7654321\n\n\
+                  Kurzprofil\n\n\
+                  Verantwortetes Budget: 1 200 000 EUR\n\n\
+                  Beruflicher Werdegang\n\n\
+                  Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
+                  - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n";
+
+    let sections = split_sections(source);
+    assert!(
+        sections.len() > 1,
+        "a Title-Case German heading must section the document; got {:?}",
+        sections.iter().map(|s| &s.heading).collect::<Vec<_>>()
+    );
+    assert!(
+        sections.iter().any(|s| s.kind == SectionKind::Experience),
+        "\"Beruflicher Werdegang\" is an experience heading; got {:?}",
+        sections.iter().map(|s| s.kind).collect::<Vec<_>>()
+    );
+
+    // The damage: the figure on the short pre-heading line is the candidate's
+    // own, and restating it must not read as fabrication.
+    let generated = "Jana Mustermann\n\
+                     jana.mustermann@example.com | +49 30 7654321\n\n\
+                     PROFIL\n\n\
+                     Ein Budget von 1 200 000 EUR verantwortet und die Plattform aufgebaut\n\n\
+                     BERUFSERFAHRUNG\n\n\
+                     Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
+                     - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n";
+    silent(
+        &validate_content(&ContentInput {
+            generated,
+            source_resume: source,
+            job_ad: DE_JOB_AD,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::Resume,
+        }),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The negative twin, one line per guard — each candidate OPENS a block, so
+    // the only thing refusing it is the guard named beside it. Every one of
+    // these carries a heading stem the lexicon matches as a substring.
+    let prose = "Jana Mustermann\n\
+                 jana@example.com\n\n\
+                 Ich habe umfangreiche Erfahrung mit Docker und Kubernetes gesammelt.\n\n\
+                 Cloud Kubernetes Docker Redis Terraform\n\n\
+                 Erfahrung 2019\n\n\
+                 Kenntnisse: Rust, Python\n\n\
+                 Rust Python Go\n\
+                 Weitere Kenntnisse\n";
+    assert_eq!(
+        split_sections(prose).len(),
+        1,
+        "a line that merely carries a heading word is not a heading — too long \
+         (sentence), too many words, digit-bearing, punctuated, or mid-block; \
+         got {:?}",
+        split_sections(prose)
+            .iter()
+            .map(|s| &s.heading)
+            .collect::<Vec<_>>()
+    );
+}

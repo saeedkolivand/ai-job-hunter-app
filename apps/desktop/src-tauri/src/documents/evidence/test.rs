@@ -1,3 +1,7 @@
+// The entry/label/date family moved to `super::entry`; its `pub(super)` helpers
+// are not re-exported by `super`, so this glob keeps the direct-unit tests
+// (`split_two_space_label`, `is_date_only`, …) resolving unchanged.
+use super::entry::*;
 use super::*;
 
 const RESUME: &str = "\
@@ -1396,4 +1400,94 @@ fn an_uncurated_language_makes_no_relevance_claim_about_its_gap_list() {
         "German is curated, so frequency still ranks real requirements; got {:?}",
         de_set.skills_absent
     );
+}
+
+/// R11-F3 — [`split_two_space_label`]'s comma-less arm returns the whole label
+/// as the company with no location test, so a label made of NOTHING but
+/// geography names a CITY as the employer.
+///
+/// The reviewer's "Berlin, Germany" reaches that arm through the peel loop
+/// above it: the loop strips location-only comma tails one at a time, and what
+/// it leaves ("Berlin") is comma-less and unguarded. The pipe arm and the
+/// two-space arm both refuse to name a city; the fallback did not.
+#[test]
+fn an_all_geography_entry_label_names_no_employer() {
+    // The reviewer's exact shape, and the bare single-token twin.
+    assert_eq!(
+        split_two_space_label("Berlin, Germany"),
+        (String::new(), String::new()),
+        "a label that is only geography identifies no employer"
+    );
+    assert_eq!(
+        split_two_space_label("Berlin"),
+        (String::new(), String::new())
+    );
+
+    // …and the shape a user actually uploads: an extracted PDF whose entry line
+    // carries only the location and the date column, with the employer on the
+    // line above it.
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Berlin, Germany, 2018 - 2021
+- Shipped Docker containers onto a Kubernetes cluster
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    let companies: Vec<&str> = set.roles.iter().map(|r| r.company.as_str()).collect();
+    assert!(
+        !companies.contains(&"Berlin"),
+        "a city is never an employer; got {companies:?}"
+    );
+
+    // The guard: a real employer with a location tail still resolves.
+    assert_eq!(
+        split_two_space_label("Globex Logistics, Munich, Germany"),
+        ("Globex Logistics".to_string(), String::new())
+    );
+}
+
+/// R11-F4 — the pipe arm reads `[title, company]` positionally, on the stated
+/// justification that it is "the order every template in this repo renders".
+/// That is true of what this app GENERATES and false of what a user UPLOADS:
+/// "Acme Corp | Senior Engineer | 2021 - Present" is an ordinary company-first
+/// résumé line, and reading it positionally records the employer as
+/// "Senior Engineer" — which then merges every entry that shares a title into
+/// one employer and hands the generation prompt a role at a company called
+/// "Senior Engineer".
+#[test]
+fn a_company_first_pipe_entry_names_the_company_not_the_title() {
+    let (company, title, dates) = split_line("Acme Corp | Senior Engineer | 2021 - Present");
+    assert_eq!(company, "Acme Corp");
+    assert_eq!(title, "Senior Engineer");
+    assert_eq!(dates, "2021 - Present");
+
+    // The pinned title-first reading is untouched wherever the legal form does
+    // not say otherwise — including the case where the COMPANY carries one.
+    let (company, title, _) = split_line("Senior Engineer | Acme Corp | 2021 - Present");
+    assert_eq!(company, "Acme Corp");
+    assert_eq!(title, "Senior Engineer");
+    let (company, title, _) = split_line("IT-Beraterin | IBM Deutschland GmbH | 2015 - 2018");
+    assert_eq!(company, "IBM Deutschland GmbH");
+    assert_eq!(title, "IT-Beraterin");
+
+    // The harm the drift check cannot mask: `extract_evidence` is what the
+    // generation prompt reads, and it was told the employer was a job title.
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Acme Corp | Senior Engineer | 2021 - Present
+- Shipped Docker containers onto a Kubernetes cluster
+
+Globex Ltd | Senior Engineer | 2018 - 2021
+- Built the billing API for forty warehouse sites
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    let companies: Vec<&str> = set.roles.iter().map(|r| r.company.as_str()).collect();
+    assert_eq!(companies, vec!["Acme Corp", "Globex Ltd"]);
 }
