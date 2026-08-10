@@ -1015,6 +1015,162 @@ fn compact_trim_suggestions_drops_whole_suggestions_from_the_end_instead_of_cutt
     );
 }
 
+// ── MEDIUM FINDING (round 6): truncated must count the .take(limit) cap too ──
+
+/// MEDIUM (PR #963 round 6): `truncated` used to be `capped.len() - kept` —
+/// `capped` is already POST-`.take(limit)`, so that arithmetic could only
+/// ever count drops from the `shrink_to_summary_cap` loop, never bullets
+/// withheld by the initial `.take(limit)` cap itself. A candidate set
+/// bigger than `limit`, but small enough that the shrink loop never
+/// engages, reported `truncated: 0` while silently withholding most
+/// bullets — defeating the whole "tell the model the summary is partial"
+/// point of the field.
+///
+/// Mutation-checked: reverting `truncated` back to `capped.len() - kept`
+/// makes this test fail (it re-asserts `0` instead of the withheld count)
+/// — restored before landing.
+#[test]
+fn compact_evidence_set_truncated_counts_bullets_withheld_by_the_limit_cap() {
+    let total = EVIDENCE_SEARCH_LIMIT + 5;
+    let roles_bullets: Vec<EvidenceBullet> = (0..total)
+        .map(|i| bullet(&format!("b{i}"), i as f64))
+        .collect();
+    let set = EvidenceSet {
+        roles: vec![EvidenceRole {
+            company: "Acme".to_string(),
+            title: "Engineer".to_string(),
+            dates: "2021 - Present".to_string(),
+            bullets: roles_bullets,
+        }],
+        skills_present: vec![],
+        skills_absent: vec![],
+        education: vec![],
+        projects: vec![],
+    };
+    let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+    let surfaced = compact["bullets"].as_array().unwrap();
+    assert_eq!(
+        surfaced.len(),
+        EVIDENCE_SEARCH_LIMIT,
+        "these small bullets must never engage the shrink loop, isolating the cap-only case"
+    );
+    assert_eq!(
+        compact["truncated"].as_u64().unwrap(),
+        (total - EVIDENCE_SEARCH_LIMIT) as u64,
+        "truncated must count bullets withheld by .take(limit), not just the shrink loop"
+    );
+}
+
+/// Combined case: a candidate set that exceeds BOTH the `.take(limit)` cap
+/// AND `SUMMARY_CAP` (so the shrink loop ALSO drops bullets from what the
+/// cap already narrowed to) must report `truncated` against the FULL
+/// total — the shrink-loop contribution still counts, it's just no longer
+/// the ONLY thing counted.
+#[test]
+fn compact_evidence_set_truncated_accounts_for_both_the_limit_cap_and_the_shrink_loop() {
+    let long_text = "t".repeat(BULLET_TEXT_CAP);
+    let long_hit = "h".repeat(EVIDENCE_CAP);
+    let total = EVIDENCE_SEARCH_LIMIT + 5;
+    let roles_bullets: Vec<EvidenceBullet> = (0..total)
+        .map(|i| EvidenceBullet {
+            id: format!("b{i}"),
+            text: long_text.clone(),
+            hits: (0..MAX_HITS).map(|_| long_hit.clone()).collect(),
+            score: i as f64,
+        })
+        .collect();
+    let set = EvidenceSet {
+        roles: vec![EvidenceRole {
+            company: "Acme".to_string(),
+            title: "Engineer".to_string(),
+            dates: "2021 - Present".to_string(),
+            bullets: roles_bullets,
+        }],
+        skills_present: vec![],
+        skills_absent: vec![],
+        education: vec![],
+        projects: vec![],
+    };
+    let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+    let surfaced = compact["bullets"].as_array().unwrap();
+    assert!(
+        surfaced.len() < EVIDENCE_SEARCH_LIMIT,
+        "the shrink loop must ALSO engage on this worst-case fixture, on top of the limit cap; \
+         got {} surfaced bullets",
+        surfaced.len()
+    );
+    let truncated = compact["truncated"].as_u64().unwrap();
+    assert_eq!(
+        truncated,
+        (total - surfaced.len()) as u64,
+        "truncated must account for the FULL total, not just what the shrink loop dropped from \
+         the already-capped set"
+    );
+    assert_eq!(
+        surfaced[0]["id"],
+        format!("b{}", total - 1),
+        "the strongest bullet must always survive both drop mechanisms"
+    );
+}
+
+/// Mirrors `compact_evidence_set_truncated_counts_bullets_withheld_by_the_limit_cap`
+/// for `compact_trim_suggestions`.
+///
+/// Mutation-checked: reverting `truncated` back to `capped.len() - kept`
+/// makes this test fail — restored before landing.
+#[test]
+fn compact_trim_suggestions_truncated_counts_bullets_withheld_by_the_limit_cap() {
+    let total = TRIM_SUGGESTIONS_LIMIT + 5;
+    let ranked: Vec<EvidenceBullet> = (0..total)
+        .map(|i| bullet(&format!("b{i}"), i as f64))
+        .collect();
+    let compact = compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT);
+    let surfaced = compact["weakestBullets"].as_array().unwrap();
+    assert_eq!(
+        surfaced.len(),
+        TRIM_SUGGESTIONS_LIMIT,
+        "these small bullets must never engage the shrink loop, isolating the cap-only case"
+    );
+    assert_eq!(
+        compact["truncated"].as_u64().unwrap(),
+        (total - TRIM_SUGGESTIONS_LIMIT) as u64,
+        "truncated must count bullets withheld by .take(limit), not just the shrink loop"
+    );
+}
+
+/// Mirrors `compact_evidence_set_truncated_accounts_for_both_the_limit_cap_and_the_shrink_loop`
+/// for `compact_trim_suggestions` — the shrink-loop contribution still
+/// counts even once the cap arithmetic is fixed to also count its own drops.
+#[test]
+fn compact_trim_suggestions_truncated_accounts_for_both_the_limit_cap_and_the_shrink_loop() {
+    let long_text = "t".repeat(BULLET_TEXT_CAP);
+    let long_hit = "h".repeat(EVIDENCE_CAP);
+    let total = TRIM_SUGGESTIONS_LIMIT + 5;
+    let ranked: Vec<EvidenceBullet> = (0..total)
+        .map(|i| EvidenceBullet {
+            id: format!("b{i}"),
+            text: long_text.clone(),
+            hits: (0..MAX_HITS).map(|_| long_hit.clone()).collect(),
+            score: i as f64,
+        })
+        .collect();
+    let compact = compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT);
+    let surfaced = compact["weakestBullets"].as_array().unwrap();
+    assert!(
+        surfaced.len() < TRIM_SUGGESTIONS_LIMIT,
+        "the shrink loop must ALSO engage on this worst-case fixture, on top of the limit cap; \
+         got {} surfaced suggestions",
+        surfaced.len()
+    );
+    let truncated = compact["truncated"].as_u64().unwrap();
+    assert_eq!(
+        truncated,
+        (total - surfaced.len()) as u64,
+        "truncated must account for the FULL total, not just what the shrink loop dropped from \
+         the already-capped set"
+    );
+}
+
 // ── MEDIUM FINDING (round 5): handler CORE coverage ─────────────────────────
 //
 // None of the four tool handlers used to be exercised by any test — only the

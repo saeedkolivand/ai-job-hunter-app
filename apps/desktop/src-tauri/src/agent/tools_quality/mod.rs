@@ -367,6 +367,15 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// `fenced()`'s hard char cap. Skills lists are NOT part of this drop loop:
 /// their own `MAX_SKILLS`/`EVIDENCE_CAP` caps alone already bound them well
 /// under `SUMMARY_CAP`, so dropping bullets is always enough.
+///
+/// MEDIUM fix, PR #963 round 6: `truncated` used to be `capped.len() - kept`
+/// — `capped` is already POST-`.take(limit)`, so that arithmetic could only
+/// ever count drops from the [`shrink_to_summary_cap`] loop, never the
+/// initial `.take(limit)` cap itself. A résumé with more than `limit`
+/// scored bullets silently withheld the rest while reporting `truncated: 0`,
+/// defeating the whole "tell the model the summary is partial" point of the
+/// field. Counted against `bullets_total` — the FULL scored count, captured
+/// before `.take(limit)` consumes `bullets` — instead.
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -375,6 +384,7 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
         .chain(set.projects.iter())
         .collect();
     bullets.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let bullets_total = bullets.len();
     let capped: Vec<&EvidenceBullet> = bullets.into_iter().take(limit).collect();
     let skills_present: Vec<String> = set
         .skills_present
@@ -398,7 +408,7 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
             "bullets": top,
             "skillsPresent": skills_present.clone(),
             "skillsAbsent": skills_absent.clone(),
-            "truncated": capped.len() - kept,
+            "truncated": bullets_total - kept,
         })
     })
 }
@@ -413,6 +423,12 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
 /// [`compact_evidence_set`] is, so a crafted résumé drops whole suggestions
 /// from the end of the already-weakest-first list into `truncated` instead
 /// of getting cut mid-string.
+///
+/// MEDIUM fix, PR #963 round 6: same `truncated` bug as
+/// [`compact_evidence_set`]'s doc — `capped.len() - kept` only ever counted
+/// drops from the shrink loop, never `ranked`'s bullets withheld by the
+/// initial `.take(limit)` cap. Counted against `ranked.len()` (the FULL
+/// ranking) instead.
 fn compact_trim_suggestions(ranked: &[EvidenceBullet], limit: usize) -> Value {
     let capped: Vec<&EvidenceBullet> = ranked.iter().take(limit).collect();
     shrink_to_summary_cap(capped.len(), |kept| {
@@ -421,7 +437,7 @@ fn compact_trim_suggestions(ranked: &[EvidenceBullet], limit: usize) -> Value {
             .take(kept)
             .map(|b| bullet_to_value(b))
             .collect();
-        json!({ "weakestBullets": top, "truncated": capped.len() - kept })
+        json!({ "weakestBullets": top, "truncated": ranked.len() - kept })
     })
 }
 
