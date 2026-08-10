@@ -39,6 +39,30 @@ export interface AiGenerationRecord {
    * RAW one (they never match for query-id boards like Indeed). Absent when unlinked.
    */
   applicationId?: string;
+  /**
+   * Serialized JSON wrapper `{schemaVersion, pipeline, generatedAt, resume?,
+   * coverLetter?}` (this shape is renderer-owned) holding the deterministic
+   * content-quality report(s). Each per-document key holds a SLOT —
+   * `{report, sourceTextHash}`: `validate::content::ContentReport` plus the
+   * hash of the exact text it validated, so the renderer can flag that
+   * document stale against the current résumé/letter text. The hash lives
+   * inside the slot precisely because the merge below is per TOP-LEVEL key: a
+   * sibling hash map would be replaced wholesale by a single-document save,
+   * orphaning the other document's anchor. The Rust store never clears a
+   * report on a text edit, so staleness display is entirely a renderer-side,
+   * read-time decision.
+   *
+   * Always present on a record returned from `list`/`save` (possibly `''` = no
+   * report yet, or the row predates this field) — unlike on
+   * {@link AiGenerationSaveRequest.qualityReport}, where it is genuinely
+   * optional (omit to leave whatever report is already on the aggregate). A
+   * save MERGES its incoming wrapper onto the existing one per TOP-LEVEL key:
+   * a letter-only save overlays only `coverLetter` (plus the envelope fields)
+   * and leaves a stored `resume` sub-report untouched, and vice versa. See
+   * ADR-007 addendum — a manual text edit via {@link AiGenerationUpdateRequest}
+   * deliberately never clears this.
+   */
+  qualityReport?: string;
 }
 
 export interface AiGenerationSaveRequest {
@@ -71,6 +95,14 @@ export interface AiGenerationSaveRequest {
    */
   emailSubject?: string;
   emailBody?: string;
+  /**
+   * Deterministic content-quality report wrapper to merge onto the aggregate
+   * (see {@link AiGenerationRecord.qualityReport} for the shape and the
+   * per-key merge rule). Renderer's job to compute it (typically right after a
+   * resume/cover regeneration) and pass it here; an absent/empty value merges
+   * nothing, leaving whatever report is already on the aggregate untouched.
+   */
+  qualityReport?: string;
 }
 
 /**

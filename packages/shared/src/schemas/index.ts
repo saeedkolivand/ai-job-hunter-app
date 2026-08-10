@@ -281,6 +281,24 @@ export const ResumeTrimSuggestionsRequestSchema = z.object({
 });
 
 /**
+ * Request for `resume:validateContent` — deterministic content-quality checks
+ * (factual accuracy, ATS structure, AI-voice tells) on an already-generated
+ * résumé/letter against its source résumé and the job ad. See
+ * `validate::content::{ContentInput, validate_content}` (Rust, L1 — no AI call,
+ * safe to run on every save). Same size caps as
+ * `ResumeTrimSuggestionsRequestSchema` — this reads the same kind of text.
+ */
+export const ResumeValidateContentSchema = z.object({
+  generated: z.string().min(1).max(200_000),
+  source: z.string().min(1).max(200_000),
+  jobAd: z.string().max(200_000),
+  topRequirements: z.array(z.string().max(300)).max(50),
+  targetLanguage: z.string().max(32),
+  docKind: z.enum(['resume', 'coverLetter']),
+});
+export type ResumeValidateContentRequest = z.infer<typeof ResumeValidateContentSchema>;
+
+/**
  * Request for the "prep this application" agentic flow (`agent.run`). Carries ONLY
  * the résumé + job identity: routing (provider/model/baseUrl) is BACKEND-OWNED —
  * the agent loop and every tool provider call resolve the active provider from the
@@ -377,6 +395,12 @@ export const AiGenerationSaveSchema = z.object({
   // strings: the UI edits and copies subject and body independently.
   emailSubject: z.string().default(''),
   emailBody: z.string().default(''),
+  // Deterministic content-quality report (serialized `ContentReport` JSON) for
+  // THIS save's resume/cover text — see ADR-007 addendum. Optional: only a save
+  // that regenerates resume_text carries a fresh one; every other save (answers,
+  // brief, email draft) omits it and the merge keeps whatever report is already
+  // on the aggregate.
+  qualityReport: z.string().optional(),
 });
 // Note: the `AiGenerationSaveRequest` type is declared in the aiGenerations IPC
 // contract (single source for that name); this schema validates the same shape.

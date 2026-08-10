@@ -29,10 +29,21 @@ import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
 import {
   antiAiTellProse,
+  capitalizeOpener,
   HUMANIZE_PROSE,
   type OutputTone,
+  TEMPLATE_OPENERS_EN,
   toneDirective,
 } from '../natural-voice/index.js';
+
+// Same two opener families cover-letter.ts's LETTER_SPECIFICS quotes (index 1
+// "writing to express", index 3 "excited to apply") — single source, never a
+// hand-typed copy of the same two clichés in a second file. " my interest" is
+// appended locally: the array entry stops at "express" (the validator-matched,
+// substring-sufficient form), but this prompt's illustrative quote reads better
+// completed into the fuller stock phrase a candidate would actually write.
+const EMAIL_OPENER_EXAMPLE_EXCITED = capitalizeOpener(TEMPLATE_OPENERS_EN[3] ?? ''); // "I am excited to apply"
+const EMAIL_OPENER_EXAMPLE_WRITING = `${capitalizeOpener(TEMPLATE_OPENERS_EN[1] ?? '')} my interest`; // "I am writing to express my interest"
 
 export interface ApplicationEmailParams {
   /** Candidate's résumé text — the sole source of factual claims. */
@@ -241,7 +252,7 @@ Subject: [concise, specific subject — role name + "Application" or similar; no
 [Greeting: ${greeting}]
 
 [Body: 2 to 3 short paragraphs, ~120 to 200 words total. NOT a cover letter — email-length only.]
-- Opening paragraph: one specific, résumé-backed reason the candidate fits this role. Do not start with "I am excited to apply" or "I am writing to express my interest". Name the role and company naturally.${hasCompany ? '' : ' (company name unknown: name only the role, never invent, name, or write a company placeholder such as "Company" or "Unternehmen")'}
+- Opening paragraph: one specific, résumé-backed reason the candidate fits this role. Do not start with "${EMAIL_OPENER_EXAMPLE_EXCITED}" or "${EMAIL_OPENER_EXAMPLE_WRITING}". Name the role and company naturally.${hasCompany ? '' : ' (company name unknown: name only the role, never invent, name, or write a company placeholder such as "Company" or "Unternehmen")'}
 - Middle: one or two concrete achievements from the résumé that prove the fit — shown as sentences, not bullets.
 - Closing: a brief, confident invitation to discuss further and a natural reference to the attached résumé/CV.
 
@@ -300,7 +311,7 @@ VOICE:
 ${antiAiTellProse(lang)}
 ${HUMANIZE_PROSE}
 - Conversational-professional: the candidate talking to a person, not reciting a spec. Email-length (2 to 3 paragraphs, ~120 to 200 words) — NOT a cover letter.
-- Lead with a genuine, résumé-backed fit reason. Never "I am excited to apply" or "I am writing to express my interest".
+- Lead with a genuine, résumé-backed fit reason. Never "${EMAIL_OPENER_EXAMPLE_EXCITED}" or "${EMAIL_OPENER_EXAMPLE_WRITING}".
 - Reference attaching the résumé/CV naturally in the closing paragraph.
 - Sign off from ${candidateName} — the name alone, with no contact line, email address, phone number, or profile links after it.
 

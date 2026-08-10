@@ -179,3 +179,52 @@ describe('OutputPanelDone — letter-layout picker (cover tab only)', () => {
     );
   });
 });
+
+// The re-check BEHAVIOUR (ownership epoch, merge-onto-live-base, persistence)
+// lives in `useQualityRecheck`, which the HOST owns — see
+// `hooks/use-quality-recheck.test.ts`. This panel is unmounted the moment a
+// Regenerate switches the stage, so it must not own that state; all it owes is
+// forwarding the host's action into the quality panel.
+describe('OutputPanelDone — quality panel Re-check wiring', () => {
+  const STALE_REPORT = {
+    schemaVersion: 2 as const,
+    pipeline: 'fast' as const,
+    generatedAt: 1,
+    resume: {
+      report: {
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: null,
+          topRequirementHits: 0,
+          duplicateRatio: 0,
+          rolesSource: 0,
+          rolesOutput: 0,
+        },
+      },
+      // Mismatches RAW's hash on purpose — the badge renders stale, so the
+      // panel's Re-check button is reachable.
+      sourceTextHash: -1,
+    },
+  };
+
+  it('forwards the panel Re-check action to the host that owns it', async () => {
+    const onRecheck = vi.fn();
+    const user = userEvent.setup();
+
+    renderPanel({ report: STALE_REPORT, onRecheck });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    await user.click(screen.getByRole('button', { name: /re-check/i }));
+
+    expect(onRecheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the Re-check action when the host provides none', async () => {
+    const user = userEvent.setup();
+    renderPanel({ report: STALE_REPORT });
+
+    await user.click(screen.getByRole('button', { name: /checked before your edits/i }));
+    expect(screen.queryByRole('button', { name: /re-check/i })).toBeNull();
+  });
+});

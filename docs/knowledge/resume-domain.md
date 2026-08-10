@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-07
+Last updated: 2026-08-09
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -12,9 +12,13 @@ Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `j
 
 **Page target** = the customary maximum _length_ of a résumé in a market, in pages — `LocaleProfile::max_pages` (`locale/mod.rs`, per-market values + their rationale on the field's doc comment). Do not conflate it with `page_size`, the physical sheet, which sits on the same struct. Hiring convention, not a published standard. **Advisory only** — nothing blocks a longer export.
 
-Consumed by the trim panel (`features/ai-generate/components/TrimPanel`): when the rendered preview exceeds the target, `resume_trim_suggestions` (`commands/match_resume.rs` → `rank_trim_candidates`) ranks the résumé's `LineKind::Bullet` lines weakest-first by how much of _this_ posting's vocabulary each carries. Embedding-free, zero model calls. Read-only — it never edits the document.
+Consumed by the trim panel (`features/ai-generate/components/TrimPanel`): when the rendered preview exceeds the target, `resume_trim_suggestions` ranks the résumé's `LineKind::Bullet` lines weakest-first by how much of _this_ posting's vocabulary each carries. The ranking core is `documents/evidence.rs` → `rank_bullets` (which ranks EvidenceBullet via `score`); match_resume.rs wraps it via a `From<EvidenceBullet>` shim for wire compatibility. Embedding-free, zero model calls. Read-only — it never edits the document.
 
-**Both surfaces that intersect a résumé against a posting must route through `keywords::languages_align`** — `score_one` and `rank_trim_candidates` alike. It decides whether both sides get stemmed or both stay normalized-only; one side stemmed alone mangles language-neutral tech tokens, and two surfaces disagreeing on it makes the panel contradict the match score for the same pair (`cross_language_pair_ranks_symmetrically_like_score_one`). The renderer skips the query below a floor (`SHORTEST_OVERFLOW` in `TrimPanel`), sound only while no market target sits under it — pinned by `no_market_targets_fewer_than_two_pages`.
+**Both surfaces that intersect a résumé against a posting must route through `keywords::languages_align`** — `score_one` and rank_bullets alike. It decides whether both sides get stemmed or both stay normalized-only; one side stemmed alone mangles language-neutral tech tokens, and two surfaces disagreeing on it makes the panel contradict the match score for the same pair (`cross_language_pair_ranks_symmetrically_like_score_one`). The renderer skips the query below a floor (`SHORTEST_OVERFLOW` in `TrimPanel`), sound only while no market target sits under it — pinned by `no_market_targets_fewer_than_two_pages`.
+
+## Content validation
+
+**`ContentReport`** (`validate/content/mod.rs`) — deterministic validators that detect factual discrepancies (unsourced claims, dropped roles, altered links) and guidance issues (low keyword coverage, AI-tell prose, formatting). **Critical issues only from deterministic checks** against the candidate's own source document; no model may emit a Critical. The code roster + severity split live in `CONTENT_ISSUE_CODES` (read the const — don't copy the count). **Evidence extraction** (`documents/evidence.rs`) — `extract_evidence` + `rank_bullets` — parses the source résumé into roles, projects, skills, and evidence spans; the `EvidenceSet` feeds both trim-panel scoring and content validation. Reported per-generation via the opaque `quality_report` column on `ai_generations` (JSON wrapper carrying per-document `ContentReport` payloads + metadata); see ADR-007 §F2 for merge rules. Consumed by: UI badge + panel (`QualityReportPanel`), with staleness detection via source text hash.
 
 ## Templates
 

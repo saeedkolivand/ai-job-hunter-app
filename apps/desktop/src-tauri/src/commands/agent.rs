@@ -149,12 +149,15 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
 
         // Trusted run-identity context threaded into the tools. Routing is now
         // backend-owned (task #25): tools that make their own provider call resolve
-        // via `Completer::from_active`, so `ToolContext` carries only `job_id` — the
-        // run's OWN validated job (lets `research_company` load THIS run's own
-        // posting server-side, never a model-supplied job/company blob; see the
-        // LOW-1 fix in `agent::tools`).
+        // via `Completer::from_active`, so `ToolContext` carries only the run's own
+        // validated identity — `job_id` (lets `research_company` load THIS run's
+        // own posting server-side, never a model-supplied job/company blob; see the
+        // LOW-1 fix in `agent::tools`) and `resume_id` (lets the quality tools in
+        // `agent::tools_quality` load THIS run's own résumé server-side, never a
+        // model-supplied `resumeId` arg).
         let ctx = ToolContext {
             job_id: req.job_id.clone(),
+            resume_id: req.resume_id.clone(),
         };
         let user = build_user_message(&req.resume_id, &req.job_id, &resume.text, &job_text);
 

@@ -1117,6 +1117,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         email_subject: String::new(),
         email_body: String::new(),
         application_id: None,
+        quality_report: String::new(),
     };
     gen_store.save_application(rec1).unwrap();
 
@@ -1153,6 +1154,7 @@ fn generate_save_second_generation_same_url_merge_into_one_gen_row_and_one_appli
         email_subject: String::new(),
         email_body: String::new(),
         application_id: None,
+        quality_report: String::new(),
     };
     // AiGenerationStore::save_application merges same-url into one gen row.
     // Both upsert_for_origin calls must return the SAME Application id.

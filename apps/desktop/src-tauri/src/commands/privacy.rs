@@ -440,6 +440,7 @@ mod tests {
                 email_subject: String::new(),
                 email_body: String::new(),
                 application_id: None,
+                quality_report: String::new(),
             })
             .unwrap();
         assert_eq!(store.list().len(), 1, "precondition: one record inserted");

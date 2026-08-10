@@ -12,7 +12,7 @@
     { "glob": "apps/desktop/src-tauri/src/recommend/**", "owner": "job-match-expert" },
     { "glob": "apps/desktop/src-tauri/src/validate/**", "owner": "job-match-expert" },
     { "glob": "apps/desktop/src-tauri/src/commands/ai_provider/**", "owner": "ai-provider-expert" },
-    { "glob": "apps/desktop/src-tauri/src/commands/ai.rs", "owner": "ai-provider-expert" },
+    { "glob": "apps/desktop/src-tauri/src/commands/ai/**", "owner": "ai-provider-expert" },
     { "glob": "apps/desktop/src-tauri/src/documents/**", "owner": "ai-provider-expert" },
     { "glob": "packages/prompts/**", "owner": "ai-provider-expert" },
     { "glob": "apps/desktop/src-tauri/src/export/**", "owner": "resume-export-expert" },
@@ -120,7 +120,7 @@
     ],
     "ai": [
       "apps/desktop/src-tauri/src/commands/ai_provider/**",
-      "apps/desktop/src-tauri/src/commands/ai.rs",
+      "apps/desktop/src-tauri/src/commands/ai/**",
       "apps/desktop/src-tauri/src/documents/**",
       "packages/prompts/**"
     ],

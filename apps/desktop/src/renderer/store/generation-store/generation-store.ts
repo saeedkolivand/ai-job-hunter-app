@@ -2,11 +2,13 @@ import { create } from 'zustand';
 
 import { errorDetail } from '@/lib/error-class';
 import {
+  computeQualityReport,
   extractMetadata,
   generateCoverLetter,
   generateResume,
   type GenerationMeta,
   type GenerationMode,
+  type QualityReport,
 } from '@/lib/generate';
 import { resolveActiveProvider } from '@/lib/generate/provider-context';
 
@@ -34,6 +36,9 @@ export interface GenerationSession {
   /** Persisted record id once {@link RunTailorParams.onComplete} has saved this
    *  session's result — lets the modal persist later edits to the right record. */
   savedId: string | null;
+  /** Deterministic content-quality report for the most recent run (ADR-007
+   *  addendum) — additive sibling to `meta`; never read by `phase`. */
+  report: QualityReport | null;
 }
 
 /** Stable empty session — returned for unknown ids so selectors keep one reference. */
@@ -47,6 +52,7 @@ export const EMPTY_SESSION: GenerationSession = {
   error: null,
   meta: null,
   savedId: null,
+  report: null,
 };
 
 /** The finished documents + detected metadata, handed to {@link RunTailorParams.onComplete}. */
@@ -58,6 +64,9 @@ export interface GenerationResult {
    *  off or no cover letter was generated). Persisted so the doc card can show the
    *  "Company research" section. */
   companyBrief: string;
+  /** Deterministic content-quality report for this run, or `null` if neither
+   *  doc validated (see `computeQualityReport`) — the caller persists it. */
+  report: QualityReport | null;
 }
 
 interface RunTailorParams {
@@ -95,6 +104,9 @@ interface GenerationStore {
   setOutput: (id: string, which: 'resume' | 'cover', text: string) => void;
   /** Record the persisted id after a clean run saves the session's result. */
   setSavedId: (id: string, savedId: string) => void;
+  /** Replace the session's quality report — the panel's "Re-check" action, which
+   *  re-validates one document and merges its fresh slot into the wrapper. */
+  setReport: (id: string, report: QualityReport) => void;
   /**
    * Seed a session from a persisted record so the flow opens on the results
    * (`done`) stage instead of the wizard. No-clobber + idempotent: writes ONLY
@@ -104,7 +116,8 @@ interface GenerationStore {
    */
   hydrate: (
     id: string,
-    seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>
+    seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'> &
+      Partial<Pick<GenerationSession, 'report'>>
   ) => void;
   /** Cancel an in-flight run for a context id. */
   cancel: (id: string) => void;
@@ -147,6 +160,8 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
 
     setSavedId: (id, savedId) => patch(id, { savedId }),
 
+    setReport: (id, report) => patch(id, { report }),
+
     hydrate: (id, seed) =>
       set((state) => {
         const existing = state.sessions[id] ?? EMPTY_SESSION;
@@ -164,6 +179,7 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
               coverOut: seed.coverOut,
               meta: seed.meta,
               savedId: seed.savedId,
+              report: seed.report ?? null,
               activeOut: seed.resumeOut ? 'resume' : 'cover',
             },
           },
@@ -277,8 +293,28 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           durationMs: Date.now() - startedAt,
         });
 
+        // Best-effort, never throws — see `computeQualityReport`. Stored on the
+        // session (drives the results-panel badge) AND handed to `onComplete` so
+        // the caller's save carries it.
+        const report = await computeQualityReport({
+          sourceResume: resume,
+          jobAd: jobDesc,
+          topRequirements: detected.topRequirements,
+          targetLanguage: detected.targetLanguage,
+          resumeText,
+          coverLetterText,
+        });
+        // Ownership guard: `cancel()` aborts this run's controller AND resets the
+        // session synchronously, but the validation call above keeps running past
+        // that point — without this check a cancelled generation would still
+        // resurrect the (now-reset) session with a stale report and fire
+        // `onComplete` (the caller's save), silently persisting + flipping
+        // "Applied" for a run the user cancelled.
+        if (controller.signal.aborted) return;
+        patch(id, { report });
+
         // Persist after a clean run only — a cancel/error throws and skips this.
-        onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief });
+        onComplete?.({ meta: detected, resumeText, coverLetterText, companyBrief, report });
       } catch (err) {
         // A user cancel aborts the controller — don't surface that as an error.
         if (controller.signal.aborted) {
@@ -300,10 +336,15 @@ export const useGenerationStore = create<GenerationStore>((set, get) => {
           onError?.();
         }
       } finally {
-        controllers.delete(id);
-        // Only flip generating off if THIS run still owns the session (a cancel may have
-        // already reset it, or a newer run may have started).
-        if (get().sessions[id]?.generating) patch(id, { generating: false, phase: 'idle' });
+        // Ownership guard: a cancel followed immediately by a new run for the same
+        // id may already have replaced this run's controller-map entry — only tear
+        // down state this run still owns, never a newer run's controller/session.
+        if (controllers.get(id) === controller) {
+          controllers.delete(id);
+          // Only flip generating off if THIS run still owns the session (a cancel may
+          // have already reset it, or a newer run may have started).
+          if (get().sessions[id]?.generating) patch(id, { generating: false, phase: 'idle' });
+        }
       }
     },
   };

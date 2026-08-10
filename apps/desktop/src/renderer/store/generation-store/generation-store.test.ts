@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { generateResume } from '@/lib/generate';
+import { computeQualityReport, generateResume } from '@/lib/generate';
 
 import { EMPTY_SESSION, useGenerationStore } from './generation-store';
 
@@ -50,12 +50,16 @@ vi.mock('@/lib/generate', () => ({
       return { text: 'COVER', companyBrief: 'BRIEF' };
     }
   ),
+  computeQualityReport: vi.fn().mockResolvedValue(null),
 }));
 
 const t = (k: string) => k;
 const base = { resume: 'r', jobDesc: 'jd', model: 'llama', mode: 'ats' as const, t };
 
-beforeEach(() => useGenerationStore.setState({ sessions: {} }));
+beforeEach(() => {
+  useGenerationStore.setState({ sessions: {} });
+  vi.mocked(computeQualityReport).mockResolvedValue(null);
+});
 
 describe('generation store', () => {
   it('returns one stable empty session reference for unknown ids', () => {
@@ -126,6 +130,7 @@ describe('generation store', () => {
       resumeText: 'RESUME',
       coverLetterText: 'COVER',
       companyBrief: 'BRIEF',
+      report: null,
     });
   });
 
@@ -149,6 +154,87 @@ describe('generation store', () => {
 
     expect(onComplete).not.toHaveBeenCalled();
     expect(useGenerationStore.getState().getSession('c2').error).toBe('boom');
+  });
+});
+
+describe('generation store — quality report', () => {
+  it('stores the computed report on the session and hands it to onComplete', async () => {
+    const report = {
+      schemaVersion: 2 as const,
+      pipeline: 'fast' as const,
+      generatedAt: 1,
+      resume: {
+        report: {
+          ok: true,
+          issues: [],
+          metrics: {
+            keywordCoverage: null,
+            topRequirementHits: 0,
+            duplicateRatio: 0,
+            rolesSource: 0,
+            rolesOutput: 0,
+          },
+        },
+        sourceTextHash: 1,
+      },
+    };
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(report);
+    const onComplete = vi.fn();
+    const id = 'quality-1';
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: id, target: 'resume', onComplete, ...base });
+
+    expect(useGenerationStore.getState().getSession(id).report).toEqual(report);
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ report }));
+  });
+
+  it('degrades to a null report without failing the run when validation fails', async () => {
+    vi.mocked(computeQualityReport).mockResolvedValueOnce(null);
+    const onComplete = vi.fn();
+    const id = 'quality-2';
+    await useGenerationStore
+      .getState()
+      .runTailor({ contextId: id, target: 'resume', onComplete, ...base });
+
+    expect(useGenerationStore.getState().getSession(id).report).toBeNull();
+    expect(useGenerationStore.getState().getSession(id).error).toBeNull();
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ report: null }));
+  });
+
+  it('a cancel mid-validation never resurrects the reset session or fires onComplete', async () => {
+    // Deferred validation call — lets us cancel() BETWEEN generation finishing
+    // and the report landing, the exact window the reproduced bug lived in.
+    let resolveReport!: (r: null) => void;
+    // Prior tests share this module-level mock, so its call count is cumulative —
+    // clear it so the waitFor below observes only THIS run's call.
+    vi.mocked(computeQualityReport).mockClear();
+    vi.mocked(computeQualityReport).mockImplementationOnce(
+      () => new Promise((resolve) => (resolveReport = resolve))
+    );
+    const onComplete = vi.fn();
+    const id = 'cancel-race';
+    const run = useGenerationStore
+      .getState()
+      .runTailor({ contextId: id, target: 'resume', onComplete, ...base });
+
+    await vi.waitFor(() => expect(computeQualityReport).toHaveBeenCalledTimes(1));
+    // The session is mid-run (generating) right up to the cancel.
+    expect(useGenerationStore.getState().getSession(id).generating).toBe(true);
+
+    useGenerationStore.getState().cancel(id);
+    // cancel() merges EMPTY_SESSION's fields into the existing session object
+    // (patch never deletes the key), so this is value-equal, not the same
+    // reference as the module's stable EMPTY_SESSION constant.
+    expect(useGenerationStore.getState().getSession(id)).toEqual(EMPTY_SESSION);
+
+    // Validation resolves LATE, after the cancel.
+    resolveReport(null);
+    await run;
+
+    // The cancelled run must never resurrect the session or persist anything.
+    expect(useGenerationStore.getState().getSession(id)).toEqual(EMPTY_SESSION);
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });
 
@@ -176,6 +262,15 @@ describe('generation store — hydrate (cold-entry seed)', () => {
     expect(s.meta).toEqual(meta);
     expect(s.generating).toBe(false);
     expect(s.activeOut).toBe('resume');
+    // Seed omitted `report` — defaults to null rather than leaving it undefined.
+    expect(s.report).toBeNull();
+  });
+
+  it('seeds the report when the caller provides one (reopening an already-checked generation)', () => {
+    const id = 'autopilot:job-y';
+    const report = { schemaVersion: 2 as const, pipeline: 'fast' as const, generatedAt: 1 };
+    useGenerationStore.getState().hydrate(id, { ...seed, report });
+    expect(useGenerationStore.getState().getSession(id).report).toEqual(report);
   });
 
   it('lands on the cover tab when only a cover letter exists', () => {

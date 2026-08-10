@@ -1,6 +1,6 @@
 # ADR-007: `ai_generations` as the application aggregate with merge-upsert by job URL
 
-Last updated: 2026-07-16
+Last updated: 2026-08-09
 
 **Status:** Accepted
 
@@ -26,3 +26,7 @@ The `applied` status of a job (whether the user has generated documents for it) 
 ## Addendum — field-selective text edit (F1, v0.65)
 
 `AiGenerationsContract.update(req: AiGenerationUpdateRequest)` (`aiGenerations:update` channel) allows post-save editing of `resumeText` / `coverLetterText` without touching the rest of the aggregate. Rust: `update_texts` in `ai_generations/mod.rs` — must verify `rows_changed > 0` and error on 0 (silent Ok diverges the optimistic cache). Frontend optimistic path: `useUpdateAiGeneration` in `renderer/services/use-ai-generations/`; no re-sync `useEffect` — the optimistic cache owns truth, rollback handles failure. See `AiGenerationUpdateRequest` in `packages/shared/src/ipc/contracts/aiGenerations.ts`.
+
+## Addendum — quality report per-document (F2, v0.135)
+
+`ai_generations` gained a `quality_report` column (opaque JSON, serialized `ContentReport` wrapper carrying both résumé and cover-letter reports + provenance). When an `AiGenerationSaveRequest` includes a fresh `qualityReport` (computed at generation-finish time), `merge_application` applies a **per-key merge**: incoming top-level JSON keys overlay existing keys, so a résumé-only save (with `{"resume": …}`) preserves any existing `{"coverLetter": …}` key. Empty/unparseable report → existing kept verbatim; existing unparseable + incoming parseable → incoming wins outright. A manual text edit (`aiGenerations:update`, F1 above) deliberately does not clear the report — the saved report is a generation-time snapshot; rendered staleness is detected client-side via source-text hash. See `merge_quality_report` in `ai_generations/mod.rs` + contracts in `packages/shared/src/ipc/contracts/aiGenerations.ts`. Content validation checks: `validate/content/mod.rs`, deterministic validators only (no model-emitted Criticals). Agent Read tools for résumé/posting analysis: `agent/tools_quality.rs`.

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
+import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
@@ -14,6 +15,7 @@ import {
   type GenerationMode,
   type LetterLayoutId,
   PERSIST_DEBOUNCE_MS,
+  serializeQualityReport,
   type TemplateId,
 } from '@/lib/generate';
 import { COPY_FEEDBACK_MS } from '@/lib/timings';
@@ -41,6 +43,9 @@ interface Params {
    *  closing/reopening the modal and navigating away. */
   contextId: string;
   jobDesc: string;
+  /** The source résumé the wizard is tailoring FROM — context for the quality
+   *  panel's "Re-check" (the run itself takes it per call via `generate`). */
+  sourceResume: string;
   model: string;
   canUse: boolean;
   hasDesc: boolean;
@@ -74,6 +79,7 @@ interface Params {
 export function useTailorGeneration({
   contextId,
   jobDesc,
+  sourceResume,
   model,
   canUse,
   hasDesc,
@@ -97,10 +103,21 @@ export function useTailorGeneration({
   const setActiveOutInStore = useGenerationStore((s) => s.setActiveOut);
   const setOutputInStore = useGenerationStore((s) => s.setOutput);
   const setSavedIdInStore = useGenerationStore((s) => s.setSavedId);
+  const setReportInStore = useGenerationStore((s) => s.setReport);
   const hydrateInStore = useGenerationStore((s) => s.hydrate);
 
-  const { generating, phase, resumeOut, coverOut, thinking, activeOut, error, meta, savedId } =
-    session;
+  const {
+    generating,
+    phase,
+    resumeOut,
+    coverOut,
+    thinking,
+    activeOut,
+    error,
+    meta,
+    savedId,
+    report,
+  } = session;
 
   // Modal-local, ephemeral UI — fine to reset when the modal remounts.
   const [copied, setCopied] = useState(false);
@@ -121,12 +138,43 @@ export function useTailorGeneration({
 
   const output = activeOut === 'resume' ? resumeOut : coverOut;
 
+  // Quality panel "Re-check" for the ACTIVE document. This surface is the one
+  // WITH inline editing (see `editActiveOutput`, which persists text via
+  // `update_texts` and deliberately never touches `quality_report`), so without
+  // it a hand-edited document was stuck on "checked before your edits" forever.
+  // The merged wrapper is written back to the session AND persisted onto this
+  // job's record, so reopening shows the cleared badge, not the stale one.
+  //
+  // `generating` comes straight off the session (`runTailor` sets it before it
+  // resets the outputs), and this hook lives in the flow's own host, which stays
+  // mounted across a run — so a Regenerate always invalidates a re-check that is
+  // still in flight.
+  const { recheck, rechecking } = useQualityRecheck({
+    report,
+    meta,
+    sourceResume,
+    jobAd: jobDesc,
+    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
+    onReportChange: (next) => setReportInStore(contextId, next),
+    resumeText: resumeOut,
+    coverLetterText: coverOut,
+    generating,
+    jobUrl,
+    board,
+  });
+
   // Persist the finished application linked to this job. Called by the store on a
   // clean run — bypasses the React Query mutation hook (which the modal may have
   // unmounted) and talks to the client directly, so a background generation still
   // records and flips the job to "Applied". Best-effort: a save failure never
   // surfaces over the already-shown output.
-  const persist = ({ meta: m, resumeText, coverLetterText, companyBrief }: GenerationResult) => {
+  const persist = ({
+    meta: m,
+    resumeText,
+    coverLetterText,
+    companyBrief,
+    report: freshReport,
+  }: GenerationResult) => {
     void api.aiGenerations
       .save({
         candidateName: m.candidateName,
@@ -144,6 +192,7 @@ export function useTailorGeneration({
         jobUrl,
         board,
         companyBrief,
+        ...(freshReport ? { qualityReport: serializeQualityReport(freshReport) } : {}),
       })
       .then((res) => {
         // The command reports a store failure IN-BAND (`{ error }`) instead of
@@ -203,8 +252,10 @@ export function useTailorGeneration({
   // reference so the host's seed-once effect doesn't re-fire every render; the
   // store guards against clobbering an in-flight/edited session.
   const hydrate = useCallback(
-    (seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'>) =>
-      hydrateInStore(contextId, seed),
+    (
+      seed: Pick<GenerationSession, 'resumeOut' | 'coverOut' | 'meta' | 'savedId'> &
+        Partial<Pick<GenerationSession, 'report'>>
+    ) => hydrateInStore(contextId, seed),
     [hydrateInStore, contextId]
   );
 
@@ -302,5 +353,10 @@ export function useTailorGeneration({
     hydrate,
     // Detected metadata — lets the questions assistant reuse it instead of re-extracting.
     meta,
+    // Deterministic content-quality report for this session, if any.
+    report,
+    // Quality panel "Re-check" — undefined only if the action is unavailable.
+    recheck,
+    rechecking,
   };
 }

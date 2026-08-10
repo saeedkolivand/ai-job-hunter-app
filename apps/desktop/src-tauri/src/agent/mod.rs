@@ -25,3 +25,10 @@ pub mod controller;
 pub mod flows;
 pub mod gate;
 pub mod tools;
+/// Résumé-quality Read tools (`validate_resume`, `search_candidate_evidence`,
+/// `lookup_salary`, `get_trim_suggestions`) — split out of [`tools`] purely to
+/// stay under the R8 module-size cap (`docs/architecture-rules.md`); it is
+/// still ONE registry: [`tools::read_tools`] appends
+/// [`tools_quality::quality_tools`] to its returned `Vec`, so every per-flow
+/// caller sees a single, unified whitelist.
+pub(crate) mod tools_quality;

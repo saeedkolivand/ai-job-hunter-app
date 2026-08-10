@@ -4,6 +4,7 @@ pub mod agent;
 pub mod ai;
 pub mod ai_generations;
 pub mod ai_provider;
+pub mod ai_salary;
 pub mod applications;
 pub mod autopilot;
 pub mod boards;
