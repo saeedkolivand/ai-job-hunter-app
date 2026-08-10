@@ -797,12 +797,32 @@ fn compact_salary_range_reports_distinct_unavailable_reasons() {
             SalaryLookupReason::ProviderUnavailable,
             "provider_unavailable",
         ),
+        (
+            SalaryLookupReason::DailyBudgetExhausted,
+            "daily_budget_exhausted",
+        ),
         (SalaryLookupReason::NoData, "no_data"),
     ] {
         let unavailable = compact_salary_range(Err(reason));
         assert_eq!(unavailable["available"], false);
         assert_eq!(unavailable["reason"], expected);
     }
+}
+
+/// Round-11 fix, PR #963: `DailyBudgetExhausted` must map to its OWN
+/// `daily_budget_exhausted` string, never fall back into `rate_limited` —
+/// the two used to be indistinguishable at the `AdmitOutcome` level, which
+/// told the model a permanently-exhausted-until-UTC-midnight condition was
+/// worth retrying this run. Pinned separately from the loop above (which
+/// would still pass if the mapping put `DailyBudgetExhausted` anywhere
+/// EXCEPT its own distinct string, as long as that string differed from
+/// its neighbors in the list) so a regression that re-collapses it
+/// specifically onto `"rate_limited"` fails here.
+#[test]
+fn compact_salary_range_never_collapses_daily_budget_exhausted_into_rate_limited() {
+    let unavailable = compact_salary_range(Err(SalaryLookupReason::DailyBudgetExhausted));
+    assert_ne!(unavailable["reason"], "rate_limited");
+    assert_eq!(unavailable["reason"], "daily_budget_exhausted");
 }
 
 // ── currency_for_location ─────────────────────────────────────────────

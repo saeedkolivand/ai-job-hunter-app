@@ -13,10 +13,16 @@ use super::ai::{admit_research, AdmitOutcome};
 /// command in `ai.rs` collapses this to `Option` (unchanged IPC contract).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SalaryLookupReason {
-    /// Rate/concurrency cap, or the daily budget, refused the request.
+    /// The transient per-call rate/concurrency cap refused the request —
+    /// retrying shortly can succeed.
     RateLimited,
     /// No active/configured AI provider could be resolved.
     ProviderUnavailable,
+    /// The per-provider daily request ceiling is exhausted; it only resets at
+    /// UTC midnight (round-11 fix, PR #963 — previously collapsed into
+    /// `RateLimited`, which reads as "retry shortly" and is misleading for a
+    /// condition that cannot succeed again this run).
+    DailyBudgetExhausted,
     /// Reached, but nothing reliable: no data, a parse/validation failure, a
     /// timeout, or a currency mismatch
     /// (`salary_research::reconcile_expected_currency`).
@@ -44,6 +50,7 @@ pub(crate) async fn ai_lookup_salary_reasoned(
         AdmitOutcome::Admitted(g, c) => (g, c),
         AdmitOutcome::RateLimited => return Err(SalaryLookupReason::RateLimited),
         AdmitOutcome::ProviderUnavailable => return Err(SalaryLookupReason::ProviderUnavailable),
+        AdmitOutcome::DailyBudgetExhausted => return Err(SalaryLookupReason::DailyBudgetExhausted),
     };
 
     // Resolved once here (the sole production caller) and passed through, so

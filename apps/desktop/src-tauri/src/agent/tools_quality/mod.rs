@@ -583,9 +583,13 @@ fn compact_trim_suggestions(ranked: &[EvidenceBullet], limit: usize) -> Value {
 
 /// `lookup_salary`'s payload: the validated range, or an explicit
 /// unavailable-with-`reason` (L-2: `rate_limited`/`provider_unavailable`/
-/// `no_data`, mapped from the actual [`SalaryLookupReason`] the lookup
-/// failed with) — never a bare `null`, so the model doesn't have to guess
-/// whether an absent range means "no data" or "the tool failed".
+/// `daily_budget_exhausted`/`no_data`, mapped from the actual
+/// [`SalaryLookupReason`] the lookup failed with) — never a bare `null`, so
+/// the model doesn't have to guess whether an absent range means "no data"
+/// or "the tool failed". `daily_budget_exhausted` (round-11 fix, PR #963)
+/// used to collapse into `rate_limited`, which reads as "retry shortly" —
+/// misleading for a ceiling that only resets at UTC midnight; the
+/// `lookup_salary` tool description tells the model not to retry on it.
 fn compact_salary_range(outcome: Result<SalaryRange, SalaryLookupReason>) -> Value {
     match outcome {
         Ok(r) => {
@@ -595,6 +599,7 @@ fn compact_salary_range(outcome: Result<SalaryRange, SalaryLookupReason>) -> Val
             let reason = match reason {
                 SalaryLookupReason::RateLimited => "rate_limited",
                 SalaryLookupReason::ProviderUnavailable => "provider_unavailable",
+                SalaryLookupReason::DailyBudgetExhausted => "daily_budget_exhausted",
                 SalaryLookupReason::NoData => "no_data",
             };
             json!({ "available": false, "reason": reason })
@@ -1143,7 +1148,11 @@ pub(crate) fn quality_tools() -> Vec<AgentTool> {
             name: "lookup_salary",
             description:
                 "Look up a web-grounded market salary range for this run's own job posting. \
-                 Read-only. Takes no arguments — it always targets this run's own role/company."
+                 Read-only. Takes no arguments — it always targets this run's own role/company. \
+                 An unavailable result reports why via `reason`: `rate_limited` may succeed on \
+                 a retry later this run, but `daily_budget_exhausted` will not — that provider's \
+                 daily request ceiling only resets at UTC midnight, so do not retry the call \
+                 this run."
                     .to_string(),
             schema: json!({ "type": "object", "properties": {} }),
             kind: ToolKind::Read,

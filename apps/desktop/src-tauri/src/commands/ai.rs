@@ -220,8 +220,17 @@ pub async fn ai_inspect_model(model: String) -> Value {
 #[allow(clippy::large_enum_variant)]
 pub(super) enum AdmitOutcome {
     Admitted(crate::limits::ConcurrencyGuard, crate::pipeline::Completer),
+    /// The transient per-call rate/concurrency cap refused the request —
+    /// retrying shortly can succeed.
     RateLimited,
+    /// No active/configured AI provider could be resolved.
     ProviderUnavailable,
+    /// The per-provider DAILY request ceiling is exhausted (round-11 fix, PR
+    /// #963). Previously collapsed into `RateLimited` below, which told
+    /// `SalaryLookupReason`/`lookup_salary`'s tool envelope — and so the
+    /// agent — that a condition which only resets at UTC midnight was worth
+    /// retrying this run.
+    DailyBudgetExhausted,
 }
 
 /// Admit one `"ai_research"` call: rate + concurrency cap, resolve the active
@@ -264,14 +273,36 @@ pub(super) fn admit_research(app: &AppHandle, who: &str) -> AdmitOutcome {
     // Per-provider daily ceiling — the same coarse runaway-cost backstop
     // `ai_generate` charges; the `(day, provider)` bucket is shared across every
     // AI command against that provider.
-    if let Err(e) = limiter.charge_provider_daily(
+    if let Some(rejected) = charge_daily_or_reject(
+        &limiter,
         completer.provider_id().as_str(),
         crate::limits::PROVIDER_DAILY_MAX,
+        who,
     ) {
-        tracing::debug!("{who}: daily budget exceeded: {e}");
-        return AdmitOutcome::RateLimited;
+        return rejected;
     }
     AdmitOutcome::Admitted(guard, completer)
+}
+
+/// The daily-charge half of [`admit_research`], pulled out pure over
+/// `&Limiter` (no `AppHandle`) so the round-11 fix it exists to make —
+/// exhausting the daily ceiling must report [`AdmitOutcome::DailyBudgetExhausted`],
+/// never silently collapse into the same [`AdmitOutcome::RateLimited`] the
+/// transient per-call cap above uses — is unit-tested without a live
+/// `AppHandle` (this crate has no `tauri::test` mock-app harness; see
+/// `research_answer_tests`' doc for the same constraint). `None` means the
+/// charge succeeded and admission should proceed.
+fn charge_daily_or_reject(
+    limiter: &crate::limits::Limiter,
+    provider: &str,
+    max_per_day: u32,
+    who: &str,
+) -> Option<AdmitOutcome> {
+    if let Err(e) = limiter.charge_provider_daily(provider, max_per_day) {
+        tracing::debug!("{who}: daily budget exceeded: {e}");
+        return Some(AdmitOutcome::DailyBudgetExhausted);
+    }
+    None
 }
 
 /// Research the company named in a job ad and return a short factual brief for
@@ -1076,6 +1107,41 @@ pub async fn ai_index_stale_documents(app: AppHandle) -> Value {
     });
 
     json!({ "jobId": job_id })
+}
+
+#[cfg(test)]
+mod admit_research_tests {
+    //! `charge_daily_or_reject` is `admit_research`'s only `AppHandle`-free
+    //! branch (the acquire/rate-limit and provider-resolution branches above
+    //! it need a live `AppHandle`, same constraint as `research_answer_tests`
+    //! below). Pins PR #963 round 11: a daily-budget failure must report
+    //! `AdmitOutcome::DailyBudgetExhausted`, not silently collapse into the
+    //! `AdmitOutcome::RateLimited` the transient per-call cap uses.
+
+    use super::*;
+    use crate::limits::Limiter;
+
+    #[test]
+    fn a_daily_budget_within_limits_admits() {
+        let limiter = Limiter::new();
+        assert!(charge_daily_or_reject(&limiter, "openai", 4_000, "test").is_none());
+    }
+
+    #[test]
+    fn an_exhausted_daily_budget_is_reported_distinctly_from_a_transient_rate_limit() {
+        let limiter = Limiter::new();
+        // Consume the only slot of a max=1/day bucket for this provider/day.
+        limiter
+            .charge_provider_daily("openai", 1)
+            .expect("the first charge of the day succeeds");
+
+        let outcome = charge_daily_or_reject(&limiter, "openai", 1, "test");
+
+        assert!(
+            matches!(outcome, Some(AdmitOutcome::DailyBudgetExhausted)),
+            "a daily-budget failure must not collapse into AdmitOutcome::RateLimited"
+        );
+    }
 }
 
 #[cfg(test)]
