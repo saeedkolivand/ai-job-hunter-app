@@ -265,7 +265,7 @@ export {
   type ReferralStatus,
   type ReferralUpsertRequest,
 } from './referrals.js';
-export { RESUME_CHANNELS, type ResumeContract } from './resume.js';
+export { type ContentReportPayload, RESUME_CHANNELS, type ResumeContract } from './resume.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';

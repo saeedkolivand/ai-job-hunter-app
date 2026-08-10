@@ -1,0 +1,13 @@
+Senior Backend Engineer (Payments)
+
+We are hiring a senior backend engineer to own our container platform and the
+services behind checkout. You will write Rust, deploy to Kubernetes, and keep
+PostgreSQL and Redis healthy under production load. Our billing pipeline runs on
+AWS and is provisioned with Terraform; the payment ledger itself is Python.
+
+Requirements
+
+- Strong Rust and Python
+- Production Docker and Kubernetes
+- PostgreSQL and Redis at scale
+- Terraform and AWS

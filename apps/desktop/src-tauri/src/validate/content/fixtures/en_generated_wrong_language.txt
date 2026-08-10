@@ -1,0 +1,26 @@
+Jane Doe
+jane.doe@example.com | +49 30 1234567 | github.com/janedoe
+
+ZUSAMMENFASSUNG
+
+Backend-Entwicklerin mit acht Jahren Erfahrung im Zahlungsverkehr und im Aufbau
+von Container-Plattformen für den Handel.
+
+BERUFSERFAHRUNG
+
+Senior Backend Engineer | Acme Payments | 2021 - Present
+- Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt, indem ein Redis-Cache vorgeschaltet wurde
+- Docker-Container auf einem Kubernetes-Cluster betrieben, der Anfragen zuverlässig beantwortet
+- Fehlgeschlagene Abrechnungen deutlich reduziert, nachdem der Wiederholungsplaner in Rust neu geschrieben wurde
+
+Backend Developer | Globex Logistics | 2018 - 2021
+- Die Abrechnungsschnittstelle in Python und PostgreSQL für 40 Lagerstandorte gebaut
+- Die Flotte zu AWS migriert und die Bereitstellung mit Terraform beschrieben
+
+KENNTNISSE
+
+Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis
+
+AUSBILDUNG
+
+BSc Informatik, TU Berlin, 2014 - 2018

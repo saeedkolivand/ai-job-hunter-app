@@ -1,0 +1,29 @@
+Jana Mustermann
+jana.mustermann@example.com | +49 30 7654321 | github.com/janamuster
+
+PROFIL
+
+Backend-Entwicklerin, acht Jahre im Zahlungsverkehr und im Aufbau von
+Container-Plattformen.
+
+BERUFSERFAHRUNG
+
+Senior Backend Engineer | Acme | 2021 - 2026
+- Einen Redis-Cache vorgeschaltet und die Wartezeit an der Kasse von 480ms auf 90ms gesenkt
+- Docker-Container auf einem Kubernetes-Cluster betrieben, der 12000 Anfragen pro Sekunde bedient
+- Den Wiederholungsplaner in Rust neu geschrieben und fehlgeschlagene Abrechnungen um 35% reduziert
+
+Backend Developer | Globex | 2018 - 2021
+- Die Abrechnungsschnittstelle mit Python und PostgreSQL für 40 Lagerstandorte gebaut
+- Die Flotte nach AWS umgezogen und die Bereitstellung mit Terraform beschrieben
+
+IT-Beraterin | IBM | 2015 - 2018
+- Die Abrechnungsdienste für zwei Werke betreut
+
+KENNTNISSE
+
+Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis
+
+AUSBILDUNG
+
+BSc Informatik, TU Berlin, 2014 - 2018

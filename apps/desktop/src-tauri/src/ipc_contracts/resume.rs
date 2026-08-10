@@ -10,3 +10,15 @@ pub struct ResumeExtractTextRequest {
     pub name: String,
     pub bytes: Vec<u8>,
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub struct ResumeValidateContentRequest {
+    pub generated: String,
+    pub source: String,
+    pub job_ad: String,
+    pub top_requirements: Vec<String>,
+    pub target_language: String,
+    pub doc_kind: String,
+}

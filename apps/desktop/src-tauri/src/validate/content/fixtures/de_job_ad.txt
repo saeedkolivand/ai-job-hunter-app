@@ -1,0 +1,14 @@
+Senior Backend Engineer (Zahlungsverkehr)
+
+Wir suchen eine erfahrene Backend-Entwicklerin für unsere Container-Plattform und
+die Dienste hinter dem Bezahlvorgang. Du schreibst Rust, betreibst Kubernetes und
+hältst PostgreSQL und Redis unter Last gesund. Unsere Abrechnung läuft auf AWS und
+wird mit Terraform bereitgestellt; das Zahlungsbuch selbst ist in Python
+geschrieben.
+
+Anforderungen
+
+- Sehr gute Kenntnisse in Rust und Python
+- Docker und Kubernetes im Produktivbetrieb
+- PostgreSQL und Redis unter Last
+- Terraform und AWS

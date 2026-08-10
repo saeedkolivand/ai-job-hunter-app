@@ -21,6 +21,7 @@ use crate::data_store::DataStore;
 use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
+pub mod evidence;
 pub mod keywords;
 mod mojibake_repair;
 

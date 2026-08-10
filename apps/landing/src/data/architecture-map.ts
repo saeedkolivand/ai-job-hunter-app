@@ -1136,7 +1136,7 @@ export const nodes: readonly MapNode[] = [
     role: 'ai_generate command: validates provider+model, spawns chat_stream; no silent Ollama fallback.',
     plain:
       'The backend door for "start writing" — it checks your AI choice then streams the answer back.',
-    path: 'apps/desktop/src-tauri/src/commands/ai.rs:30',
+    path: 'apps/desktop/src-tauri/src/commands/ai/mod.rs:30',
     notes: [
       'Provider required + validated (3 guards)',
       'Spawns provider.chat_stream on the async runtime',

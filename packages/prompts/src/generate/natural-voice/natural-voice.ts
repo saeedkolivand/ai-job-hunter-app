@@ -90,6 +90,202 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
 - Konkret statt abstrakt: benenne die reale Sache und was sich geändert hat, nicht Adjektive.`;
 
 /**
+ * Discrete, lowercase, substring-matchable word/phrase lists for the Rust
+ * content validator's `voice.ai_tell_lexical` / `voice.ai_tell_prose` /
+ * `voice.template_opener` checks
+ * (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`, generated from
+ * these exact arrays by `packages/prompts/scripts/gen-prompts-rust.ts` — run
+ * `pnpm gen:prompts` after editing any of them). Deliberately kept separate
+ * from the {@link ANTI_AI_TELL_LEXICAL_EN}-style prompt prose above (which
+ * reads as a sentence and carries parenthetical asides like "landscape
+ * (abstract)" that would be invalid validator match targets): these are the
+ * two representations of ONE editorial decision (which words/phrases count as
+ * an AI tell) and must be updated together when that decision changes. The
+ * prompt instructs the model with the prose; the validator checks the
+ * generated output against these arrays, so the check never drifts from what
+ * a DIFFERENT list would flag.
+ */
+export const AI_TELL_LEXICAL_WORDS_EN = [
+  // AI vocabulary
+  'delve',
+  'leverage',
+  'robust',
+  'seamless',
+  'cutting-edge',
+  'tapestry',
+  'testament',
+  'realm',
+  'underscore',
+  'showcase',
+  'foster',
+  'intricate',
+  'pivotal',
+  'vibrant',
+  'garner',
+  'vital',
+  'crucial',
+  'harness',
+  'elevate',
+  'streamline',
+  'unlock',
+  'empower',
+  // Promotional / inflated self-adjectives
+  'passionate',
+  'results-driven',
+  'proven track record',
+  'team player',
+  'go-getter',
+  'synergy',
+  'detail-oriented',
+  'world-class',
+  // Vague attributions / weasel words
+  'studies show',
+  'experts say',
+  'industry reports',
+  'it is widely known',
+  // Filler phrases
+  'in order to',
+  'due to the fact that',
+  'at this point in time',
+  'has the ability to',
+];
+
+/** German (de) twin of {@link AI_TELL_LEXICAL_WORDS_EN} — the actual KI-Floskeln, not a translation. */
+export const AI_TELL_LEXICAL_WORDS_DE = [
+  'darüber hinaus',
+  'nahtlos',
+  'robust',
+  'spielt eine entscheidende rolle',
+  'in der heutigen zeit',
+  'in der heutigen welt',
+  'in einem dynamischen umfeld',
+  'mit großer begeisterung',
+  'leidenschaft für',
+  'eine spannende herausforderung',
+  'maßgeschneidert',
+  'eintauchen in',
+  // Werbliches Eigenlob
+  'ergebnisorientiert',
+  'teamplayer',
+  'nachgewiesene erfolgsbilanz',
+  'detailorientiert',
+  'weltklasse',
+  // Vage Verweise
+  'studien zeigen',
+  'experten sagen',
+  'es ist allgemein bekannt',
+];
+
+/**
+ * Prose-only patterns (connected writing only) — the hedging preambles and
+ * stock transitions {@link ANTI_AI_TELL_PROSE_EN} / {@link HUMANIZE_PROSE}
+ * ban as PHRASES, wherever they appear.
+ *
+ * **Entries must be unconditionally banned by the prompt.** Every entry here
+ * becomes a substring check in the Rust validator, and a substring check has
+ * no idea what construction it landed in — so a rule the prompt states
+ * conditionally cannot be represented here without flagging prose the prompt
+ * permits (MEDIUM fix, PR #963 round 8). Two rules are conditional and
+ * therefore live in the prompt prose ONLY:
+ *
+ * - **Negative parallelism** ("not just X, but Y" / "it's not about X, it's
+ *   about Y"). The tell is the two-part construction, not the opener: "this
+ *   was not just a side project" and "for me it is not about the title" are
+ *   ordinary sentences the prompt never bans, and `'not just'` /
+ *   `"it's not about"` flagged both.
+ * - **Superficial "-ing" openers and tails** (highlighting, showcasing,
+ *   underscoring). The prompt bans them where they *fake depth*; a substring
+ *   cannot judge that, so `'highlighting'` fired on "a dashboard highlighting
+ *   anomalies in real time", a concrete, grounded clause.
+ *
+ * `'not only'` is absent for the older, related reason: the prompt only ever
+ * spells out "not just X, but Y", so banning "not only" would check a word
+ * the model was never told to avoid.
+ *
+ * The prompt keeps every one of these rules (see
+ * {@link ANTI_AI_TELL_PROSE_EN}'s negative-parallelism and "-ing" lines and
+ * {@link HUMANIZE_PROSE}'s CUT THE CLICHES line) — the model is still
+ * instructed against them; only the deterministic checker stops guessing.
+ */
+export const AI_TELL_PROSE_WORDS_EN = [
+  'it is important to note',
+  'generally speaking',
+  'with that in mind',
+  'building on this',
+];
+
+/**
+ * German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. Deliberately EMPTY: the
+ * German prose ruleset happens to contain no phrase this file's own rule ("an
+ * entry must be unconditionally banned by the prompt", see
+ * {@link AI_TELL_PROSE_WORDS_EN}) admits. Every German AI tell that IS an
+ * unconditional phrase ban already lives in {@link AI_TELL_LEXICAL_WORDS_DE};
+ * what {@link ANTI_AI_TELL_PROSE_DE} adds on top are all judgements a
+ * substring cannot make (dash use, sentence rhythm, Dreiklang, repeated
+ * paragraph openings, concrete over abstract). An empty list is the honest
+ * result, not a gap to fill:
+ *
+ * - `'nicht nur'` / `'sondern auch'` — {@link ANTI_AI_TELL_LEXICAL_DE} tells
+ *   the model to use that construction SPARINGLY, never to avoid it outright,
+ *   so a single-occurrence ban would contradict the prompt it is meant to
+ *   check.
+ * - `'erfolgte durch'` — removed in PR #963 round 9, the German twin of the
+ *   round-8 English removals. The prompt bans a Nominalstil sentence OPENER
+ *   ("Die Umsetzung von X erfolgte durch...") and quotes this phrase only as
+ *   the illustrative example; the substring ban fired on it ANYWHERE,
+ *   including mid-sentence clauses the prompt permits ("Ich habe die Migration
+ *   geleitet, die Abnahme erfolgte durch den Kunden"). Construction-dependent
+ *   rules stay prompt-only — the model can see the construction, a substring
+ *   check cannot.
+ */
+export const AI_TELL_PROSE_WORDS_DE: string[] = [];
+
+/**
+ * Stock cover-letter openers — the phrases a letter that could have been
+ * addressed to anyone starts with. Single source for BOTH the letter
+ * prompt's opener ban (see `LETTER_SPECIFICS` in
+ * `packages/prompts/src/generate/cover-letter/cover-letter.ts`) and the Rust
+ * validator's `voice.template_opener` check, generated as above.
+ */
+export const TEMPLATE_OPENERS_EN = [
+  'i am writing to apply',
+  'i am writing to express',
+  'i am writing in response to',
+  'i am excited to apply',
+  'i would like to apply for the position',
+  'please accept this letter',
+  'with great interest i read',
+  'i hope this message finds you well',
+  'i hope this email finds you well',
+  'as a passionate',
+];
+
+/** German (de) twin of {@link TEMPLATE_OPENERS_EN} (Standardfloskeln). */
+export const TEMPLATE_OPENERS_DE = [
+  'hiermit bewerbe ich mich',
+  'hiermit möchte ich mich bewerben',
+  'mit großem interesse habe ich ihre stellenanzeige',
+  'mit großem interesse habe ich gelesen',
+  'auf ihre stellenanzeige hin',
+  'wie ihrer stellenanzeige zu entnehmen ist',
+];
+
+/**
+ * Capitalizes a lowercase, validator-matched opener phrase (see
+ * {@link TEMPLATE_OPENERS_EN}) into a readable inline prompt example. Only the
+ * first letter changes — good enough for an English illustrative quote (where
+ * only the sentence-initial letter needs capitalizing), NOT a full sentence-case
+ * renderer. English-only for that reason: German capitalizes every noun
+ * mid-sentence too ("Interesse", "Stellenanzeige"), which a single-letter
+ * capitalizer can't reconstruct from {@link TEMPLATE_OPENERS_DE}'s lowercase,
+ * validator-matched form — quote a German opener as its own correctly-cased
+ * literal instead (see `LETTER_OPENER_EXAMPLE_DE` in cover-letter.ts).
+ */
+export function capitalizeOpener(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+/**
  * English display names for the generic-directive locales, purely so the
  * directive reads naturally ("in French" not "in fr"). Falls back to the raw
  * ISO-639-1 code for anything not listed — a newly-added `OUTPUT_LANGUAGES` entry

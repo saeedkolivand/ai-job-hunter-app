@@ -97,6 +97,12 @@ fn build_bundle(app: &AppHandle) -> Value {
     if let Some(s) = app.try_state::<DocumentStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
+    // ADR-007: `ai_generations` is the application aggregate — every persistent
+    // field on `AiGenerationRecord` (including `quality_report`) travels through
+    // here automatically via `DataStore::export`/`list`/`row_to_record`. A new
+    // column only needs a `AiGenerationRecord` field (with `#[serde(default)]`
+    // so an older bundle still imports) — nothing to add HERE — but this comment
+    // is the lockstep reminder to actually add that field, not skip it.
     if let Some(s) = app.try_state::<AiGenerationStore>() {
         stores.insert(s.key().to_string(), s.export());
     }

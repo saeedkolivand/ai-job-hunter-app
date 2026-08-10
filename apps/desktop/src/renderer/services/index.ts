@@ -40,6 +40,7 @@ export * from './use-postings';
 export * from './use-privacy';
 export * from './use-profile-import';
 export * from './use-referrals';
+export * from './use-resume-validation';
 export * from './use-scrape-progress';
 export * from './use-scraping-settings';
 export * from './use-support';
