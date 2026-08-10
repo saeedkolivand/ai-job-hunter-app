@@ -10,14 +10,18 @@
 //! (`tests/architecture.rs`'s `is_test` filename check) and from R3/R6's
 //! non-test scans.
 
+// `reasoning_effort` is the only item here the adapter itself no longer names
+// (it is applied inside `body::build_complete_body`), so it is imported from
+// the body module directly rather than kept alive as an unused re-import.
+use super::body::reasoning_effort;
 use super::{
     build_chat_stream_body, build_complete_body, is_gpt5_or_later_reasoning_family,
     is_reasoning_model, join_responses_text, parse_model_list, parse_openai_delta,
     parse_openai_embed_usage, parse_openai_finish_reason, parse_openai_frames, parse_openai_turn,
-    parse_openai_usage, reasoning_effort, resolve_intent, resolve_openai_key, scrub_url_secret,
-    should_list_model, structured, Intent, OpenAiClient, SamplingProfile,
-    DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
-    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
+    parse_openai_usage, resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model,
+    structured, Intent, OpenAiClient, SamplingProfile, StructuredCall, DETERMINISTIC_TEMPERATURE,
+    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
+    PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -1372,6 +1376,16 @@ fn default_embedding_model_is_offered_only_for_native_openai() {
 
 // ── Structured output (`complete_structured`) ─────────────────────────────────
 
+/// The structured half of a non-streaming call with only `response_format`
+/// set — the per-test variations below override the one field they are about.
+fn structured_call(response_format: Value) -> StructuredCall<'static> {
+    StructuredCall {
+        response_format,
+        effort: None,
+        max_tokens: None,
+    }
+}
+
 #[test]
 fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_supplied() {
     // The wire assertion for OpenAI's native structured output: the field is
@@ -1384,9 +1398,10 @@ fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_s
         "sys",
         "user",
         Some(0.3),
-        true,
-        None,
-        Some(structured::openai_response_format(Some(&schema))),
+        chat_caps(true),
+        Some(structured_call(structured::openai_response_format(Some(
+            &schema,
+        )))),
     );
     assert_eq!(body["response_format"]["type"], json!("json_schema"));
     assert_eq!(
@@ -1404,12 +1419,13 @@ fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_s
 fn complete_body_omits_response_format_entirely_on_the_plain_completion_path() {
     // `complete`/`complete_with_usage` pass `None` — an unconstrained call must
     // stay byte-identical to what it sent before structured output existed.
-    let body = build_complete_body("gpt-4o", "sys", "user", Some(0.3), true, None, None);
+    let body = build_complete_body("gpt-4o", "sys", "user", Some(0.3), chat_caps(true), None);
     assert!(
         body.get("response_format").is_none(),
         "plain completions must not start asking for JSON: {body}"
     );
     assert!(body.get("reasoning_effort").is_none(), "{body}");
+    assert!(body.get("max_tokens").is_none(), "{body}");
 }
 
 #[test]
@@ -1429,9 +1445,11 @@ fn complete_body_carries_reasoning_effort_only_where_the_streaming_body_would() 
         "sys",
         "user",
         None,
-        caps.supports_temperature,
-        reasoning_effort(Some("high"), caps),
-        Some(json!({ "type": "json_object" })),
+        caps,
+        Some(StructuredCall {
+            effort: Some("high"),
+            ..structured_call(json!({ "type": "json_object" }))
+        }),
     );
     assert_eq!(body["reasoning_effort"], json!("high"));
 
@@ -1442,9 +1460,11 @@ fn complete_body_carries_reasoning_effort_only_where_the_streaming_body_would() 
         "sys",
         "user",
         None,
-        caps.supports_temperature,
-        reasoning_effort(Some("high"), caps),
-        Some(json!({ "type": "json_object" })),
+        caps,
+        Some(StructuredCall {
+            effort: Some("high"),
+            ..structured_call(json!({ "type": "json_object" }))
+        }),
     );
     assert!(
         body.get("reasoning_effort").is_none(),
@@ -1460,6 +1480,64 @@ fn complete_body_carries_reasoning_effort_only_where_the_streaming_body_would() 
     assert_eq!(reasoning_effort(None, caps), None);
     // Padding the stored value must not defeat the gate either.
     assert_eq!(reasoning_effort(Some(" high "), caps), Some("high"));
+}
+
+#[test]
+fn complete_body_carries_the_same_token_limit_field_the_streaming_body_would() {
+    // HIGH: the structured path dropped `req.max_tokens` while `chat_stream`
+    // sent it — the same class as the `effort` drop above. Asserted against the
+    // STREAMING body's own value on BOTH spellings of the field, so the two
+    // can only drift together and the o-series rename can't be got wrong on
+    // one path only. Mutation check: drop the `max_tokens` insert in
+    // `build_complete_body` (or hardcode either spelling in `token_field`) and
+    // this fails.
+    let client = OpenAiClient::new(ProviderId::OpenAi, None);
+    for (model, field) in [
+        ("gpt-4o", "max_tokens"),
+        ("o3-mini", "max_completion_tokens"),
+    ] {
+        let mut req = base_request();
+        req.model = model.to_string();
+        req.max_tokens = Some(777);
+        let caps = client.capabilities(model);
+        let stream = build_chat_stream_body(&req, caps, SamplingProfile::default());
+        let body = build_complete_body(
+            model,
+            "sys",
+            "user",
+            None,
+            caps,
+            Some(StructuredCall {
+                max_tokens: req.max_tokens,
+                ..structured_call(json!({ "type": "json_object" }))
+            }),
+        );
+        assert_eq!(stream[field], json!(777), "{model}: {stream}");
+        assert_eq!(body[field], stream[field], "{model}: {body}");
+    }
+}
+
+#[test]
+fn complete_body_omits_the_token_limit_the_request_left_unset() {
+    // The negative half: an unset `max_tokens` must be ABSENT, never `null` —
+    // the vendor's own per-model default is the right answer when the request
+    // has no opinion, and `null` is a 400 on some gateways.
+    let client = OpenAiClient::new(ProviderId::OpenAi, None);
+    let req = base_request();
+    assert!(req.max_tokens.is_none());
+    let body = build_complete_body(
+        &req.model,
+        "sys",
+        "user",
+        None,
+        client.capabilities(&req.model),
+        Some(StructuredCall {
+            max_tokens: req.max_tokens,
+            ..structured_call(json!({ "type": "json_object" }))
+        }),
+    );
+    assert!(body.get("max_tokens").is_none(), "{body}");
+    assert!(body.get("max_completion_tokens").is_none(), "{body}");
 }
 
 #[test]

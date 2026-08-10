@@ -1157,6 +1157,16 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
 
 // ── Structured output (`complete_structured`) ─────────────────────────────────
 
+/// The structured half of a `generateContent` call with nothing set — the
+/// per-test variations below override the one field they are about.
+fn structured_call() -> StructuredCall<'static> {
+    StructuredCall {
+        schema: None,
+        effort: None,
+        max_tokens: None,
+    }
+}
+
 #[test]
 fn complete_body_carries_response_mime_type_and_the_translated_response_schema() {
     // Gemini's constrained-decoding keys live under `generationConfig` and the
@@ -1172,7 +1182,7 @@ fn complete_body_carries_response_mime_type_and_the_translated_response_schema()
         Some(0.3),
         Some(StructuredCall {
             schema: structured::gemini_response_schema(&schema),
-            effort: None,
+            ..structured_call()
         }),
     );
     let config = &body["generationConfig"];
@@ -1199,7 +1209,7 @@ fn complete_body_keeps_json_mode_when_the_schema_cannot_be_translated() {
         None,
         Some(StructuredCall {
             schema: translated,
-            effort: None,
+            ..structured_call()
         }),
     );
     let config = &body["generationConfig"];
@@ -1216,7 +1226,49 @@ fn complete_body_omits_both_json_fields_on_the_plain_completion_path() {
     assert!(config.get("responseMimeType").is_none(), "{body}");
     assert!(config.get("responseSchema").is_none(), "{body}");
     assert!(config.get("thinkingConfig").is_none(), "{body}");
+    assert!(config.get("maxOutputTokens").is_none(), "{body}");
     assert_eq!(config["temperature"], json!(0.3));
+}
+
+#[test]
+fn complete_body_carries_the_same_max_output_tokens_the_streaming_body_would() {
+    // HIGH: the structured path dropped `req.max_tokens` while `chat_stream`
+    // sent it — the same class as the `effort` drop below. Asserted against
+    // the STREAMING body's own value, so the two can only drift together.
+    // Mutation check: drop the `maxOutputTokens` insert in
+    // `build_complete_body` and this fails.
+    let mut req = base_request();
+    req.max_tokens = Some(777);
+    let stream = build_chat_stream_body(&req, SamplingProfile::default());
+    let body = super::build_complete_body(
+        &req.model,
+        "sys",
+        "user",
+        None,
+        Some(StructuredCall {
+            max_tokens: req.max_tokens,
+            ..structured_call()
+        }),
+    );
+    assert_eq!(
+        stream["generationConfig"]["maxOutputTokens"],
+        json!(777),
+        "{stream}"
+    );
+    assert_eq!(
+        body["generationConfig"]["maxOutputTokens"],
+        stream["generationConfig"]["maxOutputTokens"]
+    );
+
+    // The negative half: an unset limit must be ABSENT, never `null` —
+    // Google's own per-model default is the right answer when the request has
+    // no opinion.
+    let unset =
+        super::build_complete_body(&req.model, "sys", "user", None, Some(structured_call()));
+    assert!(
+        unset["generationConfig"].get("maxOutputTokens").is_none(),
+        "{unset}"
+    );
 }
 
 #[test]
@@ -1234,8 +1286,8 @@ fn complete_body_carries_the_thinking_level_only_where_the_streaming_body_would(
         "user",
         None,
         Some(StructuredCall {
-            schema: None,
             effort: Some("medium"),
+            ..structured_call()
         }),
     );
     assert_eq!(
@@ -1268,8 +1320,8 @@ fn complete_body_carries_the_thinking_level_only_where_the_streaming_body_would(
             "user",
             None,
             Some(StructuredCall {
-                schema: None,
                 effort: Some(effort),
+                ..structured_call()
             }),
         );
         assert!(

@@ -35,6 +35,11 @@ use serde::de::DeserializeOwned;
 /// and the panic message of `.expect()`/`.unwrap()`, which reaches the crash
 /// reporter (ADR-0020, default-ON). A content-free `Display` in front of a
 /// leaking `Debug` protects nothing.
+///
+/// The two content-carrying variants hold a [`RawDetail`], not a `String`, for
+/// the same reason: an enum variant's fields inherit the ENUM's visibility, so
+/// a bare `String` let any caller walk straight past both formatters with
+/// `if let JsonParseError::Shape(detail) = &e`.
 #[derive(Clone, PartialEq, Eq)]
 pub enum JsonParseError {
     /// No JSON value anywhere in the response — the model answered in prose.
@@ -44,11 +49,39 @@ pub enum JsonParseError {
     /// request rather than just repeat it.
     Truncated,
     /// Malformed JSON that repair could not rescue.
-    Syntax(String),
+    Syntax(RawDetail),
     /// Well-formed JSON that does not match the requested shape — a missing
     /// key, or the right key with the wrong type. The one case where the
     /// SCHEMA was ignored rather than the JSON being broken.
-    Shape(String),
+    Shape(RawDetail),
+}
+
+/// The parser's own message, held so that READING it is a deliberate,
+/// crate-internal step. The field is private and there is no accessor: within
+/// this module [`JsonParseError::detail`] destructures it, and everyone else
+/// goes through the safe [`JsonParseError::reask_detail`]. A caller outside
+/// this module can still match the variant (`Shape(_)`) — it just cannot get
+/// at the text, which is the only part that carries model output.
+///
+/// `Debug` is hand-written and content-free for the same reason the enum's is:
+/// this value is reachable by pattern-matching, so a derived `Debug` would
+/// hand back verbatim what the enum's own formatters withhold. There is
+/// deliberately no `Display` — `{d}` must not compile.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RawDetail(String);
+
+impl RawDetail {
+    /// Wrap a parser message. Construction is safe (and `pub(crate)` so the
+    /// re-ask tests can build one); it is READING that is restricted.
+    pub(crate) fn new(detail: String) -> Self {
+        Self(detail)
+    }
+}
+
+impl std::fmt::Debug for RawDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RawDetail(<withheld>)")
+    }
 }
 
 impl JsonParseError {
@@ -76,7 +109,9 @@ impl JsonParseError {
     pub(crate) fn detail(&self) -> &str {
         match self {
             Self::NotFound | Self::Truncated => "",
-            Self::Syntax(detail) | Self::Shape(detail) => detail,
+            // The one place the newtype is opened — its field is private, so
+            // this module is the only one that can (see [`RawDetail`]).
+            Self::Syntax(RawDetail(detail)) | Self::Shape(RawDetail(detail)) => detail,
         }
     }
 }
@@ -454,9 +489,11 @@ fn within(inner: &str, outer: &str) -> bool {
 /// follow-ups.
 fn classify(error: serde_json::Error) -> JsonParseError {
     match error.classify() {
-        serde_json::error::Category::Data => JsonParseError::Shape(error.to_string()),
+        serde_json::error::Category::Data => {
+            JsonParseError::Shape(RawDetail::new(error.to_string()))
+        }
         serde_json::error::Category::Eof => JsonParseError::Truncated,
-        _ => JsonParseError::Syntax(error.to_string()),
+        _ => JsonParseError::Syntax(RawDetail::new(error.to_string())),
     }
 }
 
@@ -678,11 +715,57 @@ mod tests {
         // withheld fragment verbatim — and Debug is what `tracing::error!(error
         // = ?e)`, any `{e:?}`, and an `.expect()` panic message (which reaches
         // the crash reporter) actually print. Mutation check: restore
-        // `#[derive(Debug)]` on `JsonParseError` and this fails.
+        // `#[derive(Debug)]` on `JsonParseError` and this fails — on the
+        // equality assertion now rather than the leak one, because the
+        // `RawDetail` payload is content-free under Debug too (defense in
+        // depth: the derive prints `Shape(RawDetail(<withheld>))`).
         let err = parse::<Result>(r#"{"score": "SECRET-VALUE", "notes": "ok"}"#).unwrap_err();
         let debug = format!("{err:?}");
         assert!(!debug.contains("SECRET-VALUE"), "Debug leaked: {debug}");
         assert_eq!(debug, format!("Shape({:?})", err.reason()));
+    }
+
+    #[test]
+    fn the_payload_a_caller_can_reach_by_pattern_matching_is_content_free_too() {
+        // MEDIUM: the two content-carrying variants held a bare `String`, and
+        // a variant's fields inherit the ENUM's visibility — so any caller
+        // could sidestep the content-free `Display`/`Debug` entirely with
+        // `if let JsonParseError::Shape(detail) = &e { … }` and log the model's
+        // own output. The payload is now a newtype whose field is private, so
+        // the only way through is the `pub(crate)` `detail()` (or the fenced
+        // `reask_detail()`), and what a caller CAN reach formats content-free.
+        // Mutation check: `#[derive(Debug)]` on `RawDetail` and this fails.
+        let err = parse::<Result>(r#"{"score": "SECRET-VALUE", "notes": "ok"}"#).unwrap_err();
+        let (JsonParseError::Shape(raw) | JsonParseError::Syntax(raw)) = &err else {
+            panic!("expected a content-carrying variant, got {err:?}");
+        };
+        let debug = format!("{raw:?}");
+        assert!(
+            !debug.contains("SECRET-VALUE"),
+            "payload Debug leaked: {debug}"
+        );
+    }
+
+    #[test]
+    fn the_raw_detail_payload_field_stays_private() {
+        // The one property of this fix no runtime assertion can observe:
+        // `RawDetail`'s field must stay PRIVATE, because that — not the
+        // hand-written `Debug` — is what makes reading the raw message
+        // impossible outside this module. A source pin is the cheapest guard
+        // that fails on the mutation (same `include_str!` compile-time-pin
+        // convention as `extension_bridge::answer_rewrite`'s translation
+        // parity test); `include_str!` also makes rustc track the file, so the
+        // test can never read a stale copy.
+        const SRC: &str = include_str!("json.rs");
+        // Assembled at runtime, never written out as one literal: an inline
+        // needle would appear in THIS line and satisfy its own scan (it did,
+        // on the first run — the test passed before the newtype existed).
+        let private_field = format!("pub struct RawDetail({}String);", "");
+        assert!(
+            SRC.contains(&private_field),
+            "RawDetail's field must stay private — `pub`/`pub(crate)` on it \
+             re-opens the pattern-match leak the newtype exists to close"
+        );
     }
 
     // ── candidate ordering (HIGH-1 / MEDIUM-3) ────────────────────────────

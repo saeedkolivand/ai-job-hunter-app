@@ -1022,7 +1022,9 @@ impl AiProvider for GeminiClient {
     /// per-model table `chat_stream` uses) for the same reason: this is a full
     /// [`AiGenerateRequest`], and a structured call that silently ran at
     /// Gemini's default thinking level was the user's setting being dropped,
-    /// not honored.
+    /// not honored. Same for `req.max_tokens` — the streaming body has always
+    /// sent it, and a structured call is the one carrying a whole résumé plus
+    /// a job ad.
     async fn complete_structured(
         &self,
         app: &AppHandle,
@@ -1040,6 +1042,7 @@ impl AiProvider for GeminiClient {
             Some(StructuredCall {
                 schema: schema.and_then(structured::gemini_response_schema),
                 effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
             }),
         )
         .await

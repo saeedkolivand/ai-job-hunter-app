@@ -138,6 +138,9 @@ pub(super) struct StructuredCall<'a> {
     pub(super) schema: Option<Value>,
     /// The request's RAW reasoning effort, gated here by [`thinking_level`].
     pub(super) effort: Option<&'a str>,
+    /// `req.max_tokens` → `generationConfig.maxOutputTokens`, exactly as on
+    /// [`build_chat_stream_body`].
+    pub(super) max_tokens: Option<u32>,
 }
 
 /// Build the non-streaming `generateContent` body shared by `complete`/
@@ -146,7 +149,10 @@ pub(super) struct StructuredCall<'a> {
 /// `structured` is `Some` only on the structured path and sets
 /// `responseMimeType: "application/json"` — Google documents the MIME type as
 /// the switch, with `responseSchema` as an optional extra constraint on top
-/// (a schema without the MIME type is ignored).
+/// (a schema without the MIME type is ignored). `maxOutputTokens` rides along
+/// with it because the plain paths have no request to read it from, and is
+/// gated exactly as [`build_chat_stream_body`] gates its own copy: sent only
+/// when the request set one, never as `null`.
 ///
 /// `thinkingConfig` carries `thinkingLevel` ONLY — never
 /// `includeThoughts`, unlike [`build_chat_stream_body`]. The streaming path
@@ -169,6 +175,9 @@ pub(super) fn build_complete_body(
         generation_config["responseMimeType"] = json!("application/json");
         if let Some(schema) = structured.schema {
             generation_config["responseSchema"] = schema;
+        }
+        if let Some(mt) = structured.max_tokens {
+            generation_config["maxOutputTokens"] = json!(mt);
         }
         if let Some(level) = thinking_level(model, structured.effort) {
             generation_config["thinkingConfig"] = json!({ "thinkingLevel": level });

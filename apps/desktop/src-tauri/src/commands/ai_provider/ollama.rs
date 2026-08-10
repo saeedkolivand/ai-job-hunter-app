@@ -292,7 +292,7 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        complete_impl(model, system, user, temperature, None, None)
+        complete_impl(model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -305,7 +305,7 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        complete_impl(model, system, user, temperature, None, None).await
+        complete_impl(model, system, user, temperature, None).await
     }
 
     /// Native constrained decoding via Ollama's `format` field: the caller's
@@ -318,7 +318,10 @@ impl AiProvider for OllamaClient {
     /// `req.effort` rides along (gated by [`think_level`], the same family
     /// check `chat_stream` uses) for the same reason: this is a full
     /// [`AiGenerateRequest`], and a structured call that silently ran with
-    /// thinking off was the user's setting being dropped, not honored.
+    /// thinking off was the user's setting being dropped, not honored. Same
+    /// for `req.max_tokens`/`req.context_window` — a structured call is the
+    /// one that carries a whole résumé plus a job ad, so dropping `num_ctx`
+    /// here truncated exactly the prompts that need it most.
     async fn complete_structured(
         &self,
         _app: &AppHandle,
@@ -332,8 +335,12 @@ impl AiProvider for OllamaClient {
             &system,
             &user,
             structured::structured_temperature(self, req),
-            Some(structured::ollama_format(schema)),
-            req.effort.as_deref(),
+            Some(StructuredCall {
+                format: structured::ollama_format(schema),
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+                context_window: req.context_window,
+            }),
         )
         .await
     }
@@ -1110,21 +1117,44 @@ fn think_level<'a>(model: &str, effort: Option<&'a str>) -> Option<&'a str> {
         .then_some(effort)
 }
 
+/// What [`OllamaClient::complete_structured`] adds to a non-streaming
+/// `/api/chat` call and the plain `complete`/`complete_with_usage` path cannot:
+/// those two take no [`AiGenerateRequest`], so they have neither a `format` nor
+/// any of the request-level knobs below. `Some(..)` IS the JSON-mode switch, so
+/// the switch and the knobs can never disagree — the mirror of
+/// [`super::gemini::StructuredCall`].
+struct StructuredCall<'a> {
+    /// Ollama's own constrained-decoding field: the caller's JSON Schema
+    /// verbatim, or the `"json"` string (see [`structured::ollama_format`]).
+    format: Value,
+    /// The request's RAW reasoning effort, gated here by [`think_level`].
+    effort: Option<&'a str>,
+    /// `req.max_tokens` → `options.num_predict`.
+    max_tokens: Option<u32>,
+    /// `req.context_window` → `options.num_ctx`.
+    context_window: Option<u32>,
+}
+
 /// Build the non-streaming `/api/chat` body shared by `complete`/
-/// `complete_with_usage`/`complete_structured`. Pure + unit-tested — `format`
-/// is Ollama's own constrained-decoding field (a JSON Schema, or the `"json"`
-/// string), `Some` only on the structured path, and `effort` likewise arrives
-/// only from there (the two plain paths take no [`AiGenerateRequest`] to read
-/// it from). `think` puts the model's reasoning in `message.thinking`, a
-/// SEPARATE field from the `message.content` this path parses, so it never
-/// pollutes the JSON answer.
+/// `complete_with_usage`/`complete_structured`. Pure + unit-tested.
+///
+/// Every `options.*` entry is added only when `Some` — an unset field lets
+/// `/api/chat` fall back to the model's own Modelfile default, exactly as on
+/// [`build_chat_stream_body`], whose gating this mirrors field for field.
+/// `num_predict`/`num_ctx` reach only this path's structured caller for the
+/// same reason `think` does (the two plain paths carry no request), and they
+/// matter most here: a résumé + job ad is precisely the prompt that overflows
+/// Ollama's small default context and comes back silently truncated.
+///
+/// `think` puts the model's reasoning in `message.thinking`, a SEPARATE field
+/// from the `message.content` this path parses, so it never pollutes the JSON
+/// answer.
 fn build_complete_body(
     model: &str,
     system: &str,
     user: &str,
     temperature: Option<f64>,
-    format: Option<Value>,
-    effort: Option<&str>,
+    structured: Option<StructuredCall<'_>>,
 ) -> Value {
     let mut body = json!({
         "model": model,
@@ -1134,14 +1164,24 @@ fn build_complete_body(
             { "role": "user", "content": user },
         ],
     });
+    let mut options = serde_json::Map::new();
     if let Some(t) = temperature {
-        body["options"] = json!({ "temperature": t });
+        options.insert("temperature".to_string(), json!(t));
     }
-    if let Some(format) = format {
-        body["format"] = format;
+    if let Some(structured) = structured {
+        if let Some(mt) = structured.max_tokens {
+            options.insert("num_predict".to_string(), json!(mt));
+        }
+        if let Some(ctx) = structured.context_window {
+            options.insert("num_ctx".to_string(), json!(ctx));
+        }
+        body["format"] = structured.format;
+        if let Some(effort) = think_level(model, structured.effort) {
+            body["think"] = json!(effort);
+        }
     }
-    if let Some(effort) = think_level(model, effort) {
-        body["think"] = json!(effort);
+    if !options.is_empty() {
+        body["options"] = Value::Object(options);
     }
     body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
     body
@@ -1157,14 +1197,13 @@ async fn complete_impl(
     system: &str,
     user: &str,
     temperature: Option<f64>,
-    format: Option<Value>,
-    effort: Option<&str>,
+    structured: Option<StructuredCall<'_>>,
 ) -> AppResult<(String, Usage)> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
-    let body = build_complete_body(model, system, user, temperature, format, effort);
+    let body = build_complete_body(model, system, user, temperature, structured);
 
     let resp = match super::retry::send_with_retry(|| {
         crate::net::http::shared()

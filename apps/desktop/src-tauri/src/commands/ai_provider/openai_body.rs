@@ -54,11 +54,7 @@ pub(super) fn build_chat_stream_body(
         }
     }
     if let Some(mt) = req.max_tokens {
-        let field = match caps.token_param {
-            TokenParam::MaxCompletionTokens => "max_completion_tokens",
-            _ => "max_tokens",
-        };
-        body[field] = json!(mt);
+        body[token_field(caps)] = json!(mt);
     }
     if let Some(effort) = reasoning_effort(req.effort.as_deref(), caps) {
         body["reasoning_effort"] = json!(effort);
@@ -88,21 +84,36 @@ pub(super) fn reasoning_effort(effort: Option<&str>, caps: ModelCapabilities) ->
         .filter(|e| OPENAI_EFFORT_LEVELS.contains(e))
 }
 
+/// What [`super::OpenAiClient::complete_structured`] adds to a non-streaming
+/// `/chat/completions` call and the plain `complete`/`complete_with_usage`
+/// path cannot: those two take no [`AiGenerateRequest`], so they have neither
+/// a `response_format` nor the request-level knobs below. `Some(..)` IS the
+/// JSON-mode switch, so the switch and the knobs can never disagree — the
+/// mirror of [`super::gemini::StructuredCall`].
+pub(super) struct StructuredCall<'a> {
+    /// `json_schema` (strict) or `json_object` — see
+    /// `structured::openai_response_format`.
+    pub(super) response_format: Value,
+    /// The request's RAW reasoning effort, gated here by [`reasoning_effort`].
+    pub(super) effort: Option<&'a str>,
+    /// `req.max_tokens` → `max_completion_tokens`/`max_tokens`, whichever
+    /// field this model's API takes (`caps.token_param`).
+    pub(super) max_tokens: Option<u32>,
+}
+
 /// Build the non-streaming `/chat/completions` body shared by `complete`/
-/// `complete_with_usage`/`complete_structured`. Pure + unit-tested —
-/// `supports_temperature` is the caller's already-resolved
-/// `capabilities(model)` gate (an o-series model rejects the field outright),
-/// `reasoning_effort` is the already-gated [`reasoning_effort`] (`None` on the
-/// two plain paths, whose signatures carry no request to read `effort` from),
-/// and `response_format` is the only structured-output-specific part.
+/// `complete_with_usage`/`complete_structured`. Pure + unit-tested — `caps` is
+/// the caller's already-resolved `capabilities(model)` matrix (an o-series
+/// model rejects `temperature` outright and takes a differently-named token
+/// limit), and every field [`StructuredCall`] carries is gated exactly as
+/// [`build_chat_stream_body`] gates its own copy.
 pub(super) fn build_complete_body(
     model: &str,
     system: &str,
     user: &str,
     temperature: Option<f64>,
-    supports_temperature: bool,
-    reasoning_effort: Option<&str>,
-    response_format: Option<Value>,
+    caps: ModelCapabilities,
+    structured: Option<StructuredCall<'_>>,
 ) -> Value {
     let mut body = json!({
         "model": model,
@@ -112,14 +123,28 @@ pub(super) fn build_complete_body(
         ],
         "stream": false,
     });
-    if supports_temperature {
+    if caps.supports_temperature {
         body["temperature"] = json!(temperature.unwrap_or(0.7));
     }
-    if let Some(effort) = reasoning_effort {
-        body["reasoning_effort"] = json!(effort);
-    }
-    if let Some(format) = response_format {
-        body["response_format"] = format;
+    if let Some(structured) = structured {
+        if let Some(effort) = reasoning_effort(structured.effort, caps) {
+            body["reasoning_effort"] = json!(effort);
+        }
+        if let Some(mt) = structured.max_tokens {
+            body[token_field(caps)] = json!(mt);
+        }
+        body["response_format"] = structured.response_format;
     }
     body
+}
+
+/// Which token-limit field this model's API takes. Shared by BOTH body
+/// builders — the o-series/gpt-5 rename (`max_tokens` →
+/// `max_completion_tokens`) 400s the request when it lands on the wrong one,
+/// so it is resolved in exactly one place.
+fn token_field(caps: ModelCapabilities) -> &'static str {
+    match caps.token_param {
+        TokenParam::MaxCompletionTokens => "max_completion_tokens",
+        _ => "max_tokens",
+    }
 }

@@ -490,7 +490,7 @@ fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile
 // child items of this module and no call site or test import moves.
 #[path = "openai_body.rs"]
 mod body;
-use body::{build_chat_stream_body, build_complete_body, reasoning_effort};
+use body::{build_chat_stream_body, build_complete_body, StructuredCall};
 
 pub struct OpenAiClient {
     id: ProviderId,
@@ -596,12 +596,12 @@ impl OpenAiClient {
 
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
     /// `/chat/completions` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip. `response_format` and
-    /// `effort` are `Some` only on the structured path (see
-    /// [`Self::complete_structured`]) — it is the only non-streaming entry
-    /// point handed the whole [`AiGenerateRequest`], so the other two have no
-    /// `effort` to pass. `effort` arrives RAW (the user's per-provider
-    /// preference) and is gated here against this model's own capabilities,
+    /// trait methods never duplicate the HTTP round-trip. `structured` is
+    /// `Some` only on the structured path (see [`Self::complete_structured`])
+    /// — it is the only non-streaming entry point handed the whole
+    /// [`AiGenerateRequest`], so the other two have nothing to pass. Its
+    /// `effort` arrives RAW (the user's per-provider preference) and is gated
+    /// against this model's own capabilities inside [`build_complete_body`],
     /// exactly as `chat_stream` gates it.
     async fn complete_impl(
         &self,
@@ -610,23 +610,14 @@ impl OpenAiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-        effort: Option<&str>,
-        response_format: Option<Value>,
+        structured: Option<StructuredCall<'_>>,
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(model);
         let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
 
-        let body = build_complete_body(
-            model,
-            system,
-            user,
-            temperature,
-            caps.supports_temperature,
-            reasoning_effort(effort, caps),
-            response_format,
-        );
+        let body = build_complete_body(model, system, user, temperature, caps, structured);
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -1064,7 +1055,7 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.complete_impl(app, model, system, user, temperature, None, None)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -1077,7 +1068,7 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        self.complete_impl(app, model, system, user, temperature, None, None)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
     }
 
@@ -1091,7 +1082,9 @@ impl AiProvider for OpenAiClient {
     /// `req.effort` rides along (gated by [`reasoning_effort`]) for the same
     /// reason `chat_stream` sends it: this is a full [`AiGenerateRequest`], and
     /// a structured call on a reasoning model that silently ran at the vendor's
-    /// default effort was the user's setting being dropped, not honored.
+    /// default effort was the user's setting being dropped, not honored. Same
+    /// for `req.max_tokens` — the streaming body has always sent it, and a
+    /// structured call is the one carrying a whole résumé plus a job ad.
     async fn complete_structured(
         &self,
         app: &AppHandle,
@@ -1109,8 +1102,11 @@ impl AiProvider for OpenAiClient {
             &system,
             &user,
             structured::structured_temperature(self, req),
-            req.effort.as_deref(),
-            Some(structured::openai_response_format(schema)),
+            Some(StructuredCall {
+                response_format: structured::openai_response_format(schema),
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+            }),
         )
         .await
     }
