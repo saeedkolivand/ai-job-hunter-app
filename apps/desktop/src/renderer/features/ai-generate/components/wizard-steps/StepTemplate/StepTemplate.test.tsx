@@ -8,8 +8,15 @@ import { TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
 
+// `t` is identity EXCEPT for the two caption keys the i18n-resolution test
+// below exercises — those map to distinguishable copy so that test can tell a
+// resolved translation apart from the raw key (see #965 R7).
+const CAPTION_TRANSLATIONS: Record<string, string> = {
+  'aiGenerate.templateCaption.classic': 'Best for maximum ATS safety.',
+  'aiGenerate.templateCaption.jake': 'Best for a dense, classic single column.',
+};
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => CAPTION_TRANSLATIONS[key] ?? key }),
 }));
 
 // TEMPLATE_PREVIEWS, COVER_TEMPLATE_PREVIEWS, and TEMPLATE_CAPTIONS use
@@ -32,7 +39,11 @@ vi.mock('../../../samples', () => {
   return {
     TEMPLATE_PREVIEWS: resumePreviews as Record<string, string>,
     COVER_TEMPLATE_PREVIEWS: coverPreviews as Record<string, string>,
-    TEMPLATE_CAPTIONS: {} as Record<string, string>,
+    // Real captions are i18n keys, not display text — mirrors samples.ts.
+    TEMPLATE_CAPTIONS: {
+      classic: 'aiGenerate.templateCaption.classic',
+      jake: 'aiGenerate.templateCaption.jake',
+    } as Record<string, string>,
   };
 });
 
@@ -412,6 +423,20 @@ describe('StepTemplate', () => {
     expect(card).not.toBeNull();
     expect(screen.getByText('Cologne Navy')).toBeInTheDocument();
     expect(within(card as HTMLElement).getByText('aiGenerate.tier.atsBadge')).toBeInTheDocument();
+  });
+
+  // ── template caption resolves through i18n (#965 R7) ────────────────────────
+  // TEMPLATE_CAPTIONS holds i18n KEYS; the card must call t() on them, not
+  // render the key (or a raw baked-in string) verbatim.
+
+  it('renders the translated caption for two templates, not the raw i18n keys', () => {
+    // The full gallery renders regardless of the `templateId` prop (selection
+    // only styles the card), so both cards are visible from a single render.
+    renderStep();
+    expect(screen.getByText('Best for maximum ATS safety.')).toBeInTheDocument();
+    expect(screen.getByText('Best for a dense, classic single column.')).toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.templateCaption.classic')).not.toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.templateCaption.jake')).not.toBeInTheDocument();
   });
 
   // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────

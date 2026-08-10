@@ -15,24 +15,25 @@ import type { TemplateId } from '@/lib/generate';
 // ── Template captions ────────────────────────────────────────────────────────
 // One-line "best for" shown under each template image. Kept here (not in
 // templates.ts) to stay additive — templates.ts is render metadata only.
+//
+// Values are i18n KEYS, not display text — the render site (StepTemplate)
+// resolves them through `t()`. Copy itself lives in translation.json (en/de).
 
 export const TEMPLATE_CAPTIONS: Record<TemplateId, string> = {
-  classic: 'Maximum ATS safety — single column, no color. Safe for every parser.',
-  'swiss-minimal': 'Minimalist Manrope with a red accent. Design-adjacent and product roles.',
-  academic: 'Serif throughout with ruled headings. Academia, research, and publications.',
-  atelier: 'Premium two-column sidebar. Skills-forward; collapses to single column for ATS.',
-  meridian: 'Header-forward tinted band, copper accent. Airy, modern professional.',
-  throughline: 'Vertical timeline spine. Engineering & product careers with a clear arc.',
-  portrait: 'Photo header, two columns. European market and personal-brand résumés.',
-  lebenslauf: 'DIN-style tabular CV with photo. German-speaking (DACH) market standard.',
-  cadence: 'Letter-spaced modern headings, restrained blue-grey. Premium and parser-safe.',
-  regent: 'Executive serif with small-caps headings and a deep burgundy accent. Leadership roles.',
-  aria: 'Minimalist two-column with an airy untinted sidebar and photo. Collapses to single column for ATS.',
-  saffron: 'Warm serif with a tinted sidebar and ringed photo. Collapses to single column for ATS.',
-  'cologne-navy': 'Centred navy header with ruled headings. Formal, single column, parser-safe.',
-  jake: 'Ultra-minimal single column with a centred name and thin ruled headings. Dense, classic, parser-safe.',
-  awesome:
-    'Thin accent-tinted header band with marker headings. Collapses to a plain header for ATS.',
-  deedy:
-    'Bold name block with an accent-colored surname and generous spacing. Plain name in ATS mode.',
+  classic: 'aiGenerate.templateCaption.classic',
+  'swiss-minimal': 'aiGenerate.templateCaption.swiss-minimal',
+  academic: 'aiGenerate.templateCaption.academic',
+  atelier: 'aiGenerate.templateCaption.atelier',
+  meridian: 'aiGenerate.templateCaption.meridian',
+  throughline: 'aiGenerate.templateCaption.throughline',
+  portrait: 'aiGenerate.templateCaption.portrait',
+  lebenslauf: 'aiGenerate.templateCaption.lebenslauf',
+  cadence: 'aiGenerate.templateCaption.cadence',
+  regent: 'aiGenerate.templateCaption.regent',
+  aria: 'aiGenerate.templateCaption.aria',
+  saffron: 'aiGenerate.templateCaption.saffron',
+  'cologne-navy': 'aiGenerate.templateCaption.cologne-navy',
+  jake: 'aiGenerate.templateCaption.jake',
+  awesome: 'aiGenerate.templateCaption.awesome',
+  deedy: 'aiGenerate.templateCaption.deedy',
 };

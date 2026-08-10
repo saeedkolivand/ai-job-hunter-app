@@ -141,17 +141,39 @@ describe('atsModeHintKey', () => {
     expect(atsModeHintKey('deedy')).toBe('aiGenerate.atsModeHintDecorative');
   });
 
-  it('is consistent with isTwoColumnTemplate/isPhotoTemplate for every template', () => {
-    for (const id of Object.keys(TEMPLATES) as (keyof typeof TEMPLATES)[]) {
-      const key = atsModeHintKey(id);
-      if (isTwoColumnTemplate(id)) {
-        expect(key).toBe('aiGenerate.atsModeHintTwoColumn');
-      } else if (isPhotoTemplate(id)) {
-        expect(key).toBe('aiGenerate.atsModeHintPhoto');
-      } else {
-        expect(key).toBe('aiGenerate.atsModeHintDecorative');
-      }
+  // The two tests below replace a prior one that re-derived atsModeHintKey's
+  // own if/isTwoColumnTemplate/isPhotoTemplate/else branching and so could
+  // never fail on its own — it was the implementation, restated. These instead
+  // pin structural invariants the literal per-id pins above don't cover.
+
+  it('resolves every design-tier template to one of the three valid hint keys (totality)', () => {
+    const VALID_KEYS = new Set<string>([
+      'aiGenerate.atsModeHintTwoColumn',
+      'aiGenerate.atsModeHintPhoto',
+      'aiGenerate.atsModeHintDecorative',
+    ]);
+    const designIds = Object.values(TEMPLATES)
+      .filter((t) => t.tier === 'design')
+      .map((t) => t.id);
+    expect(designIds.length).toBeGreaterThan(0); // guard against a vacuous pass
+    for (const id of designIds) {
+      expect(VALID_KEYS.has(atsModeHintKey(id)), id).toBe(true);
     }
+  });
+
+  it('the two-column and photo id sets overlap only where documented (portrait, aria, saffron) — no other template is claimed by both', () => {
+    // Portrait/Aria/Saffron are DELIBERATELY in both sets (see templates.ts) —
+    // atsModeHintKey's precedence gives two-column priority for them, which is
+    // exactly what the first test in this block pins. A genuinely disjoint-sets
+    // assertion would be false for this codebase by design, so this asserts the
+    // narrower, real invariant: the overlap is EXACTLY the known three ids, not
+    // more (an accidental extra addition to either set) and not fewer (an
+    // accidental removal).
+    const ids = Object.keys(TEMPLATES) as (keyof typeof TEMPLATES)[];
+    const twoColumnIds = ids.filter((id) => isTwoColumnTemplate(id));
+    const photoIds = ids.filter((id) => isPhotoTemplate(id));
+    const overlap = twoColumnIds.filter((id) => photoIds.includes(id)).sort();
+    expect(overlap).toEqual(['aria', 'portrait', 'saffron']);
   });
 });
 

@@ -69,7 +69,7 @@ export function StepTemplate({
     // 'both' (and 'resume') intentionally use the résumé thumbnails — the template is shared
     // and the résumé is the primary document; only cover-only swaps to cover-letter style previews.
     const image = isCover ? COVER_TEMPLATE_PREVIEWS[tpl.id] : TEMPLATE_PREVIEWS[tpl.id];
-    const caption = TEMPLATE_CAPTIONS[tpl.id];
+    const caption = t(TEMPLATE_CAPTIONS[tpl.id]);
     const selected = templateId === tpl.id;
 
     return (
