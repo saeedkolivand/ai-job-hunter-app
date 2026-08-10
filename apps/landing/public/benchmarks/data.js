@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786371736451,
+  "lastUpdate": 1786387816330,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6545,6 +6545,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 291620,
             "range": "± 13059",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96cc9f9640992bc5ae019788fcedf717a896b307",
+          "message": "feat: native structured output for openai, gemini and ollama with a hardened json parse module (#964)\n\n* refactor(ai-provider): split cursor pagination helpers into pagination.rs\n\n* feat(ai-provider): add complete_structured with a prompt-discipline default\n\n* feat(ai-provider): wire openai response_format json schema\n\n* feat(ai-provider): wire ollama format field for structured output\n\n* feat(ai-provider): wire gemini response schema for structured output\n\n* feat(ai-provider): add anthropic structured-output model gate and correct json-mode capabilities\n\n* feat(pipeline): add pure json extract, repair and typed parse module\n\n* refactor(prompts): drop the unused structured-output profile flag\n\n* refactor(pipeline): compare json delimiters as chars in the balanced scan\n\n* docs: drop the removed structured-output flag from the provider profile description\n\nThe branch removed supportsStructuredOutput from ProviderProfile (native\nstructured output is now decided per-request by the Rust provider layer via\ncomplete_structured); this line still described the old field and behavior.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: harden json extraction and structured-prompt assembly against hostile model output\n\nSecurity review found the latent complete_structured surface exploitable\nbefore its first caller lands. extract_json committed to the first fenced\nblock before any deserialization attempt, so a triple-backtick inside a JSON\nstring value (a job posting with a code fence echoed into a field) hijacked\na fully valid response into all-defaults data reported as success, and an\nattacker echoing a fenced object first controlled the parsed value on every\nprompt-discipline path. parse now walks ordered candidates — the whole\nresponse when it is exactly one balanced value, then fenced bodies last-first,\nthen top-level balanced spans last-first — with a clean parse pass for every\ncandidate before any repair.\n\nJsonParseError derived Debug, re-exposing the exact model content its\nhand-written Display withholds ({:?} logging and .expect() panic text reach\nthe crash reporter); Debug is now hand-written over reason() only. The\nre-ask path gets a safe-by-construction reask_detail() that wraps the\nfragment in the shared ADR-010 fence with the raw detail() accessor demoted\nto pub(crate). structured_prompt now flattens turns through the shared\nflatten_messages so assistant/tool provenance markers survive, matches the\nsystem role case-insensitively, and schema translation recursion is\ndepth-capped, failing whole to the existing fallbacks.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: seven pre-pr review findings on the structured-output surface\n\nContainment now overrides the parse pass split: a candidate with a nested\nlater candidate gets its repair attempt immediately, so a clean fence quoted\ninside a container that merely needs repair (raw newline, trailing comma,\nsmart quotes) can no longer win — while sibling clean-beats-repairable and\nthe shape-mismatch fallthrough are preserved and now both pinned by tests.\nThe three native complete_structured overrides thread req.effort through the\nsame gate as their streaming bodies (openai reasoning_effort, gemini\nthinkingLevel without includeThoughts, ollama think), positive and negative\ntests each. Both schema translators degrade whole on composition keywords\nthey cannot walk (anyOf/oneOf/allOf/not/$ref/$defs at any depth) instead of\nemitting strict:true over unstrictified subtrees or silently dropping the\nconstraint. GEMINI_KEPT_KEYWORDS gains the documented value constraints\n(pattern, min/max, length and property bounds) verified against the current\nSchema reference. The json-only directive no longer references an example on\nthe empty-hint path, and the public extract_json trap moved into the test\nmodule. Ollama Cloud's response_format delegation is now cited to vendor\ndocs.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: five coderabbit round-1 findings on the structured-output surface\n\nopenai_response_format now rides strictify's walk with a doc-verified\nOPENAI_STRICT_KEYWORDS allowlist and degrades whole to json_object on any\nkeyword strict mode does not permit (minLength/minProperties and the\nif/then/else family were the real exposure — the finding's pattern example\nis stale, pattern is supported now); nothing is ever silently stripped.\ncontains_version_needle requires component boundaries on both sides of the\nneedle, rejecting lookalike model ids glued to neighbouring components.\nFence language tags are stripped only when the newline precedes the fence's\nown closer and the tag is not JSON punctuation, so a one-line fence no\nlonger promotes an unrelated span into the fenced tier. bounded's expired\ncumulative deadline gets a hermetic regression test, and MAX_CANDIDATES is\npinned (band, bottom-drop truncation, real answer survives).\n\nThe sixth finding was disproven: the embed body's embedContentConfig\nnesting matches the current v1beta discovery document (rev 20260806), which\nmarks the top-level outputDimensionality deprecated — the suggested move\nwould have targeted the deprecated location. Citation recorded in the doc\ncomment; no code change.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* chore: record the gemini embed-body nesting precedent in review-config\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* test: bound the pathological duplicate-scan test for slow ci runners\n\nThe 500ms wall-clock bound held locally but failed all three nextest\nretries on the shared CI runner (~2.2s in a debug build), turning every PR\nred — including #963 itself at merge time. The assertion's job is to\ndistinguish the capped scan from an uncapped quadratic blowup (~18M pair\ncomparisons, tens of seconds anywhere), which a 10s bound still does with\nfull margin on any runner.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: three ai-review round-2 findings on the structured-output surface\n\nThe structured path dropped the token limits on every native provider, not\njust the reported Ollama: streaming bodies sent num_predict/num_ctx,\nmax_tokens and maxOutputTokens while the non-streaming builders dropped\nthem, truncating large resume/job-ad prompts. Each adapter's non-streaming\nbuilder now takes an Option<StructuredCall> mirroring its own streaming\ngating field-for-field (absent, never null), with parity tests asserting\nagainst the streaming body's value so the two can only drift together.\n\nThe invalid_json_detail re-ask fence tag joins FENCE_TAG_PATTERNS (as a\nliteral — R7 forbids an agent-from-commands import; the producing side's\ntest pins the tag text), so a forged parser-detail block inside foreign\nfenced content is neutralized like the established tags.\n\nJsonParseError's Syntax/Shape payloads become RawDetail — private field,\ncontent-free Debug, no Display — so pattern matching can no longer reach\nraw model text past the content-free formatting; detail() destructures it\npub(crate)-only and reask_detail() stays the public safe path, with a\nsource-pin guard on the field visibility.\n\nKnown pre-existing gap flagged, not half-fixed: the prompt-discipline\nfallback still calls the 5-arg complete_with_usage and cannot carry the\nlimits without a trait change touching every adapter.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: two coderabbit round-2 findings on the model gates and strict schemas\n\nThe adaptive-thinking gate's bare mythos substring was the last unbounded\nneedle — claude-notmythos-9 classified adaptive; it now routes through\ncontains_version_needle, whose component-boundary rule applies unchanged to\na bare family word, keeping family breadth (mythos-6 and later stay\nadaptive) pinned by test. Tuple-form and boolean items schemas degrade\nwhole to json_object: the non-object arm of the strict-keyword walk\nreturned fine, shipping maxLength and unclosed object members under\nstrict:true — and the alternative guard placement inside strictify is\nprovably incomplete (its object arm clones items through untouched).\nGemini's walker already degraded on both tuple shapes; now pinned so the\nproviders cannot drift.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-10T20:38:14+02:00",
+          "tree_id": "fda8a16ee9e6ba3a53e74b83ad29d5051d5917a9",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/96cc9f9640992bc5ae019788fcedf717a896b307"
+        },
+        "date": 1786387815080,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2192314,
+            "range": "± 27847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2641317,
+            "range": "± 143153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 304878,
+            "range": "± 4256",
             "unit": "ns/iter"
           }
         ]
