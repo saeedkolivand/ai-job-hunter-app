@@ -91,13 +91,23 @@ const BULLET_TEXT_CAP: usize = 200;
 const MAX_ISSUES: usize = 20;
 
 /// Max entries kept in `skillsPresent`/`skillsAbsent` — a résumé with an
-/// unusually long skills section must not blow the tool-result budget either.
+/// unusually long skills section must not blow the tool-result budget
+/// either. Drops past this cap are reported via `compact_evidence_set`'s
+/// `skillsTruncated` field (LOW fix, PR #963 round 7) — unlike
+/// [`MAX_HITS`] below, this cap gates `skillsAbsent`, the GAP LIST the
+/// agent works from, so a silent drop actively misleads it.
 const MAX_SKILLS: usize = 15;
 
 /// Max entries kept in one bullet's `hits` (job-derived keyword matches) —
 /// analogous to [`MAX_SKILLS`], scoped to a single bullet instead of the
 /// résumé's whole skills section: a keyword-dense job posting must not blow
-/// the tool-result budget either (MEDIUM fix, PR #963 round 4).
+/// the tool-result budget either (MEDIUM fix, PR #963 round 4). Deliberately
+/// NOT paired with a `hitsTruncated`-style field (PR #963 round 7 review):
+/// `hits` is corroborating evidence for a bullet the model already sees in
+/// full, not a gap list it's meant to act on exhaustively like
+/// `skillsAbsent` — a dropped hit here doesn't mislead the way a silently
+/// dropped skill does, so [`MAX_SKILLS`]'s new `skillsTruncated` signal
+/// isn't warranted here too.
 const MAX_HITS: usize = MAX_SKILLS;
 
 /// How many bullets `search_candidate_evidence` returns — the strongest
@@ -376,6 +386,17 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// defeating the whole "tell the model the summary is partial" point of the
 /// field. Counted against `bullets_total` — the FULL scored count, captured
 /// before `.take(limit)` consumes `bullets` — instead.
+///
+/// LOW fix, PR #963 round 7: round 6 only wired that "count against the
+/// pre-take total" fix into `bullets`/`truncated` — `skillsPresent`/
+/// `skillsAbsent` were still silently `.take(MAX_SKILLS)`-capped with no
+/// signal at all next to them. `skillsAbsent` is the GAP LIST the agent
+/// works from, so a résumé/job posting with an unusually long skills
+/// section silently withheld skills the agent never saw, while the
+/// adjacent `truncated` field (scoped to `bullets` only) read as
+/// whole-payload completeness. `skillsTruncated` now counts drops from
+/// BOTH skills lists against their own pre-`.take` totals, the same shape
+/// `truncated` uses for `bullets`.
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -398,6 +419,20 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
         .take(MAX_SKILLS)
         .map(|s| clamp_evidence(s))
         .collect();
+    // LOW fix, PR #963 round 7: `skillsPresent`/`skillsAbsent` were silently
+    // `.take(MAX_SKILLS)`-capped with no signal alongside them — unlike
+    // `bullets`, which reports its own drops in `truncated`. `skillsAbsent`
+    // is the GAP LIST the agent is meant to work from (missing skills to
+    // add/address), so a résumé/job posting with more than `MAX_SKILLS`
+    // present-or-absent skills silently withheld the rest while the
+    // adjacent `truncated` field (scoped to `bullets` only) read as
+    // whole-payload completeness. Counted against the PRE-`.take` totals of
+    // BOTH lists, mirroring `bullets_total`/`ranked.len()`'s "count against
+    // the full set, not the post-cap one" shape from round 6.
+    let skills_present_total = set.skills_present.len();
+    let skills_absent_total = set.skills_absent.len();
+    let skills_truncated =
+        (skills_present_total - skills_present.len()) + (skills_absent_total - skills_absent.len());
     shrink_to_summary_cap(capped.len(), |kept| {
         let top: Vec<Value> = capped
             .iter()
@@ -408,6 +443,7 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
             "bullets": top,
             "skillsPresent": skills_present.clone(),
             "skillsAbsent": skills_absent.clone(),
+            "skillsTruncated": skills_truncated,
             "truncated": bullets_total - kept,
         })
     })

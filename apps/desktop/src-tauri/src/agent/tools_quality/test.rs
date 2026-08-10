@@ -440,6 +440,10 @@ fn compact_evidence_set_returns_strongest_first_capped_at_the_limit() {
 
 /// M-1 fix: an unusually long skills section must not blow the
 /// tool-result budget either — capped to `MAX_SKILLS` entries each.
+///
+/// LOW fix, PR #963 round 7: the cap alone left the drop unsignalled —
+/// `skillsAbsent` is the GAP LIST the agent works from, so also pins the
+/// new `skillsTruncated` count (10 dropped from EACH list here == 20).
 #[test]
 fn compact_evidence_set_caps_skills_present_and_absent() {
     let skills: Vec<String> = (0..(MAX_SKILLS + 10))
@@ -461,6 +465,45 @@ fn compact_evidence_set_caps_skills_present_and_absent() {
         compact["skillsAbsent"].as_array().unwrap().len(),
         MAX_SKILLS
     );
+    assert_eq!(
+        compact["skillsTruncated"], 20,
+        "must report drops from BOTH skill lists (10 each here), not just apply the cap silently"
+    );
+}
+
+/// LOW fix, PR #963 round 7: `skillsTruncated` must sum drops from BOTH
+/// lists independently, not just reflect one side — `skills_present` and
+/// `skills_absent` are sized differently here (3 vs 7 dropped) so a bug
+/// that only counted one list's drops (or double-counted the other) would
+/// be caught, unlike the symmetric case above.
+#[test]
+fn compact_evidence_set_sums_truncation_across_both_skill_lists_independently() {
+    let present: Vec<String> = (0..(MAX_SKILLS + 3)).map(|i| format!("p{i}")).collect();
+    let absent: Vec<String> = (0..(MAX_SKILLS + 7)).map(|i| format!("a{i}")).collect();
+    let set = EvidenceSet {
+        roles: vec![],
+        skills_present: present,
+        skills_absent: absent,
+        education: vec![],
+        projects: vec![],
+    };
+    let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+    assert_eq!(compact["skillsTruncated"], 10, "3 + 7 dropped == 10");
+}
+
+/// LOW fix, PR #963 round 7: a skills section AT or under `MAX_SKILLS`
+/// must report zero truncation, not a stale/default nonzero count.
+#[test]
+fn compact_evidence_set_reports_zero_skills_truncated_under_the_cap() {
+    let set = EvidenceSet {
+        roles: vec![],
+        skills_present: vec!["docker".to_string()],
+        skills_absent: vec!["terraform".to_string()],
+        education: vec![],
+        projects: vec![],
+    };
+    let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+    assert_eq!(compact["skillsTruncated"], 0);
 }
 
 /// MEDIUM (PR #963 round 4): `skillsPresent`/`skillsAbsent` capped the
