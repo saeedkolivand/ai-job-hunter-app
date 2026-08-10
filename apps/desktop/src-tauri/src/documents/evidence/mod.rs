@@ -1290,6 +1290,9 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     // useless, it makes the honest gap list look broken.
     let stop = function_words(vocab.lang);
     let skill_like = |token: &&String| !stop.contains(&vocab.readable(token).as_str());
+    // …but that filter only EXISTS for a curated language, and an empty slice
+    // cannot say so — see [`has_curated_function_words`].
+    let curated = has_curated_function_words(vocab.lang);
     // Ordered by how often the POSTING states the term, alphabetically within a
     // tie. Both lists are truncated by their consumers
     // (`agent::tools_quality::compact_evidence_set` takes the first N and
@@ -1303,10 +1306,34 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     // the tiebreak is a total order, because [`display_forms`] maps each stem to
     // a token that stems back to it, so two distinct keywords cannot share one
     // display form.
+    //
+    // **The relevance key is switched off for an uncurated language**, which is
+    // where it measures the opposite of what it claims: with no filter, the
+    // terms a posting repeats most are its FILLERS ("pour" ×4, "avec" ×3), so
+    // frequency sorted them to the top of the truncated GAP LIST a generation
+    // prompt works from — round 8's ordering made `fr`/`es`/`it`/`nl`/`pt`
+    // worse, not better. The honest degrade is to make no relevance claim at
+    // all and fall back to the deterministic tiebreak.
+    //
+    // Emptying the lists instead was rejected on the consumer's terms: nothing
+    // in `EvidenceSet` can say "unmeasured", so an empty `skills_absent` reads
+    // as "no gaps" — a positive claim this module cannot support — and `lang`
+    // is DETECTED, so a terse posting `whatlang` misreads would silently delete
+    // an ordinary English gap list. Demoting degrades; deleting lies.
+    //
+    // *Residual, measured rather than assumed:* the fillers are still IN the
+    // list and still consume slots, so a real requirement past the consumer's
+    // cap can stay cut in BOTH orders. This stops the list ASSERTING that
+    // fillers are the priorities; it does not clean the list. A bullet's `hits`
+    // are unfiltered too. Only a curated `function_words` list fixes either —
+    // one edit, which re-enables the relevance order with it.
     let by_relevance = |tokens: Vec<&String>| -> Vec<String> {
         let mut scored: Vec<(usize, String)> = tokens
             .into_iter()
-            .map(|token| (vocab.weight(token), vocab.readable(token)))
+            .map(|token| {
+                let weight = if curated { vocab.weight(token) } else { 0 };
+                (weight, vocab.readable(token))
+            })
             .collect();
         scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         scored.into_iter().map(|(_, display)| display).collect()

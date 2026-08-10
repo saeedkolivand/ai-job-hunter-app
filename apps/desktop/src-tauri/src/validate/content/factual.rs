@@ -14,7 +14,7 @@ use crate::documents::evidence::{
     identity_tokens, split_entry, years_in, SectionKind, LEGAL_FORMS, PRESENT_MARKERS,
 };
 use crate::documents::keywords::{keywords_normalized, SHORT_TECH_TERMS, SYNONYMS};
-use crate::export::types::LineKind;
+use crate::export::types::{LineKind, ParsedLine};
 
 use super::{
     contains_phrase, has_real_contact_match, issue, Analysis, ContentIssue, Section,
@@ -206,6 +206,13 @@ pub const MIN_BARE_PHONE_LINE_DIGITS: usize = 7;
 /// totalling seven digits or more is not read as a claim either. A metric needs
 /// a sentence around it to mean anything, and this file's rule is that a missed
 /// check beats a wrong accusation.
+///
+/// **Not symmetric — see [`metric_lines`]' second invariant.** "This makes a
+/// poor claim" is a statement about the CLAIMS side. Applied to the source it
+/// says "this is not a statement either", which is false: the same shape is a
+/// candidate's own figure on its own line, and striking it from the sourced set
+/// accuses them of inventing it. On the source side this rule therefore runs
+/// inside the contact band only.
 fn is_bare_phone_line(text: &str) -> bool {
     let line = text.trim();
     line.chars().filter(char::is_ascii_digit).count() >= MIN_BARE_PHONE_LINE_DIGITS
@@ -252,12 +259,31 @@ fn is_bare_phone_line(text: &str) -> bool {
 /// On the truth side the band is therefore filtered by
 /// [`has_real_contact_match`] (plus [`is_bare_phone_line`]) rather than dropped.
 ///
-/// The asymmetry is deliberate and runs in the SAFE direction only: the source
-/// side may read STRICTLY MORE lines than the claims side, which can only ever
-/// silence a finding, never raise one. The invariant that actually matters is
-/// unchanged and is enforced by shape rather than by position — **contact
-/// details never source a body metric** — and it now holds for a bare US number
-/// too, which no positional rule covered on the letter path at all.
+/// ## The two invariants, precisely
+///
+/// They point in opposite directions, which is exactly why the side is a
+/// parameter and not a comment:
+///
+/// 1. **`Source` ⊇ `Claims`.** The source side never reads fewer lines than the
+///    claims side, so the asymmetry can only ever silence a finding, never raise
+///    one.
+/// 2. **The source side may drop a line only because it is contact DETAILS** —
+///    never merely because its shape makes a poor claim. Every line dropped from
+///    the source is a number that can no longer vouch for its own restatement,
+///    i.e. an accusation channel, so (1) alone is not enough: a rule applied
+///    identically to both sides satisfies (1) and still opens one.
+///
+/// [`is_bare_phone_line`] used to sit outside the side test and so broke (2):
+/// a figure alone on a line — the ordinary output of a table-extracted PDF —
+/// was struck from the sourced set everywhere, and restating it read as
+/// fabrication. It now applies on the claims side in every band, and on the
+/// source side only inside the contact band, where the shape really does mean a
+/// phone number. Under (1) that is a strict widening of the source side.
+///
+/// So the invariant the earlier rounds were reaching for holds in this exact
+/// form: **contact details never source a body metric**, where "contact
+/// details" means the contact BAND filtered by shape, not any line that happens
+/// to look numeric.
 ///
 /// *Residual, stated rather than hidden:* a contact-shaped line the shape test
 /// misses (a long prose letterhead, an address line with no phone or email) is
@@ -286,9 +312,15 @@ fn metric_lines(text: &str, side: MetricSide) -> Vec<String> {
             if (contact_band || !has_headings) && has_real_contact_match(&line.text) {
                 continue;
             }
-            // …and a line that is nothing but a phone number is not a claim in
-            // ANY band, including the body a sign-off sits in.
-            if is_bare_phone_line(&line.text) {
+            // …and a line that is nothing but a phone number is not a CLAIM in
+            // any band, including the body a sign-off sits in. On the SOURCE
+            // side the same line is a statement, and a statement may only ever
+            // silence — so it is dropped there ONLY inside the contact band,
+            // where a phone number is what it is. Everywhere else in the source
+            // this shape is the candidate's own figure alone on a line, the
+            // ordinary output of a table-extracted PDF, and dropping it turned
+            // a restatement of that figure into a fabrication Critical.
+            if (side == MetricSide::Claims || contact_band) && is_bare_phone_line(&line.text) {
                 continue;
             }
             out.push(line.text.clone());
@@ -810,19 +842,52 @@ fn names_a_resource(url: &str) -> bool {
 ///
 /// Entry grouping is `consistency::project_entries`, so the two checks cannot
 /// disagree about where an entry begins.
-fn project_links(section: &Section) -> Vec<String> {
+///
+/// Returned PER ENTRY, keyed by [`project_entry_name`], because a link only
+/// means "missing or altered" relative to an entry the document kept — see
+/// [`project_link_issues`].
+fn project_entry_links(section: &Section) -> Vec<(String, Vec<String>)> {
     let mut out = Vec::new();
     for entry in super::consistency::project_entries(section) {
+        let mut urls = Vec::new();
         for (index, line) in entry.iter().enumerate() {
-            let urls = urls_in(&line.text);
+            let found = urls_in(&line.text);
             if index == 1 {
-                out.extend(urls.into_iter().filter(|u| names_a_resource(u)));
+                urls.extend(found.into_iter().filter(|u| names_a_resource(u)));
             } else {
-                out.extend(urls);
+                urls.extend(found);
             }
         }
+        out.push((project_entry_name(&entry), urls));
     }
     out
+}
+
+/// The identifying NAME of one projects entry: its title line up to the first
+/// separator, reduced to lowercase alphanumeric words ("**Ledger CLI** · repo"
+/// → `"ledger cli"`).
+///
+/// Deliberately an EXACT key rather than a fuzzy one. A stricter match makes
+/// more entries look dropped, and a dropped entry is silent — so the error this
+/// choice makes is a missed check, which is the direction this whole file errs
+/// in. (A loose match would do the opposite: pair two unrelated projects and
+/// report one's links as the other's.) An entry whose title line yields no
+/// words is unmatchable and therefore silent too.
+///
+/// *Accepted cost, stated:* a generated document that RENAMES a project
+/// ("Ledger CLI" → "Ledger CLI Tool") reads as one entry dropped and one added,
+/// so the rename's links are no longer diffed against the original's — only
+/// against the whole source set, which still catches an invented host.
+fn project_entry_name(entry: &[&ParsedLine]) -> String {
+    let Some(first) = entry.first() else {
+        return String::new();
+    };
+    let head = first.text.split(['·', '|', '•']).next().unwrap_or_default();
+    head.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+        .collect::<Vec<String>>()
+        .join(" ")
 }
 
 /// `factual.altered_project_link` — the projects section's links must be the
@@ -835,15 +900,26 @@ fn project_links(section: &Section) -> Vec<String> {
 /// resource — while the evidence quotes the span exactly as written, so the user
 /// can see which of the two forms their document carries.
 ///
-/// **Both documents must HAVE a projects section.** Cutting the section
-/// entirely is a tailoring decision, and the commonest one there is — a résumé
-/// trimmed to one page drops projects before it drops a role. Reading that as
-/// "every one of your links was altered" produced a Critical per source link on
-/// a document whose only change was an editorial cut, which is the loudest
-/// possible way to be wrong about the safest possible edit.
+/// **Trimming is not altering, at either grain.** Cutting the section entirely
+/// is a tailoring decision, and the commonest one there is — a résumé trimmed to
+/// one page drops projects before it drops a role. Reading that as "every one of
+/// your links was altered" produced a Critical per source link on a document
+/// whose only change was an editorial cut, which is the loudest possible way to
+/// be wrong about the safest possible edit.
 ///
-/// Deliberately NOT replaced by a Warning-severity "section dropped" note. A cut
-/// section is not a defect: nothing was altered, invented or lost from the
+/// The SAME argument applies one level down, and the section-level carve-out
+/// alone did not cover it: trimming three projects to two is the identical edit
+/// at the identical grain, and it fired a Critical per link on the entry that
+/// went. So the source side reports only links belonging to an entry the
+/// generated document KEPT ([`project_entry_name`]); a whole entry that is
+/// simply gone is silent.
+///
+/// The GENERATED side is unscoped on purpose and needs no carve-out: trimming
+/// removes links from that side, it never adds one, so a URL the source never
+/// carried anywhere is an invention however it arrived.
+///
+/// Deliberately NOT replaced by a Warning-severity "dropped" note, at either
+/// grain. A cut is not a defect: nothing was altered, invented or lost from the
 /// candidate's own claims, so there is no evidence to show them and no action to
 /// advise. If the cut actually cost the document something, that is a measured
 /// finding `alignment.low_coverage` already makes — with the numbers to back it
@@ -858,8 +934,13 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let Some(generated) = ctx.section_of_kind(SectionKind::Projects) else {
         return Vec::new(); // The section was cut, not rewritten — see above.
     };
-    let source_urls: Vec<String> = project_links(source);
-    let generated_urls: Vec<String> = project_links(generated);
+    let source_entries = project_entry_links(source);
+    let generated_entries = project_entry_links(generated);
+    let flatten = |entries: &[(String, Vec<String>)]| -> Vec<String> {
+        entries.iter().flat_map(|(_, u)| u.clone()).collect()
+    };
+    let source_urls = flatten(&source_entries);
+    let generated_urls = flatten(&generated_entries);
     if source_urls.is_empty() && generated_urls.is_empty() {
         return Vec::new();
     }
@@ -867,9 +948,19 @@ fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         |urls: &[String]| -> HashSet<String> { urls.iter().map(|u| canonical_link(u)).collect() };
     let source_keys = key_set(&source_urls);
     let generated_keys = key_set(&generated_urls);
+    // An unnamed entry matches nothing, deliberately — see `project_entry_name`.
+    let surviving: HashSet<&str> = generated_entries
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .filter(|name| !name.is_empty())
+        .collect();
 
     let mut issues = Vec::new();
-    for url in &source_urls {
+    for url in source_entries
+        .iter()
+        .filter(|(name, _)| surviving.contains(name.as_str()))
+        .flat_map(|(_, urls)| urls)
+    {
         if !generated_keys.contains(&canonical_link(url)) {
             issues.push(issue(
                 FACTUAL_ALTERED_PROJECT_LINK,

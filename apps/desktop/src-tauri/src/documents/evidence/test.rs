@@ -1331,3 +1331,69 @@ fn the_pipe_form_does_not_read_an_employer_named_current_as_the_date_column() {
         );
     }
 }
+
+/// A French posting: "pour" ×4 and "avec" ×3 outnumber every term that names a
+/// skill, which is what an unfiltered vocabulary looks like in any language
+/// whose function words nobody has listed yet.
+const FR_JOB: &str = "\
+Développeur backend pour notre plateforme de paiement. Vous concevez des \
+services pour nos clients européens, pour la fiabilité du service et pour \
+l'équipe produit. Nous cherchons une personne à l'aise avec Kubernetes, avec \
+Terraform et avec Ansible. Kubernetes orchestre nos conteneurs en production.";
+
+const FR_RESUME: &str = "EXPÉRIENCE\n\n\
+                         Ingénieur Backend | Acme Payments | 2021 - 2024\n\
+                         - Déploiement des conteneurs sur Kubernetes pour la plateforme de paiement\n";
+
+/// A German posting whose most-repeated term is a real requirement, because
+/// `FUNCTION_WORDS_DE` removes the fillers before the frequencies are read.
+const DE_WEIGHTED_JOB: &str = "\
+Wir suchen eine Backend-Entwicklerin. Kubernetes betreibt unsere Dienste. \
+Kubernetes skaliert die Plattform. Terraform provisioniert die Infrastruktur. \
+Terraform verwaltet die Netzwerke. Ansible konfiguriert die Hosts.";
+
+/// R10-F2 — the skills split filters through `function_words(lang)` but never
+/// asked [`has_curated_function_words`], and for `fr`/`es`/`it`/`nl`/`pt` that
+/// list is EMPTY. Round 8 then ordered both lists by how often the POSTING
+/// states each term, so the words the filter would have removed — the ones a
+/// posting repeats most — sorted to the TOP of the gap list a generation prompt
+/// consumes and truncates. The ordering made an uncurated language WORSE, not
+/// better.
+///
+/// The degrade chosen here, and why, is documented at the call site: the
+/// relevance key is switched off where it cannot mean what it claims, so the
+/// list falls back to its deterministic alphabetical order and makes no
+/// relevance claim at all.
+#[test]
+fn an_uncurated_language_makes_no_relevance_claim_about_its_gap_list() {
+    let set = extract_evidence(FR_RESUME, FR_JOB);
+
+    assert!(
+        set.skills_absent.windows(2).all(|w| w[0] <= w[1]),
+        "with no function-word list, posting frequency ranks the FILLERS first, so \
+         the split may not claim relevance; got {:?}",
+        set.skills_absent
+    );
+
+    // The residual, pinned rather than hidden: the fillers are still IN the
+    // list. Only a curated `function_words("fr")` can remove them, and adding
+    // one re-enables the relevance order in the same edit.
+    assert!(
+        set.skills_absent.iter().any(|s| s == "avec"),
+        "the filler is still listed — this fix demotes it, it does not filter it; got {:?}",
+        set.skills_absent
+    );
+
+    // The guard: a CURATED language keeps the round-8 relevance order, so the
+    // switch bites exactly where the filter is missing and nowhere else.
+    let de_set = extract_evidence(
+        "BERUFSERFAHRUNG\n\nEntwicklerin | Acme | 2021 - 2024\n- Dienste auf Kubernetes betrieben\n",
+        DE_WEIGHTED_JOB,
+    );
+    assert_eq!(
+        de_set.skills_absent.first().map(String::as_str),
+        Some("terraform"),
+        "German is curated, so frequency still ranks real requirements; got {:?}",
+        de_set.skills_absent
+    );
+}

@@ -8,7 +8,8 @@
 use std::collections::HashSet;
 
 use crate::documents::evidence::{
-    date_spans, function_words, has_curated_function_words, identity_tokens, years_in, SectionKind,
+    date_spans, function_words, has_curated_function_words, identity_tokens, split_entry, years_in,
+    SectionKind,
 };
 use crate::export::types::{LineKind, ParsedLine};
 
@@ -78,6 +79,21 @@ fn date_order_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// it feeds is O(generated entries × source entries). Same rationale, same
 /// constant, as `factual::dropped_role_issues` — imported rather than
 /// re-declared so the two scans can never disagree about the bound.
+///
+/// ## Why the split is [`split_entry`]'s and not this function's
+///
+/// This used to split the label itself, at the FIRST of `|·•,`, and take
+/// everything after it as the company. That leaves the entry line's remaining
+/// COLUMNS — location, dates — inside the company string, so two unrelated
+/// employers matched as one whenever they shared a column value: "Remote" (not
+/// a place, so no geography list can exclude it), a city nobody listed, or a
+/// spelled-out month. The second entry's title was then reported as drift from
+/// the first one's on a document byte-identical to its source.
+///
+/// `split_entry` is the same parse `factual`'s survival checks read, and it
+/// drops the date and location columns by construction — so a *drift* finding
+/// and a *dropped-role* finding can no longer disagree about who the employer
+/// was.
 fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
     sections
         .iter()
@@ -86,24 +102,17 @@ fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
         .filter(|l| matches!(l.kind, LineKind::JobEntry))
         .take(MAX_SCANNED_ENTRIES)
         .map(|l| {
-            let label = l.text.as_str();
-            // "Senior Engineer | Acme Corp | 2021 – Present" and
-            // "Senior Engineer, Acme Corp" both put the title first.
-            let (title, company) = label
-                .split_once(['|', '·', '•', ','])
-                .map(|(t, c)| (t.trim().to_string(), c.to_string()))
-                .unwrap_or_else(|| (String::new(), label.to_string()));
+            let (company, title, _) = split_entry(l);
             // Only tokens that name a SPECIFIC employer may match two entries to
             // each other, so the identity set is `documents::evidence`'s —
             // the same legal-form and geography exclusions `factual` decides
             // survival on. Sharing a "GmbH" (or a "Berlin") made two unrelated
-            // employers the same employer, and the second entry's title was
-            // then reported as drift from the first one's on a document that
-            // was byte-identical to its source.
+            // employers the same employer.
             //
-            // Digits go on top of that, and only here: the split above keeps
-            // the date span inside `company`, so two unrelated employers that
-            // merely ended and began in the same year shared "2018".
+            // Digits stay filtered on top of that, for the one shape
+            // `split_entry` cannot peel: its last-resort arm reads a label with
+            // no pipe, no date column and no parenthesized span at the final
+            // comma, so "Globex Logistics 2018 - 2021" keeps its years.
             let tokens = identity_tokens(&company, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS)
                 .into_iter()
                 .filter(|t| !t.chars().any(|c| c.is_ascii_digit()))

@@ -3514,3 +3514,143 @@ fn a_posting_in_another_language_does_not_make_a_letter_generic() {
     let terse = "Payment disputes chargeback refund workflow lead";
     fired(&de_letter_against(terse), VOICE_GENERIC_LETTER);
 }
+
+/// R10-F1 — `titled_entries` split the entry label with an ad-hoc
+/// `split_once`, which leaves the LOCATION and DATE columns inside `company`.
+/// Two unrelated employers that merely both say "Remote" (or both spell their
+/// months out) were therefore the same employer, and the second entry's title
+/// was reported as drift from the first's — a Critical-adjacent Warning on a
+/// document byte-identical to its source.
+///
+/// `documents::evidence::GEOGRAPHY_TOKENS` cannot save this: "Remote" is not a
+/// place, and no gazetteer covers every city. The fix is to stop asking the
+/// question of the raw label — `split_entry` already knows which segment is the
+/// company.
+#[test]
+fn title_drift_does_not_match_employers_on_a_shared_location_or_month() {
+    // "Remote" is a column every second entry line carries.
+    let remote = "EXPERIENCE\n\n\
+                  Senior Engineer | Acme Payments | Remote | 2019 - 2022\n\
+                  - Shipped Docker containers to production\n\n\
+                  Product Manager | Globex Logistics | Remote | 2015 - 2018\n\
+                  - Ran the reporting service\n";
+    silent(
+        &report_for(remote, remote, EN_JOB_AD, &[]),
+        CONSISTENCY_TITLE_DRIFT,
+    );
+
+    // A spelled-out month survives the digit filter the shared-year case relies
+    // on, so it matched two unrelated employers just as readily.
+    let months = "EXPERIENCE\n\n\
+                  Senior Engineer | Acme Payments | January 2019 - December 2022\n\
+                  - Shipped Docker containers to production\n\n\
+                  Product Manager | Globex Logistics | January 2015 - December 2018\n\
+                  - Ran the reporting service\n";
+    silent(
+        &report_for(months, months, EN_JOB_AD, &[]),
+        CONSISTENCY_TITLE_DRIFT,
+    );
+
+    // The guard: the check still does its job when the employer really IS the
+    // same one and the generated document renamed the role.
+    let source = "EXPERIENCE\n\n\
+                  Senior Engineer | Acme Payments | Remote | 2019 - 2022\n\
+                  - Shipped Docker containers to production\n";
+    let renamed = "EXPERIENCE\n\n\
+                   Product Manager | Acme Payments | Remote | 2019 - 2022\n\
+                   - Shipped Docker containers to production\n";
+    let report = report_for(renamed, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, CONSISTENCY_TITLE_DRIFT);
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("Senior Engineer → Product Manager")
+    );
+}
+
+/// R10-F3 — the section-level carve-out (R5-F1) forgave a wholly-cut PROJECTS
+/// section but not a single trimmed ENTRY, so a résumé trimmed from three
+/// projects to two drew a `factual.altered_project_link` Critical per link on
+/// the dropped entry. Same false-positive class, same commonest edit there is.
+#[test]
+fn a_trimmed_project_entry_is_not_an_altered_link() {
+    let head = "EXPERIENCE\n\n\
+                Acme Payments | 2021 - Present\n\
+                - Shipped Docker containers to production\n\n\
+                PROJECTS\n\n";
+    let ledger = "**Ledger CLI** · https://github.com/janedoe/ledger\nRust · SQLite\n\n";
+    let invoices =
+        "**Invoice Parser** · https://github.com/janedoe/invoices\nPython · Tesseract\n\n";
+    let routes = "**Route Planner** · https://github.com/janedoe/routes\nGo · PostgreSQL\n";
+
+    let source = format!("{head}{ledger}{invoices}{routes}");
+    let trimmed = format!("{head}{ledger}{invoices}");
+    silent(
+        &report_for(&trimmed, &source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+
+    // The guard, and the reason this is entry-scoped rather than switched off:
+    // an entry the document KEPT must still match its own link exactly. A
+    // changed link surfaces as one drop plus one invention.
+    let rehosted =
+        "**Invoice Parser** · https://github.com/someone-else/invoices\nPython · Tesseract\n\n";
+    let altered = format!("{head}{ledger}{rehosted}{routes}");
+    let report = report_for(&altered, &source, EN_JOB_AD, &[]);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_ALTERED_PROJECT_LINK)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert_eq!(
+        evidence,
+        vec![
+            "https://github.com/janedoe/invoices",
+            "https://github.com/someone-else/invoices"
+        ],
+        "a surviving entry's changed link is still a drop plus an invention"
+    );
+
+    // …and a link the source never carried at all is still an invention, even
+    // when it arrives on an entry that is itself new.
+    let invented = format!("{head}{ledger}{invoices}{routes}\
+                            **Fleet Dashboard** · https://github.com/someone-else/fleet\nTypeScript · D3\n");
+    let report = report_for(&invented, &source, EN_JOB_AD, &[]);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_ALTERED_PROJECT_LINK)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert_eq!(evidence, vec!["https://github.com/someone-else/fleet"]);
+}
+
+/// R10-F4 — [`is_bare_phone_line`] ran on BOTH sides of the metric comparison,
+/// so the SOURCE lost every bare-numeric line from its sourced whitelist. A
+/// figure the candidate wrote on a line of its own — the shape a table-extracted
+/// PDF produces — could no longer vouch for its own restatement, which is an
+/// ACCUSATION channel, and it broke the stated `MetricSide` invariant that the
+/// source side reads strictly more than the claims side.
+#[test]
+fn a_figure_alone_on_a_source_line_still_sources_its_restatement() {
+    let source = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                  - Refunds processed in the first quarter after the rewrite:\n\
+                  1 200 000\n";
+    let restated = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                    - Processed 1,200,000 refunds in the first quarter after the rewrite\n";
+    silent(
+        &report_for(restated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The claims side is unchanged — a number-only line still makes no claim,
+    // so a figure the source never states is still a Critical.
+    let fabricated = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                      - Processed 9,400,000 refunds in the first quarter after the rewrite\n";
+    let report = report_for(fabricated, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("9,400,000"));
+
+    // The source side is widened in the BODY only, not wholesale: a bare number
+    // in the contact band is still contact details and still cannot vouch for a
+    // claim. That half lives in
+    // `a_number_alone_on_a_line_is_a_phone_number_not_three_claims`
+    // (direction 3), which a "claims side only" fix would have turned red —
+    // which is why this rule is scoped by band rather than by side alone.
+}
