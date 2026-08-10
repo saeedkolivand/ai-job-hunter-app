@@ -197,14 +197,25 @@ pub(super) fn build_complete_body(
 /// auto-normalizes a truncated-dimension embedding (verified in the live
 /// Gemini API docs), so this needs no extra normalization step on our side.
 ///
-/// **Nesting matters — and is now self-verifying, not just argued from docs.**
-/// The REST reference for `models.embedContent` lists a TOP-LEVEL
-/// `outputDimensionality` field as `(deprecated)`, and `EmbedContentConfig`'s
-/// own JSON representation gives the nested field name as `outputDimensionality`
-/// (camelCase) — this shape has been read from the live reference twice now
-/// by two different reviewers who reached opposite conclusions, which is
-/// exactly the failure mode "trust whoever read the docs last" has. Rather
-/// than argue it a third time: proto3-JSON transcoding tolerates an unknown
+/// **Nesting matters — settled against the machine-readable API surface, not
+/// against prose.** Three reviewers have now read the rendered REST reference
+/// for `models.embedContent` and reached two different conclusions, so the
+/// citation of record is the v1beta DISCOVERY DOCUMENT
+/// (`https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta`,
+/// revision `20260806`), which is what the endpoint actually validates
+/// against:
+///
+/// - `EmbedContentRequest.embedContentConfig` → `$ref: EmbedContentConfig`,
+///   with no deprecation marker. **This is the field below.**
+/// - `EmbedContentRequest.outputDimensionality` → `"deprecated": true`,
+///   *"Deprecated: Please use EmbedContentConfig.output_dimensionality
+///   instead."* — i.e. moving this field UP one level (the recurring review
+///   suggestion) targets the deprecated location, not the current one.
+/// - `EmbedContentConfig.outputDimensionality` → `integer`/`int32`; camelCase
+///   is the proto-JSON name, so no `output_dimensionality` snake spelling.
+///
+/// Belt and braces, because a doc revision can still move underneath us:
+/// proto3-JSON transcoding tolerates an unknown
 /// or misplaced field with NO error, so a wrong nesting here would silently
 /// return the model's full default dimension instead of
 /// [`EMBED_OUTPUT_DIMENSIONALITY`] — `embed_impl` checks the ACTUAL returned

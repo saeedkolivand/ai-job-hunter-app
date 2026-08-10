@@ -256,6 +256,95 @@ fn has_untranslatable_keyword(schema: &Value, depth: usize) -> bool {
     }
 }
 
+/// The ONLY JSON Schema keywords OpenAI's strict `json_schema` mode accepts —
+/// its "Supported types" + "Supported properties" lists verbatim
+/// (`platform.openai.com/docs/guides/structured-outputs`, read 2026-08-10),
+/// plus the structural keys [`strictify`] itself writes. Strict mode is an
+/// ALLOWLIST at the vendor: an unlisted keyword is not ignored, it 400s the
+/// whole request ("If you turn on Structured Outputs by supplying
+/// `strict: true` and call the API with an unsupported JSON Schema, you will
+/// receive an error" — e.g. `'minLength' is not permitted`).
+///
+/// `title` is not in that doc list but is provably accepted: every
+/// Pydantic-generated schema carries one on every model and field, and
+/// OpenAI's own `_ensure_strict_json_schema` helper (the blessed strict-mode
+/// input path) leaves it in place.
+///
+/// Deliberately NOT listed even though OpenAI documents them: `anyOf`, `$ref`
+/// and `$defs`. [`COMPOSITION_KEYWORDS`] already degrades those one filter
+/// earlier for cross-provider consistency, so listing them here would be dead
+/// — and if that filter ever went away, this list would keep failing them in
+/// the safe direction rather than letting [`strictify`] stamp `strict: true`
+/// over a subtree it never walked.
+///
+/// Under-listing costs a degrade to `json_object` (the shape is still asked
+/// for, by the directive + filled example, just not decoder-constrained);
+/// over-listing costs a 400 with no degrade at all. Anything ambiguous
+/// therefore stays off the list.
+const OPENAI_STRICT_KEYWORDS: &[&str] = &[
+    // Structure — the three the caller writes plus the two `strictify` adds.
+    "additionalProperties",
+    "items",
+    "properties",
+    "required",
+    "type",
+    // Annotations OpenAI's own examples/SDK path carry.
+    "description",
+    "enum",
+    "title",
+    // Documented `string` constraints.
+    "format",
+    "pattern",
+    // Documented `number` constraints.
+    "exclusiveMaximum",
+    "exclusiveMinimum",
+    "maximum",
+    "minimum",
+    "multipleOf",
+    // Documented `array` constraints.
+    "maxItems",
+    "minItems",
+];
+
+/// Whether every schema node [`strictify`] will emit carries ONLY
+/// [`OPENAI_STRICT_KEYWORDS`] — the OpenAI-side mirror of
+/// [`has_untranslatable_keyword`], and the reason a schema written for another
+/// provider's dialect degrades instead of 400ing.
+///
+/// Rides along with [`strictify`]'s OWN walk (`properties` values + `items`)
+/// rather than scanning the raw [`Value`] tree the way
+/// [`has_untranslatable_keyword`] does, because here the distinction matters:
+/// the KEYS of a `properties` map are the caller's field names, not keywords,
+/// and a blind tree scan would degrade every schema that has a field called
+/// anything at all.
+///
+/// Stripping the offending keyword instead was the tempting alternative and is
+/// the worse one: it would silently ship a WEAKER constraint than the caller
+/// wrote (the `min_length` that stops being enforced is invisible in the
+/// response), which is exactly what [`gemini_response_schema`] refuses to do
+/// on its own side. Degrading the whole schema is the honest failure.
+fn openai_strict_keywords_only(schema: &Value, depth: usize) -> bool {
+    if depth > MAX_SCHEMA_DEPTH {
+        return false;
+    }
+    let Some(obj) = schema.as_object() else {
+        return true;
+    };
+    obj.keys()
+        .all(|key| OPENAI_STRICT_KEYWORDS.contains(&key.as_str()))
+        && obj
+            .get("properties")
+            .and_then(Value::as_object)
+            .is_none_or(|props| {
+                props
+                    .values()
+                    .all(|value| openai_strict_keywords_only(value, depth + 1))
+            })
+        && obj
+            .get("items")
+            .is_none_or(|items| openai_strict_keywords_only(items, depth + 1))
+}
+
 /// OpenAI's `response_format`: strict `json_schema` when the caller supplied
 /// an object-rooted schema, else plain `json_object` mode (which constrains
 /// only "is JSON", relying on the directive + hint for the shape).
@@ -266,12 +355,14 @@ fn has_untranslatable_keyword(schema: &Value, depth: usize) -> bool {
 /// rather than 400ing on a schema that is otherwise perfectly valid. A
 /// non-object root can't be strict-mode'd at all (OpenAI requires a root
 /// object), so it degrades to `json_object` instead of being rejected — and so
-/// does a schema nested past [`MAX_SCHEMA_DEPTH`] or carrying a
-/// [`COMPOSITION_KEYWORDS`] entry [`strictify`] cannot close.
+/// does a schema nested past [`MAX_SCHEMA_DEPTH`], one carrying a
+/// [`COMPOSITION_KEYWORDS`] entry [`strictify`] cannot close, and one carrying
+/// any keyword outside [`OPENAI_STRICT_KEYWORDS`].
 pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
     match schema
         .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
         .filter(|s| !has_untranslatable_keyword(s, 0))
+        .filter(|s| openai_strict_keywords_only(s, 0))
         .and_then(|schema| strictify(schema, 0))
     {
         Some(schema) => json!({
@@ -796,6 +887,122 @@ mod tests {
             json!("json_schema")
         );
         assert!(gemini_response_schema(&plain).is_some());
+    }
+
+    #[test]
+    fn openai_response_format_degrades_on_a_keyword_strict_mode_does_not_permit() {
+        // Same hazard class as the composition keywords above, one level down:
+        // `strictify` copies every keyword it doesn't understand VERBATIM into
+        // a `strict: true` schema, and OpenAI's strict mode is an allowlist at
+        // the vendor — an unlisted keyword 400s the whole request ("'minLength'
+        // is not permitted") with no degrade anywhere. `minLength`/
+        // `minProperties` are the realistic case rather than a hypothetical:
+        // both are `GEMINI_KEPT_KEYWORDS` entries, so a schema written for this
+        // codebase's OTHER native path carries them. Mutation check: drop the
+        // `openai_strict_keywords_only` filter in `openai_response_format` and
+        // every assertion in this loop fails.
+        for (label, schema) in [
+            (
+                "a string constraint outside the documented subset",
+                json!({
+                    "type": "object",
+                    "properties": { "id": { "type": "string", "minLength": 4 } },
+                }),
+            ),
+            (
+                "an object constraint outside the documented subset",
+                json!({
+                    "type": "object",
+                    "minProperties": 1,
+                    "properties": { "id": { "type": "string" } },
+                }),
+            ),
+            (
+                "a documented-unsupported conditional",
+                json!({
+                    "type": "object",
+                    "properties": { "n": { "type": "integer" } },
+                    "if": { "type": "object" },
+                    "then": { "type": "object" },
+                }),
+            ),
+            (
+                "a documented-unsupported dependency",
+                json!({
+                    "type": "object",
+                    "properties": { "n": { "type": "integer" } },
+                    "dependentRequired": { "n": ["m"] },
+                }),
+            ),
+            (
+                "an unsupported keyword nested under an array's items",
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "tags": {
+                            "type": "array",
+                            "items": { "type": "string", "maxLength": 8 },
+                        },
+                    },
+                }),
+            ),
+        ] {
+            assert_eq!(
+                openai_response_format(Some(&schema)),
+                json!({ "type": "json_object" }),
+                "{label} must degrade, not ship inside `strict: true`"
+            );
+        }
+    }
+
+    #[test]
+    fn openai_response_format_keeps_every_documented_strict_mode_constraint() {
+        // The other half of the allowlist: degrading is only honest if the
+        // subset OpenAI DOES document still reaches the decoder. Every keyword
+        // here is from the live "Supported properties" list, and each one is
+        // asserted to survive `strictify` verbatim — the guard must never
+        // become "strip the constraint and ship anyway", which weakens
+        // validation invisibly.
+        let schema = json!({
+            "type": "object",
+            "title": "Result",
+            "description": "an ATS verdict",
+            "properties": {
+                "id": { "type": "string", "pattern": "^[A-Z]{2}-\\d+$" },
+                "kind": { "type": "string", "enum": ["ats", "manual"] },
+                "seen": { "type": "string", "format": "date-time" },
+                "score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "multipleOf": 5,
+                },
+                "ratio": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 1,
+                },
+                "tags": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": { "type": "string" },
+                },
+            },
+        });
+        let format = openai_response_format(Some(&schema));
+        assert_eq!(format["type"], json!("json_schema"));
+        let out = &format["json_schema"]["schema"];
+        assert_eq!(out["title"], json!("Result"));
+        assert_eq!(out["properties"]["id"]["pattern"], json!("^[A-Z]{2}-\\d+$"));
+        assert_eq!(out["properties"]["kind"]["enum"], json!(["ats", "manual"]));
+        assert_eq!(out["properties"]["seen"]["format"], json!("date-time"));
+        assert_eq!(out["properties"]["score"]["multipleOf"], json!(5));
+        assert_eq!(out["properties"]["ratio"]["exclusiveMaximum"], json!(1));
+        assert_eq!(out["properties"]["tags"]["maxItems"], json!(5));
+        // …and the strict-mode requirements are still added on top.
+        assert_eq!(out["additionalProperties"], json!(false));
+        assert_eq!(out["properties"]["tags"]["items"]["type"], json!("string"));
     }
 
     #[test]

@@ -403,9 +403,13 @@ fn embed_body_requests_the_reduced_output_dimensionality() {
     // Without this, gemini-embedding-2 defaults to 3072 dims (4x the
     // retired text-embedding-004's 768), quadrupling stored-vector size
     // for no accuracy benefit this app uses. Must be NESTED inside
-    // `embedContentConfig` (camelCase) — the top-level `outputDimensionality`
-    // field is deprecated per the live REST reference and may be silently
-    // ignored.
+    // `embedContentConfig` (camelCase): the v1beta discovery document
+    // (revision 20260806) marks `EmbedContentRequest.outputDimensionality`
+    // `"deprecated": true` — *"Please use
+    // EmbedContentConfig.output_dimensionality instead"* — while
+    // `embedContentConfig` carries no such marker. See `build_embed_body`'s
+    // doc comment; "move it up one level" is a recurring review suggestion
+    // that targets the DEPRECATED location.
     let body = build_embed_body("gemini-embedding-2", "hello");
     assert_eq!(
         body["embedContentConfig"]["outputDimensionality"],

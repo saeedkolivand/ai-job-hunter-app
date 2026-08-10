@@ -395,6 +395,47 @@ fn version_needles_are_boundary_aware_not_raw_substring() {
 }
 
 #[test]
+fn version_needles_reject_a_needle_glued_to_a_neighbouring_component() {
+    // The trailing-DIGIT-only boundary above left the same collision reachable
+    // from the other two sides, and both fail OPEN — an unrecognized id
+    // silently classified as a known family, the one direction these gates
+    // promise they never fail in. Mutation check: restore the
+    // `!b.is_ascii_digit()` suffix-only check in `contains_version_needle` and
+    // every assertion here fails.
+    //
+    // 1. A glued PREFIX: "notopus-4-5" contains "opus-4-5" outright.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "claude-notopus-4-5"
+    ));
+    assert!(!anthropic_uses_adaptive_thinking("claude-notopus-5"));
+    assert!(!anthropic_supports_effort("claude-notopus-4-5"));
+    // 2. A glued non-digit SUFFIX: only a digit used to be rejected.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "claude-sonnet-4-5alpha"
+    ));
+    assert!(!anthropic_uses_adaptive_thinking("claude-opus-5x"));
+    // 3. Both at once.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "xclaude-notopus-4-5beta"
+    ));
+
+    // …while every SEPARATOR a real id uses still matches: the dash-dated
+    // form, a Bedrock-style dotted vendor id (dots fold to dashes), a Vertex
+    // `@`-suffixed one, and an OpenRouter vendor prefix.
+    for model in [
+        "claude-sonnet-4-5-20250929",
+        "anthropic.claude-opus-4-5-v1:0",
+        "claude-opus-4-5@20251101",
+        "anthropic/claude-opus-4-5",
+    ] {
+        assert!(
+            super::anthropic_supports_structured_outputs(model),
+            "{model} is a real id shape and must still match its needle"
+        );
+    }
+}
+
+#[test]
 fn legacy_pre_thinking_models_keep_temperature_despite_matching_neither_gate() {
     // These also match neither `anthropic_supports_thinking` nor
     // `anthropic_uses_adaptive_thinking` (they predate thinking entirely)

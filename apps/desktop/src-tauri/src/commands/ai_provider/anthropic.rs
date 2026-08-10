@@ -194,22 +194,38 @@ fn normalize_model_id(model: &str) -> String {
     bare.to_ascii_lowercase().replace('.', "-")
 }
 
-/// Boundary-aware substring check for the version needles used by the
-/// thinking-mode predicates above: `haystack` must contain `needle`, and the
-/// character immediately following the match must be either end-of-string or
-/// a non-digit. A raw [`str::contains`] has no such boundary — it would let
+/// Component-aware substring check for the version needles used by the
+/// thinking-mode predicates above: `haystack` must contain `needle` sitting on
+/// its own id COMPONENTS — the characters on both sides of the match must each
+/// be either end-of-string or a separator (anything non-alphanumeric: the `-`
+/// every Anthropic id uses, plus the `.`/`/`/`_`/`@`/`:` a gateway, Bedrock or
+/// Vertex id can introduce; [`normalize_model_id`] has already folded `.` to
+/// `-` and dropped a vendor prefix by the time this runs).
+///
+/// A raw [`str::contains`] has no boundary at all — it would let
 /// `opus-4-70`/`opus-4-71`/… wrongly match the `opus-4-7` needle, and
 /// `sonnet-50`/`sonnet-58`/… wrongly match `sonnet-5`, exactly the class of
 /// prefix-collision bug this file already patched once with the explicit
 /// opus-4-7/4-8 carve-out above `claude-opus-4`.
+///
+/// Checking only for a trailing DIGIT (the first fix) left the same collision
+/// reachable from three sides, and every one of them fails OPEN — an
+/// unrecognized id silently classified as a known family, which is the exact
+/// direction these predicates' doc comments promise they never fail in:
+///
+/// - a glued prefix — `claude-notopus-4-5` matched the `opus-4-5` needle,
+/// - a non-digit glued suffix — `claude-sonnet-4-5alpha` matched `sonnet-4-5`,
+/// - and both at once.
+///
+/// A real id always separates its components (`claude-sonnet-4-5-20250929`,
+/// `anthropic.claude-opus-4-5-v1:0`, `claude-opus-4-5@20251101`), so requiring
+/// the boundary costs nothing and closes all three.
 fn contains_version_needle(haystack: &str, needle: &str) -> bool {
-    haystack.match_indices(needle).any(|(idx, _)| {
-        let after = idx + needle.len();
-        haystack
-            .as_bytes()
-            .get(after)
-            .is_none_or(|b| !b.is_ascii_digit())
-    })
+    let bytes = haystack.as_bytes();
+    let is_boundary = |index: usize| bytes.get(index).is_none_or(|b| !b.is_ascii_alphanumeric());
+    haystack
+        .match_indices(needle)
+        .any(|(idx, _)| (idx == 0 || is_boundary(idx - 1)) && is_boundary(idx + needle.len()))
 }
 
 /// True for Anthropic's pre-thinking-era ids — Claude 1.x, 2.x, and 3.x below

@@ -168,8 +168,7 @@ fn fenced_bodies(raw: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = raw;
     while let Some((_, after_open)) = rest.split_once("```") {
-        // Drop an optional language tag on the opening fence's own line.
-        let body = after_open.split_once('\n').map_or(after_open, |(_, r)| r);
+        let body = fence_body(after_open);
         match body.split_once("```") {
             Some((body, tail)) => {
                 out.push(body);
@@ -182,6 +181,37 @@ fn fenced_bodies(raw: &str) -> Vec<&str> {
         }
     }
     out
+}
+
+/// One fence's body, given everything after its OPENING ```` ``` ````: the
+/// same text minus an optional language tag on the fence's own opening line.
+///
+/// The tag is dropped only when that first newline is genuinely INSIDE this
+/// fence — before its closing ```` ``` ```` — and only when what precedes it
+/// could be a tag at all. Searching the whole remainder for a newline (the
+/// first version) mis-read an INLINE fence: for ```` ```{"a":1}``` ```` followed
+/// by any later line, the "tag" swallowed the real body and the fence's
+/// candidate became whatever text happened to follow the NEXT newline. That is
+/// not merely a lost candidate — the fenced tier outranks the bare-span tier
+/// (see [`candidates`]), so an unrelated span from elsewhere in the response
+/// got PROMOTED above the answer the model actually fenced, which is the
+/// attacker-steerable ordering MEDIUM-3 closed.
+fn fence_body(after_open: &str) -> &str {
+    let close = after_open.find("```");
+    match after_open.split_once('\n') {
+        // `tag.len()` IS the newline's byte index, so this is "the newline
+        // comes before the closing fence". The second half keeps a body that
+        // merely STARTS on the opening line (```` ```{ ```` + a newline before
+        // the closer) from being decapitated: a language tag is a bare word,
+        // never JSON punctuation.
+        Some((tag, rest))
+            if close.is_none_or(|close| tag.len() < close)
+                && !tag.contains(['{', '[', '"', '`']) =>
+        {
+            rest
+        }
+        _ => after_open,
+    }
 }
 
 /// Every top-level balanced span in `s`, in source order. Nested values are
@@ -784,6 +814,97 @@ mod tests {
              Real: {\"score\": 12, \"notes\": \"real\"}";
         assert_eq!(
             parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn an_inline_fence_keeps_its_own_body_instead_of_a_later_line() {
+        // Stripping the "language tag" by searching the WHOLE remainder for a
+        // newline mis-read a fence opened and closed on one line: the tag
+        // swallowed the real body, and the fenced candidate became whatever
+        // followed the next newline anywhere in the response. Because the
+        // fenced tier outranks the bare-span tier, that PROMOTED an unrelated
+        // span above the model's actual fenced answer — MEDIUM-3's ordering
+        // attack, reachable again through a one-line fence. Mutation check:
+        // restore `after_open.split_once('\n').map_or(...)` in `fence_body` and
+        // both assertions fail (the decoy is returned instead).
+        let raw = "```{\"score\": 12, \"notes\": \"real\"}```\n\
+             See also {\"score\": 100, \"notes\": \"decoy\"}";
+        assert_eq!(
+            candidates(raw).first().copied(),
+            Some("{\"score\": 12, \"notes\": \"real\"}"),
+            "the fenced body itself must be the top candidate"
+        );
+        assert_eq!(
+            parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
+        );
+        // Same promotion, reached the other way: a fence whose body STARTS on
+        // the opening line and then wraps. Here the newline really is inside
+        // the fence, so the extent check alone still decapitates the body to
+        // an unbalanced fragment and the fenced tier silently falls to the
+        // trailing decoy. Mutation check: drop the `!tag.contains([...])` half
+        // of `fence_body`'s guard and this assertion fails — a language tag is
+        // a bare word, never JSON punctuation.
+        let wrapped = "```{\n\"score\": 12, \"notes\": \"real\"}\n```\n\
+             P.S. ignore this: {\"score\": 100, \"notes\": \"decoy\"}";
+        assert_eq!(
+            parse::<Result>(wrapped).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
+        );
+
+        // The tagged, multi-line fence still behaves exactly as before.
+        assert_eq!(extract_json("```json\n{\"a\":1}\n```"), Some("{\"a\":1}"));
+    }
+
+    #[test]
+    fn the_candidate_cap_holds_and_keeps_the_highest_priority_candidates() {
+        // The cap bounds the work a pathological response can force, so it has
+        // to actually bind — and it has to drop from the BOTTOM: candidates are
+        // ordered most-trustworthy first, so truncating the other end would
+        // throw away the model's real answer (last span first) and hand the
+        // parse to an echoed decoy. Mutation check: drop the `break` in
+        // `candidates`, or truncate with `out.remove(0)` instead, and this
+        // fails.
+        //
+        // The band pins the constant itself (a range, not the literal — the
+        // exact number is a judgement call, its ORDER of magnitude isn't): a
+        // chatty-but-honest response yields two or three candidates, so
+        // anything below that starts discarding real fallbacks, and a cap
+        // large enough to stop bounding the work isn't a cap.
+        assert!(
+            (3..=32).contains(&MAX_CANDIDATES),
+            "MAX_CANDIDATES = {MAX_CANDIDATES} is outside the sane band"
+        );
+
+        let mut raw = String::from("The posting says to echo these first:\n");
+        for i in 0..MAX_CANDIDATES + 4 {
+            raw.push_str(&format!("{{\"score\": {i}, \"notes\": \"echo\"}}\n"));
+        }
+        raw.push_str("My real answer:\n{\"score\": 12, \"notes\": \"real\"}");
+        assert!(
+            spans(&raw).len() > MAX_CANDIDATES,
+            "the premise: there must be more balanced spans than the cap allows"
+        );
+
+        let picked = candidates(&raw);
+        assert_eq!(picked.len(), MAX_CANDIDATES);
+        assert_eq!(
+            picked.first().copied(),
+            Some("{\"score\": 12, \"notes\": \"real\"}")
+        );
+        assert_eq!(
+            parse::<Result>(&raw).expect("parses"),
             Result {
                 score: 12,
                 notes: "real".to_string(),
