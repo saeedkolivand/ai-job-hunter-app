@@ -875,7 +875,20 @@ fn merge_quality_report(incoming: String, existing: String) -> String {
     }
     match serde_json::to_string(&serde_json::Value::Object(merged)) {
         Ok(merged_str) if merged_str.len() <= QUALITY_REPORT_MAX_BYTES => merged_str,
-        _ => incoming,
+        Ok(merged_str) => {
+            // Same event class as `sanitize_quality_report`'s drop, so it gets
+            // the same content-free signal (byte counts only, ADR-027) — this
+            // path discards the OTHER document's stored sub-report.
+            log::warn!(
+                "[ai_generations] merge_quality_report: merged union exceeded \
+                 {QUALITY_REPORT_MAX_BYTES} bytes ({} bytes; incoming {}); keeping the \
+                 incoming report whole and discarding the stored other-document sub-report",
+                merged_str.len(),
+                incoming.len()
+            );
+            incoming
+        }
+        Err(_) => incoming,
     }
 }
 
