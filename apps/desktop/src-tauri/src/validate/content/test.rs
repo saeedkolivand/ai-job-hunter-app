@@ -434,7 +434,10 @@ fn empty_or_garbled_job_ad_silences_posting_comparisons() {
             report.metrics.keyword_coverage, None,
             "no extractable posting keywords must yield None, not 0% (job_ad={job_ad:?})"
         );
-        assert_eq!(report.metrics.top_requirement_hits, 0);
+        assert_eq!(
+            report.metrics.top_requirement_hits, None,
+            "an uncomparable posting measures nothing — None, never a confident 0"
+        );
         for code in [ALIGNMENT_LOW_COVERAGE, ALIGNMENT_MISSING_TOP_REQUIREMENT] {
             assert!(
                 !codes(&report).contains(&code),
@@ -1101,7 +1104,7 @@ fn missing_top_requirement_fires_only_when_the_source_had_the_evidence() {
     // Still present in the output → counted as a hit, not an issue.
     let report = report_for(source, source, job, &evidenced);
     silent(&report, ALIGNMENT_MISSING_TOP_REQUIREMENT);
-    assert_eq!(report.metrics.top_requirement_hits, 1);
+    assert_eq!(report.metrics.top_requirement_hits, Some(1));
 }
 
 #[test]
@@ -1843,7 +1846,7 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
         ],
         metrics: ContentMetrics {
             keyword_coverage: None,
-            top_requirement_hits: 3,
+            top_requirement_hits: Some(3),
             duplicate_ratio: 0.25,
             roles_source: 2,
             roles_output: 1,
@@ -1883,10 +1886,20 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
     assert_eq!(value["issues"][0]["severity"], "critical");
     assert_eq!(value["issues"][1]["severity"], "warning");
 
-    // The three nullable fields are PRESENT and null, never absent.
+    // The four nullable fields are PRESENT and null, never absent.
     assert!(value["issues"][0]["section"].is_null());
     assert!(value["issues"][0]["evidence"].is_null());
     assert!(value["metrics"]["keywordCoverage"].is_null());
+    assert_eq!(value["metrics"]["topRequirementHits"], 3);
+    let unmeasured = serde_json::to_value(ContentMetrics {
+        top_requirement_hits: None,
+        ..Default::default()
+    })
+    .expect("metrics must serialize");
+    assert!(
+        unmeasured["topRequirementHits"].is_null(),
+        "an unmeasured hit count is present-and-null, matching `number | null` in TS"
+    );
     assert_eq!(value["issues"][1]["section"], "Experience");
     assert_eq!(value["issues"][1]["evidence"], "40% vs 60%");
     assert_eq!(value["issues"][1]["code"], ALIGNMENT_LOW_COVERAGE);
@@ -2180,7 +2193,43 @@ fn factual_and_alignment_thresholds_are_pinned() {
     assert_eq!(alignment::TOP_REQUIREMENT_MATCH_RATIO, 0.5);
     assert_eq!(alignment::MIN_COVERAGE_DROP_POINTS, 5.0);
     assert_eq!(consistency::MAX_PROJECT_DESCRIPTION_LINES, 3);
+    assert_eq!(consistency::MAX_SKILLS_LABEL_WORDS, 3);
     assert_eq!(MIN_CHARS_FOR_LANGUAGE_CHECK, 120);
+}
+
+/// The skills-label strip must BITE at its boundary and stop there: a short
+/// `Category:` head is dropped, a long one is prose whose content still counts
+/// as a claim. Pinning the number without pinning its effect is how a threshold
+/// silently starts eating real skills.
+#[test]
+fn skills_label_strip_boundary_behaves() {
+    // A three-word label is stripped, so nothing in front of the colon is a
+    // claim …
+    let labelled = EN_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Everyday programming languages: Rust, Python\n\
+         Docker, Kubernetes, PostgreSQL, AWS, Terraform, Redis",
+    );
+    silent(
+        &report_for(&labelled, EN_SOURCE, EN_JOB_AD, &[]),
+        CONSISTENCY_SKILL_NOT_DEMONSTRATED,
+    );
+
+    // … while a head too long to be a label keeps counting: this one really
+    // does claim a skill nothing demonstrates, and must still be reported.
+    let prose = EN_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Shipped four platform services on Elasticsearch: Rust, Python, Docker, \
+         Kubernetes, PostgreSQL, AWS, Terraform, Redis",
+    );
+    let report = report_for(&prose, EN_SOURCE, EN_JOB_AD, &[]);
+    let hits = fired(&report, CONSISTENCY_SKILL_NOT_DEMONSTRATED);
+    assert!(
+        hits.iter()
+            .any(|i| i.evidence.as_deref() == Some("elasticsearch")),
+        "a claim in front of a long head is still a claim; got {:?}",
+        hits.iter().map(|i| &i.evidence).collect::<Vec<_>>()
+    );
 }
 
 /// The duplicate threshold must actually BITE at its boundary: a pair just
@@ -2272,26 +2321,35 @@ fn language_normalization_strips_control_characters() {
 // `ai_tell_prose` / `template_openers`), never its private constants, so they
 // stay valid across regeneration.
 
-/// An unknown language falls back to English, exactly like
-/// `normalizeLanguageCode` on the prompt side — never to an empty list, which
-/// would silently disable the whole check.
+/// An UNCURATED language gets an empty list, never the English one.
+///
+/// The generated module's own contract (see its header): `natural-voice.ts`
+/// hands a language with no curated list a generic, WORDLESS directive
+/// (`genericAntiAiTellLexical`/`genericAntiAiTellProse`), so checking French
+/// output against English words would flag phrasing the prompt never asked it
+/// to avoid — accusing without evidence, the same rule
+/// `documents::evidence::has_curated_function_words` enforces for the ATS
+/// density ceiling. This test asserted the OLD English-fallback behaviour and
+/// was left stale by the regeneration that changed it.
 #[test]
-fn lexicon_unknown_language_falls_back_to_english() {
+fn lexicon_uncurated_language_gets_no_list_rather_than_english() {
     let en_lexical = lexicon::ai_tell_lexical("en");
-    let en_prose = lexicon::ai_tell_prose("en");
-    let en_openers = lexicon::template_openers("en");
-    for lang in ["fr", "zz", "", "EN"] {
-        assert_eq!(
-            lexicon::ai_tell_lexical(lang),
-            en_lexical,
-            "{lang} must fall back to the English lexicon"
+    assert!(!en_lexical.is_empty(), "English is curated");
+    assert!(!lexicon::ai_tell_lexical("de").is_empty(), "German is too");
+    for lang in ["fr", "es", "it", "nl", "pt", "zz", ""] {
+        assert!(
+            lexicon::ai_tell_lexical(lang).is_empty(),
+            "{lang} has no curated lexicon — it must not borrow English's"
         );
-        assert_eq!(lexicon::ai_tell_prose(lang), en_prose);
-        assert_eq!(lexicon::template_openers(lang), en_openers);
+        assert!(lexicon::ai_tell_prose(lang).is_empty());
+        assert!(lexicon::template_openers(lang).is_empty());
     }
     // German is a genuinely different list, not just a fallback alias.
     assert_ne!(lexicon::ai_tell_lexical("de"), en_lexical);
-    assert_ne!(lexicon::template_openers("de"), en_openers);
+    assert_ne!(
+        lexicon::template_openers("de"),
+        lexicon::template_openers("en")
+    );
 }
 
 /// Every entry across every language/tier must be lowercase and non-empty:
@@ -2319,3 +2377,238 @@ fn lexicon_every_entry_is_lowercase_and_non_empty() {
         }
     }
 }
+
+// ── PR #963 round-5 findings ────────────────────────────────────────────────
+
+/// `EN_CLEAN` with its whole `PROJECTS` block cut out — the shape a length trim
+/// produces. Built here rather than as a fixture file so it stays exactly one
+/// edit from the clean fixture no matter how that fixture evolves.
+fn en_clean_without_projects() -> String {
+    let (head, rest) = EN_CLEAN
+        .split_once("PROJECTS")
+        .expect("the clean fixture has a PROJECTS section");
+    let (_, tail) = rest
+        .split_once("SKILLS")
+        .expect("SKILLS follows PROJECTS in the clean fixture");
+    format!("{head}SKILLS{tail}")
+}
+
+/// R5-F1 — dropping the Projects section outright is a legitimate tailoring
+/// decision (the commonest one: a length trim), not an altered link. Comparing
+/// an ABSENT section against the source's links raised one
+/// `factual.altered_project_link` **Critical per source link** on a document
+/// that changed nothing else — three Criticals for one editorial choice.
+#[test]
+fn a_dropped_projects_section_is_not_an_altered_link() {
+    let generated = en_clean_without_projects();
+    assert!(
+        !generated.contains("ledger.example.dev"),
+        "the section really is gone"
+    );
+    let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &en_requirements());
+    silent(&report, FACTUAL_ALTERED_PROJECT_LINK);
+
+    // …while a document that KEEPS the section and rewrites a link still fires.
+    fired(
+        &en_resume(EN_ALTERED_LINK, &en_requirements()),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+}
+
+/// R5-F2 — the false-positive guard only suppressed when the source's
+/// misdetected tag EQUALLED the generated one, so it failed OPEN for a source
+/// too short to detect (`whatlang` guesses, `is_language_mismatch` goes quiet,
+/// and the guard read that silence as "the source is fine") and for a source
+/// misdetected as some THIRD language. A Critical accusation needs a reliable
+/// premise on BOTH sides.
+#[test]
+fn a_language_critical_needs_a_reliable_source_control() {
+    // Too short for the detector to read at all — cannot decide.
+    let short_source = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\nEngineer | Acme | 2021\n";
+    silent(
+        &report_for(EN_WRONG_LANGUAGE, short_source, EN_JOB_AD, &[]),
+        CONTENT_LANGUAGE_MISMATCH,
+    );
+
+    // A source that reads as a THIRD language: the detector disagrees with the
+    // target on both documents, which is a detector problem, not something the
+    // user can fix by re-generating.
+    silent(
+        &report_for(EN_WRONG_LANGUAGE, FR_RESUME, EN_JOB_AD, &[]),
+        CONTENT_LANGUAGE_MISMATCH,
+    );
+
+    // The real defect — a long English source, a German output — still fires.
+    let real = en_resume(EN_WRONG_LANGUAGE, &en_requirements());
+    let hits = fired(&real, CONTENT_LANGUAGE_MISMATCH);
+    assert_eq!(hits[0].severity, Severity::Critical);
+}
+
+/// R5-F3 — a labelled skills line ("Languages: Rust, Python") is the commonest
+/// skills layout there is, and every one of its CATEGORY LABELS was read as a
+/// claimed skill: "languages", "frameworks", "databases" and "tooling" all
+/// reported as skills the résumé never demonstrates.
+#[test]
+fn skills_category_labels_are_not_claimed_skills() {
+    let generated = EN_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Languages: Rust, Python\nFrameworks: Docker, Kubernetes\n\
+         Databases: PostgreSQL, Redis\nTooling: AWS, Terraform",
+    );
+    let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &en_requirements());
+    let claimed: Vec<String> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    assert!(
+        claimed.is_empty(),
+        "a category label names no skill; got {claimed:?}"
+    );
+}
+
+/// The German half of the same shape — the label is a German noun, so an
+/// English-only stopword list cannot be what saves it.
+#[test]
+fn german_skills_category_labels_are_not_claimed_skills() {
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Programmiersprachen: Rust, Python\n\
+         Werkzeuge: Docker, Kubernetes, AWS, Terraform\n\
+         Datenbanken: PostgreSQL, Redis",
+    );
+    let report = validate_content(&ContentInput {
+        generated: &generated,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let claimed: Vec<String> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    assert!(
+        claimed.is_empty(),
+        "a German category label names no skill either; got {claimed:?}"
+    );
+}
+
+/// R5-F4 — `topRequirementHits` rendered a confident "0" for a posting nobody
+/// could compare against and for a run that was given no requirements at all.
+/// Same class as the letter-metrics fix: an UNMEASURED value must not be
+/// presented as a measurement.
+#[test]
+fn top_requirement_hits_is_unmeasured_rather_than_zero() {
+    let wire = |report: ContentReport| {
+        serde_json::to_value(&report).expect("a report must serialize")["metrics"]
+            ["topRequirementHits"]
+            .clone()
+    };
+
+    // No requirements were supplied — nothing was measured.
+    assert_eq!(en_resume(EN_CLEAN, &[]).metrics.top_requirement_hits, None);
+    assert_eq!(
+        report_for(EN_CLEAN, EN_SOURCE, "   ", &en_requirements())
+            .metrics
+            .top_requirement_hits,
+        None
+    );
+    assert_eq!(
+        en_letter(EN_LETTER_GROUNDED).metrics.top_requirement_hits,
+        None
+    );
+    assert!(
+        wire(en_resume(EN_CLEAN, &[])).is_null(),
+        "no requirements means no measurement"
+    );
+    // …and the OTHER alignment finding is untouched by the metric's absence:
+    // `low_coverage` compares two coverages and never reads the requirements
+    // list, so gating it on that list would silence a real regression.
+    assert!(
+        en_resume(EN_CLEAN, &[]).metrics.keyword_coverage.is_some(),
+        "coverage is still measured without a requirements list"
+    );
+    // A posting with no extractable keywords is not comparable.
+    assert!(
+        wire(report_for(EN_CLEAN, EN_SOURCE, "   ", &en_requirements())).is_null(),
+        "an uncomparable posting means no measurement"
+    );
+    // A cover letter never runs the alignment pass at all.
+    assert!(
+        wire(en_letter(EN_LETTER_GROUNDED)).is_null(),
+        "a letter never measures top-requirement hits"
+    );
+    // Genuinely measured → a real count on the wire.
+    let measured = wire(en_resume(EN_CLEAN, &en_requirements()));
+    assert!(
+        measured.as_u64().is_some_and(|n| n > 0),
+        "the clean fixture evidences at least one top requirement; got {measured}"
+    );
+}
+
+/// R5-F5 — the keyword-density ceiling counts every token the ENGLISH stopword
+/// list does not drop. Only `en` and `de` have a curated function-word list, so
+/// ordinary French prose (`pour`, `avec`, `dans`, `responsable`) was counted as
+/// repeated keywords and a truthful French résumé was accused of stuffing.
+#[test]
+fn ordinary_french_prose_is_not_keyword_stuffing() {
+    let report = validate_content(&ContentInput {
+        generated: FR_RESUME,
+        source_resume: FR_RESUME,
+        job_ad: FR_JOB_AD,
+        top_requirements: &[],
+        target_language: "fr",
+        doc_kind: DocKind::Resume,
+    });
+    let density: Vec<String> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == ATS_KEYWORD_DENSITY)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    assert!(
+        density.is_empty(),
+        "French function words are not stuffed keywords; got {density:?}"
+    );
+}
+
+const FR_RESUME: &str = "\
+Jeanne Dupont
+jeanne.dupont@example.com | +33 1 23 45 67 89
+
+PROFIL
+
+Ingenieure backend avec huit annees d'experience pour les plateformes de paiement
+et pour la construction de systemes de conteneurs dans un contexte europeen.
+
+EXPERIENCE
+
+Ingenieure backend senior | Acme Payments | 2021 - Present
+- Responsable pour la reduction du temps de reponse de la caisse avec un cache Redis
+- Responsable pour la mise en production des conteneurs Docker avec un cluster Kubernetes
+- Responsable pour la diminution des reglements echoues avec un planificateur ecrit en Rust
+
+Developpeuse backend | Globex Logistics | 2018 - 2021
+- Responsable pour la construction de l'interface de facturation avec Python et PostgreSQL
+- Responsable pour la migration de la flotte avec Terraform dans le nuage
+
+COMPETENCES
+
+Rust · Python · Docker · Kubernetes · PostgreSQL · Terraform · Redis
+
+FORMATION
+
+Licence en informatique, Universite de Lyon, 2014 - 2018
+";
+
+const FR_JOB_AD: &str = "\
+Nous recherchons une ingenieure backend pour notre plateforme de paiement.
+Vous travaillerez avec Rust, Python, Docker et Kubernetes dans une equipe
+distribuee. Une experience avec PostgreSQL, Redis et Terraform est demandee
+pour ce poste base a Lyon.
+";

@@ -603,3 +603,98 @@ Acme Payments — Senior Backend Engineer
         set.roles
     );
 }
+
+// ── PR #963 round-5 findings ────────────────────────────────────────────────
+
+/// R5-F6 — the round-4 orphan-bullet fix rescued `LineKind::Text` under
+/// Experience but not `LineKind::Contact`, and the exact entry shape it was
+/// written for is contact-shaped: `export::parser` reads the date span in
+/// "Acme Payments, Berlin, 2018 - 2021" as a phone number. So the employer line
+/// was still dropped while its bullets survived in the unattributed bucket —
+/// the prompt saw the work and never learned who it was for.
+#[test]
+fn a_contact_shaped_entry_line_keeps_its_employer_under_experience() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Acme Payments, Berlin, 2018 - 2021
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    let texts: Vec<&str> = set
+        .roles
+        .iter()
+        .flat_map(|r| r.bullets.iter())
+        .map(|b| b.text.as_str())
+        .chain(set.roles.iter().map(|r| r.company.as_str()))
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains("Acme Payments")),
+        "the employer named on a contact-shaped entry line must survive; got {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Docker")),
+        "its bullets survive too; got {texts:?}"
+    );
+}
+
+/// R5-F7 — `has_legal_form` tested EVERY token, and `LEGAL_FORMS` carries the
+/// ordinary English title words `group`, `company` and `holding`. So the head of
+/// "Group Product Manager, Acme Payments" looked like a company name, the
+/// company-first rule fired, and the employer was recorded as "Group Product
+/// Manager" with the real one discarded. A legal form is a SUFFIX.
+#[test]
+fn a_title_starting_with_an_ambiguous_legal_word_still_resolves_title_first() {
+    let split = |line: &str| {
+        let text = format!("EXPERIENCE\n\n{line}\n");
+        let parsed = parse_resume(&text);
+        let entry = parsed
+            .lines
+            .iter()
+            .find(|l| matches!(l.kind, LineKind::JobEntry))
+            .unwrap_or_else(|| panic!("{line:?} must parse as a JobEntry"))
+            .clone();
+        split_entry(&entry)
+    };
+
+    let (company, title, _) = split("Group Product Manager, Acme Payments    2021 - Present");
+    assert_eq!(company, "Acme Payments");
+    assert_eq!(title, "Group Product Manager");
+
+    // The same for the other two ambiguous English words in the list.
+    let (company, title, _) = split("Company Secretary, Globex Logistics    2018 - 2021");
+    assert_eq!(company, "Globex Logistics");
+    assert_eq!(title, "Company Secretary");
+
+    // …and a genuine trailing legal form still names the company first.
+    let (company, title, _) = split("Nordwind Systeme GmbH, Ingolstadt    2018 - 2021");
+    assert_eq!(company, "Nordwind Systeme GmbH");
+    assert_eq!(title, "");
+}
+
+/// The curated-language gate is what `validate::content::ats` reads before it
+/// dares report a density number, so the two halves must never drift: a
+/// language claiming curation with no list behind it re-opens R5-F5, and a
+/// curated language reported as uncurated silently switches the check off.
+#[test]
+fn curated_function_word_languages_match_the_lists_behind_them() {
+    // German is curated AND has a list.
+    assert!(has_curated_function_words("de"));
+    assert!(!function_words("de").is_empty());
+    // English is curated by the kernel's own STOPWORDS — an empty list here
+    // means "already filtered", not "unfiltered".
+    assert!(has_curated_function_words("en"));
+    assert!(function_words("en").is_empty());
+    // Everything else is uncurated, and says so.
+    for lang in ["fr", "es", "it", "nl", "pt", "zz", ""] {
+        assert!(
+            !has_curated_function_words(lang),
+            "{lang} has no curated function-word list"
+        );
+        assert!(function_words(lang).is_empty());
+    }
+}

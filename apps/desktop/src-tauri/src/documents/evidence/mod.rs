@@ -401,11 +401,24 @@ pub fn identity_tokens(company: &str, min_chars: usize) -> Vec<String> {
         .collect()
 }
 
-/// Whether `text` carries a corporate legal form.
-fn has_legal_form(text: &str) -> bool {
+/// Whether `text` **ends** with a corporate legal form.
+///
+/// Positional on purpose. A legal form is a SUFFIX — "Nordwind Systeme GmbH",
+/// "Acme Inc", "Globex Ltd" — while [`LEGAL_FORMS`] necessarily also holds
+/// `group`, `company` and `holding`, which are ordinary English title words.
+/// Testing every token made the head of "Group Product Manager, Acme Payments"
+/// look like a company name, so [`split_two_space_label`]'s company-first rule
+/// fired and recorded the employer as "Group Product Manager" — discarding both
+/// the real company and the title.
+///
+/// The words stay in [`LEGAL_FORMS`] because [`identity_tokens`] needs them for
+/// a different question ("does this token name a SPECIFIC employer?", where
+/// `group` is worthless wherever it sits). Only this split heuristic needs the
+/// position.
+fn ends_with_legal_form(text: &str) -> bool {
     word_tokens(text)
-        .iter()
-        .any(|t| LEGAL_FORMS.contains(&t.as_str()))
+        .last()
+        .is_some_and(|t| LEGAL_FORMS.contains(&t.as_str()))
 }
 
 /// Split the two-space form's label into `(company, title)`.
@@ -423,9 +436,10 @@ fn has_legal_form(text: &str) -> bool {
 ///
 /// * a tail made of nothing but [`GEOGRAPHY_TOKENS`] is a location, however
 ///   many segments it runs to (`Globex Logistics, Munich, Germany`);
-/// * failing that, a legal form in the HEAD and none in the tail
-///   (`Nordwind Systeme GmbH, Ingolstadt`) — an unlisted city cannot be told
-///   from a company by shape, so that is the only evidence left.
+/// * failing that, a TRAILING legal form in the HEAD and none at the end of the
+///   tail (`Nordwind Systeme GmbH, Ingolstadt`) — an unlisted city cannot be
+///   told from a company by shape, so that is the only evidence left. Trailing,
+///   not anywhere: see [`ends_with_legal_form`].
 fn split_two_space_label(label: &str) -> (String, String) {
     let mut label = label.trim();
     while let Some((head, tail)) = label.rsplit_once(',') {
@@ -440,7 +454,7 @@ fn split_two_space_label(label: &str) -> (String, String) {
         label = head.trim();
     }
     match label.rsplit_once(',') {
-        Some((head, tail)) if has_legal_form(head) && !has_legal_form(tail) => {
+        Some((head, tail)) if ends_with_legal_form(head) && !ends_with_legal_form(tail) => {
             (head.trim().to_string(), String::new())
         }
         Some((title, company)) => (company.trim().to_string(), title.trim().to_string()),
@@ -719,11 +733,35 @@ const FUNCTION_WORDS_DE: &[&str] = &[
 /// so `durch`, `werden` and `wurde` all counted as keywords and ordinary German
 /// prose was accused of stuffing. One list, both surfaces: a word that is not a
 /// skill in the gap list is not a stuffed keyword either.
+///
+/// **An empty list means "no filter", not "nothing to filter"** — see
+/// [`has_curated_function_words`], which is what a caller must ask before
+/// drawing a conclusion from a count.
 pub(crate) fn function_words(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => FUNCTION_WORDS_DE,
         _ => &[],
     }
+}
+
+/// Whether `lang`'s function words are actually known to this crate.
+///
+/// English counts: the kernel's own `STOPWORDS` is its curation, which is why
+/// [`function_words`] returns an empty slice for `en` without that meaning
+/// "unfiltered". Every other language returns an empty slice because nobody has
+/// written the list yet — the two cases are indistinguishable at the call site,
+/// and that is the whole point of this helper.
+///
+/// The rule it exists to enforce, the same one the rest of this module lives by:
+/// **never accuse without evidence.** A ratio or a ceiling computed over
+/// unfiltered French, Spanish, Italian, Dutch or Portuguese prose counts `pour`,
+/// `para`, `nella`, `worden` and `para` as keywords, so ordinary writing reads as
+/// stuffing. A caller whose conclusion depends on function words having been
+/// removed must go quiet here rather than report a number it cannot stand
+/// behind. Adding a language to [`function_words`] is what re-enables it —
+/// deliberately one edit, in one place.
+pub(crate) fn has_curated_function_words(lang: &str) -> bool {
+    matches!(lang, "en" | "de")
 }
 
 /// Attach one experience line to the entry above it, opening an UNATTRIBUTED
@@ -809,7 +847,15 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
             // in [`attach_to_role`]: when the entry line itself did not parse,
             // dropping it too would lose the employer's name as well as the
             // bullets under it.
-            LineKind::Text
+            //
+            // `Contact` belongs here for exactly the reason it belongs on the
+            // Education and Projects arms — and it is not an edge case, it is
+            // the SHAPE this arm was written for. "Acme Payments, Berlin,
+            // 2018 - 2021" is contact-shaped: `PHONE_RE` reads the date span as
+            // a phone number. Without it the fix above rescued the bullets and
+            // still lost the employer they belong to, which is the worse half of
+            // the original bug (evidence with no attribution).
+            LineKind::Text | LineKind::Contact
                 if section == SectionKind::Experience && !line.text.trim().is_empty() =>
             {
                 attach_to_role(&mut set.roles, &vocab, &line.text)

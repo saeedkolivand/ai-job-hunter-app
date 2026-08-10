@@ -140,10 +140,12 @@ mod test {
         // `top_requirement_hits` can never exceed how many requirements the
         // command actually kept — a value above the cap would prove the full
         // 200-item list reached the checker instead of being clamped first.
+        // `None` (nothing measured) trivially satisfies that.
+        let hits = report.metrics.top_requirement_hits;
         assert!(
-            report.metrics.top_requirement_hits as usize <= TOP_REQUIREMENTS_CAP,
-            "top_requirement_hits={} must not exceed TOP_REQUIREMENTS_CAP={TOP_REQUIREMENTS_CAP}",
-            report.metrics.top_requirement_hits
+            hits.is_none_or(|n| n as usize <= TOP_REQUIREMENTS_CAP),
+            "top_requirement_hits={hits:?} must not exceed \
+             TOP_REQUIREMENTS_CAP={TOP_REQUIREMENTS_CAP}"
         );
     }
 

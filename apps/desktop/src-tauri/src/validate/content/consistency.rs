@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use crate::documents::evidence::{identity_tokens, years_in, SectionKind};
+use crate::documents::evidence::{function_words, identity_tokens, years_in, SectionKind};
 use crate::export::types::{LineKind, ParsedLine};
 
 use super::factual::{MAX_SCANNED_ENTRIES, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS};
@@ -129,6 +129,30 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     issues
 }
 
+/// How many words a `label:` head may run to before it stops being a category
+/// label. "Programming languages:" is three; a sentence that merely contains a
+/// colon ("Shipped three services: billing, ledger and search") is more, and its
+/// head is content that must keep counting as a claim.
+pub const MAX_SKILLS_LABEL_WORDS: usize = 3;
+
+/// A skills line with its leading `Category:` label removed.
+///
+/// "Languages: Rust, Python" / "Frameworks: React" / "Programmiersprachen: Rust"
+/// is the commonest skills layout there is, and the label names a CATEGORY, not
+/// a claim — "languages", "frameworks", "databases", "tooling" were all reported
+/// back to the user as skills their résumé never demonstrates.
+///
+/// Only a SHORT head is stripped ([`MAX_SKILLS_LABEL_WORDS`]), and only the
+/// first colon is considered: a longer head is prose that happens to carry a
+/// colon, and dropping it would silently stop policing everything in front of
+/// it.
+fn strip_skills_label(line: &str) -> &str {
+    match line.split_once(':') {
+        Some((head, tail)) if super::word_count(head) <= MAX_SKILLS_LABEL_WORDS => tail,
+        _ => line,
+    }
+}
+
 /// `consistency.skill_not_demonstrated` — a skill listed in the skills section
 /// that no experience or project line backs up.
 ///
@@ -153,15 +177,23 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let claimed: HashSet<String> = skills
         .lines
         .iter()
-        .flat_map(|l| ctx.tokens(&l.text))
+        .flat_map(|l| ctx.tokens(strip_skills_label(&l.text)))
         .collect();
     // Tokens are STEMMED when the languages align, so map every one back to a
     // readable form before it reaches the user: "kubernet is listed under
     // skills" is a finding nobody can act on. Sorted on the display form so the
     // report reads alphabetically as printed.
+    //
+    // The same display form is what the function-word filter reads, for the
+    // same reason `documents::evidence` filters its skills split on it: the list
+    // holds words, not stems. It is the second half of the label fix — a line
+    // that spells its category out ("Kenntnisse in Rust und Python") carries the
+    // filler inline, where no `label:` rule can reach it.
+    let stop = function_words(&ctx.lang);
     let mut missing: Vec<String> = claimed
         .difference(&demonstrated)
         .map(|token| ctx.display(token))
+        .filter(|display| !stop.contains(&display.as_str()))
         .collect();
     missing.sort(); // Deterministic: the sets above are unordered.
     missing

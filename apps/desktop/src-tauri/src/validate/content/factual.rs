@@ -644,16 +644,32 @@ fn project_links(section: &Section) -> Vec<String> {
 /// is therefore the [`canonical_link`] key — everything that identifies the
 /// resource — while the evidence quotes the span exactly as written, so the user
 /// can see which of the two forms their document carries.
+///
+/// **Both documents must HAVE a projects section.** Cutting the section
+/// entirely is a tailoring decision, and the commonest one there is — a résumé
+/// trimmed to one page drops projects before it drops a role. Reading that as
+/// "every one of your links was altered" produced a Critical per source link on
+/// a document whose only change was an editorial cut, which is the loudest
+/// possible way to be wrong about the safest possible edit.
+///
+/// Deliberately NOT replaced by a Warning-severity "section dropped" note. A cut
+/// section is not a defect: nothing was altered, invented or lost from the
+/// candidate's own claims, so there is no evidence to show them and no action to
+/// advise. If the cut actually cost the document something, that is a measured
+/// finding `alignment.low_coverage` already makes — with the numbers to back it
+/// — rather than a second unmeasured one here. (A new code would also need a
+/// registered severity and an i18n key in both locales for a message that would
+/// read "you did a normal thing".)
 fn project_link_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let source = ctx.source_section_of_kind(SectionKind::Projects);
     let Some(source) = source else {
         return Vec::new(); // Nothing to compare against.
     };
+    let Some(generated) = ctx.section_of_kind(SectionKind::Projects) else {
+        return Vec::new(); // The section was cut, not rewritten — see above.
+    };
     let source_urls: Vec<String> = project_links(source);
-    let generated_urls: Vec<String> = ctx
-        .section_of_kind(SectionKind::Projects)
-        .map(project_links)
-        .unwrap_or_default();
+    let generated_urls: Vec<String> = project_links(generated);
     if source_urls.is_empty() && generated_urls.is_empty() {
         return Vec::new();
     }

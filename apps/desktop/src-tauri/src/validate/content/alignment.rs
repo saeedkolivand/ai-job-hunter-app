@@ -44,11 +44,19 @@ fn requirement_ratio_in(ctx: &Analysis, requirement: &str, in_source: bool) -> O
 }
 
 /// Returns the alignment issues and the `topRequirementHits` metric.
-pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, u32) {
+///
+/// The metric is `None` for **unmeasured**, never `0`. Two cases reach it:
+/// a posting nothing can be compared against ([`Analysis::posting_comparable`]),
+/// and a run given no `top_requirements` at all — the JD-analysis step is
+/// optional, so a report routinely arrives with an empty list. A bare "0" in the
+/// quality panel reads as "your document answers none of this posting's top
+/// requirements", which is a measurement nobody took; the renderer prints "—"
+/// for the absent value instead.
+pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, Option<u32>) {
     // Nothing extractable on the posting side, or the output is in the wrong
     // language: every comparison below would be noise.
     if !ctx.posting_comparable() {
-        return (Vec::new(), 0);
+        return (Vec::new(), None);
     }
 
     let mut issues = Vec::new();
@@ -102,5 +110,11 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, u32) {
         }
     }
 
-    (issues, hits)
+    // An empty requirements list is not "zero hits" — the JD-analysis step is
+    // optional and routinely absent, and the loop above never ran. Note this is
+    // deliberately NOT an early return: `alignment.low_coverage` compares the
+    // two documents' coverage of the posting and has nothing to do with the
+    // requirements list.
+    let measured = (!ctx.input.top_requirements.is_empty()).then_some(hits);
+    (issues, measured)
 }

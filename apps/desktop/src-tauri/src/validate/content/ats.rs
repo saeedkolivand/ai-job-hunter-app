@@ -11,7 +11,9 @@
 
 use std::collections::HashMap;
 
-use crate::documents::evidence::{function_words, years_in, SectionKind};
+use crate::documents::evidence::{
+    function_words, has_curated_function_words, years_in, SectionKind,
+};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::{is_contact_shaped, is_first_line_contact_shaped};
 use crate::export::types::{LineKind, ParsedLine};
@@ -61,7 +63,20 @@ const REQUIRED_SECTIONS: &[(SectionKind, &str)] = &[
 /// evidence extractor keeps function words out of the skills gap with: a word
 /// that is not a skill is not a stuffed keyword either. Filtering happens
 /// BEFORE `total`, so the density denominator is content words only.
+///
+/// Which means the check only works for a language whose function words are
+/// KNOWN — `en` (via the kernel's `STOPWORDS`) and `de` today. For any other
+/// language the filter is a no-op, and both the ratio and the absolute ceiling
+/// then count `pour`, `avec`, `para` and `worden` as repeated keywords: ordinary
+/// French, Spanish, Italian, Dutch or Portuguese prose is accused of stuffing.
+/// So the whole check goes quiet there rather than reporting a number it cannot
+/// stand behind — `documents::evidence::has_curated_function_words` is the one
+/// place that decides, and adding a list to `function_words` re-enables this
+/// automatically.
 fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    if !has_curated_function_words(&ctx.lang) {
+        return Vec::new();
+    }
     let stop = function_words(&ctx.lang);
     let tokens: Vec<String> = keywords_normalized_list(ctx.input.generated)
         .into_iter()

@@ -34,7 +34,14 @@ export interface ContentReportPayload {
   }[];
   metrics: {
     keywordCoverage: number | null;
-    topRequirementHits: number;
+    /**
+     * How many of the posting's top requirements the document evidences, or
+     * `null` when nothing was measured — an uncomparable posting, an empty
+     * requirements list, or a cover letter (which never runs the alignment
+     * pass). Render the absent value as "—"; a `0` here would claim a
+     * measurement that was never taken.
+     */
+    topRequirementHits: number | null;
     duplicateRatio: number;
     rolesSource: number;
     rolesOutput: number;

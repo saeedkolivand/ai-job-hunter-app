@@ -36,8 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::documents::evidence::{classify_section, SectionKind};
 use crate::documents::keywords::{
-    detect_locale_tag, display_forms, keyword_coverage, keywords, keywords_normalized,
-    languages_align, make_stemmer,
+    display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
 };
 use crate::export::parser::{is_first_line_contact_shaped, parse_resume};
 use crate::export::types::{LineKind, ParsedLine};
@@ -204,8 +203,11 @@ pub struct ContentMetrics {
     /// Share of the posting's keywords the generated document covers (0–100).
     /// `None` when the posting has no extractable keywords.
     pub keyword_coverage: Option<f64>,
-    /// How many `top_requirements` the generated document evidences.
-    pub top_requirement_hits: u32,
+    /// How many `top_requirements` the generated document evidences. `None`
+    /// when nothing was measured — an uncomparable posting, an empty
+    /// requirements list, or a cover letter (which never runs the alignment
+    /// pass) — because a rendered `0` claims a measurement that was never taken.
+    pub top_requirement_hits: Option<u32>,
     /// Share of bullets involved in at least one near-duplicate pair (0–1).
     pub duplicate_ratio: f64,
     pub roles_source: u32,
@@ -510,23 +512,50 @@ pub(crate) fn is_language_mismatch(text: &str, lang: &str) -> bool {
 /// Whether this report may raise `content.language_mismatch`.
 ///
 /// The generated text reading as the wrong language is necessary but NOT
-/// sufficient. The candidate's own source résumé is the control: it was written
-/// by a human in the language they meant, so when the detector reads BOTH
-/// documents as the same "wrong" language, the detector is what is wrong —
-/// `whatlang` routinely calls a terse, tech-heavy English résumé Dutch,
-/// Norwegian or Tagalog. Firing there produces a Critical the user cannot act on
-/// ("re-generate it in English" — it *is* in English) and, worse, blanks
-/// `keywordCoverage` and suppresses every alignment finding along with it.
+/// sufficient. The candidate's own source résumé is the CONTROL: it was written
+/// by a human in the language they meant, so it is what proves the detector can
+/// read this candidate's writing at all. `whatlang` routinely calls a terse,
+/// tech-heavy English résumé Dutch, Norwegian or Tagalog; firing on its word
+/// alone produces a Critical the user cannot act on ("re-generate it in English"
+/// — it *is* in English) and, worse, blanks `keywordCoverage` and suppresses
+/// every alignment finding along with it.
 ///
-/// A genuinely mis-generated document does not look like its source, so the
-/// real defect (an English source, a German output) still fires.
+/// So the control must PASS, positively: long enough for the detector to have
+/// read it, and reading as the target language. The earlier form of this guard
+/// only suppressed when the source's misdetected tag EQUALLED the generated
+/// one, which failed open in both directions a real document takes:
+///
+/// * a **short** source — [`is_language_mismatch`] goes quiet below
+///   [`MIN_CHARS_FOR_LANGUAGE_CHECK`], and the guard read that silence as "the
+///   source is fine", i.e. as evidence FOR the accusation;
+/// * a **heavily-reworded** source — two mis-reads of the same English land on
+///   different tags (`nl` vs `tl`) as easily as on one, and the equality test
+///   then treated a detector disagreement as a generation defect.
+///
+/// A genuinely mis-generated document still fires: an English source reads as
+/// English (control passes), the German output does not.
+///
+/// *No confidence signal is used, because there is none to use:* both detector
+/// wrappers this crate owns (`documents::keywords::languages_align` and
+/// `detect_locale_tag`) discard `whatlang`'s `Info` and return only the language,
+/// so `is_reliable()`/`confidence()` are not reachable without a second,
+/// independent detection path in this module — which is exactly the drift the
+/// "one answer to the language question" rule exists to prevent. The length gate
+/// plus a positive control covers the same ground: an unreliable read cannot
+/// pass a control that requires the EXPECTED language.
 fn language_mismatch_for(input: &ContentInput, lang: &str) -> bool {
-    if !is_language_mismatch(input.generated, lang) {
-        return false;
-    }
-    let source_reads_the_same_way = is_language_mismatch(input.source_resume, lang)
-        && detect_locale_tag(input.source_resume) == detect_locale_tag(input.generated);
-    !source_reads_the_same_way
+    is_language_mismatch(input.generated, lang) && source_is_a_reliable_control(input, lang)
+}
+
+/// Whether the source résumé can carry the weight of a Critical: long enough for
+/// `whatlang` to be reading rather than guessing, and reading as `lang`.
+fn source_is_a_reliable_control(input: &ContentInput, lang: &str) -> bool {
+    let significant = input
+        .source_resume
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count();
+    significant >= MIN_CHARS_FOR_LANGUAGE_CHECK && languages_align(input.source_resume, lang)
 }
 
 /// Split a document into sections at its headings. The leading band before the
@@ -649,7 +678,7 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
     let (top_requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
         DocKind::CoverLetter => {
             issues.extend(letter::validate(&ctx));
-            (0, 0.0, 0, 0)
+            (None, 0.0, 0, 0)
         }
         DocKind::Resume => {
             issues.extend(factual::validate(&ctx));

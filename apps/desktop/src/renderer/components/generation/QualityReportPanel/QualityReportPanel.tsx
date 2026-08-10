@@ -217,7 +217,9 @@ export function QualityReportPanel({
               {docKind === 'resume' && (
                 <div className="flex items-center justify-between gap-2">
                   <dt>{t('quality.panel.metrics.topRequirementHits')}</dt>
-                  <dd className="font-medium text-foreground/85">{metrics.topRequirementHits}</dd>
+                  <dd className="font-medium text-foreground/85">
+                    {metrics.topRequirementHits ?? '—'}
+                  </dd>
                 </div>
               )}
               {docKind === 'resume' && (

@@ -207,6 +207,22 @@ describe('QualityReportPanel', () => {
     expect(within(footer).getByText(/3.*2/)).toBeInTheDocument();
   });
 
+  it('renders an em dash when requirement hits were not measured (uncomparable posting)', () => {
+    const unmeasured: ContentReportPayload = {
+      ok: true,
+      issues: [],
+      metrics: { ...METRICS, topRequirementHits: null },
+    };
+    render(<QualityReportPanel open onClose={vi.fn()} report={unmeasured} docKind="resume" />);
+    const footer = screen
+      .getByRole('heading', { level: 3, name: /metrics/i })
+      .closest('div') as HTMLElement;
+    // null = the validator could not measure (language mismatch / no
+    // requirements) — never a literal 0 presented as fact.
+    expect(within(footer).getAllByText('—').length).toBeGreaterThan(0);
+    expect(within(footer).queryByText('2')).toBeNull();
+  });
+
   it('shows only keyword coverage for a cover letter — the other metrics are hard constants, not measurements', () => {
     render(<QualityReportPanel open onClose={vi.fn()} report={REPORT} docKind="coverLetter" />);
     const footer = screen
