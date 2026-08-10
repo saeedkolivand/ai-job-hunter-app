@@ -765,6 +765,19 @@ fn assert_validation_clean(id: TemplateId, label: &str, bytes: &[u8], report: &E
 /// with no validator coverage at all — including Awesome, which emits its
 /// contact hyperlinks from inside `page.background`, precisely the annotation
 /// shape the `empty_anchor_link` critical looks for.
+///
+/// **Cost is deliberate.** This test and
+/// [`typst_ats_mode_pdf_passes_validation_for_every_toggle_bearing_template`]
+/// below together compile 16 + 7 real Typst PDFs on every run — by far the
+/// slowest thing in this file. That is the point: the coverage gap above existed
+/// precisely *because* someone kept the list short. **Never trim the list to
+/// speed it up** — a template dropped from the matrix is a template with no
+/// validator coverage, and nothing else will notice.
+///
+/// The sanctioned mitigation, if the runtime ever genuinely hurts, is to move
+/// the whole-roster matrices behind a slower test target (a `#[ignore]`d
+/// nightly/CI job, or a separate `--test` binary) that still runs EVERY
+/// template — not to sample a subset here.
 #[test]
 fn typst_every_canonical_template_pdf_passes_validation() {
     let mut single = 0;

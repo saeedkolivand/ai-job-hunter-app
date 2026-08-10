@@ -20,7 +20,7 @@ use crate::export::docx_renderer::{
     rgb_to_hex, setup_colors, DocxColors,
 };
 use crate::export::templates::Template;
-use crate::export::types::{FontFamily, GenerationMeta, TemplateId};
+use crate::export::types::{FontFamily, GenerationMeta};
 use crate::locale::PageGeometry;
 use crate::model::adapter::model_from_resume_text;
 use crate::model::document::{Block, DocumentModel, EntryBlock, HeaderBlock, Placement, Section};
@@ -172,17 +172,22 @@ fn add_header(
 
         let mut p = Paragraph::new().add_run(name_run);
 
-        // Awesome's PDF (`awesome.typ`) draws a full-width accent-tinted header
-        // band behind the name. `docx-rs` has no page-background primitive, so
-        // approximate it exactly the way the Banded cover-letter layout does
-        // (`docx::mod`'s `header_band` branch): PARAGRAPH-level shading, filled
-        // with the accent lightened 85 % toward white, keeping the normal dark
-        // ink. Run-level `w:shd` would only tint the glyph boxes, and white ink
-        // on it disappears entirely in any reader that ignores run shading —
-        // the invisible-name hazard `awesome_matches_spec` guards the registry
-        // against. ATS mode drops the band, matching `awesome.typ`'s `is-ats`
-        // branch (which renders a plain black-on-white header).
-        if t.id == TemplateId::Awesome && !ats_mode {
+        // A banded template's PDF (`awesome.typ`) draws a full-width
+        // accent-tinted band behind the name. `docx-rs` has no page-background
+        // primitive, so approximate it exactly the way the Banded cover-letter
+        // layout does (`docx::mod`'s `header_band` branch): PARAGRAPH-level
+        // shading, filled with the accent lightened toward white by
+        // `docx::band_tint_hex`, keeping the normal dark ink. Run-level `w:shd`
+        // would only tint the glyph boxes, and white ink on it disappears
+        // entirely in any reader that ignores run shading — the invisible-name
+        // hazard `awesome_matches_spec` guards the registry against.
+        //
+        // WHICH templates are banded is `theme::has_header_band`'s call (the
+        // same owner as `is_two_column`/`placement_for`), so PDF and DOCX can't
+        // disagree on the roster. WHETHER to draw it stays here: ATS mode drops
+        // the band, matching `awesome.typ`'s `is-ats` branch (which renders a
+        // plain black-on-white header).
+        if theme::has_header_band(t.id) && !ats_mode {
             p.property = p.property.shading(
                 Shading::new()
                     .shd_type(ShdType::Clear)

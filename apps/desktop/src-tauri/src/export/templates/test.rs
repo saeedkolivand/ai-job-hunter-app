@@ -144,6 +144,28 @@ fn template_tiers_are_pinned() {
         (TemplateId::Awesome, Design),
         (TemplateId::Deedy, Design),
     ];
+    // A tier cannot be derived from anything (it is an editorial call), so the
+    // pairs above stay hand-written — but the LIST's completeness can be
+    // checked. Without this, a 17th template ships with no tier pinned at all:
+    // the loop below simply never visits it and the matrix goes quietly stale,
+    // which is how `heading_tracking_and_link_underline_default_to_neutral_
+    // for_pre_pr3_templates`-style hardcoded id lists drifted before.
+    assert_eq!(
+        expected.len(),
+        crate::export::templates::CANONICAL_TEMPLATE_IDS.len(),
+        "the tier matrix covers {} templates but there are {} canonical ones — \
+         add the new template's (id, tier) pair above",
+        expected.len(),
+        crate::export::templates::CANONICAL_TEMPLATE_IDS.len()
+    );
+    // Length alone would accept a duplicate standing in for a missing id.
+    for id in crate::export::templates::CANONICAL_TEMPLATE_IDS {
+        assert!(
+            expected.iter().any(|(pinned, _)| *pinned == id),
+            "{id:?} is canonical but has no tier pinned in the matrix above"
+        );
+    }
+
     for (id, tier) in expected {
         assert_eq!(
             Template::get(id).tier,
@@ -334,7 +356,13 @@ fn awesome_matches_spec() {
     // NOT the white the PDF band text renders in (awesome.typ hardcodes that
     // separately). A regression here would print invisible white-on-white
     // DOCX name text.
-    assert_ne!(t.name_color, (255, 255, 255));
+    //
+    // Pinned by EQUALITY, like deedy/aria below. The former `assert_ne!(t
+    // .name_color, (255, 255, 255))` only excluded pure white: (254, 254, 254)
+    // — or any other near-white — sailed through it and still prints
+    // unreadable DOCX name text on the pale `band_tint_hex` shading. "Not
+    // exactly one bad value" is not the same claim as "a dark ink".
+    assert_eq!(t.name_color, (26, 26, 26));
     assert_eq!(t.accent_color, (196, 30, 58));
     assert_eq!(t.emphasis_color, (196, 30, 58));
     assert!(t.section_all_caps);

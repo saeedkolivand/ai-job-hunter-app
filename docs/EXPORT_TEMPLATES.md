@@ -116,9 +116,13 @@ Nine **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic
 (`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`, `awesome`, `deedy` — photo, two-column
 and/or decorative colour; `awesome` and `deedy` are single-column with no photo, and earn the
 tier through the colour they drop under ATS mode).
-`classic`, `swiss-minimal`, `academic`, `cadence`, `regent`, and `jake` render through the parametric
-`single_column.typ` (no bespoke `.typ`, see `engine.rs`'s `TypstTemplate::from_template`);
-`cologne-navy`, `awesome`, `aria`, `saffron`, and `deedy` each have a bespoke `.typ`.
+All sixteen route through `engine.rs`'s `TypstTemplate::from_template` (an exhaustive
+match — no fallback). Six render through the parametric `single_column.typ` with no
+bespoke `.typ` at all, styled entirely from their registry palette via `data.style`:
+`classic`, `swiss-minimal`, `academic`, `cadence`, `regent`, `jake`.
+The other ten each have their own `.typ` under `export/typst_engine/templates/`:
+`meridian`, `throughline`, `atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`,
+`cologne-navy`, `awesome`, `deedy`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
 `Template::*` constructor (with its `tier`) in `export/templates/mod.rs` + a `.typ`
@@ -144,11 +148,14 @@ collapse to one, photo dropped) — the honesty the tier advertises. ATS-tier
 templates are already parser-safe and don't need the toggle.
 
 **Both formats must drop the same things.** `Awesome`'s résumé DOCX approximates its
-PDF header band with **paragraph-level shading in the accent lightened 85 % toward
-white, keeping the normal dark ink** (`model_docx::add_header`, sharing
-`docx::band_tint_hex` with the `Banded` cover letter) — a pale tint, never white text
-on a raw-accent run, which disappears wherever run shading is ignored. `add_header`
-takes `ats_mode` so the DOCX drops the band exactly when `awesome.typ` drops it.
+PDF header band with **paragraph-level shading in a pale tint of the accent, keeping the
+normal dark ink** — never white text on a raw-accent run, which disappears wherever run
+shading is ignored. The tint itself is `docx::band_tint_hex` (shared with the `Banded`
+cover letter so the two can't drift); it is applied in `model_docx::add_header`, which
+takes `ats_mode` so the DOCX drops the band exactly when `awesome.typ` drops it. **Which**
+templates are banded is `theme::has_header_band` — the same owner as `theme::is_two_column`,
+so PDF and DOCX can't disagree on the roster. Read those three for the exact lightening
+amount and roster; don't copy them here.
 
 ### Document accent (per-export color knob)
 
