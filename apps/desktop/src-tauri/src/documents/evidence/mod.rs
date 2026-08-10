@@ -226,12 +226,28 @@ const EXPERIENCE_HEADINGS: &[&str] = &[
     "career",
     "berufserfahrung",
     "arbeitserfahrung",
+    // "Beruflicher Werdegang" is as standard a German experience heading as
+    // "Berufserfahrung", and classifying it `Other` discarded every bullet
+    // under it. A substring, like the compounds above: "Ausbildungswerdegang"
+    // reaching Experience first is a far smaller error than losing the section.
+    "werdegang",
     "expérience",
     "experiencia",
     "esperienza",
     "werkervaring",
     "experiência",
 ];
+
+/// The bare German word for "experience", matched with [`contains_word`].
+///
+/// Word-bounded rather than added to the substring list above, and the
+/// plural is listed for the same reason `formations` is: the rule is exact at
+/// BOTH ends. As a substring `erfahrung` would subsume `berufserfahrung` and
+/// `arbeitserfahrung` — and every other `…erfahrung` compound with it,
+/// including ones that name no work history ("Nutzererfahrung" on a designer's
+/// skills heading). Bounded, it adds only the spellings that were actually
+/// missing: "Erfahrung", "Erfahrungen", "Berufliche Erfahrung".
+const EXPERIENCE_HEADINGS_WORD_BOUNDED: &[&str] = &["erfahrung", "erfahrungen"];
 const EDUCATION_HEADINGS: &[&str] = &[
     "education",
     "academic",
@@ -298,13 +314,14 @@ const SUMMARY_HEADINGS: &[&str] = &[
 /// Bucket a heading. Substring match on the lowercased heading, checked
 /// most-specific-first, so "PROFESSIONAL EXPERIENCE" and "Berufserfahrung" both
 /// land on [`SectionKind::Experience`] without a per-locale word list. The
-/// exception is [`EDUCATION_HEADINGS_WORD_BOUNDED`], whose stems are substrings
-/// of ordinary words and are therefore matched with [`contains_word`].
+/// exceptions are [`EXPERIENCE_HEADINGS_WORD_BOUNDED`] and
+/// [`EDUCATION_HEADINGS_WORD_BOUNDED`], whose stems are substrings of ordinary
+/// words and are therefore matched with [`contains_word`].
 pub fn classify_section(heading: &str) -> SectionKind {
     let lower = heading.to_lowercase();
     let has = |set: &[&str]| set.iter().any(|k| lower.contains(k));
     let has_word = |set: &[&str]| set.iter().any(|k| contains_word(&lower, k));
-    if has(EXPERIENCE_HEADINGS) {
+    if has(EXPERIENCE_HEADINGS) || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED) {
         SectionKind::Experience
     } else if has(EDUCATION_HEADINGS) || has_word(EDUCATION_HEADINGS_WORD_BOUNDED) {
         SectionKind::Education
@@ -421,6 +438,25 @@ fn ends_with_legal_form(text: &str) -> bool {
         .is_some_and(|t| LEGAL_FORMS.contains(&t.as_str()))
 }
 
+/// Whether `s` is made of NOTHING but [`GEOGRAPHY_TOKENS`] — a location column
+/// ("Berlin", "Munich, Germany"), never an employer.
+///
+/// Shared by both entry-splitting arms in [`split_entry`] on purpose. The
+/// two-space arm was hardened against reading the location as the company; the
+/// pipe/middot arm was not, so "Acme Corp | Berlin | 2021 – Present" recorded
+/// the CITY as the employer and the employer as the job title — the same defect
+/// class, one heuristic away. A company whose whole name is a listed
+/// geography word ("Berlin") is dropped rather than kept: the same tradeoff
+/// [`split_two_space_label`] already accepts, and inventing nothing beats
+/// naming a city as an employer.
+fn is_location_only(s: &str) -> bool {
+    let tokens = word_tokens(s);
+    !tokens.is_empty()
+        && tokens
+            .iter()
+            .all(|t| GEOGRAPHY_TOKENS.contains(&t.as_str()))
+}
+
 /// Split the two-space form's label into `(company, title)`.
 ///
 /// This form is the extracted-PDF shape, and its comma tail is a LOCATION far
@@ -443,12 +479,7 @@ fn ends_with_legal_form(text: &str) -> bool {
 fn split_two_space_label(label: &str) -> (String, String) {
     let mut label = label.trim();
     while let Some((head, tail)) = label.rsplit_once(',') {
-        let tail_tokens = word_tokens(tail);
-        let is_location = !tail_tokens.is_empty()
-            && tail_tokens
-                .iter()
-                .all(|t| GEOGRAPHY_TOKENS.contains(&t.as_str()));
-        if !is_location {
+        if !is_location_only(tail) {
             break;
         }
         label = head.trim();
@@ -474,6 +505,10 @@ fn split_two_space_label(label: &str) -> (String, String) {
 /// 2. Pipe/middot form (`Senior Engineer | Acme Corp | 2021 – Present`): the
 ///    date-shaped segment is the span, the first segment is the title and the
 ///    second the company (the order every template in this repo renders).
+///    Location-only segments are dropped first ([`is_location_only`]) — an
+///    entry line carries a location column at least as often as a title, and
+///    positional reading alone recorded "Acme Corp | Berlin | 2021 – Present"
+///    as the company "Berlin".
 /// 3. Parenthesized form (`Senior Engineer, Acme Corp (Jan 2021 – Mar 2023)`):
 ///    the parenthesized tail is the span, and the label splits at the LAST
 ///    comma.
@@ -510,7 +545,7 @@ pub fn split_entry(line: &ParsedLine) -> (String, String, String) {
         let rest: Vec<&str> = segments
             .iter()
             .copied()
-            .filter(|s| !s.is_empty() && !looks_like_date_span(s))
+            .filter(|s| !s.is_empty() && !looks_like_date_span(s) && !is_location_only(s))
             .collect();
         return match rest.as_slice() {
             [] => (String::new(), String::new(), dates),
@@ -591,6 +626,120 @@ pub fn is_open_ended(s: &str) -> bool {
 /// counts as a date" is decided in one place.
 pub fn looks_like_date_span(s: &str) -> bool {
     !years_in(s).is_empty() || is_open_ended(s)
+}
+
+/// A CLOSED span: two years with nothing between them but a span separator and
+/// at most one month-shaped token (`2018 – 2021`, `Jan 2018 - Mar 2021`,
+/// `2018 to 2021`, `05/2018 – 07/2021`).
+///
+/// The separator is what makes this a SPAN rather than two numbers that happen
+/// to share a line. Same year window as [`years_in`], for the same reason it
+/// lives in this module: what counts as a date is decided in one place.
+static DATE_SPAN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:19|20)\d{2}\s*(?:[-–—]|\bto\b|\bbis\b|\buntil\b)\s*(?:[\p{L}\d]{1,9}[./]?\s*)?(?:19|20)\d{2}",
+    )
+    .unwrap()
+});
+
+/// Every closed date span in `s`, as `(start_year, end_year, span_text)` — the
+/// text is what a finding may quote as evidence.
+///
+/// `validate::content::consistency` used to take ANY two years on a line as a
+/// span and report the pair as swapped when the second was smaller. A bullet
+/// that measures this year against an older baseline ("cut incidents to 2024
+/// levels from the 2019 baseline") therefore read as an entry whose end date
+/// preceded its start. Requiring the separator is what tells a date column
+/// apart from prose; a pair with a word between the years is not a span.
+pub fn date_spans(s: &str) -> Vec<(u32, u32, &str)> {
+    DATE_SPAN_RE
+        .find_iter(s)
+        .filter_map(|m| match years_in(m.as_str())[..] {
+            [start, end] => Some((start, end, m.as_str())),
+            // The optional month slot can swallow a third year; a fragment that
+            // does not resolve to exactly two is not a span this can judge.
+            _ => None,
+        })
+        .collect()
+}
+
+/// Month names and abbreviations, English and German, matched WHOLE against a
+/// [`word_tokens`] token.
+///
+/// Deliberately not a prefix list: `mar` as a prefix also matches "marketing",
+/// and this list's whole job is to decide that a fragment carries nothing but a
+/// date. Deliberately only the two languages the rest of this pipeline curates
+/// — a French or Spanish month simply leaves [`is_date_only`] false, which
+/// costs an entry line its attribution (the pre-existing behaviour) rather than
+/// mis-reading a sentence as a date column.
+const MONTH_TOKENS: &[&str] = &[
+    "jan",
+    "january",
+    "januar",
+    "feb",
+    "february",
+    "februar",
+    "mar",
+    "march",
+    "mär",
+    "märz",
+    "apr",
+    "april",
+    "may",
+    "mai",
+    "jun",
+    "june",
+    "juni",
+    "jul",
+    "july",
+    "juli",
+    "aug",
+    "august",
+    "sep",
+    "sept",
+    "september",
+    "oct",
+    "october",
+    "okt",
+    "oktober",
+    "nov",
+    "november",
+    "dec",
+    "december",
+    "dez",
+    "dezember",
+];
+
+/// True when `s` is a date span and NOTHING else: it has the shape of one
+/// ([`looks_like_date_span`]) and every word in it is a number, a month or a
+/// present-tense marker.
+///
+/// Stricter than [`looks_like_date_span`], which is satisfied by any line
+/// carrying a year — "delivered in 2019" included. The difference matters
+/// wherever a date is used as a STRUCTURAL signal rather than read for its
+/// value: see [`trailing_date_column`].
+fn is_date_only(s: &str) -> bool {
+    if !looks_like_date_span(s) {
+        return false;
+    }
+    word_tokens(s).iter().all(|t| {
+        t.chars().all(|c| c.is_ascii_digit())
+            || MONTH_TOKENS.contains(&t.as_str())
+            || PRESENT_MARKERS.contains(&t.as_str())
+    })
+}
+
+/// Split `text` into `(label, dates)` when it ends in a `, <dates>` column —
+/// the shape of an entry line the parser did not recognise as a `JobEntry`
+/// ("Acme Payments, Berlin, 2018 - 2021").
+///
+/// `None` for anything else, including a line that merely mentions a year: the
+/// tail must be [`is_date_only`], or an ordinary sentence ending in
+/// "…, delivered in 2019" would read as an employer plus a date column.
+fn trailing_date_column(text: &str) -> Option<(&str, &str)> {
+    let (label, dates) = text.rsplit_once(',')?;
+    let label = label.trim();
+    (!label.is_empty() && is_date_only(dates)).then_some((label, dates.trim()))
 }
 
 /// Every 1900–2099 year in `s`, in order, deduplicated by position (not value).
@@ -810,6 +959,9 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
 
     let mut set = EvidenceSet::default();
     let mut section = SectionKind::Other;
+    // Bullets under a heading no list recognises, held back for the last-resort
+    // rescue after the loop — see there for when they are used.
+    let mut unclassified_bullets: Vec<String> = Vec::new();
 
     for line in &parsed.lines {
         match line.kind {
@@ -839,6 +991,10 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                     set.projects.push(bullet);
                 }
                 SectionKind::Education => set.education.push(line.text.clone()),
+                SectionKind::Other => unclassified_bullets.push(line.text.clone()),
+                // Skills and Summary bullets are classified and belong where
+                // they are: a summary line is a claim about the candidate, not
+                // an achievement to draw on.
                 _ => {}
             },
             // A content line under Experience the parser recognised as none of
@@ -855,10 +1011,30 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
             // a phone number. Without it the fix above rescued the bullets and
             // still lost the employer they belong to, which is the worse half of
             // the original bug (evidence with no attribution).
+            //
+            // A line that ends in a date column OPENS ITS OWN ROLE, exactly as
+            // a recognised `JobEntry` would. Appending it to `roles.last()` —
+            // which is all [`attach_to_role`] can do — made the previous
+            // employer absorb this one's header line AND every bullet under it,
+            // so a second employer's work was credited to the first. The
+            // employer is SALVAGED from the line by the same splitters a parsed
+            // entry goes through, never guessed: whatever they cannot resolve
+            // stays an empty (unattributed) company.
             LineKind::Text | LineKind::Contact
                 if section == SectionKind::Experience && !line.text.trim().is_empty() =>
             {
-                attach_to_role(&mut set.roles, &vocab, &line.text)
+                match trailing_date_column(&line.text) {
+                    Some((label, dates)) => {
+                        let (company, title) = split_two_space_label(label);
+                        set.roles.push(EvidenceRole {
+                            company,
+                            title,
+                            dates: dates.to_string(),
+                            bullets: Vec::new(),
+                        });
+                    }
+                    None => attach_to_role(&mut set.roles, &vocab, &line.text),
+                }
             }
             // `Contact` belongs here: `export::parser` classifies any line
             // carrying a phone-shaped digit run as Contact, and a degree line
@@ -885,6 +1061,26 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
                 set.projects.push(bullet);
             }
             _ => {}
+        }
+    }
+
+    // Last resort: a document with NO recognised experience section falls back
+    // to the bullets under its unclassified headings.
+    //
+    // A heading this module cannot name is not evidence that the candidate has
+    // none — `classify_section` is a fixed list of stems in seven languages, and
+    // every gap in it (this round's "Beruflicher Werdegang", the next one's
+    // whatever) silently emptied the set the generation prompt is allowed to
+    // draw on. Gated on `roles.is_empty()` because a heading LIST is a better
+    // signal than a fallback whenever there is one: a résumé with a real
+    // experience section keeps its hobbies and interests out of its work
+    // history. The bucket is unattributed — no employer is ever guessed — and
+    // the cost when the unknown heading was really "PUBLICATIONS" is that a
+    // prompt sees the candidate's own publication list as evidence, which is
+    // strictly better than seeing nothing at all.
+    if set.roles.is_empty() {
+        for text in unclassified_bullets {
+            attach_to_role(&mut set.roles, &vocab, &text);
         }
     }
 

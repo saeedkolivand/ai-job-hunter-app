@@ -69,12 +69,45 @@ pub struct Metric {
 
 static PERCENT_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(\d[\d.,]*\d|\d)[\s\u{00A0}\u{202F}]*%").unwrap());
+
+/// A multiplier: `3x`, `2.5×`.
+///
+/// The two spellings need DIFFERENT trailing rules, which is why the unit is an
+/// alternation rather than a `[x×]` class. `x` is a word character, so `\b`
+/// after it is what keeps `3xtra` out. `×` is NOT — it is itself the
+/// non-word character a boundary needs on one side — so a trailing `\b` there
+/// requires a WORD character to follow, i.e. it matched `3×5` and a line ending
+/// in `3×` while silently skipping every mid-sentence "grew throughput 3×
+/// while …". Those multipliers were never extracted and therefore never
+/// cross-checked against the source at all.
 static MULTIPLIER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(\d[\d.,]*\d|\d)\s*[x×](?:\b|$)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)(\d[\d.,]*\d|\d)\s*(?:x\b|×)").unwrap());
+
+/// A written integer, in any digit-grouping convention.
+///
 /// Leading `\b` only, deliberately. Requiring a trailing boundary too would
 /// miss `480ms`; dropping the leading one would make `sha256` yield "256".
-static INTEGER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b(\d[\d.,\u{202F}\u{00A0}]*\d|\d)").unwrap());
+///
+/// The first arm exists because a space (or a Swiss apostrophe) is a grouping
+/// separator in half of Europe, and [`normalize_number`] has always promised
+/// `1 200` → `1200`. Without it the figure split into "1" and "200", so a
+/// document truthfully restating its own source's `1 200` as `1,200` was
+/// reported as having fabricated the number. It is strict where the second arm
+/// is loose — EXACTLY three digits per group, which is what stops "ran 5 12
+/// hour shifts" from reading as `512` — because a space between digits is
+/// ordinary prose, while a `.` or `,` between them is not. `normalize_number`
+/// stays the arbiter of what the digits MEAN; this only decides how far one
+/// number reaches.
+static INTEGER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"\b(",
+        r"\d{1,3}(?:[ \u{00A0}\u{202F}'\u{2019}]\d{3})+(?:[.,]\d+)?\b",
+        r"|\d[\d.,\u{202F}\u{00A0}]*\d",
+        r"|\d",
+        r")"
+    ))
+    .unwrap()
+});
 
 /// A heading-less document (a cover letter) has no section band to skip, so the
 /// letterhead is skipped by shape instead: metrics are read only from the body,
@@ -83,17 +116,31 @@ static INTEGER_RE: LazyLock<Regex> =
 pub const MIN_WORDS_IN_LETTER_BODY_LINE: usize = 8;
 
 /// Normalize a written number to a comparable string: drop digit-grouping
-/// separators (`1,200` / `1.200` / `1 200` → `1200`) and render a decimal
-/// comma as a period (`3,5` → `3.5`).
+/// separators (`1,200` / `1.200` / `1 200` / `1'200` → `1200`) and render a
+/// decimal comma as a period (`3,5` → `3.5`).
 ///
 /// A separator counts as GROUPING when exactly three digits follow it and more
 /// digits follow those or the number ends there; otherwise it is a decimal
 /// point. Locale-neutral by construction, which matters because the source and
 /// the generated text can be written in different markets' conventions.
+///
+/// Only `.` and `,` can ever BE a decimal point, so the space forms and the
+/// Swiss apostrophe simply vanish either way — they are listed here anyway so
+/// the separator set this function recognises is stated in one place, next to
+/// the rule that arbitrates it. [`INTEGER_RE`] is what decides how far a
+/// written number reaches; this decides what its digits mean, and the two must
+/// agree on the same separators or a figure the regex captures whole
+/// normalizes as if it were two.
 pub fn normalize_number(raw: &str) -> String {
     let digits_and_seps: Vec<char> = raw
         .chars()
-        .filter(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '\u{202F}' | '\u{00A0}' | ' '))
+        .filter(|c| {
+            c.is_ascii_digit()
+                || matches!(
+                    c,
+                    '.' | ',' | '\u{202F}' | '\u{00A0}' | ' ' | '\'' | '\u{2019}'
+                )
+        })
         .collect();
     let mut out = String::with_capacity(digits_and_seps.len());
     let mut i = 0;

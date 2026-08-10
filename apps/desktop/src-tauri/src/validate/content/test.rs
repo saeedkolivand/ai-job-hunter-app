@@ -2612,3 +2612,264 @@ Vous travaillerez avec Rust, Python, Docker et Kubernetes dans une equipe
 distribuee. Une experience avec PostgreSQL, Redis et Terraform est demandee
 pour ce poste base a Lyon.
 ";
+
+// ── PR #963 round-6 findings ────────────────────────────────────────────────
+
+/// A one-role résumé around `bullet`, for the metric and date checks.
+fn resume_with_bullet(bullet: &str) -> String {
+    format!("EXPERIENCE\n\nAcme Payments | 2021 - Present\n- {bullet}\n")
+}
+
+/// R6-F1 — `MULTIPLIER_RE` ended in `(?:\b|$)`, and `×` is not a word
+/// character: a boundary after it needs a WORD character on the other side, so
+/// only `3×5` or a line ENDING in `3×` ever matched. Every mid-sentence
+/// typographic multiplier was invisible to the metric pass — never extracted,
+/// never cross-checked against the source.
+#[test]
+fn a_typographic_multiplier_is_extracted_mid_sentence() {
+    let doc = resume_with_bullet("Grew throughput 3× while holding the error budget flat");
+    let multipliers: Vec<String> = factual::metrics_in(&doc)
+        .into_iter()
+        .filter(|m| m.kind == factual::MetricKind::Multiplier)
+        .map(|m| m.number)
+        .collect();
+    assert_eq!(
+        multipliers,
+        vec!["3".to_string()],
+        "a mid-sentence `3×` is a multiplier claim"
+    );
+
+    // The ASCII spelling is unchanged, mid-sentence and at end of line …
+    for line in [
+        "Grew throughput 3x while holding the error budget flat",
+        "Grew throughput 3x",
+        "Grew throughput 3×",
+    ] {
+        let doc = resume_with_bullet(line);
+        assert!(
+            factual::metrics_in(&doc)
+                .iter()
+                .any(|m| m.kind == factual::MetricKind::Multiplier && m.number == "3"),
+            "{line:?} states a multiplier"
+        );
+    }
+    // … and `x` inside a word is still not a multiplier.
+    let doc = resume_with_bullet("Ran the 3xtra pipeline for the payments team every night");
+    assert!(
+        !factual::metrics_in(&doc)
+            .iter()
+            .any(|m| m.kind == factual::MetricKind::Multiplier),
+        "`x` inside a word is not a multiplier"
+    );
+
+    // End to end: an invented multiplier is a Critical, like every other
+    // fabricated figure.
+    let source = resume_with_bullet("Improved throughput after rewriting the retry scheduler");
+    let invented = resume_with_bullet("Improved throughput 5× after rewriting the retry scheduler");
+    let report = report_for(&invented, &source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("5×"));
+}
+
+/// R6-F2 — `INTEGER_RE` accepted `.`, `,`, NBSP and NNBSP as digit grouping but
+/// not the ASCII space (nor the Swiss apostrophe), while `normalize_number`'s
+/// doc and body both promise "1 200" normalizes to `1200`. So a space-grouped
+/// figure split into two numbers, and a document truthfully restating its own
+/// source's "1 200" as "1,200" was accused of fabricating it.
+#[test]
+fn a_space_grouped_figure_is_one_number_not_two() {
+    for (written, expected) in [
+        ("1 200", "1200"),
+        ("1\u{202F}200", "1200"),
+        ("1\u{00A0}200", "1200"),
+        ("1'200", "1200"),
+        ("1\u{2019}200", "1200"),
+        ("1,200", "1200"),
+        ("1.200", "1200"),
+        ("40 000", "40000"),
+    ] {
+        // Normalization always promised this …
+        assert_eq!(factual::normalize_number(written), expected);
+        // … and extraction must hand it the whole figure.
+        let doc = resume_with_bullet(&format!("Processed {written} refunds a day"));
+        let numbers: Vec<String> = factual::metrics_in(&doc)
+            .into_iter()
+            .filter(|m| m.kind == factual::MetricKind::LargeInteger)
+            .map(|m| m.number)
+            .collect();
+        assert!(
+            numbers.contains(&expected.to_string()),
+            "{written:?} is one figure, not two; got {numbers:?}"
+        );
+    }
+
+    // Two separate small numbers stay separate — the space is grouping only
+    // when exactly three digits follow it.
+    let doc = resume_with_bullet("Ran 5 12 hour shifts across the payments on-call rota");
+    assert!(
+        !factual::metrics_in(&doc).iter().any(|m| m.number == "512"),
+        "a space with two digits after it is not grouping; got {:?}",
+        factual::metrics_in(&doc)
+    );
+
+    // End to end: restating a space-grouped figure in another convention is
+    // not a fabrication.
+    for source_form in ["1 200", "1'200"] {
+        let source = resume_with_bullet(&format!("Processed {source_form} refunds a day"));
+        let restated = resume_with_bullet("Processed 1,200 refunds a day");
+        silent(
+            &report_for(&restated, &source, EN_JOB_AD, &[]),
+            FACTUAL_UNSOURCED_METRIC,
+        );
+    }
+}
+
+/// R6-F3 — `date_order_issues` read EVERY line, took any two years on it as a
+/// span, and reported "the end date is before the start" whenever the second
+/// was smaller. An ordinary bullet comparing this year against an older
+/// baseline was therefore accused of carrying a swapped date span.
+#[test]
+fn two_years_compared_in_prose_are_not_a_swapped_date_span() {
+    for prose in [
+        "Cut the incident count to 2024 levels from the 2019 baseline",
+        "Migrated every service written between 2024 and 2019 onto one platform",
+    ] {
+        let doc = resume_with_bullet(prose);
+        silent(
+            &report_for(&doc, &doc, EN_JOB_AD, &[]),
+            CONSISTENCY_DATE_ORDER,
+        );
+    }
+
+    // A genuinely swapped span still fires, in both entry shapes …
+    let backwards = "EXPERIENCE\n\nAcme | 2021 - 2018\n- Shipped the ledger service\n";
+    let report = report_for(backwards, backwards, EN_JOB_AD, &[]);
+    let hits = fired(&report, CONSISTENCY_DATE_ORDER);
+    assert_eq!(hits[0].evidence.as_deref(), Some("2021 - 2018"));
+    let two_space = "EXPERIENCE\n\nAcme Payments    Jan 2021 - Mar 2018\n\
+                     - Shipped the ledger service\n";
+    fired(
+        &report_for(two_space, two_space, EN_JOB_AD, &[]),
+        CONSISTENCY_DATE_ORDER,
+    );
+    // … and an ordinary forward span stays quiet.
+    let forward = "EXPERIENCE\n\nAcme | 2018 - 2021\n- Shipped the ledger service\n";
+    silent(
+        &report_for(forward, forward, EN_JOB_AD, &[]),
+        CONSISTENCY_DATE_ORDER,
+    );
+}
+
+/// R6-F4 — the `Category:` strip fired on any head of three words or fewer, so
+/// a PROFICIENCY line ("Python: Advanced", "Deutsch: Muttersprache") lost the
+/// SKILL and kept the level word: "advanced" was reported as a skill nothing
+/// demonstrates while Python itself was never checked at all.
+#[test]
+fn a_proficiency_line_claims_the_skill_not_the_level() {
+    let generated = EN_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Python: Advanced\nDocker: Expert\nElasticsearch: Advanced",
+    );
+    let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+    let claimed: Vec<String> = fired(&report, CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .iter()
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    assert_eq!(
+        claimed,
+        vec!["elasticsearch".to_string()],
+        "the level words are not claims, and the unbacked SKILL is"
+    );
+}
+
+/// The German half of the same shape — the level word is a German noun, so an
+/// English-only stopword list cannot be what saves it.
+#[test]
+fn a_german_proficiency_line_claims_the_skill_not_the_level() {
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Python: Fortgeschritten\nDocker: Experte\nDeutsch: Muttersprache\n\
+         Elasticsearch: Grundkenntnisse",
+    );
+    let report = validate_content(&ContentInput {
+        generated: &generated,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let claimed: Vec<String> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    for level in [
+        "fortgeschritten",
+        "experte",
+        "muttersprache",
+        "grundkenntnisse",
+    ] {
+        assert!(
+            !claimed.iter().any(|c| c == level),
+            "{level:?} is a proficiency grade, not a claimed skill; got {claimed:?}"
+        );
+    }
+    // The skills themselves are now checked: two are demonstrated, one is not.
+    // ("deutsch" may legitimately appear — a language listed and never shown is
+    // exactly what this check reports.)
+    for demonstrated in ["python", "docker"] {
+        assert!(
+            !claimed.iter().any(|c| c == demonstrated),
+            "{demonstrated:?} is demonstrated in the experience section; got {claimed:?}"
+        );
+    }
+    assert!(
+        claimed.iter().any(|c| c == "elasticsearch"),
+        "the unbacked skill in front of the colon must be reported; got {claimed:?}"
+    );
+}
+
+/// The label strip's discriminator, pinned in both directions — including the
+/// boundary the fix knowingly gives up (see [`consistency::strip_skills_label`]).
+#[test]
+fn skills_label_discriminator_reads_lists_and_grades_apart() {
+    let skills = |lines: &str| {
+        let generated = EN_CLEAN.replace(
+            "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+            lines,
+        );
+        let report = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[]);
+        let mut claimed: Vec<String> = report
+            .issues
+            .iter()
+            .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+            .filter_map(|i| i.evidence.clone())
+            .collect();
+        claimed.sort();
+        claimed
+    };
+
+    // A list tail is a CATEGORY label: the head is dropped, the items are the
+    // claims (R5-F3's fix, unchanged).
+    assert_eq!(skills("Languages: Rust, Python"), Vec::<String>::new());
+    assert_eq!(
+        skills("Languages: Rust, Elasticsearch"),
+        vec!["elasticsearch".to_string()]
+    );
+    // A multi-word tail with no separator is still a list: both of its words
+    // are claims, and the category label is not one of them.
+    assert_eq!(
+        skills("Frameworks: React Native"),
+        vec!["native".to_string(), "react".to_string()]
+    );
+    // A one-word tail is a GRADE: the head is the claim.
+    assert_eq!(skills("Python: Advanced"), Vec::<String>::new());
+    // …which is exactly why a single-item CATEGORY reads as a grade too. The
+    // accepted cost of the rule, pinned so it cannot change unnoticed.
+    assert_eq!(
+        skills("Frameworks: Elasticsearch"),
+        vec!["frameworks".to_string()]
+    );
+}

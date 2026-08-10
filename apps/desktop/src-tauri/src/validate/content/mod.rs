@@ -235,7 +235,7 @@ pub struct ContentReport {
 /// copied out of an untrusted document. Worst case per sub-report:
 /// `MAX_CONTENT_ISSUES` (200) × (400 + 400 + 120 + ~150 bytes of JSON overhead
 /// for the rest of a `ContentIssue`) ≈ 214 KB, against
-/// `QUALITY_REPORT_MAX_BYTES` (256 KiB,
+/// `QUALITY_REPORT_MAX_BYTES` (512 KiB,
 /// `commands::ai_generations::ai_generations_save`) for a wrapper that also
 /// holds a second sub-report.
 ///
@@ -318,7 +318,7 @@ pub const MIN_CHARS_FOR_LANGUAGE_CHECK: usize = 120;
 /// Hard cap on [`ContentReport::issues`]' length. M-3: without this, a
 /// pathological/hostile "generated" document (thousands of forged roles,
 /// duplicate bullets, etc.) can grow the serialized report toward ~1MB —
-/// well past the save path's `QUALITY_REPORT_MAX_BYTES` (256 KiB,
+/// well past the save path's `QUALITY_REPORT_MAX_BYTES` (512 KiB,
 /// `commands::ai_generations::ai_generations_save`) byte clamp. That clamp
 /// truncates mid-JSON, the stored blob becomes unparseable, and
 /// `ai_generations::merge_quality_report` then silently falls back to

@@ -676,6 +676,254 @@ fn a_title_starting_with_an_ambiguous_legal_word_still_resolves_title_first() {
     assert_eq!(title, "");
 }
 
+// ── PR #963 round-6 findings ────────────────────────────────────────────────
+
+/// Parse one line as a `JobEntry` and split it — the shared harness the
+/// split tests use.
+fn split_line(line: &str) -> (String, String, String) {
+    let text = format!("EXPERIENCE\n\n{line}\n");
+    let parsed = parse_resume(&text);
+    let entry = parsed
+        .lines
+        .iter()
+        .find(|l| matches!(l.kind, LineKind::JobEntry))
+        .unwrap_or_else(|| panic!("{line:?} must parse as a JobEntry"))
+        .clone();
+    split_entry(&entry)
+}
+
+/// R6-F5 — the two-space arm was hardened against reading a LOCATION column as
+/// the employer, but the pipe/middot arm never was: it takes the first two
+/// non-date segments as `(title, company)` verbatim, so
+/// "Acme Corp | Berlin | 2021 – Present" recorded the CITY as the company and
+/// the employer as the job title.
+#[test]
+fn the_pipe_form_names_the_company_not_the_city() {
+    let (company, title, dates) = split_line("Acme Corp | Berlin | 2021 - Present");
+    assert_eq!(company, "Acme Corp");
+    assert_eq!(title, "");
+    assert_eq!(dates, "2021 - Present");
+
+    // A city column between title and dates must not displace either.
+    let (company, title, _) = split_line("Senior Engineer | Acme Corp | Munich | 2018 - 2021");
+    assert_eq!(company, "Acme Corp");
+    assert_eq!(title, "Senior Engineer");
+
+    // The ordinary three-segment form is untouched.
+    let (company, title, _) = split_line("Senior Engineer | Acme Corp | 2021 - Present");
+    assert_eq!(company, "Acme Corp");
+    assert_eq!(title, "Senior Engineer");
+}
+
+/// R6-F6 — "Beruflicher Werdegang" is a standard German experience heading and
+/// classified as `Other`, so every bullet under it was discarded and the prompt
+/// was told the candidate had no experience.
+#[test]
+fn german_career_headings_classify_as_experience() {
+    for heading in [
+        "Beruflicher Werdegang",
+        "BERUFLICHER WERDEGANG",
+        "Werdegang",
+        "Erfahrung",
+        "Berufliche Erfahrung",
+        "Erfahrungen",
+        // …and the spellings that already worked must keep working.
+        "BERUFSERFAHRUNG",
+        "Arbeitserfahrung",
+    ] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Experience,
+            "{heading:?} names an experience section"
+        );
+    }
+}
+
+/// The same defect end to end: the section's entries and bullets must reach the
+/// evidence set.
+#[test]
+fn a_werdegang_section_yields_roles_and_bullets() {
+    let resume = "\
+Jana Mustermann
+
+BERUFLICHER WERDEGANG
+
+Senior Backend Engineer | Acme Payments | 2021 - Heute
+- Docker-Container auf einem Kubernetes-Cluster betrieben
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend");
+    assert_eq!(set.roles.len(), 1, "got {:?}", set.roles);
+    assert_eq!(set.roles[0].company, "Acme Payments");
+    assert!(
+        set.roles[0]
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("Docker")),
+        "the section's bullets must survive; got {:?}",
+        set.roles[0].bullets
+    );
+}
+
+/// R6-F6, second half — a heading no list recognises still classifies as
+/// `Other`, and its bullets were discarded outright. When the document has NO
+/// recognised experience section, that silently throws away the candidate's
+/// only evidence.
+#[test]
+fn an_unclassified_section_with_bullets_still_contributes_evidence() {
+    let resume = "\
+Jane Doe
+
+MEINE HIGHLIGHTS
+
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis backend engineer");
+    let texts: Vec<&str> = set
+        .roles
+        .iter()
+        .flat_map(|r| r.bullets.iter())
+        .map(|b| b.text.as_str())
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains("Docker")),
+        "an unclassified section's bullets are still the candidate's own evidence; got {texts:?}"
+    );
+    // Never a guessed employer — the bucket stays unattributed.
+    assert!(
+        set.roles.iter().all(|r| r.company.is_empty()),
+        "no company may be invented for an unclassified section; got {:?}",
+        set.roles
+    );
+}
+
+/// A CLASSIFIED section's bullets keep going where they belong — the last-resort
+/// fallback must not become a second home for skills or summary lines.
+#[test]
+fn the_unclassified_fallback_yields_to_a_real_experience_section() {
+    let resume = "\
+Jane Doe
+
+EXPERIENCE
+
+Senior Engineer | Acme Payments | 2021 - Present
+- Shipped Docker containers onto a Kubernetes cluster
+
+INTERESTS
+
+- Runs the local bouldering meetup every second Thursday
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    assert_eq!(set.roles.len(), 1, "got {:?}", set.roles);
+    assert!(
+        !set.roles[0]
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("bouldering")),
+        "a hobby must not become work evidence when a real experience section \
+         exists; got {:?}",
+        set.roles[0].bullets
+    );
+}
+
+/// R6-F7 — the round-5 Contact-arm rescue appends to `roles.last()`, so a
+/// mid-section entry line the parser did not recognise (and every bullet under
+/// it) landed under the PREVIOUS employer: one role absorbed another's header
+/// line and all of its work.
+#[test]
+fn an_unparsed_entry_line_opens_its_own_role_instead_of_joining_the_last() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Globex Logistics | 2015 - 2018
+- Built the billing API in Python and PostgreSQL
+
+Acme Payments, Berlin, 2018 - 2021
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    assert_eq!(set.roles.len(), 2, "two employers; got {:?}", set.roles);
+
+    let globex = &set.roles[0];
+    assert_eq!(globex.company, "Globex Logistics");
+    assert_eq!(
+        globex.bullets.len(),
+        1,
+        "Globex's role must not absorb Acme's header line or its work; got {:?}",
+        globex.bullets
+    );
+    assert!(
+        !globex
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("Docker") || b.text.contains("Acme")),
+        "Acme's work must not be credited to Globex; got {:?}",
+        globex.bullets
+    );
+
+    let acme = &set.roles[1];
+    assert_eq!(
+        acme.company, "Acme Payments",
+        "the employer is salvaged from the unparsed line, never guessed"
+    );
+    assert_eq!(acme.dates, "2018 - 2021");
+    assert_eq!(acme.bullets.len(), 2, "got {:?}", acme.bullets);
+}
+
+/// The other half of the same rule: a line that is NOT entry-shaped must keep
+/// continuing the entry above it. "2021 to Present" on its own line is the
+/// second half of the round-4 fixture's header, not a new employer.
+#[test]
+fn a_bare_date_line_does_not_open_a_second_role() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Acme Payments — Senior Backend Engineer
+2021 to Present
+- Shipped Docker containers onto a Kubernetes cluster
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    assert_eq!(
+        set.roles.len(),
+        1,
+        "a continuation line is not a new employer; got {:?}",
+        set.roles
+    );
+}
+
+/// …and neither is prose that merely ENDS in a year. "Mentioning a date" is a
+/// far weaker signal than "having a date column", and reading the two as the
+/// same thing would turn an unbulleted sentence into an employer called
+/// "Owned the ledger rewrite".
+#[test]
+fn prose_ending_in_a_year_does_not_open_a_role() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Acme Payments | 2021 - Present
+Owned the ledger rewrite, delivered in 2019
+- Shipped Docker containers onto a Kubernetes cluster
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    assert_eq!(
+        set.roles.len(),
+        1,
+        "a sentence that mentions a year is not an entry line; got {:?}",
+        set.roles
+    );
+    assert_eq!(set.roles[0].company, "Acme Payments");
+}
+
 /// The curated-language gate is what `validate::content::ats` reads before it
 /// dares report a density number, so the two halves must never drift: a
 /// language claiming curation with no list behind it re-opens R5-F5, and a

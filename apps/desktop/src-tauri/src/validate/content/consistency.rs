@@ -7,7 +7,9 @@
 
 use std::collections::HashSet;
 
-use crate::documents::evidence::{function_words, identity_tokens, years_in, SectionKind};
+use crate::documents::evidence::{
+    date_spans, function_words, identity_tokens, years_in, SectionKind,
+};
 use crate::export::types::{LineKind, ParsedLine};
 
 use super::factual::{MAX_SCANNED_ENTRIES, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS};
@@ -21,15 +23,36 @@ use super::{
 pub const MAX_PROJECT_DESCRIPTION_LINES: usize = 3;
 
 /// `consistency.date_order` — a span whose start year is after its end year.
+///
+/// ## What counts as a span
+///
+/// Two years on a line are not a date span. This used to read EVERY line, take
+/// any two years on it as `(start, end)` and report them as swapped when the
+/// second was smaller — so an ordinary bullet measuring today against an older
+/// baseline ("cut the incident count to 2024 levels from the 2019 baseline")
+/// was accused of carrying a reversed date span.
+///
+/// So a pair must come from one of the two places a span actually lives:
+///
+/// * the parser's own date COLUMN (`right_text`, set only for the two-space
+///   entry form) — a date by construction, months and all;
+/// * otherwise a `2021 – 2018`-shaped fragment anywhere on the line
+///   ([`date_spans`]), where the separator is what distinguishes a span from
+///   two numbers that happen to share a sentence.
 fn date_order_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let mut issues = Vec::new();
     for section in &ctx.generated_sections {
         for line in &section.lines {
-            let dates = line.right_text.as_deref().unwrap_or(&line.text);
-            let years = years_in(dates);
-            // Only a genuine two-ended span can be out of order; a single year
-            // or a "2021 – Present" span has nothing to compare.
-            if let [start, end] = years[..] {
+            let spans: Vec<(u32, u32, &str)> = match line.right_text.as_deref() {
+                // Only a genuine two-ended column can be out of order; a single
+                // year or a "2021 – Present" span has nothing to compare.
+                Some(dates) => match years_in(dates)[..] {
+                    [start, end] => vec![(start, end, dates)],
+                    _ => Vec::new(),
+                },
+                None => date_spans(&line.text),
+            };
+            for (start, end, span) in spans {
                 if start > end {
                     issues.push(issue(
                         CONSISTENCY_DATE_ORDER,
@@ -38,7 +61,7 @@ fn date_order_issues(ctx: &Analysis) -> Vec<ContentIssue> {
                             "This entry runs from {start} to {end} — the end date is before the \
                              start. Swap them."
                         ),
-                        Some(dates.trim().to_string()),
+                        Some(span.trim().to_string()),
                     ));
                 }
             }
@@ -135,21 +158,52 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// head is content that must keep counting as a claim.
 pub const MAX_SKILLS_LABEL_WORDS: usize = 3;
 
-/// A skills line with its leading `Category:` label removed.
+/// Separators a skills LIST is written with — the signal that what follows a
+/// colon is a set of items rather than one word about the word in front of it.
+const SKILLS_LIST_SEPARATORS: &[char] = &[',', '·', ';', '|', '•', '/'];
+
+/// The half of a `head: tail` skills line that actually claims a skill.
 ///
-/// "Languages: Rust, Python" / "Frameworks: React" / "Programmiersprachen: Rust"
-/// is the commonest skills layout there is, and the label names a CATEGORY, not
-/// a claim — "languages", "frameworks", "databases", "tooling" were all reported
-/// back to the user as skills their résumé never demonstrates.
+/// Two different lines share that shape, and the non-skill half is the opposite
+/// one in each:
 ///
-/// Only a SHORT head is stripped ([`MAX_SKILLS_LABEL_WORDS`]), and only the
-/// first colon is considered: a longer head is prose that happens to carry a
-/// colon, and dropping it would silently stop policing everything in front of
-/// it.
+/// * a CATEGORY label + its items — "Languages: Rust, Python",
+///   "Programmiersprachen: Rust" — where the head names no skill. This is the
+///   commonest skills layout there is, and "languages", "frameworks",
+///   "databases" and "tooling" were all reported back as skills the résumé
+///   never demonstrates.
+/// * a SKILL + its proficiency grade — "Python: Advanced",
+///   "Deutsch: Muttersprache" — where the TAIL names no skill. Stripping the
+///   head here dropped the only real claim on the line (Python was never
+///   checked at all) and kept the grade, so "advanced" was reported instead —
+///   a finding about a word the user cannot demonstrate and would not want to.
+///
+/// The discriminator is the tail: a list carries a separator or runs to more
+/// than one word; a grade is a single word. Only a SHORT head is considered a
+/// label at all ([`MAX_SKILLS_LABEL_WORDS`]), and only the first colon —
+/// a longer head is prose that happens to carry a colon, and dropping it would
+/// silently stop policing everything in front of it.
+///
+/// **The boundary this knowingly gets wrong:** a category with exactly ONE item
+/// ("Frameworks: React") is indistinguishable by shape from a proficiency line,
+/// so it reads as one — the label counts as the claim and the single item is
+/// not policed. That is the cheaper error of the two: a one-item category is
+/// rare, while "Python: Advanced" is not, and the alternative (keeping both
+/// halves whenever the tail is one word) reports the grade on every proficiency
+/// line in the document. Telling the two apart needs a vocabulary of grades or
+/// of category words, and neither list can be kept honest across locales.
 fn strip_skills_label(line: &str) -> &str {
-    match line.split_once(':') {
-        Some((head, tail)) if super::word_count(head) <= MAX_SKILLS_LABEL_WORDS => tail,
-        _ => line,
+    let Some((head, tail)) = line.split_once(':') else {
+        return line;
+    };
+    if super::word_count(head) > MAX_SKILLS_LABEL_WORDS {
+        return line;
+    }
+    let tail_is_a_list = tail.contains(SKILLS_LIST_SEPARATORS) || super::word_count(tail) > 1;
+    if tail_is_a_list {
+        tail
+    } else {
+        head
     }
 }
 
