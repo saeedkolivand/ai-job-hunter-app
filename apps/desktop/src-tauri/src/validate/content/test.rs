@@ -6,6 +6,14 @@
 //!   over realistic en/de résumé + job-ad + generated triples. Each defect
 //!   fixture differs from `en_generated_clean.txt` by exactly ONE edit, so a
 //!   test that fires the wrong code says so loudly.
+//!
+//!   The `*_generated_clean.txt` pair are genuine REWORDINGS of their sources —
+//!   same employers, dates, links and figures, different sentences. They used
+//!   to be near-byte-copies, which made the suite's strongest assertion
+//!   (`clean_resume_produces_no_issues_at_all`, an empty report) prove only that
+//!   the validators do not fire on text they have already seen. Real generator
+//!   output is never a copy, and every false positive this file records was
+//!   found on rephrased text.
 //! * **Threshold tests** pin every named `const`, because a silently-loosened
 //!   threshold is how a validator stops validating.
 //!
@@ -127,6 +135,12 @@ fn fired<'a>(report: &'a ContentReport, code: &str) -> Vec<&'a ContentIssue> {
 /// This is the test that matters most. Every check in this module is a claim
 /// made to a user about their own document; one wrong warning on a correct
 /// résumé and they stop reading the panel.
+///
+/// The fixture is a REWORDING of `en_source_resume.txt`, not a copy of it: every
+/// sentence is rewritten while the employers, dates, links and figures stay
+/// exactly the candidate's own. That is what generator output looks like, and
+/// it is the only version of this assertion worth making — against a byte-copy
+/// it would pass no matter how literal the validators were.
 #[test]
 fn clean_resume_produces_no_issues_at_all() {
     let report = en_resume(EN_CLEAN, &en_requirements());
@@ -157,12 +171,12 @@ fn clean_german_resume_produces_no_issues_at_all() {
     );
 }
 
-/// The byte-copy fixtures above only prove the validators do not fire on text
-/// they have already seen. Real output is a PARAPHRASE: the same facts, reworded
-/// bullets, links written in a different but equivalent form, company names
-/// shortened, an open-ended span resolved to a concrete year. Every one of those
-/// is a legitimate tailoring decision, and every one of them produced a false
-/// Critical before this pass.
+/// The clean fixtures above are rewordings, but they keep every employer, span
+/// and link exactly as the source wrote it. This one goes further, the way real
+/// output does: links written in a different but equivalent form, company names
+/// shortened ("Acme Payments" → "Acme"), an open-ended span resolved to a
+/// concrete year. Every one of those is a legitimate tailoring decision, and
+/// every one of them produced a false Critical before this pass.
 ///
 /// Criticals are the bar here (not "no issues at all"): a rewording may
 /// legitimately move a Warning, but nothing about restating a true fact may ever
@@ -287,7 +301,7 @@ fn near_duplicate_bullets_warn_once_on_the_later_bullet() {
         hits[0]
             .evidence
             .as_deref()
-            .is_some_and(|e| e.starts_with("Shipped Docker containers to")),
+            .is_some_and(|e| e.ends_with("answering 12000 requests every second")),
         "the LATER bullet is the one to cut; got {:?}",
         hits[0].evidence
     );
@@ -2865,11 +2879,10 @@ fn skills_label_discriminator_reads_lists_and_grades_apart() {
     // A tail with no separator is a GRADE: the head is the claim.
     assert_eq!(skills("Python: Advanced"), Vec::<String>::new());
     // …which is exactly why a single-item CATEGORY reads as a grade too. The
-    // accepted cost of the rule, pinned so it cannot change unnoticed.
-    assert_eq!(
-        skills("Frameworks: Elasticsearch"),
-        vec!["frameworks".to_string()]
-    );
+    // accepted cost of the rule, pinned so it cannot change unnoticed: the item
+    // is not policed. The LABEL is not reported in its place either — that was
+    // R8-F7, and `a_category_label_is_never_the_claim` owns the rows for it.
+    assert_eq!(skills("Frameworks: Elasticsearch"), Vec::<String>::new());
 }
 
 // ── PR #963 round-7 findings ────────────────────────────────────────────────
@@ -2983,10 +2996,229 @@ fn a_space_separated_category_now_reads_as_a_grade() {
         "punctuation is the whole discriminator"
     );
     // R6-F4's own multi-word row moves to this side of the line for the same
-    // reason — it was only ever a list because of the word-count clause. Here
-    // the label is NOT demonstrated, so it becomes the claim.
+    // reason — it was only ever a list because of the word-count clause. The
+    // items stay unpoliced; the LABEL is not reported in their place (R8-F7).
     assert_eq!(
         en_skills_claims("Frameworks: React Native"),
-        vec!["frameworks".to_string()]
+        Vec::<String>::new()
+    );
+}
+
+// ── PR #963 round-8 findings ────────────────────────────────────────────────
+
+/// R8-F2 — `ats.header_in_body` is a CRITICAL, and its phone test was
+/// `export::parser`'s `PHONE_RE`, which accepts ANY run of seven or more
+/// digits, spaces and hyphens. A salary range in ordinary prose ("150 - 200")
+/// satisfies it, so a body line under any short line was reported as a second
+/// contact block.
+#[test]
+fn a_salary_range_in_the_body_is_not_a_second_contact_block() {
+    let doc = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+               Acme | 2021 - Present\n- Led the migration\n\n\
+               VENDOR MANAGEMENT\n\n\
+               Rate negotiation\n\
+               Renegotiated agency rates from 150 - 200 EUR per hour across twelve suppliers\n";
+    silent(&report_for(doc, doc, EN_JOB_AD, &[]), ATS_HEADER_IN_BODY);
+
+    // A grouped-figure budget line is the same shape in German.
+    let de = "Jana Mustermann\njana@example.com\n\nBERUFSERFAHRUNG\n\n\
+              Acme | 2021 - Heute\n- Die Abrechnung betreut\n\n\
+              BUDGETVERANTWORTUNG\n\n\
+              Jahresbudget\n\
+              Das Jahresbudget von 90 000 - 110 000 EUR eigenverantwortlich gesteuert\n";
+    silent(&report_for(de, de, EN_JOB_AD, &[]), ATS_HEADER_IN_BODY);
+
+    // …and a real phone number under a name still IS a second contact block,
+    // in every form a résumé header writes one.
+    for phone in [
+        "+49 30 1234567",
+        "+49 (0)30 1234567",
+        "(030) 12345678",
+        "0176 12345678",
+        "+1 (555) 123-4567",
+    ] {
+        let cluster = format!(
+            "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+             Acme | 2021 - Present\n- Led the migration\n\n\
+             REFERENCES\n\nJohn Smith\n{phone}\n"
+        );
+        let report = report_for(&cluster, &cluster, EN_JOB_AD, &[]);
+        let hits = fired(&report, ATS_HEADER_IN_BODY);
+        assert_eq!(hits[0].severity, Severity::Critical, "{phone}");
+    }
+}
+
+/// R8-F3 — the metric pass exempted ANY line the parser marked `Contact`, and a
+/// wrapped body paragraph carrying a European-grouped figure IS contact-shaped
+/// (`PHONE_RE` reads "90 000 - 110 000" as a phone number). A fabricated figure
+/// mid-document therefore escaped the fabricated-metric check entirely.
+#[test]
+fn a_contact_shaped_body_paragraph_is_still_metric_checked() {
+    let source = "Jane Doe\njane@example.com\n\nSUMMARY\n\n\
+                  Backend engineer on payment platforms.\n\n\
+                  EXPERIENCE\n\nAcme | 2021 - Present\n- Led the ledger migration\n";
+    let fabricated = "Jane Doe\njane@example.com\n\nSUMMARY\n\n\
+                      Grew the platform budget from 90 000 - 110 000 EUR inside one year\n\n\
+                      EXPERIENCE\n\nAcme | 2021 - Present\n- Led the ledger migration\n";
+    let report = report_for(fabricated, source, EN_JOB_AD, &[]);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_UNSOURCED_METRIC)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        evidence.contains(&"90 000") && evidence.contains(&"110 000"),
+        "a body paragraph is not the contact band; got {evidence:?}"
+    );
+}
+
+/// R8-F4 — the TRUTH side scanned the whole source with no band skip, so the
+/// digits of the candidate's own phone number "sourced" an unrelated fabricated
+/// figure: a bullet claiming 1 234 567 settlements was accepted because the
+/// header says "+49 30 1234567".
+#[test]
+fn source_contact_digits_do_not_source_a_fabricated_metric() {
+    let header = "Jane Doe\njane@example.com | +49 30 1234567 | 10115 Berlin\n\n";
+    let source = format!("{header}EXPERIENCE\n\nAcme | 2021 - Present\n- Led the migration\n");
+    let generated = format!(
+        "{header}EXPERIENCE\n\nAcme | 2021 - Present\n\
+         - Settled 1234567 payments in the first quarter after the rewrite\n"
+    );
+    let report = report_for(&generated, &source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("1234567"));
+
+    // …while the header's own digits are still not CLAIMS on either side: both
+    // sides skip the same band, so a truthful document stays silent.
+    silent(
+        &report_for(&source, &source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+}
+
+/// R8-F5 — the stack-line exclusion keyed on the literal `"://"`, so a
+/// scheme-less link line ("github.com/janedoe/ledger") was cut out of the
+/// SOURCE link set. The generated document then carried a link the source
+/// "did not have" and the candidate was told they had invented their own
+/// repository URL.
+#[test]
+fn a_scheme_less_link_line_is_not_an_invented_link() {
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · A double-entry bookkeeping tool\n\
+                  github.com/janedoe/ledger\n\
+                  Rust · SQLite · Clap\n";
+    // The model wrote the same link with its scheme spelled out.
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · A double-entry bookkeeping tool\n\
+                     https://github.com/janedoe/ledger\n\
+                     Rust · SQLite · Clap\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+
+    // The guard the exclusion exists for stays green: a package-registry NAME
+    // on a stack line is a technology, not a link, so dropping it while
+    // tailoring is not an altered link.
+    let stack = "PROJECTS\n\n\
+                 **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                 Rust · crates.io · SQLite\n";
+    let trimmed = "PROJECTS\n\n\
+                   **Ledger CLI** · https://github.com/janedoe/ledger\n\
+                   Rust · SQLite\n";
+    silent(
+        &report_for(trimmed, stack, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+
+    // …and a genuinely different repository still fires.
+    let altered = "PROJECTS\n\n\
+                   **Ledger CLI** · A double-entry bookkeeping tool\n\
+                   github.com/someone-else/ledger\n\
+                   Rust · SQLite · Clap\n";
+    fired(
+        &report_for(altered, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+}
+
+/// R8-F6 — `skill_not_demonstrated` filters its claims through
+/// `function_words(lang)` but never asked whether that language HAS a curated
+/// list, so for `fr`/`es`/`it`/`nl`/`pt` the filter is a no-op and ordinary
+/// filler ("connaissances", "approfondies") was reported back as skills the
+/// résumé never demonstrates. Same shape as R5-F5 in `ats.rs`, one check over.
+#[test]
+fn uncurated_language_skills_claims_go_quiet() {
+    let generated = FR_RESUME.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · Terraform · Redis",
+        "Connaissances approfondies en Rust, Python, Docker et Kubernetes",
+    );
+    let report = validate_content(&ContentInput {
+        generated: &generated,
+        source_resume: FR_RESUME,
+        job_ad: FR_JOB_AD,
+        top_requirements: &[],
+        target_language: "fr",
+        doc_kind: DocKind::Resume,
+    });
+    let claimed: Vec<String> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    assert!(
+        claimed.is_empty(),
+        "French filler is not a claimed skill, and nothing here can tell the two apart; \
+         got {claimed:?}"
+    );
+
+    // A curated language still runs the check — suppression is about the LIST,
+    // not about the shape of the line.
+    assert!(
+        de_skills_claims("Kenntnisse in Rust und Elasticsearch")
+            .iter()
+            .any(|c| c == "elasticsearch"),
+        "German filler is FILTERED, so the unbacked skill beside it is still reported"
+    );
+}
+
+/// R8-F7 — R6-F4's conceded boundary ("Frameworks: React" reports the label) is
+/// also a false-positive channel: a category word is near-never demonstrated,
+/// so the check reported the CATEGORY back as a skill the résumé fails to
+/// evidence. A label is not a claim, wherever the line's shape put it.
+#[test]
+fn a_category_label_is_never_the_claim() {
+    for line in [
+        "Frameworks: Elasticsearch",
+        "Frameworks: React Native",
+        "Cloud: Elasticsearch",
+        "Databases: Elasticsearch",
+    ] {
+        assert_eq!(
+            en_skills_claims(line),
+            Vec::<String>::new(),
+            "{line:?}: the category label names no skill, and the item stays unpoliced"
+        );
+    }
+    for line in [
+        "Werkzeuge: Elasticsearch",
+        "Datenbanken: Elasticsearch",
+        "Programmiersprachen: Elasticsearch",
+    ] {
+        assert_eq!(
+            de_skills_claims(line),
+            Vec::<String>::new(),
+            "{line:?}: a German category label names no skill either"
+        );
+    }
+    // The head is still the claim when it names a SKILL rather than a category.
+    assert_eq!(
+        en_skills_claims("Elasticsearch: Advanced"),
+        vec!["elasticsearch".to_string()],
+        "a proficiency line still claims the skill in front of the colon"
+    );
+    assert_eq!(
+        de_skills_claims("Englisch: verhandlungssicher in Wort und Schrift"),
+        vec!["englisch".to_string()]
     );
 }

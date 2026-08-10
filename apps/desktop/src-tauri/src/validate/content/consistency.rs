@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use crate::documents::evidence::{
-    date_spans, function_words, identity_tokens, years_in, SectionKind,
+    date_spans, function_words, has_curated_function_words, identity_tokens, years_in, SectionKind,
 };
 use crate::export::types::{LineKind, ParsedLine};
 
@@ -199,16 +199,20 @@ const SKILLS_LIST_SEPARATORS: &[char] = &[',', '·', ';', '|', '•'];
 /// stop policing everything in front of it.
 ///
 /// **The boundary this knowingly gets wrong**, in one direction only: a
-/// category whose items carry no separator reads as a grade, so the label
-/// counts as the claim and the items are not policed. That covers both a
-/// one-item category ("Frameworks: React") and an unpunctuated multi-item one
-/// ("Tools: Docker Kubernetes Terraform"). It is the cheaper error: those two
-/// layouts are uncommon, while a multi-word grade is the normal way to write a
-/// language level, and the alternative reports words like "verhandlungssicher"
-/// or "advanced" as skills the résumé fails to demonstrate — a finding about a
-/// word the user cannot act on. Telling the two apart properly needs a
-/// vocabulary of grades or of category words, and neither list can be kept
-/// honest across locales.
+/// category whose items carry no separator reads as a grade, so the items are
+/// not policed. That covers both a one-item category ("Frameworks: React") and
+/// an unpunctuated multi-item one ("Tools: Docker Kubernetes Terraform"). It is
+/// the cheaper error: those two layouts are uncommon, while a multi-word grade
+/// is the normal way to write a language level, and the alternative reports
+/// words like "verhandlungssicher" or "advanced" as skills the résumé fails to
+/// demonstrate — a finding about a word the user cannot act on.
+///
+/// What that boundary must NOT do is report the LABEL in the items' place. A
+/// category word is demonstrated by an experience section roughly never, so
+/// "Frameworks: React" answered a missed check with a false one: "frameworks is
+/// listed under skills but never appears in your experience". So when the grade
+/// reading wins and the head is a [`SKILLS_CATEGORY_LABELS`] word, the line
+/// claims NOTHING — the miss stays a miss instead of becoming an accusation.
 fn strip_skills_label(line: &str) -> &str {
     let Some((head, tail)) = line.split_once(':') else {
         return line;
@@ -218,9 +222,54 @@ fn strip_skills_label(line: &str) -> &str {
     }
     if tail.contains(SKILLS_LIST_SEPARATORS) {
         tail
+    } else if is_category_label(head) {
+        ""
     } else {
         head
     }
+}
+
+/// Words a skills line uses to NAME a category rather than to claim a skill,
+/// `en` + `de` — the two languages this crate curates vocabulary for anywhere.
+///
+/// Matched as a SUBSTRING of a head token, which is what makes one entry cover
+/// a language's inflections and compounds at once: `sprach` covers "Sprachen"
+/// and "Programmiersprachen", `datenbank` covers "Datenbanken", `tool` covers
+/// "Tools" and "Tooling". Deliberately tiny — every entry here is a skill this
+/// check stops policing, so the bar is "nobody lists this as a skill".
+const SKILLS_CATEGORY_LABELS: &[&str] = &[
+    "language",
+    "sprach",
+    "framework",
+    "library",
+    "bibliothek",
+    "tool",
+    "werkzeug",
+    "database",
+    "datenbank",
+    "cloud",
+    "skill",
+    "kenntnis",
+    "fähigkeit",
+    "kompetenz",
+    "technolog",
+    "stack",
+    "methode",
+];
+
+/// Whether `head` names a CATEGORY: any of its words carries a
+/// [`SKILLS_CATEGORY_LABELS`] stem.
+///
+/// Any word, not all of them, so a qualified label ("Everyday programming
+/// languages", "Weitere Kenntnisse") still reads as one. The cost is that a real
+/// skill whose name contains a category word ("Cloud Architecture: Advanced")
+/// stops being policed — a miss, which is the direction this whole family errs
+/// in.
+fn is_category_label(head: &str) -> bool {
+    head.split_whitespace().any(|word| {
+        let lower = word.to_lowercase();
+        SKILLS_CATEGORY_LABELS.iter().any(|c| lower.contains(c))
+    })
 }
 
 /// `consistency.skill_not_demonstrated` — a skill listed in the skills section
@@ -229,7 +278,29 @@ fn strip_skills_label(line: &str) -> &str {
 /// The ATS argument for listing a skill is real, so this is advice, not a
 /// block: it tells the user which claims an interviewer will have nothing to
 /// ask about.
+///
+/// ## Only for a language whose non-skills are known
+///
+/// The claimed set is every token on a skills line, so the finding is only as
+/// good as the filter that removes the words which are not skills — and that
+/// filter is [`function_words`], which is curated for `en` (through the
+/// kernel's own `STOPWORDS`) and `de` and for nothing else. An empty list means
+/// "no filter", not "nothing to filter": on a French résumé "Connaissances
+/// approfondies en Rust et Python" reported *connaissances* and *approfondies*
+/// as skills the candidate fails to demonstrate.
+///
+/// So the whole check goes quiet for an uncurated language, exactly as
+/// `ats::keyword_density_issues` does and for the same reason: a conclusion that
+/// depends on function words having been removed may not be drawn where they
+/// were not. This suppresses REAL gaps too (a French skills line listing
+/// something the experience never shows) — accepted, because this family is
+/// advisory while a wrong finding costs the user's trust in the panel, and
+/// because there is no way here to tell the two apart. Adding a list to
+/// `function_words` re-enables it, in one place, for every surface at once.
 fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
+    if !has_curated_function_words(&ctx.lang) {
+        return Vec::new();
+    }
     let Some(skills) = ctx.section_of_kind(SectionKind::Skills) else {
         return Vec::new();
     };

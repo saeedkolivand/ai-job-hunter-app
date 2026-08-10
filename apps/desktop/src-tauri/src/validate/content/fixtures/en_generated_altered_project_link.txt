@@ -3,24 +3,24 @@ jane.doe@example.com | +49 30 1234567 | github.com/janedoe
 
 SUMMARY
 
-Backend engineer with eight years on payment and container platforms.
+Eight years of backend work, most of it on payment systems and the container platforms behind them.
 
 EXPERIENCE
 
 Senior Backend Engineer | Acme Payments | 2021 - Present
-- Cut checkout latency from 480ms to 90ms with a Redis cache in front of the ledger service
-- Shipped Docker containers onto a Kubernetes cluster serving 12000 requests per second
-- Reduced failed settlements by 35% after rewriting the retry scheduler in Rust
+- Checkout latency fell from 480ms to 90ms once a Redis cache sat in front of the ledger service
+- Ran the Docker workloads on a Kubernetes cluster that answers 12000 requests every second
+- Rewrote the retry scheduler in Rust, and failed settlements fell by 35%
 
 Backend Developer | Globex Logistics | 2018 - 2021
-- Built the billing API in Python and PostgreSQL for 40 warehouse sites
-- Migrated the fleet to AWS and wrote the deployment pipeline in Terraform
+- 40 warehouse sites bill through an API I wrote in Python, backed by PostgreSQL
+- Took the fleet to AWS, with the whole deployment pipeline written as Terraform
 
 PROJECTS
 
 **Ledger CLI** · https://ledger.example.dev · https://github.com/jane-doe/ledger-cli · https://www.café-ledger.de
 Rust · SQLite · Clap
-A double-entry bookkeeping tool for freelancers.
+Double-entry bookkeeping for freelancers, on the command line.
 
 SKILLS
 

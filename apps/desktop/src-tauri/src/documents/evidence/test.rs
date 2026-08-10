@@ -1043,6 +1043,148 @@ Led the platform rewrite, Jan 2019 - Dec 2021
     );
 }
 
+// ── PR #963 round-8 findings ────────────────────────────────────────────────
+
+/// R8-F1 — `EXPERIENCE_HEADINGS` carries the bare substring `career`, and the
+/// experience test runs BEFORE the summary one, so "Career Summary" (and
+/// "Career Objective", and "Career Profile") classified as EXPERIENCE. The
+/// prose under a summary heading then reached the experience arm and became
+/// work bullets under an invented, unattributed role.
+#[test]
+fn a_career_summary_heading_is_a_summary_not_experience() {
+    for heading in [
+        "Career Summary",
+        "CAREER OBJECTIVE",
+        "Career Profile",
+        "Career Objective Statement",
+    ] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Summary,
+            "{heading:?} names a summary, not a work history"
+        );
+    }
+    // …and a career heading that names no summary is still Experience.
+    for heading in ["Career History", "CAREER", "Career Highlights"] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Experience,
+            "{heading:?} still names a work history"
+        );
+    }
+}
+
+/// The same defect end to end: summary prose filed as a work bullet under a
+/// role the résumé never had.
+#[test]
+fn career_summary_prose_is_not_filed_as_work_evidence() {
+    let resume = "\
+Jane Doe
+
+CAREER SUMMARY
+
+Backend engineer with eight years on payment and container platforms.
+
+EXPERIENCE
+
+Senior Engineer | Acme Payments | 2021 - Present
+- Shipped Docker containers onto a Kubernetes cluster
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend engineer");
+    assert_eq!(
+        set.roles.len(),
+        1,
+        "the summary must not open a role of its own; got {:?}",
+        set.roles
+    );
+    assert_eq!(set.roles[0].company, "Acme Payments");
+    let texts: Vec<&str> = set.roles[0]
+        .bullets
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect();
+    assert_eq!(
+        texts,
+        vec!["Shipped Docker containers onto a Kubernetes cluster"],
+        "a summary sentence is a claim, not an achievement to draw on"
+    );
+}
+
+/// R8-F8 — with R7's gate in place the comma-less salvage's remaining reachable
+/// input is an ORDINARY entry line: "Acme Payments, Jan 2019 - Dec 2021" carries
+/// a real date column and a label that is nothing BUT the employer, and R7
+/// filed it as an unattributed role with the employer surviving only as bullet
+/// text.
+#[test]
+fn a_comma_less_entry_label_names_the_employer() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Globex Logistics | 2015 - 2018
+- Built the billing API in Python and PostgreSQL
+
+Acme Payments, Jan 2019 - Dec 2021
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    assert_eq!(set.roles.len(), 2, "got {:?}", set.roles);
+    assert_eq!(set.roles[0].company, "Globex Logistics");
+
+    let acme = &set.roles[1];
+    assert_eq!(
+        acme.company, "Acme Payments",
+        "everything in front of a real date column, with no comma left in it, IS the employer"
+    );
+    assert_eq!(acme.title, "");
+    assert_eq!(acme.dates, "Jan 2019 - Dec 2021");
+    let texts: Vec<&str> = acme.bullets.iter().map(|b| b.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        vec![
+            "Shipped Docker containers onto a Kubernetes cluster",
+            "Cut checkout latency with a Redis cache in front of the ledger service",
+        ],
+        "an attributed label is role metadata, never repeated as its own bullet"
+    );
+}
+
+/// The discriminator that keeps R7-F1(b) closed, both directions. A label is
+/// the employer only when it READS like a name; a sentence never does.
+#[test]
+fn a_comma_less_entry_label_is_an_employer_only_when_it_reads_like_a_name() {
+    for name in [
+        "Acme Payments",
+        "ACME PAYMENTS",
+        "Nordwind Systeme GmbH",
+        "IBM",
+        "Johnson & Johnson",
+        "3M Deutschland",
+    ] {
+        assert_eq!(
+            salvage_entry_label(name),
+            Some((name.to_string(), String::new())),
+            "{name:?} reads as an employer"
+        );
+    }
+    for prose in [
+        "Led the platform rewrite",
+        "Promoted to Staff Engineer",
+        "Owned the ledger rewrite",
+        "Rebuilt the settlement pipeline end to end for the payments group",
+        "acme payments",
+    ] {
+        assert_eq!(
+            salvage_entry_label(prose),
+            None,
+            "{prose:?} is a sentence, and a sentence is never an employer"
+        );
+    }
+}
+
 /// The curated-language gate is what `validate::content::ats` reads before it
 /// dares report a density number, so the two halves must never drift: a
 /// language claiming curation with no list behind it re-opens R5-F5, and a

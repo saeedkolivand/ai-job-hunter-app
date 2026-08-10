@@ -223,7 +223,6 @@ pub enum SectionKind {
 const EXPERIENCE_HEADINGS: &[&str] = &[
     "experience",
     "employment",
-    "career",
     "berufserfahrung",
     "arbeitserfahrung",
     // "Beruflicher Werdegang" is as standard a German experience heading as
@@ -248,6 +247,24 @@ const EXPERIENCE_HEADINGS: &[&str] = &[
 /// skills heading). Bounded, it adds only the spellings that were actually
 /// missing: "Erfahrung", "Erfahrungen", "Berufliche Erfahrung".
 const EXPERIENCE_HEADINGS_WORD_BOUNDED: &[&str] = &["erfahrung", "erfahrungen"];
+
+/// Experience stems that ALSO open a summary heading, and therefore lose to
+/// [`SUMMARY_HEADINGS`] on a heading that carries both.
+///
+/// `career` is the whole list. It names a work history on its own ("Career",
+/// "Career History") and names a *summary* just as often ("Career Summary",
+/// "Career Objective", "Career Profile") — and because the experience test runs
+/// first, every one of those classified as Experience. That is not a cosmetic
+/// mislabel: prose under an Experience heading reaches [`extract_evidence`]'s
+/// role arm, so a summary paragraph became a work bullet under a role the
+/// candidate never had.
+///
+/// Scoped to the ambiguous stem rather than reordering the whole classifier:
+/// every other entry in [`EXPERIENCE_HEADINGS`] names a work history in any
+/// company, so letting `profil` outrank `berufserfahrung` would trade this
+/// false positive for a new one ("Berufserfahrung / Kurzprofil" style compound
+/// headings).
+const AMBIGUOUS_EXPERIENCE_HEADINGS: &[&str] = &["career"];
 const EDUCATION_HEADINGS: &[&str] = &[
     "education",
     "academic",
@@ -317,11 +334,19 @@ const SUMMARY_HEADINGS: &[&str] = &[
 /// exceptions are [`EXPERIENCE_HEADINGS_WORD_BOUNDED`] and
 /// [`EDUCATION_HEADINGS_WORD_BOUNDED`], whose stems are substrings of ordinary
 /// words and are therefore matched with [`contains_word`].
+///
+/// The one place the "experience first" order is NOT applied is
+/// [`AMBIGUOUS_EXPERIENCE_HEADINGS`] — a stem that opens a summary heading as
+/// readily as an experience one yields to a summary word on the same heading.
 pub fn classify_section(heading: &str) -> SectionKind {
     let lower = heading.to_lowercase();
     let has = |set: &[&str]| set.iter().any(|k| lower.contains(k));
     let has_word = |set: &[&str]| set.iter().any(|k| contains_word(&lower, k));
-    if has(EXPERIENCE_HEADINGS) || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED) {
+    let summary = has(SUMMARY_HEADINGS);
+    if has(EXPERIENCE_HEADINGS)
+        || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED)
+        || (!summary && has(AMBIGUOUS_EXPERIENCE_HEADINGS))
+    {
         SectionKind::Experience
     } else if has(EDUCATION_HEADINGS) || has_word(EDUCATION_HEADINGS_WORD_BOUNDED) {
         SectionKind::Education
@@ -329,7 +354,7 @@ pub fn classify_section(heading: &str) -> SectionKind {
         SectionKind::Projects
     } else if has(SKILLS_HEADINGS) {
         SectionKind::Skills
-    } else if has(SUMMARY_HEADINGS) {
+    } else if summary {
         SectionKind::Summary
     } else {
         SectionKind::Other
@@ -493,31 +518,74 @@ fn split_two_space_label(label: &str) -> (String, String) {
     }
 }
 
+/// How many words a comma-less entry label may run to and still read as an
+/// employer's NAME. Four covers "Nordwind Systeme Digital Solutions"; past that
+/// a label is a sentence far more often than a company.
+const MAX_COMPANY_LABEL_WORDS: usize = 4;
+
+/// Whether `label` reads as a NAME rather than as a sentence: at most
+/// [`MAX_COMPANY_LABEL_WORDS`] words, none of which STARTS lowercase.
+///
+/// Capitalization is the discriminator because it is the one signal that
+/// separates the two shapes in both curated languages without a vocabulary.
+/// English writes an employer in title case ("Acme Payments") and a sentence
+/// with lowercase function words ("Led **the** platform rewrite"); German
+/// capitalizes its nouns but never its articles, prepositions or verbs
+/// ("Beförderung **zum** Staff Engineer"), so a prose fragment in either
+/// language almost always carries a lowercase word. Digits and symbols are
+/// neutral, so "3M Deutschland" and "Johnson & Johnson" both pass.
+///
+/// The two errors it can still make, both stated rather than hidden:
+///
+/// * a title-cased JOB TITLE with no company on the line ("Leitende
+///   Entwicklerin, Jan 2019 - Dec 2021") is recorded as the employer;
+/// * an employer written all-lowercase ("adidas, Jan 2019 - Dec 2021") stays
+///   unattributed.
+///
+/// The second is the safe direction and the first is bounded: this value never
+/// reaches a `factual.dropped_role` comparison, which reads only lines the
+/// parser recognised as a `JobEntry`.
+fn looks_like_a_company_name(label: &str) -> bool {
+    let words: Vec<&str> = label.split_whitespace().collect();
+    !words.is_empty()
+        && words.len() <= MAX_COMPANY_LABEL_WORDS
+        && words.iter().all(|w| {
+            w.chars()
+                .find(|c| c.is_alphanumeric())
+                .is_none_or(|c| !c.is_lowercase())
+        })
+}
+
 /// Salvage `(company, title)` from an entry line the PARSER did not recognise
 /// — [`extract_evidence`]'s role-opening arm, where the label was cut out of
 /// running text instead of handed over by `export::parser`. `None` means
 /// nothing could be resolved, and the caller must open an UNATTRIBUTED role
 /// rather than name one.
 ///
-/// The difference from calling [`split_two_space_label`] directly is its
-/// comma-less arm, which reads the whole label as the company. That is correct
-/// where it is called FROM: the parser has already peeled the date column off a
-/// template-rendered entry, so whatever remains is the employer by
-/// construction. Here there is no such construction — "Promoted to Staff
-/// Engineer, 2022" arrives as a label with no comma left in it, and the whole
-/// sentence was recorded as the employer, which is exactly what this arm's
-/// contract forbids. A comma is the only structure this form offers; with none
-/// left there is no evidence, and no evidence means unattributed.
+/// ## The comma-less arm, and why it may trust its input again
 ///
-/// Cost, deliberately paid and NOT hidden: "Acme Payments, Jan 2019 - Dec 2021"
-/// (one comma, so a comma-less label) now opens an unattributed role too. The
-/// employer's name is lost from the attribution but never from the evidence —
-/// the caller keeps the label as text — and losing a name beats inventing one,
-/// the same tradeoff [`is_location_only`] and [`split_two_space_label`] already
-/// make on this path.
+/// [`split_two_space_label`]'s comma-less arm reads the whole label as the
+/// company. That is correct where IT is called from — the parser has already
+/// peeled the date column off a template-rendered entry, so whatever remains is
+/// the employer by construction — and the same construction now holds here:
+/// [`trailing_date_column`] only reaches this function after [`is_date_only`]
+/// has confirmed a real date COLUMN, so the label is everything in front of one.
+/// "Acme Payments, Jan 2019 - Dec 2021" is an ordinary entry line whose label IS
+/// the employer, and refusing to name it (R7's behaviour) cost every such entry
+/// its attribution while keeping the name as bullet text.
+///
+/// What the gate does NOT decide is whether the label is a NAME:
+/// "Led the platform rewrite, Jan 2019 - Dec 2021" passes it too. That is
+/// [`looks_like_a_company_name`]'s job, and it is why this is not simply a call
+/// to [`split_two_space_label`] — the promotion note and the sentence must
+/// still open an unattributed role, exactly as R7 pinned them.
+///
+/// Text is never deleted to buy either behaviour: when this returns `None` the
+/// caller keeps the label as the new role's first bullet.
 fn salvage_entry_label(label: &str) -> Option<(String, String)> {
     if !label.contains(',') {
-        return None;
+        let label = label.trim();
+        return looks_like_a_company_name(label).then(|| (label.to_string(), String::new()));
     }
     let (company, title) = split_two_space_label(label);
     (!company.is_empty() || !title.is_empty()).then_some((company, title))

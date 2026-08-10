@@ -168,24 +168,40 @@ pub fn normalize_number(raw: &str) -> String {
     out.trim_end_matches('.').to_string()
 }
 
-/// Extract every impact metric from `text`, skipping the contact band.
+/// The lines of `text` whose numbers count as CLAIMS — everything outside the
+/// document's contact band.
 ///
-/// Skipped deliberately:
-/// * lines before the first section heading, and any line the parser classified
-///   as `Contact`/`Name` that also carries a real address or phone — that is
-///   where phone numbers and postal codes live, and neither is a claim about
-///   impact. Nothing wider than that: the skip used to accept anything
-///   `is_contact_shaped` matched, which is any line with two `·` separators or
-///   the word "website", and a body bullet could evade the whole check by
-///   containing one;
-/// * 1900–2099 four-digit runs — those are years, checked by
-///   [`unsupported_date_issues`] instead;
-/// * numbers under three digits with no `%`/`x` unit.
-pub fn metrics_in(text: &str) -> Vec<Metric> {
+/// One walk, used by both sides of every comparison in this file
+/// ([`metrics_in`] for what a document claims, [`all_numbers`] for what its
+/// source already stated). Splitting them was a defect in itself: the truth side
+/// scanned the raw text, so the candidate's own phone digits "sourced" a
+/// fabricated figure that merely reused them.
+///
+/// What the band is depends on whether the document HAS sections:
+///
+/// * **A résumé** (headings present) — the band is section 0, name + contact,
+///   and it is skipped by POSITION. Nothing else is exempt. The per-line
+///   exemption that used to sit here ("the parser called it `Contact` and it
+///   carries a real address or phone") reached every section, and a wrapped body
+///   paragraph is contact-shaped whenever it carries a European-grouped figure
+///   ("90 000 - 110 000" satisfies `PHONE_RE`), so a fabricated number in the
+///   middle of a document was exempt from the whole check.
+/// * **A cover letter** (no headings) — there is no positional band, so the
+///   letterhead is skipped by SHAPE: the body starts at the first line long
+///   enough to be a sentence ([`MIN_WORDS_IN_LETTER_BODY_LINE`]), and a real
+///   contact line is skipped wherever it sits, because a letter carries contact
+///   details in its letterhead AND its sign-off. That shape test is
+///   [`has_real_contact_match`] — the same one `ats::is_contact_cluster` applies
+///   inline, minus the `LineKind` coupling this fix removed.
+///
+/// *Residual, stated rather than hidden:* in a heading-less document a LONG
+/// contact-shaped prose line is still exempt, because shape is the only band
+/// signal a letter offers. A letterhead written as one line
+/// ("Jane Doe · Musterstraße 1 · 10115 Berlin · +49 30 1234567") clears the
+/// sentence-length gate, so the shape test cannot be narrowed to short lines
+/// either.
+fn metric_lines(text: &str) -> Vec<String> {
     let sections = super::split_sections(text);
-    // A document with headings is a résumé: band 0 is name + contact, skip it
-    // wholesale. A document without any is a letter: skip its letterhead by
-    // shape instead (see [`MIN_WORDS_IN_LETTER_BODY_LINE`]).
     let has_headings = sections.len() > 1;
     let mut out = Vec::new();
     for (idx, section) in sections.iter().enumerate() {
@@ -200,19 +216,30 @@ pub fn metrics_in(text: &str) -> Vec<Metric> {
                     continue;
                 }
             }
-            // Skip the header band ONLY. The old test also skipped anything
-            // `is_contact_shaped` accepted, which includes any line with two
-            // `·` separators or the word "website" — so a body bullet reading
-            // "Rebuilt the website · cut load time 90% · 4 releases" was exempt
-            // from every metric check. A header line is one the parser
-            // classified as such AND that carries a real address or phone.
-            if matches!(line.kind, LineKind::Contact | LineKind::Name)
-                && has_real_contact_match(&line.text)
-            {
+            if !has_headings && has_real_contact_match(&line.text) {
                 continue;
             }
-            collect_metrics(&line.text, &mut out);
+            out.push(line.text.clone());
         }
+    }
+    out
+}
+
+/// Extract every impact metric from `text`, skipping the contact band (see
+/// [`metric_lines`]).
+///
+/// Also skipped, inside the lines that are scanned:
+/// * 1900–2099 four-digit runs — those are years, checked by
+///   [`unsupported_date_issues`] instead;
+/// * numbers under three digits with no `%`/`x` unit.
+pub fn metrics_in(text: &str) -> Vec<Metric> {
+    metrics_in_lines(&metric_lines(text))
+}
+
+fn metrics_in_lines(lines: &[String]) -> Vec<Metric> {
+    let mut out = Vec::new();
+    for line in lines {
+        collect_metrics(line, &mut out);
     }
     out
 }
@@ -274,12 +301,17 @@ fn collect_metrics(line: &str, out: &mut Vec<Metric>) {
 /// That needs meaning, and guessing at meaning is how a deterministic check
 /// starts accusing people.
 fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
-    let sourced: HashSet<String> = metrics_in(truth)
+    // The truth's band-skipped lines, resolved ONCE: both number passes below
+    // read them, and both must read the same ones as the generated side, or the
+    // source's contact digits become evidence for a claim (see
+    // [`metric_lines`]).
+    let truth_lines = metric_lines(truth);
+    let sourced: HashSet<String> = metrics_in_lines(&truth_lines)
         .into_iter()
         .map(|m| m.number)
         // Bare numbers, magnitude suffixes and word-numbers in the truth text
         // all count — see the doc comment.
-        .chain(all_numbers(truth))
+        .chain(all_numbers(&truth_lines))
         .chain(suffixed_numbers(truth))
         .chain(word_numbers(truth))
         .collect();
@@ -310,10 +342,19 @@ fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
         .collect()
 }
 
-/// Every number in `text`, normalized — the lenient half of the metric check.
-fn all_numbers(text: &str) -> HashSet<String> {
-    INTEGER_RE
-        .captures_iter(text)
+/// Every number on `lines`, normalized — the lenient half of the metric check.
+///
+/// Takes the already-band-skipped lines rather than the raw document on
+/// purpose. Scanning the whole source here let the candidate's own contact
+/// details vouch for a fabricated figure: a header reading "+49 30 1234567"
+/// put `1234567` into the sourced set, so a bullet claiming that many
+/// settlements passed silently, and a postal code did the same for any
+/// five-digit claim. The two sides of the comparison must skip the same band or
+/// the asymmetry IS the hole.
+fn all_numbers(lines: &[String]) -> HashSet<String> {
+    lines
+        .iter()
+        .flat_map(|line| INTEGER_RE.captures_iter(line))
         .map(|c| normalize_number(&c[1]))
         .filter(|n| !n.is_empty())
         .collect()
@@ -661,21 +702,50 @@ pub fn canonical_link(raw: &str) -> String {
     }
 }
 
+/// Whether a URL span names a RESOURCE rather than a package registry or a
+/// library that happens to be host-shaped: it carries a scheme, a `www.` host,
+/// or a path.
+///
+/// [`URL_RE`]'s third arm accepts a bare [`CODE_HOSTS`] name with no path
+/// (`crates.io`, `npmjs.com`), which is correct on a title line — that is how a
+/// project links to its package — and wrong on a stack line, where the same
+/// token is the ecosystem the project is written for. A path or a scheme is
+/// what tells the two apart; see [`project_links`].
+fn names_a_resource(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("www.")
+        || canonical_link(url).contains('/')
+}
+
 /// The links a projects section actually claims, verbatim.
 ///
-/// The `·`-separated STACK line is excluded structurally. In the owner-locked
-/// projects format the links live on the title line and the second line of an
-/// entry is the stack ("Rust · SQLite · Clap"); a technology list is never a
-/// link, so it does not enter the comparison at all unless it carries an
-/// explicit scheme. Entry grouping is `consistency::project_entries`, so the
-/// two checks cannot disagree about where an entry begins.
+/// The second line of an entry is the STACK line in the owner-locked projects
+/// format ("Rust · SQLite · Clap"), and a technology list is never a link. What
+/// it may still carry is a bare package-registry host, so the exclusion is
+/// applied per URL — only a span that [`names_a_resource`] survives there.
+///
+/// It used to be applied per LINE, keyed on the literal `"://"`: a stack line
+/// without that substring was dropped whole. A links line written without a
+/// scheme ("github.com/janedoe/ledger", the form half of all résumés use) was
+/// therefore cut out of the SOURCE link set, and a generated document that
+/// spelled the same link out with `https://` was reported as linking somewhere
+/// "not in your source résumé" — a Critical telling candidates they had invented
+/// their own repository URL. Substring-testing for a scheme cannot tell a
+/// missing scheme from a missing link; the resource test can.
+///
+/// Entry grouping is `consistency::project_entries`, so the two checks cannot
+/// disagree about where an entry begins.
 fn project_links(section: &Section) -> Vec<String> {
     let mut out = Vec::new();
     for entry in super::consistency::project_entries(section) {
         for (index, line) in entry.iter().enumerate() {
-            let is_stack_line = index == 1 && !line.text.contains("://");
-            if !is_stack_line {
-                out.extend(urls_in(&line.text));
+            let urls = urls_in(&line.text);
+            if index == 1 {
+                out.extend(urls.into_iter().filter(|u| names_a_resource(u)));
+            } else {
+                out.extend(urls);
             }
         }
     }
