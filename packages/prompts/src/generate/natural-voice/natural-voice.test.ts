@@ -926,4 +926,38 @@ describe('construction-dependent prose rules: kept in the prompt, absent from th
       'building on this',
     ]);
   });
+
+  // The German twin of the same defect (PR #963 round 9). ANTI_AI_TELL_LEXICAL_DE
+  // bans a Nominalstil sentence OPENER and quotes "Die Umsetzung von X erfolgte
+  // durch..." as the illustrative example; 'erfolgte durch' in the array flagged
+  // the phrase wherever it appeared, including mid-sentence clauses the prompt
+  // permits. Both halves are pinned: the guidance stays, the entry goes.
+  const LETTER_DE_PROMPT = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'de');
+
+  it('the German prompt still bans the Nominalstil opener, with its worked example', () => {
+    expect(LETTER_DE_PROMPT).toContain('formelhafte Nominalstil-Einstiege');
+    expect(LETTER_DE_PROMPT).toContain('erfolgte durch');
+    expect(LETTER_DE_PROMPT).toContain('verbführenden Satz');
+  });
+
+  it("'erfolgte durch' is prompt-only: the ban is on the opener, not the phrase", () => {
+    expect(AI_TELL_PROSE_WORDS_DE).not.toContain('erfolgte durch');
+  });
+
+  // An empty list is the honest outcome, not an oversight — see the array's
+  // own doc. Pinned so a later "the DE list looks empty, let's add something"
+  // has to argue with the rule instead of the emptiness.
+  it('the DE prose lexicon is empty: German has no unconditionally-banned prose phrase', () => {
+    expect(AI_TELL_PROSE_WORDS_DE).toEqual([]);
+  });
+
+  it('the DE prose rules that remain are all judgements a substring cannot make', () => {
+    for (const rule of [
+      'Kein Dreiklang-Zwang',
+      'Kein identischer Absatzanfang',
+      'Variiere Satzlänge',
+    ]) {
+      expect(LETTER_DE_PROMPT).toContain(rule);
+    }
+  });
 });

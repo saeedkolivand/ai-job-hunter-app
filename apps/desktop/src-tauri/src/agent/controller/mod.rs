@@ -30,28 +30,30 @@ use super::tools::{neutralize_transcript_boundaries, to_specs, AgentTool, ToolCo
 /// Hard cap on provider round-trips per agent run (agent-safety budget).
 ///
 /// Sized for the "prep this application" flow ([`super::flows::PREP_APPLICATION_SYSTEM`]),
-/// today's longest FIXED sequence: 7 tool turns (`research_company`, `match_resume`,
-/// `draft_cover_letter`, `draft_resume`, `suggest_interview_questions`,
-/// `save_cover_letter`, `save_resume`) plus a planning turn and a closing-summary
-/// turn — 9 turns minimum with zero room for a model splitting a step across two
-/// turns or a retried confirm.
+/// today's longest FIXED sequence: 8 tool turns (`research_company`, `match_resume`,
+/// `draft_cover_letter`, `draft_resume`, `validate_resume`,
+/// `suggest_interview_questions`, `save_cover_letter`, `save_resume`) plus a
+/// planning turn and a closing-summary turn — a 10-turn floor.
 ///
-/// The whitelist also carries four OPTIONAL résumé-quality Read tools
-/// (`validate_resume`, `search_candidate_evidence`, `lookup_salary`,
-/// `get_trim_suggestions` — [`super::tools_quality::quality_tools`]), 7→11 tools
-/// total. The fixed sequence above doesn't name them, but nothing stops a
-/// tool-capable model from spending an extra turn self-checking the drafted
-/// résumé or grounding a salary/evidence claim before finishing — more useful
-/// tools legitimately mean more useful steps. This is NOT at the same per-turn
-/// token cost the earlier version of this doc claimed: the larger tool-schema
-/// payload handed to the provider on every turn (11 tools vs. the old 7) is
-/// itself counted into [`MAX_AGENT_TOKENS`]'s accumulator once per turn (see
-/// `run_agent_with_system`'s `tool_specs_tokens`), so a bigger whitelist
-/// genuinely spends more of the budget per turn, not just more turns. 14 keeps
-/// the 9-turn fixed-sequence floor plus its original 3-turn headroom, and adds
-/// 2 more turns for up to two such optional quality-tool calls — without
-/// opening the door to a runaway loop (see [`MAX_AGENT_TOKENS`] for the cost
-/// backstop on top, now sized to include this per-turn schema cost).
+/// The whitelist carries 11 tools, so the remaining three résumé-quality Read
+/// tools ([`super::tools_quality::quality_tools`]) are reachable too. Round 9
+/// stopped leaving that to chance: the prompt now NAMES them and RATIONS them,
+/// at most ONE optional call plus one `validate_resume` re-check after a fix.
+/// Worst case is therefore 10 + 2 = 12 turns, and 14 leaves 2 turns of slack
+/// for a model that splits a step across two turns or retries a declined
+/// confirm. (The pre-round-9 sizing was a 9-turn floor + 3 slack + 2 for
+/// optional calls the prompt never actually authorized.) The prompt-side half
+/// of this arithmetic is asserted by
+/// `super::flows::tests::prep_application_sequence_fits_the_step_budget`, so a
+/// new numbered step fails a test instead of stranding a real run at
+/// [`StoppedReason::MaxSteps`] between the drafting spend and the saves.
+///
+/// Each extra turn is not free beyond the round-trip: the tool-schema payload
+/// handed to the provider on every turn (all 11 tools) is itself counted into
+/// [`MAX_AGENT_TOKENS`]'s accumulator once per turn (see
+/// `run_agent_with_system`'s `tool_specs_tokens`), so a bigger whitelist spends
+/// more of the budget per turn, not just more turns. Hence rationing the
+/// optional calls in the prompt rather than raising this ceiling again.
 pub const MAX_AGENT_STEPS: usize = 14;
 /// Hard cap on the accumulated token estimate (~chars/4) across prompts +
 /// completions per run — stops a loop that keeps calling tools without converging.
@@ -65,6 +67,13 @@ pub const MAX_AGENT_STEPS: usize = 14;
 /// worst case plus the rest of the transcript, so a large résumé can't trip this
 /// budget and truncate the run before the final save/summary (the very failure
 /// mode raising [`MAX_AGENT_STEPS`] was meant to fix).
+///
+/// Round 9's mandatory `validate_resume` self-check does NOT move this number.
+/// Its draft argument is model OUTPUT (real provider spend, but the accumulator
+/// only counts `turn.text` and tool RESULTS, never the args), and its result is
+/// a compact summary bounded by `super::tools_quality`'s `SUMMARY_CAP` (~13.7k
+/// chars, ~3.4k tokens); even a re-check plus an optional quality call adds
+/// well under 10k tokens against the ~100k of headroom above.
 pub const MAX_AGENT_TOKENS: usize = 120_000;
 
 /// Wall-clock ceiling on ONE provider turn or ONE read-tool call (a text-drafting

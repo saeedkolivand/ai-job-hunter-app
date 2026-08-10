@@ -135,7 +135,7 @@ const AI_TELL_PROSE_EN: &[&str] = &[
     "building on this",
 ];
 
-const AI_TELL_PROSE_DE: &[&str] = &["erfolgte durch"];
+const AI_TELL_PROSE_DE: &[&str] = &[];
 
 const TEMPLATE_OPENERS_EN: &[&str] = &[
     "i am writing to apply",

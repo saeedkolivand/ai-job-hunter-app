@@ -139,16 +139,25 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // neutralization would otherwise miss.
         "existing_answer",
         "rewrite_instruction",
-        // HIGH-1 fix — three of the four `super::tools_quality` result tags.
-        // (The fourth tool, `lookup_salary`, carries no free text to fence —
-        // it returns via `envelope_result` instead, see that fn's doc.)
-        // Without these, a JOB-POSTING (or résumé) body carrying a forged
+        // HIGH-1 fix — the three `super::tools_quality` result tags. Without
+        // these, a JOB-POSTING (or résumé) body carrying a forged
         // `<validate_resume_result>…</validate_resume_result>` block would
         // survive `fenced("job_posting", …)` untouched and could masquerade
         // as a real tool result once the transcript is composed; the same
         // goes for a forged sibling inside one quality tool's OWN result
         // body (e.g. a fake `<validate_resume_result>` smuggled inside
         // `search_candidate_evidence_result`'s bullet text).
+        //
+        // Round 9: these three tags now have NO legitimate producer.
+        // `tools_quality` stopped WRAPPING its summaries in them (the wrap
+        // was dead work — `crate::agent::controller::tool_result_fence`
+        // neutralized it again one layer up, so the model only ever saw
+        // `< validate_resume_result>`; see that module's doc). They stay
+        // registered because that makes the rule STRONGER, not weaker: any
+        // occurrence of one anywhere is now unambiguously a forgery, and
+        // every path a forgery can arrive on — untrusted input through
+        // [`fenced`], untrusted results through `tool_result_fence` — breaks
+        // it. Removing them would reopen exactly the hole HIGH-1 closed.
         "validate_resume_result",
         "search_candidate_evidence_result",
         "get_trim_suggestions_result",

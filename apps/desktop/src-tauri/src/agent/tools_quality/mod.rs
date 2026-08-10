@@ -21,13 +21,32 @@
 //! per-field cap below ([`clamp_chars`] and the [`EVIDENCE_CAP`]/
 //! [`MESSAGE_CAP`]/[`SECTION_CAP`]/[`BULLET_TEXT_CAP`] caps it backs, plus the
 //! [`MAX_ISSUES`]/[`MAX_SKILLS`] COUNT caps) bounds it before it re-enters the
-//! transcript through [`fenced`] ([`fenced_summary`]) — the same
-//! neutralize-then-fence pipeline guarding every other untrusted block in
-//! `agent::tools`, so a forged fence tag smuggled inside a quoted span can't
-//! masquerade as a new `<job_posting>`/`<candidate_resume>` boundary.
+//! transcript through [`neutralized_summary`], which makes every quoted span
+//! inert as a transcript boundary via the SAME
+//! [`super::tools::neutralize_transcript_boundaries`] pass `agent::tools`'
+//! [`fenced`] runs on untrusted input — so a forged fence tag or
+//! `[tool_result:…]` marker smuggled inside a quoted span can't masquerade as
+//! a `<job_posting>`/`<candidate_resume>` boundary or a second tool verdict.
 //! `lookup_salary` is the one exception: its result carries no free text (see
 //! `salary_range_serializes_to_only_known_numeric_and_currency_fields`), so
-//! it skips fencing and uses the plain [`envelope_result`] wrapper instead.
+//! it skips neutralization and uses the plain [`envelope_result`] wrapper.
+//!
+//! LOW fix, PR #963 round 9 — these summaries used to be `<validate_resume_
+//! result>`-style tag-WRAPPED as well ([`fenced`]). That wrap was provably
+//! dead work: those three tags are registered in
+//! `super::tools::FENCE_TAG_PATTERNS`, and
+//! [`crate::agent::controller::tool_result_fence`] runs the same
+//! neutralization over EVERY tool result body on its way into the transcript
+//! — so the wrapper this module added was broken open again one layer up
+//! (`< validate_resume_result>`) before the model ever saw it. The model got
+//! a mangled tag and the transcript got no boundary; only the INTERIOR
+//! neutralization ever did any work, and that is what survives here. The tags
+//! stay registered on purpose: with no legitimate producer left, ANY
+//! occurrence of one is a forgery, and breaking it is now unambiguously
+//! correct (pinned by `agent::tools`'
+//! `fenced_neutralizes_a_forged_validate_resume_result_tag_inside_a_job_posting_body`).
+//!
+//! [`fenced`]: super::tools::fenced
 
 use std::future::Future;
 use std::pin::Pin;
@@ -47,7 +66,9 @@ use crate::validate::content::{
 };
 use crate::validate::Severity;
 
-use super::tools::{fenced, AgentTool, ToolContext, ToolKind, JOB_CAP, RESUME_CAP};
+use super::tools::{
+    neutralize_transcript_boundaries, AgentTool, ToolContext, ToolKind, JOB_CAP, RESUME_CAP,
+};
 
 // ── Shared caps ────────────────────────────────────────────────────────────
 
@@ -97,17 +118,22 @@ const MAX_ISSUES: usize = 20;
 /// [`MAX_HITS`] below, this cap gates `skillsAbsent`, the GAP LIST the
 /// agent works from, so a silent drop actively misleads it.
 ///
-/// **Known limitation (PR #963 round 8), not fixable on this side.** The cut
-/// is ALPHABETICAL, not by relevance: `documents::evidence::extract_evidence`
-/// sorts both lists for determinism, so a 30-skill posting hands the agent
-/// the a–… prefix and drops `terraform`/`typescript` — a bias `skillsTruncated`
-/// (a count) cannot reveal. The relevance signal lives in the producer's
-/// `JobVocabulary`; [`EvidenceSet`] exposes only `Vec<String>` display forms,
-/// and for `skills_absent` no bullet hit exists by definition (that is what
-/// "absent" means), so there is nothing here to re-rank on. Ordering these
-/// lists by posting relevance is a `documents::evidence` change — recorded
-/// here rather than approximated with a second, drifting keyword heuristic in
-/// this module (which the module doc forbids outright).
+/// **CROSS-MODULE INVARIANT — this cap is only honest because the producer
+/// orders by relevance.** `documents::evidence::extract_evidence` sorts
+/// `skills_present`/`skills_absent` by how often the POSTING states each term
+/// (alphabetical only as a deterministic tiebreak), so `.take(MAX_SKILLS)`
+/// below is the top-N by relevance BY CONSTRUCTION and needs no re-ranking
+/// here. That ordering is load-bearing, not incidental: it used to be purely
+/// alphabetical (fixed in `595fa055`, round-8 follow-up), which handed the
+/// agent the a–… PREFIX of the gap list — `ansible` kept, `terraform` cut — a
+/// bias `skillsTruncated` (a count) cannot reveal. Reordering the producer
+/// would silently re-bias this cap with nothing failing here: [`EvidenceSet`]
+/// exposes only `Vec<String>` display forms, and for `skills_absent` no
+/// bullet hit exists by definition (that is what "absent" means), so this
+/// module has no signal of its own to sort on and could not detect the
+/// regression. Re-ranking here is also forbidden outright by the module doc
+/// (it would be a second, drifting keyword heuristic) — the fix always
+/// belongs at the producer.
 const MAX_SKILLS: usize = 15;
 
 /// Max entries kept in one bullet's `hits` (job-derived keyword matches) —
@@ -149,11 +175,12 @@ const TRIM_SUGGESTIONS_LIMIT: usize = 10;
 /// field is within its char cap. That's exactly why [`compact_content_report`]
 /// no longer trusts this arithmetic to hold on its own — it measures the
 /// ACTUAL serialized length and drops whole issues (into `truncated`) until
-/// the body fits [`SUMMARY_CAP`], rather than relying on `fenced()`'s hard
-/// `body.chars().take(cap)` as the enforcement point.
+/// the body fits [`SUMMARY_CAP`], rather than relying on
+/// [`neutralized_summary`]'s hard `body.chars().take(cap)` as the enforcement
+/// point.
 const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 40 + 60;
 
-/// Target ceiling on a fenced tool-result summary's SERIALIZED body —
+/// Target ceiling on a tool-result summary's SERIALIZED body —
 /// `MAX_ISSUES` issues at [`PER_ISSUE_WORST_CASE`] each (a plain-ASCII,
 /// non-escaping estimate), plus 500 chars of headroom for the summary's own
 /// envelope (`ok`/`criticals`/`warnings`/`truncated` fields, the `issues`
@@ -170,8 +197,8 @@ const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 4
 /// MEDIUM fix, PR #963 round 5: the round-4 fix below only wired this
 /// measure-then-drop loop into [`compact_content_report`] —
 /// [`compact_evidence_set`] and [`compact_trim_suggestions`] still built
-/// their bullet lists unconditionally and handed the result straight to
-/// `fenced()`'s hard char cap. Both overflow `SUMMARY_CAP` on their own
+/// their bullet lists unconditionally and handed the result straight to the
+/// hard char cap. Both overflow `SUMMARY_CAP` on their own
 /// declared per-field worst case BEFORE any JSON escaping even applies:
 /// `EVIDENCE_SEARCH_LIMIT` (12) bullets at up to `BULLET_TEXT_CAP +
 /// MAX_HITS * EVIDENCE_CAP` (~1,495) raw chars each, plus two
@@ -233,6 +260,42 @@ fn optional_query_arg(args: &Value) -> String {
     query.chars().take(QUERY_CAP).collect()
 }
 
+/// Resolve `validate_resume`'s optional `docKind` arg (MEDIUM fix, PR #963
+/// round 9). The tool used to hardcode [`DocKind::Resume`], so an agent
+/// checking the drafted COVER LETTER — which the prep flow drafts BEFORE the
+/// résumé, and can now spend an optional call on (see
+/// `agent::flows::PREP_APPLICATION_SYSTEM`) — had it scored against the
+/// résumé ruleset: `factual`/`alignment`/`consistency`/`ats`/`duplicates`
+/// checks that assume sections, roles and bullets, none of which a letter
+/// has.
+///
+/// Absent/null/empty defaults to `resume` (the overwhelmingly common case,
+/// and the pre-existing behavior). Anything else must be exactly one of the
+/// two `DocKind` wire values — `resume` | `coverLetter`, its `camelCase`
+/// serde rename — and an unrecognized value is REFUSED, never silently
+/// degraded to the more common kind: the same rule, for the same reason, as
+/// `commands::resume::resume_validate_content`'s wire-form match (a caller
+/// bug must not have its document validated against the wrong ruleset
+/// unnoticed). The offending value is echoed back clamped to
+/// [`EVIDENCE_CAP`] — it is model-supplied, so it is bounded like every other
+/// untrusted span this module quotes.
+fn doc_kind_arg(args: &Value) -> AppResult<DocKind> {
+    let raw = match args.get("docKind") {
+        None | Some(Value::Null) => return Ok(DocKind::Resume),
+        Some(Value::String(s)) => s.trim().to_string(),
+        // A non-string (number, object, array) is a caller bug, not a kind.
+        Some(other) => other.to_string(),
+    };
+    match raw.as_str() {
+        "" | "resume" => Ok(DocKind::Resume),
+        "coverLetter" => Ok(DocKind::CoverLetter),
+        other => Err(AppError::Validation(format!(
+            "validate_resume: unknown docKind {:?}, expected \"resume\" or \"coverLetter\"",
+            clamp_evidence(other)
+        ))),
+    }
+}
+
 // ── Compact, clamped summaries (unit-testable without an AppHandle) ─────────
 
 /// Cap `s` to `cap` chars, char-boundary safe — the one clamp primitive
@@ -282,8 +345,8 @@ fn clamped_job_text(text: &str) -> String {
 /// SAME budget the same way: per-field char clamps alone don't bound a JSON
 /// candidate's SERIALIZED size (JSON escaping) OR its size once multiplied
 /// by item count (see [`SUMMARY_CAP`]'s doc) — either way, leaving
-/// `fenced()`'s hard `body.chars().take(cap)` as the enforcement point cuts
-/// the JSON body mid-string.
+/// [`neutralized_summary`]'s hard `body.chars().take(cap)` as the enforcement
+/// point cuts the JSON body mid-string.
 ///
 /// `build(kept)` renders the FULL candidate `Value` (envelope + the first
 /// `kept` of the caller's already-ordered items, including whatever
@@ -410,8 +473,8 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// through [`shrink_to_summary_cap`] the same way [`compact_content_report`]
 /// is, so a bullet-heavy résumé drops whole bullets (weakest-last — the
 /// list is already sorted strongest-first, so dropping the tail drops the
-/// weakest) into `truncated` instead of getting cut mid-string by
-/// `fenced()`'s hard char cap. Skills lists are NOT part of this drop loop:
+/// weakest) into `truncated` instead of getting cut mid-string by the
+/// hard char cap. Skills lists are NOT part of this drop loop:
 /// their own `MAX_SKILLS`/`EVIDENCE_CAP` caps alone already bound them well
 /// under `SUMMARY_CAP`, so dropping bullets is always enough.
 ///
@@ -433,11 +496,11 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// adjacent `truncated` field (scoped to `bullets` only) read as
 /// whole-payload completeness. `skillsTruncated` now counts drops from
 /// BOTH skills lists against their own pre-`.take` totals, the same shape
-/// `truncated` uses for `bullets`. What that count still cannot say is WHICH
-/// skills went: the `.take(MAX_SKILLS)` below cuts an alphabetically-sorted
-/// list, so the drops are the tail of the alphabet rather than the least
-/// relevant skills — see [`MAX_SKILLS`]'s doc for why that ordering can only
-/// be fixed where the lists are produced.
+/// `truncated` uses for `bullets`. WHICH skills go is decided upstream: the
+/// `.take(MAX_SKILLS)` below cuts a list `documents::evidence` already
+/// ordered by posting relevance, so the drops are the least-relevant skills
+/// rather than the tail of the alphabet — a CROSS-MODULE invariant this
+/// module depends on and cannot re-derive (see [`MAX_SKILLS`]'s doc).
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -568,21 +631,34 @@ fn currency_for_location(location: &str) -> Option<&'static str> {
     })
 }
 
-/// Wrap a tool's compact JSON `summary` under `"result"`, fenced as `tag`. See
+/// Serialize a tool's compact JSON `summary` and wrap it under `"result"`,
+/// clamped to [`SUMMARY_CAP`] and made inert as a transcript boundary. See
 /// the module SECURITY note: the summary embeds untrusted-résumé/job-derived
-/// text, so it goes through the same neutralize-then-fence pipeline every
-/// other untrusted block in `agent::tools` uses.
-fn fenced_summary(tag: &'static str, summary: &Value) -> Value {
+/// text, so it goes through exactly the neutralization
+/// [`super::tools::fenced`] applies to untrusted INPUT — minus the `<tag>`
+/// wrap, which `crate::agent::controller::tool_result_fence` breaks open
+/// again one layer up (round-9 LOW; see the module doc).
+///
+/// Clamp-then-neutralize, in that order, mirroring `fenced` exactly: the
+/// clamp is the backstop for the one case [`shrink_to_summary_cap`] cannot
+/// solve (its `kept == 0` arm returns the envelope whatever its size), and
+/// neutralization runs last because it can only ever LENGTHEN the body (one
+/// inserted space per forged token), so applying it before the clamp could
+/// re-cut a boundary it had just broken. In the normal case the shrink loop
+/// has already measured this exact serialization against `SUMMARY_CAP`, so
+/// the clamp is a no-op and the budget mechanism is unchanged.
+fn neutralized_summary(summary: &Value) -> Value {
     let body = serde_json::to_string(summary).unwrap_or_default();
-    json!({ "result": fenced(tag, &body, SUMMARY_CAP) })
+    let body: String = body.chars().take(SUMMARY_CAP).collect();
+    json!({ "result": neutralize_transcript_boundaries(&body) })
 }
 
 /// Wrap a tool's JSON `summary` under `"result"` — the same top-level
-/// envelope shape [`fenced_summary`] uses for its sibling tools, but WITHOUT
-/// fencing: `SalaryRange` (unlike every other quality-tool payload) carries
-/// no untrusted free-text field to neutralize (pinned by
+/// envelope shape [`neutralized_summary`] uses for its sibling tools, but
+/// WITHOUT neutralization: `SalaryRange` (unlike every other quality-tool
+/// payload) carries no untrusted free-text field to neutralize (pinned by
 /// `salary_range_serializes_to_only_known_numeric_and_currency_fields`
-/// below), so fence-then-stringify would just relabel already-safe data with
+/// below), so stringify-then-scrub would just relabel already-safe data with
 /// no security benefit.
 fn envelope_result(value: Value) -> Value {
     json!({ "result": value })
@@ -653,13 +729,17 @@ fn job_not_found(job_id: &str) -> AppError {
 fn validate_resume_core(
     draft_arg: &str,
     draft_truncated: bool,
+    doc_kind: DocKind,
     resume_id: &str,
     source_text: Option<&str>,
     job_id: &str,
     job_text: Option<&str>,
 ) -> AppResult<Value> {
     let source_text = source_text.ok_or_else(|| resume_not_found(resume_id))?;
-    // HIGH + MEDIUM fix — see `clamped_resume_text`'s doc.
+    // HIGH + MEDIUM fix — see `clamped_resume_text`'s doc. The candidate's own
+    // résumé is the factual SOURCE for both doc kinds: a cover letter is
+    // checked against it too (`validate::content`'s letter arm), it is just
+    // never the thing being checked.
     let source_text = clamped_resume_text(source_text);
     // M-5 fix: an absent/empty draft validates the candidate's CURRENT
     // saved résumé against the job posting — the same
@@ -669,6 +749,21 @@ fn validate_resume_core(
     // fallback would compare the full résumé against a truncated copy of
     // itself and reintroduce the exact false-Critical class the clamp
     // above exists to prevent.
+    //
+    // MEDIUM fix, PR #963 round 9: that fallback is résumé-only. There is no
+    // saved cover letter to fall back ON (the store holds the candidate's
+    // documents, and a letter only exists once this run drafts one), and
+    // running the letter ruleset over a résumé would report a document the
+    // model never wrote — so an empty draft with `docKind: coverLetter` is a
+    // caller error, refused rather than silently answered about the wrong
+    // document.
+    if draft_arg.is_empty() && doc_kind == DocKind::CoverLetter {
+        return Err(AppError::Validation(
+            "validate_resume: checking a cover letter needs the drafted letter in `draft` — \
+             there is no saved cover letter to fall back on"
+                .into(),
+        ));
+    }
     let draft = if draft_arg.is_empty() {
         source_text.clone()
     } else {
@@ -687,16 +782,16 @@ fn validate_resume_core(
         // nothing to check against here. Every other check is unaffected.
         top_requirements: &[],
         target_language: lang,
-        doc_kind: DocKind::Resume,
+        doc_kind,
     };
     let report = validate_content(&input);
-    Ok(fenced_summary(
-        "validate_resume_result",
+    Ok(neutralized_summary(&compact_content_report(
+        &report,
         // An EMPTY draft validated the saved résumé instead, which
         // `clamped_resume_text` clamps on its own terms — the flag only ever
         // describes a model-supplied draft that was actually cut.
-        &compact_content_report(&report, draft_truncated && !draft_arg.is_empty()),
-    ))
+        draft_truncated && !draft_arg.is_empty(),
+    )))
 }
 
 fn validate_resume_handler(
@@ -708,6 +803,7 @@ fn validate_resume_handler(
     let ctx = ctx.clone();
     Box::pin(async move {
         let (draft_arg, draft_truncated) = optional_draft_arg(&args);
+        let doc_kind = doc_kind_arg(&args)?;
         let source_text = app
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
@@ -716,6 +812,7 @@ fn validate_resume_handler(
         validate_resume_core(
             &draft_arg,
             draft_truncated,
+            doc_kind,
             &ctx.resume_id,
             source_text.as_deref(),
             &ctx.job_id,
@@ -747,10 +844,10 @@ fn search_candidate_evidence_core(
         query.to_string()
     };
     let set = extract_evidence(&source_text, &scoring_text);
-    Ok(fenced_summary(
-        "search_candidate_evidence_result",
-        &compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT),
-    ))
+    Ok(neutralized_summary(&compact_evidence_set(
+        &set,
+        EVIDENCE_SEARCH_LIMIT,
+    )))
 }
 
 fn search_candidate_evidence_handler(
@@ -870,10 +967,10 @@ fn get_trim_suggestions_core(
         draft_arg.to_string()
     };
     let ranked = rank_bullets(&text, &job_ad);
-    Ok(fenced_summary(
-        "get_trim_suggestions_result",
-        &compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT),
-    ))
+    Ok(neutralized_summary(&compact_trim_suggestions(
+        &ranked,
+        TRIM_SUGGESTIONS_LIMIT,
+    )))
 }
 
 fn get_trim_suggestions_handler(
@@ -921,13 +1018,26 @@ fn validate_resume_schema() -> Value {
                 // but the result then carries `draftTruncated: true` and
                 // `ok: false` — see `validate_resume_core`'s doc.
                 "description": format!(
-                    "The generated résumé draft to check for factual, alignment, consistency, \
+                    "The generated draft to check for factual, alignment, consistency, \
                      ATS-structure, and voice issues against the candidate's own résumé and \
                      this run's job posting. Leave empty to check the candidate's saved résumé \
-                     instead. Only the first {RESUME_CAP} characters are checked; a longer \
+                     instead (résumé only — a cover letter check must pass the drafted letter \
+                     here). Only the first {RESUME_CAP} characters are checked; a longer \
                      draft comes back with draftTruncated: true and ok: false, never a clean \
                      verdict for the part that was not read."
                 )
+            },
+            // MEDIUM fix, PR #963 round 9 — see `doc_kind_arg`'s doc. Declared
+            // as an `enum` so a tool-calling model with constrained decoding
+            // can't emit a third value; `doc_kind_arg` re-validates anyway,
+            // because a schema guarantees shape, never values.
+            "docKind": {
+                "type": "string",
+                "enum": ["resume", "coverLetter"],
+                "description": "Which ruleset to check the draft against. Defaults to \
+                    \"resume\". Pass \"coverLetter\" to check a drafted cover letter instead — \
+                    a letter has no sections, roles or bullets, so the résumé-structure checks \
+                    would report problems it cannot have."
             }
         }
     })
@@ -970,8 +1080,9 @@ pub(crate) fn quality_tools() -> Vec<AgentTool> {
             name: "validate_resume",
             description: "Run deterministic content checks (facts, alignment, consistency, ATS \
                  structure, voice) on a résumé draft against the candidate's own résumé and \
-                 this run's job posting, and return a compact summary of what's wrong. \
-                 Read-only."
+                 this run's job posting, and return a compact summary of what's wrong. Pass \
+                 docKind \"coverLetter\" to check a drafted cover letter against the letter \
+                 ruleset instead. Read-only."
                 .to_string(),
             schema: validate_resume_schema(),
             kind: ToolKind::Read,

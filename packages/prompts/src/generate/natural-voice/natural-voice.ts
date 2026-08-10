@@ -215,12 +215,30 @@ export const AI_TELL_PROSE_WORDS_EN = [
 ];
 
 /**
- * German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. `'nicht nur'` / `'sondern
- * auch'` are deliberately absent: {@link ANTI_AI_TELL_LEXICAL_DE} tells the
- * model to use that construction sparingly, never to avoid it outright, so a
- * single-occurrence ban here would contradict the prompt it is meant to check.
+ * German (de) twin of {@link AI_TELL_PROSE_WORDS_EN}. Deliberately EMPTY: the
+ * German prose ruleset happens to contain no phrase this file's own rule ("an
+ * entry must be unconditionally banned by the prompt", see
+ * {@link AI_TELL_PROSE_WORDS_EN}) admits. Every German AI tell that IS an
+ * unconditional phrase ban already lives in {@link AI_TELL_LEXICAL_WORDS_DE};
+ * what {@link ANTI_AI_TELL_PROSE_DE} adds on top are all judgements a
+ * substring cannot make (dash use, sentence rhythm, Dreiklang, repeated
+ * paragraph openings, concrete over abstract). An empty list is the honest
+ * result, not a gap to fill:
+ *
+ * - `'nicht nur'` / `'sondern auch'` — {@link ANTI_AI_TELL_LEXICAL_DE} tells
+ *   the model to use that construction SPARINGLY, never to avoid it outright,
+ *   so a single-occurrence ban would contradict the prompt it is meant to
+ *   check.
+ * - `'erfolgte durch'` — removed in PR #963 round 9, the German twin of the
+ *   round-8 English removals. The prompt bans a Nominalstil sentence OPENER
+ *   ("Die Umsetzung von X erfolgte durch...") and quotes this phrase only as
+ *   the illustrative example; the substring ban fired on it ANYWHERE,
+ *   including mid-sentence clauses the prompt permits ("Ich habe die Migration
+ *   geleitet, die Abnahme erfolgte durch den Kunden"). Construction-dependent
+ *   rules stay prompt-only — the model can see the construction, a substring
+ *   check cannot.
  */
-export const AI_TELL_PROSE_WORDS_DE = ['erfolgte durch'];
+export const AI_TELL_PROSE_WORDS_DE: string[] = [];
 
 /**
  * Stock cover-letter openers — the phrases a letter that could have been
