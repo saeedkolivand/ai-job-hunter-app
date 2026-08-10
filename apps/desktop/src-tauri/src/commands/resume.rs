@@ -42,10 +42,18 @@ const TARGET_LANGUAGE_CAP: usize = 32;
 /// `ResumeValidateContentSchema`): a direct IPC caller could otherwise hand the
 /// analyzer unbounded text, the same trust boundary `resume_trim_suggestions`
 /// and `applications_track`/`applications_update` enforce for résumé/job text.
+///
+/// Plain (non-`async`) fn: the body is pure synchronous CPU work (regex/token
+/// scans over up to 3×200 KB, capped-`O(n²)` duplicate-bullet detection — see
+/// `validate::content::duplicates::MAX_DUP_BULLETS`) with no `.await` inside.
+/// Tauri's command dispatcher runs non-async commands via its own blocking
+/// thread pool, so declaring it `async fn` would instead run that work inline
+/// on a shared tokio worker — matches the established split in this codebase
+/// (`jobs_list`/`jobs_get`/`jobs_retry`, `documents_recommend_template`,
+/// `system_set_launch_at_login`: plain `fn` for sync-only bodies; `async fn`
+/// reserved for commands that actually `.await` something).
 #[tauri::command]
-pub async fn resume_validate_content(
-    req: ResumeValidateContentRequest,
-) -> AppResult<ContentReport> {
+pub fn resume_validate_content(req: ResumeValidateContentRequest) -> AppResult<ContentReport> {
     // Wire form must be exactly "resume" | "coverLetter" (`DocKind`'s
     // `camelCase` serde rename, and the Zod `z.enum` this mirrors) — reject
     // anything else rather than silently degrading to the more common case,
@@ -92,8 +100,8 @@ mod test {
     /// `generated`/`source`/`jobAd` or a direct IPC caller hands the validator
     /// unbounded text. Clamped on a char boundary, so the text stays valid
     /// UTF-8 — mirrors `match_resume::oversized_input_is_clamped_rather_than_processed_whole`.
-    #[tokio::test]
-    async fn oversized_inputs_are_clamped_rather_than_processed_whole() {
+    #[test]
+    fn oversized_inputs_are_clamped_rather_than_processed_whole() {
         // Multi-byte char straddling the cap — a naive byte truncate would
         // split it and produce invalid UTF-8.
         let huge = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(5_000);
@@ -114,7 +122,6 @@ mod test {
             target_language: "en".into(),
             doc_kind: "resume".into(),
         })
-        .await
         .expect("must not error on an oversized-but-clamped input");
     }
 
@@ -122,8 +129,8 @@ mod test {
     /// enforces nothing, so the command clamps its own copy
     /// (`TOP_REQUIREMENTS_CAP`) rather than handing an unbounded list to the
     /// alignment checker.
-    #[tokio::test]
-    async fn oversized_requirements_list_is_clamped_not_processed_whole() {
+    #[test]
+    fn oversized_requirements_list_is_clamped_not_processed_whole() {
         let requirements: Vec<String> = (0..200).map(|i| format!("requirement {i}")).collect();
         assert!(requirements.len() > TOP_REQUIREMENTS_CAP);
 
@@ -135,7 +142,6 @@ mod test {
             target_language: "en".into(),
             doc_kind: "resume".into(),
         })
-        .await
         .unwrap();
         // `top_requirement_hits` can never exceed how many requirements the
         // command actually kept — a value above the cap would prove the full
@@ -155,8 +161,8 @@ mod test {
     /// every other field on this command gets. Mirrors
     /// `oversized_inputs_are_clamped_rather_than_processed_whole`'s
     /// multi-byte-boundary shape.
-    #[tokio::test]
-    async fn oversized_target_language_is_clamped_not_processed_whole() {
+    #[test]
+    fn oversized_target_language_is_clamped_not_processed_whole() {
         let huge = "a".repeat(TARGET_LANGUAGE_CAP - 1) + "\u{1F600}" + &"b".repeat(5_000);
         assert!(huge.len() > TARGET_LANGUAGE_CAP);
 
@@ -168,7 +174,6 @@ mod test {
             target_language: huge,
             doc_kind: "resume".into(),
         })
-        .await
         .expect("must not error on an oversized-but-clamped targetLanguage");
     }
 
@@ -177,8 +182,8 @@ mod test {
     /// checks (ATS sections/bullets, alignment, project structure, duplicate
     /// bullets), which assume a document with sections and bullets a letter
     /// doesn't have.
-    #[tokio::test]
-    async fn cover_letter_doc_kind_routes_to_the_letter_ruleset() {
+    #[test]
+    fn cover_letter_doc_kind_routes_to_the_letter_ruleset() {
         // Opens with a known stock phrase from the EN template-opener list — a
         // letter-only voice check that a résumé never runs.
         let letter = "I am writing to apply for this position at your company. \
@@ -194,7 +199,6 @@ mod test {
             target_language: "en".into(),
             doc_kind: "coverLetter".into(),
         })
-        .await
         .unwrap();
 
         let codes: Vec<&str> = report.issues.iter().map(|i| i.code).collect();
@@ -213,8 +217,8 @@ mod test {
 
     /// Anything but the two literal `DocKind` wire values must be rejected, not
     /// silently coerced to a ruleset the caller didn't ask for.
-    #[tokio::test]
-    async fn unknown_doc_kind_is_rejected_with_a_validation_error() {
+    #[test]
+    fn unknown_doc_kind_is_rejected_with_a_validation_error() {
         let result = resume_validate_content(ResumeValidateContentRequest {
             generated: "text".into(),
             source: "text".into(),
@@ -222,8 +226,7 @@ mod test {
             top_requirements: vec![],
             target_language: "en".into(),
             doc_kind: "letter".into(), // not a real wire value
-        })
-        .await;
+        });
         assert!(
             matches!(result, Err(AppError::Validation(_))),
             "unknown docKind must return AppError::Validation; got {result:?}"
