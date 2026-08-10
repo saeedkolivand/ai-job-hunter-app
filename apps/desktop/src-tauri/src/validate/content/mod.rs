@@ -30,7 +30,9 @@
 //! Pure L1: no Tauri, no `AppHandle`, no emit, no I/O.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
+use regex::Regex;
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +40,7 @@ use crate::documents::evidence::{classify_section, SectionKind};
 use crate::documents::keywords::{
     display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
 };
-use crate::export::parser::{is_first_line_contact_shaped, parse_resume};
+use crate::export::parser::parse_resume;
 use crate::export::types::{LineKind, ParsedLine};
 use crate::observability::Span;
 use crate::validate::{Severity, EMAIL_RE};
@@ -583,20 +585,63 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
 
 // ── Small shared text helpers ───────────────────────────────────────────────
 
-/// A line that really does carry contact details: a genuine email address, or a
-/// phone shape on a line with no `@` at all.
+/// A phone number as a résumé HEADER actually writes one — the single shape
+/// test behind every "is this line contact details?" question in this module.
 ///
-/// `export::parser::is_first_line_contact_shaped` accepts a bare `@`, which any
-/// body line mentioning a Slack handle or a `@decorator` satisfies — so a bullet
-/// could hide its numbers behind "this is the header" just by carrying one.
-/// `factual::metrics_in`'s skip routes through this; `ats::is_contact_cluster`
-/// applies the same email-vs-phone rule inline, because it additionally has to
-/// reject a date range that `PHONE_RE` reads as a phone number.
+/// Deliberately stricter than `export::parser::PHONE_RE`
+/// (`\+?\d[\d\s\-().]{7,}`), which accepts any seven-character run of digits,
+/// spaces, hyphens, dots and parens. That rule is right where it lives: the
+/// parser only has to decide which BAND a header line belongs to, and
+/// over-matching costs it nothing. It is wrong on both surfaces here, where the
+/// answer decides whether a user is accused of something or spared a check —
+/// ordinary numeric prose satisfies it constantly ("150 - 200 EUR per hour",
+/// "90 000 - 110 000"), which made a salary range a second contact block
+/// (`ats.header_in_body`, a Critical) and let a letter paragraph quoting a rate
+/// range exempt itself from the fabricated-metric pass.
+///
+/// Two accepted forms, between them covering the header formats this pipeline's
+/// own fixtures use in `en` and `de`:
+///
+/// 1. an explicit international/area-code marker — a leading `+` or `(`
+///    followed by digits (`+49 30 1234567`, `+49 (0)30 1234567`,
+///    `(030) 12345678`, `+1 (555) 123-4567`);
+/// 2. failing that, an unbroken run of seven or more digits — the local part of
+///    a German number written without a marker (`030 1234567`,
+///    `0176 12345678`).
+///
+/// A grouped figure carries at most three digits per group and no marker, so it
+/// matches neither. The cost is a MISSED match on a bare US-style number with no
+/// parentheses ("555-123-4567", longest run four): accepted, because a header
+/// block essentially always carries an email as well, which every caller tests
+/// separately, and because both callers would rather miss than over-reach.
+static HEADER_PHONE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[+(]\s*\d[\d\s\-./()]{5,}\d|\d{7,}").unwrap());
+
+/// Whether `text` carries a header-shaped phone number. See
+/// [`HEADER_PHONE_RE`]; `pub(crate)` so `ats::is_contact_cluster` and
+/// [`has_real_contact_match`] cannot drift apart again.
+pub(crate) fn looks_like_header_phone(text: &str) -> bool {
+    HEADER_PHONE_RE.is_match(text)
+}
+
+/// A line that really does carry contact details: a genuine email address, or a
+/// header-shaped phone number on a line with no `@` at all.
+///
+/// Neither half may be the parser's own rule. `is_first_line_contact_shaped`
+/// accepts a bare `@`, which any body line mentioning a Slack handle or a
+/// `@decorator` satisfies — so a bullet could hide its numbers behind "this is
+/// the header" just by carrying one — and its phone half is the loose
+/// `PHONE_RE` that [`HEADER_PHONE_RE`] exists to replace.
+///
+/// `factual::metric_lines` routes its heading-less (cover-letter) band skip
+/// through this; `ats::is_contact_cluster` applies the same two halves inline,
+/// because it additionally has to reject a date range and to know which of the
+/// two matched.
 pub(crate) fn has_real_contact_match(text: &str) -> bool {
     if text.contains('@') {
         return EMAIL_RE.is_match(text);
     }
-    is_first_line_contact_shaped(text)
+    looks_like_header_phone(text)
 }
 
 /// Split prose into sentences on `.`/`!`/`?`.

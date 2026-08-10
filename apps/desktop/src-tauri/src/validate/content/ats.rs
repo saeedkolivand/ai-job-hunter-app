@@ -10,9 +10,6 @@
 //! badly, and the advice is framed that way.
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
-
-use regex::Regex;
 
 use crate::documents::evidence::{
     function_words, has_curated_function_words, years_in, SectionKind,
@@ -23,8 +20,8 @@ use crate::export::types::{LineKind, ParsedLine};
 use crate::validate::EMAIL_RE;
 
 use super::{
-    issue, Analysis, ContentIssue, Section, ATS_BULLET_COUNT, ATS_HEADER_IN_BODY,
-    ATS_KEYWORD_DENSITY, ATS_LONG_BULLET, ATS_MISSING_SECTION,
+    issue, looks_like_header_phone, Analysis, ContentIssue, Section, ATS_BULLET_COUNT,
+    ATS_HEADER_IN_BODY, ATS_KEYWORD_DENSITY, ATS_LONG_BULLET, ATS_MISSING_SECTION,
 };
 
 /// Share of the document one keyword may occupy before it reads as stuffing.
@@ -118,37 +115,6 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         .collect()
 }
 
-/// A phone number as a résumé HEADER actually writes one — the shape test
-/// behind this file's Critical, deliberately stricter than
-/// `export::parser::PHONE_RE`.
-///
-/// That regex (`\+?\d[\d\s\-().]{7,}`) accepts any run of seven characters
-/// drawn from digits, spaces, hyphens, dots and parens, which ordinary numeric
-/// prose satisfies constantly: "150 - 200 EUR per hour" and "90 000 - 110 000"
-/// are both "phone numbers" to it. It is the right rule where it lives — the
-/// parser only has to decide which BAND a header line belongs to, and
-/// over-matching there costs nothing — but here it decided a CRITICAL, so a
-/// salary range under any short line was reported as a second contact block.
-///
-/// Two accepted forms, and between them they cover the header formats the
-/// pipeline's own fixtures use in `en` and `de`:
-///
-/// 1. an explicit international/area-code marker — a leading `+` or `(`
-///    followed by digits (`+49 30 1234567`, `+49 (0)30 1234567`,
-///    `(030) 12345678`, `+1 (555) 123-4567`);
-/// 2. failing that, an unbroken run of seven or more digits — the local part of
-///    a German number written without a marker (`030 1234567`,
-///    `0176 12345678`).
-///
-/// A grouped figure has at most three digits per group and no marker, so it
-/// matches neither. The cost is a MISSED finding on a bare US-style number with
-/// no parentheses ("555-123-4567", longest run four): accepted, because a
-/// header block essentially always carries an email too — which
-/// [`is_contact_cluster`] tests separately — and this family's rule is that a
-/// wrong Critical is worse than a missed one.
-static HEADER_PHONE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[+(]\s*\d[\d\s\-./()]{5,}\d|\d{7,}").unwrap());
-
 /// True when a run of lines starting at `i` is a CONTACT BLOCK rather than one
 /// line that happens to hold an `@`.
 ///
@@ -175,8 +141,10 @@ static HEADER_PHONE_RE: LazyLock<Regex> =
 /// loose phone shape matches a date range (`2018 - 2021` is a digit followed by
 /// eight digits, spaces and hyphens), which would otherwise make every
 /// pipe-separated employment line a "contact block". The phone half is
-/// [`HEADER_PHONE_RE`] rather than the parser's own rule, for the reason stated
-/// there.
+/// [`super::looks_like_header_phone`] rather than the parser's own rule, for the
+/// reason stated there; the two halves are applied separately here (rather than
+/// through `super::has_real_contact_match`) because this check additionally has
+/// to reject a year-bearing line.
 fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     let line = lines[i];
     if !matches!(
@@ -190,7 +158,7 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     // address this check just rejected) and no year: a date span is not a phone
     // number, whatever the regex thinks.
     let has_phone = !line.text.contains('@')
-        && HEADER_PHONE_RE.is_match(&line.text)
+        && looks_like_header_phone(&line.text)
         && years_in(&line.text).is_empty();
     if !(has_email || has_phone) {
         return false;

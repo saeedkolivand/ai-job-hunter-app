@@ -237,9 +237,15 @@ fn skills_present_and_absent_partition_the_posting_vocabulary() {
         overlap.is_empty(),
         "sides must be disjoint; got {overlap:?}"
     );
+    // Every term in this posting is stated exactly once, so relevance ties
+    // everywhere and the alphabetical TIEBREAK decides the whole list. The
+    // ordering contract itself is
+    // `skills_lists_lead_with_the_postings_own_priorities` — alphabetical is no
+    // longer the rule, only what a tie falls back to.
     assert!(
         set.skills_present.windows(2).all(|w| w[0] <= w[1]),
-        "skills_present must be sorted for deterministic output"
+        "equally-relevant terms are ordered alphabetically; got {:?}",
+        set.skills_present
     );
 }
 
@@ -1183,6 +1189,66 @@ fn a_comma_less_entry_label_is_an_employer_only_when_it_reads_like_a_name() {
             "{prose:?} is a sentence, and a sentence is never an employer"
         );
     }
+}
+
+/// The posting used by the ordering test: `kubernetes` ×3, `docker` ×2,
+/// `terraform` ×2, everything else exactly once, and no accidental repeat that
+/// would join the weighted group.
+const WEIGHTED_JOB: &str = "\
+Kubernetes is the platform. Kubernetes schedules every Docker workload. \
+Kubernetes handles rollout. Docker images come from CI. Terraform provisions \
+infrastructure. Terraform manages networking. Ansible configures hosts.";
+
+/// R8 follow-up — both skills lists were sorted ALPHABETICALLY, purely for
+/// determinism. Every consumer truncates (`agent::tools_quality`'s
+/// `.take(MAX_SKILLS)`), so what survived was an alphabetical PREFIX of the gap
+/// list: "ansible" kept, "terraform" cut, and `skillsTruncated` reports only a
+/// COUNT, so nothing downstream can see the bias. Relevance-first ordering makes
+/// a truncated list the top-N by construction; alphabetical is the tiebreak, so
+/// determinism is unchanged.
+#[test]
+fn skills_lists_lead_with_the_postings_own_priorities() {
+    let resume = "EXPERIENCE\n\n\
+                  Senior Engineer | Acme | 2021 - 2024\n\
+                  - Ran Docker on Kubernetes\n";
+    let set = extract_evidence(resume, WEIGHTED_JOB);
+
+    // The posting says "Kubernetes" three times and "Docker" twice; alphabetical
+    // order puts them the other way round.
+    assert_eq!(
+        set.skills_present,
+        vec!["kubernetes".to_string(), "docker".to_string()],
+        "the present list leads with what the posting asks for most"
+    );
+
+    // The gap list leads with the twice-named Terraform, ahead of every
+    // once-named term including alphabetically-earlier "ansible".
+    assert_eq!(
+        set.skills_absent.first().map(String::as_str),
+        Some("terraform"),
+        "got {:?}",
+        set.skills_absent
+    );
+    // …and inside the once-named group the tiebreak is alphabetical, which is
+    // what keeps the output deterministic across runs.
+    assert_eq!(
+        set.skills_absent.get(1).map(String::as_str),
+        Some("ansible"),
+        "got {:?}",
+        set.skills_absent
+    );
+    let tied = &set.skills_absent[1..];
+    assert!(
+        tied.windows(2).all(|w| w[0] <= w[1]),
+        "equally-relevant terms stay alphabetical; got {tied:?}"
+    );
+
+    // Same input, same output — the relevance map cannot introduce HashMap
+    // iteration order into a user-visible list.
+    assert_eq!(
+        extract_evidence(resume, WEIGHTED_JOB).skills_absent,
+        set.skills_absent
+    );
 }
 
 /// The curated-language gate is what `validate::content::ats` reads before it

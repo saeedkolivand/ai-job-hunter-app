@@ -3004,6 +3004,78 @@ fn a_space_separated_category_now_reads_as_a_grade() {
     );
 }
 
+/// R8 follow-up — a heading-less document (a cover letter) has no section band,
+/// so `metric_lines` skips its contact lines by SHAPE. That shape test was
+/// `export::parser`'s loose phone rule (any 7+ run of digits, spaces and
+/// hyphens), so a letter paragraph quoting a rate range exempted itself from the
+/// fabricated-metric check — the letter-path twin of R8-F3, left open because
+/// the helper lived outside that round's file set.
+#[test]
+fn a_letter_paragraph_quoting_a_range_is_still_metric_checked() {
+    let letter = "Jane Doe\njane.doe@example.com\n\n\
+                  Dear Hiring Manager,\n\n\
+                  Last year I renegotiated our agency rates from 150 - 200 EUR an hour \
+                  across twelve suppliers.\n\n\
+                  Best regards,\nJane Doe\n";
+    let report = en_letter(letter);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_UNSOURCED_METRIC)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        evidence.contains(&"150") && evidence.contains(&"200"),
+        "a letter's body prose is not its letterhead; got {evidence:?}"
+    );
+
+    // The guard that keeps the shape test on this path at all: a letter carries
+    // contact details in its SIGN-OFF as well as its letterhead, and neither is
+    // a claim of impact. Both must stay skipped.
+    let signed = "Jane Doe\njane.doe@example.com\n\n\
+                  Dear Hiring Manager,\n\n\
+                  I put a Redis cache in front of the ledger service and checkout latency \
+                  went from 480ms to 90ms.\n\n\
+                  Best regards,\nJane Doe\n+49 30 1234567\n";
+    silent(&en_letter(signed), FACTUAL_UNSOURCED_METRIC);
+}
+
+/// The two surfaces that ask "is this line a phone number?" must agree, because
+/// they disagreed for a whole round: `ats::header_in_body` took the strict shape
+/// and the metric band skip kept the parser's loose one.
+#[test]
+fn the_header_phone_shape_is_one_rule_for_both_surfaces() {
+    for phone in [
+        "+49 30 1234567",
+        "+49 (0)30 1234567",
+        "(030) 12345678",
+        "0176 12345678",
+        "+1 (555) 123-4567",
+    ] {
+        assert!(
+            looks_like_header_phone(phone),
+            "{phone:?} is a phone number"
+        );
+        assert!(has_real_contact_match(phone), "{phone:?} is a contact line");
+    }
+    for prose in [
+        "Renegotiated agency rates from 150 - 200 EUR per hour",
+        "Das Jahresbudget von 90 000 - 110 000 EUR gesteuert",
+        "Acme Payments | 2018 - 2021",
+        "Processed 4500 orders a day",
+    ] {
+        assert!(
+            !looks_like_header_phone(prose),
+            "{prose:?} is prose, not a phone number"
+        );
+        assert!(
+            !has_real_contact_match(prose),
+            "{prose:?} must not exempt itself from the metric pass"
+        );
+    }
+    // An address still counts, and still only when it is a real one.
+    assert!(has_real_contact_match("jane.doe@example.com"));
+    assert!(!has_real_contact_match("owned the @payments rotation"));
+}
+
 // ── PR #963 round-8 findings ────────────────────────────────────────────────
 
 /// R8-F2 — `ats.header_in_body` is a CRITICAL, and its phone test was

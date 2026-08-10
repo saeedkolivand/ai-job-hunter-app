@@ -29,7 +29,8 @@ use rust_stemmers::Stemmer;
 use serde::Serialize;
 
 use crate::documents::keywords::{
-    detect_locale_tag, display_forms, keywords, keywords_normalized, languages_align, make_stemmer,
+    apply_stemmer, detect_locale_tag, display_forms, keywords, keywords_normalized,
+    keywords_normalized_list, languages_align, make_stemmer,
 };
 use crate::export::parser::parse_resume;
 use crate::export::types::{LineKind, ParsedLine};
@@ -93,9 +94,48 @@ struct JobVocabulary {
     keywords: HashSet<String>,
     /// Stem → readable, unstemmed display form for every posting keyword.
     display: HashMap<String, String>,
+    /// Keyword → how many times the POSTING states it. See
+    /// [`posting_weights`].
+    weights: HashMap<String, usize>,
     /// The posting's own detected language tag — picks the [`function_words`]
     /// list the present/absent split is filtered with.
     lang: &'static str,
+}
+
+/// How often the posting states each of its own keywords, keyed exactly like
+/// [`JobVocabulary::keywords`] — the relevance signal the skills split is
+/// ordered by.
+///
+/// `keywords` is a `HashSet`, so term frequency is discarded by the time the
+/// split runs; this recovers it from the posting text. Term frequency rather
+/// than first-occurrence position because a requirements list repeats what the
+/// role is actually about, while position mostly reflects where the boilerplate
+/// ends — and it costs one extra walk of a text this function already tokenizes.
+///
+/// Both halves come from the kernel rather than being transcribed:
+/// `keywords_normalized_list` is its own duplicate-preserving form (same
+/// tokenizer, synonym collapse and filter as the set, so a count can never
+/// disagree with membership), and the fold onto stems goes through
+/// `apply_stemmer`, so the `SHORT_TECH_TERMS` bypass that keeps "aws" from
+/// stemming to "aw" is applied once, where it is defined. Stemming runs per
+/// DISTINCT token, the same order of work `display_forms` already does.
+fn posting_weights(job_text: &str, stemmer: &Stemmer, aligned: bool) -> HashMap<String, usize> {
+    let mut normalized: HashMap<String, usize> = HashMap::new();
+    for token in keywords_normalized_list(job_text) {
+        *normalized.entry(token).or_default() += 1;
+    }
+    if !aligned {
+        return normalized; // The unaligned vocabulary is unstemmed too.
+    }
+    let mut out: HashMap<String, usize> = HashMap::new();
+    for (token, n) in normalized {
+        let stem = apply_stemmer(HashSet::from([token]), stemmer)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        *out.entry(stem).or_default() += n;
+    }
+    out
 }
 
 impl JobVocabulary {
@@ -118,13 +158,20 @@ impl JobVocabulary {
                 .map(|t| (t.clone(), t))
                 .collect()
         };
+        let weights = posting_weights(job_text, &stemmer, aligned);
         Self {
             aligned,
             stemmer,
             keywords,
             display,
+            weights,
             lang,
         }
+    }
+
+    /// How often the posting states `token`; `0` for anything it never said.
+    fn weight(&self, token: &str) -> usize {
+        self.weights.get(token).copied().unwrap_or(0)
     }
 
     /// The readable form of a keyword — the unstemmed token the posting used,
@@ -1212,20 +1259,41 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
     // useless, it makes the honest gap list look broken.
     let stop = function_words(vocab.lang);
     let skill_like = |token: &&String| !stop.contains(&vocab.readable(token).as_str());
-    set.skills_present = vocab
-        .keywords
-        .intersection(&resume_tokens)
-        .filter(skill_like)
-        .map(|t| vocab.readable(t))
-        .collect();
-    set.skills_absent = vocab
-        .keywords
-        .difference(&resume_tokens)
-        .filter(skill_like)
-        .map(|t| vocab.readable(t))
-        .collect();
-    set.skills_present.sort();
-    set.skills_absent.sort();
+    // Ordered by how often the POSTING states the term, alphabetically within a
+    // tie. Both lists are truncated by their consumers
+    // (`agent::tools_quality::compact_evidence_set` takes the first N and
+    // reports only a dropped COUNT), so a purely alphabetical order silently
+    // handed a prompt the alphabetical PREFIX of the gap list — "ansible" kept,
+    // "terraform" cut, and nothing downstream able to tell. Relevance-first
+    // makes a truncated list the top-N by construction, and the consumer needs
+    // no change.
+    //
+    // Determinism is unchanged, which is what the alphabetical sort was for:
+    // the tiebreak is a total order, because [`display_forms`] maps each stem to
+    // a token that stems back to it, so two distinct keywords cannot share one
+    // display form.
+    let by_relevance = |tokens: Vec<&String>| -> Vec<String> {
+        let mut scored: Vec<(usize, String)> = tokens
+            .into_iter()
+            .map(|token| (vocab.weight(token), vocab.readable(token)))
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        scored.into_iter().map(|(_, display)| display).collect()
+    };
+    set.skills_present = by_relevance(
+        vocab
+            .keywords
+            .intersection(&resume_tokens)
+            .filter(skill_like)
+            .collect(),
+    );
+    set.skills_absent = by_relevance(
+        vocab
+            .keywords
+            .difference(&resume_tokens)
+            .filter(skill_like)
+            .collect(),
+    );
 
     // Codes and counts only — never résumé or posting text (ADR-027).
     span.end_with(
