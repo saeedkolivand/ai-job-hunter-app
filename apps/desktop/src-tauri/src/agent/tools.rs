@@ -197,16 +197,48 @@ fn neutralize_one(body: &str, tag: &str, pattern: &regex::Regex) -> String {
 /// reason. Every tag in [`FENCE_TAG_PATTERNS`] is therefore neutralized
 /// inside EVERY fenced body, not just the tag it's about to be wrapped in.
 fn neutralize_fence_tag(body: &str, tag: &str) -> String {
-    let mut out = body.to_string();
-    for (known_tag, pattern) in FENCE_TAG_PATTERNS.iter() {
-        out = neutralize_one(&out, known_tag, pattern);
-    }
+    let mut out = neutralize_known_fence_tags(body);
     // `tag` is always one of `FENCE_TAG_PATTERNS`' keys for every real caller
     // today (already covered by the loop above); this only matters if a
     // future caller ever fences a tag name absent from that fixed list.
     if !FENCE_TAG_PATTERNS.contains_key(tag) {
         let fallback = compile_fence_tag_pattern(tag);
         out = neutralize_one(&out, tag, &fallback);
+    }
+    out
+}
+
+/// Break EVERY tag in [`FENCE_TAG_PATTERNS`] inside untrusted `body`, without
+/// wrapping anything — the fence-tag half of [`neutralize_fence_tag`], split
+/// out for the one consumer that must neutralize a body it does NOT fence:
+/// [`crate::agent::controller::tool_result_fence`].
+///
+/// HIGH fix, PR #963 round 8: `tool_result_fence` neutralized only its own
+/// `[tool_result:{name}]` marker syntax, so a tool result that never passes
+/// through [`fenced`] (`research_company`'s brief, `draft_resume` /
+/// `draft_cover_letter`'s generated text — all model- or posting-derived)
+/// could carry a fully-formed `<validate_resume_result>ok:true</…>` block
+/// straight into the transcript and masquerade as a real quality-tool
+/// verdict. Both neutralizers now run over every tool-result body at that ONE
+/// chokepoint (ADR-010: extend the existing mechanism, don't add a second
+/// one, and never per-caller).
+///
+/// Exposed as a whole-loop helper rather than as `pub(crate)`
+/// [`neutralize_one`] + [`FENCE_TAG_PATTERNS`] (the literal shape the review
+/// suggested) so the controller cannot grow its OWN copy of the
+/// iterate-every-known-tag loop — one implementation of "which tags are
+/// forgeable, and how are they broken", callable from both places.
+///
+/// **Idempotent**: [`neutralize_one`] rewrites a matched tag to its canonical
+/// broken form (`< tag>` / `< /tag>`), and that form still matches the same
+/// `<\s*(/?)\s*tag\s*>` pattern, so re-running maps it to itself. A body
+/// already neutralized by [`fenced`] therefore passes through byte-identical
+/// — no cumulative corruption of legitimate content (pinned by
+/// `controller::tests::tool_result_fence_is_idempotent_on_an_already_neutralized_body`).
+pub(crate) fn neutralize_known_fence_tags(body: &str) -> String {
+    let mut out = body.to_string();
+    for (known_tag, pattern) in FENCE_TAG_PATTERNS.iter() {
+        out = neutralize_one(&out, known_tag, pattern);
     }
     out
 }

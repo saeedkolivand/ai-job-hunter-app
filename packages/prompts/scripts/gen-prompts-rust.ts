@@ -122,9 +122,16 @@ function generate(): string {
     ),
     rustLookupFn(
       'ai_tell_prose',
-      '/// Prose-only patterns from `antiAiTellProse()` — negative parallelisms,\n' +
-        '/// "-ing" depth-faking, and hedging preambles. Only meaningful for connected\n' +
-        '/// writing (cover letters, summaries), never for a bullet.',
+      '/// Prose-only patterns from `antiAiTellProse()` — the hedging preambles and\n' +
+        '/// stock transitions it bans as PHRASES, wherever they appear. Only meaningful\n' +
+        '/// for connected writing (cover letters, summaries), never for a bullet.\n' +
+        '///\n' +
+        "/// The prompt's CONSTRUCTION-dependent prose rules (negative parallelism,\n" +
+        '/// superficial "-ing" openers/tails) are deliberately absent: a substring\n' +
+        '/// check cannot tell the banned construction from an ordinary sentence that\n' +
+        '/// happens to contain the same words, so it would flag prose the prompt\n' +
+        "/// permits. They stay prompt-only — see `AI_TELL_PROSE_WORDS_EN`'s doc in\n" +
+        '/// natural-voice.ts.',
       'AI_TELL_PROSE_EN',
       'AI_TELL_PROSE_DE'
     ),

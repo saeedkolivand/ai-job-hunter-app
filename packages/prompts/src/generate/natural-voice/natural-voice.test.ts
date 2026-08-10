@@ -877,3 +877,53 @@ describe('array -> prompt direction guard (AI_TELL_* — mirrors the existing pr
     }
   );
 });
+
+// ─── 13. CONSTRUCTION-DEPENDENT RULES ARE PROMPT-ONLY ─────────────────────────
+// Section 12 above proves every lexicon entry is SPELLED OUT in the prompt.
+// That is necessary but not sufficient (MEDIUM, PR #963 round 8): the prompt
+// can spell a word out while banning it only in a specific CONSTRUCTION, and a
+// substring check in the Rust validator has no way to see the construction. It
+// flagged "a dashboard highlighting anomalies in real time" and "this was not
+// just a side project" — prose the prompt explicitly permits.
+//
+// So the split is: constructions live in the prompt prose (the model can judge
+// them), phrases live in the array (a substring check can judge those). These
+// tests pin BOTH halves — the guidance must not quietly disappear with the
+// lexicon entries, and the entries must not quietly come back.
+
+describe('construction-dependent prose rules: kept in the prompt, absent from the lexicon', () => {
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  it('the prompt still bans negative parallelism, with both worked examples', () => {
+    expect(LETTER_EN).toContain('No negative parallelisms');
+    expect(LETTER_EN).toContain('not just X, but Y');
+    expect(LETTER_EN).toContain("it's not about X, it's about Y");
+  });
+
+  it('the prompt still bans superficial "-ing" openers and tails, by example', () => {
+    expect(LETTER_EN).toContain('No superficial "-ing" openers or tails');
+    for (const word of ['highlighting', 'showcasing', 'underscoring']) {
+      expect(LETTER_EN).toContain(word);
+    }
+  });
+
+  it.each([
+    'not just',
+    "it's not about",
+    'it is not about',
+    'highlighting',
+    'showcasing',
+    'underscoring',
+  ])('%j is prompt-only: a bare substring ban would flag permitted prose', (phrase) => {
+    expect(AI_TELL_PROSE_WORDS_EN).not.toContain(phrase);
+  });
+
+  it('every surviving EN entry is a phrase the prompt bans wherever it appears', () => {
+    expect(AI_TELL_PROSE_WORDS_EN).toEqual([
+      'it is important to note',
+      'generally speaking',
+      'with that in mind',
+      'building on this',
+    ]);
+  });
+});

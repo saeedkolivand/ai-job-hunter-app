@@ -177,19 +177,37 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
 ];
 
 /**
- * Prose-only patterns (connected writing only) — negative parallelisms, "-ing"
- * depth-faking, hedging preambles. `'not only'` is deliberately absent: the
- * English prose rule below only ever spells out "not just X, but Y" as the
- * negative-parallelism example, never "not only" — banning it here would flag
- * a word the prompt never told the model to avoid.
+ * Prose-only patterns (connected writing only) — the hedging preambles and
+ * stock transitions {@link ANTI_AI_TELL_PROSE_EN} / {@link HUMANIZE_PROSE}
+ * ban as PHRASES, wherever they appear.
+ *
+ * **Entries must be unconditionally banned by the prompt.** Every entry here
+ * becomes a substring check in the Rust validator, and a substring check has
+ * no idea what construction it landed in — so a rule the prompt states
+ * conditionally cannot be represented here without flagging prose the prompt
+ * permits (MEDIUM fix, PR #963 round 8). Two rules are conditional and
+ * therefore live in the prompt prose ONLY:
+ *
+ * - **Negative parallelism** ("not just X, but Y" / "it's not about X, it's
+ *   about Y"). The tell is the two-part construction, not the opener: "this
+ *   was not just a side project" and "for me it is not about the title" are
+ *   ordinary sentences the prompt never bans, and `'not just'` /
+ *   `"it's not about"` flagged both.
+ * - **Superficial "-ing" openers and tails** (highlighting, showcasing,
+ *   underscoring). The prompt bans them where they *fake depth*; a substring
+ *   cannot judge that, so `'highlighting'` fired on "a dashboard highlighting
+ *   anomalies in real time", a concrete, grounded clause.
+ *
+ * `'not only'` is absent for the older, related reason: the prompt only ever
+ * spells out "not just X, but Y", so banning "not only" would check a word
+ * the model was never told to avoid.
+ *
+ * The prompt keeps every one of these rules (see
+ * {@link ANTI_AI_TELL_PROSE_EN}'s negative-parallelism and "-ing" lines and
+ * {@link HUMANIZE_PROSE}'s CUT THE CLICHES line) — the model is still
+ * instructed against them; only the deterministic checker stops guessing.
  */
 export const AI_TELL_PROSE_WORDS_EN = [
-  'not just',
-  "it's not about",
-  'it is not about',
-  'highlighting',
-  'showcasing',
-  'underscoring',
   'it is important to note',
   'generally speaking',
   'with that in mind',

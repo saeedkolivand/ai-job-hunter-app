@@ -96,6 +96,18 @@ const MAX_ISSUES: usize = 20;
 /// `skillsTruncated` field (LOW fix, PR #963 round 7) — unlike
 /// [`MAX_HITS`] below, this cap gates `skillsAbsent`, the GAP LIST the
 /// agent works from, so a silent drop actively misleads it.
+///
+/// **Known limitation (PR #963 round 8), not fixable on this side.** The cut
+/// is ALPHABETICAL, not by relevance: `documents::evidence::extract_evidence`
+/// sorts both lists for determinism, so a 30-skill posting hands the agent
+/// the a–… prefix and drops `terraform`/`typescript` — a bias `skillsTruncated`
+/// (a count) cannot reveal. The relevance signal lives in the producer's
+/// `JobVocabulary`; [`EvidenceSet`] exposes only `Vec<String>` display forms,
+/// and for `skills_absent` no bullet hit exists by definition (that is what
+/// "absent" means), so there is nothing here to re-rank on. Ordering these
+/// lists by posting relevance is a `documents::evidence` change — recorded
+/// here rather than approximated with a second, drifting keyword heuristic in
+/// this module (which the module doc forbids outright).
 const MAX_SKILLS: usize = 15;
 
 /// Max entries kept in one bullet's `hits` (job-derived keyword matches) —
@@ -180,19 +192,33 @@ const SUMMARY_CAP: usize = MAX_ISSUES * PER_ISSUE_WORST_CASE + 500;
 
 // ── Pure arg parsing (unit-testable without an AppHandle) ───────────────────
 
-/// Trim + clamp an optional `draft` arg to [`RESUME_CAP`] chars. An
-/// absent/empty draft is a valid "use the saved résumé instead" case for
-/// BOTH `validate_resume` and `get_trim_suggestions` — never an error; each
-/// handler falls back to the candidate's saved résumé (M-5: this also means
-/// the model is never FORCED to echo the whole draft as tool-call arguments
-/// just to run a sanity check on the résumé it already has).
-fn optional_draft_arg(args: &Value) -> String {
+/// Trim + clamp an optional `draft` arg to [`RESUME_CAP`] chars, returning
+/// `(clamped, was_truncated)`. An absent/empty draft is a valid "use the
+/// saved résumé instead" case for BOTH `validate_resume` and
+/// `get_trim_suggestions` — never an error; each handler falls back to the
+/// candidate's saved résumé (M-5: this also means the model is never FORCED
+/// to echo the whole draft as tool-call arguments just to run a sanity check
+/// on the résumé it already has).
+///
+/// MEDIUM fix, PR #963 round 8: the clamp itself was silent. `save_resume`
+/// accepts [`super::tools::SAVED_RESUME_CAP`] (40,000) chars, so a draft up
+/// to 5× this cap can reach the save path while `validate_resume` inspected
+/// only its first `RESUME_CAP` chars — and then reported `ok: true`,
+/// `criticals: 0` for a document it had mostly never read. The second
+/// return value is what [`compact_content_report`] turns into a
+/// `draftTruncated` flag forcing `ok: false`; see
+/// [`validate_resume_core`]'s doc for why the cap is NOT simply raised to
+/// `SAVED_RESUME_CAP` instead.
+fn optional_draft_arg(args: &Value) -> (String, bool) {
     let draft = args
         .get("draft")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .unwrap_or("");
-    draft.chars().take(RESUME_CAP).collect()
+    // `nth` short-circuits at the cap — never a full O(len) count of a
+    // model-supplied blob just to answer "is it longer than 8,000?".
+    let truncated = draft.chars().nth(RESUME_CAP).is_some();
+    (draft.chars().take(RESUME_CAP).collect(), truncated)
 }
 
 /// Trim + clamp an optional `query` arg to [`QUERY_CAP`] chars. An empty
@@ -303,7 +329,17 @@ fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> V
 /// The sort is stable, so within each severity the emission order is
 /// preserved; dropping from the END of the sorted, already-capped list means
 /// a Critical is the last thing this function ever drops.
-fn compact_content_report(report: &ContentReport) -> Value {
+///
+/// MEDIUM fix, PR #963 round 8: `draft_truncated` (from
+/// [`optional_draft_arg`]) says the model's `draft` argument was LONGER than
+/// the [`RESUME_CAP`] slice actually validated. A clean bill of health on
+/// 8,000 of a 40,000-char draft is not a clean bill of health, so it is
+/// surfaced as its own `draftTruncated` field AND forces `ok: false` — the
+/// counts stay honest about what was inspected (`criticals` still counts
+/// only real findings, never a fabricated one), while `ok` stops asserting
+/// something this report cannot know. Built INSIDE the candidate so
+/// [`shrink_to_summary_cap`] measures the field like every other.
+fn compact_content_report(report: &ContentReport, draft_truncated: bool) -> Value {
     let criticals = report
         .issues
         .iter()
@@ -328,9 +364,10 @@ fn compact_content_report(report: &ContentReport) -> Value {
             })
             .collect();
         json!({
-            "ok": report.ok,
+            "ok": report.ok && !draft_truncated,
             "criticals": criticals,
             "warnings": warnings,
+            "draftTruncated": draft_truncated,
             "truncated": report.issues.len() - kept,
             "issues": issues,
         })
@@ -396,7 +433,11 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// adjacent `truncated` field (scoped to `bullets` only) read as
 /// whole-payload completeness. `skillsTruncated` now counts drops from
 /// BOTH skills lists against their own pre-`.take` totals, the same shape
-/// `truncated` uses for `bullets`.
+/// `truncated` uses for `bullets`. What that count still cannot say is WHICH
+/// skills went: the `.take(MAX_SKILLS)` below cuts an alphabetically-sorted
+/// list, so the drops are the tail of the alphabet rather than the least
+/// relevant skills — see [`MAX_SKILLS`]'s doc for why that ordering can only
+/// be fixed where the lists are produced.
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -580,8 +621,38 @@ fn job_not_found(job_id: &str) -> AppError {
 /// résumé instead of erroring). `validate_resume_handler` resolves
 /// `source_text`/`job_text` from the `DocumentStore`/postings cache and
 /// delegates here.
+///
+/// **Why `draft_truncated` (MEDIUM fix, PR #963 round 8) and not simply a
+/// bigger cap.** `save_resume` accepts up to
+/// [`super::tools::SAVED_RESUME_CAP`] (40,000) chars, so the obvious repair
+/// looks like "validate what will actually be saved". It is the wrong one:
+///
+/// - **Same-universe invariant (the round-3 HIGH).** Both sides of this
+///   comparison are clamped to [`RESUME_CAP`] because that is the slice the
+///   DRAFTING tool itself was shown (`super::tools::grounded_user_msg`
+///   fences the source résumé at `RESUME_CAP` before `draft_resume` ever
+///   runs). Raise only the draft side and its tail has no source to match
+///   against — every role past 8,000 chars reads as invented. Raise the
+///   source side too and `factual.dropped_role` fires for roles the drafting
+///   tool was never shown. Either way the fix manufactures false Criticals,
+///   which is exactly the class [`clamped_resume_text`] exists to prevent.
+/// - **Cost is real but secondary.** Measured on a synthetic worst-case
+///   résumé (release build): `validate_content` 17ms at 8k vs 31ms at 40k,
+///   `extract_evidence` 1.9ms vs 5.6ms — ~2×, not the order-of-magnitude the
+///   O(n×m) shape suggests, since the per-check entry caps bite first. Worth
+///   recording honestly: cost alone would NOT have decided this, the
+///   invariant above did.
+///
+/// So the cap stays, and the summary stops claiming a verdict it cannot
+/// support: `draftTruncated: true` with `ok: false` (see
+/// [`compact_content_report`]). `get_trim_suggestions` deliberately gets no
+/// such flag — it returns a weakest-first RANKING, advisory by construction,
+/// with no `ok`/`criticals` verdict that a partial read could falsify (the
+/// same "does a silent drop actively mislead?" test [`MAX_HITS`] is
+/// documented against).
 fn validate_resume_core(
     draft_arg: &str,
+    draft_truncated: bool,
     resume_id: &str,
     source_text: Option<&str>,
     job_id: &str,
@@ -621,7 +692,10 @@ fn validate_resume_core(
     let report = validate_content(&input);
     Ok(fenced_summary(
         "validate_resume_result",
-        &compact_content_report(&report),
+        // An EMPTY draft validated the saved résumé instead, which
+        // `clamped_resume_text` clamps on its own terms — the flag only ever
+        // describes a model-supplied draft that was actually cut.
+        &compact_content_report(&report, draft_truncated && !draft_arg.is_empty()),
     ))
 }
 
@@ -633,7 +707,7 @@ fn validate_resume_handler(
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        let draft_arg = optional_draft_arg(&args);
+        let (draft_arg, draft_truncated) = optional_draft_arg(&args);
         let source_text = app
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
@@ -641,6 +715,7 @@ fn validate_resume_handler(
         let job_text = job_text_for(&app, &ctx.job_id);
         validate_resume_core(
             &draft_arg,
+            draft_truncated,
             &ctx.resume_id,
             source_text.as_deref(),
             &ctx.job_id,
@@ -809,7 +884,10 @@ fn get_trim_suggestions_handler(
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        let draft_arg = optional_draft_arg(&args);
+        // The truncation flag is deliberately unused here — see
+        // `validate_resume_core`'s doc for why a ranking needs no such
+        // signal while an `ok`/`criticals` verdict does.
+        let (draft_arg, _truncated) = optional_draft_arg(&args);
         let job_text = job_text_for(&app, &ctx.job_id);
         // Only load the saved résumé when the fallback actually needs it —
         // mirrors the pre-refactor handler's lazy `DocumentStore` lookup.
@@ -838,10 +916,18 @@ fn validate_resume_schema() -> Value {
         "properties": {
             "draft": {
                 "type": "string",
-                "description": "The generated résumé draft to check for factual, alignment, \
-                    consistency, ATS-structure, and voice issues against the candidate's own \
-                    résumé and this run's job posting. Leave empty to check the candidate's \
-                    saved résumé instead."
+                // The cap is stated to the model rather than left implicit: a
+                // longer draft still validates (its first `RESUME_CAP` chars),
+                // but the result then carries `draftTruncated: true` and
+                // `ok: false` — see `validate_resume_core`'s doc.
+                "description": format!(
+                    "The generated résumé draft to check for factual, alignment, consistency, \
+                     ATS-structure, and voice issues against the candidate's own résumé and \
+                     this run's job posting. Leave empty to check the candidate's saved résumé \
+                     instead. Only the first {RESUME_CAP} characters are checked; a longer \
+                     draft comes back with draftTruncated: true and ok: false, never a clean \
+                     verdict for the part that was not read."
+                )
             }
         }
     })

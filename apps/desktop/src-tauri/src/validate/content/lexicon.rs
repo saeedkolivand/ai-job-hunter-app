@@ -30,9 +30,16 @@ pub fn ai_tell_lexical(lang: &str) -> &'static [&'static str] {
     }
 }
 
-/// Prose-only patterns from `antiAiTellProse()` — negative parallelisms,
-/// "-ing" depth-faking, and hedging preambles. Only meaningful for connected
-/// writing (cover letters, summaries), never for a bullet.
+/// Prose-only patterns from `antiAiTellProse()` — the hedging preambles and
+/// stock transitions it bans as PHRASES, wherever they appear. Only meaningful
+/// for connected writing (cover letters, summaries), never for a bullet.
+///
+/// The prompt's CONSTRUCTION-dependent prose rules (negative parallelism,
+/// superficial "-ing" openers/tails) are deliberately absent: a substring
+/// check cannot tell the banned construction from an ordinary sentence that
+/// happens to contain the same words, so it would flag prose the prompt
+/// permits. They stay prompt-only — see `AI_TELL_PROSE_WORDS_EN`'s doc in
+/// natural-voice.ts.
 pub fn ai_tell_prose(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => AI_TELL_PROSE_DE,
@@ -122,12 +129,6 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
 ];
 
 const AI_TELL_PROSE_EN: &[&str] = &[
-    "not just",
-    "it's not about",
-    "it is not about",
-    "highlighting",
-    "showcasing",
-    "underscoring",
     "it is important to note",
     "generally speaking",
     "with that in mind",
