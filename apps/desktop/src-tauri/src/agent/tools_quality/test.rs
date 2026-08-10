@@ -443,6 +443,29 @@ fn compact_content_report_counts_criticals_and_warnings() {
     assert_eq!(compact["issues"][0]["section"], "Experience");
 }
 
+/// MEDIUM fix, PR #963 round 12: `agent::flows::PREP_APPLICATION_SYSTEM`
+/// step 6 tells the model to fix a draft "if ok is false or criticals is
+/// above 0" — but `criticals`/`warnings` above are COUNTS; nothing in the
+/// per-issue objects themselves said WHICH listed issue was which, so a
+/// model reading a mixed list had no way to tell them apart. Each issue now
+/// carries its own `severity`, sourced from `Severity`'s own `Serialize`
+/// impl so the wire word can never drift from what every other consumer of
+/// `Severity` (e.g. `ExportIssue`) sees.
+#[test]
+fn compact_content_report_tags_each_issue_with_its_severity() {
+    let report = fixture_report("short evidence");
+    let compact = compact_content_report(&report, false);
+    let issues = compact["issues"].as_array().unwrap();
+    assert_eq!(
+        issues[0]["severity"], "critical",
+        "the Critical fixture issue must be tagged critical, not just counted"
+    );
+    assert_eq!(
+        issues[1]["severity"], "warning",
+        "the Warning fixture issue must be tagged warning"
+    );
+}
+
 /// M-1 fix: `message`/`section` must be clamped through the same
 /// per-field cap discipline as `evidence` — a validator issue can carry
 /// arbitrarily long guidance text derived from a crafted draft.
@@ -1035,6 +1058,13 @@ fn summary_cap_holds_the_real_worst_case_without_truncating_the_json() {
         inner.matches("\"code\"").count(),
         MAX_ISSUES,
         "all MAX_ISSUES issues must survive whole, not be cut mid-array"
+    );
+    // Round 12: `severity` is part of the per-issue object PER_ISSUE_WORST_CASE
+    // now accounts for — it must survive on every issue too, not just `code`.
+    assert_eq!(
+        inner.matches("\"severity\"").count(),
+        MAX_ISSUES,
+        "all MAX_ISSUES issues must keep their severity field, not be cut mid-object"
     );
 }
 

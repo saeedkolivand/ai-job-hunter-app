@@ -162,9 +162,13 @@ const TRIM_SUGGESTIONS_LIMIT: usize = 10;
 /// fields can contribute — [`SECTION_CAP`] + [`MESSAGE_CAP`] + [`EVIDENCE_CAP`],
 /// plus 40 chars of headroom for `code` (the longest registered
 /// [`crate::validate::content::CONTENT_ISSUE_CODES`] entry today,
-/// `consistency.skill_not_demonstrated`, is 34), plus 60 chars for the
-/// object's own JSON syntax (keys/quotes/colons/commas/braces — measured at
-/// ~52: `{"code":"…","section":"…","message":"…","evidence":"…"},`).
+/// `consistency.skill_not_demonstrated`, is 34), plus 8 chars for `severity`
+/// (round-12 addition — its value is never clamped because it can only ever
+/// be one of [`Severity`]'s two lowercase wire words, and `"critical"`, the
+/// longer of the two, is 8 raw chars), plus 70 chars for the object's own
+/// JSON syntax (keys/quotes/colons/commas/braces — measured at ~66 with
+/// `severity` added: `{"code":"","section":"","message":"","evidence":"",
+/// "severity":""},`; was ~52 before round 12).
 ///
 /// A sizing dial for [`SUMMARY_CAP`] — NOT a guarantee the real SERIALIZED
 /// body stays under it (MEDIUM fix, PR #963 round 4): JSON escaping (a `"`
@@ -178,7 +182,7 @@ const TRIM_SUGGESTIONS_LIMIT: usize = 10;
 /// the body fits [`SUMMARY_CAP`], rather than relying on
 /// [`neutralized_summary`]'s hard `body.chars().take(cap)` as the enforcement
 /// point.
-const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 40 + 60;
+const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 40 + 8 + 70;
 
 /// Target ceiling on a tool-result summary's SERIALIZED body —
 /// `MAX_ISSUES` issues at [`PER_ISSUE_WORST_CASE`] each (a plain-ASCII,
@@ -376,7 +380,8 @@ fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> V
 
 /// Compact a [`ContentReport`] into what `validate_resume` actually returns
 /// to the model: counts, plus up to [`MAX_ISSUES`] issues (each
-/// code/section/message/evidence field individually clamped — see the module
+/// severity/code/section/message/evidence field individually clamped or, for
+/// `severity`, inherently bounded to one of two words — see the module
 /// SECURITY note), plus a `truncated` count for anything dropped past that
 /// cap OR past [`SUMMARY_CAP`]'s serialized-length budget (enforced by
 /// [`shrink_to_summary_cap`] — see its doc and [`SUMMARY_CAP`]'s). Never a
@@ -392,6 +397,18 @@ fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> V
 /// The sort is stable, so within each severity the emission order is
 /// preserved; dropping from the END of the sorted, already-capped list means
 /// a Critical is the last thing this function ever drops.
+///
+/// MEDIUM fix, PR #963 round 12: each issue now also carries its own
+/// `severity` — the `criticals`/`warnings` COUNTS above already told the
+/// model how many Criticals existed, but nothing in the per-issue objects
+/// said WHICH of the listed issues those were. `agent::flows::
+/// PREP_APPLICATION_SYSTEM` step 6 tells the model to fix a résumé draft
+/// "if ok is false or criticals is above 0" — with only a count and no
+/// per-issue marker, a model reading a Warnings-and-Criticals-mixed list had
+/// to guess which entries were the ones the count referred to. Sourced
+/// straight from [`ContentIssue::severity`] via `Severity`'s own `Serialize`
+/// impl, so the wire word can never drift from the same "critical"/"warning"
+/// spelling every other consumer of `Severity` sees.
 ///
 /// MEDIUM fix, PR #963 round 8: `draft_truncated` (from
 /// [`optional_draft_arg`]) says the model's `draft` argument was LONGER than
@@ -420,6 +437,16 @@ fn compact_content_report(report: &ContentReport, draft_truncated: bool) -> Valu
             .map(|i| {
                 json!({
                     "code": i.code,
+                    // MEDIUM fix, PR #963 round 12: the flow prompt (step 6,
+                    // `agent::flows::PREP_APPLICATION_SYSTEM`) tells the model to
+                    // "fix Criticals" but this summary gave it a `criticals` COUNT
+                    // with no way to tell which of the listed issues those were —
+                    // `i.severity` reuses `Severity`'s own `Serialize` impl, so the
+                    // wire word (`"critical"`/`"warning"`) is always the SAME one
+                    // `Severity`'s `#[serde(rename_all = "lowercase")]` produces
+                    // everywhere else it crosses the wire (`ExportIssue`, the
+                    // quality-report panel) — no second, driftable string mapping.
+                    "severity": i.severity,
                     "section": i.section.as_deref().map(|s| clamp_chars(s, SECTION_CAP)),
                     "message": clamp_chars(&i.message, MESSAGE_CAP),
                     "evidence": i.evidence.as_deref().map(clamp_evidence),
