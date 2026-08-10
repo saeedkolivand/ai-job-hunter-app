@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { isDesignTier, LETTER_LAYOUT_IDS, TEMPLATES } from './templates';
+import {
+  atsModeHintKey,
+  isDesignTier,
+  isPhotoTemplate,
+  isTwoColumnTemplate,
+  LETTER_LAYOUT_IDS,
+  TEMPLATES,
+} from './templates';
 
 describe('TEMPLATES', () => {
   const ids = Object.keys(TEMPLATES);
@@ -95,6 +102,56 @@ describe('TEMPLATES', () => {
     // Lebenslauf is design tier despite being single-column — the toggle-gate fix.
     expect(isDesignTier('lebenslauf')).toBe(true);
     expect(isDesignTier('classic')).toBe(false);
+  });
+});
+
+describe('isPhotoTemplate', () => {
+  it('is true exactly for the photo-bearing templates', () => {
+    expect(
+      Object.values(TEMPLATES)
+        .filter((t) => isPhotoTemplate(t.id))
+        .map((t) => t.id)
+        .sort()
+    ).toEqual(['aria', 'lebenslauf', 'portrait', 'saffron']);
+  });
+
+  it('is false for Awesome and Deedy — design-tier but no photo', () => {
+    expect(isPhotoTemplate('awesome')).toBe(false);
+    expect(isPhotoTemplate('deedy')).toBe(false);
+  });
+});
+
+describe('atsModeHintKey', () => {
+  it('picks the two-column key whenever the template is two-column, even if it also has a photo', () => {
+    // Portrait/Aria/Saffron are two-column AND photo-bearing — two-column wins
+    // (its copy is the inclusive one, covering both facts).
+    for (const id of ['atelier', 'portrait', 'aria', 'saffron'] as const) {
+      expect(atsModeHintKey(id)).toBe('aiGenerate.atsModeHintTwoColumn');
+    }
+  });
+
+  it('picks the photo key for a photo-only (single-column) template', () => {
+    expect(atsModeHintKey('lebenslauf')).toBe('aiGenerate.atsModeHintPhoto');
+  });
+
+  // F1: Awesome/Deedy are design-tier but neither two-column nor photo-bearing —
+  // the old binary routing sent them to the (factually false) photo hint.
+  it('picks the decorative key for a design template with neither a photo nor two columns', () => {
+    expect(atsModeHintKey('awesome')).toBe('aiGenerate.atsModeHintDecorative');
+    expect(atsModeHintKey('deedy')).toBe('aiGenerate.atsModeHintDecorative');
+  });
+
+  it('is consistent with isTwoColumnTemplate/isPhotoTemplate for every template', () => {
+    for (const id of Object.keys(TEMPLATES) as (keyof typeof TEMPLATES)[]) {
+      const key = atsModeHintKey(id);
+      if (isTwoColumnTemplate(id)) {
+        expect(key).toBe('aiGenerate.atsModeHintTwoColumn');
+      } else if (isPhotoTemplate(id)) {
+        expect(key).toBe('aiGenerate.atsModeHintPhoto');
+      } else {
+        expect(key).toBe('aiGenerate.atsModeHintDecorative');
+      }
+    }
   });
 });
 

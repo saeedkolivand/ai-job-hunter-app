@@ -6,8 +6,8 @@ import { Button, cn, Image } from '@ajh/ui';
 import { AccentPicker } from '@/components/generation/AccentPicker';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import {
+  atsModeHintKey,
   isDesignTier,
-  isTwoColumnTemplate,
   type LetterLayoutId,
   type TemplateId,
   TEMPLATES,
@@ -185,11 +185,7 @@ export function StepTemplate({
               {t('aiGenerate.atsMode')}
             </div>
             <div className="text-[10px] text-foreground/35 mt-0.5">
-              {t(
-                isTwoColumnTemplate(templateId)
-                  ? 'aiGenerate.atsModeHintTwoColumn'
-                  : 'aiGenerate.atsModeHintPhoto'
-              )}
+              {t(atsModeHintKey(templateId))}
             </div>
           </div>
           <div

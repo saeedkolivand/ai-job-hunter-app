@@ -1348,6 +1348,7 @@
     "atsModeHint": "Empfohlen für ATS-Bewerbungen — linearisiert das zweispaltige Layout",
     "atsModeHintTwoColumn": "Empfohlen für ATS-Bewerbungen — reduziert das Layout auf eine Spalte und entfernt ein etwaiges Foto für maximale Parserkompatibilität",
     "atsModeHintPhoto": "Empfohlen für ATS-Bewerbungen — entfernt das Foto für ein lineares, parserfreundliches Layout",
+    "atsModeHintDecorative": "Empfohlen für ATS-Bewerbungen — entfernt dekorative Farbakzente und Abschnittsmarkierungen für ein schlichtes, parserfreundliches Layout",
     "tier": {
       "atsSafe": "ATS-sicher",
       "design": "Design",

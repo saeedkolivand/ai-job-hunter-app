@@ -46,7 +46,10 @@ export {
   serializeQualityReport,
 } from './quality-report';
 export {
+  type AtsModeHintKey,
+  atsModeHintKey,
   isDesignTier,
+  isPhotoTemplate,
   isTwoColumnTemplate,
   LETTER_LAYOUT_IDS,
   type LetterLayoutId,

@@ -548,6 +548,17 @@ describe('GenerationOutput', () => {
       expect(screen.queryByRole('switch')).not.toBeInTheDocument();
     });
 
+    // Awesome/Deedy are design-tier but neither two-column nor photo-bearing —
+    // the toggle hint must NOT claim to remove a photo that doesn't exist (F1).
+    it.each(['awesome', 'deedy'] as const)(
+      'sets the toggle hint to the decorative-only copy for %s (not the false photo hint)',
+      (id) => {
+        render(<GenerationOutput {...makeProps({ activeOut: 'resume', templateId: id })} />);
+        expect(screen.getByTitle('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
+        expect(screen.queryByTitle('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
+      }
+    );
+
     it('is absent on the cover tab even for a two-column template', () => {
       // The template picker still shows on the cover tab, but the ATS toggle does not.
       render(

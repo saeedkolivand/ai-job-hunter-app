@@ -3,26 +3,14 @@
 // IPC (see `BaseExportRequest.templateId`), so the colour/size fields here are
 // display metadata for the picker, kept consistent with the Rust template.
 //
-// The set MUST match the Rust `TemplateId` enum (export/types.rs) and the shared
-// contract union (packages/shared/.../documents.ts) — a guard test pins all three.
+// The id set MUST match the Rust `TemplateId` enum (export/types.rs) — a guard
+// test pins the two. `TemplateId` itself is the shared IPC contract's union (not
+// a hand-synced local copy) so a `tsc` failure surfaces the moment either side
+// adds an id the other doesn't know about, instead of silently compiling as a
+// subset.
+import type { TemplateId } from '@ajh/shared';
 
-export type TemplateId =
-  | 'classic'
-  | 'swiss-minimal'
-  | 'academic'
-  | 'atelier'
-  | 'meridian'
-  | 'throughline'
-  | 'portrait'
-  | 'lebenslauf'
-  | 'cadence'
-  | 'regent'
-  | 'aria'
-  | 'saffron'
-  | 'cologne-navy'
-  | 'jake'
-  | 'awesome'
-  | 'deedy';
+export type { TemplateId };
 
 /**
  * Cover-letter **layout** (arrangement only). Mirrors the Rust `LetterLayout`
@@ -458,6 +446,40 @@ const TWO_COLUMN_TEMPLATE_IDS = new Set<TemplateId>(['atelier', 'portrait', 'ari
 
 export function isTwoColumnTemplate(id: TemplateId): boolean {
   return TWO_COLUMN_TEMPLATE_IDS.has(id);
+}
+
+/**
+ * Design-tier templates that render a photo — mirrors the Rust template docs
+ * (Portrait/Lebenslauf/Aria/Saffron are the "Phase 3b-i / PR4 photo templates").
+ * Drives which ATS-mode hint copy is accurate: a design template that is
+ * neither two-column nor photo-bearing (Awesome, Deedy) drops decorative
+ * accent styling instead of a photo, so it needs its own hint key.
+ */
+const PHOTO_TEMPLATE_IDS = new Set<TemplateId>(['portrait', 'lebenslauf', 'aria', 'saffron']);
+
+export function isPhotoTemplate(id: TemplateId): boolean {
+  return PHOTO_TEMPLATE_IDS.has(id);
+}
+
+export type AtsModeHintKey =
+  | 'aiGenerate.atsModeHintTwoColumn'
+  | 'aiGenerate.atsModeHintPhoto'
+  | 'aiGenerate.atsModeHintDecorative';
+
+/**
+ * Which ATS-mode hint key accurately describes what the toggle does for this
+ * design-tier template: two-column layouts collapse to one column (dropping
+ * any photo along the way); a photo-only template just loses the photo;
+ * everything else in the design tier (Awesome, Deedy) has no photo and no
+ * columns to collapse — it drops decorative accent styling instead. Single
+ * source of truth so the two call sites (StepTemplate, GenerationOutput)
+ * can't drift out of sync with each other or with what the template actually
+ * does under ATS mode.
+ */
+export function atsModeHintKey(id: TemplateId): AtsModeHintKey {
+  if (isTwoColumnTemplate(id)) return 'aiGenerate.atsModeHintTwoColumn';
+  if (isPhotoTemplate(id)) return 'aiGenerate.atsModeHintPhoto';
+  return 'aiGenerate.atsModeHintDecorative';
 }
 
 /**

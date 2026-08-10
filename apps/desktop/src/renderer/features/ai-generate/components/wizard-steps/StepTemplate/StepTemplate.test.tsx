@@ -450,6 +450,19 @@ describe('StepTemplate', () => {
     expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
   });
 
+  // Awesome/Deedy are design-tier but neither two-column NOR photo-bearing —
+  // routing them to the photo hint is factually false (no photo to remove).
+  // They need the decorative-only hint instead (F1).
+  it.each(['awesome', 'deedy'] as const)(
+    'uses the decorative hint (not the false photo hint) for %s',
+    (id) => {
+      renderStep({ templateId: id });
+      expect(screen.getByText('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
+      expect(screen.queryByText('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
+      expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
+    }
+  );
+
   // Portrait is two-column AND has a photo — it must get the (inclusive)
   // two-column hint copy, which also covers photo removal, not the photo-only key.
   it('uses the inclusive two-column hint for Portrait (two-column + photo)', () => {
