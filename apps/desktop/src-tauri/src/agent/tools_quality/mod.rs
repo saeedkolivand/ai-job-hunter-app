@@ -676,6 +676,35 @@ fn envelope_result(value: Value) -> Value {
 // `agent::controller`'s `AgentEnv` trait uses for its own seam (this crate
 // has no `tauri::test` mock-app harness, so that split — not a heavier
 // AppHandle mock — is the pattern to reuse here too).
+//
+// MEDIUM perf fix, PR #963 round 10: `validate_resume`/`search_candidate_
+// evidence`/`get_trim_suggestions` each ran their `*_core` call — a CPU-bound
+// analysis pass (`validate_content`/`extract_evidence`/`rank_bullets`; see
+// `clamped_resume_text`'s perf note) — AND the `DocumentStore::get` SQLite
+// read feeding it directly inline on the async handler, parking a tokio
+// worker for the whole pass on every one of these agent-tool calls. Both now
+// run together inside [`spawn_blocking_core`], off the tokio worker.
+// `job_text_for`/`job_meta_for` stay inline (unchanged): they lock an
+// in-memory `Mutex<PostingsCache>`, not a SQLite connection, the same "cheap
+// lock, no spawn_blocking" call `commands::match_resume::match_resume`
+// already makes for the identical read.
+
+/// Run one of this module's `*_core` calls — together with the
+/// [`DocumentStore`] SQLite read that feeds it — on the `spawn_blocking`
+/// pool, so neither parks the calling handler's tokio worker (see this
+/// section's round-10 perf note). Same wrapper + `JoinError` →
+/// [`AppError::Storage`] mapping `documents::spawn_blocking_db` already uses
+/// for this store's blocking writes (`tauri::async_runtime::spawn_blocking`,
+/// never a bare `tokio::spawn`); generalized to `Value` here since every core
+/// in this module returns `AppResult<Value>`, not `documents`' `AppResult<()>`.
+async fn spawn_blocking_core<F>(f: F) -> AppResult<Value>
+where
+    F: FnOnce() -> AppResult<Value> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .map_err(|e| AppError::Storage(format!("quality-tool task failed: {e}")))?
+}
 
 /// The trusted "resume not found" error every handler below raises when the
 /// run's `ToolContext::resume_id` isn't in the [`DocumentStore`] — factored
@@ -804,20 +833,24 @@ fn validate_resume_handler(
     Box::pin(async move {
         let (draft_arg, draft_truncated) = optional_draft_arg(&args);
         let doc_kind = doc_kind_arg(&args)?;
-        let source_text = app
-            .state::<DocumentStore>()
-            .get(&ctx.resume_id)
-            .map(|d| d.text);
+        // In-memory cache lock, not SQLite — stays inline (see this module's
+        // round-10 perf note above `spawn_blocking_core`).
         let job_text = job_text_for(&app, &ctx.job_id);
-        validate_resume_core(
-            &draft_arg,
-            draft_truncated,
-            doc_kind,
-            &ctx.resume_id,
-            source_text.as_deref(),
-            &ctx.job_id,
-            job_text.as_deref(),
-        )
+        let resume_id = ctx.resume_id.clone();
+        let job_id = ctx.job_id.clone();
+        spawn_blocking_core(move || {
+            let source_text = app.state::<DocumentStore>().get(&resume_id).map(|d| d.text);
+            validate_resume_core(
+                &draft_arg,
+                draft_truncated,
+                doc_kind,
+                &resume_id,
+                source_text.as_deref(),
+                &job_id,
+                job_text.as_deref(),
+            )
+        })
+        .await
     })
 }
 
@@ -859,24 +892,27 @@ fn search_candidate_evidence_handler(
     let ctx = ctx.clone();
     Box::pin(async move {
         let query = optional_query_arg(&args);
-        let source_text = app
-            .state::<DocumentStore>()
-            .get(&ctx.resume_id)
-            .map(|d| d.text);
         // Only look up the job posting when the fallback actually needs it —
-        // mirrors the pre-refactor handler's lazy `job_text_for` call.
+        // mirrors the pre-refactor handler's lazy `job_text_for` call. Stays
+        // inline like `validate_resume_handler`'s (in-memory cache, not SQLite).
         let job_text = if query.is_empty() {
             job_text_for(&app, &ctx.job_id)
         } else {
             None
         };
-        search_candidate_evidence_core(
-            &query,
-            &ctx.resume_id,
-            source_text.as_deref(),
-            &ctx.job_id,
-            job_text.as_deref(),
-        )
+        let resume_id = ctx.resume_id.clone();
+        let job_id = ctx.job_id.clone();
+        spawn_blocking_core(move || {
+            let source_text = app.state::<DocumentStore>().get(&resume_id).map(|d| d.text);
+            search_candidate_evidence_core(
+                &query,
+                &resume_id,
+                source_text.as_deref(),
+                &job_id,
+                job_text.as_deref(),
+            )
+        })
+        .await
     })
 }
 
@@ -985,23 +1021,28 @@ fn get_trim_suggestions_handler(
         // `validate_resume_core`'s doc for why a ranking needs no such
         // signal while an `ok`/`criticals` verdict does.
         let (draft_arg, _truncated) = optional_draft_arg(&args);
+        // In-memory cache lock, not SQLite — stays inline (see this module's
+        // round-10 perf note above `spawn_blocking_core`).
         let job_text = job_text_for(&app, &ctx.job_id);
-        // Only load the saved résumé when the fallback actually needs it —
-        // mirrors the pre-refactor handler's lazy `DocumentStore` lookup.
-        let source_text = if draft_arg.is_empty() {
-            app.state::<DocumentStore>()
-                .get(&ctx.resume_id)
-                .map(|d| d.text)
-        } else {
-            None
-        };
-        get_trim_suggestions_core(
-            &draft_arg,
-            &ctx.resume_id,
-            source_text.as_deref(),
-            &ctx.job_id,
-            job_text.as_deref(),
-        )
+        let resume_id = ctx.resume_id.clone();
+        let job_id = ctx.job_id.clone();
+        spawn_blocking_core(move || {
+            // Only load the saved résumé when the fallback actually needs it —
+            // mirrors the pre-refactor handler's lazy `DocumentStore` lookup.
+            let source_text = if draft_arg.is_empty() {
+                app.state::<DocumentStore>().get(&resume_id).map(|d| d.text)
+            } else {
+                None
+            };
+            get_trim_suggestions_core(
+                &draft_arg,
+                &resume_id,
+                source_text.as_deref(),
+                &job_id,
+                job_text.as_deref(),
+            )
+        })
+        .await
     })
 }
 
