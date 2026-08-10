@@ -44,9 +44,9 @@ const TARGET_LANGUAGE_CAP: usize = 32;
 /// analyzer unbounded text, the same trust boundary `resume_trim_suggestions`
 /// and `applications_track`/`applications_update` enforce for résumé/job text.
 ///
-/// ## Threading (round-9/round-10 history — verified against the locked
-/// `tauri = "2"` / `tauri-macros 2.6.3` source, do not re-flip without a
-/// contradicting citation)
+/// ## Threading (round-9/round-10/round-11 history — verified against the
+/// locked `tauri = "2"` / `tauri-macros 2.6.3` source, do not re-flip without
+/// a contradicting citation)
 ///
 /// A **plain (non-`async`) `#[tauri::command]` fn runs INLINE, synchronously,
 /// on whichever thread received the IPC call** — for a desktop webview that is
@@ -57,20 +57,35 @@ const TARGET_LANGUAGE_CAP: usize = 32;
 /// protocol.rs`); no `spawn`/`spawn_blocking` in that path. Round-9's premise
 /// (a blocking pool exists) was **inverted**.
 ///
-/// `#[tauri::command(async)]` on a plain sync fn is the documented escape
-/// hatch (macro-internal tracing label `"sync_threadpool"`): it routes through
-/// `body_async()` → `InvokeResolver::respond_async_serialized` →
-/// `crate::async_runtime::spawn(...)` (Tokio's worker pool, `tauri-2.11.5/src/
-/// ipc/mod.rs`), moving the sync body off the main thread without making it an
-/// actual `async fn` (no `.await` inside, none needed).
+/// `#[tauri::command(async)]` on a plain sync fn was round-10's fix (the
+/// documented escape hatch, macro-internal tracing label `"sync_threadpool"`):
+/// it routes through `body_async()` → `InvokeResolver::respond_async_serialized`
+/// → `crate::async_runtime::spawn(...)` (Tokio's WORKER pool, `tauri-2.11.5/
+/// src/ipc/mod.rs`), moving the sync body off the main thread without making
+/// it an actual `async fn`. That got the scan off the UI thread — but left it
+/// parked inline on a tokio worker, one of THREE different placements the
+/// identical `validate_content` scan had grown across this codebase: the
+/// `agent::tools_quality` handlers already ran it through
+/// `tauri::async_runtime::spawn_blocking` (round 10's own perf note there),
+/// while `resume_trim_suggestions` (`commands/match_resume.rs`) runs its own
+/// CPU-bound scan inline in a plain `async fn` body. One scan, three answers.
 ///
-/// This body is regex/token scans over up to 3×200 KB plus capped-`O(n²)`
+/// Round 11: this fn is now genuinely `async` (the `(async)` attribute comes
+/// off — a plain `#[tauri::command]` on an `async fn` already gets Tauri's
+/// `body_async` dispatch, no attribute needed), and its body wraps the scan in
+/// `tauri::async_runtime::spawn_blocking`, with the SAME `JoinError` →
+/// `AppError` mapping `agent::tools_quality::spawn_blocking_core` uses. This
+/// body is regex/token scans over up to 3×200 KB plus capped-`O(n²)`
 /// duplicate-bullet detection (`validate::content::duplicates::MAX_DUP_BULLETS`)
-/// — real CPU work on every Re-check/save — so it takes the `(async)` escape
-/// hatch rather than the plain-`fn` default that would otherwise run it on the
-/// main thread and stall window painting.
-#[tauri::command(async)]
-pub fn resume_validate_content(req: ResumeValidateContentRequest) -> AppResult<ContentReport> {
+/// — real CPU work on every Re-check/save — so the `(async)` attribute got it
+/// off the UI thread, and `spawn_blocking` now gets it off the async workers
+/// too: one consistent answer. `resume_trim_suggestions` remains the one
+/// outlier (frozen this PR — `commands/match_resume.rs` is owned elsewhere; a
+/// follow-up chip already tracks it).
+#[tauri::command]
+pub async fn resume_validate_content(
+    req: ResumeValidateContentRequest,
+) -> AppResult<ContentReport> {
     // Wire form must be exactly "resume" | "coverLetter" (`DocKind`'s
     // `camelCase` serde rename, and the Zod `z.enum` this mirrors) — reject
     // anything else rather than silently degrading to the more common case,
@@ -97,15 +112,21 @@ pub fn resume_validate_content(req: ResumeValidateContentRequest) -> AppResult<C
     let target_language = clamp_to_bytes(req.target_language, TARGET_LANGUAGE_CAP);
 
     // `validate_content` owns its own `Span` (codes/counts only, ADR-027) — no
-    // command-level span duplicating it on top.
-    Ok(validate_content(&ContentInput {
-        generated: &generated,
-        source_resume: &source,
-        job_ad: &job_ad,
-        top_requirements: &top_requirements,
-        target_language: &target_language,
-        doc_kind,
-    }))
+    // command-level span duplicating it on top. Off the async worker pool
+    // too (see the doc comment's round-11 note) — same placement +
+    // `JoinError` mapping `agent::tools_quality::spawn_blocking_core` uses.
+    tauri::async_runtime::spawn_blocking(move || {
+        validate_content(&ContentInput {
+            generated: &generated,
+            source_resume: &source,
+            job_ad: &job_ad,
+            top_requirements: &top_requirements,
+            target_language: &target_language,
+            doc_kind,
+        })
+    })
+    .await
+    .map_err(|e| AppError::Storage(format!("resume_validate_content task failed: {e}")))
 }
 
 #[cfg(test)]
@@ -117,8 +138,8 @@ mod test {
     /// `generated`/`source`/`jobAd` or a direct IPC caller hands the validator
     /// unbounded text. Clamped on a char boundary, so the text stays valid
     /// UTF-8 — mirrors `match_resume::oversized_input_is_clamped_rather_than_processed_whole`.
-    #[test]
-    fn oversized_inputs_are_clamped_rather_than_processed_whole() {
+    #[tokio::test]
+    async fn oversized_inputs_are_clamped_rather_than_processed_whole() {
         // Multi-byte char straddling the cap — a naive byte truncate would
         // split it and produce invalid UTF-8.
         let huge = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(5_000);
@@ -139,6 +160,7 @@ mod test {
             target_language: "en".into(),
             doc_kind: "resume".into(),
         })
+        .await
         .expect("must not error on an oversized-but-clamped input");
     }
 
@@ -146,8 +168,8 @@ mod test {
     /// enforces nothing, so the command clamps its own copy
     /// (`TOP_REQUIREMENTS_CAP`) rather than handing an unbounded list to the
     /// alignment checker.
-    #[test]
-    fn oversized_requirements_list_is_clamped_not_processed_whole() {
+    #[tokio::test]
+    async fn oversized_requirements_list_is_clamped_not_processed_whole() {
         let requirements: Vec<String> = (0..200).map(|i| format!("requirement {i}")).collect();
         assert!(requirements.len() > TOP_REQUIREMENTS_CAP);
 
@@ -159,6 +181,7 @@ mod test {
             target_language: "en".into(),
             doc_kind: "resume".into(),
         })
+        .await
         .unwrap();
         // `top_requirement_hits` can never exceed how many requirements the
         // command actually kept — a value above the cap would prove the full
@@ -178,8 +201,8 @@ mod test {
     /// every other field on this command gets. Mirrors
     /// `oversized_inputs_are_clamped_rather_than_processed_whole`'s
     /// multi-byte-boundary shape.
-    #[test]
-    fn oversized_target_language_is_clamped_not_processed_whole() {
+    #[tokio::test]
+    async fn oversized_target_language_is_clamped_not_processed_whole() {
         let huge = "a".repeat(TARGET_LANGUAGE_CAP - 1) + "\u{1F600}" + &"b".repeat(5_000);
         assert!(huge.len() > TARGET_LANGUAGE_CAP);
 
@@ -191,6 +214,7 @@ mod test {
             target_language: huge,
             doc_kind: "resume".into(),
         })
+        .await
         .expect("must not error on an oversized-but-clamped targetLanguage");
     }
 
@@ -199,8 +223,8 @@ mod test {
     /// checks (ATS sections/bullets, alignment, project structure, duplicate
     /// bullets), which assume a document with sections and bullets a letter
     /// doesn't have.
-    #[test]
-    fn cover_letter_doc_kind_routes_to_the_letter_ruleset() {
+    #[tokio::test]
+    async fn cover_letter_doc_kind_routes_to_the_letter_ruleset() {
         // Opens with a known stock phrase from the EN template-opener list — a
         // letter-only voice check that a résumé never runs.
         let letter = "I am writing to apply for this position at your company. \
@@ -216,6 +240,7 @@ mod test {
             target_language: "en".into(),
             doc_kind: "coverLetter".into(),
         })
+        .await
         .unwrap();
 
         let codes: Vec<&str> = report.issues.iter().map(|i| i.code).collect();
@@ -234,8 +259,8 @@ mod test {
 
     /// Anything but the two literal `DocKind` wire values must be rejected, not
     /// silently coerced to a ruleset the caller didn't ask for.
-    #[test]
-    fn unknown_doc_kind_is_rejected_with_a_validation_error() {
+    #[tokio::test]
+    async fn unknown_doc_kind_is_rejected_with_a_validation_error() {
         let result = resume_validate_content(ResumeValidateContentRequest {
             generated: "text".into(),
             source: "text".into(),
@@ -243,7 +268,8 @@ mod test {
             top_requirements: vec![],
             target_language: "en".into(),
             doc_kind: "letter".into(), // not a real wire value
-        });
+        })
+        .await;
         assert!(
             matches!(result, Err(AppError::Validation(_))),
             "unknown docKind must return AppError::Validation; got {result:?}"
