@@ -1491,3 +1491,142 @@ Globex Ltd | Senior Engineer | 2018 - 2021
     let companies: Vec<&str> = set.roles.iter().map(|r| r.company.as_str()).collect();
     assert_eq!(companies, vec!["Acme Corp", "Globex Ltd"]);
 }
+
+// ── PR #963 round-14 findings ───────────────────────────────────────────────
+
+/// R14-F1 — every experience stem outranked SKILLS unconditionally, so the
+/// combined heading a real résumé writes over a SKILLS MATRIX ("Skills and
+/// Experience", "Technical Skills & Experience", "Kenntnisse und Erfahrungen")
+/// classified as Experience and filed every skill line as a work bullet under a
+/// role that never existed.
+///
+/// The resolution is asymmetric on purpose, and the asymmetry is the whole
+/// finding: the stems that name a work history *unambiguously* (they carry
+/// "work"/"employment"/"Beruf"/"Arbeit") keep Experience whatever else the
+/// heading says, while the BARE word for "experience" yields.
+#[test]
+fn a_combined_skills_and_experience_heading_is_a_skills_section() {
+    for heading in [
+        "Skills and Experience",
+        "SKILLS & EXPERIENCE",
+        "Technical Skills & Experience",
+        "Kenntnisse und Erfahrungen",
+        "Fähigkeiten und Erfahrung",
+        "Compétences et expérience",
+    ] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Skills,
+            "{heading:?} heads a skills matrix, not a work history"
+        );
+    }
+
+    // …and the bare experience heading is untouched: no skills word, no change.
+    for heading in [
+        "Experience",
+        "PROFESSIONAL EXPERIENCE",
+        "Berufserfahrung",
+        "BERUFSERFAHRUNG",
+        "Erfahrung",
+        "Erfahrungen",
+        "Berufliche Erfahrung",
+        "Beruflicher Werdegang",
+        "Expérience professionnelle",
+    ] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Experience,
+            "{heading:?} still names a work history"
+        );
+    }
+
+    // A heading that says WORK keeps its work history even beside a skills
+    // word — the carve-out that stops this fix from deleting a section.
+    for heading in [
+        "Work Experience and Skills",
+        "Professional Experience & Key Skills",
+        "Berufserfahrung und Kenntnisse",
+        "Employment History and Competencies",
+    ] {
+        assert_eq!(
+            classify_section(heading),
+            SectionKind::Experience,
+            "{heading:?} names a work history that a skills word does not override"
+        );
+    }
+
+    // The round-8 summary precedent is unchanged, and the two ambiguity rules
+    // compose rather than fight.
+    assert_eq!(classify_section("Career Summary"), SectionKind::Summary);
+    assert_eq!(classify_section("Career History"), SectionKind::Experience);
+}
+
+/// The same defect end to end: the skills matrix became work evidence.
+#[test]
+fn skill_lines_under_a_combined_heading_are_not_work_bullets() {
+    let resume = "\
+Jane Doe
+
+SKILLS AND EXPERIENCE
+
+- Rust, Python and Go, eight years
+- Docker and Kubernetes in production
+
+EXPERIENCE
+
+Senior Engineer | Acme Payments | 2021 - Present
+- Shipped the ledger service onto a Kubernetes cluster
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Rust backend engineer");
+    assert_eq!(
+        set.roles.len(),
+        1,
+        "a skills matrix must not open a role of its own; got {:?}",
+        set.roles
+    );
+    assert_eq!(set.roles[0].company, "Acme Payments");
+    let texts: Vec<&str> = set.roles[0]
+        .bullets
+        .iter()
+        .map(|b| b.text.as_str())
+        .collect();
+    assert_eq!(
+        texts,
+        vec!["Shipped the ledger service onto a Kubernetes cluster"],
+        "a skill line is a claim, not an achievement to draw on"
+    );
+}
+
+/// The counter-case, and the reason the fix is scoped to the AMBIGUOUS stems:
+/// resolving every combined heading to Skills would not merely "unpolice" a
+/// work history, it would DELETE it. Nothing in [`extract_evidence`] reads a
+/// Skills section — no role arm, no bullet arm, and the last-resort rescue only
+/// covers `Other` — so a résumé whose one work-history heading happens to carry
+/// a skills word would hand the generation prompt an empty evidence set.
+#[test]
+fn a_work_history_heading_keeps_its_roles_beside_a_skills_word() {
+    let resume = "\
+Jana Mustermann
+
+BERUFSERFAHRUNG UND KENNTNISSE
+
+Senior Backend Engineer | Acme Payments | 2021 - Heute
+- Docker-Container auf einem Kubernetes-Cluster betrieben
+";
+    let set = extract_evidence(resume, "Docker Kubernetes backend");
+    assert_eq!(
+        set.roles.len(),
+        1,
+        "the work history must survive a skills word on its heading; got {:?}",
+        set.roles
+    );
+    assert_eq!(set.roles[0].company, "Acme Payments");
+    assert!(
+        set.roles[0]
+            .bullets
+            .iter()
+            .any(|b| b.text.contains("Docker")),
+        "the section's bullets must survive; got {:?}",
+        set.roles[0].bullets
+    );
+}

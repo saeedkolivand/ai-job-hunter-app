@@ -273,54 +273,88 @@ pub enum SectionKind {
     Other,
 }
 
-/// Heading fragments per kind, matched as a substring of the lowercased heading
-/// so "PROFESSIONAL EXPERIENCE" and "Berufserfahrung" both land correctly.
+/// Heading fragments that name a WORK HISTORY unconditionally, matched as a
+/// substring of the lowercased heading so "Berufserfahrung" and "Beruflicher
+/// Werdegang" both land correctly.
 /// en/de/fr/es/it/nl/pt — the languages `make_stemmer` already supports.
+///
+/// Every entry here says *work* ("employment", "Beruf…", "Arbeit…",
+/// "…professionnelle", `werdegang` = career path, `werkervaring` = work
+/// experience), which is what makes them unconditional: no other section word
+/// on the same heading can outrank them. The BARE word for "experience" is not
+/// here — it is ambiguous, see [`AMBIGUOUS_EXPERIENCE_HEADINGS`].
 const EXPERIENCE_HEADINGS: &[&str] = &[
-    "experience",
     "employment",
+    "work experience",
+    "professional experience",
     "berufserfahrung",
+    "berufliche erfahrung",
     "arbeitserfahrung",
     // "Beruflicher Werdegang" is as standard a German experience heading as
     // "Berufserfahrung", and classifying it `Other` discarded every bullet
     // under it. A substring, like the compounds above: "Ausbildungswerdegang"
     // reaching Experience first is a far smaller error than losing the section.
     "werdegang",
-    "expérience",
-    "experiencia",
-    "esperienza",
+    "expérience professionnelle",
+    "experiencia profesional",
+    "esperienza professionale",
     "werkervaring",
-    "experiência",
+    "experiência profissional",
 ];
 
 /// The bare German word for "experience", matched with [`contains_word`].
 ///
-/// Word-bounded rather than added to the substring list above, and the
-/// plural is listed for the same reason `formations` is: the rule is exact at
-/// BOTH ends. As a substring `erfahrung` would subsume `berufserfahrung` and
-/// `arbeitserfahrung` — and every other `…erfahrung` compound with it,
-/// including ones that name no work history ("Nutzererfahrung" on a designer's
-/// skills heading). Bounded, it adds only the spellings that were actually
-/// missing: "Erfahrung", "Erfahrungen", "Berufliche Erfahrung".
+/// Word-bounded rather than a substring, and the plural is listed for the same
+/// reason `formations` is: the rule is exact at BOTH ends. As a substring
+/// `erfahrung` would subsume `berufserfahrung` and `arbeitserfahrung` — and
+/// every other `…erfahrung` compound with it, including ones that name no work
+/// history ("Nutzererfahrung" on a designer's skills heading). Bounded, it adds
+/// only the spellings that were actually missing: "Erfahrung", "Erfahrungen",
+/// "Berufliche Erfahrung".
+///
+/// Ambiguous in exactly the way [`AMBIGUOUS_EXPERIENCE_HEADINGS`] is, and read
+/// under the same rule — it is a separate const only because it needs the
+/// word-boundary matcher.
 const EXPERIENCE_HEADINGS_WORD_BOUNDED: &[&str] = &["erfahrung", "erfahrungen"];
 
-/// Experience stems that ALSO open a summary heading, and therefore lose to
-/// [`SUMMARY_HEADINGS`] on a heading that carries both.
+/// Experience stems that ALSO open a SUMMARY or a SKILLS heading, and therefore
+/// lose to [`SUMMARY_HEADINGS`]/[`SKILLS_HEADINGS`] on a heading that carries
+/// both.
 ///
-/// `career` is the whole list. It names a work history on its own ("Career",
-/// "Career History") and names a *summary* just as often ("Career Summary",
-/// "Career Objective", "Career Profile") — and because the experience test runs
-/// first, every one of those classified as Experience. That is not a cosmetic
-/// mislabel: prose under an Experience heading reaches [`extract_evidence`]'s
-/// role arm, so a summary paragraph became a work bullet under a role the
+/// `career` names a work history on its own ("Career", "Career History") and
+/// names a *summary* just as often ("Career Summary", "Career Objective",
+/// "Career Profile"). The bare word for "experience" is ambiguous the same way
+/// against SKILLS: "Skills and Experience", "Technical Skills & Experience" and
+/// "Kenntnisse und Erfahrungen" head a skills MATRIX in a real résumé, not a
+/// list of employers. Because the experience test runs first, every one of
+/// those classified as Experience — and that is not a cosmetic mislabel: prose
+/// under an Experience heading reaches [`extract_evidence`]'s role arm, so a
+/// summary paragraph or a skills line became a work bullet under a role the
 /// candidate never had.
 ///
-/// Scoped to the ambiguous stem rather than reordering the whole classifier:
-/// every other entry in [`EXPERIENCE_HEADINGS`] names a work history in any
-/// company, so letting `profil` outrank `berufserfahrung` would trade this
-/// false positive for a new one ("Berufserfahrung / Kurzprofil" style compound
-/// headings).
-const AMBIGUOUS_EXPERIENCE_HEADINGS: &[&str] = &["career"];
+/// **The rule is scoped to these stems, not applied to the whole classifier,
+/// because the two mistakes do not cost the same.** Skills filed as experience
+/// invents a role — noisy, recoverable, visible. Experience filed as skills
+/// DELETES the section: nothing in [`extract_evidence`] reads a Skills section
+/// (no role arm, no bullet arm, and the last-resort rescue covers `Other`
+/// only), so a work history under a skills-word heading would reach the
+/// generation prompt as an empty evidence set. Keeping every work-qualified
+/// spelling in [`EXPERIENCE_HEADINGS`] means "Berufserfahrung und Kenntnisse"
+/// and "Work Experience and Skills" cannot fall into that hole, while the
+/// ambiguous stems take the cheaper error.
+///
+/// Only SUMMARY and SKILLS are in the yield set. Education and Projects are
+/// deliberately out: "Project Experience" is a work history in a consultant's
+/// CV as often as it is a projects section, and neither reading has been
+/// observed to cost anything yet.
+const AMBIGUOUS_EXPERIENCE_HEADINGS: &[&str] = &[
+    "career",
+    "experience",
+    "expérience",
+    "experiencia",
+    "esperienza",
+    "experiência",
+];
 const EDUCATION_HEADINGS: &[&str] = &[
     "education",
     "academic",
@@ -392,17 +426,19 @@ const SUMMARY_HEADINGS: &[&str] = &[
 /// words and are therefore matched with [`contains_word`].
 ///
 /// The one place the "experience first" order is NOT applied is
-/// [`AMBIGUOUS_EXPERIENCE_HEADINGS`] — a stem that opens a summary heading as
-/// readily as an experience one yields to a summary word on the same heading.
+/// [`AMBIGUOUS_EXPERIENCE_HEADINGS`] (plus the word-bounded German twins) — a
+/// stem that opens a summary or a skills heading as readily as an experience
+/// one yields to a summary/skills word on the same heading. See that const for
+/// why the yield is scoped to those stems rather than reordering the classifier.
 pub fn classify_section(heading: &str) -> SectionKind {
     let lower = heading.to_lowercase();
     let has = |set: &[&str]| set.iter().any(|k| lower.contains(k));
     let has_word = |set: &[&str]| set.iter().any(|k| contains_word(&lower, k));
     let summary = has(SUMMARY_HEADINGS);
-    if has(EXPERIENCE_HEADINGS)
-        || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED)
-        || (!summary && has(AMBIGUOUS_EXPERIENCE_HEADINGS))
-    {
+    let skills = has(SKILLS_HEADINGS);
+    let ambiguous_experience =
+        has(AMBIGUOUS_EXPERIENCE_HEADINGS) || has_word(EXPERIENCE_HEADINGS_WORD_BOUNDED);
+    if has(EXPERIENCE_HEADINGS) || (ambiguous_experience && !summary && !skills) {
         SectionKind::Experience
     } else if has(EDUCATION_HEADINGS) || has_word(EDUCATION_HEADINGS_WORD_BOUNDED) {
         SectionKind::Education

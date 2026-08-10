@@ -54,7 +54,9 @@ pub enum MetricKind {
     Percent,
     /// `3x`, `2.5×`
     Multiplier,
-    /// `1,200` / `4500` — three digits or more, never a 1900–2099 year.
+    /// `1,200` / `4500` — three digits or more, never a 1900–2099 year — and
+    /// the EXPANDED value of a magnitude-suffixed figure (`10k` → `10000`, see
+    /// [`SUFFIXED_NUMBER_RE`]), which is the same claim written shorter.
     LargeInteger,
 }
 
@@ -373,7 +375,44 @@ fn metrics_in_lines(lines: &[String]) -> Vec<Metric> {
     out
 }
 
+/// Extract the metrics one line states.
+///
+/// ## Both sides speak one number language
+///
+/// [`SUFFIXED_NUMBER_RE`] used to run on the SOURCE side only, as a leniency:
+/// a source writing "10k" covers a generated "10,000". Read the other way round
+/// that leniency was a HOLE. `INTEGER_RE` sees only the mantissa of `10k`, and
+/// the mantissa is discarded below three digits ("35k" → "35") or on a decimal
+/// point ("3.5m" → "3.5"), so a *fabricated* suffixed figure was not tolerated,
+/// it was structurally invisible: `unsourced_metric` never saw a claim to check.
+///
+/// The mantissa is also why the suffixed pass has to SUPPRESS the integer
+/// capture inside its span rather than sit beside it. "250k" left "250" behind
+/// as a claim of its own, which a source writing "250,000" never states — a
+/// false Critical on a truthful restatement, and post-fix it would have been a
+/// second Critical about the same span on a fabricated one, which the
+/// deduplication in [`unsourced_metric_issues`] exists to prevent.
+///
+/// The SOURCE side loses nothing to that suppression: `sourced` also chains
+/// [`all_numbers`], which runs `INTEGER_RE` unfiltered over the same lines, so
+/// the source keeps both readings of its own figure. `Source ⊇ Claims` holds.
 fn collect_metrics(line: &str, out: &mut Vec<Metric>) {
+    // Magnitude-suffixed figures first, so the integer pass below can skip what
+    // they already claimed. No year exclusion here, unlike the integer arm:
+    // that rule exists because a résumé is full of four-digit years, and `2k`
+    // is not how anyone writes one.
+    let mut suffixed_spans: Vec<(usize, usize)> = Vec::new();
+    for caps in SUFFIXED_NUMBER_RE.captures_iter(line) {
+        let Some(span) = caps.get(0) else { continue };
+        suffixed_spans.push((span.start(), span.end()));
+        if let Some(number) = expand_suffixed(&caps) {
+            out.push(Metric {
+                kind: MetricKind::LargeInteger,
+                number,
+                raw: span.as_str().trim().to_string(),
+            });
+        }
+    }
     for caps in PERCENT_RE.captures_iter(line) {
         out.push(Metric {
             kind: MetricKind::Percent,
@@ -389,7 +428,15 @@ fn collect_metrics(line: &str, out: &mut Vec<Metric>) {
         });
     }
     for caps in INTEGER_RE.captures_iter(line) {
-        let raw = caps[1].to_string();
+        let Some(span) = caps.get(1) else { continue };
+        // The mantissa of a suffixed figure is not a second claim — see above.
+        if suffixed_spans
+            .iter()
+            .any(|(start, end)| span.start() >= *start && span.end() <= *end)
+        {
+            continue;
+        }
+        let raw = span.as_str().to_string();
         let normalized = normalize_number(&raw);
         // Three significant digits or more, and never a year.
         let digits = normalized.chars().filter(char::is_ascii_digit).count();
@@ -501,25 +548,35 @@ fn all_numbers(lines: &[String]) -> HashSet<String> {
 static SUFFIXED_NUMBER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(\d[\d.,\u{202F}\u{00A0}]*\d|\d)\s*(bn|k|m)\b").unwrap());
 
+/// The expanded value of one [`SUFFIXED_NUMBER_RE`] match (`10k` → `10000`),
+/// or `None` when the scaled mantissa is not a finite whole number.
+///
+/// **The single expansion, deliberately shared.** The source side reads it to
+/// decide a figure was already stated and the claims side reads it to decide
+/// what the document asserts ([`collect_metrics`]); the two must expand
+/// identically or the comparison compares different numbers.
+fn expand_suffixed(caps: &regex::Captures<'_>) -> Option<String> {
+    let scale: f64 = match caps[2].to_ascii_lowercase().as_str() {
+        "k" => 1_000.0,
+        "m" => 1_000_000.0,
+        _ => 1_000_000_000.0,
+    };
+    let value: f64 = normalize_number(&caps[1]).parse().ok()?;
+    let expanded = value * scale;
+    (expanded.fract() == 0.0 && expanded.is_finite()).then(|| format!("{expanded:.0}"))
+}
+
 /// Magnitude-suffixed numbers in `text`, EXPANDED (`10k` → `10000`).
 ///
-/// Only ever added to the SOURCE side's sourced set: a source that writes "10k
-/// requests" and a generated bullet that writes "10,000 requests" state the same
-/// fact, and the whole point of this pass is that a restatement is not a
-/// fabrication.
+/// The SOURCE side's half of the pass: a source that writes "10k requests" and
+/// a generated bullet that writes "10,000 requests" state the same fact, and
+/// the whole point is that a restatement is not a fabrication. The CLAIMS side
+/// runs the same regex through [`collect_metrics`], where the expanded value
+/// becomes a checkable claim rather than a sourced one.
 fn suffixed_numbers(text: &str) -> HashSet<String> {
     SUFFIXED_NUMBER_RE
         .captures_iter(text)
-        .filter_map(|caps| {
-            let scale: f64 = match caps[2].to_ascii_lowercase().as_str() {
-                "k" => 1_000.0,
-                "m" => 1_000_000.0,
-                _ => 1_000_000_000.0,
-            };
-            let value: f64 = normalize_number(&caps[1]).parse().ok()?;
-            let expanded = value * scale;
-            (expanded.fract() == 0.0 && expanded.is_finite()).then(|| format!("{expanded:.0}"))
-        })
+        .filter_map(|caps| expand_suffixed(&caps))
         .collect()
 }
 
@@ -530,6 +587,15 @@ fn suffixed_numbers(text: &str) -> HashSet<String> {
 /// Deliberately tiny and one-directional (word → digits): these are the only
 /// two multipliers a résumé states in words often enough to matter, and every
 /// entry added here weakens a Critical, so the bar is "seen in real output".
+///
+/// **Source-side only, unlike the magnitude suffixes** — the one place the two
+/// sides may legitimately differ, and for a reason that is about the numbers
+/// rather than about symmetry. A word-number expands to a SINGLE DIGIT, and a
+/// one- or two-digit figure is not a claim this file polices at all (see
+/// [`MetricKind`]): reading "double" as the claim `2` would make "double-entry
+/// bookkeeping" a fabricated metric on any source that never writes a 2. A
+/// magnitude suffix has the opposite shape — it only ever expands UPWARD, into
+/// exactly the range the check is for.
 const WORD_NUMBERS: &[(&str, &str)] = &[
     ("doubled", "2"),
     ("double", "2"),
@@ -802,15 +868,22 @@ pub fn urls_in(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The comparison key for a link: scheme dropped, host lowercased, one trailing
-/// `/` removed. The PATH keeps its case — `/JaneDoe/Ledger` and `/janedoe/ledger`
-/// are different resources on most hosts, and treating them as one would hide a
-/// genuinely altered link.
+/// The comparison key for a link: scheme dropped, one leading `www.` dropped,
+/// host lowercased, one trailing `/` removed. The PATH keeps its case —
+/// `/JaneDoe/Ledger` and `/janedoe/ledger` are different resources on most
+/// hosts, and treating them as one would hide a genuinely altered link.
 ///
 /// Compared on the key, REPORTED verbatim. `https://github.com/janedoe/ledger`
 /// and `github.com/janedoe/ledger` are the same link written two ways, and
 /// telling a candidate their own URL was "missing or altered" because the model
-/// dropped the scheme is the false Critical this key exists to prevent.
+/// dropped the scheme is the false Critical this key exists to prevent. `www.`
+/// is the same edit one label along — the model drops it (or adds it) exactly
+/// as readily — and it drew TWO Criticals per link, one for the source form
+/// "missing or altered" and one for the generated form "invented".
+///
+/// Only the FIRST `www.` label goes: `www.www.example.com` is a different host
+/// from `www.example.com`, and this key may only ever collapse spellings of the
+/// same resource.
 ///
 /// **Never index a `&str` by a fixed byte offset here.** URL text in a résumé is
 /// arbitrary UTF-8 (`www.café-berlin.de`, `ab.com/éx`), and `&s[..8]` panics the
@@ -828,6 +901,13 @@ pub fn canonical_link(raw: &str) -> String {
             s = &s[scheme.len()..]; // Safe: the matched prefix is pure ASCII.
             break;
         }
+    }
+    // Same rule one label along, and the same byte-compare-then-slice shape:
+    // `wwwé.de` is a host that merely starts with those three letters, and a
+    // blind `&s[..4]` there cuts inside the `é` and aborts the process.
+    const WWW: &str = "www.";
+    if s.len() >= WWW.len() && s.as_bytes()[..WWW.len()].eq_ignore_ascii_case(WWW.as_bytes()) {
+        s = &s[WWW.len()..]; // Safe: the matched prefix is pure ASCII.
     }
     let s = s.trim_end_matches('/');
     match s.split_once('/') {

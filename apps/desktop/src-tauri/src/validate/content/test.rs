@@ -741,10 +741,13 @@ fn normalized_link_forms_are_not_altered_links() {
 #[test]
 fn accented_project_links_are_keyed_without_panicking() {
     // Boundary 8: `é` occupies bytes 7-8 in all three of these, so the very
-    // first loop iteration (`https://`, len 8) cut inside it.
+    // first loop iteration (`https://`, len 8) cut inside it. (The `www.` here
+    // is stripped as of R14-F3 — `a_www_prefix_is_the_same_link` owns that
+    // rule and its own boundary twin; what this row still pins is that the
+    // accented tail survives whatever the prefix loop did.)
     assert_eq!(
         factual::canonical_link("www.café-berlin.de"),
-        "www.café-berlin.de"
+        "café-berlin.de"
     );
     assert_eq!(factual::canonical_link("ab.com/éx"), "ab.com/éx");
     // …and stripping the scheme that DOES match still leaves the tail intact.
@@ -4454,5 +4457,143 @@ fn bullet_count_is_grouped_under_the_documents_own_heading() {
         grouping_keys,
         vec![Some("BERUFSERFAHRUNG"), Some("BERUFSERFAHRUNG")],
         "one section, one group — the key is the document's own heading"
+    );
+}
+
+// ── PR #963 round-14 findings ───────────────────────────────────────────────
+
+/// R14-F2 — `SUFFIXED_NUMBER_RE` ran on the SOURCE side only, so a
+/// magnitude-suffixed figure was never a CLAIM. `INTEGER_RE` sees only the
+/// mantissa, and the mantissa is thrown away below three digits ("35k" → "35")
+/// or on a decimal point ("3.5m" → "3.5"): a fabricated suffixed figure was
+/// structurally invisible to `unsourced_metric`, not merely tolerated.
+///
+/// The mirror image of the same asymmetry is a false CRITICAL: "250k" left
+/// "250" behind as a claim, which a source writing "250,000" never states.
+#[test]
+fn a_fabricated_suffixed_figure_is_an_unsourced_metric() {
+    // The claims side must extract the EXPANDED value, the same language the
+    // source side has always spoken.
+    let claims: Vec<String> =
+        factual::metrics_in(&resume_with_bullet("Onboarded 35k users"), DocKind::Resume)
+            .into_iter()
+            .map(|m| m.number)
+            .collect();
+    assert_eq!(
+        claims,
+        vec!["35000".to_string()],
+        "one figure, expanded, and the mantissa is not a second claim"
+    );
+
+    let source = resume_with_bullet("Onboarded 4,000 users and booked 90,000 EUR in revenue");
+    for (written, expanded) in [("35k", "35000"), ("3.5m", "3500000"), ("2bn", "2000000000")] {
+        let fabricated = resume_with_bullet(&format!("Onboarded {written} users"));
+        let report = report_for(&fabricated, &source, EN_JOB_AD, &[]);
+        let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+        assert_eq!(
+            hits.len(),
+            1,
+            "one invented figure is one Critical; got {hits:#?}"
+        );
+        assert_eq!(
+            hits[0].evidence.as_deref(),
+            Some(written),
+            "the evidence quotes the span as written, not the expansion {expanded}"
+        );
+    }
+
+    // …and the equivalence that makes the expansion worth having, in BOTH
+    // directions: the same figure written the other way is not a fabrication.
+    for (source_form, generated_form) in [
+        ("10k requests", "10,000 requests"),
+        ("10,000 requests", "10k requests"),
+        ("250,000 requests", "250k requests"),
+        ("1.2m requests", "1,200,000 requests"),
+    ] {
+        silent(
+            &report_for(
+                &resume_with_bullet(&format!("Handled {generated_form} per second at peak")),
+                &resume_with_bullet(&format!("Handled {source_form} per second at peak")),
+                EN_JOB_AD,
+                &[],
+            ),
+            FACTUAL_UNSOURCED_METRIC,
+        );
+    }
+
+    // The `\b` that keeps a millisecond figure out of the millions is still the
+    // rule on both sides: `480ms` must not become 480 000 000.
+    let latency = resume_with_bullet("Cut latency from 480ms to 90ms");
+    silent(
+        &report_for(&latency, &latency, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+}
+
+/// R14-F3 — `canonical_link` dropped the scheme but not a leading `www.`, so
+/// `https://www.github.com/janedoe/ledger` and `github.com/janedoe/ledger` —
+/// the same resource, written the two ways résumés write it — keyed
+/// differently and drew TWO `factual.altered_project_link` Criticals: the
+/// source's link "missing or altered", plus the generated one "invented".
+#[test]
+fn a_www_prefix_is_the_same_link() {
+    assert_eq!(
+        factual::canonical_link("https://www.github.com/janedoe/ledger"),
+        "github.com/janedoe/ledger"
+    );
+    assert_eq!(
+        factual::canonical_link("WWW.GitHub.com/janedoe/ledger/"),
+        factual::canonical_link("https://github.com/janedoe/ledger")
+    );
+    // Accented hosts, on the boundary this function has already panicked on
+    // once: the `www.` strip is byte-compared, never byte-sliced blind.
+    assert_eq!(
+        factual::canonical_link("www.café-berlin.de"),
+        factual::canonical_link("café-berlin.de"),
+        "the same accented host written two ways is one key"
+    );
+    assert_eq!(
+        factual::canonical_link("www.café-berlin.de"),
+        "café-berlin.de"
+    );
+    assert_eq!(
+        factual::canonical_link("HTTPS://WWW.Café-Berlin.DE/Über/"),
+        "café-berlin.de/Über"
+    );
+    assert_eq!(factual::canonical_link("www.é.de"), "é.de");
+
+    // `www` is a LABEL, not a prefix: a host that merely starts with those
+    // three letters keeps them — including the multibyte twin, where a blind
+    // four-byte slice would cut inside the char and abort the process.
+    assert_eq!(factual::canonical_link("wwwé.de/x"), "wwwé.de/x");
+    assert_eq!(
+        factual::canonical_link("wwwx.example.com/x"),
+        "wwwx.example.com/x"
+    );
+    // Only the FIRST label is stripped — `www.www.example.com` is a different
+    // host from `www.example.com` and must stay one.
+    assert_eq!(
+        factual::canonical_link("www.www.example.com/x"),
+        "www.example.com/x"
+    );
+
+    // End to end: the two spellings of one link, through `validate_content`.
+    let source = "PROJECTS\n\n\
+                  **Ledger CLI** · https://www.github.com/janedoe/ledger\n\
+                  Rust · SQLite\n";
+    let generated = "PROJECTS\n\n\
+                     **Ledger CLI** · github.com/janedoe/ledger\n\
+                     Rust · SQLite\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
+    );
+    // …and a genuinely different host is still Critical.
+    let altered = "PROJECTS\n\n\
+                   **Ledger CLI** · github.com/someone-else/ledger\n\
+                   Rust · SQLite\n";
+    fired(
+        &report_for(altered, source, EN_JOB_AD, &[]),
+        FACTUAL_ALTERED_PROJECT_LINK,
     );
 }
