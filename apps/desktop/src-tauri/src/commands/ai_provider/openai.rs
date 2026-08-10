@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use super::research;
 use super::retry::send_with_retry;
 use super::stream::{stream_response, StreamPiece};
+use super::structured;
 use super::timeouts;
 use super::{
     friendly_api_error, model_entry, resolve_intent, single_shot_turn, AgentTurn,
@@ -484,71 +485,12 @@ fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile
     openai_sampling_profile(intent)
 }
 
-/// Build the `/chat/completions` streaming request body for a given
-/// [`AiGenerateRequest`] + capability matrix + resolved [`SamplingProfile`].
-/// Pure + unit-tested — this is the shared body shape for native OpenAI, any
-/// OpenAI-compatible gateway, and Ollama Cloud (all backed by
-/// [`OpenAiClient`]). `sampling` is already merged with the request's
-/// explicit numeric overrides (see [`SamplingProfile::resolve`]) — each field
-/// is added only when `Some` (never sent as `null`), and the whole block is
-/// skipped on reasoning models that reject `temperature`.
-fn build_chat_stream_body(
-    req: &AiGenerateRequest,
-    caps: ModelCapabilities,
-    sampling: SamplingProfile,
-) -> Value {
-    let messages = req
-        .messages
-        .iter()
-        .map(|m| json!({ "role": m.role, "content": m.content }))
-        .collect::<Vec<_>>();
-
-    let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
-    // Real per-call token usage (AI-spend visibility, `crate::spend`): asks for
-    // one extra streamed chunk carrying `usage` right before `[DONE]`. Every
-    // OpenAI-compatible server this client talks to (native OpenAI, LM
-    // Studio/vLLM/OpenRouter/Groq/…, Ollama Cloud) either honors this or
-    // silently ignores the unknown field — never a 400.
-    body["stream_options"] = json!({ "include_usage": true });
-    if caps.supports_temperature {
-        if let Some(t) = sampling.temperature {
-            body["temperature"] = json!(t);
-        }
-        if let Some(top_p) = sampling.top_p {
-            body["top_p"] = json!(top_p);
-        }
-        if let Some(fp) = sampling.frequency_penalty {
-            body["frequency_penalty"] = json!(fp);
-        }
-        if let Some(pp) = sampling.presence_penalty {
-            body["presence_penalty"] = json!(pp);
-        }
-    }
-    if let Some(mt) = req.max_tokens {
-        let field = match caps.token_param {
-            TokenParam::MaxCompletionTokens => "max_completion_tokens",
-            _ => "max_tokens",
-        };
-        body[field] = json!(mt);
-    }
-    // Only ever sent when it's one of `OPENAI_EFFORT_LEVELS` (see its doc
-    // comment) AND `caps.supports_reasoning` is true (native OpenAI's
-    // o-series, or Ollama Cloud's thinking-family models — see
-    // `OpenAiClient::supports_reasoning_effort`) — a wrong/guessed value 400s.
-    if caps.supports_reasoning {
-        if let Some(effort) = req
-            .effort
-            .as_deref()
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-        {
-            if OPENAI_EFFORT_LEVELS.contains(&effort) {
-                body["reasoning_effort"] = json!(effort);
-            }
-        }
-    }
-    body
-}
+// The pure request-body builders live in a sibling file (this one is at its
+// R8 LOC cap) — same `#[path]` convention as `openai_tests.rs`, so they stay
+// child items of this module and no call site or test import moves.
+#[path = "openai_body.rs"]
+mod body;
+use body::{build_chat_stream_body, build_complete_body, StructuredCall};
 
 pub struct OpenAiClient {
     id: ProviderId,
@@ -640,9 +582,27 @@ impl OpenAiClient {
         }
     }
 
+    /// Whether this client's provider id accepts OpenAI's `response_format`
+    /// field on `/chat/completions` — native OpenAI (which defines it) and
+    /// Ollama Cloud (whose `/v1` endpoint documents structured outputs through
+    /// the same field). A generic `openai-compatible` gateway is an unknown
+    /// catalog behind an unknown server build, exactly like
+    /// [`Self::supports_reasoning_effort`]'s `_ => false` arm: guessing wrong
+    /// 400s a whole generation, while omitting the field only costs the
+    /// prompt-discipline fallback, so an unknown gateway is never guessed.
+    fn supports_response_format(&self) -> bool {
+        matches!(self.id, ProviderId::OpenAi | ProviderId::OllamaCloud)
+    }
+
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
     /// `/chat/completions` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip.
+    /// trait methods never duplicate the HTTP round-trip. `structured` is
+    /// `Some` only on the structured path (see [`Self::complete_structured`])
+    /// — it is the only non-streaming entry point handed the whole
+    /// [`AiGenerateRequest`], so the other two have nothing to pass. Its
+    /// `effort` arrives RAW (the user's per-provider preference) and is gated
+    /// against this model's own capabilities inside [`build_complete_body`],
+    /// exactly as `chat_stream` gates it.
     async fn complete_impl(
         &self,
         app: &AppHandle,
@@ -650,23 +610,14 @@ impl OpenAiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
+        structured: Option<StructuredCall<'_>>,
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
         let caps = self.capabilities(model);
         let endpoint = self.endpoint_url("chat/completions")?;
         let trace = RequestTrace::begin(self.id, model, "/chat/completions", &self.base_url, false);
 
-        let mut body = json!({
-            "model": model,
-            "messages": [
-                { "role": "system", "content": system },
-                { "role": "user", "content": user },
-            ],
-            "stream": false,
-        });
-        if caps.supports_temperature {
-            body["temperature"] = json!(temperature.unwrap_or(0.7));
-        }
+        let body = build_complete_body(model, system, user, temperature, caps, structured);
 
         let resp = send_with_retry(|| {
             crate::net::http::shared()
@@ -956,7 +907,12 @@ impl AiProvider for OpenAiClient {
             supports_streaming: true,
             supports_reasoning: self.supports_reasoning_effort(model),
             supports_tools: true,
-            supports_json_mode: true,
+            // Corrected from a blanket `true`: a generic `openai-compatible`
+            // gateway is an unknown server build, and this adapter never
+            // sends it `response_format` for exactly that reason — the
+            // declared capability now matches what `complete_structured`
+            // actually does. Same gate, one source of truth.
+            supports_json_mode: self.supports_response_format(),
             supports_embeddings: true,
             // Only native OpenAI exposes the `web_search` tool; any
             // OpenAI-compatible gateway (LM Studio, OpenRouter, …) can't be
@@ -1099,7 +1055,7 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.complete_impl(app, model, system, user, temperature)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -1112,8 +1068,47 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        self.complete_impl(app, model, system, user, temperature)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
+    }
+
+    /// Native constrained decoding via `response_format` — strict
+    /// `json_schema` when the caller supplied a schema, else `json_object`
+    /// (see [`structured::openai_response_format`]). The prompt still carries
+    /// the directive + filled example on this path. A gateway whose id this
+    /// adapter can't vouch for falls back to the trait default — see
+    /// [`Self::supports_response_format`].
+    ///
+    /// `req.effort` rides along (gated by [`reasoning_effort`]) for the same
+    /// reason `chat_stream` sends it: this is a full [`AiGenerateRequest`], and
+    /// a structured call on a reasoning model that silently ran at the vendor's
+    /// default effort was the user's setting being dropped, not honored. Same
+    /// for `req.max_tokens` — the streaming body has always sent it, and a
+    /// structured call is the one carrying a whole résumé plus a job ad.
+    async fn complete_structured(
+        &self,
+        app: &AppHandle,
+        req: &AiGenerateRequest,
+        schema_hint: &str,
+        schema: Option<&Value>,
+    ) -> AppResult<(String, Usage)> {
+        if !self.supports_response_format() {
+            return structured::prompt_only(self, app, req, schema_hint).await;
+        }
+        let (system, user) = structured::structured_prompt(req, schema_hint);
+        self.complete_impl(
+            app,
+            &req.model,
+            &system,
+            &user,
+            structured::structured_temperature(self, req),
+            Some(StructuredCall {
+                response_format: structured::openai_response_format(schema),
+                effort: req.effort.as_deref(),
+                max_tokens: req.max_tokens,
+            }),
+        )
+        .await
     }
 
     async fn research(

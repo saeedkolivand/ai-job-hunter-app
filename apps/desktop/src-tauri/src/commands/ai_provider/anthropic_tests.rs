@@ -314,7 +314,20 @@ fn adaptive_gate_matches_opus_4_7_4_8_and_the_5_family() {
         "claude-sonnet-5",
         "claude-fable-5",
         "claude-fable-5-20260201",
+        // Every real Mythos id shape must keep passing the gate after the bare
+        // `contains("mythos")` was replaced with the boundary-aware needle:
+        // the two documented releases, a dated build, and a vendor prefix.
         "claude-mythos-5",
+        "claude-mythos-preview",
+        "claude-mythos-5-20260201",
+        "anthropic/claude-mythos-5",
+        // …and the bare family word too. Unlike `anthropic_supports_effort`
+        // (a closed list of documented VERSIONS, which asserts the opposite for
+        // this exact id), this gate covers the Mythos FAMILY, so an unlisted
+        // future point release stays adaptive with no code change. Guessing
+        // wrong is safe here and 400s there — see both doc comments.
+        "claude-mythos",
+        "claude-mythos-6",
     ] {
         assert!(
             anthropic_uses_adaptive_thinking(m),
@@ -392,6 +405,52 @@ fn version_needles_are_boundary_aware_not_raw_substring() {
     // Same class of bug for "opus-5": "claude-opus-50" must not be treated
     // as the Opus 5 (adaptive) family.
     assert!(!anthropic_uses_adaptive_thinking("claude-opus-50"));
+}
+
+#[test]
+fn version_needles_reject_a_needle_glued_to_a_neighbouring_component() {
+    // The trailing-DIGIT-only boundary above left the same collision reachable
+    // from the other two sides, and both fail OPEN — an unrecognized id
+    // silently classified as a known family, the one direction these gates
+    // promise they never fail in. Mutation check: restore the
+    // `!b.is_ascii_digit()` suffix-only check in `contains_version_needle` and
+    // every assertion here fails.
+    //
+    // 1. A glued PREFIX: "notopus-4-5" contains "opus-4-5" outright.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "claude-notopus-4-5"
+    ));
+    assert!(!anthropic_uses_adaptive_thinking("claude-notopus-5"));
+    assert!(!anthropic_supports_effort("claude-notopus-4-5"));
+    // 2. A glued non-digit SUFFIX: only a digit used to be rejected.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "claude-sonnet-4-5alpha"
+    ));
+    assert!(!anthropic_uses_adaptive_thinking("claude-opus-5x"));
+    // …including the adaptive gate's one BARE FAMILY WORD, which was still a
+    // raw `m.contains("mythos")` after the version needles were fixed — the
+    // same fail-open direction, one needle later.
+    assert!(!anthropic_uses_adaptive_thinking("claude-notmythos-9"));
+    assert!(!anthropic_uses_adaptive_thinking("claude-mythos9"));
+    // 3. Both at once.
+    assert!(!super::anthropic_supports_structured_outputs(
+        "xclaude-notopus-4-5beta"
+    ));
+
+    // …while every SEPARATOR a real id uses still matches: the dash-dated
+    // form, a Bedrock-style dotted vendor id (dots fold to dashes), a Vertex
+    // `@`-suffixed one, and an OpenRouter vendor prefix.
+    for model in [
+        "claude-sonnet-4-5-20250929",
+        "anthropic.claude-opus-4-5-v1:0",
+        "claude-opus-4-5@20251101",
+        "anthropic/claude-opus-4-5",
+    ] {
+        assert!(
+            super::anthropic_supports_structured_outputs(model),
+            "{model} is a real id shape and must still match its needle"
+        );
+    }
 }
 
 #[test]
@@ -1322,4 +1381,69 @@ async fn list_models_transport_errors_when_the_cumulative_deadline_fires_across_
         .await
         .expect_err("page 2's body delay must exceed the REMAINING cumulative budget after page 1");
     assert!(matches!(err, AppError::Network(_)));
+}
+
+// ── Structured-output model gate ──────────────────────────────────────────────
+
+#[test]
+fn structured_outputs_gate_covers_the_4_5_generation_and_later_plus_opus_4_1() {
+    for model in [
+        "claude-opus-4-1-20250805",
+        "claude-opus-4-5",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-fable-5",
+        // Vendor-prefixed (OpenRouter-style) ids normalize the same way every
+        // other gate in this file does.
+        "anthropic/claude-sonnet-5",
+        // Dot-form version separators collapse to dashes too.
+        "claude-opus-4.5",
+    ] {
+        assert!(
+            super::anthropic_supports_structured_outputs(model),
+            "{model} must be recognized as structured-output capable"
+        );
+    }
+}
+
+#[test]
+fn structured_outputs_gate_rejects_pre_4_5_models_and_anything_unrecognized() {
+    for model in [
+        // Claude 3.x and the 4.0 models never got structured outputs.
+        "claude-3-opus-20240229",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-7-sonnet-20250219",
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514",
+        // An unrecognized/future id defaults to unsupported — the fallback
+        // always works, a wrongly-claimed capability does not.
+        "claude-something-new",
+        "",
+        // Boundary check: `opus-4-50` must not match the `opus-4-5` needle.
+        "claude-opus-4-50",
+    ] {
+        assert!(
+            !super::anthropic_supports_structured_outputs(model),
+            "{model} must NOT be claimed as structured-output capable"
+        );
+    }
+}
+
+#[test]
+fn capabilities_reports_json_mode_from_the_structured_output_gate() {
+    // The declared capability is the gate, not a hardcoded blanket value —
+    // mutation check: pin `supports_json_mode` back to `false` and this fails.
+    assert!(
+        AnthropicClient
+            .capabilities("claude-sonnet-4-5")
+            .supports_json_mode
+    );
+    assert!(
+        !AnthropicClient
+            .capabilities("claude-3-5-sonnet-20241022")
+            .supports_json_mode
+    );
 }

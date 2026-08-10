@@ -3,9 +3,16 @@
  *
  * Prompts adapt to the three AI provider classes the app supports — local
  * **ollama** models, **cloud** API keys, and **cli** agents — choosing prompt
- * verbosity, truncation strategy, schema variant, and output-format. This module
- * stays PURE: it describes provider capabilities declaratively (flags + metadata);
- * the real API calls and CLI invocations live in the caller.
+ * verbosity, truncation strategy, and schema variant. This module stays PURE:
+ * it describes provider capabilities declaratively (flags + metadata); the
+ * real API calls and CLI invocations live in the caller.
+ *
+ * Native structured output is deliberately NOT modelled here: it is decided
+ * per request by the Rust provider layer's `AiProvider::complete_structured`
+ * (`commands/ai_provider/`), which knows the live provider id, model, and
+ * whether a schema is available. A duplicate TS flag could only ever drift
+ * from it — the previous `supportsStructuredOutput`/`structuredOutput` pair
+ * was never read by anything and was removed rather than re-pointed.
  */
 
 import {
@@ -25,8 +32,6 @@ export interface ProviderProfile {
   model?: string;
   /** Context window in tokens, if known — sizes cloud input budgets. */
   contextWindow?: number;
-  /** Native JSON-schema / tool-use support (cloud). */
-  supportsStructuredOutput?: boolean;
   /** Explicit ollama sub-tier; otherwise derived from `model`. */
   sizeHint?: PromptTier;
 }
@@ -49,8 +54,6 @@ export interface ResolvedProfile {
   schema: 'compact' | 'full';
   /** Whether to request the rich `rewrites` field. */
   includeRewrites: boolean;
-  /** Whether the caller can request native structured output. */
-  structuredOutput: boolean;
   /** Resume truncation strategy. */
   truncation: TruncationStrategy;
   /** Char cap for the resume slice. */
@@ -84,8 +87,8 @@ function resolveTruncation(profile: ProviderProfile, tier: PromptTier): Truncati
  * Normalize a {@link PromptTarget} into the concrete decisions a builder needs.
  *
  * - **cli** → `task` brief (self-verifying, full schema, moderate truncation).
- * - **cloud** → `full` multi-perspective prompt + rich schema + native structured
- *   output, minimal truncation sized to the context window.
+ * - **cloud** → `full` multi-perspective prompt + rich schema, minimal
+ *   truncation sized to the context window.
  * - **ollama** → `full` only for a large local model, else `brief` (compact prompt,
  *   compact schema, aggressive truncation). Unknown local models default to the
  *   smaller/safer `brief` path via {@link detectModelSize}.
@@ -111,7 +114,6 @@ export function resolveProfile(target: PromptTarget = 'large'): ResolvedProfile 
           : 'brief';
 
   const schema: 'compact' | 'full' = depth === 'brief' ? 'compact' : 'full';
-  const structuredOutput = profile.supportsStructuredOutput ?? profile.kind === 'cloud';
 
   return {
     kind: profile.kind,
@@ -119,7 +121,6 @@ export function resolveProfile(target: PromptTarget = 'large'): ResolvedProfile 
     depth,
     schema,
     includeRewrites: schema === 'full',
-    structuredOutput,
     truncation: resolveTruncation(profile, tier),
     // resumeChars is retained for backward-compat / callers that still slice;
     // the generation builders now feed the résumé via `truncation` +

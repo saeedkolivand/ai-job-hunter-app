@@ -175,7 +175,15 @@ fn anthropic_uses_adaptive_thinking(model: &str) -> bool {
         || contains_version_needle(&m, "opus-5")
         || contains_version_needle(&m, "sonnet-5")
         || contains_version_needle(&m, "fable-5")
-        || m.contains("mythos")
+        // A bare family word rather than a version needle — Mythos is gated as
+        // a WHOLE family here (unlike `anthropic_supports_effort`, which lists
+        // only the two documented Mythos names), so `mythos-6` and any later
+        // point release stay adaptive with no code change. It still goes
+        // through [`contains_version_needle`]: the helper's rule is a component
+        // boundary, not a version shape, so it applies unchanged to a bare
+        // word, and a raw `contains` would classify `claude-notmythos-9` as
+        // adaptive — the same fail-open direction the version needles closed.
+        || contains_version_needle(&m, "mythos")
 }
 
 /// Shared normalization for the two thinking-mode predicates above:
@@ -194,22 +202,38 @@ fn normalize_model_id(model: &str) -> String {
     bare.to_ascii_lowercase().replace('.', "-")
 }
 
-/// Boundary-aware substring check for the version needles used by the
-/// thinking-mode predicates above: `haystack` must contain `needle`, and the
-/// character immediately following the match must be either end-of-string or
-/// a non-digit. A raw [`str::contains`] has no such boundary — it would let
+/// Component-aware substring check for the version needles used by the
+/// thinking-mode predicates above: `haystack` must contain `needle` sitting on
+/// its own id COMPONENTS — the characters on both sides of the match must each
+/// be either end-of-string or a separator (anything non-alphanumeric: the `-`
+/// every Anthropic id uses, plus the `.`/`/`/`_`/`@`/`:` a gateway, Bedrock or
+/// Vertex id can introduce; [`normalize_model_id`] has already folded `.` to
+/// `-` and dropped a vendor prefix by the time this runs).
+///
+/// A raw [`str::contains`] has no boundary at all — it would let
 /// `opus-4-70`/`opus-4-71`/… wrongly match the `opus-4-7` needle, and
 /// `sonnet-50`/`sonnet-58`/… wrongly match `sonnet-5`, exactly the class of
 /// prefix-collision bug this file already patched once with the explicit
 /// opus-4-7/4-8 carve-out above `claude-opus-4`.
+///
+/// Checking only for a trailing DIGIT (the first fix) left the same collision
+/// reachable from three sides, and every one of them fails OPEN — an
+/// unrecognized id silently classified as a known family, which is the exact
+/// direction these predicates' doc comments promise they never fail in:
+///
+/// - a glued prefix — `claude-notopus-4-5` matched the `opus-4-5` needle,
+/// - a non-digit glued suffix — `claude-sonnet-4-5alpha` matched `sonnet-4-5`,
+/// - and both at once.
+///
+/// A real id always separates its components (`claude-sonnet-4-5-20250929`,
+/// `anthropic.claude-opus-4-5-v1:0`, `claude-opus-4-5@20251101`), so requiring
+/// the boundary costs nothing and closes all three.
 fn contains_version_needle(haystack: &str, needle: &str) -> bool {
-    haystack.match_indices(needle).any(|(idx, _)| {
-        let after = idx + needle.len();
-        haystack
-            .as_bytes()
-            .get(after)
-            .is_none_or(|b| !b.is_ascii_digit())
-    })
+    let bytes = haystack.as_bytes();
+    let is_boundary = |index: usize| bytes.get(index).is_none_or(|b| !b.is_ascii_alphanumeric());
+    haystack
+        .match_indices(needle)
+        .any(|(idx, _)| (idx == 0 || is_boundary(idx - 1)) && is_boundary(idx + needle.len()))
 }
 
 /// True for Anthropic's pre-thinking-era ids — Claude 1.x, 2.x, and 3.x below
@@ -276,12 +300,14 @@ fn anthropic_supports_temperature(model: &str) -> bool {
 /// version-needle gates) — an unrecognized future model defaults to `false`
 /// (never a guessed value; `output_config.effort` 400s on a model that
 /// doesn't support it). Every needle (including the two Mythos names below)
-/// is boundary-checked via [`contains_version_needle`] — unlike
-/// [`anthropic_uses_adaptive_thinking`]'s pre-existing bare `m.contains("mythos")`
-/// (a different, broader predicate this one deliberately does NOT reuse),
-/// this gate never guesses `true` for an unlisted/future model: only the
-/// two Mythos names the effort page currently documents ("Claude Mythos 5",
-/// "Claude Mythos Preview") match.
+/// is boundary-checked via [`contains_version_needle`], as they are in every
+/// gate in this file. What differs is BREADTH, not boundary handling: this is
+/// a closed list of VERSIONED names, so only the two Mythos releases the
+/// effort page currently documents ("Claude Mythos 5", "Claude Mythos
+/// Preview") match — a `claude-mythos-6` does not. The broader
+/// [`anthropic_uses_adaptive_thinking`] (a different predicate this one
+/// deliberately does NOT reuse) gates the bare `mythos` FAMILY instead,
+/// because guessing wrong is safe there and 400s here.
 fn anthropic_supports_effort(model: &str) -> bool {
     let m = normalize_model_id(model);
     contains_version_needle(&m, "opus-4-5")
@@ -337,6 +363,50 @@ fn anthropic_effort_levels(model: &str) -> Vec<&'static str> {
     } else {
         vec!["low", "medium", "high", "max", "xhigh"]
     }
+}
+
+/// Whether `model`'s API offers native **structured outputs** (server-side
+/// constrained decoding against a JSON Schema) at all — the Claude 4.5
+/// generation and later, plus Opus 4.1. Claude 3.x and the 4.0 models never
+/// got it. A closed, explicitly-listed set exactly like
+/// [`anthropic_supports_effort`], boundary-checked via
+/// [`contains_version_needle`]; deliberately NOT derived from any existing
+/// thinking/effort predicate (those cover different, non-coinciding model
+/// sets — see `anthropic_supports_effort`'s doc). An unrecognized or future
+/// id defaults to **false**: the conservative direction, since the fallback
+/// (prompt discipline in [`AiProvider::complete_structured`]'s default) always
+/// works and a wrongly-claimed capability cannot.
+///
+/// **This adapter does not send a structured-output request yet.**
+/// `complete_structured` deliberately stays on the trait default here: the
+/// beta's exact wire shape (the request field carrying the schema and the
+/// `anthropic-beta` header value that enables it) is **pending verification
+/// against Anthropic's live docs**, and guessing a wire format 400s every
+/// generation on the affected models. This predicate is the verified half —
+/// wiring it up is a field name and a header away, and needs no change to any
+/// caller. Consequently NO caller may read
+/// `capabilities().supports_json_mode` as "this call will be natively
+/// constrained": it describes the MODEL's API, not what this adapter sends,
+/// and `complete_structured` works on every model either way.
+fn anthropic_supports_structured_outputs(model: &str) -> bool {
+    let m = normalize_model_id(model);
+    // The 4.5 generation (the first with structured outputs) plus Opus 4.1.
+    contains_version_needle(&m, "opus-4-1")
+        || contains_version_needle(&m, "opus-4-5")
+        || contains_version_needle(&m, "sonnet-4-5")
+        || contains_version_needle(&m, "haiku-4-5")
+        // Everything Anthropic shipped after it, per this adapter's known set.
+        || contains_version_needle(&m, "opus-4-6")
+        || contains_version_needle(&m, "opus-4-7")
+        || contains_version_needle(&m, "opus-4-8")
+        || contains_version_needle(&m, "sonnet-4-6")
+        || contains_version_needle(&m, "haiku-4-6")
+        || contains_version_needle(&m, "opus-5")
+        || contains_version_needle(&m, "sonnet-5")
+        || contains_version_needle(&m, "haiku-5")
+        || contains_version_needle(&m, "fable-5")
+        || contains_version_needle(&m, "mythos-5")
+        || contains_version_needle(&m, "mythos-preview")
 }
 
 /// Concatenate every `type:"text"` block in an Anthropic Messages `content` array
@@ -983,7 +1053,13 @@ impl AiProvider for AnthropicClient {
             supports_streaming: true,
             supports_reasoning: anthropic_supports_effort(model),
             supports_tools: true,
-            supports_json_mode: false,
+            // Corrected from a blanket `false`: the 4.5 generation and later
+            // (plus Opus 4.1) DO have native structured outputs — see
+            // `anthropic_supports_structured_outputs`, which also spells out
+            // why this adapter's `complete_structured` still takes the trait
+            // default and why no caller may read this flag as "this call will
+            // be natively constrained".
+            supports_json_mode: anthropic_supports_structured_outputs(model),
             supports_embeddings: false,
             // Native server-side web_search tool (account-key gated at call time).
             supports_web_search: true,
