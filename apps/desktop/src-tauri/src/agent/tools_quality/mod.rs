@@ -36,7 +36,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_salary::SalaryLookupReason;
-use crate::commands::match_resume::{job_meta_for, job_text_for};
+use crate::commands::match_resume::{job_meta_for, job_text_for, JobPostingMeta};
 use crate::documents::evidence::{extract_evidence, rank_bullets, EvidenceBullet, EvidenceSet};
 use crate::documents::keywords::detect_locale_tag;
 use crate::documents::DocumentStore;
@@ -137,11 +137,25 @@ const PER_ISSUE_WORST_CASE: usize = SECTION_CAP + MESSAGE_CAP + EVIDENCE_CAP + 4
 /// envelope (`ok`/`criticals`/`warnings`/`truncated` fields, the `issues`
 /// array's brackets — measured at ~70).
 ///
-/// [`compact_content_report`] ENFORCES this by measurement, not by trusting
-/// the estimate above: it serializes the candidate summary and, if it's over
-/// `SUMMARY_CAP`, drops the weakest (last-sorted) whole issue and re-checks,
-/// repeating until the body fits or every issue is gone. Dropped issues are
-/// counted in `truncated`, never a mid-string cut.
+/// [`compact_content_report`], [`compact_evidence_set`], and
+/// [`compact_trim_suggestions`] all ENFORCE this by measurement, not by
+/// trusting a raw-char estimate, via the shared [`shrink_to_summary_cap`]
+/// helper: each serializes its candidate summary and, if it's over
+/// `SUMMARY_CAP`, drops the weakest (last-ordered) whole item and
+/// re-checks, repeating until the body fits or every item is gone. Dropped
+/// items are counted in `truncated`, never a mid-string cut.
+///
+/// MEDIUM fix, PR #963 round 5: the round-4 fix below only wired this
+/// measure-then-drop loop into [`compact_content_report`] —
+/// [`compact_evidence_set`] and [`compact_trim_suggestions`] still built
+/// their bullet lists unconditionally and handed the result straight to
+/// `fenced()`'s hard char cap. Both overflow `SUMMARY_CAP` on their own
+/// declared per-field worst case BEFORE any JSON escaping even applies:
+/// `EVIDENCE_SEARCH_LIMIT` (12) bullets at up to `BULLET_TEXT_CAP +
+/// MAX_HITS * EVIDENCE_CAP` (~1,495) raw chars each, plus two
+/// `MAX_SKILLS`-entry skill lists, is ~20k chars; `TRIM_SUGGESTIONS_LIMIT`
+/// (10) bullets alone is ~15k — both well past the ~13.7k this constant
+/// works out to.
 ///
 /// This used to just reuse [`RESUME_CAP`]'s magnitude (8,000) on the theory
 /// that a "handful of items" summary could never approach it (PR #963 round
@@ -224,13 +238,49 @@ fn clamped_job_text(text: &str) -> String {
     clamp_chars(text, JOB_CAP)
 }
 
+/// Shrink an already-ordered set of `len` items to fit [`SUMMARY_CAP`] once
+/// JSON-serialized, dropping the LAST item at a time and re-measuring — the
+/// measure-the-real-serialized-length-then-drop-a-whole-item loop PR #963
+/// round 4 introduced for [`compact_content_report`], generalized (round 5)
+/// so [`compact_evidence_set`] and [`compact_trim_suggestions`] enforce the
+/// SAME budget the same way: per-field char clamps alone don't bound a JSON
+/// candidate's SERIALIZED size (JSON escaping) OR its size once multiplied
+/// by item count (see [`SUMMARY_CAP`]'s doc) — either way, leaving
+/// `fenced()`'s hard `body.chars().take(cap)` as the enforcement point cuts
+/// the JSON body mid-string.
+///
+/// `build(kept)` renders the FULL candidate `Value` (envelope + the first
+/// `kept` of the caller's already-ordered items, including whatever
+/// `truncated` bookkeeping the envelope carries) for a given `kept`. The
+/// caller's own ordering decides what dropping the tail means:
+/// [`compact_content_report`] sorts Criticals first — dropping the tail
+/// drops the weakest Warnings, never a Critical; [`compact_evidence_set`]
+/// sorts strongest-first — dropping the tail drops the weakest bullets;
+/// [`compact_trim_suggestions`]'s bullets are already weakest-first — this
+/// drops from the end of that order, i.e. the least-weak of the selected
+/// set, keeping the weakest (most actionable) suggestions.
+fn shrink_to_summary_cap(len: usize, mut build: impl FnMut(usize) -> Value) -> Value {
+    let mut kept = len;
+    loop {
+        let candidate = build(kept);
+        // Measure the ACTUAL serialized length — see this fn's doc for why
+        // per-field char clamps and item-count arithmetic alone don't bound it.
+        let fits = serde_json::to_string(&candidate)
+            .map(|s| s.chars().count() <= SUMMARY_CAP)
+            .unwrap_or(false);
+        if fits || kept == 0 {
+            return candidate;
+        }
+        kept -= 1;
+    }
+}
+
 /// Compact a [`ContentReport`] into what `validate_resume` actually returns
 /// to the model: counts, plus up to [`MAX_ISSUES`] issues (each
 /// code/section/message/evidence field individually clamped — see the module
 /// SECURITY note), plus a `truncated` count for anything dropped past that
-/// cap OR past [`SUMMARY_CAP`]'s serialized-length budget (MEDIUM fix, PR
-/// #963 round 4 — see [`SUMMARY_CAP`]'s doc: per-field char clamps alone
-/// don't bound the SERIALIZED size once JSON escaping is in play). Never a
+/// cap OR past [`SUMMARY_CAP`]'s serialized-length budget (enforced by
+/// [`shrink_to_summary_cap`] — see its doc and [`SUMMARY_CAP`]'s). Never a
 /// mid-string cut of the issue list — a whole issue is dropped instead, one
 /// at a time, until the summary actually fits. The full report — every
 /// [`crate::validate::content::ContentMetrics`] field, every issue, uncapped
@@ -253,8 +303,8 @@ fn compact_content_report(report: &ContentReport) -> Value {
     let mut ordered: Vec<&ContentIssue> = report.issues.iter().collect();
     // `false < true`: Criticals sort ahead of everything else.
     ordered.sort_by_key(|i| i.severity != Severity::Critical);
-    let mut kept = MAX_ISSUES.min(ordered.len());
-    loop {
+    let cap_count = MAX_ISSUES.min(ordered.len());
+    shrink_to_summary_cap(cap_count, |kept| {
         let issues: Vec<Value> = ordered
             .iter()
             .take(kept)
@@ -267,25 +317,14 @@ fn compact_content_report(report: &ContentReport) -> Value {
                 })
             })
             .collect();
-        let candidate = json!({
+        json!({
             "ok": report.ok,
             "criticals": criticals,
             "warnings": warnings,
             "truncated": report.issues.len() - kept,
             "issues": issues,
-        });
-        // Measure the ACTUAL serialized length — per-field char clamps alone
-        // don't bound this once JSON escaping inflates a field (see
-        // SUMMARY_CAP's doc). Drop a whole issue and retry rather than let
-        // `fenced()`'s hard char cap cut the JSON body mid-string.
-        let fits = serde_json::to_string(&candidate)
-            .map(|s| s.chars().count() <= SUMMARY_CAP)
-            .unwrap_or(false);
-        if fits || kept == 0 {
-            return candidate;
-        }
-        kept -= 1;
-    }
+        })
+    })
 }
 
 /// Quotes untrusted bullet `text` — clamped to [`BULLET_TEXT_CAP`] for the
@@ -316,6 +355,18 @@ fn bullet_to_value(b: &EvidenceBullet) -> Value {
 /// bounds an individual skill/keyword's length, only the count). The
 /// résumé's own STRUCTURE (roles, education) is the quality-report panel's
 /// job, not a tool result.
+///
+/// MEDIUM fix, PR #963 round 5: `limit` (up to [`EVIDENCE_SEARCH_LIMIT`])
+/// strongest bullets, each up to `BULLET_TEXT_CAP + MAX_HITS * EVIDENCE_CAP`
+/// raw chars, is already over [`SUMMARY_CAP`] on its own declared worst case
+/// before JSON escaping is even in play (see [`SUMMARY_CAP`]'s doc) — routed
+/// through [`shrink_to_summary_cap`] the same way [`compact_content_report`]
+/// is, so a bullet-heavy résumé drops whole bullets (weakest-last — the
+/// list is already sorted strongest-first, so dropping the tail drops the
+/// weakest) into `truncated` instead of getting cut mid-string by
+/// `fenced()`'s hard char cap. Skills lists are NOT part of this drop loop:
+/// their own `MAX_SKILLS`/`EVIDENCE_CAP` caps alone already bound them well
+/// under `SUMMARY_CAP`, so dropping bullets is always enough.
 fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
     let mut bullets: Vec<&EvidenceBullet> = set
         .roles
@@ -324,11 +375,7 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
         .chain(set.projects.iter())
         .collect();
     bullets.sort_by(|a, b| b.score.total_cmp(&a.score));
-    let top: Vec<Value> = bullets
-        .into_iter()
-        .take(limit)
-        .map(bullet_to_value)
-        .collect();
+    let capped: Vec<&EvidenceBullet> = bullets.into_iter().take(limit).collect();
     let skills_present: Vec<String> = set
         .skills_present
         .iter()
@@ -341,18 +388,41 @@ fn compact_evidence_set(set: &EvidenceSet, limit: usize) -> Value {
         .take(MAX_SKILLS)
         .map(|s| clamp_evidence(s))
         .collect();
-    json!({
-        "bullets": top,
-        "skillsPresent": skills_present,
-        "skillsAbsent": skills_absent,
+    shrink_to_summary_cap(capped.len(), |kept| {
+        let top: Vec<Value> = capped
+            .iter()
+            .take(kept)
+            .map(|b| bullet_to_value(b))
+            .collect();
+        json!({
+            "bullets": top,
+            "skillsPresent": skills_present.clone(),
+            "skillsAbsent": skills_absent.clone(),
+            "truncated": capped.len() - kept,
+        })
     })
 }
 
 /// `get_trim_suggestions`' payload: the weakest `limit` bullets from an
 /// already weakest-first [`rank_bullets`] ranking — never re-sorted here.
+///
+/// MEDIUM fix, PR #963 round 5: `limit` (up to [`TRIM_SUGGESTIONS_LIMIT`])
+/// bullets at up to `BULLET_TEXT_CAP + MAX_HITS * EVIDENCE_CAP` raw chars
+/// each is already over [`SUMMARY_CAP`] on its own (see [`SUMMARY_CAP`]'s
+/// doc) — routed through [`shrink_to_summary_cap`] the same way
+/// [`compact_evidence_set`] is, so a crafted résumé drops whole suggestions
+/// from the end of the already-weakest-first list into `truncated` instead
+/// of getting cut mid-string.
 fn compact_trim_suggestions(ranked: &[EvidenceBullet], limit: usize) -> Value {
-    let top: Vec<Value> = ranked.iter().take(limit).map(bullet_to_value).collect();
-    json!({ "weakestBullets": top })
+    let capped: Vec<&EvidenceBullet> = ranked.iter().take(limit).collect();
+    shrink_to_summary_cap(capped.len(), |kept| {
+        let top: Vec<Value> = capped
+            .iter()
+            .take(kept)
+            .map(|b| bullet_to_value(b))
+            .collect();
+        json!({ "weakestBullets": top, "truncated": capped.len() - kept })
+    })
 }
 
 /// `lookup_salary`'s payload: the validated range, or an explicit
@@ -426,6 +496,82 @@ fn envelope_result(value: Value) -> Value {
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────
+//
+// MEDIUM fix, PR #963 round 5: none of the four handlers below used to be
+// exercised by any test — only the pure helpers above them were, so the
+// not-found error paths and fallback branches were unpinned. Each handler is
+// now a thin `AppHandle`-touching wrapper around an `AppHandle`-FREE "core"
+// function that carries the actual not-found/fallback logic and is fully
+// unit-testable with a plain `Option<&str>` in place of a live
+// `DocumentStore`/postings-cache lookup — the same AppHandle-free-core split
+// `agent::controller`'s `AgentEnv` trait uses for its own seam (this crate
+// has no `tauri::test` mock-app harness, so that split — not a heavier
+// AppHandle mock — is the pattern to reuse here too).
+
+/// The trusted "resume not found" error every handler below raises when the
+/// run's `ToolContext::resume_id` isn't in the [`DocumentStore`] — factored
+/// out so [`validate_resume_core`]/[`search_candidate_evidence_core`]/
+/// [`get_trim_suggestions_core`] can construct and test it without an
+/// `AppHandle`.
+fn resume_not_found(resume_id: &str) -> AppError {
+    AppError::Validation(format!("resume not found: {resume_id}"))
+}
+
+/// The trusted "job not found" error, mirroring [`resume_not_found`] for the
+/// run's `ToolContext::job_id` against the live postings cache.
+fn job_not_found(job_id: &str) -> AppError {
+    AppError::Validation(format!("job not found in cache: {job_id}"))
+}
+
+/// Core, `AppHandle`-free logic for `validate_resume`: the not-found paths
+/// and the M-5 empty-draft fallback (validates the candidate's own saved
+/// résumé instead of erroring). `validate_resume_handler` resolves
+/// `source_text`/`job_text` from the `DocumentStore`/postings cache and
+/// delegates here.
+fn validate_resume_core(
+    draft_arg: &str,
+    resume_id: &str,
+    source_text: Option<&str>,
+    job_id: &str,
+    job_text: Option<&str>,
+) -> AppResult<Value> {
+    let source_text = source_text.ok_or_else(|| resume_not_found(resume_id))?;
+    // HIGH + MEDIUM fix — see `clamped_resume_text`'s doc.
+    let source_text = clamped_resume_text(source_text);
+    // M-5 fix: an absent/empty draft validates the candidate's CURRENT
+    // saved résumé against the job posting — the same
+    // "check-the-baseline" fallback `get_trim_suggestions_core` already has
+    // (see `optional_draft_arg`'s doc). Falls back to the SAME clamped
+    // view as `source_text`, not the raw unclamped text — otherwise this
+    // fallback would compare the full résumé against a truncated copy of
+    // itself and reintroduce the exact false-Critical class the clamp
+    // above exists to prevent.
+    let draft = if draft_arg.is_empty() {
+        source_text.clone()
+    } else {
+        draft_arg.to_string()
+    };
+    let job_ad = job_text.ok_or_else(|| job_not_found(job_id))?;
+    let job_ad = clamped_job_text(job_ad);
+    let lang = detect_locale_tag(&job_ad);
+    let input = ContentInput {
+        generated: &draft,
+        source_resume: &source_text,
+        job_ad: &job_ad,
+        // No per-job "top requirements" are resolved server-side today
+        // (that extraction is client-side, fed only through the save-time
+        // IPC payload) — `alignment.missing_top_requirement` simply has
+        // nothing to check against here. Every other check is unaffected.
+        top_requirements: &[],
+        target_language: lang,
+        doc_kind: DocKind::Resume,
+    };
+    let report = validate_content(&input);
+    Ok(fenced_summary(
+        "validate_resume_result",
+        &compact_content_report(&report),
+    ))
+}
 
 fn validate_resume_handler(
     app: &AppHandle,
@@ -436,48 +582,48 @@ fn validate_resume_handler(
     let ctx = ctx.clone();
     Box::pin(async move {
         let draft_arg = optional_draft_arg(&args);
-        let source = app
+        let source_text = app
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
-            .ok_or_else(|| AppError::Validation(format!("resume not found: {}", ctx.resume_id)))?;
-        // HIGH + MEDIUM fix — see `clamped_resume_text`'s doc.
-        let source_text = clamped_resume_text(&source.text);
-        // M-5 fix: an absent/empty draft validates the candidate's CURRENT
-        // saved résumé against the job posting — the same
-        // "check-the-baseline" fallback `get_trim_suggestions` already has
-        // (see `optional_draft_arg`'s doc). Falls back to the SAME clamped
-        // view as `source_text`, not the raw unclamped text — otherwise this
-        // fallback would compare the full résumé against a truncated copy of
-        // itself and reintroduce the exact false-Critical class the clamp
-        // above exists to prevent.
-        let draft = if draft_arg.is_empty() {
-            source_text.clone()
-        } else {
-            draft_arg
-        };
-        let job_ad = job_text_for(&app, &ctx.job_id).ok_or_else(|| {
-            AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
-        })?;
-        let job_ad = clamped_job_text(&job_ad);
-        let lang = detect_locale_tag(&job_ad);
-        let input = ContentInput {
-            generated: &draft,
-            source_resume: &source_text,
-            job_ad: &job_ad,
-            // No per-job "top requirements" are resolved server-side today
-            // (that extraction is client-side, fed only through the save-time
-            // IPC payload) — `alignment.missing_top_requirement` simply has
-            // nothing to check against here. Every other check is unaffected.
-            top_requirements: &[],
-            target_language: lang,
-            doc_kind: DocKind::Resume,
-        };
-        let report = validate_content(&input);
-        Ok(fenced_summary(
-            "validate_resume_result",
-            &compact_content_report(&report),
-        ))
+            .map(|d| d.text);
+        let job_text = job_text_for(&app, &ctx.job_id);
+        validate_resume_core(
+            &draft_arg,
+            &ctx.resume_id,
+            source_text.as_deref(),
+            &ctx.job_id,
+            job_text.as_deref(),
+        )
     })
+}
+
+/// Core, `AppHandle`-free logic for `search_candidate_evidence`: the
+/// not-found path and the empty-query fallback (scores against this run's
+/// own job posting instead of erroring). See [`validate_resume_core`]'s doc
+/// for the AppHandle-free-core pattern.
+fn search_candidate_evidence_core(
+    query: &str,
+    resume_id: &str,
+    source_text: Option<&str>,
+    job_id: &str,
+    job_text: Option<&str>,
+) -> AppResult<Value> {
+    let source_text = source_text.ok_or_else(|| resume_not_found(resume_id))?;
+    // MEDIUM perf fix — see `clamped_resume_text`'s doc.
+    let source_text = clamped_resume_text(source_text);
+    // `query` is already bounded to `QUERY_CAP` (200 chars, far under
+    // `JOB_CAP`) by `optional_query_arg` — one clamp per input, not two.
+    let scoring_text = if query.is_empty() {
+        let job_text = job_text.ok_or_else(|| job_not_found(job_id))?;
+        clamped_job_text(job_text)
+    } else {
+        query.to_string()
+    };
+    let set = extract_evidence(&source_text, &scoring_text);
+    Ok(fenced_summary(
+        "search_candidate_evidence_result",
+        &compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT),
+    ))
 }
 
 fn search_candidate_evidence_handler(
@@ -489,26 +635,66 @@ fn search_candidate_evidence_handler(
     let ctx = ctx.clone();
     Box::pin(async move {
         let query = optional_query_arg(&args);
-        let source = app
+        let source_text = app
             .state::<DocumentStore>()
             .get(&ctx.resume_id)
-            .ok_or_else(|| AppError::Validation(format!("resume not found: {}", ctx.resume_id)))?;
-        // MEDIUM perf fix — see `clamped_resume_text`'s doc.
-        let source_text = clamped_resume_text(&source.text);
-        // `query` is already bounded to `QUERY_CAP` (200 chars, far under
-        // `JOB_CAP`) by `optional_query_arg` — one clamp per input, not two.
-        let scoring_text = if query.is_empty() {
-            clamped_job_text(&job_text_for(&app, &ctx.job_id).ok_or_else(|| {
-                AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
-            })?)
+            .map(|d| d.text);
+        // Only look up the job posting when the fallback actually needs it —
+        // mirrors the pre-refactor handler's lazy `job_text_for` call.
+        let job_text = if query.is_empty() {
+            job_text_for(&app, &ctx.job_id)
         } else {
-            query
+            None
         };
-        let set = extract_evidence(&source_text, &scoring_text);
-        Ok(fenced_summary(
-            "search_candidate_evidence_result",
-            &compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT),
-        ))
+        search_candidate_evidence_core(
+            &query,
+            &ctx.resume_id,
+            source_text.as_deref(),
+            &ctx.job_id,
+            job_text.as_deref(),
+        )
+    })
+}
+
+/// Resolved provider args for `lookup_salary`'s `ai_lookup_salary_reasoned`
+/// call — a named struct rather than a 4-tuple (clippy's `type_complexity`
+/// lint, and cheaper to read at every call/test site than positional
+/// `Option<String>`s).
+#[derive(Debug)]
+struct SalaryLookupArgs {
+    title: String,
+    company: Option<String>,
+    location: Option<String>,
+    currency: Option<String>,
+}
+
+/// Core, `AppHandle`-free arg-shaping for `lookup_salary`: the not-found
+/// path and the M-2 currency-resolution logic, both testable without an
+/// `AppHandle` — only the provider call itself (`ai_lookup_salary_reasoned`)
+/// needs one, so it stays in the handler.
+fn lookup_salary_args(job_id: &str, meta: Option<&JobPostingMeta>) -> AppResult<SalaryLookupArgs> {
+    let meta = meta.ok_or_else(|| job_not_found(job_id))?;
+    let company = (!meta.company.trim().is_empty()).then(|| meta.company.clone());
+    // M-2 fix: `JobPostingMeta` now carries the posting's free-text
+    // location; no ISO-3166 country code is resolved server-side for a
+    // cached posting though, so `currency_for_location` is a small
+    // curated fallback (mirrors the spirit of
+    // `commands::geocoding::geonames::COUNTRY_ALIASES`'s tiny,
+    // deliberately-not-exhaustive list) that lets
+    // `reconcile_expected_currency` re-engage for the common markets it
+    // recognizes. An unmatched location still degrades to the same
+    // "unknown currency" case `SalaryResearch::enrich` already handles
+    // gracefully — a broader market estimate, never a hard failure.
+    let location = (!meta.location.trim().is_empty()).then(|| meta.location.clone());
+    let currency = location
+        .as_deref()
+        .and_then(currency_for_location)
+        .map(str::to_string);
+    Ok(SalaryLookupArgs {
+        title: meta.title.clone(),
+        company,
+        location,
+        currency,
     })
 }
 
@@ -520,31 +706,47 @@ fn lookup_salary_handler(
     let app = app.clone();
     let ctx = ctx.clone();
     Box::pin(async move {
-        let meta = job_meta_for(&app, &ctx.job_id).ok_or_else(|| {
-            AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
-        })?;
-        let company = (!meta.company.trim().is_empty()).then(|| meta.company.clone());
-        // M-2 fix: `JobPostingMeta` now carries the posting's free-text
-        // location; no ISO-3166 country code is resolved server-side for a
-        // cached posting though, so `currency_for_location` is a small
-        // curated fallback (mirrors the spirit of
-        // `commands::geocoding::geonames::COUNTRY_ALIASES`'s tiny,
-        // deliberately-not-exhaustive list) that lets
-        // `reconcile_expected_currency` re-engage for the common markets it
-        // recognizes. An unmatched location still degrades to the same
-        // "unknown currency" case `SalaryResearch::enrich` already handles
-        // gracefully — a broader market estimate, never a hard failure.
-        let location = (!meta.location.trim().is_empty()).then(|| meta.location.clone());
-        let currency = location
-            .as_deref()
-            .and_then(currency_for_location)
-            .map(str::to_string);
+        let meta = job_meta_for(&app, &ctx.job_id);
+        let args = lookup_salary_args(&ctx.job_id, meta.as_ref())?;
         let outcome = crate::commands::ai_salary::ai_lookup_salary_reasoned(
-            &app, meta.title, company, location, None, currency, None,
+            &app,
+            args.title,
+            args.company,
+            args.location,
+            None,
+            args.currency,
+            None,
         )
         .await;
         Ok(envelope_result(compact_salary_range(outcome)))
     })
+}
+
+/// Core, `AppHandle`-free logic for `get_trim_suggestions`: the not-found
+/// paths and the empty-draft fallback (ranks the candidate's own saved
+/// résumé instead of erroring). See [`validate_resume_core`]'s doc for the
+/// AppHandle-free-core pattern.
+fn get_trim_suggestions_core(
+    draft_arg: &str,
+    resume_id: &str,
+    source_text: Option<&str>,
+    job_id: &str,
+    job_text: Option<&str>,
+) -> AppResult<Value> {
+    let job_ad = job_text.ok_or_else(|| job_not_found(job_id))?;
+    // MEDIUM perf fix — see `clamped_resume_text`'s/`clamped_job_text`'s doc.
+    let job_ad = clamped_job_text(job_ad);
+    let text = if draft_arg.is_empty() {
+        let source_text = source_text.ok_or_else(|| resume_not_found(resume_id))?;
+        clamped_resume_text(source_text)
+    } else {
+        draft_arg.to_string()
+    };
+    let ranked = rank_bullets(&text, &job_ad);
+    Ok(fenced_summary(
+        "get_trim_suggestions_result",
+        &compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT),
+    ))
 }
 
 fn get_trim_suggestions_handler(
@@ -556,28 +758,23 @@ fn get_trim_suggestions_handler(
     let ctx = ctx.clone();
     Box::pin(async move {
         let draft_arg = optional_draft_arg(&args);
-        let job_ad = job_text_for(&app, &ctx.job_id).ok_or_else(|| {
-            AppError::Validation(format!("job not found in cache: {}", ctx.job_id))
-        })?;
-        // MEDIUM perf fix — see `clamped_resume_text`'s/`clamped_job_text`'s doc.
-        let job_ad = clamped_job_text(&job_ad);
-        let text = if draft_arg.is_empty() {
-            clamped_resume_text(
-                &app.state::<DocumentStore>()
-                    .get(&ctx.resume_id)
-                    .ok_or_else(|| {
-                        AppError::Validation(format!("resume not found: {}", ctx.resume_id))
-                    })?
-                    .text,
-            )
+        let job_text = job_text_for(&app, &ctx.job_id);
+        // Only load the saved résumé when the fallback actually needs it —
+        // mirrors the pre-refactor handler's lazy `DocumentStore` lookup.
+        let source_text = if draft_arg.is_empty() {
+            app.state::<DocumentStore>()
+                .get(&ctx.resume_id)
+                .map(|d| d.text)
         } else {
-            draft_arg
+            None
         };
-        let ranked = rank_bullets(&text, &job_ad);
-        Ok(fenced_summary(
-            "get_trim_suggestions_result",
-            &compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT),
-        ))
+        get_trim_suggestions_core(
+            &draft_arg,
+            &ctx.resume_id,
+            source_text.as_deref(),
+            &ctx.job_id,
+            job_text.as_deref(),
+        )
     })
 }
 

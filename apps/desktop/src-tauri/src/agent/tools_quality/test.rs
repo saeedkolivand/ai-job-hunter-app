@@ -844,3 +844,362 @@ fn compact_content_report_drops_whole_issues_instead_of_cutting_escaped_json_mid
         "surfaced + truncated must account for every issue in the report"
     );
 }
+
+// ── MEDIUM FINDING (round 5): compact_evidence_set / compact_trim_suggestions
+// must ALSO enforce SUMMARY_CAP ─────────────────────────────────────────────
+
+/// MEDIUM (PR #963 round 5): the round-4 measure-then-drop loop only ever
+/// covered `compact_content_report` — `compact_evidence_set` still built its
+/// full `EVIDENCE_SEARCH_LIMIT`-bullet list unconditionally and handed it
+/// straight to `fenced()`'s hard char cap. `EVIDENCE_SEARCH_LIMIT` (12)
+/// bullets at their per-field worst case (`BULLET_TEXT_CAP` text +
+/// `MAX_HITS` hits at `EVIDENCE_CAP` each) is already well past `SUMMARY_CAP`
+/// on its own declared bound, before any JSON escaping is even in play.
+///
+/// Reproduces that worst case and asserts (1) the fenced summary is
+/// complete, parseable JSON with whole bullets dropped into `truncated`
+/// instead of a mid-string cut, and (2) the drop removes the WEAKEST
+/// bullets first — the list is sorted strongest-first, so the surviving
+/// bullets must be an unbroken prefix starting at the strongest.
+///
+/// Mutation-checked: reverting `compact_evidence_set` to the pre-fix
+/// `bullets.into_iter().take(limit).map(bullet_to_value).collect()` shape
+/// (dropping the `shrink_to_summary_cap` call) makes this test fail —
+/// restored before landing.
+#[test]
+fn compact_evidence_set_drops_whole_weakest_bullets_instead_of_cutting_the_json_mid_string() {
+    let long_text = "t".repeat(BULLET_TEXT_CAP);
+    let long_hit = "h".repeat(EVIDENCE_CAP);
+    // Score ascends with `i`, so bullet "b{N-1}" is strongest and "b0" is
+    // weakest — mirrors `compact_evidence_set`'s own strongest-first sort.
+    let roles_bullets: Vec<EvidenceBullet> = (0..EVIDENCE_SEARCH_LIMIT)
+        .map(|i| EvidenceBullet {
+            id: format!("b{i}"),
+            text: long_text.clone(),
+            hits: (0..MAX_HITS).map(|_| long_hit.clone()).collect(),
+            score: i as f64,
+        })
+        .collect();
+    let set = EvidenceSet {
+        roles: vec![EvidenceRole {
+            company: "Acme".to_string(),
+            title: "Engineer".to_string(),
+            dates: "2021 - Present".to_string(),
+            bullets: roles_bullets,
+        }],
+        skills_present: vec![],
+        skills_absent: vec![],
+        education: vec![],
+        projects: vec![],
+    };
+    let compact = compact_evidence_set(&set, EVIDENCE_SEARCH_LIMIT);
+    let wrapped = fenced_summary("search_candidate_evidence_result", &compact);
+    let result = wrapped["result"].as_str().unwrap();
+    assert!(
+        result
+            .trim_end()
+            .ends_with("</search_candidate_evidence_result>"),
+        "the closing tag must survive uncut; got a result ending: {:?}",
+        &result[result.len().saturating_sub(60)..]
+    );
+    let inner = result
+        .trim_start_matches("<search_candidate_evidence_result>\n")
+        .trim_end()
+        .trim_end_matches("</search_candidate_evidence_result>")
+        .trim();
+    assert!(
+        serde_json::from_str::<Value>(inner).is_ok(),
+        "the worst-case summary must still be valid, unclipped JSON; got: {inner}"
+    );
+    let truncated = compact["truncated"].as_u64().unwrap();
+    assert!(
+        truncated > 0,
+        "the worst-case bullet list must exceed SUMMARY_CAP and drop at least one whole \
+         bullet, not silently keep all {EVIDENCE_SEARCH_LIMIT} and risk mid-string truncation"
+    );
+    let surfaced = compact["bullets"].as_array().unwrap();
+    assert_eq!(
+        surfaced.len() as u64 + truncated,
+        EVIDENCE_SEARCH_LIMIT as u64,
+        "surfaced + truncated must account for every bullet"
+    );
+    let strongest_id = format!("b{}", EVIDENCE_SEARCH_LIMIT - 1);
+    assert_eq!(
+        surfaced[0]["id"], strongest_id,
+        "the strongest bullet must always survive the drop"
+    );
+    // Surviving ids must be the unbroken TOP-N by score — the weakest ones
+    // (lowest `i`) are exactly what got dropped, never the strongest.
+    let surviving_min = EVIDENCE_SEARCH_LIMIT - surfaced.len();
+    let expected: Vec<String> = (surviving_min..EVIDENCE_SEARCH_LIMIT)
+        .rev()
+        .map(|i| format!("b{i}"))
+        .collect();
+    let actual: Vec<String> = surfaced
+        .iter()
+        .map(|b| b["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "surviving bullets must be the strongest-first prefix, weakest dropped from the tail"
+    );
+}
+
+/// MEDIUM (PR #963 round 5): mirrors
+/// `compact_evidence_set_drops_whole_weakest_bullets_instead_of_cutting_the_json_mid_string`
+/// for `compact_trim_suggestions` — `TRIM_SUGGESTIONS_LIMIT` bullets at
+/// their per-field worst case also exceeds `SUMMARY_CAP` on its own. The
+/// input here is already weakest-first (per `rank_bullets`' contract), so
+/// the drop removes from the END of the list — keeping the weakest (most
+/// actionable trim suggestions), dropping the least-weak of the selected set.
+///
+/// Mutation-checked: reverting `compact_trim_suggestions` to the pre-fix
+/// `ranked.iter().take(limit).map(bullet_to_value).collect()` shape
+/// (dropping the `shrink_to_summary_cap` call) makes this test fail —
+/// restored before landing.
+#[test]
+fn compact_trim_suggestions_drops_whole_suggestions_from_the_end_instead_of_cutting_the_json_mid_string(
+) {
+    let long_text = "t".repeat(BULLET_TEXT_CAP);
+    let long_hit = "h".repeat(EVIDENCE_CAP);
+    // Already weakest-first (per `compact_trim_suggestions`' contract): "b0"
+    // is the weakest, "b{N-1}" the least-weak of the selected set.
+    let ranked: Vec<EvidenceBullet> = (0..TRIM_SUGGESTIONS_LIMIT)
+        .map(|i| EvidenceBullet {
+            id: format!("b{i}"),
+            text: long_text.clone(),
+            hits: (0..MAX_HITS).map(|_| long_hit.clone()).collect(),
+            score: i as f64,
+        })
+        .collect();
+    let compact = compact_trim_suggestions(&ranked, TRIM_SUGGESTIONS_LIMIT);
+    let wrapped = fenced_summary("get_trim_suggestions_result", &compact);
+    let result = wrapped["result"].as_str().unwrap();
+    assert!(
+        result
+            .trim_end()
+            .ends_with("</get_trim_suggestions_result>"),
+        "the closing tag must survive uncut; got a result ending: {:?}",
+        &result[result.len().saturating_sub(60)..]
+    );
+    let inner = result
+        .trim_start_matches("<get_trim_suggestions_result>\n")
+        .trim_end()
+        .trim_end_matches("</get_trim_suggestions_result>")
+        .trim();
+    assert!(
+        serde_json::from_str::<Value>(inner).is_ok(),
+        "the worst-case summary must still be valid, unclipped JSON; got: {inner}"
+    );
+    let truncated = compact["truncated"].as_u64().unwrap();
+    assert!(
+        truncated > 0,
+        "the worst-case suggestion list must exceed SUMMARY_CAP and drop at least one whole \
+         suggestion, not silently keep all {TRIM_SUGGESTIONS_LIMIT} and risk mid-string \
+         truncation"
+    );
+    let surfaced = compact["weakestBullets"].as_array().unwrap();
+    assert_eq!(
+        surfaced.len() as u64 + truncated,
+        TRIM_SUGGESTIONS_LIMIT as u64,
+        "surfaced + truncated must account for every suggestion"
+    );
+    let expected: Vec<String> = (0..surfaced.len()).map(|i| format!("b{i}")).collect();
+    let actual: Vec<String> = surfaced
+        .iter()
+        .map(|b| b["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        actual, expected,
+        "surviving suggestions must be the weakest-first prefix, dropped from the end"
+    );
+}
+
+// ── MEDIUM FINDING (round 5): handler CORE coverage ─────────────────────────
+//
+// None of the four tool handlers used to be exercised by any test — only the
+// pure helpers above them were, so the not-found error paths and fallback
+// branches were unpinned. Every handler now delegates to an `AppHandle`-free
+// "core" function taking `Option<&str>`/`Option<&JobPostingMeta>` in place of
+// a live `DocumentStore`/postings-cache lookup, so every branch is directly
+// exercisable here with no AppHandle mock (this crate has none).
+
+#[test]
+fn validate_resume_core_reports_resume_not_found() {
+    let err = validate_resume_core("", "rid-1", None, "jid-1", Some("a job ad")).unwrap_err();
+    assert!(err.to_string().contains("resume not found: rid-1"));
+}
+
+#[test]
+fn validate_resume_core_reports_job_not_found() {
+    let err = validate_resume_core(
+        "draft text",
+        "rid-1",
+        Some("Senior Engineer | Acme | 2020 - Present\n- Did work."),
+        "jid-1",
+        None,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("job not found in cache: jid-1"));
+}
+
+/// M-5 fallback: an empty draft validates the candidate's OWN saved résumé
+/// against the job posting instead of erroring.
+#[test]
+fn validate_resume_core_falls_back_to_the_saved_resume_when_draft_is_empty() {
+    let value = validate_resume_core(
+        "",
+        "rid-1",
+        Some("Senior Engineer | Acme | 2020 - Present\n- Did great things."),
+        "jid-1",
+        Some("Looking for a Senior Engineer."),
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<validate_resume_result>"));
+}
+
+#[test]
+fn validate_resume_core_happy_path_uses_the_supplied_draft() {
+    let value = validate_resume_core(
+        "Senior Engineer | Acme | 2020 - Present\n- Drafted a great bullet.",
+        "rid-1",
+        Some("Senior Engineer | Acme | 2020 - Present\n- Did great things."),
+        "jid-1",
+        Some("Senior Engineer role at Acme."),
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<validate_resume_result>"));
+}
+
+#[test]
+fn search_candidate_evidence_core_reports_resume_not_found() {
+    let err =
+        search_candidate_evidence_core("", "rid-1", None, "jid-1", Some("job text")).unwrap_err();
+    assert!(err.to_string().contains("resume not found: rid-1"));
+}
+
+#[test]
+fn search_candidate_evidence_core_reports_job_not_found_when_query_is_empty() {
+    let err = search_candidate_evidence_core(
+        "",
+        "rid-1",
+        Some("- Built kubernetes clusters"),
+        "jid-1",
+        None,
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("job not found in cache: jid-1"));
+}
+
+/// A non-empty query never needs the job posting — the fallback only
+/// engages when the model asks for nothing specific.
+#[test]
+fn search_candidate_evidence_core_happy_path_with_an_explicit_query_never_needs_the_job() {
+    let value = search_candidate_evidence_core(
+        "kubernetes",
+        "rid-1",
+        Some("- Built kubernetes clusters"),
+        "jid-1",
+        None,
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<search_candidate_evidence_result>"));
+}
+
+#[test]
+fn search_candidate_evidence_core_falls_back_to_the_job_posting_when_query_is_empty() {
+    let value = search_candidate_evidence_core(
+        "",
+        "rid-1",
+        Some("- Built kubernetes clusters"),
+        "jid-1",
+        Some("Looking for a kubernetes expert"),
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<search_candidate_evidence_result>"));
+}
+
+#[test]
+fn get_trim_suggestions_core_reports_job_not_found() {
+    let err = get_trim_suggestions_core("draft", "rid-1", None, "jid-1", None).unwrap_err();
+    assert!(err.to_string().contains("job not found in cache: jid-1"));
+}
+
+#[test]
+fn get_trim_suggestions_core_reports_resume_not_found_when_draft_is_empty() {
+    let err = get_trim_suggestions_core("", "rid-1", None, "jid-1", Some("job text")).unwrap_err();
+    assert!(err.to_string().contains("resume not found: rid-1"));
+}
+
+/// A supplied draft never needs the saved résumé — the fallback only
+/// engages when the model leaves `draft` empty.
+#[test]
+fn get_trim_suggestions_core_happy_path_with_a_supplied_draft_never_needs_the_saved_resume() {
+    let value = get_trim_suggestions_core(
+        "- Weak bullet one\n- Weak bullet two",
+        "rid-1",
+        None,
+        "jid-1",
+        Some("job text"),
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<get_trim_suggestions_result>"));
+}
+
+#[test]
+fn get_trim_suggestions_core_falls_back_to_the_saved_resume_when_draft_is_empty() {
+    let value = get_trim_suggestions_core(
+        "",
+        "rid-1",
+        Some("- Weak bullet one\n- Weak bullet two"),
+        "jid-1",
+        Some("job text"),
+    )
+    .unwrap();
+    let result = value["result"].as_str().unwrap();
+    assert!(result.starts_with("<get_trim_suggestions_result>"));
+}
+
+#[test]
+fn lookup_salary_args_reports_job_not_found() {
+    let err = lookup_salary_args("jid-1", None).unwrap_err();
+    assert!(err.to_string().contains("job not found in cache: jid-1"));
+}
+
+#[test]
+fn lookup_salary_args_resolves_title_company_location_and_currency() {
+    let meta = JobPostingMeta {
+        company: "Acme".to_string(),
+        title: "Staff Engineer".to_string(),
+        url: "https://example.com".to_string(),
+        board: "linkedin".to_string(),
+        location: "Berlin, Germany".to_string(),
+    };
+    let args = lookup_salary_args("jid-1", Some(&meta)).unwrap();
+    assert_eq!(args.title, "Staff Engineer");
+    assert_eq!(args.company, Some("Acme".to_string()));
+    assert_eq!(args.location, Some("Berlin, Germany".to_string()));
+    assert_eq!(args.currency, Some("EUR".to_string()));
+}
+
+/// M-2 fallback: a blank company/location degrades to `None`, not an
+/// empty-string placeholder — mirrors the pre-refactor handler's
+/// `(!…is_empty()).then(...)` guards.
+#[test]
+fn lookup_salary_args_treats_blank_company_and_location_as_absent() {
+    let meta = JobPostingMeta {
+        company: "   ".to_string(),
+        title: "Engineer".to_string(),
+        location: "".to_string(),
+        ..Default::default()
+    };
+    let args = lookup_salary_args("jid-1", Some(&meta)).unwrap();
+    assert_eq!(args.company, None);
+    assert_eq!(args.location, None);
+    assert_eq!(args.currency, None);
+}

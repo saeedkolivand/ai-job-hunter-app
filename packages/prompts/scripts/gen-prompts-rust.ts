@@ -83,13 +83,30 @@ export function rustArray(name: string, entries: readonly string[]): string {
   return `const ${name}: &[&str] = &[\n${items.map((e) => `    ${e},`).join('\n')}\n];`;
 }
 
-/** `pub fn <name>(lang: &str) -> &'static [&'static str]` with de/en-fallback dispatch. */
-function rustLookupFn(fnName: string, doc: string, enConst: string, deConst: string): string {
+/**
+ * `pub fn <name>(lang: &str) -> &'static [&'static str]` dispatching to the
+ * curated `"en"`/`"de"` lists. Every OTHER language returns an EMPTY slice,
+ * never the English list — `natural-voice.ts` sends an uncurated language a
+ * generic, wordless directive (no word list at all; see its
+ * `genericAntiAiTellLexical`/`genericAntiAiTellProse`), so falling back to
+ * the English words here would flag a language the prompt never told to
+ * avoid them (MEDIUM fix, PR #963 round 5).
+ */
+export function rustLookupFn(
+  fnName: string,
+  doc: string,
+  enConst: string,
+  deConst: string
+): string {
   return `${doc}
 pub fn ${fnName}(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => ${deConst},
-        _ => ${enConst},
+        "en" => ${enConst},
+        // Every other language gets the prompt's generic, wordless directive
+        // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
+        // no curated list to check it against.
+        _ => &[],
     }
 }`;
 }
@@ -137,8 +154,12 @@ function generate(): string {
     '//! validator checks exactly what the prompt asked for. Run `pnpm gen:prompts`',
     '//! to regenerate after editing those arrays.',
     '//!',
-    '//! `lang` is an ISO-639-1 code (`"en"`, `"de"`); anything else falls back to',
-    '//! English, matching `normalizeLanguageCode` on the TS side. Entries are',
+    '//! `lang` is an ISO-639-1 code. `"en"`/`"de"` return their curated lists;',
+    '//! every OTHER language returns an EMPTY slice, never the English list —',
+    '//! `natural-voice.ts` sends an uncurated language a generic, wordless',
+    '//! directive instead (see its `genericAntiAiTellLexical`/',
+    '//! `genericAntiAiTellProse`), so falling back to English words here would',
+    '//! flag a language the prompt never told to avoid them. Entries are',
     '//! lowercase and matched with word boundaries (see `super::contains_phrase`),',
     '//! so `vital` never fires on `revitalize`.',
     '',

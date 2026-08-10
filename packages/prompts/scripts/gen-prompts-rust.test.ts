@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { hasRustUnsafeChar, rustArray } from './gen-prompts-rust.js';
+import { hasRustUnsafeChar, rustArray, rustLookupFn } from './gen-prompts-rust.js';
 
 const NEWLINE = String.fromCharCode(10);
 const TAB = String.fromCharCode(9);
@@ -63,5 +63,28 @@ describe('rustArray', () => {
 
   it('never throws for a control-char-free array, however long', () => {
     expect(() => rustArray('FINE', ['delve', 'leverage', 'robust'])).not.toThrow();
+  });
+});
+
+describe('rustLookupFn', () => {
+  /**
+   * MEDIUM fix (PR #963 round 5): the generated dispatch used to fall back
+   * to the EN const for every uncurated language (`_ => enConst`), so the
+   * validator flagged English AI-tell words in, say, a French letter — but
+   * `natural-voice.ts` sends French a generic, wordless directive with no
+   * word list at all. Every non-`en`/`de` language must dispatch to an
+   * EMPTY slice instead, matching the prompt's own behavior.
+   */
+  it('dispatches "de"/"en" to their curated consts and every other language to an empty slice, never the English fallback', () => {
+    const out = rustLookupFn(
+      'ai_tell_lexical',
+      '/// doc',
+      'AI_TELL_LEXICAL_EN',
+      'AI_TELL_LEXICAL_DE'
+    );
+    expect(out).toContain('"de" => AI_TELL_LEXICAL_DE,');
+    expect(out).toContain('"en" => AI_TELL_LEXICAL_EN,');
+    expect(out).toContain('_ => &[],');
+    expect(out).not.toMatch(/_\s*=>\s*AI_TELL_LEXICAL_EN/);
   });
 });

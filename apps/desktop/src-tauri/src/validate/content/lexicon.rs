@@ -8,8 +8,12 @@
 //! validator checks exactly what the prompt asked for. Run `pnpm gen:prompts`
 //! to regenerate after editing those arrays.
 //!
-//! `lang` is an ISO-639-1 code (`"en"`, `"de"`); anything else falls back to
-//! English, matching `normalizeLanguageCode` on the TS side. Entries are
+//! `lang` is an ISO-639-1 code. `"en"`/`"de"` return their curated lists;
+//! every OTHER language returns an EMPTY slice, never the English list —
+//! `natural-voice.ts` sends an uncurated language a generic, wordless
+//! directive instead (see its `genericAntiAiTellLexical`/
+//! `genericAntiAiTellProse`), so falling back to English words here would
+//! flag a language the prompt never told to avoid them. Entries are
 //! lowercase and matched with word boundaries (see `super::contains_phrase`),
 //! so `vital` never fires on `revitalize`.
 
@@ -18,7 +22,11 @@
 pub fn ai_tell_lexical(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => AI_TELL_LEXICAL_DE,
-        _ => AI_TELL_LEXICAL_EN,
+        "en" => AI_TELL_LEXICAL_EN,
+        // Every other language gets the prompt's generic, wordless directive
+        // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
+        // no curated list to check it against.
+        _ => &[],
     }
 }
 
@@ -28,7 +36,11 @@ pub fn ai_tell_lexical(lang: &str) -> &'static [&'static str] {
 pub fn ai_tell_prose(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => AI_TELL_PROSE_DE,
-        _ => AI_TELL_PROSE_EN,
+        "en" => AI_TELL_PROSE_EN,
+        // Every other language gets the prompt's generic, wordless directive
+        // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
+        // no curated list to check it against.
+        _ => &[],
     }
 }
 
@@ -37,7 +49,11 @@ pub fn ai_tell_prose(lang: &str) -> &'static [&'static str] {
 pub fn template_openers(lang: &str) -> &'static [&'static str] {
     match lang {
         "de" => TEMPLATE_OPENERS_DE,
-        _ => TEMPLATE_OPENERS_EN,
+        "en" => TEMPLATE_OPENERS_EN,
+        // Every other language gets the prompt's generic, wordless directive
+        // (see natural-voice.ts's genericAntiAiTellLexical/Prose) — there is
+        // no curated list to check it against.
+        _ => &[],
     }
 }
 
