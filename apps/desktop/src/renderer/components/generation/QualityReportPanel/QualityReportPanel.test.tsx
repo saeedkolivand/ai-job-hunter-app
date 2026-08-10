@@ -131,6 +131,51 @@ describe('QualityReportPanel', () => {
     expect(screen.getByText(/deterministic check flagged this/i)).toBeInTheDocument();
   });
 
+  it('renders the Rust-authored message, numbers intact, for a lossy-number code (ats.bullet_count)', () => {
+    const withCount: ContentReportPayload = {
+      ok: false,
+      issues: [
+        {
+          severity: 'warning',
+          code: 'ats.bullet_count',
+          section: 'Experience',
+          message: '"Backend Engineer, Acme" has 9 bullets — keep the 6 strongest.',
+          evidence: 'Backend Engineer, Acme',
+        },
+      ],
+      metrics: METRICS,
+    };
+    render(<QualityReportPanel open onClose={vi.fn()} report={withCount} docKind="resume" />);
+    // The interpolated counts (9 bullets, keep the 6 strongest) survive verbatim.
+    expect(screen.getByText(/has 9 bullets — keep the 6 strongest/i)).toBeInTheDocument();
+    // The static translation (which has no numbers at all) must NOT also render.
+    expect(screen.queryByText(/unusual number of bullets/i)).toBeNull();
+  });
+
+  it('still renders the static translation for a code outside the lossy set, even though its Rust message has numbers (alignment.low_coverage)', () => {
+    const withCoverageNumbers: ContentReportPayload = {
+      ok: false,
+      issues: [
+        {
+          severity: 'warning',
+          code: 'alignment.low_coverage',
+          section: null,
+          message:
+            "The generated document covers 40% of this posting's keywords where your source résumé already covered 55%. Something relevant was dropped — compare the two before sending.",
+          evidence: '40% vs 55%',
+        },
+      ],
+      metrics: METRICS,
+    };
+    render(
+      <QualityReportPanel open onClose={vi.fn()} report={withCoverageNumbers} docKind="resume" />
+    );
+    // alignment.low_coverage's two percentages are already duplicated into
+    // `evidence`, so the translation (guidance, no numbers) stays preferred.
+    expect(screen.getByText(/covers little of the job ad's vocabulary/i)).toBeInTheDocument();
+    expect(screen.queryByText(/covers 40% of this posting/i)).toBeNull();
+  });
+
   it('maps the truncated-report marker to its own i18n key, not the raw Rust message', () => {
     const truncated: ContentReportPayload = {
       ok: true,

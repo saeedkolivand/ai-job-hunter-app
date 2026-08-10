@@ -46,16 +46,42 @@ function groupBySection(issues: ContentIssue[]): [SectionKey, ContentIssue[]][] 
 }
 
 /**
+ * Codes whose Rust-authored `message` carries an interpolated NUMBER (a count,
+ * percentage, or threshold `validate::content` computed) that is NOT also
+ * repeated in the issue's separate `evidence` field — so translating them to
+ * the static `quality.issue.<code>` string would silently throw that number
+ * away. Audited against every `issue(...)` call site in
+ * `apps/desktop/src-tauri/src/validate/content/*.rs`; a code missing from this
+ * list either has no computed number in its message, or `evidence` already
+ * carries it (e.g. `alignment.low_coverage`'s two percentages are duplicated
+ * into `evidence`, so its translation stays preferred).
+ */
+const CODES_WITH_LOSSY_NUMBERS = new Set<string>([
+  // "<term>" appears N times in TOTAL content words — evidence is only "term ×N", missing TOTAL.
+  'ats.keyword_density',
+  // This bullet is N characters — evidence quotes the bullet text, never the count.
+  'ats.long_bullet',
+  // "<role>" has N bullets — evidence is only the role name.
+  'ats.bullet_count',
+  // stddev across N sentences — evidence carries the stddev only, not N.
+  'voice.low_burstiness',
+  // T of N sentences are triplets — evidence is a normalized per-10 rate, not the raw T/N.
+  'voice.rule_of_three_density',
+]);
+
+/**
  * Full content-quality report for one generated document: issues grouped by
  * section with a severity chip + guidance-framed message + quoted evidence,
  * and a metrics footer. Never scores or verdicts the CANDIDATE — every message
  * advises on the document (job-match-standards framing), matching the Rust
  * validator's own posture (`validate::content`).
  *
- * A code with no matching `quality.issue.<code>` translation (a future Rust
- * check this build predates) falls back to the issue's own Rust-authored
- * `message` when present, and only to the generic `quality.fallback` when
- * that's also empty — never a raw i18n key.
+ * A code in [`CODES_WITH_LOSSY_NUMBERS`] renders its own Rust-authored
+ * `message` instead of the translation, so the number it computed survives.
+ * Otherwise: a code with no matching `quality.issue.<code>` translation (a
+ * future Rust check this build predates) falls back to the issue's own
+ * Rust-authored `message` when present, and only to the generic
+ * `quality.fallback` when that's also empty — never a raw i18n key.
  */
 export function QualityReportPanel({
   open,
@@ -73,6 +99,7 @@ export function QualityReportPanel({
   const metrics = report?.metrics;
 
   const messageFor = (code: string, message: string) => {
+    if (CODES_WITH_LOSSY_NUMBERS.has(code) && message) return message;
     const key = `quality.issue.${code}`;
     if (i18n.exists(key)) return t(key);
     return message || t('quality.fallback');
