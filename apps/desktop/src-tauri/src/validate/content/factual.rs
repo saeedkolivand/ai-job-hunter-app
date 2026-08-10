@@ -17,7 +17,7 @@ use crate::documents::keywords::{keywords_normalized, SHORT_TECH_TERMS, SYNONYMS
 use crate::export::types::{LineKind, ParsedLine};
 
 use super::{
-    contains_phrase, has_real_contact_match, issue, Analysis, ContentIssue, Section,
+    contains_phrase, has_real_contact_match, issue, Analysis, ContentIssue, DocKind, Section,
     FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE, FACTUAL_UNSOURCED_METRIC,
     FACTUAL_UNSOURCED_TERM, FACTUAL_UNSUPPORTED_DATE,
 };
@@ -303,8 +303,19 @@ fn is_bare_phone_line(text: &str) -> bool {
 /// misses (a long prose letterhead, an address line with no phone or email) is
 /// read as source text, so its digits can vouch for a claim. That is a missed
 /// check, which is this family's chosen direction of error.
-fn metric_lines(text: &str, side: MetricSide) -> Vec<String> {
-    let sections = super::split_sections(text);
+///
+/// ## `doc_kind` is the kind of THIS TEXT
+///
+/// "Does the document have sections?" is `sections.len() > 1`, and
+/// [`super::split_sections`] can MANUFACTURE a section by promoting an
+/// unrecognised line to a heading. In a letter — which never has a parser
+/// heading — a single short label line was enough to flip `has_headings` and put
+/// the whole opening of the letter behind the résumé path's positional band
+/// skip. Promotion is therefore a résumé repair only, and the kind is passed per
+/// text rather than per report: the truth side of a LETTER's comparison is the
+/// candidate's own résumé and still needs it.
+fn metric_lines(text: &str, side: MetricSide, doc_kind: DocKind) -> Vec<String> {
+    let sections = super::split_sections(text, doc_kind);
     let has_headings = sections.len() > 1;
     let mut out = Vec::new();
     for (idx, section) in sections.iter().enumerate() {
@@ -350,8 +361,8 @@ fn metric_lines(text: &str, side: MetricSide) -> Vec<String> {
 /// * 1900–2099 four-digit runs — those are years, checked by
 ///   [`unsupported_date_issues`] instead;
 /// * numbers under three digits with no `%`/`x` unit.
-pub fn metrics_in(text: &str) -> Vec<Metric> {
-    metrics_in_lines(&metric_lines(text, MetricSide::Claims))
+pub fn metrics_in(text: &str, doc_kind: DocKind) -> Vec<Metric> {
+    metrics_in_lines(&metric_lines(text, MetricSide::Claims, doc_kind))
 }
 
 fn metrics_in_lines(lines: &[String]) -> Vec<Metric> {
@@ -418,13 +429,17 @@ fn collect_metrics(line: &str, out: &mut Vec<Metric>) {
 /// What it does NOT do is verify that the number is attached to the same claim.
 /// That needs meaning, and guessing at meaning is how a deterministic check
 /// starts accusing people.
-fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
+fn unsourced_metric_issues(generated: &str, truth: &str, doc_kind: DocKind) -> Vec<ContentIssue> {
     // The truth's band-skipped lines, resolved ONCE: both number passes below
     // read them, and both must skip the same CONTACT band as the generated side
     // does, or the source's contact digits become evidence for a claim (see
     // [`metric_lines`], which also documents the one place the two sides
     // deliberately differ).
-    let truth_lines = metric_lines(truth, MetricSide::Source);
+    //
+    // The truth is always a RÉSUMÉ (the candidate's own, plus the job ad on the
+    // letter path), whatever `doc_kind` the CLAIMS side is — see `metric_lines`'
+    // `doc_kind` section.
+    let truth_lines = metric_lines(truth, MetricSide::Source, DocKind::Resume);
     let sourced: HashSet<String> = metrics_in_lines(&truth_lines)
         .into_iter()
         .map(|m| m.number)
@@ -442,7 +457,7 @@ fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
     // a missed one. The first spelling encountered wins, so the evidence still
     // quotes the unit the document actually wrote ("150%", not "150").
     let mut seen = HashSet::new();
-    metrics_in(generated)
+    metrics_in(generated, doc_kind)
         .into_iter()
         .filter(|m| !sourced.contains(&m.number))
         .filter(|m| seen.insert(m.number.clone()))
@@ -1051,7 +1066,11 @@ fn unsourced_term_issues(generated: &str, truth_texts: &[&str]) -> Vec<ContentIs
 
 /// Every factual check for a résumé, in a stable order.
 pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
-    let mut issues = unsourced_metric_issues(ctx.input.generated, ctx.input.source_resume);
+    let mut issues = unsourced_metric_issues(
+        ctx.input.generated,
+        ctx.input.source_resume,
+        DocKind::Resume,
+    );
     issues.extend(dropped_role_issues(ctx));
     issues.extend(unsupported_date_issues(ctx));
     issues.extend(project_link_issues(ctx));
@@ -1067,7 +1086,7 @@ pub(super) fn validate(ctx: &Analysis) -> Vec<ContentIssue> {
 /// has no roles, dates or projects section of its own to check.
 pub(super) fn validate_letter(ctx: &Analysis) -> Vec<ContentIssue> {
     let truth = format!("{}\n{}", ctx.input.source_resume, ctx.input.job_ad);
-    let mut issues = unsourced_metric_issues(ctx.input.generated, &truth);
+    let mut issues = unsourced_metric_issues(ctx.input.generated, &truth, DocKind::CoverLetter);
     issues.extend(unsourced_term_issues(
         ctx.input.generated,
         &[ctx.input.source_resume, ctx.input.job_ad],

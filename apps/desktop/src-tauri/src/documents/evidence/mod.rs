@@ -36,13 +36,14 @@ use crate::observability::Span;
 
 mod entry;
 
+use self::entry::salvage_entry_label;
+
 /// The entry/label/date shape family, re-exported so every existing
 /// `documents::evidence::…` path keeps resolving after the split.
 pub use self::entry::{
     contains_word, date_spans, identity_tokens, is_open_ended, looks_like_date_span, split_entry,
-    years_in, GEOGRAPHY_TOKENS, LEGAL_FORMS, PRESENT_MARKERS,
+    trailing_date_column, years_in, GEOGRAPHY_TOKENS, LEGAL_FORMS, PRESENT_MARKERS,
 };
-use self::entry::{salvage_entry_label, trailing_date_column};
 
 /// One résumé bullet, scored by how much of THIS posting's vocabulary it carries.
 ///

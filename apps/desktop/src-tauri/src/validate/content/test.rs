@@ -507,13 +507,19 @@ fn short_documents_never_raise_a_language_critical() {
 /// Critical on "2021" would be unusable.
 #[test]
 fn years_are_never_treated_as_metrics() {
-    let metrics = factual::metrics_in("EXPERIENCE\n\nAcme | 2021 - 2024\n- Shipped in 1999\n");
+    let metrics = factual::metrics_in(
+        "EXPERIENCE\n\nAcme | 2021 - 2024\n- Shipped in 1999\n",
+        DocKind::Resume,
+    );
     assert!(
         metrics.is_empty(),
         "1900–2099 must be excluded from metric extraction; got {metrics:?}"
     );
     // Just outside the window, a four-digit run IS a quantity.
-    let quantity = factual::metrics_in("EXPERIENCE\n\nAcme\n- Processed 4500 orders a day\n");
+    let quantity = factual::metrics_in(
+        "EXPERIENCE\n\nAcme\n- Processed 4500 orders a day\n",
+        DocKind::Resume,
+    );
     assert_eq!(quantity.len(), 1, "got {quantity:?}");
     assert_eq!(quantity[0].number, "4500");
 }
@@ -525,9 +531,9 @@ fn contact_band_digits_are_not_metrics() {
     let text = "Jane Doe\njane@example.com | +49 30 1234567 | 10115 Berlin\n\n\
                 EXPERIENCE\n\nAcme\n- Led the migration\n";
     assert!(
-        factual::metrics_in(text).is_empty(),
+        factual::metrics_in(text, DocKind::Resume).is_empty(),
         "the header band must be skipped entirely; got {:?}",
-        factual::metrics_in(text)
+        factual::metrics_in(text, DocKind::Resume)
     );
 }
 
@@ -2664,7 +2670,7 @@ fn resume_with_bullet(bullet: &str) -> String {
 #[test]
 fn a_typographic_multiplier_is_extracted_mid_sentence() {
     let doc = resume_with_bullet("Grew throughput 3× while holding the error budget flat");
-    let multipliers: Vec<String> = factual::metrics_in(&doc)
+    let multipliers: Vec<String> = factual::metrics_in(&doc, DocKind::Resume)
         .into_iter()
         .filter(|m| m.kind == factual::MetricKind::Multiplier)
         .map(|m| m.number)
@@ -2683,7 +2689,7 @@ fn a_typographic_multiplier_is_extracted_mid_sentence() {
     ] {
         let doc = resume_with_bullet(line);
         assert!(
-            factual::metrics_in(&doc)
+            factual::metrics_in(&doc, DocKind::Resume)
                 .iter()
                 .any(|m| m.kind == factual::MetricKind::Multiplier && m.number == "3"),
             "{line:?} states a multiplier"
@@ -2692,7 +2698,7 @@ fn a_typographic_multiplier_is_extracted_mid_sentence() {
     // … and `x` inside a word is still not a multiplier.
     let doc = resume_with_bullet("Ran the 3xtra pipeline for the payments team every night");
     assert!(
-        !factual::metrics_in(&doc)
+        !factual::metrics_in(&doc, DocKind::Resume)
             .iter()
             .any(|m| m.kind == factual::MetricKind::Multiplier),
         "`x` inside a word is not a multiplier"
@@ -2728,7 +2734,7 @@ fn a_space_grouped_figure_is_one_number_not_two() {
         assert_eq!(factual::normalize_number(written), expected);
         // … and extraction must hand it the whole figure.
         let doc = resume_with_bullet(&format!("Processed {written} refunds a day"));
-        let numbers: Vec<String> = factual::metrics_in(&doc)
+        let numbers: Vec<String> = factual::metrics_in(&doc, DocKind::Resume)
             .into_iter()
             .filter(|m| m.kind == factual::MetricKind::LargeInteger)
             .map(|m| m.number)
@@ -2743,9 +2749,11 @@ fn a_space_grouped_figure_is_one_number_not_two() {
     // when exactly three digits follow it.
     let doc = resume_with_bullet("Ran 5 12 hour shifts across the payments on-call rota");
     assert!(
-        !factual::metrics_in(&doc).iter().any(|m| m.number == "512"),
+        !factual::metrics_in(&doc, DocKind::Resume)
+            .iter()
+            .any(|m| m.number == "512"),
         "a space with two digits after it is not grouping; got {:?}",
-        factual::metrics_in(&doc)
+        factual::metrics_in(&doc, DocKind::Resume)
     );
 
     // End to end: restating a space-grouped figure in another convention is
@@ -3778,7 +3786,7 @@ fn a_title_cased_german_heading_still_sections_the_source() {
                   Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
                   - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n";
 
-    let sections = split_sections(source);
+    let sections = split_sections(source, DocKind::Resume);
     assert!(
         sections.len() > 1,
         "a Title-Case German heading must section the document; got {:?}",
@@ -3823,12 +3831,12 @@ fn a_title_cased_german_heading_still_sections_the_source() {
                  Rust Python Go\n\
                  Weitere Kenntnisse\n";
     assert_eq!(
-        split_sections(prose).len(),
+        split_sections(prose, DocKind::Resume).len(),
         1,
         "a line that merely carries a heading word is not a heading — too long \
          (sentence), too many words, digit-bearing, punctuated, or mid-block; \
          got {:?}",
-        split_sections(prose)
+        split_sections(prose, DocKind::Resume)
             .iter()
             .map(|s| &s.heading)
             .collect::<Vec<_>>()
@@ -3987,7 +3995,10 @@ fn a_title_cased_heading_is_promoted_beside_a_parser_recognised_one() {
                   Rust · Python · Docker · Kubernetes\n\n\
                   Ausbildung\n\n\
                   BSc Informatik, TU Berlin, 2014 - 2018\n";
-    let kinds: Vec<SectionKind> = split_sections(resume).iter().map(|s| s.kind).collect();
+    let kinds: Vec<SectionKind> = split_sections(resume, DocKind::Resume)
+        .iter()
+        .map(|s| s.kind)
+        .collect();
     for expected in [
         SectionKind::Summary,
         SectionKind::Experience,
@@ -4026,12 +4037,12 @@ fn a_title_cased_heading_is_promoted_beside_a_parser_recognised_one() {
                  Rust Python Go\n\
                  Weitere Kenntnisse\n";
     assert_eq!(
-        split_sections(prose).len(),
+        split_sections(prose, DocKind::Resume).len(),
         2,
         "a line that merely carries a heading word is not a heading — too long \
          (sentence), too many words, digit-bearing, punctuated, unclassified, or \
          mid-block; got {:?}",
-        split_sections(prose)
+        split_sections(prose, DocKind::Resume)
             .iter()
             .map(|s| &s.heading)
             .collect::<Vec<_>>()
@@ -4096,4 +4107,223 @@ fn a_header_phone_carrying_a_year_run_is_still_contact_details() {
     let fabricated_report = letter_report_for(fabricated, source, EN_JOB_AD);
     let hits = fired(&fabricated_report, FACTUAL_UNSOURCED_METRIC);
     assert_eq!(hits[0].evidence.as_deref(), Some("9400"));
+}
+
+// ── PR #963 round-13 findings ───────────────────────────────────────────────
+
+/// R13-F1 — round 12's per-line promotion reads an ordinary JOB TITLE as a
+/// section heading. "Projektleiter" on its own line above the employer is
+/// `LineKind::Text` (the parser's `JobTitle` arm needs the PREVIOUS line to
+/// carry a date column, and here it is blank), it opens a block, it is one word,
+/// it carries no digit and no punctuation — and `classify_section` matches the
+/// `projekt` stem, so a `SectionKind::Projects` heading appears in the middle of
+/// the experience section. Same for "Senior Project Manager".
+///
+/// The fixture carries BOTH shapes the guard reads, one per clause: two entry
+/// lines `export::parser` recognises as `JobEntry`, and one it does not
+/// ("Nordwind Systeme, Ingolstadt, 2016 - 2018" — a trailing date COLUMN, the
+/// other way `documents::evidence` opens a role).
+#[test]
+fn a_job_title_above_its_employer_is_not_a_projects_heading() {
+    let resume = "Jana Mustermann\n\
+                  jana.mustermann@example.com | +49 30 7654321\n\n\
+                  BERUFSERFAHRUNG\n\n\
+                  Projektleiter\n\
+                  Acme Payments · Berlin · 2021 - Heute\n\
+                  - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n\n\
+                  Senior Project Manager\n\
+                  Globex Logistics · München · 2018 - 2021\n\
+                  - Die Abrechnung für 40 Lagerstandorte automatisiert\n\n\
+                  Projektassistenz\n\
+                  Nordwind Systeme, Ingolstadt, 2016 - 2018\n\
+                  - Die Rechnungsprüfung für zwei Werke übernommen\n\n\
+                  KENNTNISSE\n\n\
+                  Rust · Python · Docker · Kubernetes\n";
+
+    let kinds: Vec<SectionKind> = split_sections(resume, DocKind::Resume)
+        .iter()
+        .map(|s| s.kind)
+        .collect();
+    assert!(
+        !kinds.contains(&SectionKind::Projects),
+        "a job title above its employer is not a Projects heading; got {kinds:?}"
+    );
+
+    // The user-visible damage: the two entries leave the experience section, so
+    // the résumé counts no roles, and every bullet under the phantom heading is
+    // graded as a malformed project card.
+    let report = validate_content(&ContentInput {
+        generated: resume,
+        source_resume: resume,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    assert_eq!(report.metrics.roles_output, 2, "two entries, two roles");
+    silent(&report, CONSISTENCY_PROJECT_STRUCTURE);
+
+    // The guard's own boundary, pinned so it cannot become "never promote": the
+    // SAME word with a blank line under it is a heading over a block, not a
+    // label on the line below, and it still promotes.
+    let headed = resume.replace(
+        "Projektleiter\nAcme Payments",
+        "Projektleiter\n\nAcme Payments",
+    );
+    assert!(
+        split_sections(&headed, DocKind::Resume)
+            .iter()
+            .any(|s| s.kind == SectionKind::Projects),
+        "a candidate followed by a BLANK still reads as a heading; got {:?}",
+        split_sections(&headed, DocKind::Resume)
+            .iter()
+            .map(|s| &s.heading)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// R13-F2 — promotion is unconditionally live on cover letters. A letter never
+/// has parser headings, so any short label line ("My Experience", "Kurzprofil")
+/// promotes, `sections.len() > 1` flips `factual::metric_lines` from the LETTER
+/// path to the résumé one, and section 0 — the whole opening of the letter — is
+/// then skipped by POSITION on the claims side. Most of the letter stops being
+/// checked for fabricated numbers at all.
+#[test]
+fn a_mini_heading_in_a_letter_does_not_exempt_its_opening() {
+    let source = "Max Mustermann\n\
+                  max.mustermann@example.com\n\n\
+                  EXPERIENCE\n\n\
+                  Acme Payments | 2021 - Present\n\
+                  - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    let opening = "Max Mustermann\n\
+                   max.mustermann@example.com\n\n\
+                   Dear Hiring Manager,\n\n\
+                   I rebuilt the settlement pipeline at Acme Payments and cleared a backlog \
+                   of 4700 reconciliation cases in a single quarter.\n\n";
+    let sign_off = "I would welcome the chance to do the same for your ledger team.\n\n\
+                    Best regards,\nMax Mustermann\n";
+
+    // The control: the same letter with no label line. The invented figure is a
+    // Critical, as it has been since round 9.
+    let plain = letter_report_for(&format!("{opening}{sign_off}"), source, EN_JOB_AD);
+    assert_eq!(
+        fired(&plain, FACTUAL_UNSOURCED_METRIC)[0]
+            .evidence
+            .as_deref(),
+        Some("4700")
+    );
+
+    // The finding: one two-word label line above the sign-off, and the opening
+    // paragraph stops being read at all.
+    let labelled = letter_report_for(
+        &format!("{opening}My Experience\n\n{sign_off}"),
+        source,
+        EN_JOB_AD,
+    );
+    assert_eq!(
+        fired(&labelled, FACTUAL_UNSOURCED_METRIC)[0]
+            .evidence
+            .as_deref(),
+        Some("4700"),
+        "a label line inside a letter must not exempt the letter's opening"
+    );
+}
+
+/// R13-F3 — `consistency::title_drift` stems both sides through
+/// [`Analysis::tokens`], whose decision is `languages_align(job_ad, target)`. The
+/// ad is not a party to a source-title↔generated-title comparison, so an English
+/// ad for a German-language role switches stemming OFF and the ordinary
+/// declension pair "Wissenschaftlicher Mitarbeiter" / "Wissenschaftliche
+/// Mitarbeiterin" reads as two disjoint titles — a false drift Warning. Unstemmed
+/// is the direction that FIRES more, which is what makes this an accusation
+/// channel rather than a missed check.
+///
+/// The control is the same document pair against a GERMAN ad: only the AD's
+/// language differs between the two runs, so the two answers must be identical.
+#[test]
+fn a_foreign_language_job_ad_does_not_break_the_title_comparison() {
+    let source = DE_SOURCE.replace(
+        "Senior Backend Engineer | Acme Payments",
+        "Wissenschaftlicher Mitarbeiter | Acme Payments",
+    );
+    let generated = DE_CLEAN.replace(
+        "Senior Backend Engineer | Acme Payments",
+        "Wissenschaftliche Mitarbeiterin | Acme Payments",
+    );
+    let against = |job_ad: &str| {
+        validate_content(&ContentInput {
+            generated: &generated,
+            source_resume: &source,
+            job_ad,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::Resume,
+        })
+    };
+    let drift = |report: &ContentReport| -> Vec<String> {
+        report
+            .issues
+            .iter()
+            .filter(|i| i.code == CONSISTENCY_TITLE_DRIFT)
+            .filter_map(|i| i.evidence.clone())
+            .collect()
+    };
+
+    // The control: with a German ad the pair is stemmed, the two declensions
+    // share "wissenschaftlich", and nothing is reported.
+    assert!(
+        drift(&against(DE_JOB_AD)).is_empty(),
+        "a declension pair is not a title change; got {:?}",
+        drift(&against(DE_JOB_AD))
+    );
+    // The finding: the ad's language is not part of this comparison.
+    assert!(
+        drift(&against(EN_JOB_AD)).is_empty(),
+        "a document↔source comparison must not change with the AD's language; \
+         got {:?}",
+        drift(&against(EN_JOB_AD))
+    );
+}
+
+/// R13-F3, the third `Analysis::tokens` document-internal caller. `duplicates`
+/// compares two bullets of ONE document, so the posting is not a party to it
+/// either — yet `duplicateRatio`, a reported metric, changed with the AD's
+/// language. Un-stemming merges LESS here, so the direction is the opposite of
+/// `title_drift`'s: a foreign-language ad HID a repeated bullet rather than
+/// inventing one. It is still a measurement depending on an input it does not
+/// measure, which is what the fix removes.
+#[test]
+fn a_foreign_language_job_ad_does_not_change_the_duplicate_ratio() {
+    // A second bullet that says the first one again in different inflections —
+    // the model padding a role, written the way German pads it.
+    let generated = DE_CLEAN.replace(
+        "- Den Wiederholungsplaner in Rust neu geschrieben",
+        "- Betrieb der Docker-Container auf den Kubernetes-Clustern, die pro Sekunde 12000 \
+         Anfragen beantworteten\n\
+         - Den Wiederholungsplaner in Rust neu geschrieben",
+    );
+    let against = |job_ad: &str| {
+        validate_content(&ContentInput {
+            generated: &generated,
+            source_resume: DE_SOURCE,
+            job_ad,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::Resume,
+        })
+    };
+
+    let de = against(DE_JOB_AD);
+    let en = against(EN_JOB_AD);
+    // Not vacuous: the repetition IS reported, so the equality below is two
+    // findings agreeing rather than two silences.
+    assert_eq!(fired(&de, DUPLICATE_BULLET).len(), 1);
+    assert_eq!(
+        de.metrics.duplicate_ratio, en.metrics.duplicate_ratio,
+        "a document-internal ratio must not change with the AD's language"
+    );
+    assert_eq!(
+        fired(&en, DUPLICATE_BULLET)[0].evidence,
+        fired(&de, DUPLICATE_BULLET)[0].evidence
+    );
 }

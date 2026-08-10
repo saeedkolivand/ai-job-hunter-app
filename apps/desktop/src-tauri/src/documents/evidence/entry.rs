@@ -579,7 +579,13 @@ pub(super) fn is_date_column_segment(s: &str) -> bool {
 /// `None` for anything else, including a line that merely mentions a year: the
 /// tail must be [`is_date_only`], or an ordinary sentence ending in
 /// "…, delivered in 2019" would read as an employer plus a date column.
-pub(super) fn trailing_date_column(text: &str) -> Option<(&str, &str)> {
+///
+/// Public because [`extract_evidence`] is no longer the only surface that has to
+/// answer "does this line OPEN A ROLE?": `validate::content::split_sections`
+/// refuses to promote a line to a section heading when the line below it opens
+/// one, and the two must agree about what that means or a job title above an
+/// employer becomes a heading on one surface and an entry label on the other.
+pub fn trailing_date_column(text: &str) -> Option<(&str, &str)> {
     let (label, dates) = text.rsplit_once(',')?;
     let label = label.trim();
     (!label.is_empty() && is_date_only(dates)).then_some((label, dates.trim()))

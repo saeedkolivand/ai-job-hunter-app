@@ -29,16 +29,16 @@
 //!
 //! Pure L1: no Tauri, no `AppHandle`, no emit, no I/O.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
 
-use crate::documents::evidence::{classify_section, date_spans, SectionKind};
+use crate::documents::evidence::{classify_section, date_spans, trailing_date_column, SectionKind};
 use crate::documents::keywords::{
-    keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
+    display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
 };
 use crate::export::parser::parse_resume;
 use crate::export::types::{LineKind, ParsedLine};
@@ -357,6 +357,67 @@ impl Section {
     }
 }
 
+/// The stemming decision for a comparison the POSTING is not a party to.
+///
+/// [`Analysis::tokens`] answers the résumé↔posting question, and its decision is
+/// `languages_align(job_ad, target_language)`. Three checks compare texts this
+/// report OWNS against each other — a document's skills section against its own
+/// experience, a generated title against the source title at the same employer,
+/// two bullets of one document — and for those the ad is a third party whose
+/// language silently decided whether two halves of one comparison could match.
+/// An English ad for a German-language role (the ordinary DACH case) switched
+/// stemming off and made every German declension pair look like a mismatch.
+///
+/// So the decision is taken on the pair actually being compared and the stemmer
+/// is read from the SAME text the decision was read from — the
+/// `documents::evidence::JobVocabulary` pattern — so the two can never disagree
+/// about which language is being stemmed. Both sides of every comparison are
+/// stemmed or neither is.
+///
+/// The text is the GENERATED document, against [`Analysis::lang`]: it is the one
+/// the target language is a statement about, this module already trusts that to
+/// pick a function-word list, and [`Analysis::language_mismatch`] is what
+/// withdraws the trust. Detection alone was rejected for the R5-F2 reason —
+/// `whatlang` misreads terse tech résumés, and a misread would silently pick the
+/// wrong Snowball algorithm; under this pairing a misread simply fails
+/// `languages_align` and falls back to unstemmed.
+pub(crate) struct DocumentTokens {
+    stemmer: Stemmer,
+    aligned: bool,
+}
+
+impl DocumentTokens {
+    fn of(text: &str, lang: &str) -> Self {
+        Self {
+            aligned: languages_align(text, lang),
+            stemmer: make_stemmer(text),
+        }
+    }
+
+    /// Tokenize `text` under this decision. Stemming can only MERGE tokens, so
+    /// every consumer of this that reports a difference (a skill with no
+    /// backing, a drifted title) can only ever go quieter, never louder.
+    pub fn tokens(&self, text: &str) -> HashSet<String> {
+        if self.aligned {
+            keywords(text, &self.stemmer)
+        } else {
+            keywords_normalized(text)
+        }
+    }
+
+    /// Stem → readable form for the tokens of `text`, under the SAME decision
+    /// [`Self::tokens`] used. A caller that names a token in a message owes its
+    /// readable form to the decision it tokenized under: two maps keyed on
+    /// different stemmers is how a display form comes back as a stem.
+    pub fn display(&self, text: &str) -> HashMap<String, String> {
+        if self.aligned {
+            display_forms(text, &self.stemmer)
+        } else {
+            HashMap::new()
+        }
+    }
+}
+
 /// Everything the validators share, resolved once.
 ///
 /// The single `aligned` decision matters: `alignment` compares the generated
@@ -372,6 +433,9 @@ pub(crate) struct Analysis<'a> {
     pub source_sections: Vec<Section>,
     pub aligned: bool,
     pub stemmer: Stemmer,
+    /// The stemming decision for the checks the POSTING is not a party to. See
+    /// [`DocumentTokens`].
+    pub document: DocumentTokens,
     pub job_keywords: HashSet<String>,
     pub generated_keywords: HashSet<String>,
     pub source_keywords: HashSet<String>,
@@ -403,9 +467,13 @@ impl<'a> Analysis<'a> {
             }
         };
         Self {
+            document: DocumentTokens::of(input.generated, &lang),
+            generated_sections: split_sections(input.generated, input.doc_kind),
+            // Always a résumé, whatever kind is being VALIDATED: a cover letter
+            // is still measured against the candidate's own résumé, and that
+            // document still needs the Title-Case heading repair.
+            source_sections: split_sections(input.source_resume, DocKind::Resume),
             lang: lang.clone(),
-            generated_sections: split_sections(input.generated),
-            source_sections: split_sections(input.source_resume),
             job_keywords: tokens(input.job_ad),
             generated_keywords: tokens(input.generated),
             source_keywords: tokens(input.source_resume),
@@ -648,6 +716,61 @@ fn reads_as_heading(line: &ParsedLine) -> bool {
         && classify_section(text) != SectionKind::Other
 }
 
+/// Whether the line DIRECTLY below a heading candidate opens an employment
+/// entry — which makes the candidate that entry's job TITLE, not a heading.
+///
+/// ## The shape [`reads_as_heading`] cannot tell apart on its own
+///
+/// A job title on its own line above the employer is one of the two ordinary
+/// experience layouts, and the extracted-PDF one:
+///
+/// ```text
+/// BERUFSERFAHRUNG
+///
+/// Projektleiter                         ← the candidate
+/// Acme Payments · Berlin · 2021 – Heute ← the entry it labels
+/// - …
+/// ```
+///
+/// Every shape guard passes: `export::parser`'s `JobTitle` arm needs the
+/// PREVIOUS line to carry a two-space date column and this one is blank, so the
+/// parser leaves it `Text`; it opens a block, because that is where an entry
+/// block starts; it is one word, digit-free and punctuation-free. And
+/// `classify_section` matches the `projekt`/`project` stem, so "Projektleiter",
+/// "Project Manager", "Senior Project Manager" and "Technical Project Lead" all
+/// became a `SectionKind::Projects` heading in the MIDDLE of the experience
+/// section — which takes the entries below out of
+/// [`factual::count_roles`]'s reach (a résumé reporting zero roles), grades their
+/// bullets as malformed project cards (`consistency.project_structure`), and can
+/// hand `factual::project_link_issues` a phantom projects section to compare the
+/// source's real links against.
+///
+/// ## Why the line BELOW is the discriminator
+///
+/// A heading sits above a BLOCK; a title sits above a LINE. What follows a real
+/// heading is a blank, a bullet, a stack line or a prose paragraph — what
+/// follows a title-above-employer is the employer line itself. So the one signal
+/// that separates them without a title vocabulary is: does the next line OPEN A
+/// ROLE?
+///
+/// That question already has an owner. `documents::evidence::extract_evidence`
+/// opens a role on exactly two shapes, and this reuses both rather than writing
+/// a third opinion: a `LineKind::JobEntry` (the parser's two-space, pipe/middot
+/// and parenthesized forms), or an unrecognised line ending in a real date
+/// COLUMN ([`trailing_date_column`], which takes a column and not a mentioned
+/// year — "Acme Payments, Berlin, 2018 - 2021"). A heading and an entry label
+/// cannot drift apart about what an entry line is.
+///
+/// *Residual, stated:* an employer written across two lines with no date on the
+/// first ("Projektleiter" / "Acme Payments" / "Berlin" / "2019 – 2021") still
+/// promotes the title, because nothing on the line below says an entry started.
+/// It costs a section split, not a false accusation.
+fn labels_the_entry_below(next: Option<&ParsedLine>) -> bool {
+    next.is_some_and(|line| {
+        matches!(line.kind, LineKind::JobEntry) || trailing_date_column(&line.text).is_some()
+    })
+}
+
 /// Split a document into sections at its headings. The leading band before the
 /// first heading (name + contact) is always section 0 with `heading: None`, so
 /// "is this in a non-first section?" is just an index test.
@@ -683,12 +806,35 @@ fn reads_as_heading(line: &ParsedLine) -> bool {
 /// punctuation tests; and the digit rule still guarantees promotion cannot
 /// remove a FIGURE from the source's metric set.
 ///
+/// …and it must not be the LABEL of the entry underneath it
+/// ([`labels_the_entry_below`], which is what keeps an ordinary job title above
+/// its employer out of the heading list).
+///
 /// *Residual, stated:* a ≤4-word, digit-free, punctuation-free `Text` line that
-/// opens a block AND carries a heading stem ("Cloud Kubernetes Docker" would, at
-/// four words) is promoted wherever it sits. That was already accepted for a
-/// heading-less document; it is the same error, now reachable in a headed one,
-/// and it costs a section split rather than a false accusation.
-pub(crate) fn split_sections(text: &str) -> Vec<Section> {
+/// opens a block, carries a heading stem ("Cloud Kubernetes Docker" would, at
+/// four words) and is not followed by an entry line is promoted wherever it
+/// sits. That was already accepted for a heading-less document; it is the same
+/// error, now reachable in a headed one, and it costs a section split rather
+/// than a false accusation.
+///
+/// ## Promotion is a RÉSUMÉ repair — `doc_kind` decides, per text
+///
+/// Everything above is an argument about documents that HAVE sections. A cover
+/// letter has none, so `export::parser` never finds a heading in one and every
+/// short label line in it — "My Experience", "Kurzprofil", "Zu meiner Person" —
+/// satisfies every shape guard there is. One of them is enough to take
+/// `factual::metric_lines`' `sections.len() > 1` test from false to true, which
+/// switches that pass from the LETTER rules to the résumé ones: section 0 —
+/// everything above the label, i.e. most of the letter — is then skipped by
+/// POSITION on the claims side, and the numbers in the letter's opening stop
+/// being checked against the source at all. Silencing rather than accusing, but
+/// structural: the letter loses the check the whole family exists for.
+///
+/// The parameter is the kind of THIS TEXT, not of the report, which is why it is
+/// threaded rather than read off `ContentInput`: when the report is validating a
+/// LETTER, the source résumé it is measured against is still a résumé and still
+/// needs the repair.
+pub(crate) fn split_sections(text: &str, doc_kind: DocKind) -> Vec<Section> {
     let lines = parse_resume(text).lines;
     let mut sections = vec![Section {
         heading: None,
@@ -696,9 +842,13 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
         lines: Vec::new(),
     }];
     let mut opens_a_block = true;
-    for line in lines {
+    let mut lines = lines.into_iter().peekable();
+    while let Some(line) = lines.next() {
         let is_heading = matches!(line.kind, LineKind::SectionHeader)
-            || (opens_a_block && reads_as_heading(&line));
+            || (doc_kind == DocKind::Resume
+                && opens_a_block
+                && reads_as_heading(&line)
+                && !labels_the_entry_below(lines.peek()));
         opens_a_block = matches!(line.kind, LineKind::Blank);
         if is_heading {
             sections.push(Section {

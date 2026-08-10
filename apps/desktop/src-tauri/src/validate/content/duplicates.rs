@@ -35,6 +35,20 @@ pub const MAX_DUP_BULLETS: usize = 400;
 /// Returns the duplicate issues and the `duplicateRatio` metric — the share of
 /// bullets involved in at least one near-duplicate pair (0.0–1.0), among the
 /// first [`MAX_DUP_BULLETS`] bullets in document order.
+///
+/// ## The stemming decision is the DOCUMENT's, not the posting's
+///
+/// Both bullets come from the generated document; the posting is not a party to
+/// the comparison. Under [`Analysis::tokens`] — the résumé↔POSTING decision —
+/// the `duplicateRatio` of one unchanged document changed with the AD's
+/// language, which is a measurement depending on an input it does not measure.
+/// So this reads [`super::DocumentTokens`], the same per-document decision
+/// `consistency`'s two self-comparisons take.
+///
+/// The direction differs from theirs and is stated rather than hidden: merging
+/// tokens raises Jaccard, so this check can now report a pair a foreign-language
+/// ad used to hide. That is the correct reading — two German bullets differing
+/// only in declension ARE the same bullet twice — and it is a Warning either way.
 pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, f64) {
     let mut bullets: Vec<&ParsedLine> = ctx
         .generated_sections
@@ -45,7 +59,10 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, f64) {
     if bullets.len() < 2 {
         return (Vec::new(), 0.0);
     }
-    let tokens: Vec<HashSet<String>> = bullets.iter().map(|b| ctx.tokens(&b.text)).collect();
+    let tokens: Vec<HashSet<String>> = bullets
+        .iter()
+        .map(|b| ctx.document.tokens(&b.text))
+        .collect();
 
     let mut issues = Vec::new();
     let mut involved: HashSet<usize> = HashSet::new();

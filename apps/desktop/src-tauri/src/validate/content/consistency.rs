@@ -11,9 +11,6 @@ use crate::documents::evidence::{
     date_spans, function_words, has_curated_function_words, identity_tokens, split_entry, years_in,
     SectionKind,
 };
-use crate::documents::keywords::{
-    display_forms, keywords, keywords_normalized, languages_align, make_stemmer,
-};
 use crate::export::types::{LineKind, ParsedLine};
 
 use super::factual::{MAX_SCANNED_ENTRIES, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS};
@@ -151,6 +148,24 @@ fn titled_entries(sections: &[Section]) -> Vec<(HashSet<String>, String)> {
 ///
 /// The message quotes the FIRST source title at that employer (document order),
 /// so a multi-role employer still produces a stable, reproducible report.
+///
+/// ## The stemming decision is the DOCUMENTS', not the posting's
+///
+/// Both titles come out of this report's own two documents; the job ad is not a
+/// party to the comparison. [`Analysis::tokens`] is nonetheless the
+/// résumé↔POSTING decision, so an English ad for a German-language role switched
+/// stemming OFF for a comparison the ad has no part in, and the ordinary
+/// declension pair "Wissenschaftlicher Mitarbeiter" / "Wissenschaftliche
+/// Mitarbeiterin" became two disjoint token sets — a false drift Warning.
+/// Unstemmed is the direction that FIRES more here (drift is *disjointness*), so
+/// this was an accusation channel, not a missed check.
+///
+/// It therefore reads [`super::DocumentTokens`], the same per-document decision
+/// [`skill_not_demonstrated_issues`] takes, rather than a second copy of the
+/// mechanism. Both titles go through ONE tokenizer, so a merge can only ever add
+/// an intersection — it silences, never accuses — and a source résumé written in
+/// some other language than the generated document is stemmed by the same
+/// function as the generated one, which is what keeps two equal titles equal.
 fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let source = titled_entries(&ctx.source_sections);
     let mut issues = Vec::new();
@@ -158,7 +173,7 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         if title.trim().is_empty() || company.is_empty() {
             continue;
         }
-        let generated_tokens = ctx.tokens(&title);
+        let generated_tokens = ctx.document.tokens(&title);
         if generated_tokens.is_empty() {
             continue;
         }
@@ -168,7 +183,7 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         let comparable: Vec<(&str, HashSet<String>)> = source
             .iter()
             .filter(|(c, t)| !t.trim().is_empty() && !c.is_disjoint(&company))
-            .map(|(_, t)| (t.as_str(), ctx.tokens(t)))
+            .map(|(_, t)| (t.as_str(), ctx.document.tokens(t)))
             .filter(|(_, tokens)| !tokens.is_empty())
             .collect();
         let Some((source_title, _)) = comparable.first() else {
@@ -368,6 +383,10 @@ fn is_category_label(head: &str) -> bool {
 /// never accuses. `ctx.lang` is the trustworthy half of the pair (the document
 /// is supposed to be in it, and this check already trusts it to pick the
 /// function-word list); the mismatch guard above is what withdraws that trust.
+///
+/// That decision is [`super::DocumentTokens`], shared with the two other checks
+/// the posting is not a party to ([`title_drift_issues`] and
+/// `duplicates::validate`) rather than re-derived here.
 fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     if ctx.language_mismatch || !has_curated_function_words(&ctx.lang) {
         return Vec::new();
@@ -376,21 +395,12 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
         return Vec::new();
     };
     let document = ctx.input.generated;
-    let stemmer = make_stemmer(document);
-    let aligned = languages_align(document, &ctx.lang);
-    let tokens = |text: &str| {
-        if aligned {
-            keywords(text, &stemmer)
-        } else {
-            keywords_normalized(text)
-        }
-    };
     let demonstrated: HashSet<String> = ctx
         .generated_sections
         .iter()
         .filter(|s| matches!(s.kind, SectionKind::Experience | SectionKind::Projects))
         .flat_map(|s| s.lines.iter())
-        .flat_map(|l| tokens(&l.text))
+        .flat_map(|l| ctx.document.tokens(&l.text))
         .collect();
     if demonstrated.is_empty() {
         return Vec::new(); // Nothing to check against — a skills-only document.
@@ -399,7 +409,7 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let claimed: HashSet<String> = skills
         .lines
         .iter()
-        .flat_map(|l| tokens(strip_skills_label(&l.text)))
+        .flat_map(|l| ctx.document.tokens(strip_skills_label(&l.text)))
         .collect();
     // Tokens are STEMMED when the languages align, so map every one back to a
     // readable form before it reaches the user: "kubernet is listed under
@@ -415,11 +425,7 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     // holds words, not stems. It is the second half of the label fix — a line
     // that spells its category out ("Kenntnisse in Rust und Python") carries the
     // filler inline, where no `label:` rule can reach it.
-    let display: HashMap<String, String> = if aligned {
-        display_forms(document, &stemmer)
-    } else {
-        HashMap::new()
-    };
+    let display: HashMap<String, String> = ctx.document.display(document);
     let stop = function_words(&ctx.lang);
     let mut missing: Vec<String> = claimed
         .difference(&demonstrated)
