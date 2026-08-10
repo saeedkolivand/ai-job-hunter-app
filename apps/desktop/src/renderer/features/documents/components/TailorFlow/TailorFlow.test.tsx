@@ -859,6 +859,7 @@ describe('TailorFlow — cold-entry hydration', () => {
         metrics: {
           keywordCoverage: 80,
           topRequirementHits: 1,
+          topRequirementsMeasured: 2,
           duplicateRatio: 0,
           rolesSource: 1,
           rolesOutput: 1,
