@@ -159,8 +159,17 @@ fn title_drift_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 pub const MAX_SKILLS_LABEL_WORDS: usize = 3;
 
 /// Separators a skills LIST is written with — the signal that what follows a
-/// colon is a set of items rather than one word about the word in front of it.
-const SKILLS_LIST_SEPARATORS: &[char] = &[',', '·', ';', '|', '•', '/'];
+/// colon is a set of ITEMS rather than a grade for the word in front of it.
+///
+/// Two members are decided rather than obvious:
+///
+/// * `/` is **out**. "Deutsch: C1/C2" and "Python: 3/5" are single grades that
+///   happen to carry a slash, while a category list is written with commas or
+///   middots — a slash between two items is rare enough that reading it as a
+///   list costs more than it buys.
+/// * `•` is **in**. A bullet glyph is never part of a proficiency grade, so it
+///   can only be separating items.
+const SKILLS_LIST_SEPARATORS: &[char] = &[',', '·', ';', '|', '•'];
 
 /// The half of a `head: tail` skills line that actually claims a skill.
 ///
@@ -178,20 +187,28 @@ const SKILLS_LIST_SEPARATORS: &[char] = &[',', '·', ';', '|', '•', '/'];
 ///   checked at all) and kept the grade, so "advanced" was reported instead —
 ///   a finding about a word the user cannot demonstrate and would not want to.
 ///
-/// The discriminator is the tail: a list carries a separator or runs to more
-/// than one word; a grade is a single word. Only a SHORT head is considered a
-/// label at all ([`MAX_SKILLS_LABEL_WORDS`]), and only the first colon —
-/// a longer head is prose that happens to carry a colon, and dropping it would
-/// silently stop policing everything in front of it.
+/// The discriminator is the tail, and it is [`SKILLS_LIST_SEPARATORS`] alone: a
+/// list is PUNCTUATED. Length is not a signal — a grade runs to as many words
+/// as the language needs it to ("Englisch: verhandlungssicher in Wort und
+/// Schrift" is the standard German Sprachen phrasing, "Python: 5 years in
+/// production" its English equivalent), and counting words made every one of
+/// those a list, so the grade words became the claims and the skill in front of
+/// the colon was never checked at all. Only a SHORT head is considered a label
+/// at all ([`MAX_SKILLS_LABEL_WORDS`]), and only the first colon — a longer
+/// head is prose that happens to carry a colon, and dropping it would silently
+/// stop policing everything in front of it.
 ///
-/// **The boundary this knowingly gets wrong:** a category with exactly ONE item
-/// ("Frameworks: React") is indistinguishable by shape from a proficiency line,
-/// so it reads as one — the label counts as the claim and the single item is
-/// not policed. That is the cheaper error of the two: a one-item category is
-/// rare, while "Python: Advanced" is not, and the alternative (keeping both
-/// halves whenever the tail is one word) reports the grade on every proficiency
-/// line in the document. Telling the two apart needs a vocabulary of grades or
-/// of category words, and neither list can be kept honest across locales.
+/// **The boundary this knowingly gets wrong**, in one direction only: a
+/// category whose items carry no separator reads as a grade, so the label
+/// counts as the claim and the items are not policed. That covers both a
+/// one-item category ("Frameworks: React") and an unpunctuated multi-item one
+/// ("Tools: Docker Kubernetes Terraform"). It is the cheaper error: those two
+/// layouts are uncommon, while a multi-word grade is the normal way to write a
+/// language level, and the alternative reports words like "verhandlungssicher"
+/// or "advanced" as skills the résumé fails to demonstrate — a finding about a
+/// word the user cannot act on. Telling the two apart properly needs a
+/// vocabulary of grades or of category words, and neither list can be kept
+/// honest across locales.
 fn strip_skills_label(line: &str) -> &str {
     let Some((head, tail)) = line.split_once(':') else {
         return line;
@@ -199,8 +216,7 @@ fn strip_skills_label(line: &str) -> &str {
     if super::word_count(head) > MAX_SKILLS_LABEL_WORDS {
         return line;
     }
-    let tail_is_a_list = tail.contains(SKILLS_LIST_SEPARATORS) || super::word_count(tail) > 1;
-    if tail_is_a_list {
+    if tail.contains(SKILLS_LIST_SEPARATORS) {
         tail
     } else {
         head

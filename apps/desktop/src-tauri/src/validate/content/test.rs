@@ -2858,18 +2858,135 @@ fn skills_label_discriminator_reads_lists_and_grades_apart() {
         skills("Languages: Rust, Elasticsearch"),
         vec!["elasticsearch".to_string()]
     );
-    // A multi-word tail with no separator is still a list: both of its words
-    // are claims, and the category label is not one of them.
-    assert_eq!(
-        skills("Frameworks: React Native"),
-        vec!["native".to_string(), "react".to_string()]
-    );
-    // A one-word tail is a GRADE: the head is the claim.
+    // (R6's "a multi-word tail is still a list" row moved to R7-F2's
+    // `a_space_separated_category_now_reads_as_a_grade` — word count is no
+    // longer a list signal, because multi-word GRADES are commoner.)
+    //
+    // A tail with no separator is a GRADE: the head is the claim.
     assert_eq!(skills("Python: Advanced"), Vec::<String>::new());
     // …which is exactly why a single-item CATEGORY reads as a grade too. The
     // accepted cost of the rule, pinned so it cannot change unnoticed.
     assert_eq!(
         skills("Frameworks: Elasticsearch"),
+        vec!["frameworks".to_string()]
+    );
+}
+
+// ── PR #963 round-7 findings ────────────────────────────────────────────────
+
+/// The EN half of the R7-F2 rows, and the concession that comes with the fix.
+/// Shares `skills`' shape with the R6-F4 test on purpose: same fixture, same
+/// extraction, so the two discriminator rules are compared on one surface.
+fn en_skills_claims(lines: &str) -> Vec<String> {
+    let generated = EN_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        lines,
+    );
+    let mut claimed: Vec<String> = report_for(&generated, EN_SOURCE, EN_JOB_AD, &[])
+        .issues
+        .iter()
+        .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .filter_map(|i| i.evidence.clone())
+        .collect();
+    claimed.sort();
+    claimed
+}
+
+fn de_skills_claims(lines: &str) -> Vec<String> {
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        lines,
+    );
+    let mut claimed: Vec<String> = validate_content(&ContentInput {
+        generated: &generated,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    })
+    .issues
+    .iter()
+    .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+    .filter_map(|i| i.evidence.clone())
+    .collect();
+    claimed.sort();
+    claimed
+}
+
+/// R7-F2 — R6-F4's discriminator read "a tail of more than one word" as a LIST,
+/// but a proficiency GRADE runs to as many words as the language needs:
+/// "verhandlungssicher in Wort und Schrift" is the standard German Sprachen
+/// phrasing, and "5 years in production" is its English equivalent. The skill in
+/// front of the colon was dropped and the grade words became the claims — the
+/// same false-positive family R6-F4 set out to close, louder.
+#[test]
+fn a_multi_word_grade_is_not_a_skills_list() {
+    // The German Sprachen line: the language is the claim, the grade is not.
+    let de = de_skills_claims("Englisch: verhandlungssicher in Wort und Schrift");
+    for grade in ["verhandlungssicher", "wort", "schrift"] {
+        assert!(
+            !de.iter().any(|c| c == grade),
+            "{grade:?} is part of a proficiency grade, not a claimed skill; got {de:?}"
+        );
+    }
+    assert!(
+        de.iter().any(|c| c == "englisch"),
+        "the skill in front of the colon is what gets checked; got {de:?}"
+    );
+
+    // The English equivalent — a grade written as a measurement. ("years" is
+    // also a kernel stopword, so "production" is the load-bearing half here.)
+    let en = en_skills_claims("Python: 5 years in production");
+    for grade in ["years", "production"] {
+        assert!(
+            !en.iter().any(|c| c == grade),
+            "{grade:?} is part of a proficiency grade, not a claimed skill; got {en:?}"
+        );
+    }
+    assert_eq!(
+        en,
+        Vec::<String>::new(),
+        "and Python itself IS demonstrated in the experience section; got {en:?}"
+    );
+
+    // A slash is a GRADE's punctuation ("C1/C2"), not a list separator.
+    let levels = de_skills_claims("Deutsch: C1/C2");
+    assert_eq!(
+        levels,
+        vec!["deutsch".to_string()],
+        "the language is the claim; the CEFR levels are the grade"
+    );
+}
+
+/// The boundary this fix knowingly gives up, pinned so it cannot change
+/// unnoticed: with the word-count clause gone, a category whose items are
+/// separated by SPACES alone reads grade-shaped — the label becomes the claim
+/// and the items are not policed. Deliberate: a category list is written with
+/// commas or middots, and the alternative is a false finding on every
+/// multi-word grade, which is far commoner than an unpunctuated category.
+#[test]
+fn a_space_separated_category_now_reads_as_a_grade() {
+    // The cost, stated as the MISS it is: "elasticsearch" is claimed here and
+    // demonstrated nowhere, and an unpunctuated category means it is not
+    // policed. (The label "Tools" is itself demonstrated by the projects line,
+    // so nothing at all is reported.)
+    assert_eq!(
+        en_skills_claims("Tools: Docker Kubernetes Elasticsearch"),
+        Vec::<String>::new(),
+        "the items of a space-separated category are not checked"
+    );
+    // A separator puts it straight back: the items are the claims again.
+    assert_eq!(
+        en_skills_claims("Tools: Docker, Kubernetes, Elasticsearch"),
+        vec!["elasticsearch".to_string()],
+        "punctuation is the whole discriminator"
+    );
+    // R6-F4's own multi-word row moves to this side of the line for the same
+    // reason — it was only ever a list because of the word-count clause. Here
+    // the label is NOT demonstrated, so it becomes the claim.
+    assert_eq!(
+        en_skills_claims("Frameworks: React Native"),
         vec!["frameworks".to_string()]
     );
 }

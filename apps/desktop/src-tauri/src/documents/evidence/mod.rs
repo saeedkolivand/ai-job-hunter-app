@@ -493,6 +493,36 @@ fn split_two_space_label(label: &str) -> (String, String) {
     }
 }
 
+/// Salvage `(company, title)` from an entry line the PARSER did not recognise
+/// — [`extract_evidence`]'s role-opening arm, where the label was cut out of
+/// running text instead of handed over by `export::parser`. `None` means
+/// nothing could be resolved, and the caller must open an UNATTRIBUTED role
+/// rather than name one.
+///
+/// The difference from calling [`split_two_space_label`] directly is its
+/// comma-less arm, which reads the whole label as the company. That is correct
+/// where it is called FROM: the parser has already peeled the date column off a
+/// template-rendered entry, so whatever remains is the employer by
+/// construction. Here there is no such construction — "Promoted to Staff
+/// Engineer, 2022" arrives as a label with no comma left in it, and the whole
+/// sentence was recorded as the employer, which is exactly what this arm's
+/// contract forbids. A comma is the only structure this form offers; with none
+/// left there is no evidence, and no evidence means unattributed.
+///
+/// Cost, deliberately paid and NOT hidden: "Acme Payments, Jan 2019 - Dec 2021"
+/// (one comma, so a comma-less label) now opens an unattributed role too. The
+/// employer's name is lost from the attribution but never from the evidence —
+/// the caller keeps the label as text — and losing a name beats inventing one,
+/// the same tradeoff [`is_location_only`] and [`split_two_space_label`] already
+/// make on this path.
+fn salvage_entry_label(label: &str) -> Option<(String, String)> {
+    if !label.contains(',') {
+        return None;
+    }
+    let (company, title) = split_two_space_label(label);
+    (!company.is_empty() || !title.is_empty()).then_some((company, title))
+}
+
 /// Split an entry line into `(company, title, dates)`.
 ///
 /// HEURISTIC, and deliberately a conservative one — a wrong split must never
@@ -710,23 +740,36 @@ const MONTH_TOKENS: &[&str] = &[
     "dezember",
 ];
 
-/// True when `s` is a date span and NOTHING else: it has the shape of one
-/// ([`looks_like_date_span`]) and every word in it is a number, a month or a
-/// present-tense marker.
+/// True when `s` is a date COLUMN and nothing else: every word in it is a
+/// number, a month or a present-tense marker, **and** it carries more date
+/// structure than a lone year — a span separator (`2018 – 2021`), an open end
+/// (`2021 – Present`, `2021 –`) or a month (`Jan 2022`).
 ///
-/// Stricter than [`looks_like_date_span`], which is satisfied by any line
-/// carrying a year — "delivered in 2019" included. The difference matters
-/// wherever a date is used as a STRUCTURAL signal rather than read for its
-/// value: see [`trailing_date_column`].
+/// Both halves are load-bearing, and [`looks_like_date_span`] alone is neither.
+/// It is satisfied by any text carrying a year, so the word test was doing all
+/// the work — and a single BARE YEAR passes the word test too. "Promoted to
+/// Staff Engineer, 2022" is an ordinary line in an experience section, and
+/// reading its trailing year as a date column made [`trailing_date_column`]
+/// hand the sentence in front of it to the employer salvage. A year on its own
+/// is a date a line MENTIONS; a column is a date the line is STRUCTURED by.
+///
+/// Cost, deliberately paid: an entry line whose whole date column is one bare
+/// year ("Acme Corp, 2022") no longer opens a role, so its bullets continue the
+/// entry above it. That is the pre-existing behaviour for every unrecognised
+/// line, and it invents nothing.
 fn is_date_only(s: &str) -> bool {
-    if !looks_like_date_span(s) {
-        return false;
-    }
-    word_tokens(s).iter().all(|t| {
+    let tokens = word_tokens(s);
+    let date_words = tokens.iter().all(|t| {
         t.chars().all(|c| c.is_ascii_digit())
             || MONTH_TOKENS.contains(&t.as_str())
             || PRESENT_MARKERS.contains(&t.as_str())
-    })
+    });
+    if !date_words || !looks_like_date_span(s) {
+        return false;
+    }
+    !date_spans(s).is_empty()
+        || is_open_ended(s)
+        || tokens.iter().any(|t| MONTH_TOKENS.contains(&t.as_str()))
 }
 
 /// Split `text` into `(label, dates)` when it ends in a `, <dates>` column —
@@ -1012,26 +1055,37 @@ pub fn extract_evidence(source_resume: &str, job_text: &str) -> EvidenceSet {
             // still lost the employer they belong to, which is the worse half of
             // the original bug (evidence with no attribution).
             //
-            // A line that ends in a date column OPENS ITS OWN ROLE, exactly as
+            // A line that ends in a date COLUMN opens its own role, exactly as
             // a recognised `JobEntry` would. Appending it to `roles.last()` —
             // which is all [`attach_to_role`] can do — made the previous
             // employer absorb this one's header line AND every bullet under it,
-            // so a second employer's work was credited to the first. The
-            // employer is SALVAGED from the line by the same splitters a parsed
-            // entry goes through, never guessed: whatever they cannot resolve
-            // stays an empty (unattributed) company.
+            // so a second employer's work was credited to the first.
+            //
+            // Both gates are conservative on purpose, because the input is
+            // ordinary text and the output is an employer's name:
+            // [`trailing_date_column`] takes a date column, not a mentioned
+            // year, and [`salvage_entry_label`] resolves an employer or returns
+            // nothing. Unresolved, the role still opens (the column says an
+            // entry started) but stays UNATTRIBUTED, and the label is kept as
+            // its first bullet so refusing to name an employer never deletes
+            // the line — the same shape the R5-F6 rescue already gives an
+            // entry line it cannot attribute.
             LineKind::Text | LineKind::Contact
                 if section == SectionKind::Experience && !line.text.trim().is_empty() =>
             {
                 match trailing_date_column(&line.text) {
                     Some((label, dates)) => {
-                        let (company, title) = split_two_space_label(label);
+                        let (company, title) = salvage_entry_label(label).unwrap_or_default();
+                        let unattributed = company.is_empty() && title.is_empty();
                         set.roles.push(EvidenceRole {
                             company,
                             title,
                             dates: dates.to_string(),
                             bullets: Vec::new(),
                         });
+                        if unattributed {
+                            attach_to_role(&mut set.roles, &vocab, label);
+                        }
                     }
                     None => attach_to_role(&mut set.roles, &vocab, &line.text),
                 }

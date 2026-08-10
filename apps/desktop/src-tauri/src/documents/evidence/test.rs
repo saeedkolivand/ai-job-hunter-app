@@ -924,6 +924,125 @@ Owned the ledger rewrite, delivered in 2019
     assert_eq!(set.roles[0].company, "Acme Payments");
 }
 
+// ── PR #963 round-7 findings ────────────────────────────────────────────────
+
+/// R7-F1(a) — `is_date_only` gated on [`looks_like_date_span`], which is
+/// satisfied by a SINGLE BARE YEAR, so an ordinary promotion note between two
+/// entries ("Promoted to Staff Engineer, 2022") read as an employer plus a date
+/// column and opened a role. "Mentioning a year" is not "having a date column";
+/// the column needs a span separator, an open end or a month.
+#[test]
+fn a_promotion_note_between_two_entries_is_not_an_employer() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Acme Payments | 2021 - Present
+- Cut checkout latency with a Redis cache in front of the ledger service
+Promoted to Staff Engineer, 2022
+- Shipped Docker containers onto a Kubernetes cluster
+
+Backend Developer | Globex Logistics | 2018 - 2021
+- Built the billing API in Python and PostgreSQL
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    let companies: Vec<&str> = set.roles.iter().map(|r| r.company.as_str()).collect();
+    assert!(
+        !companies.iter().any(|c| c.contains("Promoted")),
+        "a sentence is never an employer; got {companies:?}"
+    );
+    assert_eq!(
+        companies,
+        vec!["Acme Payments", "Globex Logistics"],
+        "two real entries, and nothing between them"
+    );
+
+    // The note and the bullet under it stay with the employer above — the
+    // promotion happened AT Acme, and no role was opened to strand them in.
+    let acme = &set.roles[0];
+    let texts: Vec<&str> = acme.bullets.iter().map(|b| b.text.as_str()).collect();
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("Promoted to Staff Engineer")),
+        "the note is kept as text under the entry it continues; got {texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("Docker")),
+        "the bullet after the note belongs to the same employer; got {texts:?}"
+    );
+}
+
+/// The unit half of the same rule, both directions: every shape that IS a date
+/// column, and the bare year that is not.
+#[test]
+fn a_date_column_needs_more_than_a_year_in_it() {
+    for column in [
+        "2018 - 2021",
+        "2018 – 2021",
+        "05/2018 – 07/2021",
+        "Jan 2018 - Mar 2021",
+        "2021 - Present",
+        "2021 - Heute",
+        "2021 –",
+        "Jan 2022",
+    ] {
+        assert!(is_date_only(column), "{column:?} is a date column");
+    }
+    for prose in ["2022", "delivered in 2019", "40 warehouse sites", ""] {
+        assert!(!is_date_only(prose), "{prose:?} is not a date column");
+    }
+}
+
+/// R7-F1(b) — the salvage contradicted its own contract. A label with no comma
+/// left in it gives [`split_two_space_label`] nothing to split, and its
+/// comma-less arm hands the WHOLE LABEL back as the company — so the role
+/// opened by an entry-shaped line was named after the sentence on it. The
+/// employer is salvaged or it is empty; it is never the verbatim line.
+#[test]
+fn an_unresolvable_entry_label_opens_an_unattributed_role() {
+    let resume = "\
+Jane Doe
+jane@example.com
+
+EXPERIENCE
+
+Senior Engineer | Globex Logistics | 2015 - 2018
+- Built the billing API in Python and PostgreSQL
+
+Led the platform rewrite, Jan 2019 - Dec 2021
+- Shipped Docker containers onto a Kubernetes cluster
+- Cut checkout latency with a Redis cache in front of the ledger service
+";
+    let set = extract_evidence(resume, "Docker Kubernetes Redis Python backend engineer");
+    assert_eq!(set.roles.len(), 2, "the date column still opens a role");
+    assert_eq!(
+        set.roles[0].company, "Globex Logistics",
+        "and the previous employer does not absorb it (R6-F7 stays fixed)"
+    );
+
+    let salvaged = &set.roles[1];
+    assert_eq!(
+        salvaged.company, "",
+        "an unresolvable label is an UNATTRIBUTED role, not an invented employer"
+    );
+    assert_eq!(salvaged.title, "");
+    assert_eq!(salvaged.dates, "Jan 2019 - Dec 2021", "the column is kept");
+    // Refusing to name an employer must not silently delete the line either.
+    let texts: Vec<&str> = salvaged.bullets.iter().map(|b| b.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        vec![
+            "Led the platform rewrite",
+            "Shipped Docker containers onto a Kubernetes cluster",
+            "Cut checkout latency with a Redis cache in front of the ledger service",
+        ],
+        "the unresolved label stays as text in its own bucket"
+    );
+}
+
 /// The curated-language gate is what `validate::content::ats` reads before it
 /// dares report a density number, so the two halves must never drift: a
 /// language claiming curation with no list behind it re-opens R5-F5, and a
