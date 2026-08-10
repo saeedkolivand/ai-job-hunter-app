@@ -196,7 +196,11 @@ function parseMetrics(value: unknown): ContentMetrics | null {
   const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
   return {
     keywordCoverage: typeof value.keywordCoverage === 'number' ? value.keywordCoverage : null,
-    topRequirementHits: num(value.topRequirementHits),
+    // null = "not measured" (uncomparable posting / no requirements / letter).
+    // Coercing it to 0 here would resurrect "0 requirements covered" as a fact
+    // on every reopen — the exact state the Option<u32> wire change removed.
+    topRequirementHits:
+      typeof value.topRequirementHits === 'number' ? value.topRequirementHits : null,
     duplicateRatio: num(value.duplicateRatio),
     rolesSource: num(value.rolesSource),
     rolesOutput: num(value.rolesOutput),

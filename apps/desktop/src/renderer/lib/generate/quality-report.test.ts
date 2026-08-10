@@ -302,6 +302,23 @@ describe('parseQualityReport', () => {
     expect(parseQualityReport(raw)).toBeNull();
   });
 
+  it('preserves a null topRequirementHits through a reopen — "not measured" never rehydrates as 0', () => {
+    const unmeasured = {
+      ok: true,
+      issues: [],
+      metrics: { ...OK_REPORT.metrics, topRequirementHits: null },
+    };
+    const raw = JSON.stringify({
+      schemaVersion: 2,
+      pipeline: 'fast',
+      generatedAt: 1,
+      resume: { report: unmeasured, sourceTextHash: 9 },
+    });
+    // Coercing null to 0 here would render "Top requirements covered: 0" as a
+    // fact on cold entry — the exact state the Option<u32> wire removed.
+    expect(parseQualityReport(raw)?.resume?.report.metrics.topRequirementHits).toBeNull();
+  });
+
   it('drops a slot that carries a report but no hash — never a report without its anchor', () => {
     const raw = JSON.stringify({
       schemaVersion: 2,
