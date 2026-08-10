@@ -5,11 +5,14 @@
 //! written up) that a Critical would be wrong; what the user needs is a
 //! pointer, not a block.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::documents::evidence::{
     date_spans, function_words, has_curated_function_words, identity_tokens, split_entry, years_in,
     SectionKind,
+};
+use crate::documents::keywords::{
+    display_forms, keywords, keywords_normalized, languages_align, make_stemmer,
 };
 use crate::export::types::{LineKind, ParsedLine};
 
@@ -335,19 +338,59 @@ fn is_category_label(head: &str) -> bool {
 /// advisory while a wrong finding costs the user's trust in the panel, and
 /// because there is no way here to tell the two apart. Adding a list to
 /// `function_words` re-enables it, in one place, for every surface at once.
+///
+/// …and only for a document that IS in that language. `ctx.lang` is the TARGET
+/// language, so every sentence above holds only while the document is actually
+/// written in it. [`Analysis::language_mismatch`] is precisely the measurement
+/// that it is not — taken with a reliable source control, and already reported
+/// as its own Critical — and once it holds, `function_words(&ctx.lang)` is a
+/// filter for words that are not on the page: German filler ("Kenntnisse",
+/// "verantwortlich") came back as skills the résumé fails to demonstrate,
+/// underneath the one finding the user can act on. Same suppression, same
+/// reason, as `Analysis::posting_comparable`'s.
+///
+/// ## The stemming decision is the DOCUMENT's, not the posting's
+///
+/// This check intersects one document's skills section with its own experience,
+/// so the posting is not a party to it. [`Analysis::tokens`] is nonetheless the
+/// résumé↔POSTING decision — it stems both sides only when the JOB AD's language
+/// pairs with the target, which is right for a coverage comparison and wrong
+/// here: an English ad for a German-language role (the ordinary DACH case)
+/// switched stemming off for a comparison the ad has no part in, and every
+/// German inflection pair ("Abrechnungsschnittstelle" in the experience,
+/// "Abrechnungsschnittstellen" under skills) read as an undemonstrated skill.
+///
+/// So the pair aligned here is (document, target language), resolved exactly the
+/// way `documents::evidence::JobVocabulary` resolves its own: `languages_align`
+/// decides and `make_stemmer` reads the SAME text that decision was taken on, so
+/// the two can never disagree about which language is being stemmed. Both sides
+/// are stemmed or neither is, so the change can only merge tokens — it silences,
+/// never accuses. `ctx.lang` is the trustworthy half of the pair (the document
+/// is supposed to be in it, and this check already trusts it to pick the
+/// function-word list); the mismatch guard above is what withdraws that trust.
 fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if !has_curated_function_words(&ctx.lang) {
+    if ctx.language_mismatch || !has_curated_function_words(&ctx.lang) {
         return Vec::new();
     }
     let Some(skills) = ctx.section_of_kind(SectionKind::Skills) else {
         return Vec::new();
+    };
+    let document = ctx.input.generated;
+    let stemmer = make_stemmer(document);
+    let aligned = languages_align(document, &ctx.lang);
+    let tokens = |text: &str| {
+        if aligned {
+            keywords(text, &stemmer)
+        } else {
+            keywords_normalized(text)
+        }
     };
     let demonstrated: HashSet<String> = ctx
         .generated_sections
         .iter()
         .filter(|s| matches!(s.kind, SectionKind::Experience | SectionKind::Projects))
         .flat_map(|s| s.lines.iter())
-        .flat_map(|l| ctx.tokens(&l.text))
+        .flat_map(|l| tokens(&l.text))
         .collect();
     if demonstrated.is_empty() {
         return Vec::new(); // Nothing to check against — a skills-only document.
@@ -356,22 +399,36 @@ fn skill_not_demonstrated_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let claimed: HashSet<String> = skills
         .lines
         .iter()
-        .flat_map(|l| ctx.tokens(strip_skills_label(&l.text)))
+        .flat_map(|l| tokens(strip_skills_label(&l.text)))
         .collect();
     // Tokens are STEMMED when the languages align, so map every one back to a
     // readable form before it reaches the user: "kubernet is listed under
     // skills" is a finding nobody can act on. Sorted on the display form so the
-    // report reads alphabetically as printed.
+    // report reads alphabetically as printed. Keyed on the same document and the
+    // same stemmer the tokens were, so the context's own former display map
+    // (built on the report's three-document corpus under the POSTING's stemming
+    // decision) could not be reused here — and, having no other caller, it is
+    // gone. See [`Analysis::tokens`].
     //
     // The same display form is what the function-word filter reads, for the
     // same reason `documents::evidence` filters its skills split on it: the list
     // holds words, not stems. It is the second half of the label fix — a line
     // that spells its category out ("Kenntnisse in Rust und Python") carries the
     // filler inline, where no `label:` rule can reach it.
+    let display: HashMap<String, String> = if aligned {
+        display_forms(document, &stemmer)
+    } else {
+        HashMap::new()
+    };
     let stop = function_words(&ctx.lang);
     let mut missing: Vec<String> = claimed
         .difference(&demonstrated)
-        .map(|token| ctx.display(token))
+        .map(|token| {
+            display
+                .get(token)
+                .cloned()
+                .unwrap_or_else(|| token.to_string())
+        })
         .filter(|display| !stop.contains(&display.as_str()))
         .collect();
     missing.sort(); // Deterministic: the sets above are unordered.

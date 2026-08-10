@@ -3834,3 +3834,266 @@ fn a_title_cased_german_heading_still_sections_the_source() {
             .collect::<Vec<_>>()
     );
 }
+
+// ── PR #963 round-12 findings ───────────────────────────────────────────────
+
+/// R12-F1 — `consistency::skill_not_demonstrated` compares a document against
+/// ITSELF, but it tokenized both sides with [`Analysis::tokens`], whose stemming
+/// decision is `languages_align(job_ad, target_language)`. An English ad for a
+/// German-language role (the ordinary DACH case) therefore switches stemming OFF
+/// for a comparison the ad is not part of, and every German inflection pair —
+/// "Abrechnungsschnittstelle" in the experience, "Abrechnungsschnittstellen"
+/// under skills — reads as a skill the résumé never demonstrates.
+///
+/// The control is the same document against a GERMAN ad: only the AD's language
+/// differs between the two runs, so the two answers must be identical.
+#[test]
+fn a_foreign_language_job_ad_does_not_break_the_skills_self_comparison() {
+    let generated = DE_CLEAN.replace(
+        "Rust · Python · Docker · Kubernetes · PostgreSQL · AWS · Terraform · Redis",
+        "Rust · Python · Docker · Kubernetes · Abrechnungsschnittstellen · \
+         Lagerstandorten · Kafka",
+    );
+    let against = |job_ad: &str| {
+        validate_content(&ContentInput {
+            generated: &generated,
+            source_resume: DE_SOURCE,
+            job_ad,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::Resume,
+        })
+    };
+    let undemonstrated = |report: &ContentReport| -> Vec<String> {
+        report
+            .issues
+            .iter()
+            .filter(|i| i.code == CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+            .filter_map(|i| i.evidence.clone())
+            .collect()
+    };
+
+    // The control: with a German ad the pair is stemmed, so only the genuine
+    // gap — a skill the experience never shows — is reported.
+    assert_eq!(
+        undemonstrated(&against(DE_JOB_AD)),
+        vec!["kafka".to_string()],
+        "the German inflections are demonstrated; only Kafka is not"
+    );
+    // The finding: the ad's language is not part of this comparison.
+    assert_eq!(
+        undemonstrated(&against(EN_JOB_AD)),
+        vec!["kafka".to_string()],
+        "a document-internal check must not change with the AD's language"
+    );
+}
+
+/// R12-F2 — `ats::keyword_density` and `consistency::skill_not_demonstrated`
+/// both filter their tokens through `function_words(ctx.lang)`, the TARGET
+/// language — even when `content.language_mismatch` has already established
+/// (with a reliable source control) that the document is written in some other
+/// language. The filter is then a no-op against the words that are actually on
+/// the page, so ordinary German prose is accused of keyword stuffing and German
+/// filler is reported back as an undemonstrated skill, underneath the one
+/// Critical that matters.
+#[test]
+fn a_wrong_language_document_is_not_measured_with_the_target_word_list() {
+    // A German résumé that really IS stuffed (Kubernetes ×8) and really DOES
+    // claim a skill it never shows (Kafka) — so both checks have something true
+    // to say. Every "verantwortlich für" around them is ordinary German bullet
+    // phrasing, and both of those words are in FUNCTION_WORDS_DE, where
+    // `function_words("en")` cannot see them.
+    let german = "Jana Mustermann\njana.mustermann@example.com\n\n\
+                  PROFIL\n\n\
+                  Backend-Entwicklerin mit acht Jahren Erfahrung im Zahlungsverkehr und im \
+                  Aufbau von Container-Plattformen.\n\n\
+                  BERUFSERFAHRUNG\n\n\
+                  Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
+                  - Verantwortlich für den Betrieb der Zahlungsplattform auf Kubernetes\n\
+                  - Verantwortlich für Kubernetes-Cluster, Kubernetes-Netzwerke und \
+                  Kubernetes-Speicher\n\
+                  - Verantwortlich für Kubernetes-Upgrades und für die Kubernetes-Bereitschaft\n\
+                  - Verantwortlich für die Bereitstellung mit Kubernetes, Python und Terraform\n\n\
+                  Backend Developer | Globex Logistics | 2018 - 2021\n\
+                  - Verantwortlich für die Abrechnungsschnittstelle der Lagerstandorte\n\
+                  - Verantwortlich für die Datenbanken und für die Wartung in Rust\n\
+                  - Verantwortlich für die Migration und für den Betrieb\n\n\
+                  KENNTNISSE\n\n\
+                  Kenntnisse in Rust, Python, Kubernetes, Terraform und Kafka\n\n\
+                  AUSBILDUNG\n\n\
+                  BSc Informatik, TU Berlin, 2014 - 2018\n";
+
+    // Read as English: the finding the user must act on is present and
+    // Critical, and neither word-list-dependent check adds noise underneath it.
+    let mismatched = en_resume(german, &[]);
+    assert_eq!(
+        fired(&mismatched, CONTENT_LANGUAGE_MISMATCH)[0].severity,
+        Severity::Critical
+    );
+    silent(&mismatched, ATS_KEYWORD_DENSITY);
+    silent(&mismatched, CONSISTENCY_SKILL_NOT_DEMONSTRATED);
+
+    // The control — the SAME document, read as the German it is. Both checks
+    // still bite, so the suppression is keyed on the mismatch rather than
+    // switching the checks off, and the filler around the real findings is
+    // filtered instead of counted.
+    let matched = validate_content(&ContentInput {
+        generated: german,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    let stuffed: Vec<&str> = fired(&matched, ATS_KEYWORD_DENSITY)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert!(
+        stuffed.contains(&"kubernetes ×8"),
+        "the real repetition is reported; got {stuffed:?}"
+    );
+    assert!(
+        !stuffed
+            .iter()
+            .any(|e| e.starts_with("verantwortlich") || e.starts_with("für")),
+        "German filler is FILTERED at a German target, not counted; got {stuffed:?}"
+    );
+    let undemonstrated: Vec<&str> = fired(&matched, CONSISTENCY_SKILL_NOT_DEMONSTRATED)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert_eq!(undemonstrated, vec!["kafka"]);
+}
+
+/// R12-F3 — the round-11 promotion gate was DOCUMENT-WIDE ("the parser found no
+/// heading at all"), and `export::parser`'s `SECTION_NAMES` is not English-only:
+/// "ausbildung", "kenntnisse", "formation" and "compétences" are all in it. One
+/// conventional single-word heading therefore switched promotion off for the
+/// whole document — including for the fix's own headline case, "Beruflicher
+/// Werdegang", in the completely ordinary mixed résumé below.
+#[test]
+fn a_title_cased_heading_is_promoted_beside_a_parser_recognised_one() {
+    // "Ausbildung" is a literal `SECTION_NAMES` entry; the other three headings
+    // are Title-Case and outside that list.
+    let resume = "Jana Mustermann\n\
+                  jana.mustermann@example.com | +49 30 7654321\n\n\
+                  Kurzprofil\n\n\
+                  Backend-Entwicklerin mit acht Jahren Erfahrung im Zahlungsverkehr.\n\n\
+                  Beruflicher Werdegang\n\n\
+                  Senior Backend Engineer | Acme Payments | 2021 - Heute\n\
+                  - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt\n\n\
+                  Technische Kenntnisse\n\n\
+                  Rust · Python · Docker · Kubernetes\n\n\
+                  Ausbildung\n\n\
+                  BSc Informatik, TU Berlin, 2014 - 2018\n";
+    let kinds: Vec<SectionKind> = split_sections(resume).iter().map(|s| s.kind).collect();
+    for expected in [
+        SectionKind::Summary,
+        SectionKind::Experience,
+        SectionKind::Skills,
+        SectionKind::Education,
+    ] {
+        assert!(
+            kinds.contains(&expected),
+            "{expected:?} must survive one parser-recognised sibling; got {kinds:?}"
+        );
+    }
+
+    // The user-visible damage: a résumé that has all three standard sections
+    // was told it was missing two of them, and its roles never counted.
+    let report = validate_content(&ContentInput {
+        generated: resume,
+        source_resume: resume,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::Resume,
+    });
+    silent(&report, ATS_MISSING_SECTION);
+    assert_eq!(report.metrics.roles_output, 1, "the entry is an entry");
+
+    // The negative twin, now in a WELL-HEADED document — the shape guards carry
+    // the whole weight once the document-wide gate is gone, so each one is
+    // exercised here on its own line, every candidate opening a block.
+    let prose = "Jana Mustermann\n\
+                 jana@example.com\n\n\
+                 BERUFSERFAHRUNG\n\n\
+                 Ich habe umfangreiche Erfahrung mit Docker und Kubernetes gesammelt.\n\n\
+                 Cloud Kubernetes Docker Redis Terraform\n\n\
+                 Erfahrung 2019\n\n\
+                 Kenntnisse: Rust, Python\n\n\
+                 Rust Python Go\n\
+                 Weitere Kenntnisse\n";
+    assert_eq!(
+        split_sections(prose).len(),
+        2,
+        "a line that merely carries a heading word is not a heading — too long \
+         (sentence), too many words, digit-bearing, punctuated, unclassified, or \
+         mid-block; got {:?}",
+        split_sections(prose)
+            .iter()
+            .map(|s| &s.heading)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// R12-F4 — round 11 folded a year test into [`looks_like_header_phone`] to stop
+/// a parenthesized DATE SPAN reading as an area code, and wrote off "a header
+/// phone containing a 1900–2099 run" as a missed skip. It is not a missed skip,
+/// it is an ACCUSATION channel: the source's contact band still drops such a
+/// line (via `is_bare_phone_line`), while the letter that repeats the same
+/// number keeps it (the shape test says it is not contact details) — so the
+/// candidate's own phone digits come back as a fabricated metric.
+#[test]
+fn a_header_phone_carrying_a_year_run_is_still_contact_details() {
+    assert!(looks_like_header_phone("+49 30 2019 1234"));
+    assert!(has_real_contact_match(
+        "Max Mustermann · Berlin · +49 30 2019 1234"
+    ));
+    // R11-F1 stays closed: a span is still not a phone number, on both callers.
+    assert!(!looks_like_header_phone("Beratung (2019 - 2021)"));
+    assert!(!has_real_contact_match(
+        "Contract work (2019 - 2021): 1 200 000 EUR in payment volume"
+    ));
+
+    let source = "Max Mustermann\n\
+                  max.mustermann@example.com\n\
+                  +49 30 2019 1234\n\n\
+                  EXPERIENCE\n\n\
+                  Acme Payments | 2021 - Present\n\
+                  - Cut checkout latency from 480ms to 90ms with a Redis cache\n";
+    let letter = "Max Mustermann · Berlin · +49 30 2019 1234\n\n\
+                  Dear Hiring Manager,\n\n\
+                  I put a Redis cache in front of the ledger service and checkout latency \
+                  went from 480ms to 90ms.\n\n\
+                  Best regards,\nMax Mustermann\n";
+    silent(
+        &letter_report_for(letter, source, EN_JOB_AD),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The invariant's own direction is unchanged: the source's contact band is
+    // dropped from the truth set, so its digits still cannot vouch for a body
+    // claim that merely reuses them.
+    let borrowed = "Max Mustermann\n\
+                    max.mustermann@example.com\n\
+                    +49 30 2019 1234\n\n\
+                    EXPERIENCE\n\n\
+                    Acme Payments | 2021 - Present\n\
+                    - Settled 1234 disputes in the first quarter after the rewrite\n";
+    let borrowed_report = report_for(borrowed, source, EN_JOB_AD, &[]);
+    let hits = fired(&borrowed_report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("1234"));
+
+    // …and a letter figure the source never states is still a Critical, so the
+    // skip exempts the letterhead rather than the letter.
+    let fabricated = "Max Mustermann · Berlin · +49 30 2019 1234\n\n\
+                      Dear Hiring Manager,\n\n\
+                      I put a Redis cache in front of the ledger service and settled 9400 \
+                      disputes in the same quarter.\n\n\
+                      Best regards,\nMax Mustermann\n";
+    let fabricated_report = letter_report_for(fabricated, source, EN_JOB_AD);
+    let hits = fired(&fabricated_report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("9400"));
+}

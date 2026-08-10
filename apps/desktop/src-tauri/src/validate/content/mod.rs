@@ -29,16 +29,16 @@
 //!
 //! Pure L1: no Tauri, no `AppHandle`, no emit, no I/O.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 use regex::Regex;
 use rust_stemmers::Stemmer;
 use serde::{Deserialize, Serialize};
 
-use crate::documents::evidence::{classify_section, years_in, SectionKind};
+use crate::documents::evidence::{classify_section, date_spans, SectionKind};
 use crate::documents::keywords::{
-    display_forms, keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
+    keyword_coverage, keywords, keywords_normalized, languages_align, make_stemmer,
 };
 use crate::export::parser::parse_resume;
 use crate::export::types::{LineKind, ParsedLine};
@@ -375,9 +375,6 @@ pub(crate) struct Analysis<'a> {
     pub job_keywords: HashSet<String>,
     pub generated_keywords: HashSet<String>,
     pub source_keywords: HashSet<String>,
-    /// Stem → readable, unstemmed form for every token in this report's three
-    /// documents. Empty when nothing was stemmed. See [`Analysis::display`].
-    display: HashMap<String, String>,
     /// The generated text is not in the target language. Every posting
     /// comparison is suppressed while this holds — coverage across two
     /// languages is noise, and a cascade of derived warnings would bury the one
@@ -405,18 +402,6 @@ impl<'a> Analysis<'a> {
                 keywords_normalized(text)
             }
         };
-        // Stems are an implementation detail of the comparison and must never
-        // reach a message — see [`Analysis::display`]. Built over all three
-        // documents because a finding can name a token from any of them.
-        let display = if aligned {
-            let corpus = format!(
-                "{}\n{}\n{}",
-                input.generated, input.source_resume, input.job_ad
-            );
-            display_forms(&corpus, &stemmer)
-        } else {
-            HashMap::new()
-        };
         Self {
             lang: lang.clone(),
             generated_sections: split_sections(input.generated),
@@ -425,7 +410,6 @@ impl<'a> Analysis<'a> {
             generated_keywords: tokens(input.generated),
             source_keywords: tokens(input.source_resume),
             language_mismatch: language_mismatch_for(input, &lang),
-            display,
             aligned,
             stemmer,
             input,
@@ -433,27 +417,26 @@ impl<'a> Analysis<'a> {
     }
 
     /// Tokenize `text` the same way both sides of this report were tokenized.
+    ///
+    /// Stems are an implementation detail of a comparison and must never reach a
+    /// message: a token taken straight from here reads as `kubernet`,
+    /// `develop`, `entwickl`, and telling a user their résumé never demonstrates
+    /// "kubernet" is a finding they cannot act on. This context used to carry a
+    /// stem → readable map for that, built over all three documents under THIS
+    /// (posting-keyed) alignment decision — but the one check that interpolated
+    /// a token into a message is `consistency::skill_not_demonstrated`, which
+    /// compares a document against ITSELF and therefore needs its own
+    /// document-keyed stemmer AND its own map to match. Two maps keyed on
+    /// different stemmers is how a display form comes back as a stem, so this
+    /// one is gone rather than kept for a caller that no longer exists. Any
+    /// future check that names a token owes its readable form to the same
+    /// decision it tokenized under.
     pub fn tokens(&self, text: &str) -> HashSet<String> {
         if self.aligned {
             keywords(text, &self.stemmer)
         } else {
             keywords_normalized(text)
         }
-    }
-
-    /// The readable form of a token, for interpolation into a user-facing
-    /// `message` or `evidence`.
-    ///
-    /// [`Analysis::tokens`] stems when the languages align, so a token taken
-    /// straight from a comparison reads as `kubernet`, `develop`, `entwickl`.
-    /// Telling a user their résumé never demonstrates "kubernet" is a finding
-    /// they cannot act on and does not trust. Every token that reaches a
-    /// message goes through here first.
-    pub fn display(&self, token: &str) -> String {
-        self.display
-            .get(token)
-            .cloned()
-            .unwrap_or_else(|| token.to_string())
     }
 
     /// Coverage of the posting by `tokens`, 0–100. `None` when the posting has
@@ -670,20 +653,43 @@ fn reads_as_heading(line: &ParsedLine) -> bool {
 /// "is this in a non-first section?" is just an index test.
 ///
 /// A line the parser did not recognise is promoted to a heading by
-/// [`reads_as_heading`] — but ONLY in a document where the parser found no
-/// heading at all. That gate is the same "no better signal was available" rule
-/// `documents::evidence`'s unclassified-section fallback uses: a document the
-/// parser already sectioned is not the failure this repairs, and promoting a
-/// mid-document line on a substring lexicon could otherwise split a role in
-/// half. The residual it leaves is a MIXED document (one recognised heading
-/// plus three Title-Case ones), which still under-sections; that is a partial
-/// degrade instead of a total collapse, and widening it needs a per-section
-/// rule rather than a document-wide one.
+/// [`reads_as_heading`], **per line**.
+///
+/// ## Why the document-wide gate is gone
+///
+/// The promotion used to run only in a document where `export::parser` found NO
+/// heading at all — the same "no better signal was available" rule
+/// `documents::evidence`'s unclassified-section fallback uses. That reading
+/// assumed the parser's `SECTION_NAMES` was English-only, and it is not: it
+/// carries "ausbildung", "kenntnisse", "sprachen", "formation", "compétences"
+/// and their siblings in seven locales. So ONE conventional single-word heading
+/// ("Ausbildung") switched promotion off for the whole document — including for
+/// this repair's own headline case, "Beruflicher Werdegang", in the completely
+/// ordinary mixed résumé that heads three of its four sections in Title-Case and
+/// the fourth in a word the list happens to hold. That document then reports the
+/// Experience and Skills sections it visibly has as MISSING, and counts none of
+/// its roles.
+///
+/// ## What defends the promotion instead
+///
+/// The risk the gate was covering is an ordinary prose line resembling a heading
+/// in the MIDDLE of a well-headed document, which would split a role in half. It
+/// is covered by [`reads_as_heading`]'s own shape guards, which is where a
+/// statement about what a heading LOOKS like belongs: the classifier must
+/// recognise the line (a generic shape is never promoted), the parser must have
+/// left it as plain `Text`/`Name`, it must open a block, and it must carry no
+/// digits and no sentence/column punctuation. A stack line or a bullet
+/// continuation fails the block test; a sentence fails the length and
+/// punctuation tests; and the digit rule still guarantees promotion cannot
+/// remove a FIGURE from the source's metric set.
+///
+/// *Residual, stated:* a ≤4-word, digit-free, punctuation-free `Text` line that
+/// opens a block AND carries a heading stem ("Cloud Kubernetes Docker" would, at
+/// four words) is promoted wherever it sits. That was already accepted for a
+/// heading-less document; it is the same error, now reachable in a headed one,
+/// and it costs a section split rather than a false accusation.
 pub(crate) fn split_sections(text: &str) -> Vec<Section> {
     let lines = parse_resume(text).lines;
-    let parser_found_headings = lines
-        .iter()
-        .any(|l| matches!(l.kind, LineKind::SectionHeader));
     let mut sections = vec![Section {
         heading: None,
         kind: SectionKind::Other,
@@ -692,7 +698,7 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
     let mut opens_a_block = true;
     for line in lines {
         let is_heading = matches!(line.kind, LineKind::SectionHeader)
-            || (!parser_found_headings && opens_a_block && reads_as_heading(&line));
+            || (opens_a_block && reads_as_heading(&line));
         opens_a_block = matches!(line.kind, LineKind::Blank);
         if is_heading {
             sections.push(Section {
@@ -741,29 +747,43 @@ pub(crate) fn split_sections(text: &str) -> Vec<Section> {
 static HEADER_PHONE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[+(]\s*\d[\d\s\-./()]{5,}\d|\d{7,}").unwrap());
 
-/// Whether `text` carries a header-shaped phone number **and no year**. See
+/// Whether `text` carries a header-shaped phone number **and no date span**. See
 /// [`HEADER_PHONE_RE`]; `pub(crate)` so `ats::is_contact_cluster` and
 /// [`has_real_contact_match`] cannot drift apart again.
 ///
-/// ## Why the year test is part of the SHAPE, not of a call site
+/// ## Why the span test is part of the SHAPE, not of a call site
 ///
 /// The `[+(]` arm matches a parenthesized DATE SPAN exactly as readily as an
 /// area code: `(2019 - 2021)` is `(`, a digit, eight separator-or-digit
-/// characters and a digit. `ats::is_contact_cluster` carried its own
-/// `years_in(…).is_empty()` clause against precisely that, and the other
-/// caller — [`has_real_contact_match`] — did not, so the two answers to one
-/// question disagreed. A pre-heading line carrying a span ("Contract work
-/// (2019 - 2021): 1 200 000 EUR in payment volume") was read as contact details
-/// and struck out of the SOURCE's metric set, and restating its figure came
-/// back as a fabrication Critical. One helper, one guard, both callers.
+/// characters and a digit. `ats::is_contact_cluster` carried its own guard
+/// against precisely that, and the other caller — [`has_real_contact_match`] —
+/// did not, so the two answers to one question disagreed. A pre-heading line
+/// carrying a span ("Contract work (2019 - 2021): 1 200 000 EUR in payment
+/// volume") was read as contact details and struck out of the SOURCE's metric
+/// set, and restating its figure came back as a fabrication Critical. One
+/// helper, one guard, both callers.
 ///
-/// *Cost, accepted:* a header phone number that happens to contain a 1900–2099
-/// four-digit run ("+49 30 2019 1234") is no longer read as contact details.
-/// That is a missed skip — this family's chosen direction of error — and a
-/// header block essentially always carries an email as well, which every caller
-/// tests separately.
+/// ## Why the guard is [`date_spans`] and not "carries a year"
+///
+/// The statement being made is *a date span is not a phone number*, and the
+/// first cut of it tested for a bare 1900–2099 run instead — strictly broader
+/// than the shape it named, and it wrote off the difference as an accepted
+/// missed skip ("+49 30 2019 1234" is a perfectly ordinary German number). That
+/// was the wrong cost direction. `factual::metric_lines`' SOURCE side still
+/// drops such a line from the truth set inside the contact band (it is a bare
+/// phone line by shape), while the letter that repeats the same number keeps it
+/// (this test said it was not contact details) — so the two sides dropped one
+/// line through two different rules and the candidate's own phone digits came
+/// back as a fabricated metric. A drop from the truth set that the claims side
+/// does not mirror is an accusation channel, not a missed check.
+///
+/// [`date_spans`] requires a span SEPARATOR between two years, so it matches the
+/// statement exactly: `(2019 - 2021)`, `(Jan 2019 – Mar 2021)` and `2018 to
+/// 2021` are refused, and a subscriber number that happens to contain one
+/// year-shaped run is contact details again — on BOTH callers, which is the
+/// whole point of the guard living here.
 pub(crate) fn looks_like_header_phone(text: &str) -> bool {
-    HEADER_PHONE_RE.is_match(text) && years_in(text).is_empty()
+    HEADER_PHONE_RE.is_match(text) && date_spans(text).is_empty()
 }
 
 /// A line that really does carry contact details: a genuine email address, or a

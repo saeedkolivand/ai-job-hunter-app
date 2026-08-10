@@ -285,6 +285,20 @@ fn is_bare_phone_line(text: &str) -> bool {
 /// details" means the contact BAND filtered by shape, not any line that happens
 /// to look numeric.
 ///
+/// ## (2) is a statement about the two SHAPE TESTS agreeing, not just the sides
+///
+/// The band keeps TWO tests — [`has_real_contact_match`] and
+/// [`is_bare_phone_line`] — and they must answer the same way about the same
+/// number however it is written, or a line the source drops is one the claims
+/// side keeps and the invariant fails across the two documents rather than
+/// inside one. That is exactly what a too-broad guard in
+/// [`super::looks_like_header_phone`] did: a contact-band line reading
+/// "+49 30 2019 1234" was dropped from the truth set as a bare phone line, while
+/// the letter restating the same number with words around it kept it (the shape
+/// test refused it for carrying a year), and the candidate's own phone came back
+/// as a fabricated metric. The repair is in the shape test, where the statement
+/// belongs — a DATE SPAN is not a phone number, a year-shaped run inside one is.
+///
 /// *Residual, stated rather than hidden:* a contact-shaped line the shape test
 /// misses (a long prose letterhead, an address line with no phone or email) is
 /// read as source text, so its digits can vouch for a claim. That is a missed

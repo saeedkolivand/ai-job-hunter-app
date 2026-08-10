@@ -71,8 +71,20 @@ const REQUIRED_SECTIONS: &[(SectionKind, &str)] = &[
 /// stand behind — `documents::evidence::has_curated_function_words` is the one
 /// place that decides, and adding a list to `function_words` re-enables this
 /// automatically.
+///
+/// The same argument closes one more door. `ctx.lang` is the language the
+/// document was ASKED for, and every sentence above assumes the document is
+/// written in it. [`Analysis::language_mismatch`] is the measurement that it is
+/// not — taken against a reliable source control, and already reported as its
+/// own Critical — and while it holds, `function_words(&ctx.lang)` filters words
+/// that are not on the page: an English target with German output counted
+/// `verantwortlich` and `für` as repeated keywords and accused ordinary German
+/// prose of stuffing, underneath the one finding the user can act on. An
+/// accusation about density in a document we already know we are reading in the
+/// wrong language is noise, so this suppresses exactly the way
+/// [`Analysis::posting_comparable`] does.
 fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if !has_curated_function_words(&ctx.lang) {
+    if ctx.language_mismatch || !has_curated_function_words(&ctx.lang) {
         return Vec::new();
     }
     let stop = function_words(&ctx.lang);
