@@ -151,8 +151,10 @@ export function resolveEffectiveTier(model: string, provider: AiProvider): Model
  * Build a {@link ProviderProfile} from the currently active provider config.
  *
  * Passing this to prompt builders instead of a bare tier string enables
- * provider-aware tailoring: cloud context-window sizing, CLI task-brief depth,
- * and native structured-output routing.
+ * provider-aware tailoring: cloud context-window sizing and CLI task-brief
+ * depth. Native structured output is NOT part of this profile — the Rust
+ * provider layer decides it per request (`AiProvider::complete_structured`),
+ * where the live provider id, model, and schema are actually known.
  *
  * @param fallbackModel - Forwarded to `resolveActiveProvider`.
  */
@@ -172,10 +174,6 @@ export function buildProviderProfile(fallbackModel = ''): ProviderProfile {
     kind,
     model: activeModel || undefined,
     contextWindow: localLimits?.contextWindow,
-    // supportsStructuredOutput: cloud providers support it; ollama/cli do not
-    // (the Rust adapter wave will wire this; leave as undefined = auto-resolved
-    // by resolveProfile inside the prompt builders).
-    supportsStructuredOutput: kind === 'cloud' ? true : undefined,
     sizeHint: kind === 'ollama' ? tier : undefined,
   };
 }

@@ -14,6 +14,7 @@
 
 pub mod cache;
 pub mod enrichment;
+pub mod json;
 
 use async_trait::async_trait;
 use tauri::{AppHandle, Manager};

@@ -2190,8 +2190,13 @@ fn pathological_bullet_count_returns_quickly_and_still_flags_a_duplicate_within_
     let (issues, ratio) = duplicates::validate(&ctx);
     let elapsed = start.elapsed();
 
+    // The bound discriminates capped from uncapped, not fast from slow: capped,
+    // the scan is linear tokenization + a bounded pairwise pass (~2.2s worst
+    // observed on a slow shared CI runner in a debug build); uncapped, 6,000
+    // bullets is ~18M pairwise comparisons — tens of seconds anywhere. 500ms
+    // held locally but failed every CI retry, blocking merges on runner speed.
     assert!(
-        elapsed < std::time::Duration::from_millis(500),
+        elapsed < std::time::Duration::from_secs(10),
         "the pairwise duplicate scan must stay bounded past MAX_DUP_BULLETS bullets, \
          took {elapsed:?}"
     );

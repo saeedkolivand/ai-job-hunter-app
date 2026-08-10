@@ -156,6 +156,40 @@ fn pagination_step_is_stalled_not_done_on_a_non_advancing_cursor() {
     );
 }
 
+#[tokio::test]
+async fn bounded_maps_an_expired_deadline_to_a_named_network_error() {
+    // The third member of the pagination trio had no test at all. It is the
+    // one that decides what a stalled page fetch LOOKS like: a timeout has to
+    // arrive as `AppError::Network` (retryable, and rendered as a connectivity
+    // problem), never as a `Provider`/`Unknown` error the caller would report
+    // as "the provider rejected the request", and it has to name the provider
+    // so the message says WHICH catalogue fetch gave up. Mutation check: swap
+    // the variant in `bounded`'s `map_err`, or drop `{provider}` from the
+    // message, and this fails.
+    let expired = tokio::time::Instant::now();
+    let error = bounded(expired, "anthropic", std::future::pending::<()>())
+        .await
+        .expect_err("an already-expired deadline must not resolve");
+    assert!(
+        matches!(error, crate::error::AppError::Network(_)),
+        "a cumulative-deadline timeout must be a Network error, got {error:?}"
+    );
+    assert!(
+        error.to_string().contains("anthropic"),
+        "the message must name the provider: {error}"
+    );
+
+    // …and the wrapper is not simply always-failing: a future that resolves
+    // inside the deadline passes its value straight through.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    assert_eq!(
+        bounded(deadline, "gemini", std::future::ready(7))
+            .await
+            .expect("resolves before the deadline"),
+        7
+    );
+}
+
 #[test]
 fn cosine_identical_vectors_is_one() {
     let a = vec![1.0, 2.0, 3.0];
