@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::ai_generations::sanitize_quality_report;
 use crate::ipc_contracts::ai::{AiGenerationSaveRequest, AiGenerationUpdateRequest};
 
 #[tauri::command]
@@ -53,6 +54,16 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
         email_subject: req.email_subject,
         email_body: req.email_body,
         application_id: None,
+        // Absent = "this save carries no fresh report" — `save_application`'s
+        // merge (`merge_quality_report`) keeps whatever report is already on
+        // the aggregate for exactly that case. An over-cap report hits the
+        // same "no report" outcome deliberately: a byte-position clamp would
+        // truncate mid-JSON instead, which `merge_quality_report` would then
+        // treat as unparseable and silently drop with no signal at all.
+        quality_report: sanitize_quality_report(
+            req.quality_report.unwrap_or_default(),
+            "ai_generations_save",
+        ),
     };
 
     // ADR 0001: the Application aggregate is the source of truth for status +

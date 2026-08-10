@@ -55,10 +55,15 @@ import { buildReferralPrompt } from '../referral/index.js';
 import { buildResumeSystemPrompt } from '../resume/index.js';
 import { buildRewritePrompt } from '../rewrite/index.js';
 import {
+  AI_TELL_LEXICAL_WORDS_DE,
+  AI_TELL_LEXICAL_WORDS_EN,
+  AI_TELL_PROSE_WORDS_DE,
+  AI_TELL_PROSE_WORDS_EN,
   antiAiTellLexical,
   antiAiTellProse,
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
+  TEMPLATE_OPENERS_DE,
   toneDirective,
 } from './natural-voice.js';
 
@@ -767,4 +772,192 @@ describe('cover-letter — forced personal specifics + non-generic opening hook'
       expect(prompt).toMatch(/mit großem Interesse/i);
     });
   }
+});
+
+// ─── 11. OPENER-BAN EXAMPLES — distinct families + correctly-cased German ────
+// (ai-provider-expert M-4) Regression coverage for two bugs in one earlier
+// revision: (a) the two English examples were both "I am writing to..."
+// variants (near-duplicates) and silently dropped the excited-to-apply
+// family; (b) the German example was rendered through the same
+// first-letter-only `capitalizeOpener` used for English, which left German
+// mid-sentence nouns lowercase ("Mit großem interesse ... ihre
+// stellenanzeige") — invalid German orthography.
+
+describe('cover-letter — opener-ban examples: distinct EN families + correctly-cased German', () => {
+  const EXPECTED_EN = '"I am writing to express...", "I am excited to apply..."';
+  const EXPECTED_DE = 'a literal "Mit großem Interesse habe ich Ihre Stellenanzeige..." in German';
+
+  for (const [label, target] of [
+    ['brief (small)', BRIEF_TARGET],
+    ['task (cli)', TASK_TARGET],
+    ['full (large)', FULL_TARGET],
+  ] as const) {
+    it(`pins the exact EN + DE opener examples at ${label} depth`, () => {
+      const prompt = buildCoverLetterSystemPrompt('recruiter', target);
+      expect(prompt).toContain(EXPECTED_EN);
+      expect(prompt).toContain(EXPECTED_DE);
+    });
+  }
+
+  it('the two EN examples are distinct opener families, never both "I am writing to..."', () => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET);
+    expect(prompt).toContain('I am excited to apply');
+    expect(prompt).toContain('I am writing to express');
+  });
+
+  it('the German example keeps German mid-sentence noun capitalization (case-sensitive)', () => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET);
+    expect(prompt).toContain('Mit großem Interesse habe ich Ihre Stellenanzeige');
+    expect(prompt).not.toContain('Mit großem interesse habe ich ihre stellenanzeige');
+  });
+
+  it('the German example is the same phrase as TEMPLATE_OPENERS_DE[2] (case-insensitive)', () => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET);
+    expect(prompt.toLowerCase()).toContain(TEMPLATE_OPENERS_DE[2]);
+  });
+});
+
+// ─── 12. ARRAY -> PROMPT DIRECTION GUARD ──────────────────────────────────────
+// The prompt -> Rust direction is already pinned mechanically: `pnpm
+// gen:prompts:check` (CI) fails whenever `lexicon.rs` drifts from these same
+// arrays. This is the missing reverse direction (ai-provider-expert M-3):
+// every entry the Rust validator bans must also be something the PROMPT
+// actually told the model to avoid — otherwise the validator flags prose the
+// model was never instructed to avoid, a false-positive machine.
+//
+// Scoped to AI_TELL_LEXICAL_WORDS_*/AI_TELL_PROSE_WORDS_*, which are designed
+// as near-verbatim mirrors of the prose (every entry is meant to be spelled
+// out literally — see ANTI_AI_TELL_LEXICAL_EN's comma list). TEMPLATE_OPENERS_
+// EN/DE are deliberately NOT exhaustively checked here: the prompt only ever
+// quotes 2-3 REPRESENTATIVE openers by design (quoting all 10 EN + 6 DE
+// clichés would bloat the prompt for no detection benefit — the Rust
+// validator is what needs the exhaustive list, the prompt just needs to make
+// the pattern clear). The representative subset the prompt DOES quote is
+// pinned exactly by section 11 above instead, which is the achievable form of
+// this same direction guard for that array.
+
+describe('array -> prompt direction guard (AI_TELL_* — mirrors the existing prompt -> Rust codegen pin)', () => {
+  const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
+  const RESUME_DE = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'de');
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+  const LETTER_DE = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'de');
+
+  // "it's" / "it is" are both valid AI_TELL_PROSE_WORDS_EN entries (a generated
+  // letter may spell the contraction either way), but the prompt prose only
+  // spells out one form ("it's not about X, it's about Y") — normalize the
+  // contraction so the substring check still finds the expanded entry.
+  const normalize = (s: string) => s.toLowerCase().replace(/it's/g, 'it is');
+  const bannedBy = (prompt: string, entry: string) => normalize(prompt).includes(normalize(entry));
+
+  it.each(AI_TELL_LEXICAL_WORDS_EN)(
+    'AI_TELL_LEXICAL_WORDS_EN entry %j is banned by the resume prompt',
+    (entry) => {
+      expect(bannedBy(RESUME_EN, entry)).toBe(true);
+    }
+  );
+
+  it.each(AI_TELL_LEXICAL_WORDS_DE)(
+    'AI_TELL_LEXICAL_WORDS_DE entry %j is banned by the resume prompt',
+    (entry) => {
+      expect(bannedBy(RESUME_DE, entry)).toBe(true);
+    }
+  );
+
+  it.each(AI_TELL_PROSE_WORDS_EN)(
+    'AI_TELL_PROSE_WORDS_EN entry %j is banned by the cover-letter prompt',
+    (entry) => {
+      expect(bannedBy(LETTER_EN, entry)).toBe(true);
+    }
+  );
+
+  it.each(AI_TELL_PROSE_WORDS_DE)(
+    'AI_TELL_PROSE_WORDS_DE entry %j is banned by the cover-letter prompt',
+    (entry) => {
+      expect(bannedBy(LETTER_DE, entry)).toBe(true);
+    }
+  );
+});
+
+// ─── 13. CONSTRUCTION-DEPENDENT RULES ARE PROMPT-ONLY ─────────────────────────
+// Section 12 above proves every lexicon entry is SPELLED OUT in the prompt.
+// That is necessary but not sufficient (MEDIUM, PR #963 round 8): the prompt
+// can spell a word out while banning it only in a specific CONSTRUCTION, and a
+// substring check in the Rust validator has no way to see the construction. It
+// flagged "a dashboard highlighting anomalies in real time" and "this was not
+// just a side project" — prose the prompt explicitly permits.
+//
+// So the split is: constructions live in the prompt prose (the model can judge
+// them), phrases live in the array (a substring check can judge those). These
+// tests pin BOTH halves — the guidance must not quietly disappear with the
+// lexicon entries, and the entries must not quietly come back.
+
+describe('construction-dependent prose rules: kept in the prompt, absent from the lexicon', () => {
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  it('the prompt still bans negative parallelism, with both worked examples', () => {
+    expect(LETTER_EN).toContain('No negative parallelisms');
+    expect(LETTER_EN).toContain('not just X, but Y');
+    expect(LETTER_EN).toContain("it's not about X, it's about Y");
+  });
+
+  it('the prompt still bans superficial "-ing" openers and tails, by example', () => {
+    expect(LETTER_EN).toContain('No superficial "-ing" openers or tails');
+    for (const word of ['highlighting', 'showcasing', 'underscoring']) {
+      expect(LETTER_EN).toContain(word);
+    }
+  });
+
+  it.each([
+    'not just',
+    "it's not about",
+    'it is not about',
+    'highlighting',
+    'showcasing',
+    'underscoring',
+  ])('%j is prompt-only: a bare substring ban would flag permitted prose', (phrase) => {
+    expect(AI_TELL_PROSE_WORDS_EN).not.toContain(phrase);
+  });
+
+  it('every surviving EN entry is a phrase the prompt bans wherever it appears', () => {
+    expect(AI_TELL_PROSE_WORDS_EN).toEqual([
+      'it is important to note',
+      'generally speaking',
+      'with that in mind',
+      'building on this',
+    ]);
+  });
+
+  // The German twin of the same defect (PR #963 round 9). ANTI_AI_TELL_LEXICAL_DE
+  // bans a Nominalstil sentence OPENER and quotes "Die Umsetzung von X erfolgte
+  // durch..." as the illustrative example; 'erfolgte durch' in the array flagged
+  // the phrase wherever it appeared, including mid-sentence clauses the prompt
+  // permits. Both halves are pinned: the guidance stays, the entry goes.
+  const LETTER_DE_PROMPT = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'de');
+
+  it('the German prompt still bans the Nominalstil opener, with its worked example', () => {
+    expect(LETTER_DE_PROMPT).toContain('formelhafte Nominalstil-Einstiege');
+    expect(LETTER_DE_PROMPT).toContain('erfolgte durch');
+    expect(LETTER_DE_PROMPT).toContain('verbführenden Satz');
+  });
+
+  it("'erfolgte durch' is prompt-only: the ban is on the opener, not the phrase", () => {
+    expect(AI_TELL_PROSE_WORDS_DE).not.toContain('erfolgte durch');
+  });
+
+  // An empty list is the honest outcome, not an oversight — see the array's
+  // own doc. Pinned so a later "the DE list looks empty, let's add something"
+  // has to argue with the rule instead of the emptiness.
+  it('the DE prose lexicon is empty: German has no unconditionally-banned prose phrase', () => {
+    expect(AI_TELL_PROSE_WORDS_DE).toEqual([]);
+  });
+
+  it('the DE prose rules that remain are all judgements a substring cannot make', () => {
+    for (const rule of [
+      'Kein Dreiklang-Zwang',
+      'Kein identischer Absatzanfang',
+      'Variiere Satzlänge',
+    ]) {
+      expect(LETTER_DE_PROMPT).toContain(rule);
+    }
+  });
 });

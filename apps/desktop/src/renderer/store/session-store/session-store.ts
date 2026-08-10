@@ -9,6 +9,7 @@ import type {
   GenerationMeta,
   GenerationMode,
   LetterLayoutId,
+  QualityReport,
   TemplateId,
 } from '@/lib/generate';
 import type { AnalysisMode, AnalysisResult } from '@/lib/resume-ai';
@@ -45,6 +46,9 @@ interface AIGenerateSlice {
   coverOut: string;
   activeOut: 'resume' | 'cover';
   wizardStep: number;
+  /** Deterministic content-quality report for the most recent generation
+   *  (ADR-007 addendum) — additive sibling to `meta`, never read by `stage`. */
+  report: QualityReport | null;
 }
 
 type AnalyzeStage = 'idle' | 'running' | 'done';
@@ -186,6 +190,7 @@ const AI_GENERATE_DEFAULTS: AIGenerateSlice = {
   coverOut: '',
   activeOut: 'resume',
   wizardStep: 0,
+  report: null,
 };
 
 const APPLICATION_APPLY_DEFAULTS: ApplicationApplySlice = {

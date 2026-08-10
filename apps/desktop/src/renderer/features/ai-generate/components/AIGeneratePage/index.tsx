@@ -16,6 +16,7 @@ import { OutputPanelIdle } from '@/features/ai-generate/components/OutputPanelId
 import { useFileUpload } from '@/features/ai-generate/hooks/useFileUpload';
 import { useGeneration } from '@/features/ai-generate/hooks/useGeneration';
 import { useStageRotation } from '@/features/ai-generate/hooks/useStageRotation';
+import { useQualityRecheck } from '@/hooks/use-quality-recheck';
 import { useResearchCompanyDefault } from '@/hooks/use-research-company-default';
 import {
   buildFilename,
@@ -56,6 +57,7 @@ export function AIGeneratePage() {
     resumeOut,
     coverOut,
     activeOut,
+    report,
   } = aiGenerate;
 
   const setResume = (v: string) => setAIGenerate({ resume: v });
@@ -69,6 +71,7 @@ export function AIGeneratePage() {
   const setStage = (v: typeof stage) =>
     setAIGenerate(v === 'configuring' ? { stage: v, wizardStep: 0 } : { stage: v });
   const setMeta = (v: typeof meta) => setAIGenerate({ meta: v });
+  const setReport = (v: typeof report) => setAIGenerate({ report: v });
   const setMode = (v: GenerationMode) => setAIGenerate({ mode: v });
   const setEmphasis = (v: EmphasisId[]) => setAIGenerate({ emphasis: v });
   const setTarget = (v: 'resume' | 'cover' | 'both') => setAIGenerate({ target: v });
@@ -133,6 +136,7 @@ export function AIGeneratePage() {
     selectedModel,
     setStage,
     setMeta,
+    setReport,
     setResumeOut,
     setCoverOut,
     setActiveOut,
@@ -157,6 +161,26 @@ export function AIGeneratePage() {
     jobUrl,
     board
   );
+
+  // Quality panel "Re-check" for the active document — owned HERE, not in
+  // OutputPanelDone: this page holds the run state (`isGenerating`) and the
+  // outputs, and it stays mounted across a run, while the done panel is swapped
+  // out the moment Regenerate sets stage `generating` (an exiting
+  // AnimatePresence child is never re-rendered with the new props, so a guard
+  // living down there would be frozen at its pre-Regenerate values).
+  const { recheck, rechecking } = useQualityRecheck({
+    report,
+    meta,
+    sourceResume: resume,
+    jobAd,
+    docKind: activeOut === 'resume' ? 'resume' : 'coverLetter',
+    onReportChange: setReport,
+    resumeText: resumeOut,
+    coverLetterText: coverOut,
+    generating: isGenerating,
+    jobUrl,
+    board,
+  });
 
   const canProceed = resume.trim().length > 50 && jobAd.trim().length > 50;
   const canGenerate = canProceed && canUseAI;
@@ -183,9 +207,10 @@ export function AIGeneratePage() {
   };
 
   const reset = () => {
-    if (abortControllerRef.current && stage === 'generating') {
-      abortControllerRef.current.abort();
-    }
+    // Abort whenever a run is in flight — including the post-generation
+    // validation/save window (stage is already 'done' there, not 'generating'),
+    // so Reset can't leave a stale save persisting after the user left.
+    abortControllerRef.current?.abort();
     stopStageRotation();
     setError(null);
     setStreamBuffer('');
@@ -353,6 +378,9 @@ export function AIGeneratePage() {
                 coverOut={coverOut}
                 activeOut={activeOut}
                 meta={meta}
+                report={report}
+                onRecheck={recheck}
+                rechecking={rechecking}
                 sourceResume={resume}
                 jobAd={jobAd}
                 mode={mode}

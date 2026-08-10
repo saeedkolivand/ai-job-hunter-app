@@ -327,6 +327,19 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
 
     resume: {
       extractText: noop,
+      // Canned "clean" report by default — tests that care about issues/severity
+      // override `resume.validateContent` per-call via `overrides`.
+      validateContent: async () => ({
+        ok: true,
+        issues: [],
+        metrics: {
+          keywordCoverage: null,
+          topRequirementHits: 0,
+          duplicateRatio: 0,
+          rolesSource: 0,
+          rolesOutput: 0,
+        },
+      }),
     },
 
     support: {

@@ -1439,6 +1439,83 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Centred letterhead over a ruled line. Pairs with Cologne Navy."
   },
+  "quality": {
+    "badge": {
+      "clean": "Checked — no issues",
+      "issues_one": "{{count}} issue ({{critical}} critical)",
+      "issues_other": "{{count}} issues ({{critical}} critical)",
+      "open": "Open the quality report",
+      "stale": "Checked before your edits",
+      "staleTooltip": "This document changed after the check — the results may be out of date."
+    },
+    "panel": {
+      "resumeTitle": "Résumé quality report",
+      "coverLetterTitle": "Cover letter quality report",
+      "documentWide": "Document-wide",
+      "critical": "Critical",
+      "warning": "Warning",
+      "emptyTitle": "No issues found",
+      "emptyDescription": "This document passed every deterministic check.",
+      "staleNotice": "This document has been edited since this report was generated — the issues below may no longer reflect the current text.",
+      "recheck": "Re-check",
+      "rechecking": "Checking…",
+      "metrics": {
+        "title": "Metrics",
+        "keywordCoverage": "Keyword coverage",
+        "topRequirementHits": "Top requirements covered",
+        "duplicateRatio": "Duplicate bullets",
+        "roles": "Roles (source → output)"
+      }
+    },
+    "nudge": {
+      "message": "Consider hand-editing a line or two in your own voice before you send this.",
+      "dismiss": "Dismiss"
+    },
+    "fallback": "A deterministic check flagged this — review the evidence below.",
+    "issue": {
+      "factual": {
+        "unsourced_metric": "This number doesn't appear in your résumé — confirm it's accurate before sending.",
+        "dropped_role": "A role from your résumé seems to be missing from this document.",
+        "unsupported_date": "This date doesn't match your résumé — double-check it.",
+        "altered_project_link": "A project link here looks different from your résumé — verify it's correct.",
+        "unsourced_term": "This term doesn't appear in your résumé — make sure it's accurate."
+      },
+      "content": {
+        "language_mismatch": "This text doesn't match the target language."
+      },
+      "alignment": {
+        "low_coverage": "This document covers little of the job ad's vocabulary — consider weaving in more of it.",
+        "missing_top_requirement": "A top requirement from the job ad isn't evidenced here."
+      },
+      "consistency": {
+        "date_order": "Dates in this section aren't in the expected order.",
+        "title_drift": "A job title here doesn't match your résumé.",
+        "skill_not_demonstrated": "A claimed skill isn't backed by an example — consider adding one.",
+        "project_structure": "A project entry doesn't follow the usual format."
+      },
+      "duplicate": {
+        "bullet": "This bullet is very similar to another one — consider merging or varying it."
+      },
+      "ats": {
+        "keyword_density": "Keyword usage here may read as stuffed rather than natural.",
+        "header_in_body": "Contact-shaped text appears outside the header — move it up top.",
+        "missing_section": "An expected section seems to be missing.",
+        "long_bullet": "This bullet is long — consider tightening it.",
+        "bullet_count": "This section has an unusual number of bullets."
+      },
+      "voice": {
+        "ai_tell_lexical": "A word or phrase here commonly reads as AI-generated — consider rephrasing.",
+        "template_opener": "This opening line reads like a generic template.",
+        "low_burstiness": "Sentence rhythm here is very uniform — try varying sentence length.",
+        "rule_of_three_density": "Several three-item lists in a row can read as formulaic.",
+        "em_dash_overuse": "Frequent em dashes here can read as AI-generated.",
+        "generic_letter": "This letter reads generically — consider adding a specific detail about the role or company."
+      },
+      "report": {
+        "truncated": "Some issues aren't shown — the full check found more than fit in this report."
+      }
+    }
+  },
   "autopilot": {
     "title": "Autopilot",
     "subtitle": "Automated job search and application workflows",

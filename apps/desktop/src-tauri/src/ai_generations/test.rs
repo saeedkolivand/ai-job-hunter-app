@@ -25,6 +25,7 @@ fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         email_subject: String::new(),
         email_body: String::new(),
         application_id: None,
+        quality_report: String::new(),
     }
 }
 
@@ -110,6 +111,7 @@ fn migration_defaults_link_fields_for_legacy_records() {
     assert!(list[0].interview_questions.is_empty());
     assert_eq!(list[0].email_subject, "");
     assert_eq!(list[0].email_body, "");
+    assert_eq!(list[0].quality_report, "");
 }
 
 /// A backup round-trip must carry the email draft — otherwise restoring a
@@ -239,6 +241,76 @@ fn add_email_draft_migration_backfills_legacy_rows_with_empty_strings() {
     assert_eq!(list[0].resume_text, "R", "existing data is untouched");
     assert_eq!(list[0].email_subject, "", "new column defaults to empty");
     assert_eq!(list[0].email_body, "");
+}
+
+/// A DB created before `add_quality_report` (schema at the previous migration)
+/// must gain the column with a `''` default for every existing row, and a
+/// later save must be able to merge onto that backfilled row: a content-less
+/// save leaves it alone, a save carrying a fresh wrapper replaces it outright
+/// (nothing to merge a key onto — see `merge_quality_report`).
+#[test]
+fn add_quality_report_migration_backfills_legacy_rows_and_a_later_save_replaces_it() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("ai_generations.db");
+    let job_url = "https://acme.com/job/legacy";
+    {
+        // Build the store at the PREVIOUS schema version by running every
+        // migration up to (not including) `add_quality_report`. Looked up BY
+        // NAME rather than "all but the last" so this stays correct
+        // regardless of what gets appended after it.
+        let all = AiGenerationStore::MIGRATIONS;
+        let add_quality_report_idx = all
+            .iter()
+            .position(|m| m.name == "add_quality_report")
+            .expect("add_quality_report must still be registered");
+        let mut conn = crate::db::open(&path).unwrap();
+        crate::db::run_migrations(&mut conn, &all[..add_quality_report_idx]).unwrap();
+        assert!(
+            !crate::db::column_exists(&conn, "ai_generations", "quality_report"),
+            "precondition: the legacy schema has no quality_report column"
+        );
+        conn.execute(
+            "INSERT INTO ai_generations (id, created_at, resume_text, cover_letter_text, job_url)
+             VALUES ('legacy', 1000, 'R', 'C', ?1)",
+            params![job_url],
+        )
+        .unwrap();
+    }
+
+    // Opening with the full migration list applies `add_quality_report` in
+    // place — the legacy row backfills to ''.
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let list = store.list();
+    assert_eq!(list.len(), 1, "the legacy row must survive the migration");
+    assert_eq!(list[0].id, "legacy");
+    assert_eq!(list[0].quality_report, "", "new column defaults to empty");
+
+    // A content-less (answers-only) save merges into the legacy row and must
+    // leave the backfilled empty report alone.
+    let mut answers_only = record("g-answers", job_url);
+    answers_only.resume_text = String::new();
+    answers_only.cover_letter_text = String::new();
+    answers_only.quality_report = String::new();
+    answers_only.application_answers = vec![answer("why-company")];
+    store.save_application(answers_only).unwrap();
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "a content-less save must leave the backfilled empty report alone"
+    );
+
+    // A résumé save carrying a fresh wrapper report replaces the (unparseable,
+    // empty) existing value outright.
+    let mut resume_save = record("g-resume", job_url);
+    resume_save.cover_letter_text = String::new();
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":42,"resume":{"ok":true}}"#.into();
+    store.save_application(resume_save).unwrap();
+    assert_eq!(
+        store.list()[0].quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":42,"resume":{"ok":true}}"#,
+        "a résumé save must replace the backfilled empty report with its wrapper"
+    );
 }
 
 /// Bring a fresh DB up to JUST BEFORE the repair migration (simulating an
@@ -1276,5 +1348,461 @@ fn export_import_round_trip_preserves_application_id() {
         dst.remove_for_application(app_id).unwrap(),
         1,
         "application_id must survive export/import so the link still matches"
+    );
+}
+
+// ── quality_report (ADR-007 addendum) ──────────────────────────────────────
+
+/// A backup round-trip must carry the quality report — otherwise restoring a
+/// backup silently drops the deterministic content-quality findings.
+#[test]
+fn export_import_round_trip_preserves_the_quality_report() {
+    let src_dir = TempDir::new().unwrap();
+    let src = AiGenerationStore::open(&src_dir.path().to_path_buf()).unwrap();
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = r#"{"ok":true,"issues":[],"metrics":{}}"#.into();
+    src.insert(&rec).unwrap();
+
+    let exported = crate::data_store::DataStore::export(&src);
+
+    let dst_dir = TempDir::new().unwrap();
+    let dst = AiGenerationStore::open(&dst_dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&dst, &exported).unwrap(),
+        1
+    );
+
+    assert_eq!(
+        dst.list()[0].quality_report,
+        r#"{"ok":true,"issues":[],"metrics":{}}"#
+    );
+}
+
+/// L-5: `import` is a write path for a user-supplied backup FILE — just as
+/// untrusted as the IPC save path, which already guards `quality_report`
+/// (`commands::ai_generations::ai_generations_save`). Before this fix,
+/// `import` wrote the bundle's `quality_report` straight to the column with
+/// no guard at all, unlike every other write path for this column.
+#[test]
+fn import_sanitizes_an_oversized_quality_report_to_the_empty_string() {
+    let huge = "x".repeat(QUALITY_REPORT_MAX_BYTES + 10_000);
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = huge.clone();
+    let bundle = serde_json::json!([rec]);
+
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&store, &bundle).unwrap(),
+        1
+    );
+
+    let imported = store.list();
+    assert_eq!(imported.len(), 1);
+    assert_eq!(
+        imported[0].quality_report, "",
+        "an over-cap bundle's quality_report must drop to the empty sentinel on \
+         import, not a byte-truncated blob"
+    );
+}
+
+/// The finding this regression-tests: a byte-position clamp on an otherwise
+/// VALID JSON object truncates it MID-STRUCTURE — unlike the "huge" garbage
+/// fixture above (never valid JSON either way), this fixture is a real
+/// wrapper that only becomes invalid because of where a byte clamp would cut
+/// it. `import` must reach the same documented `''` sentinel, not a
+/// truncated-but-still-invalid blob that only accidentally reads as
+/// "no report".
+#[test]
+fn import_sanitizes_an_oversized_valid_json_report_to_the_empty_string() {
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "resume",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    assert!(
+        oversized.len() > QUALITY_REPORT_MAX_BYTES,
+        "test fixture must actually exceed the cap on its own"
+    );
+    let mut rec = record("g1", "https://acme.com/job/1");
+    rec.quality_report = oversized;
+    let bundle = serde_json::json!([rec]);
+
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    assert_eq!(
+        crate::data_store::DataStore::import(&store, &bundle).unwrap(),
+        1
+    );
+
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "an over-cap incoming report must be dropped to the empty sentinel, \
+         never stored as truncated (unparseable) JSON"
+    );
+}
+
+/// Unit coverage for the shared guard both write paths call through.
+#[test]
+fn sanitize_quality_report_drops_an_over_cap_report_to_the_empty_string() {
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 1,
+        "coverLetter": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    assert!(oversized.len() > QUALITY_REPORT_MAX_BYTES);
+    assert_eq!(sanitize_quality_report(oversized, "test"), "");
+}
+
+#[test]
+fn sanitize_quality_report_leaves_an_in_budget_report_untouched() {
+    let small = r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":1,"resume":{"ok":true}}"#;
+    assert_eq!(sanitize_quality_report(small.into(), "test"), small);
+}
+
+/// Regression for the finding this fix closes: `QUALITY_REPORT_MAX_BYTES`
+/// guards the WRAPPER, which legitimately holds two sub-reports (résumé +
+/// cover letter), not one. Builds two synthetic sub-reports at the exact
+/// worst-case byte count `validate::content::ISSUE_MESSAGE_MAX_BYTES`'s doc
+/// computes per sub-report (`MAX_CONTENT_ISSUES` issues × the three
+/// clamped-field byte caps + JSON overhead) and asserts the resulting
+/// two-sub-report wrapper survives `sanitize_quality_report` byte-for-byte —
+/// the exact document the cap is sized to allow, not silently dropped to the
+/// empty sentinel.
+#[test]
+fn sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_worst_case_size() {
+    use crate::validate::content::{
+        ISSUE_EVIDENCE_MAX_BYTES, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES,
+        MAX_CONTENT_ISSUES,
+    };
+    // Mirrors `ISSUE_MESSAGE_MAX_BYTES`'s doc arithmetic (≈214 KB per
+    // sub-report). The `~150` JSON-overhead term there is deliberately
+    // approximate (not a named constant), so this pads past it slightly to
+    // stay a genuine worst case rather than an optimistic one.
+    let per_issue_overhead_bytes = 150;
+    let sub_report_worst_case_bytes = MAX_CONTENT_ISSUES
+        * (ISSUE_MESSAGE_MAX_BYTES
+            + ISSUE_EVIDENCE_MAX_BYTES
+            + ISSUE_SECTION_MAX_BYTES
+            + per_issue_overhead_bytes);
+
+    let wrapper = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "combined",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(sub_report_worst_case_bytes) },
+        "coverLetter": { "blob": "x".repeat(sub_report_worst_case_bytes) }
+    })
+    .to_string();
+
+    assert!(
+        wrapper.len() < QUALITY_REPORT_MAX_BYTES,
+        "a legitimate two-sub-report wrapper at the documented worst case must fit \
+         under the cap — this is exactly what QUALITY_REPORT_MAX_BYTES is sized to allow"
+    );
+    assert_eq!(
+        sanitize_quality_report(wrapper.clone(), "test"),
+        wrapper,
+        "a wrapper with two near-worst-case sub-reports must persist intact, not be \
+         dropped to the empty sentinel"
+    );
+}
+
+/// Regression for the finding this fix closes (PR #963 round 14):
+/// `QUALITY_REPORT_MAX_BYTES`'s sizing arithmetic capped each `ContentIssue`
+/// field at its RAW (pre-serialization) byte bound — the round-6 test above
+/// exercised only that raw bound, filling the worst-case blob with plain
+/// `'x'` characters, which `serde_json` never escapes. `serde_json` DOES
+/// escape `"` (→ `\"`) and `\` (→ `\\`), doubling every occurrence, so a
+/// legitimate quote-heavy report (quoted résumé bullets, code-snippet
+/// evidence) can serialize to roughly double the raw-bound estimate. Builds
+/// two sub-reports of `MAX_CONTENT_ISSUES` issues each, with
+/// `message`/`evidence`/`section` filled with `"` characters at their
+/// documented RAW caps (`validate::content::ISSUE_*_MAX_BYTES`) — the
+/// worst-case escape density — and measures the REAL, `serde_json`-produced
+/// byte length (never an assumed multiple) via `.to_string()`. Asserts the
+/// escaped wrapper (a) genuinely exceeds the OLD 512 KiB cap, proving the
+/// defect was reachable, and (b) still survives `sanitize_quality_report`
+/// byte-for-byte under the resized cap.
+#[test]
+fn sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_escaped_worst_case_size() {
+    use crate::validate::content::{
+        ISSUE_EVIDENCE_MAX_BYTES, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES,
+        MAX_CONTENT_ISSUES,
+    };
+
+    // One issue at its raw field caps, filled with `"` — the character that
+    // costs the most once `serde_json` escapes it (`\"`, 2×).
+    let issue = serde_json::json!({
+        "severity": "critical",
+        "code": "consistency.skill_not_demonstrated",
+        "section": "\"".repeat(ISSUE_SECTION_MAX_BYTES),
+        "message": "\"".repeat(ISSUE_MESSAGE_MAX_BYTES),
+        "evidence": "\"".repeat(ISSUE_EVIDENCE_MAX_BYTES),
+    });
+    let issues: Vec<_> = std::iter::repeat_n(issue, MAX_CONTENT_ISSUES).collect();
+    let sub_report = serde_json::json!({ "ok": false, "issues": issues, "metrics": {} });
+
+    // `.to_string()` here is the real `serde_json` serialization — this is
+    // the measured escaped byte count, not an assumed 2× multiple.
+    let wrapper = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "combined",
+        "generatedAt": 1,
+        "resume": { "report": sub_report.clone(), "sourceTextHash": "x".repeat(64) },
+        "coverLetter": { "report": sub_report, "sourceTextHash": "x".repeat(64) },
+    })
+    .to_string();
+
+    assert!(
+        wrapper.len() > 512 * 1024,
+        "a quote-heavy worst-case wrapper ({} bytes) must exceed the OLD 512 KiB cap — \
+         this is the exact escaping gap QUALITY_REPORT_MAX_BYTES was resized to close",
+        wrapper.len()
+    );
+    assert!(
+        wrapper.len() < QUALITY_REPORT_MAX_BYTES,
+        "the resized cap ({QUALITY_REPORT_MAX_BYTES} bytes) must still allow a legitimate \
+         quote-heavy worst-case wrapper ({} bytes)",
+        wrapper.len()
+    );
+    assert_eq!(
+        sanitize_quality_report(wrapper.clone(), "test"),
+        wrapper,
+        "an escaping-hostile worst-case wrapper must persist byte-for-byte, not be \
+         dropped to the empty sentinel"
+    );
+}
+
+/// End-to-end proof for the save path: `ai_generations_save` runs the
+/// incoming `quality_report` through `sanitize_quality_report` (simulated
+/// here exactly as the command does) BEFORE building the record it hands to
+/// `save_application`. An over-cap incoming report must therefore merge as
+/// content-less, so the EXISTING report survives untouched — never replaced
+/// by truncated/unparseable garbage, and never silently lost with no signal
+/// (the guard logs a warning; see `sanitize_quality_report`).
+#[test]
+fn save_application_keeps_the_existing_report_when_the_incoming_one_was_over_cap() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let url = "https://acme.com/job/1";
+
+    let mut first = record("g1", url);
+    first.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":1,"resume":{"ok":true}}"#.into();
+    store.save_application(first.clone()).unwrap();
+
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 2,
+        "coverLetter": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    let mut second = record("g2", url);
+    second.resume_text = String::new();
+    second.cover_letter_text = String::new();
+    // Exactly what `commands::ai_generations::ai_generations_save` does to the
+    // request's `quality_report` before constructing the record.
+    second.quality_report = sanitize_quality_report(oversized, "test");
+
+    store.save_application(second).unwrap();
+
+    let stored = &store.list()[0].quality_report;
+    assert_eq!(
+        stored, &first.quality_report,
+        "an over-cap incoming report must leave the existing report intact"
+    );
+    assert!(
+        *stored == first.quality_report || stored.is_empty(),
+        "the stored quality_report must be the existing report or the empty \
+         sentinel — never unparseable truncated JSON"
+    );
+}
+
+/// The scenario a raw byte clamp actually leaves unprotected: a FIRST-EVER
+/// save for a job has no existing aggregate row, so `save_application` goes
+/// straight to `insert()` — `merge_quality_report` never runs, and its
+/// "unparseable incoming → keep existing" guard has nothing to fall back
+/// onto. Without a write-boundary guard, a byte-truncated (invalid-JSON)
+/// over-cap report would be stored verbatim. The command-layer guard
+/// (`sanitize_quality_report`, simulated here exactly as `ai_generations_save`
+/// applies it before building the record) must catch this BEFORE
+/// `save_application` is ever called.
+#[test]
+fn save_application_inserts_the_empty_sentinel_for_a_first_save_with_an_over_cap_report() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+
+    let oversized = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "resume",
+        "generatedAt": 1,
+        "resume": { "blob": "x".repeat(QUALITY_REPORT_MAX_BYTES) }
+    })
+    .to_string();
+    let mut rec = record("g1", "https://acme.com/job/brand-new");
+    // Exactly what `commands::ai_generations::ai_generations_save` does to the
+    // request's `quality_report` before constructing the record.
+    rec.quality_report = sanitize_quality_report(oversized, "test");
+
+    store.save_application(rec).unwrap();
+
+    assert_eq!(
+        store.list()[0].quality_report,
+        "",
+        "a first-ever save (no existing row to merge onto) must store the \
+         empty sentinel, never a byte-truncated invalid-JSON blob"
+    );
+}
+
+/// A résumé-writing save carries a wrapper with a `resume` key: it overlays
+/// the envelope fields (`schemaVersion`/`pipeline`/`generatedAt`) plus
+/// `resume`, and leaves a stored `coverLetter` sub-report untouched.
+#[test]
+fn merge_quality_report_resume_save_overlays_resume_key_and_envelope() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"combined","generatedAt":100,"coverLetter":{"ok":false}}"#
+            .into();
+
+    let mut resume_save = record("g2", "https://acme.com/job/1");
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":200,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, resume_save);
+    let value: serde_json::Value = serde_json::from_str(&merged.quality_report).unwrap();
+    assert_eq!(value["pipeline"], "resume");
+    assert_eq!(value["generatedAt"], 200);
+    assert_eq!(value["resume"]["ok"], true);
+    assert_eq!(
+        value["coverLetter"]["ok"], false,
+        "the coverLetter sub-report from the existing wrapper must survive a résumé-only save"
+    );
+}
+
+/// An answers-only save carries no report at all (`quality_report` defaults to
+/// `""`) — the existing wrapper must survive byte-for-byte.
+#[test]
+fn merge_quality_report_content_less_save_keeps_existing_report_untouched() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":100,"resume":{"ok":true}}"#.into();
+
+    let answers_only = record("g2", "https://acme.com/job/1"); // quality_report == ""
+    let merged = merge_application(existing.clone(), answers_only);
+    assert_eq!(merged.quality_report, existing.quality_report);
+}
+
+/// A letter-only save carries a wrapper with a `coverLetter` key: it must
+/// preserve a stored `resume` sub-report rather than clobbering it.
+#[test]
+fn merge_quality_report_letter_save_preserves_stored_resume_key() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":150,"resume":{"ok":false}}"#.into();
+
+    let mut letter_save = record("g2", "https://acme.com/job/1");
+    letter_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"letter","generatedAt":300,"coverLetter":{"ok":true}}"#
+            .into();
+
+    let merged = merge_application(existing, letter_save);
+    let value: serde_json::Value = serde_json::from_str(&merged.quality_report).unwrap();
+    assert_eq!(value["pipeline"], "letter");
+    assert_eq!(value["coverLetter"]["ok"], true);
+    assert_eq!(
+        value["resume"]["ok"], false,
+        "a letter-only save must not clobber the stored résumé sub-report"
+    );
+}
+
+/// A bundle exported before `qualityReport` existed carries no key at all;
+/// `#[serde(default)]` deserializes it to `""`. A later save on that imported
+/// row must not be blocked by the empty placeholder — it's simply unparseable,
+/// same as any other missing report.
+#[test]
+fn merge_quality_report_old_bundle_import_leaves_an_empty_report_a_later_save_can_fill() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let legacy = serde_json::json!([{
+        "id": "old-1", "createdAt": 1, "candidateName": "Jane", "jobTitle": "Engineer",
+        "companyName": "Acme", "resumeLanguage": "en", "jobAdLanguage": "en",
+        "targetLanguage": "en", "mismatch": false, "topRequirements": [],
+        "mode": "ats", "resumeText": "R", "coverLetterText": "C", "jobAd": "",
+        "jobUrl": "https://acme.com/job/1", "board": "linkedin"
+    }]);
+    crate::data_store::DataStore::import(&store, &legacy).unwrap();
+    assert_eq!(store.list()[0].quality_report, "");
+
+    let mut fresh = record("g2", "https://acme.com/job/1");
+    fresh.resume_text = String::new();
+    fresh.cover_letter_text = String::new();
+    fresh.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":500,"resume":{"ok":true}}"#.into();
+    store.save_application(fresh).unwrap();
+
+    assert_eq!(
+        store.list()[0].quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":500,"resume":{"ok":true}}"#
+    );
+}
+
+/// A garbage/corrupt existing value (not parseable JSON at all) must not block
+/// a genuinely fresh incoming report — `incoming` wins outright since there is
+/// nothing to overlay a key onto.
+#[test]
+fn merge_quality_report_unparseable_existing_recovers_via_incoming() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    existing.quality_report = "not json at all".into();
+
+    let mut incoming = record("g2", "https://acme.com/job/1");
+    incoming.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":600,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, incoming);
+    assert_eq!(
+        merged.quality_report,
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":600,"resume":{"ok":true}}"#
+    );
+}
+
+/// Each side clamps its OWN write to `QUALITY_REPORT_MAX_BYTES`, but the merge
+/// unions both sub-reports — a small, fresh résumé-only `incoming` overlaid
+/// onto an `existing` wrapper whose stored `coverLetter` sub-report is already
+/// near the cap can still push the merged object over budget. The merge must
+/// not truncate the oversized JSON (unparseable on the next read, silently
+/// reverting to the stale stored report on the read after that) — it falls
+/// back to `incoming` whole, which is both known-parseable and already within
+/// budget.
+#[test]
+fn merge_quality_report_oversized_union_falls_back_to_incoming() {
+    let mut existing = record("g1", "https://acme.com/job/1");
+    let huge = "x".repeat(QUALITY_REPORT_MAX_BYTES);
+    existing.quality_report = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "letter",
+        "generatedAt": 100,
+        "coverLetter": { "blob": huge }
+    })
+    .to_string();
+    assert!(
+        existing.quality_report.len() > QUALITY_REPORT_MAX_BYTES,
+        "test fixture must actually exceed the cap on its own"
+    );
+
+    let mut resume_save = record("g2", "https://acme.com/job/1");
+    resume_save.quality_report =
+        r#"{"schemaVersion":1,"pipeline":"resume","generatedAt":200,"resume":{"ok":true}}"#.into();
+
+    let merged = merge_application(existing, resume_save.clone());
+    assert_eq!(
+        merged.quality_report, resume_save.quality_report,
+        "an oversized merged union must fall back to the fresh incoming report verbatim, not a truncated blob"
     );
 }

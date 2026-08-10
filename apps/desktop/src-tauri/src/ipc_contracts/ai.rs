@@ -89,6 +89,8 @@ pub struct AiGenerationSaveRequest {
     pub email_subject: String,
     #[serde(default = "default_ai_generation_save_request_email_body")]
     pub email_body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality_report: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

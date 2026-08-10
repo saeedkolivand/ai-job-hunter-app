@@ -6,14 +6,17 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { EditableOutput } from '@/components/generation/EditableOutput';
+import { HandEditNudge } from '@/components/generation/HandEditNudge';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import { PdfPreview } from '@/components/generation/PdfPreview';
+import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
   buildFilename,
   type GenerationMeta,
   type LetterLayoutId,
   MODES,
+  type QualityReport,
   resolveMarket,
   type TemplateId,
   TEMPLATES,
@@ -27,6 +30,17 @@ interface OutputPanelDoneProps {
   coverOut: string;
   activeOut: 'resume' | 'cover';
   meta: GenerationMeta | null;
+  /** Deterministic content-quality report for the current session, if any. */
+  report?: QualityReport | null;
+  /**
+   * Re-runs validation on the active document's current text. Owned by the HOST
+   * (`useQualityRecheck` in AIGeneratePage), not by this panel: the panel is
+   * unmounted the moment a Regenerate switches the stage, which would freeze the
+   * hook's ownership epoch and its live-session reads mid-flight. Omit to hide
+   * the panel's "Re-check" action (the badge/report still render).
+   */
+  onRecheck?: () => void;
+  rechecking?: boolean;
   mode: string;
   templateId: TemplateId;
   /** ATS single-column override — must match the export so the preview is faithful. */
@@ -60,6 +74,9 @@ export function OutputPanelDone({
   coverOut,
   activeOut,
   meta,
+  report,
+  onRecheck,
+  rechecking,
   mode,
   templateId,
   atsMode,
@@ -229,6 +246,13 @@ export function OutputPanelDone({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <QualityBadge
+            report={report}
+            docKind={activeOut === 'resume' ? 'resume' : 'coverLetter'}
+            currentText={currentOutput}
+            onRecheck={onRecheck}
+            rechecking={rechecking}
+          />
           <Button
             onClick={onCopy}
             disabled={isGenerating}
@@ -247,6 +271,11 @@ export function OutputPanelDone({
           </Button>
         </div>
       </div>
+
+      {/* Hand-edit nudge — once per generation: keyed by the report's timestamp
+          so a NEW generation remounts (and re-shows) it, while ordinary
+          re-renders (edits, tab switches) leave a dismissal in place. */}
+      {report && <HandEditNudge key={report.generatedAt} className="mx-6 mt-3" />}
 
       {/* Filename preview + active template (#12 — template info on top of the
           resume box; templates apply to résumés, so it's hidden for cover letters). */}
