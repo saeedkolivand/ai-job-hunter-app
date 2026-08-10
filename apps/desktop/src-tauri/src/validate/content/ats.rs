@@ -9,9 +9,11 @@
 //! (see the job-match standards). They are the shapes every parser handles
 //! badly, and the advice is framed that way.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::documents::evidence::{function_words, has_curated_function_words, SectionKind};
+use crate::documents::evidence::{
+    function_words, has_curated_function_words, trailing_date_column, SectionKind,
+};
 use crate::documents::keywords::keywords_normalized_list;
 use crate::export::parser::is_contact_shaped;
 use crate::export::types::{LineKind, ParsedLine};
@@ -156,7 +158,40 @@ fn keyword_density_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// helper. The two halves are still applied separately here (rather than
 /// through `super::has_real_contact_match`) because this check has to know
 /// WHICH of the two matched.
-fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
+///
+/// ## Shape (2) additionally asks WHOSE details these are
+///
+/// "First line of a section, name-shaped, address underneath" is not a header
+/// block; it is the shape of every references list and every named contact
+/// person ever written — "REFERENCES / Maria Lang / maria.lang@…". The `i == 1`
+/// narrowing was introduced to stop exactly that and lands one index short: the
+/// heading goes into `Section::heading` rather than into `lines`, and `Blank` is
+/// filtered out, so a referee IS the section's first line. Listing a referee was
+/// a Critical.
+///
+/// What this check claims is in its own message — a **second** contact block,
+/// i.e. the candidate's own header appearing twice, which is what makes a parser
+/// attribute the document to the wrong person. A referee's details are not that
+/// under any reading. So the name over the address must be a name the HEADER
+/// BAND already carries ([`header_name_forms`]); someone else's is not a second
+/// copy of anything.
+///
+/// **Why identity and not a `REFERENCES` heading lexicon** (the other repair on
+/// the table): a heading list only exempts the sections that say so, and the
+/// same block appears under "Ansprechpartner", "Kontakt für Rückfragen",
+/// "Empfehlungen" and under no heading the classifier knows at all — while this
+/// module has twice been bitten by "that list is English-only" being wrong about
+/// a list nobody enumerated. Identity needs no vocabulary, holds in every
+/// locale, and states the actual claim. Shape (1) — the one-line
+/// `Name · email · phone` block — is untouched: it carries its own separators
+/// and is a header block by construction.
+///
+/// *Cost, paid deliberately:* a genuinely duplicated header whose second copy
+/// writes the name differently ("M. Mustermann" under "Max Mustermann"), or
+/// omits it, is no longer reported through shape (2). A missed check, which is
+/// this family's chosen direction — and a document whose header band carries no
+/// name-shaped line at all has no first header for a second one to duplicate.
+fn is_contact_cluster(lines: &[&ParsedLine], i: usize, header_names: &HashSet<String>) -> bool {
     let line = lines[i];
     if !matches!(
         line.kind,
@@ -180,20 +215,49 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
     if separators >= 2 && is_contact_shaped(&line.text) {
         return true;
     }
-    // A name line: short, unpunctuated, no digits, no separators, and not
-    // something the parser already classified as structure (a job entry like
-    // "Acme | 2021 - Present" satisfies every shape test but is not a name).
-    let name_like = |l: &ParsedLine| {
-        let t = l.text.trim();
-        matches!(l.kind, LineKind::Name | LineKind::Text)
-            && !t.is_empty()
-            && t.chars().count() <= 60
-            && !t.contains(['.', ',', ';', ':', '|', '·', '•'])
-            && !t.chars().any(|c| c.is_ascii_digit())
-            && super::word_count(t) <= 5
-    };
-    // Exactly the second line, under the section's first line.
-    i == 1 && name_like(lines[0])
+    // Exactly the second line, under the section's first line — and that line
+    // must name the CANDIDATE, not a referee. See the doc comment.
+    i == 1
+        && is_name_like(lines[0])
+        && header_names.contains(&super::flattened_lower(&lines[0].text))
+}
+
+/// A name line: short, unpunctuated, no digits, no separators, and not something
+/// the parser already classified as structure (a job entry like
+/// "Acme | 2021 - Present" satisfies every shape test but is not a name).
+///
+/// Applied to BOTH sides of the identity test in [`is_contact_cluster`] — the
+/// candidate's header band and the candidate line in the body — so the two can
+/// never disagree about what a name looks like.
+fn is_name_like(l: &ParsedLine) -> bool {
+    let t = l.text.trim();
+    matches!(l.kind, LineKind::Name | LineKind::Text)
+        && !t.is_empty()
+        && t.chars().count() <= 60
+        && !t.contains(['.', ',', ';', ':', '|', '·', '•'])
+        && !t.chars().any(|c| c.is_ascii_digit())
+        && super::word_count(t) <= 5
+}
+
+/// The name-shaped lines of the HEADER BAND (section 0, everything before the
+/// first heading), flattened for comparison.
+///
+/// Section 0 is the header by construction — `split_sections` never gives it a
+/// heading — so these are the candidate's own name as their document writes it.
+/// Empty when the band carries no name-shaped line, which correctly disables
+/// [`is_contact_cluster`]'s second shape: there is no first header for a second
+/// one to be a copy of.
+fn header_name_forms(ctx: &Analysis) -> HashSet<String> {
+    ctx.generated_sections
+        .first()
+        .map(|band| {
+            band.lines
+                .iter()
+                .filter(|l| is_name_like(l))
+                .map(|l| super::flattened_lower(&l.text))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// `ats.header_in_body` — a second contact block inside the document.
@@ -205,6 +269,7 @@ fn is_contact_cluster(lines: &[&ParsedLine], i: usize) -> bool {
 /// (section 0 IS the header).
 fn header_in_body_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     let mut issues = Vec::new();
+    let header_names = header_name_forms(ctx);
     for section in ctx.generated_sections.iter().skip(1) {
         let lines: Vec<&ParsedLine> = section
             .lines
@@ -212,7 +277,7 @@ fn header_in_body_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             .filter(|l| !matches!(l.kind, LineKind::Blank))
             .collect();
         for i in 0..lines.len() {
-            if is_contact_cluster(&lines, i) {
+            if is_contact_cluster(&lines, i, &header_names) {
                 issues.push(issue(
                     ATS_HEADER_IN_BODY,
                     section.heading.as_deref(),
@@ -270,6 +335,24 @@ fn long_bullet_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 }
 
 /// Bullets grouped per employment entry, in document order.
+///
+/// ## What opens a role is `documents::evidence`'s rule, not a second one
+///
+/// This used to open a role ONLY on `LineKind::JobEntry` and append every other
+/// line to `roles.last_mut()`, which is precisely the misattribution class
+/// `documents::evidence::extract_evidence` spent rounds 6–11 removing. Both
+/// consumers read the SAME `ParsedLine` stream, so on the ordinary mixed-format
+/// résumé — one entry the parser recognises, the next in the extracted-PDF comma
+/// form ("Acme Payments, Berlin, 2018 - 2021") — the evidence extractor opened a
+/// second role while this one kept appending, and the second employer's bullets
+/// were counted against the first. The visible result is a `bullet_count`
+/// finding naming the wrong employer, with a number that belongs to two of them.
+///
+/// So a `Text`/`Contact` line ending in a real date COLUMN opens its own role
+/// here too, through the same [`trailing_date_column`] the extractor gates on —
+/// a date the line is STRUCTURED by, not one it merely mentions. The role is
+/// named by the label in front of the column, which is the same half of the line
+/// a recognised `JobEntry` would have given us.
 fn bullets_per_role(section: &Section) -> Vec<(String, usize)> {
     let mut roles: Vec<(String, usize)> = Vec::new();
     for line in &section.lines {
@@ -280,6 +363,11 @@ fn bullets_per_role(section: &Section) -> Vec<(String, usize)> {
                     last.1 += 1;
                 }
             }
+            LineKind::Text | LineKind::Contact => {
+                if let Some((label, _)) = trailing_date_column(&line.text) {
+                    roles.push((label.to_string(), 0));
+                }
+            }
             _ => {}
         }
     }
@@ -287,13 +375,23 @@ fn bullets_per_role(section: &Section) -> Vec<(String, usize)> {
 }
 
 /// `ats.bullet_count` — a role outside the 1..=6 bullet band.
+///
+/// The `section` field is the DOCUMENT's own heading, not the English word
+/// "Experience" this used to hardcode. The panel renders that field verbatim as
+/// a grouping key, so a German résumé showed one section as two groups —
+/// "BERUFSERFAHRUNG" from [`long_bullet_issues`], which reads the heading, and
+/// an untranslated "Experience" from here. Same section, same key, one group.
 fn bullet_count_issues(ctx: &Analysis) -> Vec<ContentIssue> {
     ctx.generated_sections
         .iter()
         .filter(|s| s.kind == SectionKind::Experience)
-        .flat_map(bullets_per_role)
-        .filter(|(_, n)| !(MIN_BULLETS_PER_ROLE..=MAX_BULLETS_PER_ROLE).contains(n))
-        .map(|(role, n)| {
+        .flat_map(|section| {
+            bullets_per_role(section)
+                .into_iter()
+                .map(move |role| (section, role))
+        })
+        .filter(|(_, (_, n))| !(MIN_BULLETS_PER_ROLE..=MAX_BULLETS_PER_ROLE).contains(n))
+        .map(|(section, (role, n))| {
             let advice = if n < MIN_BULLETS_PER_ROLE {
                 "add at least one result for it".to_string()
             } else {
@@ -301,7 +399,7 @@ fn bullet_count_issues(ctx: &Analysis) -> Vec<ContentIssue> {
             };
             issue(
                 ATS_BULLET_COUNT,
-                Some("Experience"),
+                section.heading.as_deref(),
                 format!("\"{role}\" has {n} bullets — {advice}."),
                 Some(role),
             )

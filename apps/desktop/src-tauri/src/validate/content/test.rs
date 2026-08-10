@@ -575,11 +575,18 @@ fn resolving_an_open_ended_span_is_not_an_unsupported_date() {
 /// A second contact block in the body is Critical; a body line that merely
 /// mentions an address is not. The second half is the false positive that
 /// would make the check unusable.
+///
+/// ⚠️ The positive fixture was `REFERENCES / John Smith / john.smith@…` until
+/// R13-W1: that is a REFERENCES LIST, not a second header, and this test was
+/// pinning the false positive as the expected behaviour. The block is now the
+/// candidate's own header repeated, which is what the Critical claims. The
+/// referee shape has its own test —
+/// `a_reference_block_is_not_a_second_contact_block`.
 #[test]
 fn header_in_body_needs_a_contact_cluster_not_just_an_email() {
     let with_cluster = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
                         Acme | 2021 - Present\n- Led the migration\n\n\
-                        REFERENCES\n\nJohn Smith\njohn.smith@acme.example.com\n";
+                        CONTACT\n\nJane Doe\njane@example.com\n";
     let report = validate_content(&ContentInput {
         generated: with_cluster,
         source_resume: with_cluster,
@@ -954,10 +961,13 @@ fn header_in_body_needs_a_real_address_directly_under_the_heading() {
         ATS_HEADER_IN_BODY,
     );
 
-    // The real thing — a name on the section's first line, an address under it.
+    // The real thing — the CANDIDATE's name on the section's first line, their
+    // own address under it. (Was a referee's until R13-W1; see
+    // `a_reference_block_is_not_a_second_contact_block` for why that shape is
+    // not a second header.)
     let cluster = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
                    Acme | 2021 - Present\n- Led the migration\n\n\
-                   REFERENCES\n\nJohn Smith\njohn.smith@acme.example.com\n";
+                   CONTACT\n\nJane Doe\njane@example.com\n";
     let report = report_for(cluster, cluster, EN_JOB_AD, &[]);
     let hits = fired(&report, ATS_HEADER_IN_BODY);
     assert_eq!(hits[0].severity, Severity::Critical);
@@ -3130,8 +3140,10 @@ fn a_salary_range_in_the_body_is_not_a_second_contact_block() {
               Das Jahresbudget von 90 000 - 110 000 EUR eigenverantwortlich gesteuert\n";
     silent(&report_for(de, de, EN_JOB_AD, &[]), ATS_HEADER_IN_BODY);
 
-    // …and a real phone number under a name still IS a second contact block,
-    // in every form a résumé header writes one.
+    // …and a real phone number under the CANDIDATE's own name still IS a second
+    // contact block, in every form a résumé header writes one. (The name was a
+    // referee's until R13-W1 — see
+    // `a_reference_block_is_not_a_second_contact_block`.)
     for phone in [
         "+49 30 1234567",
         "+49 (0)30 1234567",
@@ -3142,7 +3154,7 @@ fn a_salary_range_in_the_body_is_not_a_second_contact_block() {
         let cluster = format!(
             "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
              Acme | 2021 - Present\n- Led the migration\n\n\
-             REFERENCES\n\nJohn Smith\n{phone}\n"
+             CONTACT\n\nJane Doe\n{phone}\n"
         );
         let report = report_for(&cluster, &cluster, EN_JOB_AD, &[]);
         let hits = fired(&report, ATS_HEADER_IN_BODY);
@@ -4325,5 +4337,122 @@ fn a_foreign_language_job_ad_does_not_change_the_duplicate_ratio() {
     assert_eq!(
         fired(&en, DUPLICATE_BULLET)[0].evidence,
         fired(&de, DUPLICATE_BULLET)[0].evidence
+    );
+}
+
+// ── PR #963 round-13, wave 2 (ats.rs) ───────────────────────────────────────
+
+/// R13-W1 — the round-12 `i == 1` narrowing's own named false positive survives
+/// at exactly that index. A conventional references block is a NAME on the
+/// section's first line and that person's address under it: the heading goes to
+/// `Section::heading` rather than into `lines`, `Blank` is filtered out, so the
+/// reference lands at index 1 and satisfies every clause. The candidate is told
+/// their document has two headers because they listed a referee.
+///
+/// What the Critical actually claims is that the candidate's OWN header appears
+/// twice, so the discriminator is whose details these are.
+#[test]
+fn a_reference_block_is_not_a_second_contact_block() {
+    let referees = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+                    Acme | 2021 - Present\n- Led the migration\n\n\
+                    REFERENCES\n\nMaria Lang\nmaria.lang@acme.example.com\n";
+    silent(
+        &report_for(referees, referees, EN_JOB_AD, &[]),
+        ATS_HEADER_IN_BODY,
+    );
+
+    // A contact PERSON under a heading no list knows is the same shape and the
+    // same non-defect.
+    let ansprechpartner = "Jana Mustermann\njana@example.com\n\nBERUFSERFAHRUNG\n\n\
+                           Acme | 2021 - Heute\n- Die Abrechnung betreut\n\n\
+                           ANSPRECHPARTNER\n\nMaria Lang\nmaria.lang@acme.example.com\n";
+    silent(
+        &report_for(ansprechpartner, ansprechpartner, EN_JOB_AD, &[]),
+        ATS_HEADER_IN_BODY,
+    );
+
+    // The genuine defect — the candidate's own header block, pasted a second
+    // time — is still Critical.
+    let repeated = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+                    Acme | 2021 - Present\n- Led the migration\n\n\
+                    CONTACT\n\nJane Doe\njane@example.com\n";
+    let report = report_for(repeated, repeated, EN_JOB_AD, &[]);
+    assert_eq!(
+        fired(&report, ATS_HEADER_IN_BODY)[0].severity,
+        Severity::Critical
+    );
+}
+
+/// R13-W2 — `bullets_per_role` opens a role only on `LineKind::JobEntry` and
+/// appends everything else to `roles.last_mut()`, which is the misattribution
+/// class `documents::evidence` spent rounds 6–11 removing. Both read the same
+/// `ParsedLine` stream: `extract_evidence` opens a role on a `Text`/`Contact`
+/// line that ends in a date COLUMN, this one appends to the employer above. So
+/// the second employer's bullets are counted against the first.
+#[test]
+fn bullets_are_counted_against_the_role_they_belong_to() {
+    // Globex parses as a `JobEntry`; the Acme line does not (no two-space
+    // column, no pipes, no parens) — it is the extracted-PDF comma form.
+    let resume = "Jane Doe\njane@example.com\n\nEXPERIENCE\n\n\
+                  Globex Logistics | 2021 - Present\n\
+                  - Built the billing API\n\
+                  - Owned the release train\n\n\
+                  Acme Payments, Berlin, 2018 - 2021\n\
+                  - Shipped Docker containers to production\n\
+                  - Cut checkout latency from 480ms to 90ms\n\
+                  - Rewrote the retry scheduler in Rust\n\
+                  - Migrated the fleet to AWS\n\
+                  - Described the deployment in Terraform\n\
+                  - Ran the on-call rotation\n\
+                  - Wrote the runbooks\n";
+    let report = report_for(resume, resume, EN_JOB_AD, &[]);
+    let hits = fired(&report, ATS_BULLET_COUNT);
+    assert_eq!(hits.len(), 1, "one role is over the band; got {hits:?}");
+    assert_eq!(
+        hits[0].evidence.as_deref(),
+        Some("Acme Payments, Berlin"),
+        "the bullets belong to the employer they sit under, not the one above"
+    );
+    assert!(
+        hits[0].message.contains("has 7 bullets"),
+        "seven of the nine bullets are Acme's; got {:?}",
+        hits[0].message
+    );
+}
+
+/// R13-W3/W4 — `ats.bullet_count` passed the hardcoded English "Experience" as
+/// the issue's `section`, which the panel renders verbatim as a GROUPING KEY. A
+/// German résumé therefore showed two groups for one section: "BERUFSERFAHRUNG"
+/// (from `long_bullet`, which reads the document's own heading) and an
+/// untranslated "Experience" (from `bullet_count`).
+#[test]
+fn bullet_count_is_grouped_under_the_documents_own_heading() {
+    // Eight bullets (over the band) and one of them over the character budget,
+    // so both checks fire on the SAME section and their grouping keys are
+    // directly comparable.
+    let resume = "Jana Mustermann\njana@example.com\n\nBERUFSERFAHRUNG\n\n\
+                  Acme Payments | 2021 - Heute\n\
+                  - Die Wartezeit an der Kasse gesenkt\n\
+                  - Die Abrechnung betreut\n\
+                  - Die Flotte migriert\n\
+                  - Die Bereitstellung beschrieben\n\
+                  - Die Datenbanken gewartet\n\
+                  - Die Migration begleitet\n\
+                  - Die Rufbereitschaft übernommen\n\
+                  - Die Wartezeit an der Kasse von 480ms auf 90ms gesenkt, indem ein \
+                  Redis-Cache vorgeschaltet, die Abfragen zusammengefasst und die \
+                  Verbindungen gebündelt wurden, was zusätzlich die Kosten im \
+                  Rechenzentrum deutlich reduziert hat\n";
+    let report = report_for(resume, resume, EN_JOB_AD, &[]);
+    let grouping_keys: Vec<Option<&str>> = report
+        .issues
+        .iter()
+        .filter(|i| i.code == ATS_BULLET_COUNT || i.code == ATS_LONG_BULLET)
+        .map(|i| i.section.as_deref())
+        .collect();
+    assert_eq!(
+        grouping_keys,
+        vec![Some("BERUFSERFAHRUNG"), Some("BERUFSERFAHRUNG")],
+        "one section, one group — the key is the document's own heading"
     );
 }
