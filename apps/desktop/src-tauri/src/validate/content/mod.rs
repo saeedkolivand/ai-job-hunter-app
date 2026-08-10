@@ -210,6 +210,13 @@ pub struct ContentMetrics {
     /// requirements list, or a cover letter (which never runs the alignment
     /// pass) — because a rendered `0` claims a measurement that was never taken.
     pub top_requirement_hits: Option<u32>,
+    /// The denominator for [`Self::top_requirement_hits`]: how many
+    /// requirements could be measured at all. `None` exactly when the hit count
+    /// is — they are two halves of one measurement, produced together by
+    /// [`alignment::RequirementHits`] — so a renderer needs one null check for
+    /// the pair. Lower than the requirements LIST when a requirement has no
+    /// extractable keywords, and `0` when none of them had any.
+    pub top_requirements_measured: Option<u32>,
     /// Share of bullets involved in at least one near-duplicate pair (0–1).
     pub duplicate_ratio: f64,
     pub roles_source: u32,
@@ -458,8 +465,47 @@ impl<'a> Analysis<'a> {
 
     /// Whether every posting comparison should be skipped: nothing extractable
     /// on the posting side, or the output is not in the target language.
+    ///
+    /// Deliberately does NOT include [`Self::posting_language_diverges`] —
+    /// see that method for the counter-example.
     pub fn posting_comparable(&self) -> bool {
         !self.job_keywords.is_empty() && !self.language_mismatch
+    }
+
+    /// The posting is RELIABLY in a language other than the target's.
+    ///
+    /// A check that INTERSECTS the posting's vocabulary with a document's — as
+    /// opposed to comparing two documents' coverage of the posting against each
+    /// other — is meaningless when the two are written in different languages:
+    /// it counts how many foreign words happen to appear in native prose, gets
+    /// ~0, and reports that as a finding about the document. That is the
+    /// ordinary DACH case, where an English-language ad advertises a
+    /// German-speaking role: nothing is wrong with either text, and
+    /// `voice.generic_letter` told the candidate their letter "could have been
+    /// sent to anyone" while it named the posting's own subject matter in every
+    /// sentence.
+    ///
+    /// **Not folded into [`Self::posting_comparable`]**, though it looks like a
+    /// third premise of the same rule. `aligned` compares the ad to the TARGET
+    /// LANGUAGE, which is a user setting, not to the documents — and when the
+    /// target disagrees with everything else
+    /// (`language_critical_is_withheld_when_the_source_reads_the_same_way`: a
+    /// German ad, a German source, a German output, `target_language: "en"`)
+    /// the ad and the documents still match each other, so coverage and the
+    /// source-vs-generated alignment comparison are real measurements that must
+    /// survive. Only the ad↔document INTERSECTION is invalid there, and only
+    /// `generic_letter` computes one.
+    ///
+    /// The reliability half is the same positive control the language Critical
+    /// takes ([`source_is_a_reliable_control`], R5-F2), against the same
+    /// constant: `languages_align` answers `false` for a MISDETECTED language
+    /// just as readily as for a real one, and a terse ad ("Terraform AWS
+    /// PostgreSQL Kubernetes platform engineer") is a keyword soup the detector
+    /// reads as anything at all. Suppressing on that guess would switch the
+    /// check off for ordinary short postings. "Long enough to read a language
+    /// from" is one bar, not two.
+    fn posting_language_diverges(&self) -> bool {
+        !self.aligned && significant_chars(self.input.job_ad) >= MIN_CHARS_FOR_LANGUAGE_CHECK
     }
 
     pub fn section_of_kind(&self, kind: SectionKind) -> Option<&Section> {
@@ -552,12 +598,16 @@ fn language_mismatch_for(input: &ContentInput, lang: &str) -> bool {
 /// Whether the source résumé can carry the weight of a Critical: long enough for
 /// `whatlang` to be reading rather than guessing, and reading as `lang`.
 fn source_is_a_reliable_control(input: &ContentInput, lang: &str) -> bool {
-    let significant = input
-        .source_resume
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .count();
-    significant >= MIN_CHARS_FOR_LANGUAGE_CHECK && languages_align(input.source_resume, lang)
+    significant_chars(input.source_resume) >= MIN_CHARS_FOR_LANGUAGE_CHECK
+        && languages_align(input.source_resume, lang)
+}
+
+/// Characters that carry signal for language detection — everything but
+/// whitespace. The one definition of "how much text is this really", shared by
+/// [`source_is_a_reliable_control`] and [`Analysis::posting_language_diverges`],
+/// which measure two different documents against the same bar.
+fn significant_chars(text: &str) -> usize {
+    text.chars().filter(|c| !c.is_whitespace()).count()
 }
 
 /// Split a document into sections at its headings. The leading band before the
@@ -720,7 +770,7 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
     // included: a cover letter has no employment entries, so reporting the
     // SOURCE résumé's role count next to the letter's own zero rendered a
     // "2 → 0" roles drop in the quality panel on a perfectly good letter.
-    let (top_requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
+    let (requirement_hits, duplicate_ratio, roles_source, roles_output) = match input.doc_kind {
         DocKind::CoverLetter => {
             issues.extend(letter::validate(&ctx));
             (None, 0.0, 0, 0)
@@ -748,7 +798,10 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
             .posting_comparable()
             .then(|| ctx.coverage(&ctx.generated_keywords))
             .flatten(),
-        top_requirement_hits,
+        // Both halves of the ratio come from the same `Option`, so they cannot
+        // drift into "2 hits out of nothing".
+        top_requirement_hits: requirement_hits.as_ref().map(|h| h.hits),
+        top_requirements_measured: requirement_hits.as_ref().map(|h| h.measured),
         duplicate_ratio,
         roles_source,
         roles_output,

@@ -1273,3 +1273,61 @@ fn curated_function_word_languages_match_the_lists_behind_them() {
         assert!(function_words(lang).is_empty());
     }
 }
+
+// ── PR #963 round-9 findings ────────────────────────────────────────────────
+
+/// R9-F1 — the pipe/middot arm picked its date column with
+/// `looks_like_date_span`, which is TRUE for a bare present-tense marker
+/// (`is_open_ended` fires on the word alone, with no year anywhere). An
+/// employer whose NAME is or contains one — Current (current.com) is a real
+/// fintech, Current Health a real medtech, "Aktuell" opens plenty of German
+/// company names — was therefore selected as the date column AND filtered out
+/// of the segments, so the job TITLE was recorded as the employer and the
+/// employer as the date.
+#[test]
+fn the_pipe_form_does_not_read_an_employer_named_current_as_the_date_column() {
+    let (company, title, dates) = split_line("Senior Engineer | Current | 2021 - Present");
+    assert_eq!(
+        company, "Current",
+        "the employer is the company, not the date"
+    );
+    assert_eq!(title, "Senior Engineer");
+    assert_eq!(dates, "2021 - Present");
+
+    // The same word inside a longer name, and the German marker.
+    let (company, title, _) = split_line("Senior Engineer | Current Health | 2021 - Present");
+    assert_eq!(company, "Current Health");
+    assert_eq!(title, "Senior Engineer");
+    let (company, title, _) = split_line("Entwicklerin | Aktuell Media GmbH | 2018 - 2021");
+    assert_eq!(company, "Aktuell Media GmbH");
+    assert_eq!(title, "Entwicklerin");
+
+    // The other half of the boundary: every date column the parser actually
+    // hands this arm must still resolve. The rows are the shapes
+    // `export::parser`'s `DATE_RE`/`SOLO_DATE_RE` admit — a lone year and a
+    // separator word both appear here, and `is_date_only` would reject both
+    // (see `is_date_column_segment` for why it is not the test used).
+    for (line, expected) in [
+        (
+            "Senior Engineer | Acme Corp | 2021 - Present",
+            "2021 - Present",
+        ),
+        (
+            "Senior Engineer | Acme Corp | Jan 2018 - Mar 2021",
+            "Jan 2018 - Mar 2021",
+        ),
+        ("Senior Engineer | Acme Corp | 2018 to 2021", "2018 to 2021"),
+        (
+            "Senior Engineer | Acme Corp | 2021 bis Heute",
+            "2021 bis Heute",
+        ),
+        ("Senior Engineer | Acme Corp | 2022", "2022"),
+    ] {
+        let (company, title, dates) = split_line(line);
+        assert_eq!(
+            (company.as_str(), title.as_str(), dates.as_str()),
+            ("Acme Corp", "Senior Engineer", expected),
+            "{line:?}"
+        );
+    }
+}

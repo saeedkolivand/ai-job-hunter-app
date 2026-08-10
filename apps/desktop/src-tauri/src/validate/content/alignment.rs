@@ -43,7 +43,25 @@ fn requirement_ratio_in(ctx: &Analysis, requirement: &str, in_source: bool) -> O
     Some(needed.iter().filter(|t| haystack.contains(*t)).count() as f64 / needed.len() as f64)
 }
 
-/// Returns the alignment issues and the `topRequirementHits` metric.
+/// The top-requirement metric: how many were answered, out of how many could be
+/// ANSWERED AT ALL.
+///
+/// One `Option` carrying both numbers, so a hit count without its denominator
+/// cannot be constructed. They are two halves of one measurement: a bare "2"
+/// reads identically for 2-of-2, 2-of-10, and a list where nothing was
+/// measurable, and the panel had no way to tell those apart.
+pub(super) struct RequirementHits {
+    /// Requirements the generated document evidences.
+    pub hits: u32,
+    /// Requirements that could be measured at all — the denominator. Smaller
+    /// than the requirements LIST whenever one of them has no extractable
+    /// keywords ("Team player!"), because an unanswerable requirement counts
+    /// for neither side (see [`requirement_ratio_in`]). Zero is a real value:
+    /// it means the JD analysis produced requirements this kernel cannot check.
+    pub measured: u32,
+}
+
+/// Returns the alignment issues and the top-requirement metric.
 ///
 /// The metric is `None` for **unmeasured**, never `0`. Two cases reach it:
 /// a posting nothing can be compared against ([`Analysis::posting_comparable`]),
@@ -52,7 +70,7 @@ fn requirement_ratio_in(ctx: &Analysis, requirement: &str, in_source: bool) -> O
 /// quality panel reads as "your document answers none of this posting's top
 /// requirements", which is a measurement nobody took; the renderer prints "—"
 /// for the absent value instead.
-pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, Option<u32>) {
+pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, Option<RequirementHits>) {
     // Nothing extractable on the posting side, or the output is in the wrong
     // language: every comparison below would be noise.
     if !ctx.posting_comparable() {
@@ -86,10 +104,14 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, Option<u32>) {
     // simply does not meet are not reported: that is a gap in their experience,
     // not a defect in the document, and the match score already says so.
     let mut hits = 0u32;
+    let mut measured = 0u32;
     for requirement in ctx.input.top_requirements {
+        // No extractable keywords ⇒ unanswerable ⇒ it is not part of the
+        // measurement, on either side of the ratio.
         let Some(generated) = requirement_ratio_in(ctx, requirement, false) else {
             continue;
         };
+        measured += 1;
         if generated >= TOP_REQUIREMENT_MATCH_RATIO {
             hits += 1;
             continue;
@@ -115,6 +137,11 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, Option<u32>) {
     // deliberately NOT an early return: `alignment.low_coverage` compares the
     // two documents' coverage of the posting and has nothing to do with the
     // requirements list.
-    let measured = (!ctx.input.top_requirements.is_empty()).then_some(hits);
-    (issues, measured)
+    //
+    // A NON-empty list whose every entry was unanswerable is a different state
+    // and reports as one (`0` of `0`): the analysis did produce requirements,
+    // and none of them is something this kernel can check.
+    let metric =
+        (!ctx.input.top_requirements.is_empty()).then_some(RequirementHits { hits, measured });
+    (issues, metric)
 }

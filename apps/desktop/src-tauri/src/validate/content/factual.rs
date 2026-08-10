@@ -168,24 +168,73 @@ pub fn normalize_number(raw: &str) -> String {
     out.trim_end_matches('.').to_string()
 }
 
-/// The lines of `text` whose numbers count as CLAIMS — everything outside the
-/// document's contact band.
+/// Which document a band walk is being computed for. The two sides of the
+/// metric comparison ask different questions of the same text, and the ONE
+/// place they may legitimately differ is the pre-heading band — see
+/// [`metric_lines`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MetricSide {
+    /// The generated document: its numbers are CLAIMS the user is answerable
+    /// for.
+    Claims,
+    /// The source document: its numbers are what the candidate already stated.
+    Source,
+}
+
+/// Digits a number-only line must carry before it reads as a phone number
+/// rather than as a figure. Seven is the floor
+/// `super::HEADER_PHONE_RE`'s marker-less arm already applies, kept the same so
+/// the two "is this a phone?" answers cannot disagree about length.
+pub const MIN_BARE_PHONE_LINE_DIGITS: usize = 7;
+
+/// True when a line is NOTHING but a phone-shaped token: enough digits to be a
+/// subscriber number, and not one other character besides the separators phone
+/// numbers are written with.
 ///
-/// One walk, used by both sides of every comparison in this file
-/// ([`metrics_in`] for what a document claims, [`all_numbers`] for what its
-/// source already stated). Splitting them was a defect in itself: the truth side
-/// scanned the raw text, so the candidate's own phone digits "sourced" a
-/// fabricated figure that merely reused them.
+/// Deliberately looser about SHAPE than [`super::looks_like_header_phone`],
+/// because being alone on a line is itself the signal. That helper answers "is
+/// this line contact details?" and has to stay strict, since ordinary numeric
+/// prose ("150 - 200 EUR per hour") would otherwise exempt itself from the whole
+/// metric pass — its documented cost is a bare US number with no `+`/parens
+/// ("555-123-4567", longest digit run four), which is exactly what a letter
+/// signs off with. This asks a much narrower question: a line carrying no words
+/// at all makes no claim of impact, whatever its digits are, so relaxing the
+/// shape here cannot exempt any prose. `INTEGER_RE` used to read that sign-off
+/// as THREE fabricated figures ("555", "123", "4567").
+///
+/// *Accepted cost, stated:* a line consisting of nothing but bare numbers
+/// totalling seven digits or more is not read as a claim either. A metric needs
+/// a sentence around it to mean anything, and this file's rule is that a missed
+/// check beats a wrong accusation.
+fn is_bare_phone_line(text: &str) -> bool {
+    let line = text.trim();
+    line.chars().filter(char::is_ascii_digit).count() >= MIN_BARE_PHONE_LINE_DIGITS
+        && line.chars().all(|c| {
+            c.is_ascii_digit()
+                || matches!(
+                    c,
+                    '+' | '(' | ')' | '-' | '–' | '.' | '/' | ' ' | '\u{00A0}'
+                )
+        })
+}
+
+/// The lines of `text` whose numbers count — CLAIMS on the generated side, what
+/// the source already stated on the truth side.
+///
+/// One walk for both, because the sides disagreeing is what makes a hole: the
+/// truth side used to scan the raw text, so the candidate's own phone digits
+/// "sourced" a fabricated figure that merely reused them.
 ///
 /// What the band is depends on whether the document HAS sections:
 ///
-/// * **A résumé** (headings present) — the band is section 0, name + contact,
-///   and it is skipped by POSITION. Nothing else is exempt. The per-line
-///   exemption that used to sit here ("the parser called it `Contact` and it
-///   carries a real address or phone") reached every section, and a wrapped body
-///   paragraph is contact-shaped whenever it carries a European-grouped figure
-///   ("90 000 - 110 000" satisfies `PHONE_RE`), so a fabricated number in the
-///   middle of a document was exempt from the whole check.
+/// * **A résumé** (headings present) — the band is section 0, name + contact.
+///   On the CLAIMS side it is skipped by POSITION and nothing else is exempt.
+///   The per-line exemption that used to sit here ("the parser called it
+///   `Contact` and it carries a real address or phone") reached every section,
+///   and a wrapped body paragraph is contact-shaped whenever it carries a
+///   European-grouped figure ("90 000 - 110 000" satisfies `PHONE_RE`), so a
+///   fabricated number in the middle of a document was exempt from the whole
+///   check.
 /// * **A cover letter** (no headings) — there is no positional band, so the
 ///   letterhead is skipped by SHAPE: the body starts at the first line long
 ///   enough to be a sentence ([`MIN_WORDS_IN_LETTER_BODY_LINE`]), and a real
@@ -194,18 +243,33 @@ pub fn normalize_number(raw: &str) -> String {
 ///   [`has_real_contact_match`] — the same one `ats::is_contact_cluster` applies
 ///   inline, minus the `LineKind` coupling this fix removed.
 ///
-/// *Residual, stated rather than hidden:* in a heading-less document a LONG
-/// contact-shaped prose line is still exempt, because shape is the only band
-/// signal a letter offers. A letterhead written as one line
-/// ("Jane Doe · Musterstraße 1 · 10115 Berlin · +49 30 1234567") clears the
-/// sentence-length gate, so the shape test cannot be narrowed to short lines
-/// either.
-fn metric_lines(text: &str) -> Vec<String> {
+/// ## Why the SOURCE side reads section 0 by shape instead of position
+///
+/// A résumé that opens with a profile paragraph BEFORE its first heading is an
+/// ordinary layout, and skipping section 0 wholesale erased every figure in that
+/// paragraph from the sourced set — so the same figure, restated under the
+/// generated document's `SUMMARY` heading, came back as a fabrication Critical.
+/// On the truth side the band is therefore filtered by
+/// [`has_real_contact_match`] (plus [`is_bare_phone_line`]) rather than dropped.
+///
+/// The asymmetry is deliberate and runs in the SAFE direction only: the source
+/// side may read STRICTLY MORE lines than the claims side, which can only ever
+/// silence a finding, never raise one. The invariant that actually matters is
+/// unchanged and is enforced by shape rather than by position — **contact
+/// details never source a body metric** — and it now holds for a bare US number
+/// too, which no positional rule covered on the letter path at all.
+///
+/// *Residual, stated rather than hidden:* a contact-shaped line the shape test
+/// misses (a long prose letterhead, an address line with no phone or email) is
+/// read as source text, so its digits can vouch for a claim. That is a missed
+/// check, which is this family's chosen direction of error.
+fn metric_lines(text: &str, side: MetricSide) -> Vec<String> {
     let sections = super::split_sections(text);
     let has_headings = sections.len() > 1;
     let mut out = Vec::new();
     for (idx, section) in sections.iter().enumerate() {
-        if has_headings && idx == 0 {
+        let contact_band = has_headings && idx == 0;
+        if contact_band && side == MetricSide::Claims {
             continue;
         }
         let mut body_started = has_headings;
@@ -216,7 +280,15 @@ fn metric_lines(text: &str) -> Vec<String> {
                     continue;
                 }
             }
-            if !has_headings && has_real_contact_match(&line.text) {
+            // Every band whose contact lines are not skipped by POSITION is
+            // skipped by SHAPE instead: the letter (no headings at all) and the
+            // source résumé's pre-heading band.
+            if (contact_band || !has_headings) && has_real_contact_match(&line.text) {
+                continue;
+            }
+            // …and a line that is nothing but a phone number is not a claim in
+            // ANY band, including the body a sign-off sits in.
+            if is_bare_phone_line(&line.text) {
                 continue;
             }
             out.push(line.text.clone());
@@ -233,7 +305,7 @@ fn metric_lines(text: &str) -> Vec<String> {
 ///   [`unsupported_date_issues`] instead;
 /// * numbers under three digits with no `%`/`x` unit.
 pub fn metrics_in(text: &str) -> Vec<Metric> {
-    metrics_in_lines(&metric_lines(text))
+    metrics_in_lines(&metric_lines(text, MetricSide::Claims))
 }
 
 fn metrics_in_lines(lines: &[String]) -> Vec<Metric> {
@@ -302,10 +374,11 @@ fn collect_metrics(line: &str, out: &mut Vec<Metric>) {
 /// starts accusing people.
 fn unsourced_metric_issues(generated: &str, truth: &str) -> Vec<ContentIssue> {
     // The truth's band-skipped lines, resolved ONCE: both number passes below
-    // read them, and both must read the same ones as the generated side, or the
-    // source's contact digits become evidence for a claim (see
-    // [`metric_lines`]).
-    let truth_lines = metric_lines(truth);
+    // read them, and both must skip the same CONTACT band as the generated side
+    // does, or the source's contact digits become evidence for a claim (see
+    // [`metric_lines`], which also documents the one place the two sides
+    // deliberately differ).
+    let truth_lines = metric_lines(truth, MetricSide::Source);
     let sourced: HashSet<String> = metrics_in_lines(&truth_lines)
         .into_iter()
         .map(|m| m.number)

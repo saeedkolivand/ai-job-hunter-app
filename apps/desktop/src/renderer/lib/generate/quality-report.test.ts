@@ -17,6 +17,7 @@ const OK_REPORT: ContentReportPayload = {
   metrics: {
     keywordCoverage: 80,
     topRequirementHits: 2,
+    topRequirementsMeasured: 4,
     duplicateRatio: 0,
     rolesSource: 3,
     rolesOutput: 3,
@@ -37,6 +38,7 @@ const CRITICAL_REPORT: ContentReportPayload = {
   metrics: {
     keywordCoverage: 40,
     topRequirementHits: 0,
+    topRequirementsMeasured: 0,
     duplicateRatio: 0,
     rolesSource: 3,
     rolesOutput: 2,
@@ -306,7 +308,7 @@ describe('parseQualityReport', () => {
     const unmeasured = {
       ok: true,
       issues: [],
-      metrics: { ...OK_REPORT.metrics, topRequirementHits: null },
+      metrics: { ...OK_REPORT.metrics, topRequirementHits: null, topRequirementsMeasured: null },
     };
     const raw = JSON.stringify({
       schemaVersion: 2,
@@ -316,7 +318,26 @@ describe('parseQualityReport', () => {
     });
     // Coercing null to 0 here would render "Top requirements covered: 0" as a
     // fact on cold entry — the exact state the Option<u32> wire removed.
-    expect(parseQualityReport(raw)?.resume?.report.metrics.topRequirementHits).toBeNull();
+    const metrics = parseQualityReport(raw)?.resume?.report.metrics;
+    expect(metrics?.topRequirementHits).toBeNull();
+    expect(metrics?.topRequirementsMeasured).toBeNull();
+  });
+
+  it('carries the requirement denominator through a reopen', () => {
+    const measured = {
+      ok: true,
+      issues: [],
+      metrics: { ...OK_REPORT.metrics, topRequirementHits: 2, topRequirementsMeasured: 4 },
+    };
+    const raw = JSON.stringify({
+      schemaVersion: 2,
+      pipeline: 'fast',
+      generatedAt: 1,
+      resume: { report: measured, sourceTextHash: 9 },
+    });
+    // Dropping the denominator at the parse layer would strand a reopened
+    // report with an uninterpretable bare count (round-9 finding).
+    expect(parseQualityReport(raw)?.resume?.report.metrics.topRequirementsMeasured).toBe(4);
   });
 
   it('drops a slot that carries a report but no hash — never a report without its anchor', () => {

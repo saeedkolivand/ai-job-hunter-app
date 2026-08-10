@@ -201,6 +201,10 @@ function parseMetrics(value: unknown): ContentMetrics | null {
     // on every reopen — the exact state the Option<u32> wire change removed.
     topRequirementHits:
       typeof value.topRequirementHits === 'number' ? value.topRequirementHits : null,
+    // The denominator travels with the hits — dropping it here would strand a
+    // reopened report with an uninterpretable bare count.
+    topRequirementsMeasured:
+      typeof value.topRequirementsMeasured === 'number' ? value.topRequirementsMeasured : null,
     duplicateRatio: num(value.duplicateRatio),
     rolesSource: num(value.rolesSource),
     rolesOutput: num(value.rolesOutput),

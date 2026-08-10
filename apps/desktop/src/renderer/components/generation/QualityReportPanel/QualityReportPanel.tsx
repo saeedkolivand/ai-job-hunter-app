@@ -218,7 +218,14 @@ export function QualityReportPanel({
                 <div className="flex items-center justify-between gap-2">
                   <dt>{t('quality.panel.metrics.topRequirementHits')}</dt>
                   <dd className="font-medium text-foreground/85">
-                    {metrics.topRequirementHits ?? '—'}
+                    {/* null hits = not measured at all; a missing denominator
+                        only happens on a pre-denominator persisted report,
+                        where the bare count is all that exists. */}
+                    {metrics.topRequirementHits == null
+                      ? '—'
+                      : metrics.topRequirementsMeasured != null
+                        ? `${metrics.topRequirementHits} / ${metrics.topRequirementsMeasured}`
+                        : metrics.topRequirementHits}
                   </dd>
                 </div>
               )}

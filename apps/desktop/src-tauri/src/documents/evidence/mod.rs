@@ -648,12 +648,14 @@ fn salvage_entry_label(label: &str) -> Option<(String, String)> {
 ///    the date into `right_text`, so `text` is the entry label, split by
 ///    [`split_two_space_label`]'s company-first rule.
 /// 2. Pipe/middot form (`Senior Engineer | Acme Corp | 2021 – Present`): the
-///    date-shaped segment is the span, the first segment is the title and the
-///    second the company (the order every template in this repo renders).
-///    Location-only segments are dropped first ([`is_location_only`]) — an
-///    entry line carries a location column at least as often as a title, and
-///    positional reading alone recorded "Acme Corp | Berlin | 2021 – Present"
-///    as the company "Berlin".
+///    date segment ([`is_date_column_segment`], which needs a year — a bare
+///    present-tense marker is an employer's NAME at least as often as a date)
+///    is the span, the first remaining segment is the title and the second the
+///    company (the order every template in this repo renders). Location-only
+///    segments are dropped first ([`is_location_only`]) — an entry line carries
+///    a location column at least as often as a title, and positional reading
+///    alone recorded "Acme Corp | Berlin | 2021 – Present" as the company
+///    "Berlin".
 /// 3. Parenthesized form (`Senior Engineer, Acme Corp (Jan 2021 – Mar 2023)`):
 ///    the parenthesized tail is the span, and the label splits at the LAST
 ///    comma.
@@ -684,13 +686,13 @@ pub fn split_entry(line: &ParsedLine) -> (String, String, String) {
         let segments: Vec<&str> = line.text.split(separators).map(str::trim).collect();
         let dates = segments
             .iter()
-            .find(|s| looks_like_date_span(s))
+            .find(|s| is_date_column_segment(s))
             .map(|s| s.to_string())
             .unwrap_or_default();
         let rest: Vec<&str> = segments
             .iter()
             .copied()
-            .filter(|s| !s.is_empty() && !looks_like_date_span(s) && !is_location_only(s))
+            .filter(|s| !s.is_empty() && !is_date_column_segment(s) && !is_location_only(s))
             .collect();
         return match rest.as_slice() {
             [] => (String::new(), String::new(), dates),
@@ -885,6 +887,35 @@ fn is_date_only(s: &str) -> bool {
     !date_spans(s).is_empty()
         || is_open_ended(s)
         || tokens.iter().any(|t| MONTH_TOKENS.contains(&t.as_str()))
+}
+
+/// True when one pipe/middot SEGMENT is the entry's date column: it carries a
+/// YEAR.
+///
+/// Stricter than [`looks_like_date_span`] in exactly one dimension, and that is
+/// the point. `looks_like_date_span` is also satisfied by a bare present-tense
+/// marker with no year anywhere ([`is_open_ended`] fires on the word alone), and
+/// [`PRESENT_MARKERS`] is a list of ordinary words that real employers are named
+/// after — Current (current.com) and Current Health are both real, and "Aktuell"
+/// opens plenty of German company names. Such a segment was selected as the date
+/// column AND filtered out of the label segments, so the job TITLE was recorded
+/// as the employer and the employer as the date span.
+///
+/// Deliberately NOT [`is_date_only`], which the review suggested: it is both too
+/// loose and too tight here. Too loose because a bare "Current" satisfies it
+/// (every word is a present marker, and `is_open_ended` supplies the structure),
+/// which is the failing case itself; too tight because it rejects a lone year,
+/// and this arm has always read `Senior Engineer | Acme Corp | 2022` as an entry
+/// with a one-year column. Its word test would additionally reject spellings the
+/// PARSER accepts and hands us — "2018 to 2021", "2021 bis Heute",
+/// "Jan 2018 through Mar 2021" all carry a word that is neither month, number
+/// nor marker — turning a fixed false employer into a lost date column.
+///
+/// The residual is the pre-existing one, unchanged: a label that happens to
+/// carry a year ("2020 Ventures") still reads as the date column. Telling that
+/// apart needs the word test this rejects.
+fn is_date_column_segment(s: &str) -> bool {
+    !years_in(s).is_empty()
 }
 
 /// Split `text` into `(label, dates)` when it ends in a `, <dates>` column —

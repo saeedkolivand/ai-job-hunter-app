@@ -9,6 +9,7 @@ import { QualityReportPanel } from './QualityReportPanel';
 const METRICS = {
   keywordCoverage: 62.4,
   topRequirementHits: 2,
+  topRequirementsMeasured: 4,
   duplicateRatio: 0.25,
   rolesSource: 3,
   rolesOutput: 2,
@@ -202,9 +203,25 @@ describe('QualityReportPanel', () => {
       .getByRole('heading', { level: 3, name: /metrics/i })
       .closest('div') as HTMLElement;
     expect(within(footer).getByText('62%')).toBeInTheDocument();
-    expect(within(footer).getByText('2')).toBeInTheDocument();
+    // Hits render as a ratio against the measured denominator, never a bare
+    // uninterpretable count (round-9 finding).
+    expect(within(footer).getByText('2 / 4')).toBeInTheDocument();
     expect(within(footer).getByText('25%')).toBeInTheDocument();
     expect(within(footer).getByText(/3.*2/)).toBeInTheDocument();
+  });
+
+  it('falls back to the bare count for a pre-denominator persisted report', () => {
+    const legacy: ContentReportPayload = {
+      ok: true,
+      issues: [],
+      metrics: { ...METRICS, topRequirementsMeasured: null },
+    };
+    render(<QualityReportPanel open onClose={vi.fn()} report={legacy} docKind="resume" />);
+    const footer = screen
+      .getByRole('heading', { level: 3, name: /metrics/i })
+      .closest('div') as HTMLElement;
+    expect(within(footer).getByText('2')).toBeInTheDocument();
+    expect(within(footer).queryByText(/2 \/ /)).toBeNull();
   });
 
   it('renders an em dash when requirement hits were not measured (uncomparable posting)', () => {

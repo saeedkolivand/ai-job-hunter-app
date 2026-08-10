@@ -1861,6 +1861,7 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
         metrics: ContentMetrics {
             keyword_coverage: None,
             top_requirement_hits: Some(3),
+            top_requirements_measured: Some(4),
             duplicate_ratio: 0.25,
             roles_source: 2,
             roles_output: 1,
@@ -1891,7 +1892,8 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
             "keywordCoverage",
             "rolesOutput",
             "rolesSource",
-            "topRequirementHits"
+            "topRequirementHits",
+            "topRequirementsMeasured"
         ],
         "metrics keys are camelCase on the wire"
     );
@@ -1905,15 +1907,19 @@ fn serialized_report_matches_the_typescript_wire_mirror() {
     assert!(value["issues"][0]["evidence"].is_null());
     assert!(value["metrics"]["keywordCoverage"].is_null());
     assert_eq!(value["metrics"]["topRequirementHits"], 3);
+    assert_eq!(value["metrics"]["topRequirementsMeasured"], 4);
     let unmeasured = serde_json::to_value(ContentMetrics {
         top_requirement_hits: None,
+        top_requirements_measured: None,
         ..Default::default()
     })
     .expect("metrics must serialize");
-    assert!(
-        unmeasured["topRequirementHits"].is_null(),
-        "an unmeasured hit count is present-and-null, matching `number | null` in TS"
-    );
+    for field in ["topRequirementHits", "topRequirementsMeasured"] {
+        assert!(
+            unmeasured[field].is_null(),
+            "{field}: an unmeasured value is present-and-null, matching `number | null` in TS"
+        );
+    }
     assert_eq!(value["issues"][1]["section"], "Experience");
     assert_eq!(value["issues"][1]["evidence"], "40% vs 60%");
     assert_eq!(value["issues"][1]["code"], ALIGNMENT_LOW_COVERAGE);
@@ -2204,6 +2210,9 @@ fn factual_and_alignment_thresholds_are_pinned() {
     // what turned "IBM Deutschland GmbH" written as "IBM" into a Critical.
     assert_eq!(factual::MIN_SURVIVAL_COMPANY_TOKEN_CHARS, 2);
     assert_eq!(factual::MIN_WORDS_IN_LETTER_BODY_LINE, 8);
+    // Shared with the marker-less arm of `HEADER_PHONE_RE` on purpose — the two
+    // "is this a phone?" answers may differ in SHAPE, never in length.
+    assert_eq!(factual::MIN_BARE_PHONE_LINE_DIGITS, 7);
     assert_eq!(alignment::TOP_REQUIREMENT_MATCH_RATIO, 0.5);
     assert_eq!(alignment::MIN_COVERAGE_DROP_POINTS, 5.0);
     assert_eq!(consistency::MAX_PROJECT_DESCRIPTION_LINES, 3);
@@ -2368,19 +2377,22 @@ fn lexicon_uncurated_language_gets_no_list_rather_than_english() {
 
 /// Every entry across every language/tier must be lowercase and non-empty:
 /// matching lowercases the haystack, so an upper-case entry would be dead,
-/// and an empty entry would match everything.
+/// and an empty entry would match everything. The DE prose tier is exempt
+/// from the non-empty rule: every German prose tell turned out to be
+/// construction-dependent (see `AI_TELL_PROSE_WORDS_DE`'s doc — the prompt
+/// bans them as sentence-opener constructions a substring cannot judge), so
+/// an empty list is the honest state, not a codegen accident.
 #[test]
 fn lexicon_every_entry_is_lowercase_and_non_empty() {
-    let all: [&[&str]; 6] = [
+    let curated: [&[&str]; 5] = [
         lexicon::ai_tell_lexical("en"),
         lexicon::ai_tell_lexical("de"),
         lexicon::ai_tell_prose("en"),
-        lexicon::ai_tell_prose("de"),
         lexicon::template_openers("en"),
         lexicon::template_openers("de"),
     ];
-    for list in all {
-        assert!(!list.is_empty(), "no list may be empty");
+    for list in curated {
+        assert!(!list.is_empty(), "no curated list may be empty");
         for entry in list {
             assert!(!entry.trim().is_empty(), "empty entry in lexicon");
             assert_eq!(
@@ -2389,6 +2401,16 @@ fn lexicon_every_entry_is_lowercase_and_non_empty() {
                 "lexicon entries must be lowercase; got {entry:?}"
             );
         }
+    }
+    // The DE prose tier may be empty, but any entry it ever gains must obey
+    // the same per-entry rules as the curated lists.
+    for entry in lexicon::ai_tell_prose("de") {
+        assert!(!entry.trim().is_empty(), "empty entry in lexicon");
+        assert_eq!(
+            *entry,
+            entry.to_lowercase(),
+            "lexicon entries must be lowercase; got {entry:?}"
+        );
     }
 }
 
@@ -3293,4 +3315,202 @@ fn a_category_label_is_never_the_claim() {
         de_skills_claims("Englisch: verhandlungssicher in Wort und Schrift"),
         vec!["englisch".to_string()]
     );
+}
+
+// ── PR #963 round-9 findings ────────────────────────────────────────────────
+
+/// R9-F2 — `topRequirementHits` is a bare count with no denominator, and a
+/// requirement with no extractable keywords is dropped from the loop silently,
+/// so "2" could mean 2 of 2, 2 of 10, or 2 out of a list where nothing else was
+/// measurable. The panel cannot tell those apart, and neither could this test
+/// suite.
+#[test]
+fn top_requirement_hits_carry_the_denominator_they_were_measured_against() {
+    let source = "EXPERIENCE\n\nAcme | 2021 - Present\n\
+                  - Wrote Terraform modules for the AWS estate\n\
+                  - Ran the PostgreSQL fleet through two major upgrades\n";
+    let job = "Terraform AWS PostgreSQL Kubernetes platform engineer";
+    let metrics = |reqs: &[String]| {
+        serde_json::to_value(report_for(source, source, job, reqs).metrics)
+            .expect("metrics must serialize")
+    };
+    let req = |s: &str| s.to_string();
+
+    let both = metrics(&[req("Terraform modules"), req("PostgreSQL fleet")]);
+    assert_eq!(both["topRequirementHits"], 2);
+    assert_eq!(
+        both["topRequirementsMeasured"], 2,
+        "2 of 2 must be distinguishable from 2 of 10"
+    );
+
+    // A requirement with no extractable keywords ("5+ yrs" — every token is
+    // under the kernel's length filter) is UNMEASURABLE, and an unmeasurable
+    // requirement counts for neither side of the ratio.
+    let mixed = metrics(&[
+        req("Terraform modules"),
+        req("PostgreSQL fleet"),
+        req("5+ yrs"),
+    ]);
+    assert_eq!(mixed["topRequirementHits"], 2);
+    assert_eq!(
+        mixed["topRequirementsMeasured"], 2,
+        "an unanswerable requirement is not a denominator"
+    );
+
+    // A requirement nothing evidences DOES count in the denominator — that is
+    // the whole difference between "2 of 2" and "2 of 3".
+    let with_gap = metrics(&[req("Terraform modules"), req("Kubernetes operators")]);
+    assert_eq!(with_gap["topRequirementHits"], 1);
+    assert_eq!(with_gap["topRequirementsMeasured"], 2);
+
+    // The invariant the wire mirror depends on: the denominator is absent
+    // EXACTLY when the hit count is, so the renderer needs one null check for
+    // the pair. Both routes to "unmeasured" are covered — an empty requirements
+    // list, and a cover letter (which never runs the alignment pass at all).
+    for unmeasured in [
+        metrics(&[]),
+        serde_json::to_value(en_letter(EN_LETTER_GROUNDED).metrics).expect("metrics serialize"),
+    ] {
+        assert!(unmeasured["topRequirementHits"].is_null());
+        assert!(unmeasured["topRequirementsMeasured"].is_null());
+    }
+}
+
+/// R9-F3 — the TRUTH side skipped section 0 by POSITION, so a résumé that opens
+/// with a profile paragraph BEFORE its first heading (an extremely common
+/// layout) had every figure in that paragraph erased from the sourced set. The
+/// same figure, restated in the generated document's headed summary, then read
+/// as fabricated.
+#[test]
+fn a_profile_paragraph_before_the_first_heading_still_sources_its_metrics() {
+    let source = "Jane Doe\njane@example.com\n\n\
+                  Backend engineer who cut checkout latency by 40% on the payment platform.\n\n\
+                  EXPERIENCE\n\nAcme | 2021 - Present\n- Led the ledger migration\n";
+    let generated = "Jane Doe\njane@example.com\n\n\
+                     SUMMARY\n\n\
+                     Backend engineer; cut checkout latency by 40% on the payment platform.\n\n\
+                     EXPERIENCE\n\nAcme | 2021 - Present\n- Led the ledger migration\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        FACTUAL_UNSOURCED_METRIC,
+    );
+
+    // The check still bites: a figure the profile paragraph does NOT state is
+    // still a fabrication.
+    let invented = "Jane Doe\njane@example.com\n\n\
+                    SUMMARY\n\n\
+                    Backend engineer; cut checkout latency by 65% on the payment platform.\n\n\
+                    EXPERIENCE\n\nAcme | 2021 - Present\n- Led the ledger migration\n";
+    let report = report_for(invented, source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("65%"));
+}
+
+/// R9-F4 — the trade R8-F4's symmetry fix made. A heading-less document (a
+/// letter) has no positional band, so its sign-off is skipped by SHAPE — and
+/// the shape test is `looks_like_header_phone`, whose own documented miss is a
+/// bare US number with no `+`/parens. "555-123-4567" alone under "Best regards"
+/// therefore reached the metric pass and became THREE `unsourced_metric`
+/// Criticals about the candidate's own phone number.
+#[test]
+fn a_number_alone_on_a_line_is_a_phone_number_not_three_claims() {
+    let body = "I put a Redis cache in front of the ledger service and checkout latency \
+                went from 480ms to 90ms.";
+    let signed = format!(
+        "Jane Doe\njane.doe@example.com\n\n\
+         Dear Hiring Manager,\n\n{body}\n\n\
+         Best regards,\nJane Doe\n555-123-4567\n"
+    );
+    silent(&en_letter(&signed), FACTUAL_UNSOURCED_METRIC);
+
+    // Direction 2 — R8-F4's property is kept: digits in PROSE are still
+    // checked, and a figure the source never states is still a Critical.
+    let fabricated = format!(
+        "Jane Doe\njane.doe@example.com\n\n\
+         Dear Hiring Manager,\n\n{body} I also settled 4500 disputes that quarter.\n\n\
+         Best regards,\nJane Doe\n555-123-4567\n"
+    );
+    let report = en_letter(&fabricated);
+    let evidence: Vec<&str> = fired(&report, FACTUAL_UNSOURCED_METRIC)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    assert_eq!(
+        evidence,
+        vec!["4500"],
+        "the sign-off number is not a claim; the prose figure still is"
+    );
+
+    // Direction 3 — the same line in the SOURCE still cannot vouch for a body
+    // metric that merely reuses its digits (R8-F4, via the shape this round
+    // added rather than the position R9-F3 relaxed).
+    let header = "Jane Doe\njane@example.com\n555-123-4567\n\n";
+    let source = format!("{header}EXPERIENCE\n\nAcme | 2021 - Present\n- Led the migration\n");
+    let generated = format!(
+        "{header}EXPERIENCE\n\nAcme | 2021 - Present\n\
+         - Settled 4567 disputes in the first quarter after the rewrite\n"
+    );
+    let report = report_for(&generated, &source, EN_JOB_AD, &[]);
+    let hits = fired(&report, FACTUAL_UNSOURCED_METRIC);
+    assert_eq!(hits[0].evidence.as_deref(), Some("4567"));
+}
+
+/// R9-F5 — `generic_letter` obeyed the generated-vs-target language gate but
+/// not the JOB-AD-vs-target one, which is the normal DACH case: an
+/// English-language posting for a German-speaking role. The keyword
+/// intersection then ran across two languages, came back at ~0, and told a
+/// letter that names the posting's own subject matter that it "could have been
+/// sent to anyone".
+#[test]
+fn a_posting_in_another_language_does_not_make_a_letter_generic() {
+    let en_ad = "Operations Lead, Payment Disputes\n\n\
+                 We are hiring an operations lead for our chargeback and dispute desk. You \
+                 will own the refund workflow end to end, cut the average handling time per \
+                 case, and report weekly to the finance team on recovered volume.\n";
+    let de_ad = "Teamleitung Zahlungsreklamationen\n\n\
+                 Wir suchen eine Teamleitung für unsere Rückbuchungsstelle. Sie verantworten \
+                 den Erstattungsprozess von Anfang bis Ende, senken die Bearbeitungszeit je \
+                 Fall und berichten wöchentlich an die Finanzabteilung über das \
+                 zurückgeholte Volumen.\n";
+    let letter = "Jana Mustermann\njana.mustermann@example.com\n\n\
+                  Sehr geehrtes Team,\n\n\
+                  Ihre Ausschreibung nennt die Rückbuchungsstelle und den Erstattungsprozess \
+                  als Kern der Aufgabe. Genau dort habe ich die letzten vier Jahre \
+                  gearbeitet. Ich habe die Bearbeitungszeit je Fall von elf auf vier Tage \
+                  gesenkt und das wöchentliche Berichtswesen an die Finanzabteilung \
+                  aufgebaut.\n\n\
+                  Mit freundlichen Grüßen\nJana Mustermann\n";
+    let de_letter_against = |job_ad: &str| {
+        validate_content(&ContentInput {
+            generated: letter,
+            source_resume: DE_SOURCE,
+            job_ad,
+            top_requirements: &[],
+            target_language: "de",
+            doc_kind: DocKind::CoverLetter,
+        })
+    };
+
+    // The control: against the SAME posting in the target language, this letter
+    // is measurably specific. Only the ad's language differs between the two.
+    silent(&de_letter_against(de_ad), VOICE_GENERIC_LETTER);
+    let across_languages = de_letter_against(en_ad);
+    silent(&across_languages, VOICE_GENERIC_LETTER);
+
+    // The premise is scoped to the ad↔document INTERSECTION and nothing else:
+    // coverage compares the two DOCUMENTS against the same ad, symmetrically,
+    // so it stays a real measurement and must survive.
+    assert!(
+        across_languages.metrics.keyword_coverage.is_some(),
+        "a coverage comparison between two documents is not a cross-language \
+         intersection; only `generic_letter` is"
+    );
+
+    // …and the control on the control: divergence has to be RELIABLY detected.
+    // A terse ad is a keyword soup `whatlang` reads as anything at all, so
+    // suppressing on that guess would switch the check off for ordinary short
+    // postings. Below the reliability bar the check runs exactly as it always
+    // did — including, accepted and pinned, its cross-language noise.
+    let terse = "Payment disputes chargeback refund workflow lead";
+    fired(&de_letter_against(terse), VOICE_GENERIC_LETTER);
 }

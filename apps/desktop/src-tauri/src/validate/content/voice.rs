@@ -281,8 +281,22 @@ fn em_dash_issues(ctx: &Analysis) -> Vec<ContentIssue> {
 /// letter yields ~0 every time — a guaranteed "this letter is generic" warning
 /// stacked under the one finding that actually explains it, which is exactly the
 /// cascade the language Critical suppresses everywhere else.
+///
+/// It ALSO obeys [`Analysis::posting_language_diverges`], which the coverage
+/// checks do not, because this is the one posting comparison that INTERSECTS
+/// the ad's vocabulary with a document's instead of comparing two documents'
+/// coverage of the ad against each other. A German-language letter answering an
+/// English-language ad — the ordinary DACH case, where nothing is wrong with
+/// either text — scores ~0 on that intersection for reasons that have nothing
+/// to do with how specific the letter is. See that method for why the premise
+/// is scoped to this check rather than folded into `posting_comparable`.
+///
+/// *Accepted cost, stated:* a letter that IS generic goes unreported whenever
+/// the ad's language diverges. This family is advisory (a Warning) and a wrong
+/// warning costs more than a missed one, which is the trade every check in this
+/// module makes.
 fn generic_letter_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    if !ctx.posting_comparable() {
+    if !ctx.posting_comparable() || ctx.posting_language_diverges() {
         return Vec::new(); // Nothing to be specific ABOUT, or not comparable.
     }
     let specific = ctx
