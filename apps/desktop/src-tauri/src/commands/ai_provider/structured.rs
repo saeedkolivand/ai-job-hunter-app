@@ -306,10 +306,15 @@ const OPENAI_STRICT_KEYWORDS: &[&str] = &[
     "minItems",
 ];
 
-/// Whether every schema node [`strictify`] will emit carries ONLY
-/// [`OPENAI_STRICT_KEYWORDS`] — the OpenAI-side mirror of
+/// Whether every schema node [`strictify`] will emit is an object carrying
+/// ONLY [`OPENAI_STRICT_KEYWORDS`] — the OpenAI-side mirror of
 /// [`has_untranslatable_keyword`], and the reason a schema written for another
 /// provider's dialect degrades instead of 400ing.
+///
+/// "Is an object" is half the check, not a precondition: the non-object schema
+/// positions (tuple-form `items`, a boolean schema) are exactly the ones
+/// [`strictify`] cannot close, so they are rejected here — see the comment on
+/// that arm below.
 ///
 /// Rides along with [`strictify`]'s OWN walk (`properties` values + `items`)
 /// rather than scanning the raw [`Value`] tree the way
@@ -327,8 +332,19 @@ fn openai_strict_keywords_only(schema: &Value, depth: usize) -> bool {
     if depth > MAX_SCHEMA_DEPTH {
         return false;
     }
+    // Every position this walk reaches — the root, a `properties` value, an
+    // `items` value — must be a schema OBJECT. A non-object here is a shape
+    // neither this vetter nor [`strictify`] can descend into, and both used to
+    // bottom out returning "fine", so the subtree shipped VERBATIM under
+    // `strict: true`. The reachable cases are TUPLE-form `items` (an array of
+    // schemas — draft-07 tuple validation, `prefixItems` in 2020-12) and a
+    // boolean schema (`items: true`); OpenAI's strict subset documents neither
+    // (its array properties are `minItems`/`maxItems` — see
+    // [`OPENAI_STRICT_KEYWORDS`]), and an undocumented construct in strict mode
+    // 400s the whole request. So this fails the schema — the SAME whole-schema
+    // degrade [`COMPOSITION_KEYWORDS`] takes, for the same reason.
     let Some(obj) = schema.as_object() else {
-        return true;
+        return false;
     };
     obj.keys()
         .all(|key| OPENAI_STRICT_KEYWORDS.contains(&key.as_str()))
@@ -356,8 +372,10 @@ fn openai_strict_keywords_only(schema: &Value, depth: usize) -> bool {
 /// non-object root can't be strict-mode'd at all (OpenAI requires a root
 /// object), so it degrades to `json_object` instead of being rejected — and so
 /// does a schema nested past [`MAX_SCHEMA_DEPTH`], one carrying a
-/// [`COMPOSITION_KEYWORDS`] entry [`strictify`] cannot close, and one carrying
-/// any keyword outside [`OPENAI_STRICT_KEYWORDS`].
+/// [`COMPOSITION_KEYWORDS`] entry [`strictify`] cannot close, one carrying any
+/// keyword outside [`OPENAI_STRICT_KEYWORDS`], and one carrying a non-object
+/// schema node ([`openai_strict_keywords_only`] — tuple-form `items` is the
+/// realistic case).
 pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
     match schema
         .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
@@ -385,10 +403,12 @@ pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
 ///
 /// `None` past [`MAX_SCHEMA_DEPTH`] — failing the whole schema (the caller
 /// falls back to `json_object`) rather than emitting a subtree that silently
-/// isn't strict, which would 400 at the vendor instead. The other way to reach
-/// a not-actually-strict subtree — a composition keyword this walker never
-/// descends into — is screened out by the caller before this runs (see
-/// [`COMPOSITION_KEYWORDS`]).
+/// isn't strict, which would 400 at the vendor instead. The other two ways to
+/// reach a not-actually-strict subtree are both screened out by the caller
+/// before this runs: a composition keyword this walker never descends into
+/// (see [`COMPOSITION_KEYWORDS`]) and a non-object node it cannot descend into
+/// at all — tuple-form `items`, which the non-object arm below would otherwise
+/// clone through verbatim (see [`openai_strict_keywords_only`]).
 fn strictify(schema: &Value, depth: usize) -> Option<Value> {
     if depth > MAX_SCHEMA_DEPTH {
         return None;
@@ -954,6 +974,76 @@ mod tests {
                 "{label} must degrade, not ship inside `strict: true`"
             );
         }
+    }
+
+    #[test]
+    fn both_translators_degrade_whole_on_tuple_form_items() {
+        // TUPLE-form `items` (an ARRAY of schemas — draft-07 tuple validation,
+        // renamed `prefixItems` in 2020-12) is the third way to reach a subtree
+        // no walker vets, after the composition keywords and the depth cap.
+        // Neither `strictify` nor `openai_strict_keywords_only` descends into
+        // it — both bottom out on "not a JSON object" — so every tuple member
+        // was copied VERBATIM into a `strict: true` schema. Two independent
+        // 400s ride in that gap, and both are the no-degrade kind:
+        //   1. an unsupported keyword (`maxLength`) reaching the vendor
+        //      allowlist unfiltered, and
+        //   2. an object member with neither `required` nor
+        //      `additionalProperties` — exactly the composition-keyword shape.
+        // OpenAI's strict subset does not document array-form `items` at all
+        // (its "Supported properties" list for arrays is `minItems`/`maxItems`
+        // — see `OPENAI_STRICT_KEYWORDS`), so the honest posture is the one the
+        // composition keywords already take: degrade the WHOLE schema.
+        // Mutation check: restore `openai_strict_keywords_only`'s non-object
+        // `return true` and both OpenAI assertions below fail.
+        let tuple = json!({
+            "type": "object",
+            "properties": {
+                "pair": {
+                    "type": "array",
+                    "items": [
+                        { "type": "string", "maxLength": 8 },
+                        { "type": "object", "properties": { "id": { "type": "string" } } },
+                    ],
+                },
+            },
+        });
+        assert_eq!(
+            openai_response_format(Some(&tuple)),
+            json!({ "type": "json_object" })
+        );
+        // Same shape hung off an OBJECT-typed node, where `strictify` never
+        // even looks at `items` (its object arm only rewrites `properties`) and
+        // would clone the tuple through untouched — which is why the guard
+        // lives on the walk that visits `items` on EVERY node, not in
+        // `strictify`'s array arm.
+        let object_tuple = json!({
+            "type": "object",
+            "properties": {
+                "odd": { "type": "object", "items": [{ "type": "string", "maxLength": 8 }] },
+            },
+        });
+        assert_eq!(
+            openai_response_format(Some(&object_tuple)),
+            json!({ "type": "json_object" })
+        );
+        // Gemini already degrades whole on both (its translator starts with
+        // `as_object()?`, and it visits `items` regardless of `type`) — pinned
+        // here so the two providers can never drift into "strict on one,
+        // silently unconstrained on the other".
+        assert!(gemini_response_schema(&tuple).is_none());
+        assert!(gemini_response_schema(&object_tuple).is_none());
+
+        // No false positives: object-form `items` — the shape every caller
+        // actually writes — must still reach the decoder on both.
+        let object_form = json!({
+            "type": "object",
+            "properties": { "tags": { "type": "array", "items": { "type": "string" } } },
+        });
+        assert_eq!(
+            openai_response_format(Some(&object_form))["type"],
+            json!("json_schema")
+        );
+        assert!(gemini_response_schema(&object_form).is_some());
     }
 
     #[test]

@@ -175,7 +175,15 @@ fn anthropic_uses_adaptive_thinking(model: &str) -> bool {
         || contains_version_needle(&m, "opus-5")
         || contains_version_needle(&m, "sonnet-5")
         || contains_version_needle(&m, "fable-5")
-        || m.contains("mythos")
+        // A bare family word rather than a version needle — Mythos is gated as
+        // a WHOLE family here (unlike `anthropic_supports_effort`, which lists
+        // only the two documented Mythos names), so `mythos-6` and any later
+        // point release stay adaptive with no code change. It still goes
+        // through [`contains_version_needle`]: the helper's rule is a component
+        // boundary, not a version shape, so it applies unchanged to a bare
+        // word, and a raw `contains` would classify `claude-notmythos-9` as
+        // adaptive — the same fail-open direction the version needles closed.
+        || contains_version_needle(&m, "mythos")
 }
 
 /// Shared normalization for the two thinking-mode predicates above:
@@ -292,12 +300,14 @@ fn anthropic_supports_temperature(model: &str) -> bool {
 /// version-needle gates) — an unrecognized future model defaults to `false`
 /// (never a guessed value; `output_config.effort` 400s on a model that
 /// doesn't support it). Every needle (including the two Mythos names below)
-/// is boundary-checked via [`contains_version_needle`] — unlike
-/// [`anthropic_uses_adaptive_thinking`]'s pre-existing bare `m.contains("mythos")`
-/// (a different, broader predicate this one deliberately does NOT reuse),
-/// this gate never guesses `true` for an unlisted/future model: only the
-/// two Mythos names the effort page currently documents ("Claude Mythos 5",
-/// "Claude Mythos Preview") match.
+/// is boundary-checked via [`contains_version_needle`], as they are in every
+/// gate in this file. What differs is BREADTH, not boundary handling: this is
+/// a closed list of VERSIONED names, so only the two Mythos releases the
+/// effort page currently documents ("Claude Mythos 5", "Claude Mythos
+/// Preview") match — a `claude-mythos-6` does not. The broader
+/// [`anthropic_uses_adaptive_thinking`] (a different predicate this one
+/// deliberately does NOT reuse) gates the bare `mythos` FAMILY instead,
+/// because guessing wrong is safe there and 400s here.
 fn anthropic_supports_effort(model: &str) -> bool {
     let m = normalize_model_id(model);
     contains_version_needle(&m, "opus-4-5")

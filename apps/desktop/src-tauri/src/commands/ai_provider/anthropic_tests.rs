@@ -314,7 +314,20 @@ fn adaptive_gate_matches_opus_4_7_4_8_and_the_5_family() {
         "claude-sonnet-5",
         "claude-fable-5",
         "claude-fable-5-20260201",
+        // Every real Mythos id shape must keep passing the gate after the bare
+        // `contains("mythos")` was replaced with the boundary-aware needle:
+        // the two documented releases, a dated build, and a vendor prefix.
         "claude-mythos-5",
+        "claude-mythos-preview",
+        "claude-mythos-5-20260201",
+        "anthropic/claude-mythos-5",
+        // …and the bare family word too. Unlike `anthropic_supports_effort`
+        // (a closed list of documented VERSIONS, which asserts the opposite for
+        // this exact id), this gate covers the Mythos FAMILY, so an unlisted
+        // future point release stays adaptive with no code change. Guessing
+        // wrong is safe here and 400s there — see both doc comments.
+        "claude-mythos",
+        "claude-mythos-6",
     ] {
         assert!(
             anthropic_uses_adaptive_thinking(m),
@@ -414,6 +427,11 @@ fn version_needles_reject_a_needle_glued_to_a_neighbouring_component() {
         "claude-sonnet-4-5alpha"
     ));
     assert!(!anthropic_uses_adaptive_thinking("claude-opus-5x"));
+    // …including the adaptive gate's one BARE FAMILY WORD, which was still a
+    // raw `m.contains("mythos")` after the version needles were fixed — the
+    // same fail-open direction, one needle later.
+    assert!(!anthropic_uses_adaptive_thinking("claude-notmythos-9"));
+    assert!(!anthropic_uses_adaptive_thinking("claude-mythos9"));
     // 3. Both at once.
     assert!(!super::anthropic_supports_structured_outputs(
         "xclaude-notopus-4-5beta"
