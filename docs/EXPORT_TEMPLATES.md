@@ -1,8 +1,8 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-07-16
+Last updated: 2026-08-10
 
-The normative reference for the document export system: the twelve templates, the
+The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
 validation). This is a **contract** — behavior described here is locked by tests;
 changing it means changing the tests too.
@@ -79,7 +79,7 @@ gate in `markdown.roundtrip.test.ts`.
 
 ---
 
-## The twelve templates
+## The sixteen templates
 
 `TemplateId` (kebab-case on the wire) in `export/types.rs`. Unknown / removed IDs
 (e.g. a saved `"modern"`, or a stale frontend sending `"two-column"` /
@@ -101,17 +101,21 @@ live in each `Template::*` constructor in `export/templates/mod.rs`.
 | `throughline`   | Throughline   | ats    | Single column  | Vertical timeline spine per experience/project entry                                        | Engineering / product; tenure-story emphasis |
 | `cadence`       | Cadence       | ats    | Single column  | Inter, 28pt name, letter-spaced all-caps ruled headings, underlined links, blue-grey accent | Modern & parser-safe; software / product     |
 | `regent`        | Regent        | ats    | Single column  | Source Serif 4, burgundy small-caps headings, rose rule, first-line-indent letter           | Executive / leadership roles                 |
+| `cologne-navy`  | Cologne Navy  | ats    | Single column  | Centred tracked-caps navy header, rule-underlined uppercase headings, blue company names    | European market; formal executive            |
+| `jake`          | Jake          | ats    | Single column  | Ultra-minimal single column, centred name, thin ruled headings, compact entry lines         | LaTeX classic aesthetic; print-first         |
 | `atelier`       | Atelier       | design | **Two column** | Shaded sidebar rail, slate-indigo accent, serif headings                                    | Design; skills-forward                       |
 | `portrait`      | Portrait      | design | **Two column** | Circular photo top-left, name/title right, slate-teal keyline                               | European market; personal brand              |
 | `lebenslauf`    | Lebenslauf    | design | Single column  | DACH DIN-style tabular, photo top-right, formal A4                                          | German-speaking market                       |
 | `aria`          | Aria          | design | **Two column** | Untinted RIGHT sidebar, rectangular top-right photo, 30pt Manrope name, slate accent        | Minimalist personal brand                    |
 | `saffron`       | Saffron       | design | **Two column** | Tinted LEFT sidebar, circular ringed photo, terracotta accent, serif small-caps headings    | Warm personal brand                          |
+| `awesome`       | Awesome       | design | Single column  | Thin accent-tinted header band, accent-bar section markers, single column body              | Vibrant personal brand; design-forward       |
+| `deedy`         | Deedy         | design | Single column  | Bold name block with accent-colored surname, generous section spacing, subtle grey metadata | Modern personal brand; visual emphasis       |
 
-Seven **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
-`meridian`, `throughline`, `cadence`, `regent`) and five **design-tier** templates
-(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron` — photo and/or two-column).
-`cadence` and `regent` render through the parametric `single_column.typ` (no bespoke
-`.typ`); `aria` and `saffron` each have a bespoke `.typ`.
+Nine **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
+`meridian`, `throughline`, `cadence`, `regent`, `cologne-navy`, `jake`) and seven **design-tier** templates
+(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`, `awesome`, `deedy` — photo and/or two-column).
+`cadence`, `regent`, and `jake` render through the parametric `single_column.typ` (no bespoke `.typ`);
+`cologne-navy`, `awesome`, `aria`, `saffron`, and `deedy` each have a bespoke `.typ`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
 `Template::*` constructor (with its `tier`) in `export/templates/mod.rs` + a `.typ`
