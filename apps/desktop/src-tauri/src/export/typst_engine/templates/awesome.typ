@@ -85,11 +85,35 @@
 #let page-w = data.opts.page_width_mm  * 1mm
 #let page-h = data.opts.page_height_mm * 1mm
 
-// A THIN band (vs. Meridian's 38mm) — name + one contact line only.
-#let band-h        = 24mm
 #let keyline-pt     = 1.5pt
 #let body-margin-h  = 20mm
 #let body-margin-top = 7mm
+
+// Does the header carry a role/title line? Real résumés almost always do
+// (`model/adapter.rs` fills `header.title`), which costs the band one text
+// line — so the band height has to account for it.
+#let has-title = (
+  "title" in data.header and data.header.title != none and data.header.title != ""
+)
+
+// A THIN band (vs. Meridian's 38mm) — name, optional title, contact line.
+//
+// Header content is placed in `page.background`, which lays out at UNBOUNDED
+// width: without the `band-box-w` bound below, a long contact line does not
+// wrap, it runs off the right edge of the sheet (measured: a 125-char contact
+// reached x=630pt on a 595pt-wide page — the tail was simply gone). Bounding it
+// makes it wrap instead, so the band has to be tall enough to hold that wrapped
+// line or the remainder would render white-on-white below the band.
+//
+// Budget: name + optional title + up to TWO contact lines, both heights taken
+// from a real render (`awesome_band_contains_its_white_header_text`), not
+// estimated. A title costs one line, hence the two values. `top-margin` below
+// is derived from this, so the body flow always starts under the band.
+#let band-h = if has-title { 28mm } else { 24mm }
+
+// Printable width for the placed band content — the same left/right margins the
+// body flow uses.
+#let band-box-w = page-w - 2 * body-margin-h
 
 #let top-margin = if is-ats { 20mm } else { band-h + keyline-pt + body-margin-top }
 
@@ -147,7 +171,7 @@
   background: if is-ats { none } else {
     place(top + left, rect(width: 100%, height: band-h, fill: c-accent))
     place(top + left, dy: band-h, line(length: 100%, stroke: keyline-pt + c-accent))
-    place(top + left, dx: body-margin-h, dy: 0pt, pad(top: 6mm, {
+    place(top + left, dx: body-margin-h, dy: 0pt, box(width: band-box-w, pad(top: 6mm, {
       text(
         size: name-pt,
         weight: "bold",
@@ -155,7 +179,7 @@
         font: (font-name, "Inter", "Carlito"),
         if "name" in data.header { data.header.name } else { "" },
       )
-      if "title" in data.header and data.header.title != none and data.header.title != "" {
+      if has-title {
         block(above: 2pt, below: sp-header-title-below,
           text(
             size: section-pt,
@@ -176,7 +200,7 @@
           )
         )
       }
-    }))
+    })))
   },
 )
 

@@ -128,7 +128,14 @@
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
-#block(below: sp-name-below, {
+// `align(center, …)` only moves content inside a container WIDER than that
+// content; an `auto`-width block shrinks to fit, so centring inside one is a
+// no-op (measured: Jake's name rendered at x=72.0 — the left margin — exactly
+// like a `name_centered: false` template). Claim the full text width first.
+// Left-aligned templates keep `auto`, so their output stays byte-identical.
+#let header-width = if name-centered { 100% } else { auto }
+
+#block(width: header-width, below: sp-name-below, {
   let name-text = text(
     size: name-pt,
     weight: "bold",
@@ -150,12 +157,21 @@
     fill: c-body,
     data.header.title,
   )
-  block(below: sp-header-title-below, if name-centered { align(center, t) } else { t })
+  block(
+    width: header-width,
+    below: sp-header-title-below,
+    if name-centered { align(center, t) } else { t },
+  )
 }
 
+// The contact line follows the name's alignment: the DOCX backend
+// (`model_docx::add_header`) centres name, title AND contact off the same
+// `name_centered` flag, so centring only the first two would put the two
+// formats out of parity for the same template.
 #if "contact" in data.header {
-  block(below: sp-header-contact, {
-    text(size: body-pt, fill: c-body, render-runs(data.header.contact))
+  block(width: header-width, below: sp-header-contact, {
+    let c = text(size: body-pt, fill: c-body, render-runs(data.header.contact))
+    if name-centered { align(center, c) } else { c }
   })
 }
 

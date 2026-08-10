@@ -79,10 +79,12 @@
 #let is-ats = if "ats" in data.opts { data.opts.ats } else { false }
 
 // Extra breathing room above every section heading, on top of the shared
-// house rhythm — the reference's "generous section spacing" trait. A literal
-// local supplement, not a new registry knob (`_scale.typ` stays the single
-// locked source for the base rhythm every template shares).
-#let sp-section-extra = 8pt
+// house rhythm — the reference's "generous section spacing" trait. It comes
+// from the registry (`Template::section_above_extra`, the same knob shape as
+// `rule_thickness` / `heading_tracking`), NOT a literal in this file:
+// `_scale.typ` is the single locked source of the rhythm and no template may
+// fork it locally. Absent/0 → the shared rhythm, unchanged.
+#let sp-section-extra = if "section_above_extra" in st { st.section_above_extra * 1pt } else { 0pt }
 
 // ── Page setup ────────────────────────────────────────────────────────────────
 

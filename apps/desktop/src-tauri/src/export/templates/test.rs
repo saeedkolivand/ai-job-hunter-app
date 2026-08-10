@@ -302,6 +302,12 @@ fn saffron_matches_spec() {
 
 // ─── Phase 8 Track B: Jake / Awesome / Deedy spec pins ─────────────────────────
 
+/// Registry FIELDS only. `name_centered` in particular is a declaration, not
+/// evidence: this test passed for the whole life of the bug where Jake's name
+/// rendered flush left because `single_column.typ` centred inside an
+/// auto-width block. The rendered geometry is pinned by
+/// `typst_engine::test::name_centered_actually_centres_the_rendered_header` —
+/// don't read a green here as "the name is centred".
 #[test]
 fn jake_matches_spec() {
     let t = Template::get(TemplateId::Jake);
@@ -347,4 +353,45 @@ fn deedy_matches_spec() {
     assert!(!t.job_title_italic);
     assert_eq!(t.section_style, SectionStyle::RuledBottom);
     assert!(t.two_column.is_none());
+    // Deedy's "generous section spacing" trait. It lives here, in the registry,
+    // because `_scale.typ`'s rhythm is LOCKED — `deedy.typ` used to fork it with
+    // a local `sp-section-extra = 8pt`, the only template doing so.
+    assert_eq!(t.section_above_extra, 8.0);
+}
+
+/// The wider rhythm is Deedy's alone: every other template must keep the shared
+/// `_scale.typ` `sp-section-above` untouched. Without this, adding the knob
+/// would be one careless copy-paste away from silently re-spacing the roster.
+#[test]
+fn only_deedy_supplements_the_shared_section_rhythm() {
+    for id in crate::export::templates::CANONICAL_TEMPLATE_IDS {
+        let expected = if id == TemplateId::Deedy { 8.0 } else { 0.0 };
+        assert_eq!(
+            Template::get(id).section_above_extra,
+            expected,
+            "{id:?}: section_above_extra must be {expected} — 0.0 means \
+             'use the locked house rhythm unchanged'"
+        );
+    }
+}
+
+/// [`crate::export::templates::CANONICAL_TEMPLATE_IDS`] is the list every test
+/// matrix iterates, so a gap in it silently un-covers a template everywhere at
+/// once. Pin that it holds each id exactly once and that `Template::get` really
+/// returns that id (a copy-pasted constructor returning a neighbour's id would
+/// otherwise make one template invisible to every matrix).
+#[test]
+fn canonical_template_ids_are_unique_and_self_describing() {
+    let ids = crate::export::templates::CANONICAL_TEMPLATE_IDS;
+    for (i, id) in ids.iter().enumerate() {
+        assert_eq!(
+            Template::get(*id).id,
+            *id,
+            "Template::get({id:?}) returned a different template's id"
+        );
+        assert!(
+            !ids[..i].contains(id),
+            "{id:?} appears twice in CANONICAL_TEMPLATE_IDS"
+        );
+    }
 }

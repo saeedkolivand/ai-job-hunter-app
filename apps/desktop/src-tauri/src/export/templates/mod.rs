@@ -1,5 +1,32 @@
 use super::types::{FontFamily, TemplateId};
 
+/// Every user-facing template, in gallery order — the one list test matrices
+/// iterate so a newly added template is covered automatically instead of
+/// needing a remembered edit in each of them.
+///
+/// Kept honest by `canonical_template_ids_are_unique_and_self_describing`:
+/// [`Template::get`] matches on `TemplateId` with no wildcard arm, and that
+/// test pins that every entry here really resolves to its own template.
+#[cfg(test)]
+pub(crate) const CANONICAL_TEMPLATE_IDS: [TemplateId; 16] = [
+    TemplateId::Classic,
+    TemplateId::SwissMinimal,
+    TemplateId::Academic,
+    TemplateId::Atelier,
+    TemplateId::Meridian,
+    TemplateId::Throughline,
+    TemplateId::Portrait,
+    TemplateId::Lebenslauf,
+    TemplateId::Cadence,
+    TemplateId::Regent,
+    TemplateId::Aria,
+    TemplateId::Saffron,
+    TemplateId::CologneNavy,
+    TemplateId::Jake,
+    TemplateId::Awesome,
+    TemplateId::Deedy,
+];
+
 // ─── Font configuration ───────────────────────────────────────────────────────
 
 /// Which font families a template uses for its three typographic roles.
@@ -144,6 +171,15 @@ pub struct Template {
     /// un-underlined, byte-identical to prior output. Read into
     /// `JsonStyle.link_underline`.
     pub link_underline: bool,
+    /// Extra space (pt) above every section heading, ADDED to the shared
+    /// `_scale.typ` `sp-section-above`. `0.0` (every template but Deedy) keeps
+    /// the house rhythm exactly as it is.
+    ///
+    /// This knob exists because `_scale.typ` is the single locked source of the
+    /// vertical rhythm: a template that wants a wider one declares it here (the
+    /// same shape as [`Template::rule_thickness`] / [`Template::heading_tracking`])
+    /// rather than defining a local spacing constant in its own `.typ`.
+    pub section_above_extra: f32,
 
     // Two-column layout (None = single column)
     pub two_column: Option<TwoColumnConfig>,
@@ -243,6 +279,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout::default(),
         }
@@ -280,6 +317,7 @@ impl Template {
             rule_thickness: 0.0,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -320,6 +358,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::FirstLine,
@@ -370,6 +409,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: Some(TwoColumnConfig {
                 sidebar_width_ratio: 0.30,
                 // Very light warm-grey tint that pairs with the slate-indigo accent.
@@ -424,6 +464,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -471,6 +512,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -520,6 +562,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             // Two-column: sidebar holds contact, skills, education, languages,
             // certifications — same set as Atelier.
             two_column: Some(TwoColumnConfig {
@@ -573,6 +616,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             // Single-column — DIN tabular layout manages its own columns.
             two_column: None,
             // Cover letter mirrors modern layout (appropriate for DIN letters).
@@ -623,6 +667,7 @@ impl Template {
             rule_thickness: 0.75,
             heading_tracking: 0.08,
             link_underline: true,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -678,6 +723,7 @@ impl Template {
             // reads this field, so the two cannot drift.
             heading_tracking: 0.10,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -725,6 +771,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.04,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::FirstLine,
@@ -776,6 +823,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.06,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: Some(TwoColumnConfig {
                 sidebar_width_ratio: 0.32,
                 // Untinted (white) — aria.typ skips the sidebar band fill.
@@ -830,6 +878,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: Some(TwoColumnConfig {
                 sidebar_width_ratio: 0.34,
                 // Warm peach tint.
@@ -884,6 +933,7 @@ impl Template {
             rule_thickness: 0.4,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout::default(),
         }
@@ -936,6 +986,7 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            section_above_extra: 0.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,
@@ -984,6 +1035,10 @@ impl Template {
             rule_thickness: 0.5,
             heading_tracking: 0.0,
             link_underline: false,
+            // The reference's "generous section spacing" trait, declared here
+            // rather than as a local constant in `deedy.typ` — `_scale.typ`'s
+            // rhythm is locked and no template may fork it in its own file.
+            section_above_extra: 8.0,
             two_column: None,
             cover_letter: CoverLetterLayout {
                 paragraph_indent: ParagraphIndent::BlockNoIndent,

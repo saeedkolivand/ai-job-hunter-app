@@ -113,8 +113,11 @@ live in each `Template::*` constructor in `export/templates/mod.rs`.
 
 Nine **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
 `meridian`, `throughline`, `cadence`, `regent`, `cologne-navy`, `jake`) and seven **design-tier** templates
-(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`, `awesome`, `deedy` — photo and/or two-column).
-`cadence`, `regent`, and `jake` render through the parametric `single_column.typ` (no bespoke `.typ`);
+(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`, `awesome`, `deedy` — photo, two-column
+and/or decorative colour; `awesome` and `deedy` are single-column with no photo, and earn the
+tier through the colour they drop under ATS mode).
+`classic`, `swiss-minimal`, `academic`, `cadence`, `regent`, and `jake` render through the parametric
+`single_column.typ` (no bespoke `.typ`, see `engine.rs`'s `TypstTemplate::from_template`);
 `cologne-navy`, `awesome`, `aria`, `saffron`, and `deedy` each have a bespoke `.typ`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
@@ -139,6 +142,13 @@ render behavior**. It does two things:
 Turning ATS mode on for a design-tier template **linearizes** it (two columns
 collapse to one, photo dropped) — the honesty the tier advertises. ATS-tier
 templates are already parser-safe and don't need the toggle.
+
+**Both formats must drop the same things.** `Awesome`'s résumé DOCX approximates its
+PDF header band with **paragraph-level shading in the accent lightened 85 % toward
+white, keeping the normal dark ink** (`model_docx::add_header`, sharing
+`docx::band_tint_hex` with the `Banded` cover letter) — a pale tint, never white text
+on a raw-accent run, which disappears wherever run shading is ignored. `add_header`
+takes `ats_mode` so the DOCX drops the band exactly when `awesome.typ` drops it.
 
 ### Document accent (per-export color knob)
 
