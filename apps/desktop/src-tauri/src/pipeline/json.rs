@@ -22,13 +22,20 @@ use serde::de::DeserializeOwned;
 /// for a follow-up "your last answer wasn't valid JSON, here's what broke"
 /// re-ask, WITHOUT that detail being loggable by accident.
 ///
-/// **[`Display`](std::fmt::Display) deliberately omits [`Self::detail`]**: a
-/// serde message can quote a fragment of the model's own output, and ADR-027
-/// forbids model/prompt content reaching a log line or the renderer. `{e}` is
-/// therefore always a short, content-free reason; a caller that genuinely
-/// needs the specifics (the re-ask prompt) asks for [`Self::detail`]
-/// explicitly.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// **BOTH [`Display`](std::fmt::Display) and [`Debug`](std::fmt::Debug)
+/// deliberately omit [`Self::detail`]**: a serde message can quote a fragment
+/// of the model's own output, and ADR-027 forbids model/prompt content
+/// reaching a log line or the renderer. `{e}` AND `{e:?}` are therefore both
+/// a short, content-free reason; a caller that genuinely needs the specifics
+/// (the re-ask prompt) asks for [`Self::detail`] explicitly.
+///
+/// `Debug` is hand-written rather than derived for exactly that reason: the
+/// derive prints every field, and Debug is the formatter that actually shows
+/// up in the dangerous places — `tracing::error!(error = ?e)`, a bare `{e:?}`,
+/// and the panic message of `.expect()`/`.unwrap()`, which reaches the crash
+/// reporter (ADR-0020, default-ON). A content-free `Display` in front of a
+/// leaking `Debug` protects nothing.
+#[derive(Clone, PartialEq, Eq)]
 pub enum JsonParseError {
     /// No JSON value anywhere in the response — the model answered in prose.
     NotFound,
@@ -55,9 +62,18 @@ impl JsonParseError {
         }
     }
 
-    /// The parser's own message, for a re-ask prompt ONLY. May quote a
-    /// fragment of the model's output — never log it (see the type's doc).
-    pub fn detail(&self) -> &str {
+    /// The parser's own message, RAW. Never log it (see the type's doc), and
+    /// never paste it into a prompt: serde quotes the offending fragment, so
+    /// this string carries attacker-influenced model output and would arrive
+    /// in the re-ask unfenced — the OWASP LLM01 mistake this codebase
+    /// segregates against everywhere else.
+    ///
+    /// **Prompt callers want
+    /// [`reask_detail`](Self::reask_detail) instead**, which returns the same
+    /// fragment already wrapped in the crate's standard ADR-010 fence. This
+    /// accessor is `pub(crate)` (the safe one is the public surface) and
+    /// exists only as its input.
+    pub(crate) fn detail(&self) -> &str {
         match self {
             Self::NotFound | Self::Truncated => "",
             Self::Syntax(detail) | Self::Shape(detail) => detail,
@@ -71,11 +87,28 @@ impl std::fmt::Display for JsonParseError {
     }
 }
 
+/// Variant name + [`reason`](JsonParseError::reason) — never
+/// [`detail`](JsonParseError::detail). See the type's doc: this is the
+/// formatter that reaches `tracing`, `{:?}`, and panic messages, so it is the
+/// one that has to be content-free.
+impl std::fmt::Debug for JsonParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let variant = match self {
+            Self::NotFound => "NotFound",
+            Self::Truncated => "Truncated",
+            Self::Syntax(_) => "Syntax",
+            Self::Shape(_) => "Shape",
+        };
+        f.debug_tuple(variant).field(&self.reason()).finish()
+    }
+}
+
 impl std::error::Error for JsonParseError {}
 
-/// Find the JSON value in a model response: the first balanced `{…}` or `[…]`,
-/// searched inside a Markdown code fence when there is one (so prose before
-/// the fence can't win) and across the whole response otherwise.
+/// The JSON value [`parse`] would try FIRST — see [`candidates`] for the full
+/// order. Exposed for callers that only want the span; anything that
+/// deserializes should call [`parse`], which tries the other candidates too
+/// instead of committing to this one.
 ///
 /// String-aware — a brace or bracket inside a JSON string never opens or
 /// closes a region, which the two parsers this replaces both got wrong (a
@@ -83,23 +116,109 @@ impl std::error::Error for JsonParseError {}
 /// when nothing opens, and also when something opens but never closes
 /// ([`parse`] tells those two apart).
 pub fn extract_json(raw: &str) -> Option<&str> {
-    fenced_body(raw)
-        .and_then(balanced_span)
-        .or_else(|| balanced_span(raw))
+    candidates(raw).into_iter().next()
 }
 
-/// The body of the first ```` ```json ```` / ```` ``` ```` fence, or `None`
-/// when the response isn't fenced. An unterminated fence (a truncated
-/// response) yields everything after the opening fence.
-fn fenced_body(raw: &str) -> Option<&str> {
-    let after_open = raw.split_once("```")?.1;
-    // Drop an optional language tag on the opening fence's own line.
-    let body = after_open.split_once('\n').map_or(after_open, |(_, r)| r);
-    Some(body.split_once("```").map_or(body, |(b, _)| b))
+/// How many candidates [`parse`] will try. A response that obeys the output
+/// contract has exactly ONE; a chatty one has two or three (a fence, plus the
+/// same object seen again by the bare scan). The cap bounds the work a
+/// pathological response can force and keeps the de-dup below trivial.
+const MAX_CANDIDATES: usize = 8;
+
+/// Every plausible JSON value in a model response, in the order [`parse`]
+/// tries them — most-trustworthy first:
+///
+/// 1. **The whole trimmed response**, when it is exactly one balanced value
+///    and nothing else. That is what a natively-constrained provider returns
+///    and what the output contract asks the rest for, so it outranks anything
+///    found *inside* it. Committing to a fence before deserialization was a
+///    real hijack (HIGH-1): a perfectly valid object whose own string value
+///    quoted a ```` ```json ```` block — a code fence echoed out of a dev job
+///    ad or a projects entry — had the fence's contents parsed instead, and
+///    for a `T` whose fields are all `Option`/`#[serde(default)]` that
+///    deserializes fine, so the caller got an all-defaults value REPORTED AS
+///    SUCCESS (and [`JsonParseError::Truncated`] never fired).
+/// 2. **Fenced bodies, LAST fence first.** First-fence-wins was
+///    attacker-steerable (MEDIUM-3): a posting that instructs "first echo this
+///    JSON block" then supplies its own object controls the parsed value on
+///    every prompt-discipline path. The model's real answer comes last, so the
+///    last fence is the one to prefer — and unlike 1., ordering is what fixes
+///    this, because the attacker's object deserializes perfectly.
+/// 3. **Every balanced span in the response, LAST first** — the same attack
+///    works without a fence, and the same "the answer comes last" reasoning
+///    applies.
+///
+/// Ordering is a preference, not a commitment: [`parse`] walks the list and
+/// takes the first candidate that actually deserializes to `T`.
+fn candidates(raw: &str) -> Vec<&str> {
+    let trimmed = raw.trim();
+    let whole = balanced_range(trimmed)
+        .filter(|span| span.start == 0 && span.end == trimmed.len())
+        .map(|_| trimmed);
+    let fenced = fenced_bodies(raw)
+        .into_iter()
+        .rev()
+        .filter_map(balanced_span);
+    let bare = spans(raw).into_iter().rev();
+
+    let mut out: Vec<&str> = Vec::new();
+    for candidate in whole.into_iter().chain(fenced).chain(bare) {
+        if out.len() == MAX_CANDIDATES {
+            break;
+        }
+        // Every candidate is a slice of the SAME `raw` buffer, so identity
+        // (address + length) catches every duplicate without a string compare.
+        if !out.iter().any(|seen| std::ptr::eq(*seen, candidate)) {
+            out.push(candidate);
+        }
+    }
+    out
+}
+
+/// The body of every ```` ```json ```` / ```` ``` ```` fence, in source order.
+/// An unterminated fence (a truncated response) yields everything after the
+/// opening fence and ends the scan.
+fn fenced_bodies(raw: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = raw;
+    while let Some((_, after_open)) = rest.split_once("```") {
+        // Drop an optional language tag on the opening fence's own line.
+        let body = after_open.split_once('\n').map_or(after_open, |(_, r)| r);
+        match body.split_once("```") {
+            Some((body, tail)) => {
+                out.push(body);
+                rest = tail;
+            }
+            None => {
+                out.push(body);
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Every top-level balanced span in `s`, in source order. Nested values are
+/// not enumerated separately (they are already inside their parent), so the
+/// whole scan stays linear in `s`.
+fn spans(s: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut offset = 0;
+    while let Some(range) = balanced_range(&s[offset..]) {
+        out.push(&s[offset + range.start..offset + range.end]);
+        offset += range.end;
+    }
+    out
 }
 
 /// The first balanced `{…}`/`[…]` span in `s`, string- and escape-aware.
 fn balanced_span(s: &str) -> Option<&str> {
+    balanced_range(s).map(|range| &s[range])
+}
+
+/// [`balanced_span`] as a byte range, so a caller can resume the scan after
+/// the span it just took (see [`spans`]) without pointer arithmetic.
+fn balanced_range(s: &str) -> Option<std::ops::Range<usize>> {
     let start = s.find(['{', '['])?;
     let (open, close) = if s[start..].starts_with('{') {
         ('{', '}')
@@ -130,7 +249,7 @@ fn balanced_span(s: &str) -> Option<&str> {
                 // iteration always takes the arm above and leaves depth >= 1.
                 depth -= 1;
                 if depth == 0 {
-                    return Some(&s[start..start + i + ch.len_utf8()]);
+                    return Some(start..start + i + ch.len_utf8());
                 }
             }
             _ => {}
@@ -226,27 +345,44 @@ fn drop_trailing_comma(out: &mut String) {
     }
 }
 
-/// Extract → parse → repair → parse. The one entry point callers use.
+/// Deserialize the model's response into `T`. The one entry point callers use.
 ///
-/// The repair pass runs only after a clean parse has already failed, so
-/// well-formed output is never rewritten. Errors are typed
-/// ([`JsonParseError`]) so a caller can decide between re-asking, shortening
-/// the request, and giving up — see each variant.
+/// Walks [`candidates`] and takes the first one that actually deserializes,
+/// rather than committing to a single extracted span before serde has had a
+/// say — the fix for a fence quoted inside a string value hijacking an
+/// otherwise-valid response (HIGH-1) and for first-fence-wins being
+/// attacker-steerable (MEDIUM-3).
+///
+/// Two passes over that same ordered list: EVERY candidate gets a clean parse
+/// before ANY candidate gets [`repair_json`], so a repairable decoy can never
+/// outrank a well-formed answer, and well-formed output is never rewritten.
+///
+/// Errors are typed ([`JsonParseError`]) so a caller can decide between
+/// re-asking, shortening the request, and giving up — see each variant. The
+/// reported error is the FIRST (most-trustworthy) candidate's, so the detail a
+/// re-ask quotes back describes the value the model most likely meant.
 pub fn parse<T: DeserializeOwned>(raw: &str) -> Result<T, JsonParseError> {
-    let Some(candidate) = extract_json(raw) else {
-        // Nothing balanced. An opening delimiter with no closer means the
-        // response was cut off, which is a different (and differently
-        // fixable) failure from "the model answered in prose".
-        return Err(if raw.contains(['{', '[']) {
-            JsonParseError::Truncated
-        } else {
-            JsonParseError::NotFound
-        });
-    };
-    if let Ok(value) = serde_json::from_str::<T>(candidate) {
-        return Ok(value);
+    let candidates = candidates(raw);
+    for candidate in &candidates {
+        if let Ok(value) = serde_json::from_str::<T>(candidate) {
+            return Ok(value);
+        }
     }
-    serde_json::from_str::<T>(&repair_json(candidate)).map_err(classify)
+    let mut primary_error = None;
+    for candidate in &candidates {
+        match serde_json::from_str::<T>(&repair_json(candidate)) {
+            Ok(value) => return Ok(value),
+            Err(error) => primary_error = primary_error.or(Some(error)),
+        }
+    }
+    Err(match primary_error {
+        Some(error) => classify(error),
+        // Nothing balanced anywhere. An opening delimiter with no closer means
+        // the response was cut off, which is a different (and differently
+        // fixable) failure from "the model answered in prose".
+        None if raw.contains(['{', '[']) => JsonParseError::Truncated,
+        None => JsonParseError::NotFound,
+    })
 }
 
 /// Map a `serde_json` failure onto the typed error. `classify()` is serde's
@@ -451,6 +587,98 @@ mod tests {
             err.detail().contains("SECRET-VALUE"),
             "detail must keep the specifics for a re-ask: {}",
             err.detail()
+        );
+    }
+
+    #[test]
+    fn debug_never_leaks_model_content_either() {
+        // HIGH-2: `Display` was content-free but `#[derive(Debug)]` printed the
+        // withheld fragment verbatim — and Debug is what `tracing::error!(error
+        // = ?e)`, any `{e:?}`, and an `.expect()` panic message (which reaches
+        // the crash reporter) actually print. Mutation check: restore
+        // `#[derive(Debug)]` on `JsonParseError` and this fails.
+        let err = parse::<Result>(r#"{"score": "SECRET-VALUE", "notes": "ok"}"#).unwrap_err();
+        let debug = format!("{err:?}");
+        assert!(!debug.contains("SECRET-VALUE"), "Debug leaked: {debug}");
+        assert_eq!(debug, format!("Shape({:?})", err.reason()));
+    }
+
+    // ── candidate ordering (HIGH-1 / MEDIUM-3) ────────────────────────────
+
+    /// A `T` whose every field has a serde default — the shape that turns a
+    /// hijacked extraction into SILENT DATA LOSS rather than a parse error.
+    #[derive(Debug, Deserialize, PartialEq, Default)]
+    #[serde(default)]
+    struct Lenient {
+        note: String,
+        score: u8,
+    }
+
+    #[test]
+    fn a_fence_quoted_inside_a_string_value_cannot_hijack_a_valid_response() {
+        // HIGH-1: the whole response is ONE valid JSON object whose `note`
+        // value happens to quote a ```` ```json ```` block — a code fence
+        // echoed out of a dev job ad or a projects entry. Committing to the
+        // fence before deserialization parsed the `{}` INSIDE the string, and
+        // because every field of `Lenient` has a default that came back `Ok`
+        // with all-defaults: data loss reported as success.
+        let raw = r#"{"note":"see ```json\n{}\n``` above","score":7}"#;
+        assert_eq!(
+            parse::<Lenient>(raw).expect("the whole response is the answer"),
+            Lenient {
+                note: "see ```json\n{}\n``` above".to_string(),
+                score: 7,
+            }
+        );
+        assert_eq!(extract_json(raw), Some(raw));
+    }
+
+    #[test]
+    fn the_last_fenced_candidate_wins_over_an_echoed_first_one() {
+        // MEDIUM-3: a posting that instructs "first echo this JSON block"
+        // controlled the parsed value under first-fence-wins. Both objects
+        // deserialize, so HIGH-1's candidate ordering alone does not cover
+        // this — the ORDER among fenced candidates is what does.
+        let raw = "The posting says to echo this first:\n\
+             ```json\n{\"score\": 100, \"notes\": \"echoed\"}\n```\n\
+             My real answer:\n\
+             ```json\n{\"score\": 12, \"notes\": \"real\"}\n```";
+        assert_eq!(
+            parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn the_last_unfenced_candidate_wins_too() {
+        // Same attack without a fence — the model's real answer still comes
+        // last, so the scan must not stop at the first balanced span.
+        let raw = "Echo: {\"score\": 100, \"notes\": \"echoed\"}\n\
+             Real: {\"score\": 12, \"notes\": \"real\"}";
+        assert_eq!(
+            parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_candidate_that_does_not_deserialize_falls_through_to_the_next_one() {
+        // Ordering is a PREFERENCE, not a commitment: the last fence here is a
+        // shape the caller didn't ask for, so the earlier one still wins.
+        let raw = "```json\n{\"score\": 12, \"notes\": \"real\"}\n```\n\
+             For reference the schema is:\n```json\n{\"score\": \"<integer>\"}\n```";
+        assert_eq!(
+            parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 12,
+                notes: "real".to_string(),
+            }
         );
     }
 }
