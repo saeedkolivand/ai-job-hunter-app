@@ -35,24 +35,41 @@ const TARGET_LANGUAGE_CAP: usize = 32;
 
 /// Deterministic content-quality checks (factual accuracy, ATS structure,
 /// AI-voice tells) on an already-generated résumé/letter against its source
-/// résumé and the job ad. Pure and fast — no AI call — so it's safe to run on
-/// every save, not just on demand.
+/// résumé and the job ad. No AI call, so it's safe to run on every save, not
+/// just on demand — but the regex/token scanning below is real CPU work (see
+/// the threading note).
 ///
 /// Server-side clamp mirrors the Zod caps (renderer-side only, see
 /// `ResumeValidateContentSchema`): a direct IPC caller could otherwise hand the
 /// analyzer unbounded text, the same trust boundary `resume_trim_suggestions`
 /// and `applications_track`/`applications_update` enforce for résumé/job text.
 ///
-/// Plain (non-`async`) fn: the body is pure synchronous CPU work (regex/token
-/// scans over up to 3×200 KB, capped-`O(n²)` duplicate-bullet detection — see
-/// `validate::content::duplicates::MAX_DUP_BULLETS`) with no `.await` inside.
-/// Tauri's command dispatcher runs non-async commands via its own blocking
-/// thread pool, so declaring it `async fn` would instead run that work inline
-/// on a shared tokio worker — matches the established split in this codebase
-/// (`jobs_list`/`jobs_get`/`jobs_retry`, `documents_recommend_template`,
-/// `system_set_launch_at_login`: plain `fn` for sync-only bodies; `async fn`
-/// reserved for commands that actually `.await` something).
-#[tauri::command]
+/// ## Threading (round-9/round-10 history — verified against the locked
+/// `tauri = "2"` / `tauri-macros 2.6.3` source, do not re-flip without a
+/// contradicting citation)
+///
+/// A **plain (non-`async`) `#[tauri::command]` fn runs INLINE, synchronously,
+/// on whichever thread received the IPC call** — for a desktop webview that is
+/// the main/UI event-loop thread. There is no Tauri-provided "blocking thread
+/// pool" for sync commands: `tauri-macros-2.6.3/src/command/wrapper.rs`'s
+/// `body_blocking()` lowers straight to `resolver.respond(...)` in the same
+/// call stack as `AppManager::run_invoke_handler` (`tauri-2.11.5/src/ipc/
+/// protocol.rs`); no `spawn`/`spawn_blocking` in that path. Round-9's premise
+/// (a blocking pool exists) was **inverted**.
+///
+/// `#[tauri::command(async)]` on a plain sync fn is the documented escape
+/// hatch (macro-internal tracing label `"sync_threadpool"`): it routes through
+/// `body_async()` → `InvokeResolver::respond_async_serialized` →
+/// `crate::async_runtime::spawn(...)` (Tokio's worker pool, `tauri-2.11.5/src/
+/// ipc/mod.rs`), moving the sync body off the main thread without making it an
+/// actual `async fn` (no `.await` inside, none needed).
+///
+/// This body is regex/token scans over up to 3×200 KB plus capped-`O(n²)`
+/// duplicate-bullet detection (`validate::content::duplicates::MAX_DUP_BULLETS`)
+/// — real CPU work on every Re-check/save — so it takes the `(async)` escape
+/// hatch rather than the plain-`fn` default that would otherwise run it on the
+/// main thread and stall window painting.
+#[tauri::command(async)]
 pub fn resume_validate_content(req: ResumeValidateContentRequest) -> AppResult<ContentReport> {
     // Wire form must be exactly "resume" | "coverLetter" (`DocKind`'s
     // `camelCase` serde rename, and the Zod `z.enum` this mirrors) — reject
