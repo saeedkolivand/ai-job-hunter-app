@@ -14,33 +14,29 @@ interface ProviderProfile {
   kind: 'ollama' | 'cloud' | 'cli';
   model?: string; // raw model / tag name
   contextWindow?: number; // tokens, if known
-  supportsStructuredOutput?: boolean; // native JSON schema / tool use
   sizeHint?: 'large' | 'medium' | 'small'; // ollama sub-tiering
 }
 ```
 
-`resolveProfile(target)` turns that into the four decisions a builder needs:
-prompt **depth**, **schema** variant, **truncation** strategy, and whether the
-caller can request **native structured output**.
+`resolveProfile(target)` turns that into the three decisions a builder needs:
+prompt **depth**, **schema** variant, and **truncation** strategy.
 
-| kind     | depth    | prompt                                          | truncation               | structured output² |
-| -------- | -------- | ----------------------------------------------- | ------------------------ | ------------------ |
-| `ollama` | `brief`¹ | shortest, imperative, compact schema + one-shot | aggressive (by size)     | no                 |
-| `cloud`  | `full`   | full multi-perspective + rich schema            | minimal (context window) | yes                |
-| `cli`    | `task`   | self-verifying task brief + acceptance checks   | moderate                 | no                 |
+| kind     | depth    | prompt                                          | truncation               |
+| -------- | -------- | ----------------------------------------------- | ------------------------ |
+| `ollama` | `brief`¹ | shortest, imperative, compact schema + one-shot | aggressive (by size)     |
+| `cloud`  | `full`   | full multi-perspective + rich schema            | minimal (context window) |
+| `cli`    | `task`   | self-verifying task brief + acceptance checks   | moderate                 |
 
 ¹ ollama uses `full` only for a large local model. `detectModelSize` parses the
 parameter size from the tag (`:1b`, `-3.2-1b`, `:7b`, `70b`, quant/instruct
 suffixes) → `<4B small · 4-14B medium · >14B large`; unknown local models default
 to the smaller/safer prompt.
 
-² The **structured output** column is the _default_ per `kind`; `resolveProfile`
-computes it as `profile.supportsStructuredOutput ?? profile.kind === 'cloud'`, so any
-profile can override it: a cloud model without native JSON-schema/tool-use → `false`, a
-capable local model → `true`.
-
-`validateAndRepair` / `validateMetadata` remain the universal fallback for every
-provider.
+**Native structured output is not modelled here.** It is decided per request by
+the Rust provider layer (`AiProvider::complete_structured`), which knows the
+live provider id, model, and whether a JSON Schema is available; a TS mirror
+could only drift from it. `validateAndRepair` / `validateMetadata` remain the
+universal fallback for every provider.
 
 ## Locale follows the job ad
 
