@@ -1549,6 +1549,10 @@
     "applyJob": "Apply",
     "aiNote": "AI note",
     "provisionalScoreHint": "Estimated from a summary — open the job for the exact match score.",
+    "scoreLabel": {
+      "coverage": "Keyword Coverage %",
+      "combined": "Match %"
+    },
     "delete": "Delete",
     "deleteTitle": "Delete this autopilot?",
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",

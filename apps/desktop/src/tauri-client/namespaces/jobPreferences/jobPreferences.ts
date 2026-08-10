@@ -7,4 +7,6 @@ export const jobPreferences = {
     invoke('job_preferences_set_salary_expectation', { salaryExpectation }),
   setExtraAgencyCompanies: (companies: string[] | undefined) =>
     invoke('job_preferences_set_extra_agency_companies', { companies }),
+  setSemanticScoring: (enabled: boolean) =>
+    invoke('job_preferences_set_semantic_scoring', { enabled }),
 };

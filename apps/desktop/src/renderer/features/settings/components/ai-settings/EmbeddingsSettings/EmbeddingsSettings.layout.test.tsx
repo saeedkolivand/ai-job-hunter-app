@@ -21,10 +21,15 @@ vi.mock('@ajh/translations', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
+const { mockSetSemanticScoring } = vi.hoisted(() => ({
+  mockSetSemanticScoring: vi.fn(),
+}));
+
 vi.mock('@/services', () => ({
   useEmbeddingStatus: () => ({ data: undefined, refetch: vi.fn() }),
   useSetEmbeddingConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReembedAll: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetSemanticScoring: () => ({ mutate: mockSetSemanticScoring, isPending: false }),
   useJobEvents: (_handler: unknown) => undefined,
 }));
 

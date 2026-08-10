@@ -321,6 +321,13 @@ export interface AutopilotFoundJob {
    *  diverge from that full-text score — the renderer marks such scores as
    *  provisional. Absent/false for full-text boards and for unscored jobs. */
   scoreProvisional?: boolean;
+  /** WHICH kernel produced `score`: `'keyword'` = the embedding-free keyword
+   *  prefilter (the default, and what every pre-existing record holds);
+   *  `'combined'` = the Jobs-page semantic+ATS kernel, set only when the user
+   *  has semantic scoring on AND that job's re-rank succeeded. Per job, so a
+   *  posting whose embed failed reads `'keyword'` even in a re-ranked run.
+   *  Drives the metric label + the band's score thresholds (ADR-020 addendum). */
+  scoreSource?: 'keyword' | 'combined';
   foundAt: number;
   /** First surfaced in the most recent run — drives the "New" badge. */
   isNew?: boolean;

@@ -1553,6 +1553,10 @@
     "applyJob": "Bewerben",
     "aiNote": "KI-Notiz",
     "provisionalScoreHint": "Aus einer Kurzfassung geschätzt — öffne den Job für den genauen Match-Score.",
+    "scoreLabel": {
+      "coverage": "Stichwortabdeckung %",
+      "combined": "Match %"
+    },
     "delete": "Löschen",
     "deleteTitle": "Diesen Autopilot löschen?",
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",

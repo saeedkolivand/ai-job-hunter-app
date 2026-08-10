@@ -3,7 +3,9 @@ use std::sync::{Arc, LazyLock};
 
 use parking_lot::Mutex;
 
-use crate::autopilot::{AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus};
+use crate::autopilot::{
+    AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus, ScoreSource,
+};
 use crate::autopilot_helpers::autopilot_scrape;
 // The save-path `country_code` backfill (a location saved without a geocode
 // pick) — shared with the manual scrape path since trust-fix #2.
@@ -327,12 +329,92 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     let kept = found_jobs.len();
     let dropped = total_found - kept;
 
+    // ── Phase 2 (opt-in, ADR-020 addendum): semantic re-rank ──────────────────
+    // Everything above is phase 1 — the free, embedding-free keyword prefilter,
+    // byte-for-byte the pre-existing pipeline. When (and ONLY when) the user has
+    // semantic scoring on, the head of that ranking is re-scored through the
+    // SAME combined kernel the Jobs page uses. With the setting off — the
+    // default — the block below is not entered at all: no map is built, no
+    // provider is resolved, and a scheduled run makes zero embed calls, exactly
+    // as before.
+    //
+    // Placed AFTER the retain, deliberately: `minMatchScore` keeps its existing
+    // keyword-coverage meaning (no silent threshold regression for existing
+    // autopilots), and only jobs that survived dedup can cost an embed.
+    //
+    // A résumé-less autopilot short-circuits with the flag: phase 1 produced no
+    // scores at all for it, so there is nothing to re-rank.
+    let semantic_on = app
+        .try_state::<crate::job_preferences::JobPreferencesStore>()
+        .is_some_and(|s| s.semantic_scoring());
+    let rerank = if !semantic_on || resume.is_empty() {
+        None
+    } else {
+        // `try_state` (not `state`) for both stores: a run must never fail
+        // because of scoring, and `state` PANICS on an unmanaged type. A
+        // startup failure that left either store unregistered degrades this run
+        // to keyword-only instead of unwinding a scheduled tick.
+        match app
+            .try_state::<crate::documents::DocumentStore>()
+            .zip(app.try_state::<Arc<crate::limits::Limiter>>())
+        {
+            Some((doc_store, limiter)) => {
+                // Reuse phase 1's EXACT scoring blob per posting — `FoundJob` drops
+                // `requirements`, so re-deriving it here would score different text
+                // than the keyword phase did on the boards that populate that field.
+                let blobs: std::collections::HashMap<String, String> = postings
+                    .iter()
+                    .filter_map(|p| {
+                        crate::documents::keywords::posting_text_blob(
+                            &p.title,
+                            p.description.as_deref(),
+                            p.requirements.as_deref(),
+                        )
+                        .map(|blob| (p.url.clone(), blob))
+                    })
+                    .collect();
+                let env = LiveRerankEnv {
+                    app: &app,
+                    store: doc_store.inner(),
+                    resume,
+                    active: doc_store.embedding_config(),
+                    limiter: limiter.inner().clone(),
+                };
+                let summary = semantic_rerank(&env, &mut found_jobs, &blobs, &cancel_token).await;
+                // Re-sort: phase 2 replaced the head's scores, so the keyword
+                // ordering no longer holds. Same comparator as phase 1 (unscored
+                // sorts last).
+                found_jobs.sort_by(|a, b| {
+                    b.score
+                        .unwrap_or(-1.0)
+                        .partial_cmp(&a.score.unwrap_or(-1.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                Some(summary)
+            }
+            None => {
+                log::warn!(
+                    "[autopilot] semantic re-rank skipped: document/limiter state unavailable; ranking stays keyword-only"
+                );
+                None
+            }
+        }
+    };
+
+    let rerank_detail = match &rerank {
+        Some(s) => format!(
+            "; semantic re-rank {}/{} (kept keyword for {})",
+            s.rescored, s.considered, s.degraded
+        ),
+        None => String::new(),
+    };
+
     emit_step(
         &app,
         &job_id,
         "rank_done",
         &format!(
-            "Keyword-matched {scored_count}/{total_found}; kept {kept} at or above {threshold:.0}% coverage (dropped {dropped})"
+            "Keyword-matched {scored_count}/{total_found}; kept {kept} at or above {threshold:.0}% coverage (dropped {dropped}){rerank_detail}"
         ),
     );
 
@@ -553,6 +635,12 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         // is provisional, a full-text board's is authoritative, and an unscored
         // job (no résumé/description) is neither.
         score_provisional: score.is_some() && p.source.trim() == AGGREGATOR_SNIPPET_SOURCE,
+        // Phase 1 of the rank always produces a keyword-coverage number. The
+        // optional phase-2 semantic re-rank (`semantic_rerank`, only when the
+        // user has semantic scoring on) is the ONLY thing that promotes a job to
+        // `Combined` — so a build-time default of `Keyword` is always honest,
+        // including for a job whose re-rank later degrades.
+        score_source: ScoreSource::Keyword,
         found_at,
         // Set by the dedup merge in `record_run`; `applied` is derived on read.
         is_new: false,
@@ -572,6 +660,209 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
         cluster_members: Vec::new(),
         is_agency: false,
     }
+}
+
+// ── Phase 2: optional semantic re-rank (ADR-020 addendum) ─────────────────────
+
+/// How many of a run's top keyword-ranked jobs get the semantic re-rank.
+///
+/// Evidence for the number: a run's raw harvest is bounded per board (the
+/// aggregator caps at 2 pages × `ADZUNA_PAGE_SIZE` = ≤100 postings, matching the
+/// manual search's own 100-item amount cap), and by the time this step runs the
+/// list has already been through the keyword filter, the user's `minMatchScore`
+/// gate and cross-board cluster dedup — so a typical kept set is a few dozen.
+/// Re-ranking the top 20 therefore covers the head of the list a user actually
+/// scans and acts on, while bounding the worst case at 20 posting embeds + 1
+/// résumé embed per run.
+///
+// ponytail: the real ceiling is cost, and it is already tiny — 21 embeds is a
+// rounding error next to the ONE completion `ASSISTANT_NOTES_MAX` (3) guards,
+// and the ADR-017 caches (`posting_vectors` + `match_scores`) make a steady-state
+// repeat run cost ZERO embeds. This is a hard bound against a pathological
+// harvest, not a tuning knob — raise it only with a measurement.
+const SEMANTIC_RERANK_MAX: usize = 20;
+
+/// Cache identity for an Autopilot posting in the ADR-017 caches.
+///
+/// Keyed on `canonical_job_key` — the SAME identity `merge_found_jobs` uses —
+/// rather than the raw URL, so a job re-surfacing under different tracking
+/// params hits the row it already paid for instead of re-embedding. Prefixed so
+/// it can never collide with a real `PostingsCache` posting id (mirrors
+/// `extension_bridge::match_live::adhoc_job_id`).
+fn autopilot_job_id(job: &FoundJob) -> String {
+    let key =
+        crate::scraping::boards::common::canonical_job_key(&job.url, &job.title, &job.company);
+    format!("autopilot:{}", crate::documents::sha256_hex(&key))
+}
+
+/// Outcome counts of one semantic re-rank pass — the content-free traceability
+/// summary (counts only, never posting text) the run logs and reports.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct RerankSummary {
+    /// Jobs the keyword prefilter handed to phase 2 (≤ [`SEMANTIC_RERANK_MAX`]).
+    pub(crate) considered: usize,
+    /// Jobs whose score is now the combined semantic+ATS number.
+    pub(crate) rescored: usize,
+    /// Jobs that fell back to their keyword score (embed/provider failure, no
+    /// scorable text, the daily ceiling, or cancellation).
+    pub(crate) degraded: usize,
+}
+
+/// The re-rank's I/O seam — mirrors `autopilot_helpers`'s `NoteEnv`: the two
+/// external effects (one combined-kernel score, which may embed, and the shared
+/// daily-budget charge) sit behind a trait so the loop's control flow (top-N
+/// ceiling, cancellation, daily-ceiling short-circuit, per-job degrade) is
+/// unit-testable with a fake — there is no way to fake a live embedding
+/// provider in-process. Prod wiring is [`LiveRerankEnv`].
+#[async_trait::async_trait]
+trait RerankEnv: Send + Sync {
+    /// Score one posting through the SHARED combined kernel.
+    ///
+    /// `None` means "no semantic score for this job" — an embed that failed, a
+    /// provider that is offline, or an error object from the kernel. The caller
+    /// must then keep the job's keyword score: a run NEVER fails because of
+    /// scoring.
+    async fn score(&self, job_id: &str, job_text: String) -> Option<f64>;
+    /// Charge one embedding call against the SAME per-provider daily ceiling as
+    /// interactive AI — no parallel budget architecture (the `NoteEnv::charge_daily`
+    /// precedent). Acceptable because a run charges at most
+    /// [`SEMANTIC_RERANK_MAX`] against it.
+    fn charge_daily(&self) -> crate::error::AppResult<()>;
+}
+
+/// Extract a usable SEMANTIC score from a `score_one` result — the degrade
+/// boundary, kept pure so it is directly testable against realistic kernel
+/// output.
+///
+/// `None` unless the kernel itself reports `scoreSource: "combined"`. The
+/// `combined` NUMBER alone is not sufficient evidence: `score_one` degrades to
+/// `combined == ats` when no embedding vector is available, and that keyword
+/// number is exactly what the job already carries — promoting it would relabel a
+/// keyword score as semantic and lie to the user. An error object (`{"error":…}`)
+/// and a `scoreSource`-less legacy cache row likewise degrade.
+fn rerank_score_from(result: &Value) -> Option<f64> {
+    if result.get("scoreSource").and_then(Value::as_str)
+        != Some(crate::commands::match_resume::SCORE_SOURCE_COMBINED)
+    {
+        return None;
+    }
+    result.get("combined").and_then(Value::as_f64)
+}
+
+/// Production [`RerankEnv`]: the shared combined kernel + the shared limiter.
+struct LiveRerankEnv<'a> {
+    app: &'a AppHandle,
+    store: &'a crate::documents::DocumentStore,
+    resume: &'a str,
+    active: crate::documents::EmbeddingConfig,
+    limiter: Arc<crate::limits::Limiter>,
+}
+
+#[async_trait::async_trait]
+impl RerankEnv for LiveRerankEnv<'_> {
+    async fn score(&self, job_id: &str, job_text: String) -> Option<f64> {
+        let result = crate::commands::match_resume::score_autopilot_semantic(
+            self.app,
+            self.store,
+            self.resume,
+            &self.active,
+            job_id,
+            job_text,
+        )
+        .await;
+        rerank_score_from(&result)
+    }
+
+    fn charge_daily(&self) -> crate::error::AppResult<()> {
+        // The EMBEDDING provider is the one being billed here (not the
+        // generation provider the AI-notes step charges), so the counter is
+        // keyed on it.
+        self.limiter
+            .charge_provider_daily(&self.active.provider, crate::limits::PROVIDER_DAILY_MAX)
+    }
+}
+
+/// Phase 2 of the two-phase rank: re-score the top [`SEMANTIC_RERANK_MAX`] jobs
+/// of the (already keyword-ranked, filtered and deduped) list through the shared
+/// combined kernel, in place.
+///
+/// `blobs` maps a job url to the EXACT scoring blob phase 1 used, so the two
+/// phases can never score different text for the same posting (`FoundJob` drops
+/// `requirements`, so re-deriving the blob here would silently diverge on the
+/// boards that populate it).
+///
+/// Degrade contract — a run never fails because of scoring:
+/// - a job with no keyword score (no résumé / no scorable text) is skipped
+///   entirely: there is nothing to re-rank and no reason to spend an embed;
+/// - a job whose scoring returns `None` keeps its keyword score AND its
+///   `Keyword` label, and the loop moves on to the next job;
+/// - the daily ceiling and cancellation stop the loop, leaving every
+///   not-yet-visited job on its keyword score.
+///
+/// Split from the command (mirroring `run_notes_loop`) so a fake `env` unit-tests
+/// this control flow without a provider.
+async fn semantic_rerank(
+    env: &dyn RerankEnv,
+    found_jobs: &mut [FoundJob],
+    blobs: &std::collections::HashMap<String, String>,
+    cancel: &CancellationToken,
+) -> RerankSummary {
+    let mut summary = RerankSummary::default();
+    // Cache identities already re-ranked THIS run. A single run can surface the
+    // same job under two URL variants (the cluster/merge pass that collapses
+    // them runs later, in `record_run`), and both derive the SAME
+    // `autopilot_job_id` — so the second would burn a top-N slot to recompute a
+    // score the first already produced. Same guard, same reason, as
+    // `run_notes_loop`'s `seen_this_run`.
+    let mut seen_this_run: HashSet<String> = HashSet::new();
+    for job in found_jobs.iter_mut() {
+        if summary.considered >= SEMANTIC_RERANK_MAX {
+            break; // top-N ceiling — the hard cost bound
+        }
+        // An unscored job had no résumé or no extractable text in phase 1;
+        // neither is fixed by an embedding. Not counted as considered OR
+        // degraded — it was never a re-rank candidate.
+        if job.score.is_none() {
+            continue;
+        }
+        let Some(job_text) = blobs.get(&job.url).cloned() else {
+            continue; // same reasoning: no phase-1 blob means nothing to score
+        };
+        let cache_id = autopilot_job_id(job);
+        if !seen_this_run.insert(cache_id.clone()) {
+            // A different URL variant of this same job already ran this pass.
+            // Checked BEFORE `charge_daily` so the duplicate also can't burn the
+            // shared per-provider ceiling.
+            continue;
+        }
+        summary.considered += 1;
+        if cancel.is_cancelled() {
+            summary.degraded += 1;
+            break; // stopped by the user — the keyword score stands
+        }
+        if let Err(e) = env.charge_daily() {
+            log::info!("[autopilot] semantic re-rank stopped at daily ceiling: {e}");
+            summary.degraded += 1;
+            break;
+        }
+        match env.score(&cache_id, job_text).await {
+            Some(combined) => {
+                job.score = Some(combined);
+                job.score_source = ScoreSource::Combined;
+                summary.rescored += 1;
+            }
+            // Per-job degrade: keep the keyword score and the `Keyword` label,
+            // keep going. One offline embed must not cost the whole run.
+            None => summary.degraded += 1,
+        }
+    }
+    log::info!(
+        "[autopilot] semantic re-rank: considered {} (max {SEMANTIC_RERANK_MAX}), rescored {}, degraded to keyword-only {}",
+        summary.considered,
+        summary.rescored,
+        summary.degraded
+    );
+    summary
 }
 
 /// Whether a posting passes the autopilot's keyword filters: it must contain
@@ -710,294 +1001,4 @@ pub(crate) fn recluster_autopilot_record(app: &AppHandle, autopilot_id: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    fn posting(title: &str, description: Option<&str>) -> JobPosting {
-        JobPosting {
-            id: "id".into(),
-            external_id: None,
-            title: title.into(),
-            company: "co".into(),
-            location: None,
-            url: "https://example.com/job".into(),
-            source: "test".into(),
-            description: description.map(String::from),
-            requirements: None,
-            posted_at: None,
-            captured_at: 0,
-            extra: HashMap::new(),
-        }
-    }
-
-    fn filter(keywords: Option<&[&str]>, exclude: Option<&[&str]>) -> AutopilotFilter {
-        AutopilotFilter {
-            min_match_score: 0.0,
-            keywords: keywords.map(|v| v.iter().map(|s| s.to_string()).collect()),
-            exclude_keywords: exclude.map(|v| v.iter().map(|s| s.to_string()).collect()),
-        }
-    }
-
-    // The `country_code` save-time derivation tests moved to
-    // `commands::geocoding` with the helpers themselves (they are now shared
-    // with the manual scrape path).
-
-    #[test]
-    fn no_filters_keep_everything() {
-        let p = posting("Rust Engineer", Some("We use Rust and Go"));
-        assert!(matches_keyword_filters(&p, &filter(None, None)));
-        // Empty lists are also a no-op.
-        assert!(matches_keyword_filters(&p, &filter(Some(&[]), Some(&[]))));
-    }
-
-    #[test]
-    fn must_include_requires_all_keywords() {
-        let p = posting("Rust Engineer", Some("We use Rust and Kubernetes"));
-        assert!(matches_keyword_filters(
-            &p,
-            &filter(Some(&["rust", "kubernetes"]), None)
-        ));
-        // Missing one required keyword → dropped.
-        assert!(!matches_keyword_filters(
-            &p,
-            &filter(Some(&["rust", "elixir"]), None)
-        ));
-    }
-
-    #[test]
-    fn exclude_drops_on_any_match() {
-        let p = posting("Senior PHP Developer", Some("Legacy PHP codebase"));
-        assert!(!matches_keyword_filters(&p, &filter(None, Some(&["php"]))));
-        assert!(matches_keyword_filters(
-            &p,
-            &filter(None, Some(&["python"]))
-        ));
-    }
-
-    #[test]
-    fn matching_is_case_insensitive_over_title_and_description() {
-        let p = posting("Backend Role", Some("Postgres and REDIS"));
-        // "Backend" only in title, "redis" only in description, different cases.
-        assert!(matches_keyword_filters(
-            &p,
-            &filter(Some(&["Backend", "redis"]), None)
-        ));
-    }
-
-    // Autopilot now ranks with the shared keyword-coverage kernel
-    // (`documents::keywords::coverage_score`) — the same embedding-free ATS
-    // sub-score the Jobs page uses — instead of the deleted Jaccard
-    // `simple_similarity`. A résumé covering all the JD's keywords scores high; an
-    // unrelated résumé scores 0; partial overlap lands strictly in between.
-    #[test]
-    fn ranking_uses_shared_keyword_coverage_kernel() {
-        use crate::documents::keywords::coverage_score;
-
-        // resume = description (all JD keywords covered) → full coverage.
-        assert_eq!(
-            coverage_score("rust kubernetes docker", "rust kubernetes docker"),
-            100.0
-        );
-        // No overlapping keywords → 0.
-        assert_eq!(coverage_score("rust", "java"), 0.0);
-        // Résumé covers only part of the JD's keywords → strictly between.
-        let partial = coverage_score("rust kubernetes", "rust kubernetes docker terraform");
-        assert!(
-            partial > 0.0 && partial < 100.0,
-            "partial coverage must be strictly between 0 and 100; got {partial}"
-        );
-    }
-
-    fn found(score: Option<f64>) -> FoundJob {
-        FoundJob {
-            title: "t".into(),
-            company: "c".into(),
-            url: "https://example.com/job".into(),
-            location: None,
-            board: None,
-            description: None,
-            salary_min: None,
-            salary_max: None,
-            salary_currency: None,
-            score,
-            score_provisional: false,
-            found_at: 0,
-            is_new: false,
-            applied: false,
-            trust: None,
-            assistant_notes: None,
-            cluster_id: None,
-            cluster_canonical: true,
-            cluster_members: Vec::new(),
-            is_agency: false,
-        }
-    }
-
-    #[test]
-    fn min_score_gate_keeps_at_or_above_threshold() {
-        assert!(passes_min_score(&found(Some(80.0)), 50.0));
-        assert!(passes_min_score(&found(Some(50.0)), 50.0)); // boundary is inclusive
-        assert!(!passes_min_score(&found(Some(49.9)), 50.0));
-    }
-
-    #[test]
-    fn min_score_gate_keeps_unscored_jobs() {
-        // No resume / no description → no score → never filtered out by the gate.
-        assert!(passes_min_score(&found(None), 50.0));
-        assert!(passes_min_score(&found(None), 100.0));
-    }
-
-    // ── cluster-aware retention (ADR-029 §g) ───────────────────────────────────
-
-    #[test]
-    fn cluster_aware_retain_keeps_below_bar_member_of_passing_cluster() {
-        // Two board copies of the SAME job (same title+company, different urls)
-        // form ONE cluster. The strong copy (80) clears the 50 bar, so the whole
-        // cluster — including the below-bar (40) copy — is retained.
-        let strong = FoundJob {
-            url: "https://a.example.com/job".into(),
-            score: Some(80.0),
-            ..found(None)
-        };
-        let weak = FoundJob {
-            url: "https://b.example.com/job".into(),
-            score: Some(40.0),
-            ..found(None)
-        };
-        let kept = cluster_aware_retain(vec![strong, weak], 50.0, &HashSet::new(), &[]);
-        assert_eq!(
-            kept.len(),
-            2,
-            "a below-bar member of a passing cluster must be kept"
-        );
-    }
-
-    #[test]
-    fn cluster_aware_retain_drops_a_failing_cluster() {
-        // A lone scored job below the bar → its cluster fails → dropped.
-        let weak = FoundJob {
-            url: "https://c.example.com/job".into(),
-            score: Some(40.0),
-            ..found(None)
-        };
-        let kept = cluster_aware_retain(vec![weak], 50.0, &HashSet::new(), &[]);
-        assert!(kept.is_empty(), "a below-bar singleton cluster is dropped");
-    }
-
-    #[test]
-    fn cluster_aware_retain_keeps_fully_unscored_cluster() {
-        let unscored = FoundJob {
-            url: "https://d.example.com/job".into(),
-            ..found(None)
-        };
-        let kept = cluster_aware_retain(vec![unscored], 50.0, &HashSet::new(), &[]);
-        assert_eq!(
-            kept.len(),
-            1,
-            "a fully-unscored cluster keeps the keep-unscored behavior"
-        );
-    }
-
-    #[test]
-    fn mixed_cluster_with_below_bar_scored_representative_is_dropped_even_with_unscored_member() {
-        // Same job on two boards → ONE cluster. One copy scores 40 (below the 50
-        // bar); the other is unscored. Per ADR-029 §g the cluster representative
-        // is its best-SCORED member (40 < 50), so the WHOLE cluster is dropped —
-        // the unscored member does NOT rescue it. Keep-unscored only applies to a
-        // cluster with NO scored member at all.
-        let scored_below = FoundJob {
-            url: "https://a.example.com/job".into(),
-            score: Some(40.0),
-            ..found(None)
-        };
-        let unscored = FoundJob {
-            url: "https://b.example.com/job".into(),
-            ..found(None)
-        };
-        let kept = cluster_aware_retain(vec![scored_below, unscored], 50.0, &HashSet::new(), &[]);
-        assert!(
-            kept.is_empty(),
-            "a below-bar scored representative drops the whole cluster, unscored member included"
-        );
-    }
-
-    #[test]
-    fn take_pending_focus_returns_buffered_id_then_clears() {
-        let buf = crate::tray::PendingFocus(Mutex::new(Some("autopilot-123".to_string())));
-        assert_eq!(take_pending_focus(&buf), Some("autopilot-123".to_string()));
-        // Atomic take cleared the slot — a second pull (e.g. a later focus) is empty,
-        // so a cold-start deep-link focus is delivered exactly once and can't re-fire.
-        assert_eq!(take_pending_focus(&buf), None);
-    }
-
-    #[test]
-    fn take_pending_focus_returns_none_when_empty() {
-        let buf = crate::tray::PendingFocus(Mutex::new(None));
-        assert_eq!(take_pending_focus(&buf), None);
-    }
-
-    // ── concurrent-run guard (item 2) ──────────────────────────────────────
-    // Distinct ids per test isolate the process-global RUNS_IN_FLIGHT set from
-    // the parallel test runner, so no #[serial] is needed.
-
-    #[test]
-    fn run_guard_blocks_a_second_concurrent_acquire() {
-        let id = "guard-test-concurrent";
-        let first = RunGuard::try_acquire(id).expect("first acquire succeeds");
-        assert!(
-            RunGuard::try_acquire(id).is_none(),
-            "a second acquire for the same in-flight id is blocked (no double-run)"
-        );
-        drop(first);
-        assert!(
-            RunGuard::try_acquire(id).is_some(),
-            "after the first guard drops, the id can be acquired again"
-        );
-    }
-
-    #[test]
-    fn run_guard_distinct_ids_do_not_block_each_other() {
-        let _a = RunGuard::try_acquire("guard-test-a").expect("id a acquires");
-        assert!(
-            RunGuard::try_acquire("guard-test-b").is_some(),
-            "different autopilot ids run concurrently — the guard is per-id"
-        );
-    }
-
-    // ── snippet-score provisional flag (item 4) ────────────────────────────
-
-    #[test]
-    fn build_found_job_flags_aggregator_snippet_scores_as_provisional() {
-        // An aggregator (Adzuna) posting is ranked over a truncated snippet, so
-        // its score is provisional.
-        let mut agg = posting("Rust Engineer", Some("We use Rust and Go"));
-        agg.source = AGGREGATOR_SNIPPET_SOURCE.into();
-        let job = build_found_job(&agg, "rust go", 0);
-        assert!(job.score.is_some(), "a résumé + description yields a score");
-        assert!(
-            job.score_provisional,
-            "an aggregator snippet score must be flagged provisional"
-        );
-
-        // A direct full-text board's score is authoritative — not provisional.
-        let mut greenhouse = posting("Rust Engineer", Some("We use Rust and Go"));
-        greenhouse.source = "greenhouse".into();
-        let job = build_found_job(&greenhouse, "rust go", 0);
-        assert!(job.score.is_some());
-        assert!(
-            !job.score_provisional,
-            "a full-text board score must not be flagged provisional"
-        );
-
-        // No résumé → no score → nothing to qualify, even for an aggregator job.
-        let mut agg_unscored = posting("Rust Engineer", Some("We use Rust"));
-        agg_unscored.source = AGGREGATOR_SNIPPET_SOURCE.into();
-        let job = build_found_job(&agg_unscored, "", 0);
-        assert!(job.score.is_none());
-        assert!(
-            !job.score_provisional,
-            "an unscored job is never provisional"
-        );
-    }
-}
+mod tests;

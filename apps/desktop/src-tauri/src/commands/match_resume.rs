@@ -9,8 +9,8 @@ use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
 use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
 use crate::documents::evidence::{rank_bullets, EvidenceBullet};
 use crate::documents::keywords::{
-    apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, languages_align,
-    make_stemmer, readable_gaps,
+    apply_stemmer, detect_locale_tag, display_forms, keyword_coverage, keywords,
+    keywords_normalized, languages_align, make_stemmer, readable_gaps,
 };
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
@@ -208,7 +208,14 @@ async fn score_one(
     // "developer", not the Snowball stems "kubernet" / "develop".
     let gaps = readable_gaps(&gap_stems, &display_forms(&job_text, &stemmer));
 
-    let combined = if job_vec.is_some() {
+    // ONE decision, two consumers: the combined formula below AND the
+    // `scoreSource` label in the result. Both hang off this single boolean, so a
+    // caller can never be told "combined" for a number that is really
+    // keyword-only — the degrade case (semantic disabled, or an embed that
+    // failed / a provider that is offline). `semantic == 0.0` is NOT a usable
+    // proxy for it: a real cosine can legitimately clamp to zero.
+    let semantic_available = job_vec.is_some();
+    let combined = if semantic_available {
         (0.6 * semantic + 0.4 * ats).round()
     } else {
         ats // no semantic signal available
@@ -244,6 +251,13 @@ async fn score_one(
         "recommendations": recommendations,
         "explanation": explanation,
         "guidance": GUIDANCE,
+        // Which kernel actually produced `combined`. Purely additive — no
+        // MATCH_FORMULA_VERSION bump, because no SCORE changes: a row cached
+        // before this field existed still holds the right numbers, and the one
+        // consumer that branches on it (the Autopilot re-rank) writes its own
+        // fresh rows under its own `resume_id`/`job_id` namespace, so it never
+        // reads a field-less legacy row.
+        "scoreSource": if semantic_available { "combined" } else { "keyword" },
     });
     if let Ok(s) = serde_json::to_string(&result) {
         store
@@ -296,6 +310,93 @@ pub(crate) async fn score_adhoc_keyword_only(
         Some(job_text),
         0,     // semantic_enabled hardcoded OFF — never caller-configurable
         false, // translate hardcoded OFF — this entry point never calls translate_if_needed
+    )
+    .await
+}
+
+/// The `scoreSource` value [`score_one`] emits when a real embedding pair backed
+/// the `combined` number. Anything else — a keyword-only run, a failed embed, an
+/// error object, a field-less legacy cache row — is a degrade. One constant so
+/// the producer and the Autopilot consumer can't drift.
+pub(crate) const SCORE_SOURCE_COMBINED: &str = "combined";
+
+/// Content-addressed cache identity for an Autopilot's résumé snapshot.
+///
+/// The Autopilot record persists `resume_text` (a raw string copied at setup
+/// time), not a `DocumentRecord` id, so the semantic path needs a stable id for
+/// the `vectors` / `match_scores` rows. Hashing the text makes it
+/// **self-invalidating**: editing the autopilot's résumé yields a different id,
+/// so a stale résumé vector can never be scored against — the same discipline
+/// `posting_vectors.text_hash` uses. Prefixed so it can never collide with a
+/// real document id (mirrors `extension_bridge::match_live::adhoc_job_id`'s
+/// `adhoc:` prefix).
+///
+/// `pub(crate)` so `commands::autopilot`'s cache-reuse test can assert against
+/// the REAL identity instead of a hand-retyped mirror of this format string.
+pub(crate) fn autopilot_resume_id(resume_text: &str) -> String {
+    format!("autopilot:{}", sha256_hex(resume_text))
+}
+
+/// SEMANTIC (combined) scoring entry point for the headless Autopilot re-rank —
+/// a thin forwarding wrapper around [`score_one`], NOT a second scoring path:
+/// no new branch is added to `score_one`, so Autopilot and the Jobs page share
+/// one kernel, `languages_align` included. That inclusion is the point: the
+/// Autopilot's previous `coverage_score` path stemmed BOTH sides with the JD
+/// stemmer unconditionally, which mangles language-neutral tokens on a
+/// cross-language résumé↔posting pair; routing through `score_one` closes that
+/// known divergence (ADR-020 addendum).
+///
+/// `job_id` is a synthetic per-job cache key the caller derives (see
+/// `commands::autopilot::autopilot_job_id`) — Autopilot postings never enter
+/// `PostingsCache`, so there is no real posting id to use.
+///
+/// The résumé is wrapped in a synthetic [`DocumentRecord`] because an Autopilot
+/// stores résumé TEXT, not a document reference. Only the four fields
+/// `score_one` reads are meaningful:
+/// - `id` — [`autopilot_resume_id`], the content-addressed cache identity;
+/// - `text` — the résumé itself;
+/// - `locale` — [`detect_locale_tag`], which exists precisely for a résumé with
+///   no persisted locale; without it `languages_align` would compare against a
+///   hardcoded `"en"` and mis-stem every non-English résumé;
+/// - `keywords_json: None` — no cached token list, so `score_one` live-extracts
+///   (its documented fallback).
+///
+/// `translate: false`, unlike the in-app `match_resume` path. A scheduled run is
+/// unattended: `translate_if_needed` would fire one provider completion per
+/// foreign-language posting, unbounded and outside the embedding budget this
+/// step charges. `languages_align` already handles a cross-language pair
+/// symmetrically (both sides normalized-only), so the trade-off costs stemming
+/// precision on such a pair, never correctness.
+pub(crate) async fn score_autopilot_semantic(
+    app: &AppHandle,
+    store: &DocumentStore,
+    resume_text: &str,
+    active: &EmbeddingConfig,
+    job_id: &str,
+    job_text: String,
+) -> Value {
+    let resume = DocumentRecord {
+        id: autopilot_resume_id(resume_text),
+        title: String::new(),
+        name: String::new(),
+        locale: Some(detect_locale_tag(resume_text).to_string()),
+        text: resume_text.to_string(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    score_one(
+        app,
+        store,
+        &resume,
+        None, // no cached keyword list for a raw résumé snapshot — live-extract
+        active,
+        job_id,
+        Some(job_text),
+        1,     // semantic_enabled: this entry point exists only for the semantic re-rank
+        false, // translate: never, in an unattended scheduled run — see the doc above
     )
     .await
 }

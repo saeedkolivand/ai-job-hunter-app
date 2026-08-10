@@ -62,3 +62,17 @@ pub async fn job_preferences_set_salary_expectation(
         Err(e) => json!({ "error": e.to_string() }),
     }
 }
+
+/// Single-column semantic-scoring write (ADR-020 addendum) — the renderer's
+/// `semanticScoring` preference lives in the webview's `localStorage`, which no
+/// Rust code can read, so the headless Autopilot scheduler needs this mirror to
+/// know whether to run the semantic re-rank. Same single-column discipline as
+/// `job_preferences_set_salary_expectation`: it can never NULL another column.
+#[tauri::command]
+pub async fn job_preferences_set_semantic_scoring(app: AppHandle, enabled: bool) -> Value {
+    let store = app.state::<crate::job_preferences::JobPreferencesStore>();
+    match store.set_semantic_scoring(enabled) {
+        Ok(()) => json!({ "success": true }),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}

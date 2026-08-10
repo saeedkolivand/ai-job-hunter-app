@@ -13,7 +13,7 @@
  *   click the trigger button → list portals to document.body as plain <button>s
  *   → click the option by text content (no ARIA role="option").
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -27,10 +27,15 @@ vi.mock('@ajh/translations', () => ({
 
 // ── Service stubs — prevent any IPC / QueryClient dependency ──────────────────
 
+const { mockSetSemanticScoring } = vi.hoisted(() => ({
+  mockSetSemanticScoring: vi.fn(),
+}));
+
 vi.mock('@/services', () => ({
   useEmbeddingStatus: () => ({ data: undefined, refetch: vi.fn() }),
   useSetEmbeddingConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReembedAll: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetSemanticScoring: () => ({ mutate: mockSetSemanticScoring, isPending: false }),
   useJobEvents: (_handler: unknown) => undefined,
 }));
 
@@ -52,6 +57,8 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 });
 
 // ── component under test ──────────────────────────────────────────────────────
+
+import { usePreferencesStore } from '@/store/preferences-store';
 
 import { EmbeddingsSettings } from './index';
 
@@ -137,5 +144,46 @@ describe('EmbeddingsSettings — cloud provider selected', () => {
     // Switch back to ollama — advisory must disappear.
     await switchProvider(user, 'OpenAI', 'Ollama (Local)');
     expect(screen.queryByText(ADVISORY_FRAGMENT)).not.toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Semantic-scoring toggle → backend mirror (ADR-020 addendum)
+//
+// The toggle writes to a Zustand store persisted in the WEBVIEW's localStorage,
+// which the headless Autopilot scheduler cannot read. Without the write-through
+// below, turning semantic scoring on would silently never reach a scheduled run
+// (and turning it off would leave the scheduler embedding). The store write
+// alone is not evidence of anything — these tests pin the IPC mirror.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('EmbeddingsSettings — semantic scoring backend mirror', () => {
+  beforeEach(() => {
+    mockSetSemanticScoring.mockClear();
+    usePreferencesStore.getState().resetPreferences();
+  });
+
+  it('mirrors the toggle to the backend on enable AND on disable', async () => {
+    const user = userEvent.setup();
+    render(<EmbeddingsSettings />);
+
+    const toggle = screen.getByLabelText('settings.embeddings.semanticScoring');
+    await user.click(toggle);
+    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(true);
+    // The local store moved too — the mirror must not replace it.
+    expect(usePreferencesStore.getState().semanticScoring).toBe(true);
+
+    await user.click(toggle);
+    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(false);
+    expect(mockSetSemanticScoring).toHaveBeenCalledTimes(2);
+    expect(usePreferencesStore.getState().semanticScoring).toBe(false);
+  });
+
+  it('does NOT mirror when an unrelated toggle on the same panel changes', async () => {
+    const user = userEvent.setup();
+    render(<EmbeddingsSettings />);
+
+    await user.click(screen.getByLabelText('settings.embeddings.autoIndex'));
+    expect(mockSetSemanticScoring).not.toHaveBeenCalled();
   });
 });

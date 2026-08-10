@@ -5,7 +5,13 @@ import type { JobEvent } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, Dropdown, GlassCard, Input, useNotification } from '@ajh/ui';
 
-import { useEmbeddingStatus, useJobEvents, useReembedAll, useSetEmbeddingConfig } from '@/services';
+import {
+  useEmbeddingStatus,
+  useJobEvents,
+  useReembedAll,
+  useSetEmbeddingConfig,
+  useSetSemanticScoring,
+} from '@/services';
 import {
   useAutoIndexOnUpload,
   usePreferencesStore,
@@ -150,6 +156,11 @@ export function EmbeddingsSettings() {
   const indexingNow = status?.indexing === true;
   const setAutoIndexOnUpload = usePreferencesStore((s) => s.setAutoIndexOnUpload);
   const setSemanticScoring = usePreferencesStore((s) => s.setSemanticScoring);
+  // Mirror the toggle onto the backend-readable copy the headless Autopilot
+  // scheduler reads (ADR-020 addendum) — the preference itself lives in the
+  // webview's localStorage, which Rust cannot see. Write-through only; the
+  // Zustand store above stays the source of truth for every in-app reader.
+  const syncSemanticScoring = useSetSemanticScoring();
 
   return (
     <GlassCard>
@@ -299,7 +310,10 @@ export function EmbeddingsSettings() {
           <input
             type="checkbox"
             checked={semanticScoring}
-            onChange={(e) => setSemanticScoring(e.target.checked)}
+            onChange={(e) => {
+              setSemanticScoring(e.target.checked);
+              syncSemanticScoring.mutate(e.target.checked);
+            }}
             className="h-4 w-4 shrink-0 accent-[var(--color-brand)] cursor-pointer"
             aria-label={t('settings.embeddings.semanticScoring')}
           />

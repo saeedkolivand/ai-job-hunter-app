@@ -1032,6 +1032,7 @@ fn found_job_full(url: &str, title: &str, company: &str, found_at: u64) -> Found
         salary_currency: None,
         score: None,
         score_provisional: false,
+        score_source: crate::autopilot::ScoreSource::Keyword,
         found_at,
         is_new: false,
         applied: false,
