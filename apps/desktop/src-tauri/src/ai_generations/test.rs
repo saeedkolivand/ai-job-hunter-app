@@ -1513,6 +1513,72 @@ fn sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_worst_case_size() {
     );
 }
 
+/// Regression for the finding this fix closes (PR #963 round 14):
+/// `QUALITY_REPORT_MAX_BYTES`'s sizing arithmetic capped each `ContentIssue`
+/// field at its RAW (pre-serialization) byte bound — the round-6 test above
+/// exercised only that raw bound, filling the worst-case blob with plain
+/// `'x'` characters, which `serde_json` never escapes. `serde_json` DOES
+/// escape `"` (→ `\"`) and `\` (→ `\\`), doubling every occurrence, so a
+/// legitimate quote-heavy report (quoted résumé bullets, code-snippet
+/// evidence) can serialize to roughly double the raw-bound estimate. Builds
+/// two sub-reports of `MAX_CONTENT_ISSUES` issues each, with
+/// `message`/`evidence`/`section` filled with `"` characters at their
+/// documented RAW caps (`validate::content::ISSUE_*_MAX_BYTES`) — the
+/// worst-case escape density — and measures the REAL, `serde_json`-produced
+/// byte length (never an assumed multiple) via `.to_string()`. Asserts the
+/// escaped wrapper (a) genuinely exceeds the OLD 512 KiB cap, proving the
+/// defect was reachable, and (b) still survives `sanitize_quality_report`
+/// byte-for-byte under the resized cap.
+#[test]
+fn sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_escaped_worst_case_size() {
+    use crate::validate::content::{
+        ISSUE_EVIDENCE_MAX_BYTES, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES,
+        MAX_CONTENT_ISSUES,
+    };
+
+    // One issue at its raw field caps, filled with `"` — the character that
+    // costs the most once `serde_json` escapes it (`\"`, 2×).
+    let issue = serde_json::json!({
+        "severity": "critical",
+        "code": "consistency.skill_not_demonstrated",
+        "section": "\"".repeat(ISSUE_SECTION_MAX_BYTES),
+        "message": "\"".repeat(ISSUE_MESSAGE_MAX_BYTES),
+        "evidence": "\"".repeat(ISSUE_EVIDENCE_MAX_BYTES),
+    });
+    let issues: Vec<_> = std::iter::repeat_n(issue, MAX_CONTENT_ISSUES).collect();
+    let sub_report = serde_json::json!({ "ok": false, "issues": issues, "metrics": {} });
+
+    // `.to_string()` here is the real `serde_json` serialization — this is
+    // the measured escaped byte count, not an assumed 2× multiple.
+    let wrapper = serde_json::json!({
+        "schemaVersion": 1,
+        "pipeline": "combined",
+        "generatedAt": 1,
+        "resume": { "report": sub_report.clone(), "sourceTextHash": "x".repeat(64) },
+        "coverLetter": { "report": sub_report, "sourceTextHash": "x".repeat(64) },
+    })
+    .to_string();
+
+    assert!(
+        wrapper.len() > 512 * 1024,
+        "a quote-heavy worst-case wrapper ({} bytes) must exceed the OLD 512 KiB cap — \
+         this is the exact escaping gap QUALITY_REPORT_MAX_BYTES was resized to close",
+        wrapper.len()
+    );
+    assert!(
+        wrapper.len() < QUALITY_REPORT_MAX_BYTES,
+        "the resized cap ({QUALITY_REPORT_MAX_BYTES} bytes) must still allow a legitimate \
+         quote-heavy worst-case wrapper ({} bytes)",
+        wrapper.len()
+    );
+    assert_eq!(
+        sanitize_quality_report(wrapper.clone(), "test"),
+        wrapper,
+        "an escaping-hostile worst-case wrapper must persist byte-for-byte, not be \
+         dropped to the empty sentinel"
+    );
+}
+
 /// End-to-end proof for the save path: `ai_generations_save` runs the
 /// incoming `quality_report` through `sanitize_quality_report` (simulated
 /// here exactly as the command does) BEFORE building the record it hands to

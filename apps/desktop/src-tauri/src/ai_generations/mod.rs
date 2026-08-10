@@ -15,15 +15,32 @@ use crate::error::{AppError, AppResult};
 /// This caps the WRAPPER (`{schemaVersion, pipeline, generatedAt, resume?,
 /// coverLetter?}`), not one sub-report — the wrapper legitimately holds TWO
 /// of them (résumé + cover letter), each up to its own documented worst
-/// case. Per `validate::content::ISSUE_MESSAGE_MAX_BYTES`'s arithmetic, one
-/// sub-report tops out around `MAX_CONTENT_ISSUES` (200) ×
-/// (400 + 400 + 120 + ~150 bytes of JSON overhead) ≈ 214 KB, so two
-/// sub-reports alone already run ≈ 428 KB — past a 256 KiB cap, which would
-/// silently drop a LEGITIMATE worst-case wrapper to the empty sentinel (see
-/// [`sanitize_quality_report`]) on exactly the documents this cap exists to
-/// allow. 512 KiB covers 2 × ~214 KB sub-report worst case plus the envelope
-/// fields and the per-slot `sourceTextHash`es (well under 100 KB combined)
-/// with headroom to spare.
+/// case.
+///
+/// **The arithmetic is on SERIALIZED bytes, not raw field bytes** (PR #963
+/// round 14 fix — the prior 512 KiB sizing used only the RAW arithmetic
+/// below and could silently drop a legitimate quote-heavy report). Per
+/// `validate::content::ISSUE_MESSAGE_MAX_BYTES`'s doc, one sub-report's RAW
+/// (pre-serialization) `message`/`evidence`/`section` content tops out
+/// around `MAX_CONTENT_ISSUES` (200) × (400 + 400 + 120 + ~150 bytes of JSON
+/// overhead) ≈ 214 KB — but `serde_json` ESCAPES every byte it writes: a
+/// `"` becomes `\"` and a `\` becomes `\\` (2× that byte), a raw control
+/// char becomes `\u00XX` (6×). Quoted résumé bullets or code-snippet
+/// evidence routinely hit that 2× density on the three clamped text fields;
+/// this cap assumes AT MOST 2× escape density there (not the pathological
+/// 6× control-char case, which generated document text does not carry, and
+/// which a byte cap alone cannot close anyway — `sanitize_quality_report`'s
+/// existing sentinel-drop already degrades that case safely, just more
+/// eagerly). That puts one sub-report's SERIALIZED worst case near 389 KB
+/// (200 × ((400×2) + (400×2) + (120×2) + ~150)), two of them near 777 KB,
+/// and the full wrapper — plus the envelope fields and the per-slot
+/// `sourceTextHash`es (well under 100 KB combined) — near 878 KB. 1 MiB
+/// (exactly 2× the prior 512 KiB) covers that ≈878 KB escaped worst case
+/// with ~14% headroom to spare, without silently reverting to the raw-only
+/// arithmetic the round-6 regression test never actually exercised (it
+/// filled the worst-case blob with plain, non-escaping `'x'` characters —
+/// see `sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_escaped_worst_case_size`
+/// in `test.rs` for the corrected, measured version).
 ///
 /// Dropping per-slot instead of the whole wrapper (persist whichever
 /// sub-report fits, drop only the other) was considered and rejected: it's
@@ -34,7 +51,7 @@ use crate::error::{AppError, AppResult};
 /// `quality_report` (`commands::ai_generations::ai_generations_save` and
 /// [`AiGenerationStore::import`] below) — the data layer owns the column, so
 /// the cap lives here rather than duplicated per caller.
-pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 512 * 1024;
+pub(crate) const QUALITY_REPORT_MAX_BYTES: usize = 1024 * 1024;
 
 /// Guard an incoming `quality_report` blob against exceeding
 /// [`QUALITY_REPORT_MAX_BYTES`] on write. A byte-position clamp
