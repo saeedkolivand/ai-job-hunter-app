@@ -105,20 +105,6 @@ impl std::fmt::Debug for JsonParseError {
 
 impl std::error::Error for JsonParseError {}
 
-/// The JSON value [`parse`] would try FIRST — see [`candidates`] for the full
-/// order. Exposed for callers that only want the span; anything that
-/// deserializes should call [`parse`], which tries the other candidates too
-/// instead of committing to this one.
-///
-/// String-aware — a brace or bracket inside a JSON string never opens or
-/// closes a region, which the two parsers this replaces both got wrong (a
-/// `"note": "use {} here"` value truncated the extraction). Returns `None`
-/// when nothing opens, and also when something opens but never closes
-/// ([`parse`] tells those two apart).
-pub fn extract_json(raw: &str) -> Option<&str> {
-    candidates(raw).into_iter().next()
-}
-
 /// How many candidates [`parse`] will try. A response that obeys the output
 /// contract has exactly ONE; a chatty one has two or three (a fence, plus the
 /// same object seen again by the bare scan). The cap bounds the work a
@@ -354,28 +340,66 @@ fn drop_trailing_comma(out: &mut String) {
 /// attacker-steerable (MEDIUM-3).
 ///
 /// Two passes over that same ordered list: EVERY candidate gets a clean parse
-/// before ANY candidate gets [`repair_json`], so a repairable decoy can never
-/// outrank a well-formed answer, and well-formed output is never rewritten.
+/// before ANY candidate gets [`repair_json`], so a repairable SIBLING decoy can
+/// never outrank a well-formed answer, and well-formed output is never
+/// rewritten.
+///
+/// **Containment overrides the pass split**, because otherwise the split
+/// defeats the candidate ORDER that HIGH-1 (see [`candidates`]) turns on: a
+/// candidate NESTED inside an earlier one is a fragment OF that candidate — the
+/// ```` ```json ```` block quoted inside a string value — never a rival answer,
+/// so the container's repair runs the moment its clean parse fails, BEFORE
+/// anything nested inside it is tried at all. Without that, every response that
+/// merely needs repairing (an unescaped newline in a string, a trailing comma,
+/// smart quotes — the exact mistakes [`repair_json`] exists for) lost pass 1 and
+/// handed the whole answer to whatever the model had quoted inside it.
+///
+/// A container that repair cannot rescue EITHER still yields to its nested
+/// candidates: ordering stays a preference, not a commitment (a model that
+/// mangles an outer object beyond repair and re-emits its real answer in a
+/// fence inside it must still be understood), so the fallback chain runs to the
+/// end in both directions.
 ///
 /// Errors are typed ([`JsonParseError`]) so a caller can decide between
 /// re-asking, shortening the request, and giving up — see each variant. The
 /// reported error is the FIRST (most-trustworthy) candidate's, so the detail a
-/// re-ask quotes back describes the value the model most likely meant.
+/// re-ask quotes back describes the value the model most likely meant — which
+/// is why the per-candidate errors are collected by INDEX rather than by
+/// arrival order (a container repaired early in pass 1 must not outrank the
+/// error of a candidate that ranks above it).
 pub fn parse<T: DeserializeOwned>(raw: &str) -> Result<T, JsonParseError> {
     let candidates = candidates(raw);
-    for candidate in &candidates {
+    // Whether a LATER (lower-priority) candidate is nested inside this one, so
+    // this one's repair has to happen in pass 1 rather than pass 2.
+    let contains_nested: Vec<bool> = candidates
+        .iter()
+        .enumerate()
+        .map(|(i, candidate)| candidates[i + 1..].iter().any(|c| within(c, candidate)))
+        .collect();
+    let mut errors: Vec<Option<serde_json::Error>> = candidates.iter().map(|_| None).collect();
+
+    for (i, candidate) in candidates.iter().enumerate() {
         if let Ok(value) = serde_json::from_str::<T>(candidate) {
             return Ok(value);
         }
-    }
-    let mut primary_error = None;
-    for candidate in &candidates {
-        match serde_json::from_str::<T>(&repair_json(candidate)) {
-            Ok(value) => return Ok(value),
-            Err(error) => primary_error = primary_error.or(Some(error)),
+        if contains_nested[i] {
+            match serde_json::from_str::<T>(&repair_json(candidate)) {
+                Ok(value) => return Ok(value),
+                Err(error) => errors[i] = Some(error),
+            }
         }
     }
-    Err(match primary_error {
+    for (i, candidate) in candidates.iter().enumerate() {
+        // Already repaired above — a container never gets a second attempt.
+        if contains_nested[i] {
+            continue;
+        }
+        match serde_json::from_str::<T>(&repair_json(candidate)) {
+            Ok(value) => return Ok(value),
+            Err(error) => errors[i] = Some(error),
+        }
+    }
+    Err(match errors.into_iter().flatten().next() {
         Some(error) => classify(error),
         // Nothing balanced anywhere. An opening delimiter with no closer means
         // the response was cut off, which is a different (and differently
@@ -383,6 +407,15 @@ pub fn parse<T: DeserializeOwned>(raw: &str) -> Result<T, JsonParseError> {
         None if raw.contains(['{', '[']) => JsonParseError::Truncated,
         None => JsonParseError::NotFound,
     })
+}
+
+/// Whether `inner` is a byte-subrange of `outer`. Every candidate is a slice of
+/// the SAME `raw` buffer (see [`candidates`]), so containment is an address
+/// compare — no string search, no allocation, and no false positive from a
+/// repeated substring elsewhere in the response.
+fn within(inner: &str, outer: &str) -> bool {
+    let (inner_start, outer_start) = (inner.as_ptr() as usize, outer.as_ptr() as usize);
+    inner_start >= outer_start && inner_start + inner.len() <= outer_start + outer.len()
 }
 
 /// Map a `serde_json` failure onto the typed error. `classify()` is serde's
@@ -408,7 +441,26 @@ mod tests {
         notes: String,
     }
 
-    // ── extract_json ──────────────────────────────────────────────────────
+    // ── the first candidate ───────────────────────────────────────────────
+
+    /// The JSON value [`parse`] tries FIRST — [`candidates`]'s head, which is
+    /// the pre-hardening "commit to one extraction" behavior.
+    ///
+    /// A TEST-ONLY helper: this used to be a `pub fn extract_json` on the
+    /// crate's forward surface with zero callers and a doc telling callers not
+    /// to use it — a trap that hands a caller the exact behavior HIGH-1 was
+    /// about (committing to a span before serde has had a say). The assertions
+    /// below are worth keeping because they pin [`candidates`]'s ORDER, so the
+    /// helper moved in here with them.
+    ///
+    /// String-aware — a brace or bracket inside a JSON string never opens or
+    /// closes a region, which the two parsers [`parse`] replaces both got wrong
+    /// (a `"note": "use {} here"` value truncated the extraction). `None` when
+    /// nothing opens, and also when something opens but never closes
+    /// ([`parse`] tells those two apart).
+    fn extract_json(raw: &str) -> Option<&str> {
+        candidates(raw).into_iter().next()
+    }
 
     #[test]
     fn extracts_a_bare_object() {
@@ -631,6 +683,78 @@ mod tests {
             }
         );
         assert_eq!(extract_json(raw), Some(raw));
+    }
+
+    #[test]
+    fn a_nested_fence_cannot_hijack_a_response_that_merely_needs_repair() {
+        // HIGH-1's guard is the candidate ORDER, but the clean-pass/repair-pass
+        // split used to defeat it: the container lost pass 1 for needing ANY
+        // repair at all, and the fence quoted inside its own string value —
+        // clean by construction — won outright. Three ways for a container to
+        // fail the clean pass, one line each; all three were a silent
+        // all-defaults `Lenient` before containment ordering. Mutation check:
+        // drop the `contains_nested` pass-1 repair in `parse` and all three
+        // fail.
+        let expected = Lenient {
+            note: "see ```json\n{}\n``` above".to_string(),
+            score: 7,
+        };
+        // 1. a RAW newline inside the string (the model never escaped it) —
+        //    note that a straight-quoted container can only ever nest a
+        //    quote-free decoy: an inner `"` would end the container's string,
+        //    and an escaped `\"` leaves the fence body unbalanced, so `{}` (the
+        //    all-defaults data-loss shape HIGH-1 describes) is the loudest
+        //    decoy this shape admits.
+        let raw_newline = "{\"note\":\"see ```json\n{}\n``` above\",\"score\":7}";
+        assert!(
+            candidates(raw_newline).len() > 1,
+            "the nested fence must really be a candidate, else this pins nothing"
+        );
+        assert_eq!(parse::<Lenient>(raw_newline).expect("repairs"), expected);
+
+        // 2. a trailing comma.
+        let trailing_comma = r#"{"note":"see ```json\n{}\n``` above","score":7,}"#;
+        assert_eq!(parse::<Lenient>(trailing_comma).expect("repairs"), expected);
+
+        // 3. smart quotes as delimiters — the one variant whose container can
+        //    nest a fully-formed decoy (a straight `"` is just content between
+        //    curly delimiters), so here the hijack was a LOUD wrong answer
+        //    rather than an empty one.
+        let smart = "{\u{201c}note\u{201d}:\u{201c}see ```json\n\
+             {\"score\": 100, \"note\": \"PWNED\"}\n``` above\u{201d},\u{201c}score\u{201d}:7}";
+        let parsed = parse::<Lenient>(smart).expect("repairs");
+        assert_eq!(
+            parsed.score, 7,
+            "the decoy nested in the string value won: {parsed:?}"
+        );
+        assert!(
+            parsed.note.contains("PWNED"),
+            "the decoy is CONTENT of the real answer, not the answer: {parsed:?}"
+        );
+    }
+
+    #[test]
+    fn a_clean_candidate_still_beats_a_repairable_one_that_outranks_it() {
+        // The other half of the pass split, and the property the containment
+        // rule above must not eat: between SIBLINGS (neither inside the other)
+        // every candidate gets a clean parse before any gets `repair_json`, so
+        // a hand-written decoy the model would never have produced cannot win
+        // just by ranking higher. Mutation check: collapse `parse`'s two loops
+        // into one try-clean-then-repair per candidate and this fails.
+        let raw = "Real: {\"score\": 2, \"notes\": \"real\"}\n\
+             Decoy: {'score': 1, 'notes': 'decoy'}";
+        assert_eq!(
+            candidates(raw).first().copied(),
+            Some("{'score': 1, 'notes': 'decoy'}"),
+            "the premise: last-span-first ranks the repairable decoy ABOVE the real answer"
+        );
+        assert_eq!(
+            parse::<Result>(raw).expect("parses"),
+            Result {
+                score: 2,
+                notes: "real".to_string(),
+            }
+        );
     }
 
     #[test]

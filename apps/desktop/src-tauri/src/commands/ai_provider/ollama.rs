@@ -292,7 +292,7 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        complete_impl(model, system, user, temperature, None)
+        complete_impl(model, system, user, temperature, None, None)
             .await
             .map(|(text, _)| text)
     }
@@ -305,7 +305,7 @@ impl AiProvider for OllamaClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        complete_impl(model, system, user, temperature, None).await
+        complete_impl(model, system, user, temperature, None, None).await
     }
 
     /// Native constrained decoding via Ollama's `format` field: the caller's
@@ -314,6 +314,11 @@ impl AiProvider for OllamaClient {
     /// constrained decoding is enforced by the SERVER's sampler, not by model
     /// training, so unlike `tools` there is no per-family allowlist to gate on
     /// (`capabilities().supports_json_mode` is already `true` for all).
+    ///
+    /// `req.effort` rides along (gated by [`think_level`], the same family
+    /// check `chat_stream` uses) for the same reason: this is a full
+    /// [`AiGenerateRequest`], and a structured call that silently ran with
+    /// thinking off was the user's setting being dropped, not honored.
     async fn complete_structured(
         &self,
         _app: &AppHandle,
@@ -328,6 +333,7 @@ impl AiProvider for OllamaClient {
             &user,
             structured::structured_temperature(self, req),
             Some(structured::ollama_format(schema)),
+            req.effort.as_deref(),
         )
         .await
     }
@@ -994,19 +1000,8 @@ fn build_chat_stream_body(req: &AiGenerateRequest, sampling: SamplingProfile) ->
     .unwrap_or(json!([]));
 
     let mut body = json!({ "model": req.model, "messages": messages, "stream": true });
-    // `think` is a top-level request field (NOT nested under `options`), and only
-    // safe to send when it's one of `OLLAMA_EFFORT_LEVELS` (see its doc comment)
-    // — it 400s on a non-thinking model (see `ollama_family_supports_thinking`'s
-    // doc comment) or an unrecognized value.
-    if let Some(effort) = req
-        .effort
-        .as_deref()
-        .map(str::trim)
-        .filter(|e| !e.is_empty())
-    {
-        if ollama_family_supports_thinking(&req.model) && OLLAMA_EFFORT_LEVELS.contains(&effort) {
-            body["think"] = json!(effort);
-        }
+    if let Some(effort) = think_level(&req.model, req.effort.as_deref()) {
+        body["think"] = json!(effort);
     }
     let mut options = serde_json::Map::new();
     if let Some(t) = sampling.temperature {
@@ -1097,16 +1092,39 @@ async fn stream_chat(
     .await
 }
 
+/// The `think` value a request may send on this model — `None` when it must
+/// not be sent at all. `think` is a top-level request field (NOT nested under
+/// `options`), and only safe to send when it is one of [`OLLAMA_EFFORT_LEVELS`]
+/// (see its doc comment) AND the model is in the known thinking family: it 400s
+/// on a non-thinking model (see [`ollama_family_supports_thinking`]) or on an
+/// unrecognized value.
+///
+/// Shared by BOTH body builders rather than re-written per call site.
+/// `complete_structured` is the one non-streaming path that receives the whole
+/// [`AiGenerateRequest`], and it silently dropped `effort` for its entire
+/// existence while `chat_stream` honored it — a second hand-written copy of
+/// this gate is precisely how that happens again.
+fn think_level<'a>(model: &str, effort: Option<&'a str>) -> Option<&'a str> {
+    let effort = effort.map(str::trim)?;
+    (ollama_family_supports_thinking(model) && OLLAMA_EFFORT_LEVELS.contains(&effort))
+        .then_some(effort)
+}
+
 /// Build the non-streaming `/api/chat` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested — `format`
 /// is Ollama's own constrained-decoding field (a JSON Schema, or the `"json"`
-/// string), `Some` only on the structured path.
+/// string), `Some` only on the structured path, and `effort` likewise arrives
+/// only from there (the two plain paths take no [`AiGenerateRequest`] to read
+/// it from). `think` puts the model's reasoning in `message.thinking`, a
+/// SEPARATE field from the `message.content` this path parses, so it never
+/// pollutes the JSON answer.
 fn build_complete_body(
     model: &str,
     system: &str,
     user: &str,
     temperature: Option<f64>,
     format: Option<Value>,
+    effort: Option<&str>,
 ) -> Value {
     let mut body = json!({
         "model": model,
@@ -1121,6 +1139,9 @@ fn build_complete_body(
     }
     if let Some(format) = format {
         body["format"] = format;
+    }
+    if let Some(effort) = think_level(model, effort) {
+        body["think"] = json!(effort);
     }
     body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
     body
@@ -1137,12 +1158,13 @@ async fn complete_impl(
     user: &str,
     temperature: Option<f64>,
     format: Option<Value>,
+    effort: Option<&str>,
 ) -> AppResult<(String, Usage)> {
     let base = host();
     let endpoint = format!("{base}/api/chat");
     let trace = RequestTrace::begin(ProviderId::Ollama, model, "/api/chat", &base, false);
 
-    let body = build_complete_body(model, system, user, temperature, format);
+    let body = build_complete_body(model, system, user, temperature, format, effort);
 
     let resp = match super::retry::send_with_retry(|| {
         crate::net::http::shared()

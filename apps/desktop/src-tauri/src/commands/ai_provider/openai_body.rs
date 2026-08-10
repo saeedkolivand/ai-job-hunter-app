@@ -60,29 +60,40 @@ pub(super) fn build_chat_stream_body(
         };
         body[field] = json!(mt);
     }
-    // Only ever sent when it's one of `OPENAI_EFFORT_LEVELS` (see its doc
-    // comment) AND `caps.supports_reasoning` is true (native OpenAI's
-    // o-series, or Ollama Cloud's thinking-family models — see
-    // `OpenAiClient::supports_reasoning_effort`) — a wrong/guessed value 400s.
-    if caps.supports_reasoning {
-        if let Some(effort) = req
-            .effort
-            .as_deref()
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-        {
-            if OPENAI_EFFORT_LEVELS.contains(&effort) {
-                body["reasoning_effort"] = json!(effort);
-            }
-        }
+    if let Some(effort) = reasoning_effort(req.effort.as_deref(), caps) {
+        body["reasoning_effort"] = json!(effort);
     }
     body
+}
+
+/// The `reasoning_effort` value a request may send on this model — `None` when
+/// it must not be sent at all. Only ever `Some` for one of
+/// [`OPENAI_EFFORT_LEVELS`] (see its doc comment) AND when
+/// `caps.supports_reasoning` (native OpenAI's o-series/gpt-5.x, or Ollama
+/// Cloud's thinking-family models — see
+/// [`super::OpenAiClient::supports_reasoning_effort`]): a wrong/guessed value
+/// 400s the whole request.
+///
+/// Shared by BOTH body builders rather than re-written per call site.
+/// `complete_structured` is the one non-streaming path that receives the whole
+/// [`AiGenerateRequest`], and it silently dropped `effort` for its entire
+/// existence while `chat_stream` honored it — a second hand-written copy of
+/// this gate is precisely how that happens again.
+pub(super) fn reasoning_effort(effort: Option<&str>, caps: ModelCapabilities) -> Option<&str> {
+    if !caps.supports_reasoning {
+        return None;
+    }
+    effort
+        .map(str::trim)
+        .filter(|e| OPENAI_EFFORT_LEVELS.contains(e))
 }
 
 /// Build the non-streaming `/chat/completions` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested —
 /// `supports_temperature` is the caller's already-resolved
 /// `capabilities(model)` gate (an o-series model rejects the field outright),
+/// `reasoning_effort` is the already-gated [`reasoning_effort`] (`None` on the
+/// two plain paths, whose signatures carry no request to read `effort` from),
 /// and `response_format` is the only structured-output-specific part.
 pub(super) fn build_complete_body(
     model: &str,
@@ -90,6 +101,7 @@ pub(super) fn build_complete_body(
     user: &str,
     temperature: Option<f64>,
     supports_temperature: bool,
+    reasoning_effort: Option<&str>,
     response_format: Option<Value>,
 ) -> Value {
     let mut body = json!({
@@ -102,6 +114,9 @@ pub(super) fn build_complete_body(
     });
     if supports_temperature {
         body["temperature"] = json!(temperature.unwrap_or(0.7));
+    }
+    if let Some(effort) = reasoning_effort {
+        body["reasoning_effort"] = json!(effort);
     }
     if let Some(format) = response_format {
         body["response_format"] = format;

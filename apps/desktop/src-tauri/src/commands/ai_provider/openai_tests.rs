@@ -14,10 +14,10 @@ use super::{
     build_chat_stream_body, build_complete_body, is_gpt5_or_later_reasoning_family,
     is_reasoning_model, join_responses_text, parse_model_list, parse_openai_delta,
     parse_openai_embed_usage, parse_openai_finish_reason, parse_openai_frames, parse_openai_turn,
-    parse_openai_usage, resolve_intent, resolve_openai_key, scrub_url_secret, should_list_model,
-    structured, Intent, OpenAiClient, SamplingProfile, DETERMINISTIC_TEMPERATURE,
-    PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE,
-    PROSE_TOP_P,
+    parse_openai_usage, reasoning_effort, resolve_intent, resolve_openai_key, scrub_url_secret,
+    should_list_model, structured, Intent, OpenAiClient, SamplingProfile,
+    DETERMINISTIC_TEMPERATURE, PROSE_FREQUENCY_PENALTY, PROSE_GROUNDED_TEMPERATURE,
+    PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
 use crate::commands::ai_provider::{
     AiGenerateRequest, AiProvider, ModelCapabilities, ProviderId, StopReason, TokenParam, ToolCall,
@@ -1385,6 +1385,7 @@ fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_s
         "user",
         Some(0.3),
         true,
+        None,
         Some(structured::openai_response_format(Some(&schema))),
     );
     assert_eq!(body["response_format"]["type"], json!("json_schema"));
@@ -1403,11 +1404,62 @@ fn complete_body_carries_a_strict_json_schema_response_format_when_a_schema_is_s
 fn complete_body_omits_response_format_entirely_on_the_plain_completion_path() {
     // `complete`/`complete_with_usage` pass `None` — an unconstrained call must
     // stay byte-identical to what it sent before structured output existed.
-    let body = build_complete_body("gpt-4o", "sys", "user", Some(0.3), true, None);
+    let body = build_complete_body("gpt-4o", "sys", "user", Some(0.3), true, None, None);
     assert!(
         body.get("response_format").is_none(),
         "plain completions must not start asking for JSON: {body}"
     );
+    assert!(body.get("reasoning_effort").is_none(), "{body}");
+}
+
+#[test]
+fn complete_body_carries_reasoning_effort_only_where_the_streaming_body_would() {
+    // `complete_structured` is the only non-streaming path handed the whole
+    // `AiGenerateRequest`, and it dropped `effort` on the floor while
+    // `chat_stream` honored it: a reasoning model asked for a JSON answer ran
+    // at OpenAI's default effort no matter what the user picked. Both paths now
+    // share ONE gate, so the two can't drift again. Mutation check: drop the
+    // `reasoning_effort` insert in `build_complete_body` and the first
+    // assertion fails.
+    let client = OpenAiClient::new(ProviderId::OpenAi, None);
+
+    let caps = client.capabilities("o3-mini");
+    let body = build_complete_body(
+        "o3-mini",
+        "sys",
+        "user",
+        None,
+        caps.supports_temperature,
+        reasoning_effort(Some("high"), caps),
+        Some(json!({ "type": "json_object" })),
+    );
+    assert_eq!(body["reasoning_effort"], json!("high"));
+
+    // A model that does not take the field must never be sent it — it 400s.
+    let caps = client.capabilities("gpt-4o");
+    let body = build_complete_body(
+        "gpt-4o",
+        "sys",
+        "user",
+        None,
+        caps.supports_temperature,
+        reasoning_effort(Some("high"), caps),
+        Some(json!({ "type": "json_object" })),
+    );
+    assert!(
+        body.get("reasoning_effort").is_none(),
+        "a non-reasoning model must not be sent reasoning_effort: {body}"
+    );
+
+    // …and neither may a level outside `OPENAI_EFFORT_LEVELS` (effort is stored
+    // per PROVIDER, so a stale value from another model can arrive here), nor a
+    // blank/absent one.
+    let caps = client.capabilities("o3-mini");
+    assert_eq!(reasoning_effort(Some("xhigh"), caps), None);
+    assert_eq!(reasoning_effort(Some("  "), caps), None);
+    assert_eq!(reasoning_effort(None, caps), None);
+    // Padding the stored value must not defeat the gate either.
+    assert_eq!(reasoning_effort(Some(" high "), caps), Some("high"));
 }
 
 #[test]

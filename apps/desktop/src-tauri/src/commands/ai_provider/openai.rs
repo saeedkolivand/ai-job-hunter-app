@@ -490,7 +490,7 @@ fn ollama_cloud_sampling_profile(model: &str, intent: Intent) -> SamplingProfile
 // child items of this module and no call site or test import moves.
 #[path = "openai_body.rs"]
 mod body;
-use body::{build_chat_stream_body, build_complete_body};
+use body::{build_chat_stream_body, build_complete_body, reasoning_effort};
 
 pub struct OpenAiClient {
     id: ProviderId,
@@ -596,8 +596,13 @@ impl OpenAiClient {
 
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
     /// `/chat/completions` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip. `response_format` is
-    /// `Some` only on the structured path (see [`Self::complete_structured`]).
+    /// trait methods never duplicate the HTTP round-trip. `response_format` and
+    /// `effort` are `Some` only on the structured path (see
+    /// [`Self::complete_structured`]) — it is the only non-streaming entry
+    /// point handed the whole [`AiGenerateRequest`], so the other two have no
+    /// `effort` to pass. `effort` arrives RAW (the user's per-provider
+    /// preference) and is gated here against this model's own capabilities,
+    /// exactly as `chat_stream` gates it.
     async fn complete_impl(
         &self,
         app: &AppHandle,
@@ -605,6 +610,7 @@ impl OpenAiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
+        effort: Option<&str>,
         response_format: Option<Value>,
     ) -> AppResult<(String, Usage)> {
         let api_key = get_provider_key(app, self.id.credential_key()).unwrap_or_default();
@@ -618,6 +624,7 @@ impl OpenAiClient {
             user,
             temperature,
             caps.supports_temperature,
+            reasoning_effort(effort, caps),
             response_format,
         );
 
@@ -1057,7 +1064,7 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.complete_impl(app, model, system, user, temperature, None)
+        self.complete_impl(app, model, system, user, temperature, None, None)
             .await
             .map(|(text, _)| text)
     }
@@ -1070,7 +1077,7 @@ impl AiProvider for OpenAiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        self.complete_impl(app, model, system, user, temperature, None)
+        self.complete_impl(app, model, system, user, temperature, None, None)
             .await
     }
 
@@ -1080,6 +1087,11 @@ impl AiProvider for OpenAiClient {
     /// the directive + filled example on this path. A gateway whose id this
     /// adapter can't vouch for falls back to the trait default — see
     /// [`Self::supports_response_format`].
+    ///
+    /// `req.effort` rides along (gated by [`reasoning_effort`]) for the same
+    /// reason `chat_stream` sends it: this is a full [`AiGenerateRequest`], and
+    /// a structured call on a reasoning model that silently ran at the vendor's
+    /// default effort was the user's setting being dropped, not honored.
     async fn complete_structured(
         &self,
         app: &AppHandle,
@@ -1097,6 +1109,7 @@ impl AiProvider for OpenAiClient {
             &system,
             &user,
             structured::structured_temperature(self, req),
+            req.effort.as_deref(),
             Some(structured::openai_response_format(schema)),
         )
         .await

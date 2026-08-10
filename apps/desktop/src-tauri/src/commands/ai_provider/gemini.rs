@@ -530,14 +530,17 @@ fn gemini_effective_temperature(model: &str, explicit: Option<f64>, fallback: f6
 // child items of this module and no call site or test import moves.
 #[path = "gemini_body.rs"]
 mod body;
-use body::{build_chat_stream_body, build_complete_body, build_embed_body};
+use body::{build_chat_stream_body, build_complete_body, build_embed_body, StructuredCall};
 
 pub struct GeminiClient;
 
 impl GeminiClient {
     /// Shared body of `complete`/`complete_with_usage`: one non-streaming
     /// `generateContent` call, parsed once into `(text, usage)` so the two
-    /// trait methods never duplicate the HTTP round-trip.
+    /// trait methods never duplicate the HTTP round-trip. `structured` is
+    /// `Some` only on the structured path — see [`StructuredCall`], which
+    /// carries everything that path has and the other two do not (JSON mode,
+    /// the translated schema, the request's effort).
     async fn complete_impl(
         &self,
         app: &AppHandle,
@@ -545,16 +548,14 @@ impl GeminiClient {
         system: &str,
         user: &str,
         temperature: Option<f64>,
-        json_mode: bool,
-        response_schema: Option<Value>,
+        structured: Option<StructuredCall<'_>>,
     ) -> AppResult<(String, Usage)> {
         let api_key = require_gemini_key(app)?;
         let m = model.strip_prefix("models/").unwrap_or(model);
         let endpoint_label = format!("/v1beta/models/{m}:generateContent");
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
 
-        let body =
-            build_complete_body(model, system, user, temperature, json_mode, response_schema);
+        let body = build_complete_body(model, system, user, temperature, structured);
 
         let url = format!("{BASE}{endpoint_label}");
         let resp = send_with_retry(|| {
@@ -992,7 +993,7 @@ impl AiProvider for GeminiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<String> {
-        self.complete_impl(app, model, system, user, temperature, false, None)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
             .map(|(text, _)| text)
     }
@@ -1005,7 +1006,7 @@ impl AiProvider for GeminiClient {
         user: &str,
         temperature: Option<f64>,
     ) -> AppResult<(String, Usage)> {
-        self.complete_impl(app, model, system, user, temperature, false, None)
+        self.complete_impl(app, model, system, user, temperature, None)
             .await
     }
 
@@ -1016,6 +1017,12 @@ impl AiProvider for GeminiClient {
     /// equivalent yields `None` and this sends JSON mode WITHOUT a shape
     /// constraint (the prompt still carries the directive + example) rather
     /// than a silently weakened one.
+    ///
+    /// `req.effort` rides along (gated by [`body::thinking_level`], the same
+    /// per-model table `chat_stream` uses) for the same reason: this is a full
+    /// [`AiGenerateRequest`], and a structured call that silently ran at
+    /// Gemini's default thinking level was the user's setting being dropped,
+    /// not honored.
     async fn complete_structured(
         &self,
         app: &AppHandle,
@@ -1030,8 +1037,10 @@ impl AiProvider for GeminiClient {
             &system,
             &user,
             structured::structured_temperature(self, req),
-            true,
-            schema.and_then(structured::gemini_response_schema),
+            Some(StructuredCall {
+                schema: schema.and_then(structured::gemini_response_schema),
+                effort: req.effort.as_deref(),
+            }),
         )
         .await
     }

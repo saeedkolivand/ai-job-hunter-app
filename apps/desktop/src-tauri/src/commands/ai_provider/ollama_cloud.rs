@@ -116,6 +116,18 @@ impl AiProvider for OllamaCloudClient {
     /// `/api/chat`-only `format` key would be ignored there, silently dropping
     /// the constraint. The inner client's own `supports_response_format` gate
     /// admits `ProviderId::OllamaCloud` for exactly this call.
+    ///
+    /// Verified against Ollama's own docs rather than assumed (checked
+    /// 2026-08-10): `docs.ollama.com/api/openai-compatibility` lists
+    /// `response_format` as a supported request field for
+    /// `/v1/chat/completions`, `docs.ollama.com/capabilities/structured-outputs`
+    /// states "Structured outputs work through the OpenAI-compatible API via
+    /// `response_format`", and that page's OpenAI-compatibility example drives
+    /// it through the OpenAI SDK's `chat.completions.parse(response_format=…)`
+    /// helper — which is exactly the strict `json_schema` wire shape
+    /// `structured::openai_response_format` emits. Ollama
+    /// documents this for the OpenAI-compat layer as a whole; it publishes no
+    /// separate, narrower field list for the hosted `ollama.com/v1` base.
     async fn complete_structured(
         &self,
         app: &AppHandle,

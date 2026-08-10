@@ -39,10 +39,18 @@ use super::{
 /// else). Deliberately mentions "JSON" verbatim: OpenAI's `json_object`
 /// response format REJECTS a request whose messages never say the word.
 const JSON_ONLY_DIRECTIVE: &str = "Output contract: reply with ONE valid JSON value and nothing \
-else — no prose, no preamble, no explanation, no Markdown code fence. Use exactly the keys, \
-nesting and value types shown in the example below; the example's VALUES are placeholders and \
-must never be copied. Do not add keys. When you have no value for a key, still emit it with an \
-empty/neutral value of the right type.";
+else — no prose, no preamble, no explanation, no Markdown code fence. When you have no value for \
+a key, still emit it with an empty/neutral value of the right type.";
+
+/// The half of the output contract that only makes sense once an example is
+/// actually appended — so it is appended WITH the example, never on its own.
+/// A schema-less caller (hint `""`, a supported and test-pinned path) used to
+/// be told to copy the keys "shown in the example below" and to "not add keys"
+/// with no example anywhere in the prompt: an instruction to conform to
+/// something that isn't there is at best noise and at worst invites the model
+/// to invent the missing example.
+const JSON_EXAMPLE_DIRECTIVE: &str = "Use exactly the keys, nesting and value types shown in the \
+example below; the example's VALUES are placeholders and must never be copied. Do not add keys.";
 
 /// The transcript [`Role`] a request message's wire string names — the
 /// structured path's only role decision, so it is made once, here.
@@ -100,6 +108,8 @@ pub(super) fn structured_prompt(req: &AiGenerateRequest, schema_hint: &str) -> (
     system.push_str(JSON_ONLY_DIRECTIVE);
     let hint = schema_hint.trim();
     if !hint.is_empty() {
+        system.push(' ');
+        system.push_str(JSON_EXAMPLE_DIRECTIVE);
         system.push_str("\n\nExample of the required shape:\n");
         system.push_str(hint);
     }
@@ -194,6 +204,58 @@ pub(super) async fn prompt_only<P: AiProvider + ?Sized>(
 /// degrades to `json_object`, Gemini to `responseMimeType` + the prompt hint.
 const MAX_SCHEMA_DEPTH: usize = 16;
 
+/// JSON Schema keywords that COMPOSE or REFERENCE other schemas. Neither
+/// [`strictify`] nor [`gemini_schema_at`] walks into them — both recurse
+/// through `properties`/`items` only — so a schema carrying one anywhere fails
+/// the whole translation ([`has_untranslatable_keyword`]) instead of being
+/// half-translated.
+///
+/// The alternative is worse on BOTH sides, in the two opposite ways this module
+/// already refuses elsewhere:
+///
+/// - OpenAI: `strictify` would stamp `strict: true` over a subtree it never
+///   strictified — an `anyOf` branch keeps its own `properties` with no
+///   `required`/`additionalProperties`, and OpenAI 400s the entire request.
+///   That was the one schema path with no degrade at all (a non-object root and
+///   the depth cap both already fall back to `json_object`).
+/// - Gemini: the keyword would simply be dropped (it is not in
+///   [`GEMINI_KEPT_KEYWORDS`]), silently sending a WEAKER constraint than the
+///   caller asked for — the same silent-weakening
+///   [`gemini_response_schema`] already rejects for an untranslatable `type`.
+///
+/// Both callers degrade whole: OpenAI to `json_object`, Gemini to
+/// `responseMimeType` + the prompt hint. The prompt still carries the directive
+/// and the filled example either way, so the shape is still asked for — just
+/// not constrained by the decoder.
+const COMPOSITION_KEYWORDS: &[&str] = &["anyOf", "oneOf", "allOf", "not", "$ref", "$defs"];
+
+/// Whether `schema` carries a [`COMPOSITION_KEYWORDS`] entry at ANY depth —
+/// including under keys neither walker visits (`additionalProperties`,
+/// `patternProperties`, an `anyOf` branch's own `properties`, …), which is why
+/// this scans the raw [`Value`] tree rather than riding along with a walker.
+///
+/// "Too deep to scan" counts as untranslatable: a `Value` is acyclic, so this
+/// only fires on a genuinely pathological schema, and the answer there is the
+/// same degrade the walkers' own [`MAX_SCHEMA_DEPTH`] already produces.
+fn has_untranslatable_keyword(schema: &Value, depth: usize) -> bool {
+    if depth > MAX_SCHEMA_DEPTH {
+        return true;
+    }
+    match schema {
+        Value::Object(map) => {
+            map.keys()
+                .any(|key| COMPOSITION_KEYWORDS.contains(&key.as_str()))
+                || map
+                    .values()
+                    .any(|value| has_untranslatable_keyword(value, depth + 1))
+        }
+        Value::Array(items) => items
+            .iter()
+            .any(|item| has_untranslatable_keyword(item, depth + 1)),
+        _ => false,
+    }
+}
+
 /// OpenAI's `response_format`: strict `json_schema` when the caller supplied
 /// an object-rooted schema, else plain `json_object` mode (which constrains
 /// only "is JSON", relying on the directive + hint for the shape).
@@ -204,10 +266,12 @@ const MAX_SCHEMA_DEPTH: usize = 16;
 /// rather than 400ing on a schema that is otherwise perfectly valid. A
 /// non-object root can't be strict-mode'd at all (OpenAI requires a root
 /// object), so it degrades to `json_object` instead of being rejected — and so
-/// does a schema nested past [`MAX_SCHEMA_DEPTH`].
+/// does a schema nested past [`MAX_SCHEMA_DEPTH`] or carrying a
+/// [`COMPOSITION_KEYWORDS`] entry [`strictify`] cannot close.
 pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
     match schema
         .filter(|s| s.get("type").and_then(Value::as_str) == Some("object"))
+        .filter(|s| !has_untranslatable_keyword(s, 0))
         .and_then(|schema| strictify(schema, 0))
     {
         Some(schema) => json!({
@@ -230,7 +294,10 @@ pub(super) fn openai_response_format(schema: Option<&Value>) -> Value {
 ///
 /// `None` past [`MAX_SCHEMA_DEPTH`] — failing the whole schema (the caller
 /// falls back to `json_object`) rather than emitting a subtree that silently
-/// isn't strict, which would 400 at the vendor instead.
+/// isn't strict, which would 400 at the vendor instead. The other way to reach
+/// a not-actually-strict subtree — a composition keyword this walker never
+/// descends into — is screened out by the caller before this runs (see
+/// [`COMPOSITION_KEYWORDS`]).
 fn strictify(schema: &Value, depth: usize) -> Option<Value> {
     if depth > MAX_SCHEMA_DEPTH {
         return None;
@@ -264,18 +331,42 @@ fn strictify(schema: &Value, depth: usize) -> Option<Value> {
     Some(Value::Object(out))
 }
 
-/// Keywords Gemini's OpenAPI-subset `Schema` shares verbatim with JSON Schema.
-/// Anything NOT listed here (`additionalProperties`, `$schema`, `title`,
-/// `pattern`, `default`, …) is dropped — Gemini rejects unknown fields, and
-/// dropping a purely-descriptive keyword loses no constraint the model would
-/// have honored anyway.
+/// Keywords Gemini's OpenAPI-subset `Schema` shares verbatim with JSON Schema
+/// — every field the live `Schema` reference (`ai.google.dev/api`, checked
+/// 2026-08-10) documents AND this translator can pass through untouched.
+/// Anything NOT listed here is dropped, in two very different classes:
+///
+/// - **Fields Gemini does not document at all** (`additionalProperties`,
+///   `$schema`, …). Gemini rejects unknown fields, so they cannot be sent;
+///   they are also the ones whose loss costs no constraint (`additionalProperties`
+///   has no `Schema` equivalent — Gemini's own strictness is a different knob).
+/// - **Documented fields this translator deliberately does not carry**:
+///   `title`/`example`/`default`/`propertyOrdering` (presentation, not
+///   constraint — dropping them changes nothing the model would have honored),
+///   and `anyOf`, whose sub-schemas would need translating too and which
+///   [`has_untranslatable_keyword`] therefore degrades the WHOLE schema on
+///   rather than silently weakening it.
+///
+/// The value CONSTRAINTS below are the point of the list: `pattern`,
+/// `minLength`/`maxLength`, `minimum`/`maximum` and
+/// `minProperties`/`maxProperties` are real, documented Gemini fields that
+/// constrain what the model may emit — a regex or a numeric bound is not
+/// "purely descriptive", and silently dropping one is exactly the weakened
+/// constraint [`gemini_response_schema`] refuses to send elsewhere.
 const GEMINI_KEPT_KEYWORDS: &[&str] = &[
     "description",
     "enum",
     "format",
     "maxItems",
+    "maxLength",
+    "maxProperties",
+    "maximum",
     "minItems",
+    "minLength",
+    "minProperties",
+    "minimum",
     "nullable",
+    "pattern",
     "required",
 ];
 
@@ -287,12 +378,18 @@ const GEMINI_KEPT_KEYWORDS: &[&str] = &[
 /// `None` — meaning "fall back to `responseMimeType` + the prompt hint" —
 /// whenever ANY part of the schema has no equivalent (a missing/unknown
 /// `type`, or a union type like `["string","null"]`, which arrives as an
-/// array and is not a `&str`), and likewise past [`MAX_SCHEMA_DEPTH`].
+/// array and is not a `&str`), when it composes or references another schema
+/// ([`COMPOSITION_KEYWORDS`] — the SAME degrade OpenAI takes, so one schema
+/// never lands strict-mode'd on one provider and silently weakened on the
+/// other), and likewise past [`MAX_SCHEMA_DEPTH`].
 /// Failing the WHOLE schema rather than dropping the untranslatable property
 /// is deliberate: a dropped property silently stops constraining a field the
 /// caller asked to constrain, which is the silent-truncation failure mode this
 /// codebase rejects elsewhere.
 pub(super) fn gemini_response_schema(schema: &Value) -> Option<Value> {
+    if has_untranslatable_keyword(schema, 0) {
+        return None;
+    }
     gemini_schema_at(schema, 0)
 }
 
@@ -377,6 +474,9 @@ mod tests {
         );
         assert!(system.starts_with("You are an ATS.\n\n"));
         assert!(system.contains(JSON_ONLY_DIRECTIVE));
+        // The example-referencing half rides WITH the example (see the
+        // empty-hint test for the other side of that rule).
+        assert!(system.contains(JSON_EXAMPLE_DIRECTIVE));
         assert!(system.contains(r#"{"score": 72}"#));
         // The untrusted half stays untouched — no instruction is ever mixed
         // into the slot carrying résumé/job-ad text (OWASP LLM01).
@@ -395,9 +495,19 @@ mod tests {
 
     #[test]
     fn structured_prompt_survives_an_empty_system_and_an_empty_hint() {
+        // A schema-less caller is a SUPPORTED path, so the directive it gets
+        // must stand on its own: with no example appended, nothing may point at
+        // "the example below" or forbid keys the prompt never listed. Mutation
+        // check: fold `JSON_EXAMPLE_DIRECTIVE` back into `JSON_ONLY_DIRECTIVE`
+        // and the two `contains` assertions fail.
         let (system, user) = structured_prompt(&request(&[("user", "hi")]), "   ");
         assert_eq!(system, JSON_ONLY_DIRECTIVE);
         assert!(!system.contains("Example of the required shape"));
+        assert!(!system.contains("example below"));
+        assert!(!system.contains("Do not add keys"));
+        // …but the word JSON stays, with or without an example: OpenAI's
+        // `json_object` mode rejects a request whose messages never say it.
+        assert!(system.contains("JSON"));
         assert_eq!(user, "hi");
     }
 
@@ -606,6 +716,110 @@ mod tests {
         assert_eq!(out["properties"]["tags"]["items"]["type"], json!("STRING"));
         assert!(out.get("title").is_none());
         assert!(out.get("additionalProperties").is_none());
+    }
+
+    #[test]
+    fn both_translators_degrade_whole_on_a_composition_keyword_they_cannot_walk() {
+        // The strict-mode 400 shape: `strictify` recurses through `properties`
+        // and `items` only, so the object INSIDE `anyOf` came back with neither
+        // `required` nor `additionalProperties` — under `strict: true`, which
+        // OpenAI rejects outright, failing the whole generation. This was the
+        // only schema path with no degrade (a non-object root and the depth cap
+        // both already fall back to `json_object`). Mutation check: drop the
+        // `has_untranslatable_keyword` filter in `openai_response_format` and
+        // the first assertion fails.
+        let anyof = json!({
+            "type": "object",
+            "properties": {
+                "note": {
+                    "anyOf": [
+                        { "type": "object", "properties": { "text": { "type": "string" } } },
+                        { "type": "string" },
+                    ],
+                },
+            },
+        });
+        assert_eq!(
+            openai_response_format(Some(&anyof)),
+            json!({ "type": "json_object" })
+        );
+        // Gemini rejects that exact shape anyway (the `anyOf` node carries no
+        // `type`). The shape it would silently WEAKEN instead is a TYPED node
+        // carrying the keyword: `anyOf` is not in `GEMINI_KEPT_KEYWORDS`, so the
+        // union would simply vanish and the property ship as a bare
+        // `{"type": "OBJECT"}` — a constraint the caller asked for, dropped
+        // without a word. Same degrade on both, so one schema can't be strict
+        // on one provider and quietly loosened on the other.
+        assert!(gemini_response_schema(&anyof).is_none());
+        let typed_anyof = json!({
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "object",
+                    "anyOf": [
+                        { "type": "object", "properties": { "text": { "type": "string" } } },
+                        { "type": "object", "properties": { "code": { "type": "string" } } },
+                    ],
+                },
+            },
+        });
+        assert!(gemini_response_schema(&typed_anyof).is_none());
+        assert_eq!(
+            openai_response_format(Some(&typed_anyof)),
+            json!({ "type": "json_object" })
+        );
+
+        // At ANY depth, and under a key neither walker even visits.
+        let nested = json!({
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": { "type": "object", "additionalProperties": { "$ref": "#/$defs/x" } },
+                },
+            },
+        });
+        assert_eq!(
+            openai_response_format(Some(&nested)),
+            json!({ "type": "json_object" })
+        );
+        assert!(gemini_response_schema(&nested).is_none());
+
+        // No false positives: an ordinary in-cap schema still translates on
+        // both — the degrade must cost nothing for the schemas callers write.
+        let plain = json!({
+            "type": "object",
+            "properties": { "score": { "type": "integer" }, "notes": { "type": "string" } },
+        });
+        assert_eq!(
+            openai_response_format(Some(&plain))["type"],
+            json!("json_schema")
+        );
+        assert!(gemini_response_schema(&plain).is_some());
+    }
+
+    #[test]
+    fn gemini_response_schema_keeps_documented_value_constraints() {
+        // `pattern`, `minLength`/`maxLength` and `minimum`/`maximum` are real
+        // fields of Gemini's live `Schema` object, and each one CONSTRAINS what
+        // the model may emit — dropping them (as "purely descriptive") shipped
+        // a weaker constraint than the caller asked for, which is exactly what
+        // this translator refuses to do everywhere else. Mutation check: remove
+        // them from `GEMINI_KEPT_KEYWORDS` and this fails.
+        let out = gemini_response_schema(&json!({
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+                "id": { "type": "string", "pattern": "^[A-Z]{2}-\\d+$", "minLength": 4 },
+                "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+            },
+        }))
+        .expect("translatable");
+        assert_eq!(out["minProperties"], json!(1));
+        assert_eq!(out["properties"]["id"]["pattern"], json!("^[A-Z]{2}-\\d+$"));
+        assert_eq!(out["properties"]["id"]["minLength"], json!(4));
+        assert_eq!(out["properties"]["score"]["minimum"], json!(0));
+        assert_eq!(out["properties"]["score"]["maximum"], json!(100));
     }
 
     #[test]

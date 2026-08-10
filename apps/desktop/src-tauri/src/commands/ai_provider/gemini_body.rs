@@ -95,18 +95,8 @@ pub(super) fn build_chat_stream_body(req: &AiGenerateRequest, sampling: Sampling
     // model, so this one check covers both gates — an invalid/stale level
     // for the CURRENT model is silently omitted (the request still sends,
     // just without an effort override) rather than sent and rejected.
-    if let Some(effort) = req
-        .effort
-        .as_deref()
-        .map(str::trim)
-        .filter(|e| !e.is_empty())
-    {
-        if gemini_effort_levels(&req.model).contains(&effort) {
-            thinking_config.insert(
-                "thinkingLevel".to_string(),
-                json!(effort.to_ascii_uppercase()),
-            );
-        }
+    if let Some(level) = thinking_level(&req.model, req.effort.as_deref()) {
+        thinking_config.insert("thinkingLevel".to_string(), json!(level));
     }
     if !thinking_config.is_empty() {
         generation_config["thinkingConfig"] = Value::Object(thinking_config);
@@ -118,34 +108,71 @@ pub(super) fn build_chat_stream_body(req: &AiGenerateRequest, sampling: Sampling
     body
 }
 
+/// The `thinkingConfig.thinkingLevel` value a request may send on this model —
+/// `None` when it must not be sent at all. See [`build_chat_stream_body`]'s
+/// call site for the two gates this single per-model lookup covers (Gemini 3+
+/// AND the model's own accepted subset).
+///
+/// Shared by BOTH body builders rather than re-written per call site.
+/// `complete_structured` is the one non-streaming path that receives the whole
+/// [`AiGenerateRequest`], and it silently dropped `effort` for its entire
+/// existence while `chat_stream` honored it — a second hand-written copy of
+/// this gate is precisely how that happens again.
+pub(super) fn thinking_level(model: &str, effort: Option<&str>) -> Option<String> {
+    let effort = effort.map(str::trim)?;
+    gemini_effort_levels(model)
+        .contains(&effort)
+        .then(|| effort.to_ascii_uppercase())
+}
+
+/// What [`super::GeminiClient::complete_structured`] adds to a
+/// `generateContent` call and the plain `complete`/`complete_with_usage` path
+/// cannot: those two take no [`AiGenerateRequest`], so they have neither a
+/// schema nor an effort to send. `Some(..)` IS the JSON-mode switch — the two
+/// can no longer disagree.
+pub(super) struct StructuredCall<'a> {
+    /// The translated `responseSchema`, or `None` when the caller's JSON Schema
+    /// had no faithful Gemini equivalent (see
+    /// `structured::gemini_response_schema`) — JSON mode still applies, just
+    /// without a shape constraint.
+    pub(super) schema: Option<Value>,
+    /// The request's RAW reasoning effort, gated here by [`thinking_level`].
+    pub(super) effort: Option<&'a str>,
+}
+
 /// Build the non-streaming `generateContent` body shared by `complete`/
 /// `complete_with_usage`/`complete_structured`. Pure + unit-tested.
 ///
-/// `json_mode` is true only on the structured path and sets
+/// `structured` is `Some` only on the structured path and sets
 /// `responseMimeType: "application/json"` — Google documents the MIME type as
 /// the switch, with `responseSchema` as an optional extra constraint on top
-/// (a schema without the MIME type is ignored). `response_schema` is therefore
-/// `Some` only when `json_mode` is also true AND the caller's JSON Schema
-/// translated cleanly into Gemini's OpenAPI subset (see
-/// `structured::gemini_response_schema`) — an untranslatable schema still gets
-/// JSON mode, just no shape constraint.
+/// (a schema without the MIME type is ignored).
+///
+/// `thinkingConfig` carries `thinkingLevel` ONLY — never
+/// `includeThoughts`, unlike [`build_chat_stream_body`]. The streaming path
+/// splits `thought` parts out into their own UI channel; this path's reader
+/// (`join_parts_text`) concatenates every `parts[].text` there is, so asking
+/// for thoughts here would paste the model's reasoning into the very string the
+/// caller is about to parse as JSON.
 pub(super) fn build_complete_body(
     model: &str,
     system: &str,
     user: &str,
     temperature: Option<f64>,
-    json_mode: bool,
-    response_schema: Option<Value>,
+    structured: Option<StructuredCall<'_>>,
 ) -> Value {
     let mut generation_config = json!({});
     if let Some(t) = gemini_effective_temperature(model, temperature, 0.7) {
         generation_config["temperature"] = json!(t);
     }
-    if json_mode {
+    if let Some(structured) = structured {
         generation_config["responseMimeType"] = json!("application/json");
-    }
-    if let Some(schema) = response_schema {
-        generation_config["responseSchema"] = schema;
+        if let Some(schema) = structured.schema {
+            generation_config["responseSchema"] = schema;
+        }
+        if let Some(level) = thinking_level(model, structured.effort) {
+            generation_config["thinkingConfig"] = json!({ "thinkingLevel": level });
+        }
     }
     let mut body = json!({
         "contents": [ { "role": "user", "parts": [{ "text": user }] } ],

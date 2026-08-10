@@ -15,7 +15,7 @@ use super::{
     gemini_is_v3_or_later, gemini_omits_sampling_params, gemini_supports_thinking, join_parts_text,
     parse_gemini_embed_usage, parse_gemini_frames, parse_gemini_parts, parse_gemini_turn,
     parse_gemini_usage, parse_model_page, resolve_intent, structured, validate_gemini_key,
-    AiProvider, GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece,
+    AiProvider, GeminiClient, GeminiScanner, Intent, SamplingProfile, StreamPiece, StructuredCall,
     DETERMINISTIC_TEMPERATURE, EMBED_OUTPUT_DIMENSIONALITY, PROSE_FREQUENCY_PENALTY,
     PROSE_GROUNDED_TEMPERATURE, PROSE_PRESENCE_PENALTY, PROSE_TEMPERATURE, PROSE_TOP_P,
 };
@@ -1166,8 +1166,10 @@ fn complete_body_carries_response_mime_type_and_the_translated_response_schema()
         "sys",
         "user",
         Some(0.3),
-        true,
-        structured::gemini_response_schema(&schema),
+        Some(StructuredCall {
+            schema: structured::gemini_response_schema(&schema),
+            effort: None,
+        }),
     );
     let config = &body["generationConfig"];
     assert_eq!(config["responseMimeType"], json!("application/json"));
@@ -1186,7 +1188,16 @@ fn complete_body_keeps_json_mode_when_the_schema_cannot_be_translated() {
     let schema = json!({ "type": "object", "properties": { "n": { "type": ["string", "null"] } } });
     let translated = structured::gemini_response_schema(&schema);
     assert!(translated.is_none());
-    let body = super::build_complete_body("gemini-2.5-flash", "", "user", None, true, translated);
+    let body = super::build_complete_body(
+        "gemini-2.5-flash",
+        "",
+        "user",
+        None,
+        Some(StructuredCall {
+            schema: translated,
+            effort: None,
+        }),
+    );
     let config = &body["generationConfig"];
     assert_eq!(config["responseMimeType"], json!("application/json"));
     assert!(config.get("responseSchema").is_none());
@@ -1194,12 +1205,72 @@ fn complete_body_keeps_json_mode_when_the_schema_cannot_be_translated() {
 
 #[test]
 fn complete_body_omits_both_json_fields_on_the_plain_completion_path() {
-    // `complete`/`complete_with_usage` pass `(false, None)` — an unconstrained
-    // call must stay byte-identical to what it sent before structured output.
-    let body =
-        super::build_complete_body("gemini-2.5-flash", "sys", "user", Some(0.3), false, None);
+    // `complete`/`complete_with_usage` pass `None` — an unconstrained call must
+    // stay byte-identical to what it sent before structured output.
+    let body = super::build_complete_body("gemini-2.5-flash", "sys", "user", Some(0.3), None);
     let config = &body["generationConfig"];
     assert!(config.get("responseMimeType").is_none(), "{body}");
     assert!(config.get("responseSchema").is_none(), "{body}");
+    assert!(config.get("thinkingConfig").is_none(), "{body}");
     assert_eq!(config["temperature"], json!(0.3));
+}
+
+#[test]
+fn complete_body_carries_the_thinking_level_only_where_the_streaming_body_would() {
+    // `complete_structured` is the only non-streaming path handed the whole
+    // `AiGenerateRequest`, and it dropped `effort` on the floor while
+    // `chat_stream` honored it: a Gemini 3 model asked for a JSON answer ran at
+    // Google's default thinking level no matter what the user picked. Both
+    // paths now share ONE per-model gate. Mutation check: drop the
+    // `thinkingConfig` insert in `build_complete_body` and the first assertion
+    // fails.
+    let body = super::build_complete_body(
+        "gemini-3.1-pro-preview",
+        "sys",
+        "user",
+        None,
+        Some(StructuredCall {
+            schema: None,
+            effort: Some("medium"),
+        }),
+    );
+    assert_eq!(
+        body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        json!("MEDIUM")
+    );
+    // NEVER `includeThoughts` here, unlike the streaming body: this path's
+    // reader joins every `parts[].text`, so a thought part would land inside
+    // the string the caller parses as JSON.
+    assert!(
+        body["generationConfig"]["thinkingConfig"]
+            .get("includeThoughts")
+            .is_none(),
+        "{body}"
+    );
+
+    // A model that does not accept the level must never be sent it — a pre-3
+    // model 400s on `thinkingLevel` outright, and a 3.x model 400s on a level
+    // outside its own row of Google's table (`effort` is stored per PROVIDER,
+    // so a value picked on another model reaches here unchanged).
+    for (model, effort) in [
+        ("gemini-2.5-flash", "medium"),
+        ("gemini-3-pro-preview", "medium"),
+        ("gemini-3.1-pro-preview", "minimal"),
+        ("gemini-3.1-pro-preview", "   "),
+    ] {
+        let body = super::build_complete_body(
+            model,
+            "sys",
+            "user",
+            None,
+            Some(StructuredCall {
+                schema: None,
+                effort: Some(effort),
+            }),
+        );
+        assert!(
+            body["generationConfig"].get("thinkingConfig").is_none(),
+            "{model} must not be sent thinkingLevel {effort:?}: {body}"
+        );
+    }
 }
