@@ -395,6 +395,23 @@ impl RerankEnv for std::sync::Arc<FakeRerankEnv> {
 /// tests that are not about clustering.
 const NO_CLUSTERS: &[crate::scraping::cluster::ClusterAssignment] = &[];
 
+/// Run the re-rank loop and hand back its summary.
+///
+/// `semantic_rerank` accumulates into a caller-owned summary (so a pass the wall
+/// clock cuts off still reports its partial counts); these loop tests care about
+/// the completed pass, so the accumulator is a local detail here.
+async fn rerank_all(
+    env: &dyn RerankEnv,
+    found_jobs: &mut [FoundJob],
+    clusters: &[crate::scraping::cluster::ClusterAssignment],
+    blobs: &HashMap<String, String>,
+    cancel: &CancellationToken,
+) -> RerankSummary {
+    let mut summary = RerankSummary::default();
+    semantic_rerank(env, found_jobs, clusters, blobs, cancel, &mut summary).await;
+    summary
+}
+
 /// Build a scored job at `url` with a phase-1 keyword score.
 fn ranked(url: &str, score: f64) -> FoundJob {
     FoundJob {
@@ -427,7 +444,7 @@ async fn semantic_rerank_reorders_the_head_through_the_combined_kernel() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -444,7 +461,8 @@ async fn semantic_rerank_reorders_the_head_through_the_combined_kernel() {
         RerankSummary {
             considered: 3,
             rescored: 3,
-            degraded: 0
+            degraded: 0,
+            timed_out: false
         }
     );
     assert_eq!(
@@ -482,7 +500,7 @@ async fn semantic_rerank_degrades_that_job_only_and_the_run_completes() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -496,7 +514,8 @@ async fn semantic_rerank_degrades_that_job_only_and_the_run_completes() {
         RerankSummary {
             considered: 3,
             rescored: 2,
-            degraded: 1
+            degraded: 1,
+            timed_out: false
         }
     );
     // The failure did NOT abort the loop: the job AFTER the failure still ran.
@@ -527,7 +546,7 @@ async fn semantic_rerank_leaves_the_provisional_flag_untouched() {
     let env = FakeRerankEnv::new(vec![(autopilot_job_id(&jobs[0]), 88.0)]);
     let blobs = blobs_for(&jobs);
 
-    semantic_rerank(
+    rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -552,7 +571,7 @@ async fn semantic_rerank_never_scores_an_unscored_job() {
     let env = FakeRerankEnv::new(vec![(autopilot_job_id(&jobs[1]), 77.0)]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -582,7 +601,7 @@ async fn semantic_rerank_stops_at_the_top_n_ceiling() {
     );
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -620,7 +639,7 @@ async fn semantic_rerank_charges_the_daily_ceiling_and_stops_when_it_is_hit() {
     env.charge_fails_after = Some(2); // the 3rd charge is refused
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -668,7 +687,7 @@ async fn a_run_of_consecutive_degrades_stops_the_phase() {
     )]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -713,7 +732,7 @@ async fn isolated_degrades_never_stop_a_healthy_pass() {
     );
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -742,7 +761,7 @@ async fn semantic_rerank_stops_on_cancellation_without_spending() {
     let cancel = CancellationToken::new();
     cancel.cancel();
 
-    let summary = semantic_rerank(&env, &mut jobs, NO_CLUSTERS, &blobs, &cancel).await;
+    let summary = rerank_all(&env, &mut jobs, NO_CLUSTERS, &blobs, &cancel).await;
 
     assert_eq!(env.calls(), 0);
     assert_eq!(
@@ -855,6 +874,14 @@ async fn semantic_on_runs_the_phase_through_the_same_entry_point() {
 /// so a hung provider must not delay the "new jobs" notification unboundedly.
 /// The degrade is per job: whatever was scored before the deadline is KEPT, the
 /// rest stay keyword-only, and the run continues.
+///
+/// …and the pass REPORTS what it did. A timed-out phase has already spent embeds
+/// and promoted jobs, so returning no summary made `rank_done` read exactly like
+/// a keyword-only run — the one shape where the log actively misdescribes the
+/// work. The partial counts plus the `timed_out` flag (which the command turns
+/// into its own `rerank_timeout` step) are what tell the two apart: the counts
+/// alone cannot say whether the untouched tail was skipped by the ceiling, the
+/// breaker, or the clock.
 #[tokio::test(start_paused = true)]
 async fn the_rerank_phase_gives_up_on_the_wall_clock_and_keeps_the_rest_keyword_only() {
     let mut jobs = vec![
@@ -882,9 +909,22 @@ async fn the_rerank_phase_gives_up_on_the_wall_clock_and_keeps_the_rest_keyword_
     )
     .await;
 
-    assert!(
-        summary.is_none(),
-        "the timed-out pass reports no summary — the step log must not claim a completed re-rank"
+    let summary = summary.expect(
+        "a pass that spent embeds and promoted a job must report it — reporting \
+         nothing describes the run as keyword-only",
+    );
+    assert_eq!(
+        summary,
+        RerankSummary {
+            // The second job was in flight at the deadline: counted as
+            // considered by the loop, never resolved either way.
+            considered: 2,
+            rescored: 1,
+            degraded: 0,
+            timed_out: true,
+        },
+        "the counts must be the PARTIAL ones as of the cutoff, and the cutoff \
+         itself must be visible — that is what the `rerank_timeout` step reports"
     );
     assert_eq!(
         jobs[0].score,
@@ -917,7 +957,7 @@ async fn a_cached_job_is_re_ranked_without_charging_the_daily_budget() {
         .with_cached(ids);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -1268,6 +1308,77 @@ fn editing_an_autopilots_resume_orphans_the_previous_snapshot() {
     );
 }
 
+/// The two tests above pin what `drop_orphaned_resume_cache` DOES; this pins
+/// that the commands still call it — the wiring, which is the half that shipped
+/// broken (the UPDATE path landed without the cleanup the DELETE path had just
+/// gained). Driving `autopilot_update`/`autopilot_remove` for real needs an
+/// `AppHandle` and this crate has no `tauri::test` mock-app harness, so the
+/// cheapest honest guard is a source pin (the `pipeline::json` +
+/// `extension_bridge::answer_rewrite` precedent; `include_str!` also makes rustc
+/// track the file, so this can never read a stale copy).
+///
+/// The invariant: every mutation of an autopilot RECORD goes through
+/// `mutate_record`, which owns both halves. A new command that reaches the store
+/// directly — the exact shape of the original defect — fails here.
+///
+/// Rustfmt assumption: the enclosing opener of a call is the nearest preceding
+/// line at a strictly smaller indent. True for every form rustfmt emits here; a
+/// hand-wrapped receiver chain would need this pin updated with it.
+#[test]
+fn every_record_mutation_goes_through_mutate_record() {
+    const SRC: &str = include_str!("../autopilot.rs");
+
+    // Assembled at runtime, never written out as one literal: an inline needle
+    // would appear in THIS file, and this file is a `#[path]` module OF the one
+    // being scanned — a future inlining would make the test satisfy its own scan.
+    let writers: Vec<String> = ["update", "remove"]
+        .iter()
+        .map(|method| format!(".{}().{method}(", "lock"))
+        .collect();
+    let owner = format!("mutate_{}(", "record");
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let is_code = |l: &str| !l.trim().is_empty() && !l.trim_start().starts_with("//");
+
+    let lines: Vec<&str> = SRC.lines().collect();
+    let mut pinned = Vec::new();
+    for (i, &line) in lines.iter().enumerate() {
+        if !is_code(line) || !writers.iter().any(|w| line.contains(w.as_str())) {
+            continue;
+        }
+        // The in-flight guard is a `HashSet` of run ids, not the record store.
+        if line.contains("RUNS_IN_FLIGHT") {
+            continue;
+        }
+        let opener = lines[..i]
+            .iter()
+            .rev()
+            .copied()
+            .filter(|l| is_code(l))
+            .find(|l| indent(l) < indent(line))
+            .unwrap_or_default();
+        assert!(
+            opener.contains(&owner),
+            "src/commands/autopilot.rs:{}\n  {}\nmutates an autopilot record outside \
+             `mutate_record`, whose enclosing block is instead:\n  {}\n\n\
+             Every record mutation must run through `mutate_record`: the cache id is \
+             sha256(resume_text), so a DELETE and a resume REPLACE orphan the identical \
+             `autopilot-resume:<sha>` vector + `match_scores` rows. Route the new call \
+             through it rather than remembering the cleanup at one more site.",
+            i + 1,
+            line.trim(),
+            opener.trim()
+        );
+        pinned.push(line.trim());
+    }
+    assert_eq!(
+        pinned.len(),
+        2,
+        "expected exactly the update + remove call sites to be pinned; got {pinned:?}. \
+         A drop to 0 means the scan stopped matching the real writers (a renamed store \
+         method, or a reformatted call) and is silently guarding nothing."
+    );
+}
+
 /// The `match_scores` key an Autopilot re-rank writes for a résumé snapshot.
 fn snapshot_score_key<'a>(
     resume_id: &'a str,
@@ -1417,7 +1528,7 @@ async fn a_cross_board_duplicate_pair_costs_one_embed_on_the_displayed_canonical
     );
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         &clusters,
@@ -1568,7 +1679,7 @@ async fn semantic_rerank_pays_once_for_a_job_surfaced_under_two_url_variants() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(
+    let summary = rerank_all(
         &env,
         &mut jobs,
         NO_CLUSTERS,
@@ -1585,7 +1696,9 @@ async fn semantic_rerank_pays_once_for_a_job_surfaced_under_two_url_variants() {
     assert_eq!(
         env.charges(),
         2,
-        "…and must not burn a daily charge either — the skip precedes the charge"
+        "…and the charge count is the SCORED count, not the row count: three rows, \
+         one collapsed as a URL variant, two charges. The skip precedes the charge, \
+         so the duplicate never reaches the shared per-provider ceiling"
     );
     assert_eq!(summary.considered, 2);
     // The first variant IS re-ranked; the duplicate keeps its keyword score

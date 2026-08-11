@@ -1558,6 +1558,10 @@
       "coverage": "Stichwortabdeckung %",
       "combined": "Match %"
     },
+    "scoreAbbr": {
+      "coverage": "Stichwort",
+      "combined": "Match"
+    },
     "delete": "Löschen",
     "deleteTitle": "Diesen Autopilot löschen?",
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",

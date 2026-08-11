@@ -22,8 +22,8 @@ use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Mig
 use crate::error::AppResult;
 
 use sql::{
-    get_match_score_with_conn, get_vector_with_conn, spawn_blocking_db,
-    upsert_match_score_with_conn, upsert_vector_with_conn,
+    get_match_score_with_conn, get_vector_with_conn, prune_due, prune_table_locked,
+    spawn_blocking_db, upsert_match_score_with_conn, upsert_vector_with_conn,
 };
 
 pub mod evidence;
@@ -234,14 +234,15 @@ pub struct DocumentStore {
     /// is not reentrant — never re-lock while a guard is held, and never hold a
     /// guard across an `.await`.
     conn: Arc<Mutex<Connection>>,
-    /// Monotonic count of `upsert_posting_vector` writes, used to amortize the
-    /// posting-vector cache prune onto a cheap cadence (every
-    /// [`Self::POSTING_PRUNE_EVERY`] writes) instead of running two DELETEs under
-    /// the held connection lock on *every* write. A re-embed (`ai_reembed_all`)
-    /// upserts hundreds of postings back-to-back, so the old per-write prune was
-    /// pure overhead — the cache can briefly exceed its bound between prunes,
-    /// which is fine for a best-effort cache.
+    /// Monotonic count of `upsert_posting_vector` writes, used to amortize that
+    /// cache's prune onto a cheap cadence — see [`sql::prune_due`], which owns
+    /// the rationale and the cadence both counters share.
     posting_writes: std::sync::atomic::AtomicU64,
+    /// The same, for `match_scores`. Its own counter, not a shared one: the two
+    /// tables are written by different paths at wildly different rates (a
+    /// re-embed batch touches only postings; a scoring run writes both), and one
+    /// counter would let the busy path drag its quiet sibling's prune along.
+    match_score_writes: std::sync::atomic::AtomicU64,
 }
 
 impl DocumentStore {
@@ -524,13 +525,9 @@ impl DocumentStore {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             posting_writes: std::sync::atomic::AtomicU64::new(0),
+            match_score_writes: std::sync::atomic::AtomicU64::new(0),
         })
     }
-
-    /// Prune the posting-vector cache once per this many writes (see
-    /// [`DocumentStore::posting_writes`]). 64 keeps re-embed batches (hundreds of
-    /// upserts) cheap while still bounding the cache regularly under steady use.
-    const POSTING_PRUNE_EVERY: u64 = 64;
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
@@ -804,18 +801,11 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
-        // Amortized eviction: prune only once per `POSTING_PRUNE_EVERY` writes,
-        // reusing the held lock (must NOT re-lock). A re-embed upserts hundreds of
-        // postings back-to-back, so the previous per-write prune ran two DELETEs
-        // on every call for no benefit; the cache may briefly exceed its bound
-        // between prunes, which is fine for a best-effort cache.
-        let n = self
-            .posting_writes
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1;
-        if n.is_multiple_of(Self::POSTING_PRUNE_EVERY) {
+        // Amortized eviction on the shared cadence, reusing the held lock (must
+        // NOT re-lock) — see `sql::prune_due`.
+        if prune_due(&self.posting_writes) {
             let cfg = crate::performance::current();
-            Self::prune_table_locked(
+            prune_table_locked(
                 &conn,
                 "posting_vectors",
                 cfg.cache_ttl_secs,
@@ -855,47 +845,12 @@ impl DocumentStore {
     /// table to the newest `max_rows`. `None` for a knob disables that bound
     /// (today's unbounded behavior). Best-effort — a failed prune never blocks
     /// the caller. Pure of its inputs (does not read the live global), so the
-    /// command can pass the exact tier it just applied.
+    /// command can pass the exact tier it just applied. Unlike the amortized
+    /// per-write prune, this one always runs: its caller is the settings change.
     pub fn prune_caches(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
         let conn = self.conn.lock();
-        Self::prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
-        Self::prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
-    }
-
-    /// Prune one cache table to the given TTL + row cap, reusing an already-held
-    /// connection lock (callers hold `self.conn`; parking_lot Mutex is NOT
-    /// reentrant, so we must never call a `self.*` method that re-locks). No-op
-    /// when a knob is `None`. Table names are hardcoded literals (not user
-    /// input), so formatting them into the SQL is safe.
-    fn prune_table_locked(
-        conn: &Connection,
-        table: &str,
-        ttl_secs: Option<i64>,
-        max_rows: Option<i64>,
-    ) {
-        if let Some(ttl) = ttl_secs {
-            // created_at is epoch-MILLIS; ttl is seconds.
-            let cutoff = ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000));
-            let _ = conn.execute(
-                &format!("DELETE FROM {table} WHERE created_at < ?1"),
-                params![cutoff],
-            );
-        }
-        if let Some(n) = max_rows {
-            // Index-friendly row cap: delete everything older than the n-th newest
-            // row. The subquery uses idx_*_created_at (ORDER BY created_at DESC
-            // LIMIT 1 OFFSET n) instead of an unindexed full-table NOT IN sort.
-            // ≤ n rows → subquery is NULL → `created_at < NULL` deletes nothing.
-            // Ties on created_at may retain slightly more than n rows — fine for a
-            // cache bound. `{table}` is a hardcoded literal; `n` is bound.
-            let _ = conn.execute(
-                &format!(
-                    "DELETE FROM {table} WHERE created_at < \
-                     (SELECT created_at FROM {table} ORDER BY created_at DESC LIMIT 1 OFFSET ?1)"
-                ),
-                params![n],
-            );
-        }
+        prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
+        prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
     }
 
     // ── Match-result cache (self-invalidating) ────────────────────────────────
@@ -933,24 +888,31 @@ impl DocumentStore {
     }
 
     /// Store (or replace) the cached match-score JSON result for the given key.
+    ///
+    /// The amortized-prune decision is taken HERE, not in the SQL helper: the
+    /// counter belongs to the store and the helper only holds a `&Connection`.
     pub fn upsert_match_score(&self, key: &MatchScoreKey, score_json: &str) -> AppResult<()> {
+        let prune = prune_due(&self.match_score_writes);
         let conn = self.conn.lock();
-        upsert_match_score_with_conn(&conn, key, score_json)
+        upsert_match_score_with_conn(&conn, key, score_json, prune)
     }
 
     /// Async variant of [`upsert_match_score`] — runs the blocking write + lazy
     /// eviction off the async worker. Takes owned key + json so the closure is
-    /// `'static`. The TTL/row-cap prune reads `performance::current()` *inside*
-    /// the closure, reusing the held lock (never re-locks → no deadlock).
+    /// `'static`; the prune decision is likewise resolved before the move, since
+    /// the counter lives on `self`. The TTL/row-cap prune reads
+    /// `performance::current()` *inside* the closure, reusing the held lock
+    /// (never re-locks → no deadlock).
     pub async fn upsert_match_score_async(
         &self,
         key: OwnedMatchScoreKey,
         score_json: String,
     ) -> AppResult<()> {
         let conn = Arc::clone(&self.conn);
+        let prune = prune_due(&self.match_score_writes);
         spawn_blocking_db(move || {
             let conn = conn.lock();
-            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json)
+            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json, prune)
         })
         .await
     }
@@ -1235,7 +1197,14 @@ pub(crate) async fn posting_vector_or_embed<E: Embedder + ?Sized>(
         return cached.map(|(v, _)| v); // cache hit — no embed, no charge
     }
     let v = embed_charged(embedder, budget, text).await?;
-    store.upsert_posting_vector(job_id, &hash, &v).ok();
+    // Best-effort cache write: the embed already succeeded, so a failed upsert
+    // must not fail the score — it only means the NEXT call re-embeds (and
+    // re-charges) this posting. Logged rather than dropped, because a
+    // persistently failing write is invisible otherwise and reads downstream as
+    // "the cache never hits". Content-free: the id and the error, never the text.
+    if let Err(e) = store.upsert_posting_vector(job_id, &hash, &v) {
+        log::warn!("[documents] posting vector not cached for {job_id}: {e}");
+    }
     Some(v)
 }
 

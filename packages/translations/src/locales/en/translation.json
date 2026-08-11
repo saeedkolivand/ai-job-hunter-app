@@ -1554,6 +1554,10 @@
       "coverage": "Keyword Coverage %",
       "combined": "Match %"
     },
+    "scoreAbbr": {
+      "coverage": "Keyword",
+      "combined": "Match"
+    },
     "delete": "Delete",
     "deleteTitle": "Delete this autopilot?",
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",

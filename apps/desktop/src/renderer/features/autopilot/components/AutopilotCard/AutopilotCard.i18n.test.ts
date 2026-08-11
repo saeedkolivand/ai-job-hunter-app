@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest';
 
 import i18n from '@ajh/translations';
 
+import { SCORE_VARIANTS } from './index';
+
 const LOCALES = ['en', 'de'] as const;
 
 describe('PR H provisional-score i18n — en/de parity', () => {
@@ -39,27 +41,42 @@ describe('PR H provisional-score i18n — en/de parity', () => {
  * genuinely DIFFERENT strings in each locale, which is the whole point of a
  * flip. `fallbackLng: false` is still passed to `exists` so this file's own
  * per-locale claim is honest rather than fallback-shadowed.
+ *
+ * The variant list comes from the component module rather than being restated
+ * here: a third variant added to `SCORE_VARIANTS` must arrive with its keys, and
+ * a hardcoded pair in the test is exactly what would let it ship without them.
  */
 describe('autopilot score metric labels — en/de', () => {
-  const VARIANTS = ['coverage', 'combined'] as const;
+  const cases = LOCALES.flatMap((lng) => SCORE_VARIANTS.map((variant) => [lng, variant] as const));
 
-  it.each(LOCALES.flatMap((lng) => VARIANTS.map((variant) => [lng, variant] as const)))(
-    '%s resolves autopilot.scoreLabel.%s',
-    (lng, variant) => {
-      const key = `autopilot.scoreLabel.${variant}`;
-      expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng}:${key}`).toBe(true);
-      const out = i18n.getFixedT(lng)(key);
-      expect(out).not.toBe(key);
-      // It is a PERCENTAGE metric name in both languages — a label that dropped
-      // the unit would read as a bare noun next to the tier word.
-      expect(out).toContain('%');
-    }
-  );
+  it.each(cases)('%s resolves autopilot.scoreLabel.%s', (lng, variant) => {
+    const key = `autopilot.scoreLabel.${variant}`;
+    expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng}:${key}`).toBe(true);
+    const out = i18n.getFixedT(lng)(key);
+    expect(out).not.toBe(key);
+    // It is a PERCENTAGE metric name in both languages — a label that dropped
+    // the unit would read as a bare noun next to the tier word.
+    expect(out).toContain('%');
+  });
+
+  // The compact visible form, shown next to the score only when the list mixes
+  // the two scales. Same enumeration, same reason.
+  it.each(cases)('%s resolves autopilot.scoreAbbr.%s', (lng, variant) => {
+    const key = `autopilot.scoreAbbr.${variant}`;
+    expect(i18n.exists(key, { lng, fallbackLng: false }), `${lng}:${key}`).toBe(true);
+    const out = i18n.getFixedT(lng)(key);
+    expect(out).not.toBe(key);
+    expect(out.trim().length).toBeGreaterThan(0);
+    // It sits inline beside the number in a 10px row: a full sentence there
+    // would push the band and the Apply button off the row.
+    expect(out.length).toBeLessThanOrEqual(12);
+  });
 
   it.each(LOCALES)('%s distinguishes keyword coverage from the combined match', (lng) => {
     // Identical copy would make the flip invisible to the user — and is exactly
     // what a copy/paste translation produces.
     const t = i18n.getFixedT(lng);
     expect(t('autopilot.scoreLabel.coverage')).not.toBe(t('autopilot.scoreLabel.combined'));
+    expect(t('autopilot.scoreAbbr.coverage')).not.toBe(t('autopilot.scoreAbbr.combined'));
   });
 });

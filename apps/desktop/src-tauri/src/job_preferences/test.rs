@@ -609,3 +609,56 @@ fn semantic_scoring_column_exists_after_the_migration_chain() {
         "semantic_scoring"
     ));
 }
+
+/// …and the UPGRADE path, which the fresh-install test above cannot see: every
+/// existing user opens a v5 database, where the column does not exist yet. A
+/// fresh install runs the whole chain from zero and would still pass if
+/// migration 6 were mis-numbered, mis-ordered, or wrong about the starting
+/// schema — this seeds the real v5 shape and reopens through the store.
+#[test]
+fn a_version_5_database_gains_the_semantic_scoring_column_on_open() {
+    let temp_dir = TempDir::new().unwrap();
+    let data_dir = temp_dir.path().to_path_buf();
+
+    // The schema as of migration 5 (`add_job_preferences_extra_agency_companies`):
+    // the dropped-column recreate has already run and the three ADD COLUMNs with
+    // it. No `semantic_scoring`.
+    {
+        let conn = crate::db::open(&data_dir.join("job_preferences.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE job_preferences (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 location TEXT,
+                 tech_stack TEXT,
+                 country_code TEXT,
+                 salary_expectation TEXT,
+                 extra_agency_companies TEXT
+             );
+             INSERT OR IGNORE INTO job_preferences (id, location) VALUES (1, 'Berlin');
+             PRAGMA user_version = 5;",
+        )
+        .unwrap();
+        assert!(
+            !crate::db::column_exists(&conn, "job_preferences", "semantic_scoring"),
+            "fixture precondition: a v5 database has no semantic_scoring column"
+        );
+    }
+
+    let store = JobPreferencesStore::open(&data_dir).expect("the v5 → v6 upgrade must succeed");
+
+    assert!(
+        crate::db::column_exists(&store.conn.lock(), "job_preferences", "semantic_scoring"),
+        "opening a v5 database must run migration 6"
+    );
+    assert!(
+        !store.semantic_scoring(),
+        "the added column is NULL for every upgraded install, and NULL must read \
+         false — the app-wide default that keeps a scheduled run embedding-free \
+         until the user opts in"
+    );
+    assert_eq!(
+        store.get().location,
+        Some("Berlin".to_string()),
+        "…and the upgrade is an ADD COLUMN, so the user's existing row survives it"
+    );
+}

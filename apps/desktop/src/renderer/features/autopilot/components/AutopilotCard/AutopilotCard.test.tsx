@@ -709,6 +709,66 @@ describe('AutopilotCard — score metric label', () => {
     expect(band).toHaveAttribute('data-variant', 'coverage');
   });
 
+  // ── the mixed-scale affordance ──────────────────────────────────────────
+  //
+  // After a semantic re-rank the list holds TWO scales and is sorted in two
+  // blocks, so a combined 58 legitimately sits above a keyword 62. The metric
+  // was only ever in the tier colour and the sr-only text, which reads to a
+  // sighted user as a sorting bug.
+
+  /** Expand the found-jobs panel for a whole list. */
+  async function renderList(jobs: AutopilotFoundJob[]) {
+    renderCard(makeAutopilot(jobs));
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+  }
+
+  const combined = (url: string, score: number): AutopilotFoundJob => ({
+    ...makeJob(url, score),
+    scoreSource: 'combined' as const,
+  });
+  const keyword = (url: string, score: number): AutopilotFoundJob => ({
+    ...makeJob(url, score),
+    scoreSource: 'keyword' as const,
+  });
+
+  it('names each row’s metric when the list mixes the two scales', async () => {
+    // The exact reported shape: the re-ranked head scores LOWER than the
+    // keyword tail, so without a visible metric the order looks broken.
+    await renderList([combined('https://example.com/a', 58), keyword('https://example.com/b', 62)]);
+
+    expect(screen.getByText('autopilot.scoreAbbr.combined')).toBeInTheDocument();
+    expect(screen.getByText('autopilot.scoreAbbr.coverage')).toBeInTheDocument();
+  });
+
+  it('adds nothing when every score is on the same scale', async () => {
+    // The overwhelmingly common case (semantic scoring off, or a run where
+    // every job re-ranked): an identical label on every row is pure noise.
+    await renderList([keyword('https://example.com/a', 62), keyword('https://example.com/b', 40)]);
+
+    expect(screen.queryByText('autopilot.scoreAbbr.coverage')).not.toBeInTheDocument();
+    expect(screen.queryByText('autopilot.scoreAbbr.combined')).not.toBeInTheDocument();
+  });
+
+  it('ignores unscored rows when deciding whether the list mixes', async () => {
+    // An unscored job renders no band at all, so it cannot be one of the two
+    // scales — counting it would label a uniform list.
+    await renderList([keyword('https://example.com/a', 62), makeJob('https://example.com/b')]);
+
+    expect(screen.queryByText('autopilot.scoreAbbr.coverage')).not.toBeInTheDocument();
+  });
+
+  it('keeps the metric out of the accessible name, which already carries it', async () => {
+    // aria-hidden: the sr-only span next to the band announces the FULL label
+    // ("Keyword Coverage %"), so an announced abbreviation would be a second,
+    // shorter duplicate of the same fact.
+    await renderList([combined('https://example.com/a', 58), keyword('https://example.com/b', 62)]);
+
+    expect(screen.getByText('autopilot.scoreAbbr.coverage')).toHaveAttribute('aria-hidden', 'true');
+  });
+
   it('keeps the provisional caveat alongside the flipped label', async () => {
     // A re-ranked aggregator job is BOTH semantic and snippet-derived: the
     // label flips, and the "~"/muted/caveat treatment must survive.

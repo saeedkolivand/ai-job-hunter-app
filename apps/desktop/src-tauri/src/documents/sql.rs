@@ -1,10 +1,19 @@
 //! Connection-bound SQL for the hot match path, split out of `documents/mod.rs`
-//! (which is at R8's LOC cap). Pure move — the functions, their SQL and their
-//! comments are unchanged; only their visibility widened to `pub(super)` so the
-//! parent's sync + async wrappers keep sharing one copy of each query.
+//! (which is at R8's LOC cap), together with the lazy cache eviction that runs
+//! under the same held lock. Visibility widened to `pub(super)` so the parent's
+//! sync + async wrappers keep sharing one copy of each query.
 //!
-//! A child module sees the parent's private items, so `DocumentStore::
-//! prune_table_locked` and `ttl_cutoff_ms` are still reachable from here.
+//! Everything here was moved verbatim except two things, both documented where
+//! they live: the synthetic-scoring-id guard in [`upsert_vector_with_conn`]
+//! (added with the split, because the guard belongs AT the write rather than at
+//! each call site), and the amortized [`prune_due`] cadence that
+//! `upsert_match_score_with_conn` now shares with `upsert_posting_vector`
+//! instead of running two DELETEs on every write.
+//!
+//! A child module sees the parent's private items, so `ttl_cutoff_ms` is still
+//! reachable from here.
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rusqlite::{params, Connection};
 
@@ -12,7 +21,7 @@ use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
 use crate::db::{now_ms, ts_to_db};
 use crate::error::AppResult;
 
-use super::{is_synthetic_scoring_id, ttl_cutoff_ms, DocumentStore, MatchScoreKey};
+use super::{is_synthetic_scoring_id, ttl_cutoff_ms, MatchScoreKey};
 
 // ── Connection-bound SQL helpers ───────────────────────────────────────────────
 //
@@ -123,10 +132,18 @@ pub(super) fn get_match_score_with_conn(
     .and_then(|json| serde_json::from_str(&json).ok())
 }
 
+/// `prune` carries the amortized-eviction decision from the caller, which owns
+/// the write counter (see [`prune_due`]); this function only has a
+/// `&Connection`. Passing the decision in — rather than pruning here on every
+/// write — is what puts `match_scores` on the same cadence as its
+/// `posting_vectors` sibling. The match path is the BIGGER batch of the two: one
+/// Autopilot re-rank writes a row per job on top of whatever the Jobs page
+/// scores, so a per-write prune was up to ~2000 extra DELETEs per run.
 pub(super) fn upsert_match_score_with_conn(
     conn: &Connection,
     key: &MatchScoreKey,
     score_json: &str,
+    prune: bool,
 ) -> AppResult<()> {
     conn.execute(
         "INSERT INTO match_scores
@@ -150,10 +167,74 @@ pub(super) fn upsert_match_score_with_conn(
         ],
     )
     .map_err(|e| e.to_string())?;
-    // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
-    let cfg = crate::performance::current();
-    DocumentStore::prune_table_locked(conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
+    // Lazy amortized eviction, reusing the held lock (must NOT re-lock).
+    if prune {
+        let cfg = crate::performance::current();
+        prune_table_locked(conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
+    }
     Ok(())
+}
+
+// ── Lazy cache eviction ────────────────────────────────────────────────────────
+
+/// How many writes to a cache table share ONE eviction pass.
+///
+/// Pruning under the held connection lock on every write is two DELETEs of pure
+/// overhead in the batches this store actually sees: `ai_reembed_all` upserts
+/// hundreds of posting vectors back-to-back, and one Autopilot re-rank writes a
+/// `match_scores` row per scored job. 64 keeps those batches cheap while still
+/// bounding the caches regularly under steady use; a table may briefly exceed
+/// its row cap between prunes, which is fine for a best-effort cache (the
+/// read-side TTL in [`get_match_score_with_conn`] is what keeps a STALE row from
+/// being served, and it does not depend on eviction having run).
+pub(super) const CACHE_PRUNE_EVERY: u64 = 64;
+
+/// Whether THIS write carries the amortized prune: true once every
+/// [`CACHE_PRUNE_EVERY`] writes of `counter`.
+///
+/// Bumping and testing in one place is what keeps the two cache tables on one
+/// documented cadence — the alternative (each write site rolling its own) is how
+/// `posting_vectors` ended up amortized while its `match_scores` sibling still
+/// ran two DELETEs per write.
+pub(super) fn prune_due(counter: &AtomicU64) -> bool {
+    let n = counter.fetch_add(1, Ordering::Relaxed) + 1;
+    n.is_multiple_of(CACHE_PRUNE_EVERY)
+}
+
+/// Prune one cache table to the given TTL + row cap, reusing an already-held
+/// connection lock (callers hold `DocumentStore::conn`; parking_lot Mutex is NOT
+/// reentrant, so we must never call a `self.*` method that re-locks). No-op
+/// when a knob is `None`. Table names are hardcoded literals (not user input),
+/// so formatting them into the SQL is safe.
+pub(super) fn prune_table_locked(
+    conn: &Connection,
+    table: &str,
+    ttl_secs: Option<i64>,
+    max_rows: Option<i64>,
+) {
+    if let Some(ttl) = ttl_secs {
+        // created_at is epoch-MILLIS; ttl is seconds.
+        let cutoff = ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000));
+        let _ = conn.execute(
+            &format!("DELETE FROM {table} WHERE created_at < ?1"),
+            params![cutoff],
+        );
+    }
+    if let Some(n) = max_rows {
+        // Index-friendly row cap: delete everything older than the n-th newest
+        // row. The subquery uses idx_*_created_at (ORDER BY created_at DESC
+        // LIMIT 1 OFFSET n) instead of an unindexed full-table NOT IN sort.
+        // ≤ n rows → subquery is NULL → `created_at < NULL` deletes nothing.
+        // Ties on created_at may retain slightly more than n rows — fine for a
+        // cache bound. `{table}` is a hardcoded literal; `n` is bound.
+        let _ = conn.execute(
+            &format!(
+                "DELETE FROM {table} WHERE created_at < \
+                 (SELECT created_at FROM {table} ORDER BY created_at DESC LIMIT 1 OFFSET ?1)"
+            ),
+            params![n],
+        );
+    }
 }
 
 /// Run a fallible blocking DB closure on the `spawn_blocking` pool and flatten
@@ -161,11 +242,17 @@ pub(super) fn upsert_match_score_with_conn(
 /// (or pool shutdown) surfaces as an `AppError::Storage`, matching how every
 /// other rusqlite failure on this store is categorized. Used by the write-side
 /// async methods, where the `?`-propagated result must distinguish failure.
+///
+/// Tokio's `spawn_blocking`, not `tauri::async_runtime`'s: the latter is a thin
+/// forward to exactly this call, and taking it directly keeps the whole file
+/// Tauri-free (architecture R2 — it is an L1 store, and its allowlist entry is
+/// gone). Every caller awaits from inside the runtime Tauri itself runs on, so
+/// there is no context to lose.
 pub(super) async fn spawn_blocking_db<F>(f: F) -> AppResult<()>
 where
     F: FnOnce() -> AppResult<()> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(f)
+    tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| crate::error::AppError::Storage(format!("documents db task failed: {e}")))?
 }

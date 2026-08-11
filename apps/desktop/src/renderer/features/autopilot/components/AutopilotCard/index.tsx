@@ -72,6 +72,7 @@ const STEP_ICON: Record<string, string> = {
   scrape_done: '✓',
   scrape_diag: '⚠',
   rerank_start: '◇',
+  rerank_timeout: '◷',
   rank_done: '★',
   cancelled: '⊘',
   complete: '✓',
@@ -114,6 +115,18 @@ const NEEDS_CONFIG_BADGE = {
 };
 
 /**
+ * Every metric a found-job score can be rendered as (ADR-020 addendum).
+ *
+ * A runtime tuple, not just a type: each variant owns an
+ * `autopilot.scoreLabel.*` / `autopilot.scoreAbbr.*` key built by template
+ * string, which TypeScript cannot check. Exported so the i18n test enumerates
+ * the REAL set — restating the two strings there is how a third variant would
+ * ship with no localized label.
+ */
+export const SCORE_VARIANTS = ['coverage', 'combined'] as const;
+export type ScoreVariant = (typeof SCORE_VARIANTS)[number];
+
+/**
  * The band variant a found job's score should render as. `'combined'` ONLY when
  * the backend says that job's score came from the semantic+ATS kernel — the
  * two metrics have different meanings AND different tier cut points, so showing
@@ -121,7 +134,7 @@ const NEEDS_CONFIG_BADGE = {
  * that degraded back to keyword-only mid-run reports `'keyword'` and is
  * rendered as such (ADR-020 addendum).
  */
-function scoreVariant(job: AutopilotFoundJob): 'combined' | 'coverage' {
+function scoreVariant(job: AutopilotFoundJob): ScoreVariant {
   return job.scoreSource === 'combined' ? 'combined' : 'coverage';
 }
 
@@ -184,6 +197,18 @@ export function AutopilotCard({
   const foundJobs = useMemo(
     () => (ap.foundJobs ?? []).filter((j) => j.clusterCanonical !== false),
     [ap.foundJobs]
+  );
+  // Does this list hold BOTH scales at once? After a semantic re-rank it can:
+  // the re-ranked head carries the combined "Match %", the tail keyword
+  // coverage, and the backend sorts them as two separate blocks — so a 58 can
+  // legitimately sit above a 62. Until now the only visible difference was the
+  // tier colour (screen-reader users always had the sr-only metric name), which
+  // reads as a sorting bug. When the list mixes, each row names its metric;
+  // when it doesn't — the overwhelmingly common case — nothing is added, since
+  // a label repeated identically on every row is noise.
+  const mixedScoreSources = useMemo(
+    () => new Set(foundJobs.filter((j) => typeof j.score === 'number').map(scoreVariant)).size > 1,
+    [foundJobs]
   );
   // Persisted per-board outcome of the most recent run (PR B). Unlike the live
   // step log (below), this survives the run ending, so a zero/partial/failed
@@ -672,6 +697,20 @@ export function AutopilotCard({
                             className="inline-flex shrink-0 items-center gap-0.5"
                             title={scoreDetail(t, job)}
                           >
+                            {mixedScoreSources && (
+                              // The scale this number is on, shown only while
+                              // the list actually mixes the two (see
+                              // `mixedScoreSources`). aria-hidden because the
+                              // sr-only span below already announces the full
+                              // metric name — this is the sighted-user half of
+                              // the same fact, not a second announcement.
+                              <span
+                                aria-hidden="true"
+                                className="shrink-0 text-[8px] font-semibold uppercase tracking-wider text-foreground/40"
+                              >
+                                {t(`autopilot.scoreAbbr.${scoreVariant(job)}`)}
+                              </span>
+                            )}
                             {job.scoreProvisional && (
                               <span
                                 aria-hidden="true"

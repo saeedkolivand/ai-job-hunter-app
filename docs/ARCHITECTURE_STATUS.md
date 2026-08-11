@@ -2,7 +2,7 @@
 
 Implementation status tracker. Updated as features ship.
 
-Last updated: 2026-08-11 (PR #924: accessibility statement at `/accessibility`, WCAG 2.2 AA conformance status)
+Last updated: 2026-08-11 (PR #966: opt-in two-phase Autopilot ranking — see the "Ranking via keyword-coverage" row under Autopilot)
 
 ---
 

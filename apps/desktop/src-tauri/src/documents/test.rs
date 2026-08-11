@@ -2020,6 +2020,90 @@ fn count_table(store: &DocumentStore, table: &str) -> i64 {
         .unwrap_or(0)
 }
 
+// ── Amortized per-write eviction: match_scores ────────────────────────────────
+
+/// The `match_scores` cache prunes on the SAME amortized cadence as its
+/// `posting_vectors` sibling — one eviction pass per [`sql::CACHE_PRUNE_EVERY`]
+/// writes, rather than two DELETEs under the held connection lock on EVERY
+/// write. The match path is the bigger batch of the two (an Autopilot re-rank
+/// writes a row per scored job, on top of whatever the Jobs page scores), so
+/// per-write was up to ~2000 extra DELETEs per run.
+///
+/// Both halves matter and both are asserted here: an amortized prune that never
+/// fires is just a deleted prune, and a "prune" that fires on every write is the
+/// cost this change exists to remove. A stale row is the probe — the read-side
+/// TTL would hide it from `get_match_score` whether or not eviction ran, so the
+/// assertion counts raw rows.
+#[test]
+#[serial]
+fn the_match_score_prune_is_amortized_but_still_fires_across_a_batch() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    set_perf(Some(3600), None); // 1h TTL, no row cap
+
+    // One row already two hours past the TTL, inserted underneath the store so
+    // no write counter is spent on it.
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', 'stale-job', 'ollama', 'nomic-embed-text', 1, 1, 1, 'h', '{}', ?1)",
+            params![ts_to_db(now_ms() - 2 * 3600 * 1000)],
+        )
+        .unwrap();
+    }
+
+    let fresh = |i: u64| {
+        let hash = sha256_hex(&format!("job-text-{i}"));
+        let job_id = format!("job-{i}");
+        move |store: &DocumentStore| {
+            store
+                .upsert_match_score(
+                    &MatchScoreKey {
+                        resume_id: "r",
+                        job_id: &job_id,
+                        provider: "ollama",
+                        model: "nomic-embed-text",
+                        semantic_enabled: 1,
+                        formula_version: 1,
+                        vector_version: 1,
+                        job_text_hash: &hash,
+                    },
+                    "{}",
+                )
+                .unwrap();
+        }
+    };
+
+    // Every write but the last one leaves the expired row in place — that is
+    // what "amortized" means, and a per-write prune fails here.
+    for i in 0..sql::CACHE_PRUNE_EVERY - 1 {
+        fresh(i)(&store);
+    }
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        sql::CACHE_PRUNE_EVERY as i64,
+        "the expired row plus every fresh one: within a batch the cache is \
+         allowed to hold rows past the TTL"
+    );
+
+    // …and the write that completes the cadence evicts it, so the bound still
+    // holds over the batch as a whole.
+    fresh(sql::CACHE_PRUNE_EVERY)(&store);
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        sql::CACHE_PRUNE_EVERY as i64,
+        "the write that completes the cadence pruned the expired row while adding \
+         its own, so the count holds instead of growing — an amortized prune that \
+         never fires would read {} here",
+        sql::CACHE_PRUNE_EVERY as i64 + 1
+    );
+
+    reset_perf_to_balanced();
+}
+
 // ── Row-cap eviction: match_scores ────────────────────────────────────────────
 //
 // Implementation note: `prune_table_locked` uses

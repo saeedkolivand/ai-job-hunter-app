@@ -23,7 +23,7 @@ Autopilot's `simple_similarity` was crude (failed to weight keyword importance, 
 
 ## Consequences
 
-- **Autopilot is simpler and faster (by default):** when semantic scoring is disabled, no embedding calls; when enabled, bounded re-rank bounded by top-N and wall clock. No in-memory `simple_similarity` overhead in either path; ranking uses only the stemmed keyword set + one cache lookup per job (pre-filter) or reuses cached embeddings (post-filter).
+- **Autopilot is simpler and faster (by default):** when semantic scoring is disabled, no embedding calls; when enabled, the re-rank is bounded by top-N and a wall clock. No in-memory `simple_similarity` overhead in either path; ranking uses only the stemmed keyword set + one cache lookup per job (pre-filter) or reuses cached embeddings (post-filter).
 - **Keyword coverage is the canonical keyword-only scoring branch**, owned by the documents module and tested extensively in `documents/keywords.rs`. The formula is a single source of truth for the default path.
 - **User expectation alignment:** The Autopilot % is now clearly labeled "keyword coverage" not "overall match %", preventing confusion with the semantic score on the Jobs page.
 - **Formula versioning:** The composite PK in the match-score cache (`posting_vectors` + `match_scores` tables) includes the formula version, so a future change to the keyword algorithm automatically invalidates old cached results.
@@ -37,7 +37,9 @@ The re-rank phase is controlled by the `job_preferences.semantic_scoring` toggle
 
 The pre-processing pipeline (translation via `translate_if_needed`, locale resolution) runs for every surface that renders "Match %" — Jobs page and Autopilot both — via `MatchSurface::translates()`, ensuring the two surfaces cannot produce different "Match %" for the same pair. The Extension stays zero-egress by structural design (`score_adhoc_keyword_only`).
 
-Implementation: `commands/autopilot.rs::semantic_rerank_phase` (phase 2 entry point), `commands/match_resume.rs::score_one` (shared kernel), `documents/embed_charged` (per-round-trip charge choke point), `RERANK_DEGRADE_BREAKER = 3` (consecutive degrade limit per run). See `commands/autopilot.rs::tests` and `commands/match_resume/test.rs` for mutation-verified guards on cache identity, budget enforcement, and the mixed-shape degrade boundary. Related: `docs/knowledge/matching-algorithm.md`, `docs/ARCHITECTURE_STATUS.md:159`.
+A pass the wall clock cuts off still reports its PARTIAL counts plus a distinct `rerank_timeout` step: it has already spent embeds and promoted jobs, so reporting nothing would make the run's step log read as keyword-only.
+
+Implementation: `commands/autopilot/rerank.rs::semantic_rerank_phase` (phase 2 entry point — split out of `commands/autopilot.rs` for the LOC cap, no behaviour change), `commands/match_resume.rs::score_one` (shared kernel), `documents::embed_charged` (per-round-trip charge choke point), `RERANK_DEGRADE_BREAKER = 3` (consecutive degrade limit per run). See `commands/autopilot/tests.rs` and `commands/match_resume/test.rs` for mutation-verified guards on cache identity, budget enforcement, and the mixed-shape degrade boundary. Related: `docs/knowledge/matching-algorithm.md`, and the "Ranking via keyword-coverage" row in `docs/ARCHITECTURE_STATUS.md`.
 
 ## Related
 

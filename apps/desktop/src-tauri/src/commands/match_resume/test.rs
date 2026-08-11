@@ -282,199 +282,6 @@ fn formula_version_constant_is_pinned() {
     );
 }
 
-// A6 — Combined-score formula: combined = round(0.6 * semantic + 0.4 * ats).
-// Tests the arithmetic kernel in isolation, covering the branch in `score_one`
-// where `job_vec.is_some()` is true. The formula is not `0.6*s + 0.4*a` before
-// rounding — we pin the specific rounded values to catch weight drift.
-#[test]
-fn combined_formula_is_weighted_60_semantic_40_ats_rounded() {
-    // Simulate the production formula: both vectors present → combined branch.
-    let semantic = 80.0_f64;
-    let ats = 60.0_f64;
-    let combined = (0.6 * semantic + 0.4 * ats).round();
-    // 0.6 * 80 + 0.4 * 60 = 48 + 24 = 72 → rounded = 72
-    assert_eq!(
-        combined, 72.0,
-        "combined must be round(0.6*80 + 0.4*60) = 72"
-    );
-
-    // Verify a different pair to guard against accidental integer short-circuit.
-    let semantic2 = 75.0_f64;
-    let ats2 = 50.0_f64;
-    let combined2 = (0.6 * semantic2 + 0.4 * ats2).round();
-    // 0.6 * 75 + 0.4 * 50 = 45 + 20 = 65 → rounded = 65
-    assert_eq!(
-        combined2, 65.0,
-        "combined must be round(0.6*75 + 0.4*50) = 65"
-    );
-
-    // When semantic and ats differ, combined must differ from BOTH so we can
-    // distinguish it from an accidental identity (combined == ats).
-    assert_ne!(
-        combined, ats,
-        "combined must differ from ats (weights are 0.6/0.4)"
-    );
-    assert_ne!(
-        combined, semantic,
-        "combined must differ from semantic (weights are 0.6/0.4)"
-    );
-}
-
-// A6 — Degrade path: when the semantic vector is unavailable (`job_vec.is_none()`),
-// the production branch in `score_one` yields `combined = ats` (no semantic
-// weighting). This test pins that degrade-path logic is `!= 0.6*semantic +
-// 0.4*ats`; combined equals ATS score when semantic is absent.
-//
-// The branch in score_one is: `let combined = if job_vec.is_some() {
-//     (0.6 * semantic + 0.4 * ats).round() } else { ats };`
-// We verify that the ELSE arm produces exactly `ats`, not 0.6*0 + 0.4*ats.
-#[test]
-fn degrade_path_combined_equals_ats_when_no_semantic_vector() {
-    // Simulate: job_vec is None → semantic stays 0.0 (no computation),
-    // combined = ats (the else branch).
-    let ats = 65.0_f64;
-    let job_vec_present = false;
-    let semantic = 0.0_f64; // unused in degrade branch
-
-    let combined = if job_vec_present {
-        (0.6 * semantic + 0.4 * ats).round()
-    } else {
-        ats // degrade: keyword-only
-    };
-
-    assert_eq!(
-        combined, ats,
-        "degrade path (no job vector) must yield combined == ats ({ats}); got {combined}"
-    );
-
-    // The degrade combined must NOT equal the weighted formula applied to
-    // ats alone (0.6*0 + 0.4*65 = 26 ≠ 65), proving the else-branch is
-    // `ats` not `0.6*semantic + 0.4*ats`.
-    let weighted_ats_only = (0.6 * 0.0 + 0.4 * ats).round();
-    assert_ne!(
-        combined, weighted_ats_only,
-        "degrade combined ({combined}) must not be the weighted-formula partial ({weighted_ats_only})"
-    );
-}
-
-// A6 — Degrade explanation: when semantic is disabled the explanation must
-// say "(semantic scoring disabled)" and NOT mention "Semantic similarity".
-// When semantic is available the explanation includes "Semantic similarity".
-// Both explanations must carry the guidance framing ("guidance estimate").
-// Mirrors the `explanation` construction in `score_one` (pure string logic,
-// tested without AppHandle).
-#[test]
-fn explanation_reflects_semantic_enabled_state() {
-    let job_kw_count = 10_usize;
-    let ats = 70.0_f64;
-    let semantic = 85.0_f64;
-    const GUIDANCE: &str =
-        "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
-
-    // Degrade (skip_semantic = true):
-    let degrade_explanation = format!(
-        "Keyword coverage {ats:.0}% across {job_kw_count} job keywords (semantic scoring disabled). {GUIDANCE}"
-    );
-    assert!(
-        degrade_explanation.contains("semantic scoring disabled"),
-        "degrade explanation must say 'semantic scoring disabled'; got: {degrade_explanation}"
-    );
-    assert!(
-        !degrade_explanation.contains("Semantic similarity"),
-        "degrade explanation must NOT mention 'Semantic similarity'; got: {degrade_explanation}"
-    );
-    assert!(
-        degrade_explanation.contains("guidance estimate"),
-        "degrade explanation must carry guidance framing; got: {degrade_explanation}"
-    );
-
-    // Normal (skip_semantic = false):
-    let normal_explanation = format!(
-        "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {job_kw_count} job keywords. {GUIDANCE}"
-    );
-    assert!(
-        normal_explanation.contains("Semantic similarity"),
-        "normal explanation must mention 'Semantic similarity'; got: {normal_explanation}"
-    );
-    assert!(
-        !normal_explanation.contains("disabled"),
-        "normal explanation must NOT mention 'disabled'; got: {normal_explanation}"
-    );
-    assert!(
-        normal_explanation.contains("guidance estimate"),
-        "normal explanation must carry guidance framing; got: {normal_explanation}"
-    );
-}
-
-// Empty JD keywords → explanation flags unavailable score, not misleading 0%.
-// Mirrors the `no_jd_keywords` branch in `score_one`.
-#[test]
-fn empty_jd_keywords_explanation_flags_unavailable() {
-    const GUIDANCE: &str =
-        "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
-    let explanation = format!(
-        "No extractable keywords found in this job posting — coverage score is unavailable. {GUIDANCE}"
-    );
-    assert!(
-        explanation.contains("No extractable keywords"),
-        "empty-JD explanation must flag unavailability; got: {explanation}"
-    );
-    assert!(
-        explanation.contains("guidance estimate"),
-        "empty-JD explanation must carry guidance framing; got: {explanation}"
-    );
-    // Must NOT claim 0% — that would be indistinguishable from a real mismatch.
-    assert!(
-        !explanation.contains("0%"),
-        "empty-JD explanation must not claim 0%; got: {explanation}"
-    );
-}
-
-// Stemmer-language guard: when JD language matches the résumé locale,
-// apply_stemmer runs; when they diverge, the normalized (unstemmed) set is
-// used directly. This pins the guard logic (pure boolean, no AppHandle).
-#[test]
-fn stemmer_language_guard_skips_stemming_on_mismatch() {
-    use crate::documents::keywords::{apply_stemmer, keywords_normalized, make_stemmer};
-
-    // German JD, English résumé (locale "en") — languages diverge.
-    let jd_text = "Wir suchen einen erfahrenen Softwareentwickler mit Rust-Kenntnissen";
-    let stemmer = make_stemmer(jd_text); // German stemmer
-    let resume_tokens = keywords_normalized("experienced rust developer");
-
-    // Guard logic mirrors score_one: German JD, English locale → no match.
-    let jd_matches_en = false; // German JD vs "en" locale
-    let resume_words_diverge: HashSet<String> = if jd_matches_en {
-        apply_stemmer(resume_tokens.clone(), &stemmer)
-    } else {
-        resume_tokens.clone() // unstemmed
-    };
-
-    // When languages match (English JD, English résumé) → stemmer applied.
-    let en_jd = "experienced rust developer";
-    let en_stemmer = make_stemmer(en_jd);
-    let en_tokens = keywords_normalized("experienced rust developer");
-    let resume_words_match = apply_stemmer(en_tokens.clone(), &en_stemmer);
-
-    // The stemmed set must differ from the unstemmed one for ordinary words.
-    // ("developer" → "develop" under English Snowball).
-    assert!(
-        resume_words_match.contains("develop"),
-        "English stemmer must reduce 'developer' to 'develop'; got {:?}",
-        resume_words_match
-    );
-    assert!(
-        resume_words_diverge.contains("developer"),
-        "Without stemming, 'developer' must survive unstemmed; got {:?}",
-        resume_words_diverge
-    );
-    assert!(
-        !resume_words_diverge.contains("develop"),
-        "Without stemming, stemmed form 'develop' must be absent; got {:?}",
-        resume_words_diverge
-    );
-}
-
 // Round-trip parity: a 7-field MatchScore JSON blob survives
 // upsert_match_score → get_match_score with every field name and type intact.
 // Guards against a future rename/drop of any result-cache field.
@@ -889,6 +696,23 @@ fn stale_space_vector(store: &DocumentStore, dim: usize) -> EmbeddingVector {
     }
 }
 
+/// A vector in the ACTIVE embedding space with caller-chosen values, so a test
+/// can seed a pair whose cosine — and therefore the kernel's `semantic` number
+/// — is known in advance instead of inheriting [`FakeScoreIo::vector`]'s
+/// identical-on-both-sides 1.0.
+fn vector_of(store: &DocumentStore, values: [f64; 3]) -> EmbeddingVector {
+    let active = store.embedding_config();
+    EmbeddingVector {
+        values: values.to_vec(),
+        space: crate::commands::ai_provider::EmbeddingSpace {
+            provider: active.provider,
+            model: active.model,
+            dim: 3,
+            version: EMBEDDING_VECTOR_VERSION,
+        },
+    }
+}
+
 /// The semantic cache key of one autopilot job, as the kernel writes it.
 fn semantic_key<'a>(
     resume_id: &'a str,
@@ -983,6 +807,207 @@ async fn an_evicted_resume_vector_is_a_charged_round_trip_of_its_own() {
         "only the résumé side embeds"
     );
     assert_eq!(budget.charges(), 1);
+}
+
+// ── the published number: weights, the empty-JD branch, the stemmer guard ────
+//
+// All three drive the REAL kernel. The versions these replace re-declared the
+// formula / the sentence / the guard inside the test body and asserted against
+// their own copy, so a production weight flip, a reworded explanation or an
+// inverted guard could not fail them.
+
+/// A JD the résumé covers COMPLETELY (it contains the posting verbatim), so
+/// `ats` is exactly 100 and the only variable left in the combined number is
+/// the cosine — which the seeded vector pair fixes at 0.6.
+const COVERED_JD: &str = "We are looking for an experienced Rust developer with Kubernetes \
+                          experience to build distributed systems in Berlin.";
+const COVERING_RESUME: &str = "We are looking for an experienced Rust developer with Kubernetes \
+                               experience to build distributed systems in Berlin. Shipped \
+                               Postgres and Terraform work alongside it.";
+
+/// The weights, pinned on the kernel's own output rather than on a copy of the
+/// formula. Both inputs are fixed by the fixture — cosine 0.6 → `semantic` 60,
+/// full keyword coverage → `ats` 100 — so `combined` has exactly one correct
+/// value: `round(0.6 × 60 + 0.4 × 100)` = 76.
+///
+/// Mutation: any weight change moves it (0.5/0.5 → 80, 0.4/0.6 → 84, dropping
+/// the semantic term → 100).
+#[tokio::test]
+async fn the_combined_score_weights_semantic_60_and_ats_40() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[]);
+    let job_id = "autopilot:weights";
+    // Unit vectors 0.6 apart: cos = (1·0.6 + 0·0.8 + 0·0) / (1 × 1) = 0.6.
+    store
+        .upsert_posting_vector(
+            &autopilot_resume_id(COVERING_RESUME),
+            &sha256_hex(COVERING_RESUME),
+            &vector_of(&store, [1.0, 0.0, 0.0]),
+        )
+        .unwrap();
+    store
+        .upsert_posting_vector(
+            job_id,
+            &sha256_hex(COVERED_JD),
+            &vector_of(&store, [0.6, 0.8, 0.0]),
+        )
+        .unwrap();
+
+    let resume = autopilot_resume_record(COVERING_RESUME);
+    let active = store.embedding_config();
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        job_id,
+        Some(COVERED_JD.to_string()),
+        1,
+        MatchSurface::Autopilot,
+        None,
+    )
+    .await;
+
+    assert!(
+        io.embedded().is_empty(),
+        "fixture precondition: both vectors are seeded, so the kernel measures \
+         the cosine this test chose and not one an embed invented"
+    );
+    assert_eq!(
+        result["semantic"].as_f64(),
+        Some(60.0),
+        "fixture precondition: the seeded pair is 0.6 apart"
+    );
+    assert_eq!(
+        result["ats"].as_f64(),
+        Some(100.0),
+        "fixture precondition: the résumé contains the posting verbatim, so every \
+         JD keyword is covered"
+    );
+    assert_eq!(
+        result["combined"].as_f64(),
+        Some(76.0),
+        "combined must be round(0.6 × semantic + 0.4 × ats) = round(36 + 40); any \
+         other number is a weight change and needs a MATCH_FORMULA_VERSION bump"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED),
+        "…and it really is the semantic branch that produced it"
+    );
+}
+
+/// A posting with no extractable keywords (the garbled / boilerplate-only JD)
+/// must say the coverage is UNAVAILABLE. The alternative — reporting the
+/// kernel's `0.0` placeholder as "0%" — is indistinguishable from a genuine
+/// total mismatch, which is a different message to the user entirely.
+#[tokio::test]
+async fn a_jd_with_no_extractable_keywords_reports_an_unavailable_score() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[]);
+    let resume = autopilot_resume_record(RESUME_TEXT);
+    let active = store.embedding_config();
+
+    // Punctuation and digits only: nothing survives keyword extraction.
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        "autopilot:garbled",
+        Some("--- 123 456 --- *** ///".to_string()),
+        0,
+        MatchSurface::Autopilot,
+        None,
+    )
+    .await;
+
+    let explanation = result["explanation"].as_str().unwrap_or_default();
+    assert!(
+        explanation.contains("No extractable keywords"),
+        "an unscorable posting must be named as such: {explanation}"
+    );
+    assert!(
+        !explanation.contains("0%"),
+        "…and must never be reported as a 0% match, which is a real measurement: {explanation}"
+    );
+    assert!(
+        explanation.contains("guidance estimate"),
+        "the guidance framing rides on every branch: {explanation}"
+    );
+    assert_eq!(
+        result["ats"].as_f64(),
+        Some(0.0),
+        "there is no coverage to report"
+    );
+    assert!(
+        result["gaps"].as_array().is_some_and(|g| g.is_empty()),
+        "…and no gap terms either — there were no keywords to miss"
+    );
+}
+
+/// The stemmer-language guard, through the kernel that owns it. A German JD
+/// against an English-locale résumé must leave BOTH sides unstemmed, so the
+/// language-neutral tech tokens they share still intersect. Stemming one side
+/// only (the pre-fix asymmetry) mutates `docker`/`kubernetes` on the JD side
+/// alone and collapses coverage to zero — strictly worse than no stemming.
+///
+/// Driven on [`MatchSurface::Extension`], the one surface that does not
+/// translate: translation would realign the languages and the guard would never
+/// be reached.
+#[tokio::test]
+async fn a_cross_language_pair_keeps_both_sides_unstemmed_so_shared_tokens_match() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[]);
+    let active = store.embedding_config();
+    let resume = DocumentRecord {
+        id: "doc-en".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None, // → "en", the divergent half of the pair
+        text: "Experienced engineer shipping docker containers and kubernetes clusters.".into(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let german_jd = "Wir suchen einen erfahrenen Softwareentwickler mit docker und kubernetes \
+                     Kenntnissen für den Aufbau verteilter Systeme in Berlin.";
+    assert!(
+        !crate::documents::keywords::languages_align(german_jd, resume_target_lang(&resume)),
+        "fixture precondition: the pair really is cross-language, or the guard \
+         under test is never reached"
+    );
+
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        "adhoc-cross-language",
+        Some(german_jd.to_string()),
+        0,
+        MatchSurface::Extension,
+        None,
+    )
+    .await;
+
+    assert!(
+        result["ats"].as_f64().is_some_and(|a| a > 0.0),
+        "the shared language-neutral tokens must survive on BOTH sides; got {}",
+        result["ats"]
+    );
+    let gaps: Vec<String> = serde_json::from_value(result["gaps"].clone()).unwrap_or_default();
+    for shared in ["docker", "kubernetes"] {
+        assert!(
+            !gaps.iter().any(|g| g == shared),
+            "`{shared}` appears on both sides, so it cannot be a gap; got {gaps:?}"
+        );
+    }
 }
 
 // ── the degrade needs BOTH vectors, and they must be COMPARABLE ──────────────
@@ -1242,6 +1267,20 @@ async fn the_explanation_never_reports_a_similarity_that_was_not_measured() {
         measured.contains("Semantic similarity"),
         "…and a score that DID embed must still report its similarity: {measured}"
     );
+
+    // Whatever the state, the sentence stays framed as OUR estimate — the one
+    // claim every branch has to keep (job-match-standards: never present the
+    // number as the employer's verdict).
+    for (state, sentence) in [
+        ("unavailable", &degraded),
+        ("disabled", &disabled),
+        ("measured", &measured),
+    ] {
+        assert!(
+            sentence.contains("guidance estimate"),
+            "the {state} branch dropped the guidance framing: {sentence}"
+        );
+    }
 }
 
 /// A refused charge stops the round-trip (that is the point of a ceiling) and
@@ -1260,7 +1299,7 @@ async fn a_refused_charge_makes_no_provider_call_and_degrades_to_keyword_only() 
     );
     assert_eq!(
         result.get("scoreSource").and_then(Value::as_str),
-        Some("keyword"),
+        Some(SCORE_SOURCE_KEYWORD),
         "the job keeps its keyword score — a run never fails because of scoring"
     );
 }
