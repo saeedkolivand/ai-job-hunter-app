@@ -125,3 +125,53 @@ describe('SegmentedControl', () => {
     expect(inactive.className).not.toContain('bg-white');
   });
 });
+
+describe('SegmentedControl — a disabled option', () => {
+  const WITH_DISABLED: readonly SegmentedOption<Quality>[] = [
+    { value: 'full', label: 'Full' },
+    { value: 'auto', label: 'Auto' },
+    { value: 'compact', label: 'Fast', disabled: true, title: 'Not available yet' },
+  ];
+
+  it('is rendered and announced, not hidden — a missing option is a different claim', () => {
+    render(<SegmentedControl options={WITH_DISABLED} value="auto" onChange={vi.fn()} />);
+    const disabled = screen.getByRole('radio', { name: 'Fast' });
+    expect(disabled).toHaveAttribute('aria-disabled', 'true');
+    expect(disabled).toHaveAttribute('title', 'Not available yet');
+  });
+
+  it('refuses selection on click', async () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl options={WITH_DISABLED} value="auto" onChange={onChange} />);
+    await userEvent.click(screen.getByRole('radio', { name: 'Fast' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('is stepped over by the arrow keys rather than landed on', async () => {
+    // The radio-group pattern moves selection WITH focus, so stopping on a
+    // disabled segment would either select an unavailable value or strand the
+    // caret on a dead control.
+    const onChange = vi.fn();
+    render(<SegmentedControl options={WITH_DISABLED} value="auto" onChange={onChange} />);
+    screen.getByRole('radio', { name: 'Auto' }).focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(onChange).toHaveBeenCalledWith('full');
+    expect(onChange).not.toHaveBeenCalledWith('compact');
+  });
+
+  it('skips it from the End key too', async () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl options={WITH_DISABLED} value="full" onChange={onChange} />);
+    screen.getByRole('radio', { name: 'Full' }).focus();
+    await userEvent.keyboard('{End}');
+    expect(onChange).toHaveBeenCalledWith('auto');
+  });
+
+  it('leaves an all-enabled control behaving exactly as before', async () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl options={OPTIONS} value="auto" onChange={onChange} />);
+    screen.getByRole('radio', { name: 'Auto' }).focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(onChange).toHaveBeenCalledWith('compact');
+  });
+});
