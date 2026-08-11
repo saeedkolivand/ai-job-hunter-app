@@ -780,6 +780,42 @@ impl AiGenerationStore {
         }
         Ok(())
     }
+
+    /// Replace a row's résumé text AND its quality report in ONE transaction.
+    ///
+    /// Not a convenience wrapper over [`update_texts`](Self::update_texts) +
+    /// [`update_quality_report`](Self::update_quality_report): the pipeline's
+    /// merge rule is that **any save writing `resume_text` carries a fresh
+    /// `quality_report`**, and two statements have a window between them where
+    /// the row holds the NEW document beside the OLD document's report — a
+    /// report the panel would render as this text's verdict. A crash, a lock
+    /// error, or a clamp rejection on the second statement makes that window
+    /// permanent. One transaction is the only way the rule is a guarantee
+    /// rather than an ordering convention.
+    ///
+    /// `quality_report` is clamped exactly as `update_quality_report` clamps it
+    /// — same write path, same guard.
+    pub fn update_text_and_report(
+        &self,
+        id: &str,
+        resume_text: String,
+        quality_report: String,
+    ) -> AppResult<()> {
+        let report = sanitize_quality_report(quality_report, "update_text_and_report");
+        // `Connection::transaction` needs `&mut Connection`, so take the lock
+        // mutably and call on the guard (same shape as `import`).
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let changed = tx.execute(
+            "UPDATE ai_generations SET resume_text = ?2, quality_report = ?3 WHERE id = ?1",
+            params![id, resume_text, report],
+        )?;
+        if changed == 0 {
+            return Err(format!("generation not found: {id}").into());
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 /// Map a DB row (the full 23-column projection) to a record. Shared by `list`

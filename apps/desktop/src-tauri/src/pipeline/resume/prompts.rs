@@ -33,14 +33,41 @@ use super::prompt_blocks::{
     resume_conventions, ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL,
 };
 use super::types::{CompanyPlan, EvidenceMap, JobAnalysis, ResumeStrategy};
+use crate::validate::content::normalize_language;
 
 /// Char cap on ONE serialized prior-stage artifact inside a prompt.
 ///
-/// Smaller than [`RESUME_CAP`] because these are SUMMARIES the pipeline itself
-/// asked for — a `JobAnalysis` that needs more than this is a model that
-/// ignored the instruction, not a long posting — and because the draft turn
-/// carries the résumé, the posting AND the strategy at once.
-const ARTIFACT_CAP: usize = 4_000;
+/// **Sized against the measured worst case, not a round number**, because
+/// [`fenced`] truncates with NO marker: a cap below what an artifact can
+/// legitimately reach cuts the JSON mid-object, silently, and the model reads
+/// whatever survives as the whole plan. The 4 000 this used to be was below the
+/// strategy artifact's own worst case (~3.9 k pretty-printed for eight roles,
+/// before a single two-sentence `angle`), so a full roster's last `perCompany`
+/// entries were dropped at the ONE place the roster reaches the document — and
+/// the resulting `factual.dropped_role` Critical is unrepairable, because the
+/// repair loop has no section to regenerate for an absence. The two artifacts
+/// that ride this cap, both MEASURED rather than estimated (the numbers below
+/// come from `the_strategy_artifact_survives_a_max_roster_uncapped` and
+/// `the_evidence_artifact_survives_a_full_requirement_set`, which fail if they
+/// grow past the margin):
+///
+/// * `resume_strategy` — ≤ [`super::stages::MAX_COMPANY_PLANS`] + 1 entries,
+///   each with a long angle and five emphasis terms, plus six skills groups and
+///   a section order: **5 845 chars compact** (7 553 pretty-printed).
+/// * `evidence_map` — 40 items (`stages::evidence::MAX_REQUIREMENTS`), each
+///   carrying a verbatim résumé line as its quote: **13 191 chars compact**
+///   (15 199 pretty-printed). This is the artifact that actually approaches the
+///   cap, and its quote length is bounded only by the source résumé's own line
+///   length, so a document with unusually long lines can still reach it —
+///   truncating it degrades ADVICE (the strategy stage's input) rather than
+///   dropping an employer, which is why the cap is sized for it rather than the
+///   other way round.
+///
+/// 16 000 clears the measured worst cases by 2.7× and 1.2×. It is charged
+/// against a prompt that also carries the résumé and the posting
+/// ([`RESUME_CAP`] + [`JOB_CAP`] = 16 k chars), so the draft turn's worst case
+/// is ~32 k chars ≈ 8 k tokens — inside every model this app talks to.
+const ARTIFACT_CAP: usize = 16_000;
 
 /// Char cap on the free-text steer a user may attach to a section regenerate.
 /// Mirrors the wire schema's `.max(500)`; serde enforces nothing, so the prompt
@@ -50,15 +77,41 @@ const NOTE_CAP: usize = 500;
 /// Char cap on ONE section's current text on the repair path.
 const SECTION_CAP: usize = 4_000;
 
+/// The language token that may reach a SYSTEM slot.
+///
+/// ADR-010, restated by this module's own doc: *the system slot is a fixed Rust
+/// string — nothing that came off a job board, out of a user's file, or out of
+/// a model ever reaches it.* `targetLanguage` is renderer-supplied free text
+/// (its `.max(32)` is Zod, which does not run on the bare-`invoke` transport),
+/// so interpolating it raw was that rule's one exception — and the payload is
+/// the most valuable one available: text landing in the SYSTEM slot is the
+/// slot the rest of the prompt calls trustworthy.
+///
+/// [`normalize_language`] is the closure: the same first-two-alphanumerics,
+/// lowercased, `"en"`-on-empty normalization `resume_conventions` already
+/// applies to derive its heading table, and the same one
+/// `validate::content` uses before this value reaches a span. The output is at
+/// most two alphanumeric characters — no newline, no instruction, no length.
+fn system_language(lang: &str) -> String {
+    normalize_language(lang)
+}
+
 /// Serialize a prior-stage artifact for a prompt, then FENCE it.
 ///
-/// Pretty-printed because a model reads an indented object more reliably than a
-/// single line, and the cost is bytes we already bound. A serialization failure
-/// yields an empty block rather than an error: a stage that cannot show the
-/// previous artifact still has the source résumé, which is the only thing it is
-/// allowed to draw facts from anyway.
+/// **Compact, not pretty-printed.** Indentation reads better to a human and
+/// buys nothing here: it costs ~23% more characters on the measured worst-case
+/// strategy (7 553 vs 5 845) and ~15% on the evidence map, and every one of
+/// those characters is spent against [`ARTIFACT_CAP`], which truncates without
+/// a marker. Margin on the artifact whose truncation loses an employer is worth
+/// more than the model's marginally easier read of an indented object — and
+/// JSON is a format every model parses unindented every day. The CAP is the
+/// guard; this is the margin.
+///
+/// A serialization failure yields an empty block rather than an error: a stage
+/// that cannot show the previous artifact still has the source résumé, which is
+/// the only thing it is allowed to draw facts from anyway.
 fn fenced_artifact<T: Serialize>(tag: &str, artifact: &T) -> String {
-    let json = serde_json::to_string_pretty(artifact).unwrap_or_default();
+    let json = serde_json::to_string(artifact).unwrap_or_default();
     fenced(tag, &json, ARTIFACT_CAP)
 }
 
@@ -198,6 +251,7 @@ pub fn company_roster_block(companies: &[CompanyPlan]) -> String {
 /// are written under identical instructions.
 pub fn draft_system(lang: &str) -> String {
     let conventions = resume_conventions(lang);
+    let lang = system_language(lang);
     format!(
         "You are writing one candidate's résumé for one specific job, in {lang}.
 
@@ -244,6 +298,7 @@ pub fn draft_user(resume: &str, job_ad: &str, strategy: &ResumeStrategy) -> Stri
 /// back into the draft, so anything outside the named section is discarded, and
 /// a model told to "fix the résumé" rewrites the parts that were already fine.
 pub fn repair_system(lang: &str) -> String {
+    let lang = system_language(lang);
     format!(
         "You are correcting ONE section of an already-written résumé, in {lang}.
 

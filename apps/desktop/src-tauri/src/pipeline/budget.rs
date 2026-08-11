@@ -47,6 +47,19 @@ pub struct Budget {
     /// cannot satisfy the check in two corrections will not satisfy it in ten.
     pub max_repair_attempts: usize,
     /// Wall clock for ONE provider turn or ONE tool call.
+    ///
+    /// **Enforced only by [`crate::agent::controller`]**, which races each turn
+    /// and each tool call against it in a `select!`. [`crate::pipeline::Pipeline::run_hooked`]
+    /// does NOT — a staged run's per-call bounds are the HTTP timeouts of the
+    /// calls a stage makes (`timeouts::stream_deadline` /
+    /// `timeouts::OLLAMA_COMPLETION`), and its whole-run bound is
+    /// [`Self::run_timeout`], checked at every stage boundary AND inside the one
+    /// stage that fans out (`stages::repair`). Documented rather than fixed:
+    /// wrapping every stage in `tokio::time::timeout` would add a second
+    /// timing mechanism above bounds that already fire with a specific,
+    /// actionable error, and a stage that legitimately makes several calls (the
+    /// repair loop) has no single "step" for this to bound. Do not read a value
+    /// here as a guarantee a pipeline stage will be interrupted.
     pub step_timeout: Duration,
     /// Wall clock for the WHOLE run — the backstop for a run that never trips a
     /// per-step timeout but crawls forever (many slow-but-answering steps).
@@ -148,22 +161,29 @@ impl Budget {
     /// no enforcement point in the Phase-3 stages
     /// ([`StoppedReason::MaxTokens`] stays unreachable here).
     ///
-    /// **`step_timeout`** matches [`Self::AGENT_PREP`] for the same reason (it
-    /// is a backstop above the longest HTTP timeout, not a per-call target).
+    /// **`step_timeout`** matches [`Self::AGENT_PREP`]'s value, but read its
+    /// field doc first: it is INERT for this flow — `Pipeline::run_hooked` does
+    /// not enforce it.
     ///
-    /// **`run_timeout` = 45 min**, raised from an unvalidated 30 and now
-    /// DERIVED: it is the effort-blind FLOOR that must agree with
+    /// **`run_timeout` = 75 min**, raised from an unvalidated 30 (via a wrong
+    /// 45) and now DERIVED from the fan-out that actually runs: it is the
+    /// effort-blind FLOOR that must agree with
     /// `timeouts::quality_run_deadline(None)`, which is
-    /// `fixed + baseline × passes × 1.0` = 1800 s (three JSON stages × two
-    /// round-trips × the 300 s `OLLAMA_COMPLETION` bound, none of which scales
-    /// with effort) + 900 s (the draft plus one generation pass per repair
-    /// round, at the baseline multiplier) = 2700 s. The old 30 min sat BELOW
-    /// the JSON half alone, so a run whose three extraction stages were each
-    /// answering — just slowly, which is the ordinary local-reasoning-model
-    /// case — would have been killed by its own outer bound before any
-    /// actionable per-call error could fire. Pinned by
-    /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`;
-    /// the effort-scaled deadline above this floor is picked by
+    /// `fixed + baseline × passes × 1.0` = 4200 s + 300 s = 4500 s. The fixed
+    /// term is every call whose per-call bound is FLAT — 3 JSON stages × 2
+    /// round-trips (1800 s) plus the repair fan-out, `max_repair_attempts` (2)
+    /// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections (2400 s), all at the
+    /// 300 s `OLLAMA_COMPLETION` bound — and the scaled term is the draft, the
+    /// run's only streamed call. The 45-minute version counted the repair half
+    /// as ONE effort-scaled draft-equivalent per round (600 s instead of
+    /// 2400 s), so the advertised deadline was ~1800 s short of the calls it
+    /// wraps while the renderer's own client timeout would have fired first —
+    /// inverting the invariant that the backend gives up first because it is
+    /// the side that knows WHY. Pinned by
+    /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`
+    /// and by `quality_run_deadline_clears_the_inner_per_call_bounds`, which
+    /// computes those inner bounds from the fan-out constants themselves; the
+    /// effort-scaled deadline above this floor is picked by
     /// `pipeline::resume::run_deadline`.
     ///
     /// **`confirm_timeout`** carries the app-wide value even though the pipeline
@@ -176,7 +196,7 @@ impl Budget {
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(45 * 60),
+        run_timeout: Duration::from_secs(75 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 }

@@ -384,7 +384,229 @@ fn the_run_kind_and_the_budget_floor_are_pinned() {
     assert_eq!(super::RUN_KIND, "resume");
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(45 * 60)
+        Duration::from_secs(75 * 60)
+    );
+}
+
+// ── The terminal state ──────────────────────────────────────────────────────
+
+/// **A cancelled run reports `cancelled`, never `failed` + `"done"`.**
+///
+/// The live path this reproduces: the user cancels during the DRAFT stage.
+/// `chat_stream` aborts and returns `AppError::Message("Job cancelled")` — not
+/// `AppError::Cancelled` — the draft stage propagates it, and because `repair`
+/// never starts, no later `before()` runs `apply_stop`, so the ledger records
+/// NOTHING. The old derivation then read `stopped == None` as
+/// `StoppedReason::Done` and `cancelled == false`, producing
+/// `status=failed stoppedReason="done"` for a run the user cancelled — and the
+/// renderer maps `done` to a success suffix.
+///
+/// Mutation check: derive `cancelled` from the ledger alone (drop the
+/// `token_cancelled` argument's effect) and the status assertion fails; restore
+/// `stopped.unwrap_or(Done)` and the reason assertion does.
+#[test]
+fn a_cancel_the_ledger_never_saw_still_reports_cancelled() {
+    // Exactly the ledger a cancelled draft leaves behind: empty.
+    let ledger = RunLedger::new();
+    assert_eq!(
+        ledger.stopped(),
+        None,
+        "the premise: the ledger saw nothing"
+    );
+
+    let (status, reason) = super::hooks::terminal_state(&ledger, false, true, false);
+    assert_eq!(status, "cancelled");
+    assert_eq!(reason.as_deref(), Some("cancelled"));
+    assert_eq!(
+        ledger.stopped(),
+        Some(StoppedReason::Cancelled),
+        "…and the ledger is corrected, so the metrics agree with the row"
+    );
+}
+
+/// A run that FAILED for any other reason carries no stopped reason at all
+/// rather than the `done` that used to be the fallback. `Done` means "the last
+/// stage completed"; a failure is the one thing it must never label.
+///
+/// Mutation check: restore `stopped.unwrap_or(StoppedReason::Done)` and the
+/// `None` assertion fails.
+#[test]
+fn a_failed_run_never_reports_done() {
+    let ledger = RunLedger::new();
+    let (status, reason) = super::hooks::terminal_state(&ledger, false, false, false);
+    assert_eq!(status, "failed");
+    assert_eq!(
+        reason, None,
+        "a run that failed with no recorded stop reason reports none — never \"done\""
+    );
+}
+
+/// The rest of the terminal-state table, so the fixes above cannot have moved
+/// the ordinary outcomes: a clean run is `completed` + `done`, a run with
+/// undecided findings is `needsReview`, and a recorded reason always wins over
+/// the derived one.
+#[test]
+fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
+    let clean = RunLedger::new();
+    assert_eq!(
+        super::hooks::terminal_state(&clean, true, false, false),
+        ("completed", Some("done".to_string()))
+    );
+
+    let review = RunLedger::new();
+    assert_eq!(
+        super::hooks::terminal_state(&review, true, false, true),
+        ("needsReview", Some("done".to_string()))
+    );
+
+    // A stage that stopped the run keeps its own reason, and `needsReview` is
+    // still not a failure.
+    let repaired = RunLedger::new();
+    repaired.stop(StoppedReason::MaxRepairs);
+    assert_eq!(
+        super::hooks::terminal_state(&repaired, true, false, true),
+        ("needsReview", Some("max_repairs".to_string()))
+    );
+
+    // The deadline: the stage errored out, so the run failed — but it says WHY.
+    let timed_out = RunLedger::new();
+    timed_out.stop(StoppedReason::RunTimeout);
+    assert_eq!(
+        super::hooks::terminal_state(&timed_out, false, false, false),
+        ("failed", Some("run_timeout".to_string()))
+    );
+
+    // A run already stopped for a reason of its own, cancelled afterwards:
+    // first-writer-wins keeps the earlier cause, and the status follows it.
+    let budgeted = RunLedger::new();
+    budgeted.stop(StoppedReason::Budgeted);
+    assert_eq!(
+        super::hooks::terminal_state(&budgeted, false, true, false),
+        ("failed", Some("budgeted".to_string()))
+    );
+}
+
+// ── Admission + server-side clamps ──────────────────────────────────────────
+
+/// **Every provider-calling command in this module goes through the limiter.**
+///
+/// `resume_pipeline_regenerate_section` did not: it went straight to
+/// `charge_daily` + `complete`, and `PROVIDER_DAILY_MAX` is a per-DAY TOTAL,
+/// not a rate — so a renderer loop on that button burns the whole ceiling in
+/// seconds and every other AI feature in the app is dead until UTC midnight.
+///
+/// The command needs an `AppHandle` this crate has no harness for, so the
+/// assertion is on the exact admission call it makes, against a real `Limiter`:
+/// the bucket's concurrency cap refuses the next caller with the retriable
+/// error the command's `?` propagates, and the guard releases on drop.
+///
+/// **This pins the MECHANISM, not the number.** Raising
+/// `AGENT_RUN_CONCURRENCY_MAX` does NOT fail it — the loop below is derived
+/// from that constant, deliberately, because the value belongs to `limits` and
+/// is pinned there. Mutation check for what this DOES guard: make `acquire`
+/// return `Ok` on a full gate and the refusal assertion fails; make the guard
+/// leak its permit and the re-open assertion does. The call SITE is pinned by
+/// the source lock below — deleting the `acquire` call fails that one (verified).
+#[test]
+fn the_regenerate_section_bucket_refuses_a_caller_past_its_concurrency_cap() {
+    let limiter = std::sync::Arc::new(crate::limits::Limiter::default());
+    let held: Vec<_> = (0..crate::limits::AGENT_RUN_CONCURRENCY_MAX)
+        .map(|index| {
+            limiter
+                .acquire(
+                    "agent_run",
+                    crate::limits::AGENT_RUN_RATE_MAX,
+                    crate::limits::AGENT_RUN_CONCURRENCY_MAX,
+                )
+                .unwrap_or_else(|e| panic!("slot {index} must be admitted: {e}"))
+        })
+        .collect();
+
+    let refused = limiter.acquire(
+        "agent_run",
+        crate::limits::AGENT_RUN_RATE_MAX,
+        crate::limits::AGENT_RUN_CONCURRENCY_MAX,
+    );
+    assert!(
+        matches!(refused, Err(crate::error::AppError::RateLimited(_))),
+        "the bucket must refuse, and with the retriable variant the command propagates"
+    );
+    drop(held);
+    assert!(
+        limiter
+            .acquire(
+                "agent_run",
+                crate::limits::AGENT_RUN_RATE_MAX,
+                crate::limits::AGENT_RUN_CONCURRENCY_MAX,
+            )
+            .is_ok(),
+        "the guard is RAII — releasing it must re-open the slot"
+    );
+}
+
+/// The source-level half of the lock above: the two provider-calling commands
+/// in this module must ADMIT before they spend. Grep-shaped for the same reason
+/// `job_analysis_never_reaches_match_scoring` is — the command bodies need a
+/// Tauri harness, and "it calls the limiter" is otherwise provable only by
+/// reading the code.
+///
+/// Mutation check: delete either `acquire` call and this fails.
+#[test]
+fn every_provider_calling_command_admits_before_it_spends() {
+    let source = include_str!("mod.rs");
+    assert!(
+        source.contains(".acquire_queued("),
+        "resume_pipeline_run must park on the concurrency cap"
+    );
+    assert!(
+        source.contains(".acquire("),
+        "resume_pipeline_regenerate_section must be admitted (and REFUSED, not parked — it is a \
+         click, not a run)"
+    );
+}
+
+/// **The wire schema's caps are Zod, and Zod does not run on this transport.**
+/// A direct IPC caller can send an unbounded `targetLanguage`, a 10 000-entry
+/// `topRequirements`, or a 5 MB cover letter, all of which reach a prompt or a
+/// stored row. The command mirrors the caps server-side, HOISTED from
+/// `commands::resume` rather than re-declared.
+///
+/// Mutation check: drop any one clamp and its assertion fails. The multi-byte
+/// straddle is deliberate — a naive byte truncate splits it and produces
+/// invalid UTF-8.
+#[test]
+fn oversized_run_request_free_text_is_clamped_server_side() {
+    use crate::commands::resume::{
+        TARGET_LANGUAGE_CAP, TOP_REQUIREMENTS_CAP, TOP_REQUIREMENT_BYTES_CAP,
+    };
+
+    let huge = "a".repeat(TARGET_LANGUAGE_CAP - 1) + "\u{1F600}" + &"b".repeat(5_000);
+    let req: ResumePipelineRunRequest = serde_json::from_value(json!({
+        "resumeId": "res-1",
+        "jobId": "job-9",
+        "jobUrl": format!("https://boards.example/{}", "u".repeat(9_000)),
+        "targetLanguage": huge,
+        "topRequirements": (0..500).map(|i| format!("{i} {}", "r".repeat(2_000)))
+            .collect::<Vec<_>>(),
+        "coverLetterText": "c".repeat(1_000_000),
+    }))
+    .expect("the hostile shape still deserializes — nothing rejects it on the wire");
+
+    let clamped = super::clamp_request(&req);
+    assert!(clamped.target_language.len() <= TARGET_LANGUAGE_CAP);
+    assert!(
+        !clamped.target_language.contains('\u{1F600}'),
+        "must cut before the multi-byte char, not through it"
+    );
+    assert_eq!(clamped.top_requirements.len(), TOP_REQUIREMENTS_CAP);
+    assert!(clamped
+        .top_requirements
+        .iter()
+        .all(|r| r.len() <= TOP_REQUIREMENT_BYTES_CAP));
+    assert!(clamped.job_url.len() <= 2_048);
+    assert!(
+        clamped.cover_letter.len() <= crate::applications::MAX_JOB_DESCRIPTION_BYTES,
+        "the letter is validated AND stored — an unbounded one reaches both"
     );
 }
 
@@ -500,4 +722,82 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
         .collect();
     assert_eq!(resume_runs.len(), 1);
     assert_eq!(resume_runs[0].id, "run-1");
+}
+
+/// **A write command refuses an OLDER run of the same posting.**
+///
+/// Every run of a posting merges into ONE `ai_generations` aggregate, so
+/// `find_for_job` can only ever return the newest run's document while
+/// `listForJob` legitimately advertises three runs. Without this guard,
+/// `regenerateSection(oldRunId)` rewrote the NEWEST document and returned a
+/// detail whose `resumeText` was never that run's — a silent cross-run edit,
+/// which is worse than a refusal.
+///
+/// Mutation check: return `Ok(())` unconditionally from `ensure_latest_run` and
+/// the older-run assertion fails; drop the empty-`job_url` exemption and the
+/// unlinked case fails.
+#[test]
+fn a_write_against_an_older_run_of_the_same_posting_is_refused() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let store = PipelineRunStore::open(dir.path()).expect("store opens");
+
+    let base = RunRow {
+        id: String::new(),
+        job_url: "https://boards.example/jobs/42".to_string(),
+        kind: super::RUN_KIND.to_string(),
+        depth: "quality".to_string(),
+        status: "completed".to_string(),
+        started_at: 0,
+        finished_at: None,
+        stopped_reason: None,
+        metrics_json: "{}".to_string(),
+    };
+    let older = RunRow {
+        id: "run-older".to_string(),
+        started_at: 1_700_000_000_000,
+        ..base.clone()
+    };
+    let newer = RunRow {
+        id: "run-newer".to_string(),
+        started_at: 1_700_000_500_000,
+        ..base.clone()
+    };
+    store.upsert_run(&older).expect("older run persists");
+    store.upsert_run(&newer).expect("newer run persists");
+
+    assert!(
+        super::ensure_latest_run(&store, &newer).is_ok(),
+        "the newest run owns the document"
+    );
+    let refused = super::ensure_latest_run(&store, &older);
+    assert!(
+        matches!(refused, Err(crate::error::AppError::Validation(_))),
+        "an older run must be refused rather than silently editing the newest document"
+    );
+
+    // A run of ANOTHER kind against the same posting is not competition — the
+    // aggregate is partitioned by `(job_url, kind)`.
+    store
+        .upsert_run(&RunRow {
+            id: "run-agent".to_string(),
+            kind: "agent".to_string(),
+            started_at: 1_700_000_900_000,
+            ..base.clone()
+        })
+        .expect("an agent run shares the tables");
+    assert!(
+        super::ensure_latest_run(&store, &newer).is_ok(),
+        "a newer run of a different kind must not lock the résumé flow out"
+    );
+
+    // An UNLINKED run has no aggregate at all, so this guard must stand aside
+    // and let the "no saved résumé" error be the one the user sees.
+    let unlinked = RunRow {
+        id: "run-unlinked".to_string(),
+        job_url: String::new(),
+        started_at: 1_700_000_100_000,
+        ..base
+    };
+    store.upsert_run(&unlinked).expect("unlinked run persists");
+    assert!(super::ensure_latest_run(&store, &unlinked).is_ok());
 }

@@ -44,12 +44,12 @@ use crate::ipc_contracts::resume_pipeline::{
     ResumePipelineRunRequest,
 };
 use crate::jobs::cancel::CancelRegistry;
-use crate::pipeline::budget::{Budget, StoppedReason};
+use crate::pipeline::budget::Budget;
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::resume::stages::regenerate_one_section;
+use crate::pipeline::resume::stages::{regenerate_one_section, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
 use crate::pipeline::resume::{
-    quality_pipeline, run_deadline, QualityCtx, QualityInput, RunLedger,
+    quality_pipeline, run_deadline, QualityCtx, QualityInput, RunDeadline, RunLedger,
 };
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
@@ -66,10 +66,52 @@ use self::hooks::RunHooks;
 pub const RUN_KIND: &str = "resume";
 
 const STATUS_RUNNING: &str = "running";
-const STATUS_COMPLETED: &str = "completed";
-const STATUS_NEEDS_REVIEW: &str = "needsReview";
-const STATUS_FAILED: &str = "failed";
-const STATUS_CANCELLED: &str = "cancelled";
+pub(crate) const STATUS_COMPLETED: &str = "completed";
+pub(crate) const STATUS_NEEDS_REVIEW: &str = "needsReview";
+pub(crate) const STATUS_FAILED: &str = "failed";
+pub(crate) const STATUS_CANCELLED: &str = "cancelled";
+
+/// The renderer-supplied free text of one run request, CLAMPED server-side.
+///
+/// The wire schema's `.max(…)` caps are Zod, and Zod does not run on this
+/// transport (`tauri-client` calls `invoke` directly, no parse on the way out),
+/// so serde accepts whatever a direct IPC caller sends. Every other command
+/// that takes this same text mirrors its caps in Rust —
+/// `commands::resume::resume_validate_content` is where these constants live,
+/// and they are HOISTED from there rather than re-declared, because two copies
+/// of "50 requirements, 300 bytes each" is exactly how one of them drifts.
+struct ClampedRequest {
+    job_url: String,
+    target_language: String,
+    top_requirements: Vec<String>,
+    cover_letter: String,
+}
+
+/// Byte cap on the request's `jobUrl` — mirrors the schema's `.max(2_048)`.
+/// This value is a STORAGE key (the run row's retention partition and the
+/// aggregate lookup), so an unbounded one writes an unbounded row.
+const JOB_URL_CAP: usize = 2_048;
+
+/// Clamp every renderer-supplied free-text field of a run request. Pure, so the
+/// caps are a test rather than a claim.
+fn clamp_request(req: &ResumePipelineRunRequest) -> ClampedRequest {
+    use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
+    use crate::commands::resume::{
+        TARGET_LANGUAGE_CAP, TOP_REQUIREMENTS_CAP, TOP_REQUIREMENT_BYTES_CAP,
+    };
+
+    ClampedRequest {
+        job_url: clamp_to_bytes(req.job_url.clone(), JOB_URL_CAP),
+        target_language: clamp_to_bytes(req.target_language.clone(), TARGET_LANGUAGE_CAP),
+        top_requirements: req
+            .top_requirements
+            .iter()
+            .take(TOP_REQUIREMENTS_CAP)
+            .map(|r| clamp_to_bytes(r.clone(), TOP_REQUIREMENT_BYTES_CAP))
+            .collect(),
+        cover_letter: clamp_to_bytes(req.cover_letter_text.clone(), MAX_JOB_DESCRIPTION_BYTES),
+    }
+}
 
 /// Start one staged résumé run. Returns `{ runId, jobId }` immediately; stage
 /// progress streams as `pipeline:stage` and the draft's deltas as `ai:stream`
@@ -169,6 +211,7 @@ async fn execute(
         }
     }
 
+    let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
     let resume = app
         .state::<DocumentStore>()
@@ -180,17 +223,20 @@ async fn execute(
     // The posting's OWN url wins over the request's: it was resolved
     // server-side from the cache, and it is the retention + aggregate key.
     let job_url = if meta.url.trim().is_empty() {
-        req.job_url.clone()
+        clamped.job_url.clone()
     } else {
         meta.url.clone()
     };
 
     let span = crate::observability::Span::begin(
         "pipeline:resume",
+        // The TIER, never the raw string: `effort` is renderer-supplied free
+        // text and this line lands in the diagnostics bundle. Same treatment as
+        // the `key=` below, which logs a parsed `SectionKey`.
         format!(
             "op=run depth={} effort={}",
             depth.as_str(),
-            req.effort.as_deref().unwrap_or("-")
+            timeouts::effort_tier(req.effort.as_deref())
         ),
     );
 
@@ -212,10 +258,13 @@ async fn execute(
     store.upsert_run(&row)?;
 
     let ledger = Arc::new(RunLedger::new());
-    let deadline = run_deadline(
+    // ONE clock for the whole run: the hook checks it at every stage boundary
+    // and the `repair` stage checks it between its own provider calls (it is
+    // the last stage, so there is no boundary after it — see `RunDeadline`).
+    let deadline = RunDeadline::starting_now(run_deadline(
         Budget::RESUME_QUALITY,
         timeouts::quality_run_deadline(req.effort.as_deref()),
-    );
+    ));
     let hooks = RunHooks::new(
         app.clone(),
         run_id.to_string(),
@@ -230,45 +279,42 @@ async fn execute(
         QualityInput {
             source_resume: &resume.text,
             job_ad: &job_ad,
-            target_language: &req.target_language,
-            top_requirements: &req.top_requirements,
-            cover_letter: &req.cover_letter_text,
+            target_language: &clamped.target_language,
+            top_requirements: &clamped.top_requirements,
+            cover_letter: &clamped.cover_letter,
             effort: req.effort.as_deref(),
             job_id,
         },
         &completer,
         cache.as_deref(),
+        deadline,
         Arc::clone(&ledger),
     );
 
     let outcome = quality_pipeline().run_hooked(&mut ctx, &hooks).await;
-    let stopped = ledger.stopped();
-    let cancelled = stopped == Some(StoppedReason::Cancelled);
 
     // Persist whatever the run produced BEFORE deciding how it ended: a run
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
-    let quality_report = persist_document(app, &job_url, &meta, req, &ctx, depth.as_str());
+    let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
     let needs_review = quality_report
         .as_deref()
         .is_some_and(report::still_needs_review)
         || ctx.critical_count() > 0;
 
-    let status = match (&outcome, cancelled) {
-        (_, true) => STATUS_CANCELLED,
-        (Err(_), _) => STATUS_FAILED,
-        (Ok(()), _) if needs_review => STATUS_NEEDS_REVIEW,
-        (Ok(()), _) => STATUS_COMPLETED,
-    };
+    // Status and reason together — see `hooks::terminal_state` for why a
+    // cancelled draft used to come out `failed` + `"done"`.
+    let (status, stopped_reason) = hooks::terminal_state(
+        &ledger,
+        outcome.is_ok(),
+        cancel.is_cancelled(),
+        needs_review,
+    );
+    let cancelled = status == STATUS_CANCELLED;
     row.status = status.to_string();
     row.finished_at = Some(crate::db::now_ms());
-    row.stopped_reason = Some(
-        serde_json::to_value(stopped.unwrap_or(StoppedReason::Done))
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_string))
-            .unwrap_or_else(|| "done".to_string()),
-    );
+    row.stopped_reason = stopped_reason;
     let mut metrics = ledger.metrics();
     if let Some(object) = metrics.as_object_mut() {
         object.insert("ms".to_string(), json!(hooks.elapsed_ms()));
@@ -329,16 +375,24 @@ async fn execute(
 /// `None` when there was nothing to save (an empty draft, or a run that failed
 /// before validation): a record with no text and no report is not an aggregate
 /// update, it is noise.
+///
+/// **An UNLINKED run (no resolvable `jobUrl`) saves nothing.** The aggregate is
+/// keyed by posting url, so a row with an empty one is unreachable by every
+/// reader in the app (`find_for_job` looks up a url; `applied_job_urls` filters
+/// them out) and unreachable by the retention prune, which partitions on
+/// `(job_url, kind)` — a permanent, invisible row holding a full résumé. The
+/// plan calls an unlinked generation session-only, and the run row + the stream
+/// the user watched are that session.
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
     meta: &crate::commands::match_resume::JobPostingMeta,
-    req: &ResumePipelineRunRequest,
+    clamped: &ClampedRequest,
     ctx: &QualityCtx<'_>,
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    if ctx.draft.trim().is_empty() {
+    if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
         return None;
     }
     let wrapper = report::build(
@@ -347,14 +401,14 @@ fn persist_document(
         Some((report, &ctx.draft)),
         ctx.letter_report
             .as_ref()
-            .map(|letter| (letter, req.cover_letter_text.as_str())),
+            .map(|letter| (letter, clamped.cover_letter.as_str())),
     );
     let store = app.try_state::<AiGenerationStore>()?;
     let record = AiGenerationRecord {
         id: make_generation_id(),
         created_at: crate::db::now_ms(),
-        target_language: req.target_language.clone(),
-        top_requirements: req.top_requirements.clone(),
+        target_language: clamped.target_language.clone(),
+        top_requirements: clamped.top_requirements.clone(),
         resume_text: ctx.draft.clone(),
         job_ad: String::new(),
         job_url: job_url.to_string(),
@@ -505,6 +559,43 @@ fn detail(app: &AppHandle, row: &RunRow) -> Value {
 
 // ── Write surface ────────────────────────────────────────────────────────────
 
+/// The DOCUMENT a run's write commands act on belongs to the NEWEST run of that
+/// posting, not to the run whose id was passed.
+///
+/// `pipeline_runs` keeps one row per run, but every run of a posting merges into
+/// the SAME `ai_generations` aggregate (see the module doc), so `listForJob`
+/// legitimately advertises three runs while `find_for_job` can only ever return
+/// one document — the newest run's. A `regenerateSection` against an older run
+/// id would therefore rewrite the NEWEST document and hand back a detail whose
+/// `resumeText` was never that run's; a `resolveFabrication` would record a
+/// verdict against findings from a report the run never produced.
+///
+/// Refusing is the honest answer, and the smallest one: making it work needs a
+/// per-run document, which is a schema change and a second copy of every
+/// résumé. Read-only `get` still returns the older run's own row — its status,
+/// metrics and stage trail are genuinely its — with the aggregate document
+/// alongside; the contract's doc comment says so.
+///
+/// An UNLINKED run (empty `job_url`) is exempt: it has no aggregate at all, so
+/// the "no saved résumé" error below is the accurate one.
+fn ensure_latest_run(store: &PipelineRunStore, row: &RunRow) -> AppResult<()> {
+    if row.job_url.trim().is_empty() {
+        return Ok(());
+    }
+    let newest = store
+        .runs_for_job(&row.job_url)
+        .into_iter()
+        .find(|candidate| candidate.kind == row.kind);
+    match newest {
+        Some(newest) if newest.id != row.id => Err(AppError::Validation(
+            "This posting has a newer run, and all of its runs share one saved résumé. \
+             Open the latest run to edit the document."
+                .to_string(),
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Re-generate ONE section of a finished run and splice it back.
 ///
 /// **`"header"` is rejected here, at the boundary**, and not by a special case:
@@ -512,11 +603,25 @@ fn detail(app: &AppHandle, row: &RunRow) -> Value {
 /// grammar, which has no header token — so the contact header the editor owns
 /// at export time (ADR-0021) is unreachable from this command by construction,
 /// along with every other invented section name.
+///
+/// **Admission-limited like every other provider-calling command.** It makes a
+/// full completion (plus a re-validation) per click, and
+/// `PROVIDER_DAILY_MAX` is a per-DAY total, not a rate — so an unadmitted
+/// button is a renderer loop that can burn a day's ceiling in seconds. It takes
+/// the same `agent_run` bucket as the run itself, and `acquire` (not
+/// `acquire_queued`): this is a click, and a click that has to wait behind a
+/// 45-minute run should be refused with a retriable error, not parked.
 #[tauri::command]
 pub async fn resume_pipeline_regenerate_section(
     app: AppHandle,
     req: ResumePipelineRegenerateSectionRequest,
 ) -> AppResult<Value> {
+    let _guard = app.state::<Arc<crate::limits::Limiter>>().inner().acquire(
+        "agent_run",
+        crate::limits::AGENT_RUN_RATE_MAX,
+        crate::limits::AGENT_RUN_CONCURRENCY_MAX,
+    )?;
+
     let key = SectionKey::from_wire(&req.section_key).ok_or_else(|| {
         AppError::Validation(format!(
             "{:?} is not a section this pipeline can regenerate. The contact header is owned \
@@ -529,6 +634,7 @@ pub async fn resume_pipeline_regenerate_section(
     let row = store
         .run(&req.run_id)
         .ok_or_else(|| AppError::Validation(format!("run not found: {}", req.run_id)))?;
+    ensure_latest_run(&store, &row)?;
     let generations = app
         .try_state::<AiGenerationStore>()
         .ok_or_else(|| AppError::Storage("the generation store is unavailable".to_string()))?;
@@ -547,7 +653,7 @@ pub async fn resume_pipeline_regenerate_section(
     );
     let completer = Completer::from_active(&app)?;
     let source = source_resume_for(&app, &row, &record);
-    let spliced = regenerate_one_section(
+    let spliced = match regenerate_one_section(
         &completer,
         &source,
         &record.target_language,
@@ -558,14 +664,26 @@ pub async fn resume_pipeline_regenerate_section(
         &[],
         req.note.as_deref(),
     )
-    .await?;
-    let Some(spliced) = spliced else {
-        span.end(false);
-        return Err(AppError::Provider(
-            "The model's replacement section came back empty or truncated, so nothing was \
-             changed. Try again."
-                .to_string(),
-        ));
+    .await?
+    {
+        SectionOutcome::Replaced(spliced) => spliced,
+        SectionOutcome::Unusable => {
+            span.end(false);
+            return Err(AppError::Provider(
+                "The model's replacement section came back empty or truncated, so nothing was \
+                 changed. Try again."
+                    .to_string(),
+            ));
+        }
+        // No provider call was made — say so, rather than blaming the model for
+        // a section this document does not have.
+        SectionOutcome::Missing => {
+            span.end(false);
+            return Err(AppError::Validation(format!(
+                "this résumé has no {} section to regenerate",
+                key.to_wire()
+            )));
+        }
     };
 
     // The merge rule again: this save writes `resume_text`, so it carries a
@@ -588,8 +706,11 @@ pub async fn resume_pipeline_regenerate_section(
             .as_ref()
             .map(|letter| (letter, record.cover_letter_text.as_str())),
     );
-    generations.update_texts(&record.id, Some(spliced), None)?;
-    generations.update_quality_report(&record.id, wrapper)?;
+    // ONE write, not two: the merge rule above says the text and its report
+    // move together, and two statements leave a window where a crash (or a
+    // failing second statement) persists a document with the PREVIOUS
+    // document's report — the exact state the rule exists to make impossible.
+    generations.update_text_and_report(&record.id, spliced, wrapper)?;
     span.end_with(
         &format!(
             "issues={} blocking={}",
@@ -623,6 +744,9 @@ pub async fn resume_pipeline_resolve_fabrication(
     let row = store
         .run(&req.run_id)
         .ok_or_else(|| AppError::Validation(format!("run not found: {}", req.run_id)))?;
+    // Same aggregate, same rule (see `ensure_latest_run`): a verdict recorded
+    // against an older run would land in the NEWEST run's report.
+    ensure_latest_run(&store, &row)?;
     let generations = app
         .try_state::<AiGenerationStore>()
         .ok_or_else(|| AppError::Storage("the generation store is unavailable".to_string()))?;

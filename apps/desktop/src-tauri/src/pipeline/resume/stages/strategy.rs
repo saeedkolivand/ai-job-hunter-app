@@ -16,7 +16,7 @@ use serde_json::json;
 use crate::documents::evidence::extract_evidence;
 use crate::error::AppResult;
 use crate::pipeline::resume::prompts::{company_roster_block, strategy_system, strategy_user};
-use crate::pipeline::resume::types::{CompanyPlan, ResumeStrategy};
+use crate::pipeline::resume::types::{CompanyPlan, EvidenceMap, EvidenceStatus, ResumeStrategy};
 use crate::pipeline::resume::{cache, QualityCtx};
 use crate::pipeline::Stage;
 
@@ -56,7 +56,7 @@ pub fn seed_company_roster(source_resume: &str, job_ad: &str) -> Vec<CompanyPlan
         .collect();
     if roles.len() > MAX_COMPANY_PLANS {
         let rest = &roles[MAX_COMPANY_PLANS..];
-        // The condensed entry names the employers it stands for in its `dates`
+        // The condensed entry names the employers it stands for in its `title`
         // slot rather than dropping them: the reader has to be able to see that
         // the history continues, and the draft prompt renders what it is given.
         let companies: Vec<&str> = rest
@@ -67,10 +67,7 @@ pub fn seed_company_roster(source_resume: &str, job_ad: &str) -> Vec<CompanyPlan
         roster.push(CompanyPlan {
             company: CONDENSED_LABEL.to_string(),
             title: companies.join(", "),
-            dates: rest
-                .last()
-                .map(|role| role.dates.clone())
-                .unwrap_or_default(),
+            dates: condensed_span(rest.iter().map(|role| role.dates.as_str())),
             condensed: true,
             ..CompanyPlan::default()
         });
@@ -78,40 +75,125 @@ pub fn seed_company_roster(source_resume: &str, job_ad: &str) -> Vec<CompanyPlan
     roster
 }
 
+/// The date range ONE condensed group stands for.
+///
+/// The group holds several roles, so carrying only ONE of their ranges — which
+/// is what `rest.last().dates` gave — understates the history by everything
+/// between that role and the cap, and the draft prompt renders this verbatim
+/// ("with its company, title and dates exactly as given"). A group standing for
+/// three jobs that reads as one job's dates is the same gap in a date range
+/// that condensing exists to avoid.
+///
+/// **Spanned by YEAR, not by position.** Every other approach needs to know
+/// which end of the list is oldest, and role order is the DOCUMENT's (usually
+/// reverse-chronological, but nothing enforces it) — a positional rule silently
+/// inverts on an ascending résumé. Four-digit years are the one token every
+/// date format this app sees carries (`2019 - 2021`, `January 2021 – March
+/// 2023`, `01/2021 – 03/2023`), and min/max over them is order-free.
+///
+/// Falls back to the last role's own dates when the group carries no year at
+/// all, which is the previous behavior and still better than an empty slot.
+/// Known limitation, and safe by construction: a non-year end token
+/// (`Present`) is not preserved — the condensed group holds the roles PAST the
+/// cap, i.e. the oldest, so a current role can only land here on a résumé that
+/// lists eight jobs more recent than an ongoing one.
+fn condensed_span<'a>(dates: impl Iterator<Item = &'a str>) -> String {
+    let mut years: Vec<u32> = Vec::new();
+    let mut last = "";
+    for entry in dates {
+        last = entry.trim();
+        let bytes = last.as_bytes();
+        for (index, window) in bytes.windows(4).enumerate() {
+            // A standalone 4-digit run: not part of a longer number, so
+            // "01/2021" yields 2021 and "12345" yields nothing.
+            let bounded = window.iter().all(u8::is_ascii_digit)
+                && !bytes
+                    .get(index.wrapping_sub(1))
+                    .is_some_and(u8::is_ascii_digit)
+                && !bytes.get(index + 4).is_some_and(u8::is_ascii_digit);
+            if bounded {
+                if let Ok(year) = last[index..index + 4].parse::<u32>() {
+                    years.push(year);
+                }
+            }
+        }
+    }
+    match (years.iter().min(), years.iter().max()) {
+        (Some(first), Some(latest)) if first != latest => format!("{first} \u{2013} {latest}"),
+        (Some(only), _) => only.to_string(),
+        _ => last.to_string(),
+    }
+}
+
 /// Rebuild the model's plan on the fixed roster.
 ///
 /// For each roster entry, take the model's plan for that employer if it named
-/// one (matched on the company, falling back to POSITION for the ordinary case
-/// where a model reworded an employer it was told not to touch), and keep only
+/// one — **matched on the company NAME, and only on the name** — and keep only
 /// the two fields it is allowed to author: `angle` and `emphasis`. Identity
 /// comes back from the roster unconditionally.
 ///
-/// Pure, so "never drops a role" is a test rather than a claim.
-pub(crate) fn reseed(roster: &[CompanyPlan], model: &ResumeStrategy) -> Vec<CompanyPlan> {
+/// The positional fallback this used to carry (`per_company.get(index)`) looked
+/// like tolerance for a model that reworded an employer, but it attaches ANY
+/// unmatched plan to whatever roster slot shares its index: a model that
+/// reorders, drops, or merges entries — which is exactly the model this
+/// re-seeding exists to defend against — gets role B's angle written onto role
+/// A, and the result is indistinguishable from a correct plan. An unmatched
+/// roster entry now gets NO plan, which reads as "the model said nothing about
+/// this role" and is the truth.
+///
+/// **`emphasis` is filtered against the grounded evidence map.** The prompt
+/// says a `missing` requirement must not be emphasized anywhere, but a prompt
+/// is not a guarantee: an emphasis on a requirement the résumé cannot evidence
+/// is an instruction to the DRAFT stage to write something the source does not
+/// support — the fabrication the whole pipeline is built to prevent, arriving
+/// one stage before validation can call it a Critical. Only requirements the
+/// map lists as `covered` or `partial` survive; a term the map never mentions
+/// is unverifiable and goes too.
+///
+/// Pure, so "never drops a role" and "never emphasizes a gap" are tests rather
+/// than claims.
+pub(crate) fn reseed(
+    roster: &[CompanyPlan],
+    model: &ResumeStrategy,
+    evidence: &EvidenceMap,
+) -> Vec<CompanyPlan> {
     roster
         .iter()
-        .enumerate()
-        .map(|(index, seed)| {
-            let proposed = model
-                .per_company
-                .iter()
-                .find(|plan| {
-                    !seed.company.trim().is_empty()
-                        && plan
-                            .company
-                            .trim()
-                            .eq_ignore_ascii_case(seed.company.trim())
-                })
-                .or_else(|| model.per_company.get(index));
+        .map(|seed| {
+            let proposed = model.per_company.iter().find(|plan| {
+                !seed.company.trim().is_empty()
+                    && plan
+                        .company
+                        .trim()
+                        .eq_ignore_ascii_case(seed.company.trim())
+            });
             CompanyPlan {
                 company: seed.company.clone(),
                 title: seed.title.clone(),
                 dates: seed.dates.clone(),
                 condensed: seed.condensed,
                 angle: proposed.map(|p| p.angle.clone()).unwrap_or_default(),
-                emphasis: proposed.map(|p| p.emphasis.clone()).unwrap_or_default(),
+                emphasis: proposed
+                    .map(|p| grounded_emphasis(&p.emphasis, evidence))
+                    .unwrap_or_default(),
             }
         })
+        .collect()
+}
+
+/// The subset of `emphasis` the résumé can actually evidence.
+fn grounded_emphasis(emphasis: &[String], evidence: &EvidenceMap) -> Vec<String> {
+    emphasis
+        .iter()
+        .filter(|term| {
+            let term = term.trim();
+            !term.is_empty()
+                && evidence.items.iter().any(|item| {
+                    item.status != EvidenceStatus::Missing
+                        && item.requirement.trim().eq_ignore_ascii_case(term)
+                })
+        })
+        .cloned()
         .collect()
 }
 
@@ -148,7 +230,7 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         // against the same source (the key chains it in), but re-seeding is
         // free and makes the invariant hold for every path out of this stage
         // rather than for one of them.
-        strategy.per_company = reseed(&roster, &strategy);
+        strategy.per_company = reseed(&roster, &strategy, &ctx.evidence);
 
         let json = serde_json::to_string(&strategy).unwrap_or_default();
         if !from_cache {

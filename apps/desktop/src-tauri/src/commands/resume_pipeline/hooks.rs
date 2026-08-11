@@ -8,7 +8,7 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::Serialize;
@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, PIPELINE_STAGE};
 use crate::pipeline::budget::StoppedReason;
-use crate::pipeline::resume::RunLedger;
+use crate::pipeline::resume::{RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow};
 use crate::pipeline::{StageHooks, StageInfo, StageOutcome};
 
@@ -99,14 +99,68 @@ pub(crate) fn apply_stop(
     Ok(())
 }
 
+/// The run's TERMINAL STATE — status and stopped reason, derived together.
+///
+/// Together, because deriving them separately is what let a cancelled run
+/// report `status=failed stoppedReason=done`. Two things go wrong on that path
+/// and both are fixed here:
+///
+/// * **A cancelled stream does not reach the ledger.** `chat_stream` reports an
+///   aborted stream as `AppError::Message("Job cancelled")`, not
+///   [`AppError::Cancelled`] — and the draft's error propagates out of
+///   `run_hooked` immediately, so no later `before()` runs [`apply_stop`] and
+///   the ledger records nothing. The cancel TOKEN is the authority the ledger
+///   missed, so it is consulted here (on the error path only: a run that
+///   completed before the cancel landed completed).
+/// * **A failed run must never report `done`.** `StoppedReason::Done` is "the
+///   last stage completed"; writing it as a fallback for `stopped == None`
+///   labelled every failure as a clean finish, and the renderer maps `done` to
+///   a SUCCESS suffix. A failure with no recorded stop reason now carries
+///   `None` — absent, which the wire contract already allows.
+///
+/// Returns the wire token rather than the enum so the caller writes one
+/// `Option<String>` straight into the row.
+pub(crate) fn terminal_state(
+    ledger: &RunLedger,
+    ok: bool,
+    token_cancelled: bool,
+    needs_review: bool,
+) -> (&'static str, Option<String>) {
+    if !ok && token_cancelled {
+        // First-writer-wins, so a run that had already recorded WHY it was
+        // stopping keeps its own reason.
+        ledger.stop(StoppedReason::Cancelled);
+    }
+    let stopped = ledger.stopped();
+    let status = match (ok, stopped == Some(StoppedReason::Cancelled)) {
+        (_, true) => super::STATUS_CANCELLED,
+        (false, _) => super::STATUS_FAILED,
+        (true, _) if needs_review => super::STATUS_NEEDS_REVIEW,
+        (true, _) => super::STATUS_COMPLETED,
+    };
+    let reason = stopped.or_else(|| ok.then_some(StoppedReason::Done));
+    (status, reason.map(stopped_wire))
+}
+
+/// One [`StoppedReason`]'s wire token — the `snake_case` serde rename the
+/// renderer's suffix map keys on.
+fn stopped_wire(reason: StoppedReason) -> String {
+    serde_json::to_value(reason)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        // Unreachable: every variant is a unit variant with a `snake_case`
+        // rename. The fallback names the enum's own default rather than
+        // inventing a token no consumer knows.
+        .unwrap_or_else(|| "done".to_string())
+}
+
 /// Emits, persists, and stops. One instance per run.
 pub struct RunHooks {
     app: AppHandle,
     run_id: String,
     job_id: String,
     cancel: CancellationToken,
-    started: Instant,
-    deadline: Duration,
+    deadline: RunDeadline,
     ledger: Arc<RunLedger>,
     /// Monotonic `pipeline_run_events.seq`. Atomic because `StageHooks` takes
     /// `&self` — the trait is deliberately shaped so an observer cannot mutate
@@ -115,12 +169,16 @@ pub struct RunHooks {
 }
 
 impl RunHooks {
+    /// `deadline` is the run's shared clock — the SAME value the `repair` stage
+    /// holds through `QualityCtx`, so the boundary check here and the in-loop
+    /// check there measure one run, not two `Instant::now()`s a few
+    /// milliseconds apart.
     pub fn new(
         app: AppHandle,
         run_id: String,
         job_id: String,
         cancel: CancellationToken,
-        deadline: Duration,
+        deadline: RunDeadline,
         ledger: Arc<RunLedger>,
     ) -> Self {
         Self {
@@ -128,7 +186,6 @@ impl RunHooks {
             run_id,
             job_id,
             cancel,
-            started: Instant::now(),
             deadline,
             ledger,
             seq: AtomicU32::new(0),
@@ -138,7 +195,7 @@ impl RunHooks {
     /// Wall clock consumed so far — read by the command to report the run's
     /// duration without keeping a second `Instant`.
     pub fn elapsed_ms(&self) -> u64 {
-        self.started.elapsed().as_millis() as u64
+        self.deadline.elapsed().as_millis() as u64
     }
 
     /// Emit ONE `pipeline:stage` event and append its durable twin.
@@ -223,8 +280,8 @@ impl StageHooks for RunHooks {
         apply_stop(
             &self.ledger,
             self.cancel.is_cancelled(),
-            self.started.elapsed(),
-            self.deadline,
+            self.deadline.elapsed(),
+            self.deadline.limit(),
         )?;
         self.report(stage, PHASE_START, None, None);
         Ok(())

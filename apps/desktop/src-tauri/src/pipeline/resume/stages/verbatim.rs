@@ -21,7 +21,7 @@
 /// Nothing else is: no punctuation stripping, no stemming, no fuzzy distance. A
 /// changed number, a dropped qualifier, an added adjective — every one of those
 /// changes what the candidate claimed, and every one of them fails here.
-fn normalize(text: &str) -> String {
+pub fn normalize(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -35,18 +35,28 @@ fn normalize(text: &str) -> String {
 /// evidencing nothing. The filter's job is to prove the model copied a LINE.
 const MIN_QUOTE_CHARS: usize = 12;
 
-/// Whether `quote` is a verbatim span of `source`, under the two normalizations
-/// above.
+/// Whether `quote` is a verbatim span of an ALREADY-[`normalize`]d source.
+///
+/// The pre-normalized parameter is the point: normalizing the source is
+/// proportional to the whole résumé and the caller checks it once per
+/// requirement (up to 40), so doing it inside would re-walk a 200 KB document
+/// forty times to compare against forty short strings.
 ///
 /// An empty quote is `false` — but callers treat "no quote" and "a dropped
 /// quote" identically anyway (both leave `source_quote` empty), so this is
 /// about the SHAPE of the answer, not a distinction the artifact carries.
-pub fn is_verbatim(source: &str, quote: &str) -> bool {
+pub fn is_verbatim_in(normalized_source: &str, quote: &str) -> bool {
     let quote = normalize(quote);
     if quote.chars().count() < MIN_QUOTE_CHARS {
         return false;
     }
-    normalize(source).contains(&quote)
+    normalized_source.contains(&quote)
+}
+
+/// [`is_verbatim_in`] for a caller with ONE quote to check, which normalizes
+/// the source for it.
+pub fn is_verbatim(source: &str, quote: &str) -> bool {
+    is_verbatim_in(&normalize(source), quote)
 }
 
 /// Blank a quote that is not verbatim, returning whether it survived.
@@ -55,8 +65,12 @@ pub fn is_verbatim(source: &str, quote: &str) -> bool {
 /// and its status is still computed from the source, so the honest artifact is
 /// "this requirement, no supporting quote" — which is also what
 /// `stages::strategy` needs in order to not emphasize it.
-pub fn keep_or_blank(source: &str, quote: &mut String) -> bool {
-    if is_verbatim(source, quote) {
+///
+/// Takes the source ALREADY normalized (see [`is_verbatim_in`]) — the name says
+/// `_in` for the same reason, so a caller cannot pass a raw résumé by mistake
+/// and get a silently-always-false answer.
+pub fn keep_or_blank_in(normalized_source: &str, quote: &mut String) -> bool {
+    if is_verbatim_in(normalized_source, quote) {
         return true;
     }
     quote.clear();

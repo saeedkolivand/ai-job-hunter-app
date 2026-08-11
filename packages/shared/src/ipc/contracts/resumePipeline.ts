@@ -32,7 +32,17 @@ export interface ResumePipelineContract {
    */
   run(req: ResumePipelineRunRequest): Promise<PipelineRunStarted>;
 
-  /** One run with its full stage trail. `null` for an unknown id. */
+  /**
+   * One run with its full stage trail. `null` for an unknown id.
+   *
+   * **`resumeText`/`report` come from the per-job AGGREGATE, not from this
+   * run.** Every run of a posting merges into one `ai_generations` row (keyed by
+   * `jobUrl`), so `listForJob` can legitimately show three runs while only the
+   * NEWEST one's document exists. An older run's `status`, `metrics`, `events`
+   * and `stoppedReason` are genuinely its own; its `resumeText` is whatever the
+   * newest run produced. That is also why the two write calls below refuse an
+   * older run outright rather than silently editing the newest document.
+   */
   get(runId: string): Promise<PipelineRunDetail | null>;
 
   /**
@@ -45,12 +55,21 @@ export interface ResumePipelineContract {
    * Re-generate ONE section of a finished run and splice it back in, through
    * the same primitive the repair loop uses. Rejects `"header"` (and anything
    * else outside the closed `PipelineSectionKey` grammar) at the boundary.
+   *
+   * **Only the posting's LATEST run may be written to** (see {@link
+   * ResumePipelineContract.get}): an older `runId` is rejected with a clear
+   * validation error rather than rewriting the newest run's document. It also
+   * goes through the same admission bucket as `run` and is REFUSED (not queued)
+   * when that bucket is full — surface the retriable error, do not auto-retry.
    */
   regenerateSection(req: ResumePipelineRegenerateSectionRequest): Promise<PipelineRunDetail>;
 
   /**
    * Record the user's Remove/Keep verdict on ONE surviving fabrication finding.
    * The run stays `needs_review` until every flagged bullet has one.
+   *
+   * Same latest-run rule as {@link ResumePipelineContract.regenerateSection}:
+   * the report being stamped belongs to the aggregate, i.e. to the newest run.
    */
   resolveFabrication(req: ResumePipelineResolveFabricationRequest): Promise<PipelineRunDetail>;
 
@@ -87,9 +106,19 @@ export interface PipelineRunSummary {
   status: PipelineRunStatus;
   startedAt: number;
   finishedAt?: number;
-  /** The backend `StoppedReason` wire token (`done`, `run_timeout`,
-   *  `max_repairs`, `cancelled`, …) — absent while the run is still going. */
-  stoppedReason?: string;
+  /**
+   * The backend `StoppedReason` wire token (`done`, `run_timeout`,
+   * `max_repairs`, `budgeted`, `cancelled`, …).
+   *
+   * **Absent/`null` in two cases, and `'done'` is never one of them:** while the
+   * run is still going, and for a run that FAILED without recording a reason (a
+   * provider error, a store failure). `'done'` means the last stage completed —
+   * a failure carrying it would read as a clean finish in any suffix map, which
+   * is exactly the bug the backend's `terminal_state` exists to prevent. Treat
+   * an absent value on a terminal run as "no further detail", never as success:
+   * `status` is the authority on how the run ended.
+   */
+  stoppedReason?: string | null;
   metrics: PipelineRunMetrics;
 }
 

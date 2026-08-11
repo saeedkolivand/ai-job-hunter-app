@@ -169,6 +169,10 @@ pub struct QualityCtx<'a> {
     /// setup): every stage then simply runs.
     pub cache: Option<&'a KvCache>,
     pub budget: Budget,
+    /// The whole run's wall clock. Read by the stage that fans out (`repair`)
+    /// so the deadline is enforced INSIDE it, not only at the boundaries around
+    /// it — see [`RunDeadline`].
+    pub deadline: RunDeadline,
     pub ledger: Arc<RunLedger>,
     /// The rolling cache identity — each stage extends it with the artifact it
     /// produced, so a later stage's key depends on everything upstream.
@@ -189,6 +193,7 @@ impl<'a> QualityCtx<'a> {
         input: QualityInput<'a>,
         completer: &'a Completer,
         cache: Option<&'a KvCache>,
+        deadline: RunDeadline,
         ledger: Arc<RunLedger>,
     ) -> Self {
         // The seed binds the cache chain to the run's own inputs. The résumé and
@@ -206,6 +211,7 @@ impl<'a> QualityCtx<'a> {
             completer,
             cache,
             budget: Budget::RESUME_QUALITY,
+            deadline,
             ledger,
             cache_key,
             analysis: JobAnalysis::default(),
@@ -271,7 +277,43 @@ pub fn run_deadline(budget: Budget, effort_scaled: Duration) -> Duration {
     budget.run_timeout.max(effort_scaled)
 }
 
-/// Whether a run that started at `started` has used up `deadline`.
-pub fn deadline_passed(started: Instant, deadline: Duration) -> bool {
-    started.elapsed() >= deadline
+/// The run's wall clock: when it started and how long it is allowed.
+///
+/// A VALUE, not a hook, because two very different places have to ask the same
+/// question. `StageHooks::before` checks it at every stage boundary — the
+/// cheapest place to stop, since nothing is in flight — but a boundary check
+/// alone cannot bound the LAST stage, and `repair` is both the last stage and
+/// the only one that fans out (up to `max_repair_attempts ×
+/// MAX_SECTIONS_PER_ROUND` provider calls). Before this existed, a repair loop
+/// could run for ~2400 s past a deadline nothing would check again, and the
+/// renderer's own client timeout — which can only say "it timed out" — fired
+/// first. Copyable and Tauri-free so the stage can hold one without reaching
+/// into L3.
+#[derive(Debug, Clone, Copy)]
+pub struct RunDeadline {
+    started: Instant,
+    limit: Duration,
+}
+
+impl RunDeadline {
+    /// Start the clock now, with `limit` of wall time.
+    pub fn starting_now(limit: Duration) -> Self {
+        Self {
+            started: Instant::now(),
+            limit,
+        }
+    }
+
+    pub fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
+
+    pub fn limit(&self) -> Duration {
+        self.limit
+    }
+
+    /// Whether the run has used up its allowance.
+    pub fn passed(&self) -> bool {
+        self.elapsed() >= self.limit
+    }
 }

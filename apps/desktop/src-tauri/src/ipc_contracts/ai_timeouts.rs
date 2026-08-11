@@ -10,12 +10,15 @@ pub const STREAM_BASELINE_SECS: u64 = 300;
 pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
     &[("medium", 1.5), ("high", 2.0), ("xhigh", 2.5), ("max", 3.0)];
 
-/// The EFFORT-INVARIANT half of one quality-depth run's deadline: the three
-/// JSON stages, each allowed one re-ask, each round-trip bounded by
+/// The EFFORT-INVARIANT half of one quality-depth run's deadline: every call
+/// whose per-call bound is FLAT — the three JSON stages (each allowed one
+/// re-ask) plus the repair fan-out (`max_repair_attempts` rounds ×
+/// `MAX_SECTIONS_PER_ROUND` sections), all bounded by
 /// `timeouts::OLLAMA_COMPLETION`. See `qualityRunDeadlineSecs` in
 /// packages/shared/src/ai-timeouts.ts for the full derivation.
-pub const QUALITY_RUN_FIXED_SECS: u64 = 1800;
+pub const QUALITY_RUN_FIXED_SECS: u64 = 4200;
 
-/// Whole-document generation passes one quality run may make (the draft plus
-/// one per repair round) — the term that DOES scale with reasoning effort.
-pub const QUALITY_RUN_GENERATION_PASSES: u64 = 3;
+/// Effort-SCALED whole-document passes one quality run may make: the draft,
+/// the run's only streamed call. The repair rounds are flat-bounded and live
+/// in `QUALITY_RUN_FIXED_SECS` instead.
+pub const QUALITY_RUN_GENERATION_PASSES: u64 = 1;

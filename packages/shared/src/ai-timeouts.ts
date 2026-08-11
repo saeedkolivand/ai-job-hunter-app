@@ -56,39 +56,54 @@ function effortMultiplier(effort?: string): number {
 
 /**
  * The EFFORT-INVARIANT half of one quality-depth pipeline run's deadline, in
- * seconds — the three JSON stages (`analyze_job`, `match_evidence`,
- * `strategy`).
+ * seconds — every call the run makes whose per-call bound is a FLAT constant.
  *
- * Derived, not guessed. Each of those stages runs through
- * `Completer::complete_json`, which is allowed exactly ONE re-ask, and each
- * round-trip is bounded by the longest per-call HTTP timeout this app ships —
- * `timeouts::OLLAMA_COMPLETION`, 300 s (the local daemon's non-streaming
- * bound). That is 3 stages × 2 round-trips × 300 s = 1800 s. None of it scales
- * with reasoning effort, because `complete_with_usage`'s timeouts
- * (`COMPLETION` / `OLLAMA_COMPLETION`) are flat constants — only the STREAM
- * deadline is effort-scaled.
+ * Derived, not guessed, and derived from the fan-out that actually runs:
+ *
+ * | term                       | calls           | per-call bound       | total  |
+ * | -------------------------- | --------------- | -------------------- | ------ |
+ * | 3 JSON stages, ≤1 re-ask   | 3 × 2 = 6       | `OLLAMA_COMPLETION`  | 1800 s |
+ * | repair, ≤2 rounds × ≤4 sec | 2 × 4 = 8       | `OLLAMA_COMPLETION`  | 2400 s |
+ * | **fixed total**            |                 |                      | 4200 s |
+ *
+ * `analyze_job`/`match_evidence`/`strategy` each run through
+ * `Completer::complete_json`, which is allowed exactly ONE re-ask. The repair
+ * stage regenerates up to `repair::MAX_SECTIONS_PER_ROUND` (4) sections per
+ * round for up to `Budget::max_repair_attempts` (2) rounds, each through
+ * `Completer::complete`. **Every one of those 14 round-trips is bounded by the
+ * longest per-call HTTP timeout this app ships — `timeouts::OLLAMA_COMPLETION`,
+ * 300 s** (the local daemon's non-streaming bound), and NONE of them scales
+ * with reasoning effort: `complete_with_usage`'s timeouts (`COMPLETION` /
+ * `OLLAMA_COMPLETION`) are flat constants. Only the STREAM deadline is
+ * effort-scaled, and the draft is the run's only streamed call.
  *
  * The rule this exists to satisfy is the same one
  * `research_deadline_exceeds_the_inner_search_bounds_it_wraps` states for
  * research: **an outer bound that does not clear the inner bounds it wraps
  * becomes the binding constraint**, and the actionable inner error never gets
- * to fire. A run deadline below 1800 s would kill a run whose three JSON
- * stages were each answering, just slowly — on a local reasoning model, the
- * ordinary case.
+ * to fire. The repair half used to be counted as one effort-scaled
+ * draft-equivalent PER ROUND (600 s at the baseline) rather than as its real 8
+ * flat-bounded calls (2400 s), so the advertised deadline was ~1800 s short of
+ * the fan-out it wraps — and, because the deadline was only checked at a stage
+ * boundary and repair is the LAST stage, nothing else bounded it either. Both
+ * halves were fixed together: the repair loop now checks the deadline between
+ * rounds AND between per-section calls, and this term covers the fan-out.
  */
-export const QUALITY_RUN_FIXED_SECS = 1_800;
+export const QUALITY_RUN_FIXED_SECS = 4_200;
 
 /**
- * How many whole-document GENERATION passes one quality-depth run may make:
- * the draft, plus one per repair round (`Budget::max_repair_attempts` = 2). A
- * repair round regenerates only the failing sections, so it is bounded ABOVE by
- * one draft-equivalent, never below it.
+ * How many EFFORT-SCALED (streamed) whole-document passes one quality-depth run
+ * may make: exactly one — the draft.
  *
- * This is the term that scales with effort, because every one of those passes
- * is bounded by {@link STREAM_BASELINE_SECS} × the effort multiplier — the
- * exact bound `stream_deadline` enforces per call.
+ * It is the run's only `chat_stream` call, and therefore the only call bounded
+ * by {@link STREAM_BASELINE_SECS} × the effort multiplier (`stream_deadline`).
+ * The repair rounds are NOT here: they go through `Completer::complete`, whose
+ * bound is flat, so they belong to {@link QUALITY_RUN_FIXED_SECS} — counting
+ * them here would scale 8 calls that do not scale, wildly over-provisioning the
+ * top tier for the same reason `baseline × multiplier` under-provisions the
+ * bottom one.
  */
-export const QUALITY_RUN_GENERATION_PASSES = 3;
+export const QUALITY_RUN_GENERATION_PASSES = 1;
 
 /**
  * Deadline (seconds) for ONE WHOLE quality-depth résumé pipeline run — the
@@ -97,18 +112,18 @@ export const QUALITY_RUN_GENERATION_PASSES = 3;
  * `fixed + baseline × passes × multiplier(effort)`, i.e. the sum of the inner
  * per-call bounds the run can legitimately consume at that effort:
  *
- * | effort           | m   | JSON stages | generation passes | deadline        |
- * | ---------------- | --- | ----------- | ----------------- | --------------- |
- * | none/minimal/low | 1.0 | 1800 s      | 900 s             | 2700 s (45 min) |
- * | medium           | 1.5 | 1800 s      | 1350 s            | 3150 s (52 min) |
- * | high             | 2.0 | 1800 s      | 1800 s            | 3600 s (60 min) |
- * | xhigh            | 2.5 | 1800 s      | 2250 s            | 4050 s (67 min) |
- * | max              | 3.0 | 1800 s      | 2700 s            | 4500 s (75 min) |
+ * | effort           | m   | flat calls | the draft | deadline        |
+ * | ---------------- | --- | ---------- | --------- | --------------- |
+ * | none/minimal/low | 1.0 | 4200 s     | 300 s     | 4500 s (75 min) |
+ * | medium           | 1.5 | 4200 s     | 450 s     | 4650 s (77 min) |
+ * | high             | 2.0 | 4200 s     | 600 s     | 4800 s (80 min) |
+ * | xhigh            | 2.5 | 4200 s     | 750 s     | 4950 s (82 min) |
+ * | max              | 3.0 | 4200 s     | 900 s     | 5100 s (85 min) |
  *
- * Deliberately NOT `baseline × multiplier`: half the run's cost does not scale
- * with effort at all (see {@link QUALITY_RUN_FIXED_SECS}), so a single
- * multiplicative constant either under-provisions the bottom tier — killing
- * legitimate runs — or wildly over-provisions the top one.
+ * Deliberately NOT `baseline × multiplier`: all but one of the run's calls do
+ * not scale with effort at all (see {@link QUALITY_RUN_FIXED_SECS}), so a
+ * single multiplicative constant either under-provisions the bottom tier —
+ * killing legitimate runs — or wildly over-provisions the top one.
  *
  * This is a BACKSTOP for a run that never trips a per-step timeout but crawls
  * forever, not a target: the realistic clean quality run is +30–90 s over the

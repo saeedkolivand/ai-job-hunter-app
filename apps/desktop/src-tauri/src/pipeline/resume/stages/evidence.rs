@@ -145,6 +145,10 @@ pub(crate) fn ground(
     model: EvidenceMap,
 ) -> (EvidenceMap, usize) {
     let kernel = Kernel::new(source_resume, job_ad, target_language);
+    // Normalized ONCE for the whole map: the check below runs per requirement
+    // (up to `MAX_REQUIREMENTS`), and normalizing inside it re-walked the whole
+    // résumé every time.
+    let normalized_source = super::verbatim::normalize(source_resume);
     let mut dropped = 0usize;
     let items = requirements
         .iter()
@@ -157,7 +161,7 @@ pub(crate) fn ground(
                 .unwrap_or_default();
             item.requirement = requirement.clone();
             if !item.source_quote.trim().is_empty()
-                && !super::verbatim::keep_or_blank(source_resume, &mut item.source_quote)
+                && !super::verbatim::keep_or_blank_in(&normalized_source, &mut item.source_quote)
             {
                 dropped += 1;
                 // The attribution rides with the quote: an employer name kept

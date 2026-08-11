@@ -171,15 +171,19 @@ fn every_budget_timeout_is_pinned_to_its_documented_literal() {
         Duration::from_secs(360),
         "RESUME_QUALITY.step_timeout deliberately matches AGENT_PREP's backstop"
     );
-    // 45 min, and DERIVED rather than chosen: it is the effort-blind floor that
-    // must equal `timeouts::quality_run_deadline(None)` (1800 s of flat JSON-stage
-    // bounds + 900 s of baseline generation passes). Raised from an unvalidated
-    // 30 min, which sat BELOW the JSON half alone — see the budget's own doc and
+    // 75 min, and DERIVED rather than chosen: it is the effort-blind floor that
+    // must equal `timeouts::quality_run_deadline(None)` — 4200 s of FLAT
+    // per-call bounds (3 JSON stages × 2 round-trips, PLUS `max_repair_attempts`
+    // × `MAX_SECTIONS_PER_ROUND` section rewrites, all at `OLLAMA_COMPLETION`)
+    // + 300 s for the one streamed draft. The 45-minute version counted the
+    // repair fan-out as one effort-scaled draft-equivalent per round, i.e. 600 s
+    // instead of 2400 s, so the deadline sat ~1800 s below the calls it wraps.
+    // See the budget's own doc and
     // `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`,
     // which is the guard that keeps the two from drifting apart again.
     assert_eq!(
         Budget::RESUME_QUALITY.run_timeout,
-        Duration::from_secs(45 * 60)
+        Duration::from_secs(75 * 60)
     );
     assert_eq!(
         Budget::RESUME_QUALITY.confirm_timeout,

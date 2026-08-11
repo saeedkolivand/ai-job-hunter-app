@@ -72,6 +72,26 @@ fn effort_multiplier(effort: Option<&str>) -> f64 {
     }
 }
 
+/// The closed TIER token an effort string resolves to — `"baseline"` for
+/// absent/`minimal`/`low`/unrecognized, exactly where [`effort_multiplier`]
+/// returns 1.0.
+///
+/// Exists for LOGGING. `effort` arrives from the renderer as free text (the
+/// wire schema's cap is Zod, which never runs on the bare-`invoke` transport),
+/// so a raw copy of it in a `Span` message is an unbounded, newline-capable
+/// value landing in the diagnostics bundle — a log-injection primitive of the
+/// same shape `normalize_language` exists to close. Log the token this returns,
+/// which is always one of the table's own `&'static str`s.
+pub fn effort_tier(effort: Option<&str>) -> &'static str {
+    match effort {
+        Some(e) => EFFORT_TIMEOUT_MULTIPLIER
+            .iter()
+            .find(|(tier, _)| *tier == e)
+            .map_or("baseline", |(tier, _)| *tier),
+        None => "baseline",
+    }
+}
+
 /// The actual per-request deadline for `chat_stream`: [`STREAM`] scaled by
 /// [`effort_multiplier`]. `reqwest::RequestBuilder::timeout` bounds the WHOLE
 /// request (connect through the last streamed byte — see reqwest's own docs),
@@ -151,13 +171,15 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 /// `StoppedReason::RunTimeout` reachable.
 ///
 /// **Not `baseline × multiplier`, unlike [`stream_deadline`] and
-/// [`research_deadline`].** Half of a run's cost does not scale with reasoning
-/// effort at all: the three JSON stages go through `complete_with_usage`, whose
-/// bounds ([`COMPLETION`] / [`OLLAMA_COMPLETION`]) are flat constants. So the
-/// formula is `fixed + baseline × passes × multiplier`, where the fixed half is
-/// 3 stages × 2 round-trips (`complete_json` allows exactly one re-ask) ×
-/// [`OLLAMA_COMPLETION`] = 1800 s, and the scaling half is the draft plus one
-/// generation pass per repair round.
+/// [`research_deadline`].** All but ONE of a run's calls do not scale with
+/// reasoning effort: the three JSON stages and every repair-round section
+/// rewrite go through `complete_with_usage`, whose bounds ([`COMPLETION`] /
+/// [`OLLAMA_COMPLETION`]) are flat constants. So the formula is
+/// `fixed + baseline × passes × multiplier`, where the fixed term is
+/// 3 stages × 2 round-trips (`complete_json` allows exactly one re-ask) +
+/// `max_repair_attempts` (2) rounds × `MAX_SECTIONS_PER_ROUND` (4) sections,
+/// i.e. 14 calls × [`OLLAMA_COMPLETION`] = 4200 s, and the scaling term is the
+/// draft — the run's only streamed call.
 ///
 /// Both terms come from `packages/shared/src/ai-timeouts.ts` through
 /// `pnpm gen:ipc`; the resulting per-tier table is pinned on BOTH sides
@@ -324,13 +346,13 @@ mod tests {
     #[test]
     fn quality_run_deadline_pins_the_derived_table() {
         for (effort, secs) in [
-            (None, 2_700),
-            (Some("minimal"), 2_700),
-            (Some("low"), 2_700),
-            (Some("medium"), 3_150),
-            (Some("high"), 3_600),
-            (Some("xhigh"), 4_050),
-            (Some("max"), 4_500),
+            (None, 4_500),
+            (Some("minimal"), 4_500),
+            (Some("low"), 4_500),
+            (Some("medium"), 4_650),
+            (Some("high"), 4_800),
+            (Some("xhigh"), 4_950),
+            (Some("max"), 5_100),
         ] {
             assert_eq!(
                 quality_run_deadline(effort),
@@ -342,15 +364,30 @@ mod tests {
 
     /// The outer bound must clear the inner bounds it wraps, at EVERY tier —
     /// the same rule `research_deadline_exceeds_the_inner_search_bounds_it_wraps`
-    /// states. Three JSON stages, each allowed one re-ask, each round-trip
-    /// bounded by `OLLAMA_COMPLETION`, plus the effort-scaled generation
-    /// passes. Mutation check: drop `QUALITY_RUN_FIXED_SECS` in the shared
-    /// source and every tier fails here.
+    /// states.
+    ///
+    /// The inner bounds are computed from the FAN-OUT CONSTANTS themselves, not
+    /// from the deadline's own terms: three JSON stages each allowed one
+    /// re-ask, plus `max_repair_attempts × MAX_SECTIONS_PER_ROUND` section
+    /// rewrites — all of them `Completer::complete*` calls bounded by the flat
+    /// `OLLAMA_COMPLETION` — plus the one streamed draft. That is what makes
+    /// this a guard rather than an identity: raising either repair constant
+    /// without raising the deadline fails here.
+    ///
+    /// Mutation checks (applied and reverted): `QUALITY_RUN_FIXED_SECS` back to
+    /// 1_800 ⇒ every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier
+    /// fails; `DEFAULT_MAX_REPAIR_ATTEMPTS` 2 → 3 ⇒ every tier fails.
     #[test]
     fn quality_run_deadline_clears_the_inner_per_call_bounds() {
         const JSON_STAGES: u32 = 3;
         const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
         let json_half = OLLAMA_COMPLETION * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
+        // The repair fan-out is bounded by the SAME flat per-call constant —
+        // `regenerate_one_section` goes through `Completer::complete`, never a
+        // stream — so it belongs to the effort-invariant half.
+        let repair_half = OLLAMA_COMPLETION
+            * crate::pipeline::budget::Budget::RESUME_QUALITY.max_repair_attempts as u32
+            * crate::pipeline::resume::stages::MAX_SECTIONS_PER_ROUND as u32;
         for effort in [
             None,
             Some("medium"),
@@ -358,9 +395,10 @@ mod tests {
             Some("xhigh"),
             Some("max"),
         ] {
-            let generation = stream_deadline(effort) * 3;
+            // The draft is the only streamed call the run makes.
+            let generation = stream_deadline(effort);
             assert!(
-                quality_run_deadline(effort) >= json_half + generation,
+                quality_run_deadline(effort) >= json_half + repair_half + generation,
                 "quality_run_deadline({effort:?}) must cover the calls it wraps"
             );
         }

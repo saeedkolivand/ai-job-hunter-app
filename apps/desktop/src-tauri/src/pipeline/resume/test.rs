@@ -5,8 +5,6 @@
 //! change that makes it fail, and each was applied and reverted rather than
 //! assumed. A test that passes with its feature deleted is not a guard.
 
-use std::collections::BTreeMap;
-
 use serde_json::json;
 
 use super::cache::{StageCacheKey, PIPELINE_PROMPT_VERSION};
@@ -21,7 +19,7 @@ use super::stages::{
 };
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
-    ResumeStrategy, SectionKey,
+    ResumeStrategy, SectionKey, SkillGroup,
 };
 use super::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::budget::{Budget, StoppedReason};
@@ -269,6 +267,21 @@ fn evidence_grounding_ignores_a_requirement_the_model_invented() {
 /// about a job title.
 const THREE_ROLE_RESUME: &str = "Jane Doe\n\nWORK EXPERIENCE\n\nSenior Engineer | Acme Payments | 2021 - Present\n- Built the ledger\n\nEngineer | Beta Systems | 2019 - 2021\n- Shipped the API\n\nJunior Engineer | Gamma Industries | 2017 - 2019\n- Wrote tests\n";
 
+/// An evidence map where every named requirement is supported — so the
+/// emphasis filter below is not what a test is accidentally measuring.
+fn evidence_covering(requirements: &[&str]) -> EvidenceMap {
+    EvidenceMap {
+        items: requirements
+            .iter()
+            .map(|requirement| EvidenceItem {
+                requirement: (*requirement).to_string(),
+                status: EvidenceStatus::Covered,
+                ..EvidenceItem::default()
+            })
+            .collect(),
+    }
+}
+
 /// **The structural guarantee.** Whatever the model returns — a shorter list, a
 /// renamed employer, re-dated entries — the plan comes back with exactly the
 /// roster's roles, in the roster's order, with the roster's identity.
@@ -282,8 +295,9 @@ fn strategy_never_drops_renames_or_re_dates_a_role() {
 
     let model = ResumeStrategy {
         per_company: vec![CompanyPlan {
-            // One entry, renamed, re-dated, for a role that is not even first.
-            company: "ACME PAYMENTS INTERNATIONAL".to_string(),
+            // The employer named exactly (case-insensitively), which is the
+            // ONLY way a plan is attached — see the positional-fallback test.
+            company: "acme payments".to_string(),
             title: "Principal Engineer".to_string(),
             dates: "2015 - Present".to_string(),
             angle: "lead with the ledger".to_string(),
@@ -293,18 +307,120 @@ fn strategy_never_drops_renames_or_re_dates_a_role() {
         ..ResumeStrategy::default()
     };
 
-    let out = reseed(&roster, &model);
+    let out = reseed(&roster, &model, &evidence_covering(&["payments"]));
     assert_eq!(out.len(), roster.len(), "no role may be dropped");
     for (planned, seed) in out.iter().zip(roster.iter()) {
         assert_eq!(planned.company, seed.company);
         assert_eq!(planned.title, seed.title);
         assert_eq!(planned.dates, seed.dates);
     }
-    // …and the one field the model IS allowed to author survives.
+    // …and the two fields the model IS allowed to author survive.
     assert_eq!(out[0].angle, "lead with the ledger");
+    assert_eq!(out[0].emphasis, vec!["payments".to_string()]);
     assert!(
         out[1].angle.is_empty(),
         "an unplanned role gets no invented angle"
+    );
+}
+
+/// **A plan is matched by NAME, never by position.**
+///
+/// The positional fallback (`model.per_company.get(index)`) was written for the
+/// tolerant case — a model that reworded an employer — but it cannot tell that
+/// case from the dangerous one: a model that drops, merges or REORDERS entries
+/// gets its plan for role B attached to role A, and nothing downstream can see
+/// that the angle describes a different job. Re-seeding exists precisely
+/// because the model's list is not trusted to be parallel to the roster.
+///
+/// Mutation check: restore `.or_else(|| model.per_company.get(index))` and both
+/// assertions here fail.
+#[test]
+fn strategy_never_attaches_a_plan_to_a_role_by_position() {
+    let roster = seed_company_roster(THREE_ROLE_RESUME, "We need a payments engineer.");
+    let model = ResumeStrategy {
+        per_company: vec![
+            // A renamed employer: matches nothing on the roster.
+            CompanyPlan {
+                company: "ACME PAYMENTS INTERNATIONAL".to_string(),
+                angle: "lead with the ledger".to_string(),
+                ..CompanyPlan::default()
+            },
+            // A plan for the THIRD role, sitting in the SECOND slot.
+            CompanyPlan {
+                company: "Gamma Industries".to_string(),
+                angle: "show the testing depth".to_string(),
+                ..CompanyPlan::default()
+            },
+        ],
+        ..ResumeStrategy::default()
+    };
+
+    let out = reseed(&roster, &model, &EvidenceMap::default());
+    assert!(
+        out[0].angle.is_empty(),
+        "a renamed employer matches nothing and must get no angle, not the first plan"
+    );
+    assert!(
+        out[1].angle.is_empty(),
+        "role 2 must not inherit the plan that happens to sit at index 1"
+    );
+    assert_eq!(
+        out[2].angle, "show the testing depth",
+        "the plan that NAMED its employer lands on that employer"
+    );
+}
+
+/// **A requirement the résumé cannot evidence is never emphasized.**
+///
+/// The prompt says so, and a prompt is not a guarantee. An emphasis is an
+/// instruction to the DRAFT stage, so a `missing` requirement surviving here
+/// tells the next stage to write a claim the source does not support —
+/// arriving one stage before the validator can call it a Critical.
+///
+/// Mutation check: return `p.emphasis` unfiltered and both dropped terms
+/// survive.
+#[test]
+fn strategy_emphasis_keeps_only_what_the_evidence_map_supports() {
+    let roster = seed_company_roster(THREE_ROLE_RESUME, "We need a payments engineer.");
+    let model = ResumeStrategy {
+        per_company: vec![CompanyPlan {
+            company: "Acme Payments".to_string(),
+            angle: "lead with the ledger".to_string(),
+            emphasis: vec![
+                "Payments".to_string(),              // covered — kept (case-insensitively)
+                "Ledgers".to_string(),               // partial — kept
+                "Kubernetes".to_string(),            // MISSING — dropped
+                "Executive sponsorship".to_string(), // not in the map at all — dropped
+            ],
+            ..CompanyPlan::default()
+        }],
+        ..ResumeStrategy::default()
+    };
+    let evidence = EvidenceMap {
+        items: vec![
+            EvidenceItem {
+                requirement: "payments".to_string(),
+                status: EvidenceStatus::Covered,
+                ..EvidenceItem::default()
+            },
+            EvidenceItem {
+                requirement: "Ledgers".to_string(),
+                status: EvidenceStatus::Partial,
+                ..EvidenceItem::default()
+            },
+            EvidenceItem {
+                requirement: "Kubernetes".to_string(),
+                status: EvidenceStatus::Missing,
+                ..EvidenceItem::default()
+            },
+        ],
+    };
+
+    let out = reseed(&roster, &model, &evidence);
+    assert_eq!(
+        out[0].emphasis,
+        vec!["Payments".to_string(), "Ledgers".to_string()],
+        "only the requirements the résumé can vouch for survive"
     );
 }
 
@@ -337,6 +453,18 @@ fn strategy_condenses_rather_than_drops_past_the_company_cap() {
             condensed.title
         );
     }
+
+    // The group's DATES must span the whole group, oldest start → newest end.
+    // The fixture's roles run 2010-2011 … 2020-2021 in document order, so the
+    // three past the cap are 2018-2019, 2019-2020, 2020-2021 and the condensed
+    // entry stands for 2018 → 2021. Mutation check: go back to
+    // `rest.last().dates` and this reads "2020 - 2021", understating the
+    // history by two roles at the one place the draft prompt renders it.
+    assert_eq!(
+        condensed.dates, "2018 \u{2013} 2021",
+        "the condensed group must span oldest start to newest end; got {:?}",
+        condensed.dates
+    );
 }
 
 // ── Section splice ──────────────────────────────────────────────────────────
@@ -361,6 +489,41 @@ fn splice_replaces_one_section_and_touches_nothing_else() {
         out.ends_with('\n'),
         "the trailing-newline shape must survive"
     );
+}
+
+/// **The cross-module assumption the splice is built on, pinned.**
+///
+/// `sections::split` zips `parse_resume(text).lines` against `text.lines()` BY
+/// INDEX, and `splice` then slices `text.lines()` with the ranges that zip
+/// produced. The whole thing rests on `export::parser::parse_resume` mapping
+/// exactly one `ParsedLine` per `text.lines()` entry — an assumption owned by
+/// another module, documented in `sections`' own header, and enforced nowhere.
+/// If that parser ever starts merging wrapped lines or dropping blanks, the
+/// failure here is not a wrong section: it is an out-of-range slice, i.e. a
+/// PANIC inside a background run.
+///
+/// Mutation check: `.filter(|l| !l.trim().is_empty())` in `parse_resume`'s
+/// mapping and every blank-carrying case below fails.
+#[test]
+fn parse_resume_maps_one_to_one_over_text_lines() {
+    for text in [
+        DRAFTED,
+        THREE_ROLE_RESUME,
+        "",
+        "\n",
+        "\n\n\n",
+        "one line, no newline",
+        "trailing newline\n",
+        "  \n\nblank-heavy\n\n  \n",
+        "PROFESSIONAL SUMMARY\r\nCRLF body\r\n",
+    ] {
+        assert_eq!(
+            crate::export::parser::parse_resume(text).lines.len(),
+            text.lines().count(),
+            "parse_resume must stay 1:1 with text.lines() for {text:?} — \
+             sections::split zips them by index and splice slices with the result"
+        );
+    }
 }
 
 /// A truncated replacement is a FAILED attempt. Splicing one in would delete the
@@ -562,6 +725,147 @@ fn the_company_roster_block_carries_the_seeded_identity() {
     assert!(user.contains("<evidence_map>"));
 }
 
+/// **A max-roster strategy reaches the draft turn WHOLE.**
+///
+/// `fenced` truncates at its cap with NO marker, and the strategy artifact is
+/// the ONE place the seeded roster reaches the document: a cut mid-`perCompany`
+/// silently undoes "never drop a role" — and the `factual.dropped_role`
+/// Critical it produces downstream is unrepairable, because an absence has no
+/// section to regenerate. The old 4 000-char cap was below a full roster's
+/// pretty-printed size, so this was reachable with eight ordinary jobs.
+///
+/// Mutation check: restore `ARTIFACT_CAP = 4_000` and both the last company and
+/// the JSON parse fail. (Restoring `to_string_pretty` does NOT fail this at the
+/// current cap — 7 553 chars still fits. Compactness is documented as MARGIN,
+/// not as the guard, and the size assertion below is what notices it.)
+#[test]
+fn the_strategy_artifact_survives_a_max_roster_uncapped() {
+    let angle = "Lead with the ledger migration: this role is the one that proves end-to-end \
+                 ownership of a payments platform, from schema design through the on-call \
+                 rotation, at the scale this posting names.";
+    let per_company: Vec<CompanyPlan> = (0..=MAX_COMPANY_PLANS)
+        .map(|index| CompanyPlan {
+            company: format!("Company Number {index} Payments Systems International GmbH"),
+            title: "Senior Staff Software Engineer, Platform".to_string(),
+            dates: "January 2019 \u{2013} March 2021".to_string(),
+            angle: angle.to_string(),
+            emphasis: vec![
+                "distributed systems".to_string(),
+                "payments domain".to_string(),
+                "Kubernetes".to_string(),
+                "incident response".to_string(),
+                "team leadership".to_string(),
+            ],
+            condensed: index == MAX_COMPANY_PLANS,
+        })
+        .collect();
+    let strategy = ResumeStrategy {
+        headline_angle: angle.to_string(),
+        summary_focus: (0..6).map(|i| format!("focus area number {i}")).collect(),
+        section_order: vec![
+            "summary".to_string(),
+            "skills".to_string(),
+            "experience".to_string(),
+            "projects".to_string(),
+            "education".to_string(),
+        ],
+        per_company,
+        skills_groups: (0..6)
+            .map(|group| SkillGroup {
+                label: format!("Skill group number {group}"),
+                skills: (0..8).map(|s| format!("Technology {group}-{s}")).collect(),
+            })
+            .collect(),
+    };
+
+    let out = draft_user(
+        "Jane Doe\nEXPERIENCE\n- Built things",
+        "We need it all.",
+        &strategy,
+    );
+    let last_company = format!("Company Number {MAX_COMPANY_PLANS} Payments Systems");
+    assert!(
+        out.contains(&last_company),
+        "the LAST roster entry must survive the cap — a silent cut here is a dropped employer"
+    );
+
+    // Not merely "the name is in there": the whole block must still be valid
+    // JSON, which is what a mid-object truncation destroys.
+    let body = out
+        .split_once("<resume_strategy>\n")
+        .and_then(|(_, rest)| rest.split_once("\n</resume_strategy>"))
+        .map(|(body, _)| body)
+        .expect("the strategy block is fenced");
+    let round_tripped: ResumeStrategy =
+        serde_json::from_str(body).expect("the fenced artifact must still be parseable JSON");
+    assert_eq!(
+        round_tripped.per_company.len(),
+        MAX_COMPANY_PLANS + 1,
+        "every roster entry, including the condensed group"
+    );
+    assert!(
+        round_tripped
+            .per_company
+            .last()
+            .is_some_and(|p| p.condensed),
+        "the condensed group must still be last"
+    );
+    // The MEASURED size the cap's documented margin is derived from. A tripwire,
+    // not a style rule: an artifact that grows past this has eaten the margin
+    // and the cap has to be re-argued (or the artifact trimmed) rather than
+    // silently approaching a truncation nobody marks.
+    let measured = body.chars().count();
+    assert!(
+        measured <= 7_000,
+        "the max-roster strategy measured {measured} chars — the cap's margin was derived \
+         from 5 845; re-derive ARTIFACT_CAP before letting this grow"
+    );
+}
+
+/// The OTHER artifact that rides `ARTIFACT_CAP`, and the one that actually
+/// approaches it: a full 40-requirement evidence map, each item carrying a
+/// verbatim résumé line. Measured for the same reason — the cap is sized for
+/// this one, so a change here is what eats the margin first.
+///
+/// Mutation check: restore `ARTIFACT_CAP = 12_000` and the round-trip fails.
+#[test]
+fn the_evidence_artifact_survives_a_full_requirement_set() {
+    let evidence = EvidenceMap {
+        items: (0..40)
+            .map(|index| EvidenceItem {
+                requirement: format!("Requirement number {index} with a long noun phrase"),
+                source_quote: format!(
+                    "- Delivered the thing number {index} across a long verbatim résumé line \
+                     that a model copied character for character from the source document"
+                ),
+                source_company: "Company Number 1 Payments Systems International GmbH".to_string(),
+                status: EvidenceStatus::Covered,
+                strength: 3,
+            })
+            .collect(),
+    };
+
+    let out = strategy_user(
+        "Jane Doe\nEXPERIENCE\n- Built things",
+        &JobAnalysis::default(),
+        &evidence,
+    );
+    let body = out
+        .split_once("<evidence_map>\n")
+        .and_then(|(_, rest)| rest.split_once("\n</evidence_map>"))
+        .map(|(body, _)| body)
+        .expect("the evidence block is fenced");
+    let round_tripped: EvidenceMap =
+        serde_json::from_str(body).expect("the fenced artifact must still be parseable JSON");
+    assert_eq!(round_tripped.items.len(), 40, "no requirement may be cut");
+    let measured = body.chars().count();
+    assert!(
+        measured <= 14_500,
+        "the full evidence map measured {measured} chars — the cap's margin was derived from \
+         13 191; re-derive ARTIFACT_CAP before letting this grow"
+    );
+}
+
 // ── Budget + ledger ─────────────────────────────────────────────────────────
 
 /// Wire compatibility for the two variants this phase makes reachable — the
@@ -689,9 +993,11 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
 
     let grouped = criticals_by_section(generated, &report);
     assert!(
-        grouped.contains_key(&SectionKey::Summary.to_wire()),
+        grouped
+            .iter()
+            .any(|(key, _)| *key == SectionKey::Summary.to_wire()),
         "the fabricated metric's section must be regenerable; got {:?}",
-        grouped.keys().collect::<Vec<_>>()
+        grouped.iter().map(|(key, _)| key).collect::<Vec<_>>()
     );
     // Only criticals: a report full of warnings must not schedule a rewrite.
     let warning_only = validate_content(&ContentInput {
@@ -721,9 +1027,8 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
 ///
 /// Mutation check: change the comparison to `>=` and the "equal is not worse"
 /// case fails; change it to `after > before + 1` and the "one more is worse"
-/// case does. (The loop AROUND this decision needs an injectable `Completer` to
-/// exercise end to end — recorded as a deferred gap in the handoff; the
-/// candidate-is-a-clone shape is what makes the revert total.)
+/// case does. The loop AROUND this decision is exercised end to end by
+/// `the_repair_loop_*` below, through the injected-provider seam.
 #[test]
 fn a_repair_round_is_reverted_only_when_it_is_strictly_worse() {
     assert!(round_is_worse(3, 4), "one more Critical is worse");
@@ -739,17 +1044,470 @@ fn a_repair_round_is_reverted_only_when_it_is_strictly_worse() {
 /// Stage artifacts are content-free (ADR-027): the hook copies them straight
 /// onto the wire and into the event trail, so a stage that recorded a quote
 /// would leak résumé text into a channel that claims to carry none.
+///
+/// **Recurses.** The top-level walk accepted `value.is_object()` wholesale, so
+/// the one artifact that actually nests — `validate`'s `codes` histogram — was
+/// waved through unexamined, and a stage that hid a quote one level down (the
+/// obvious place to put a "which text failed" map) passed. Every LEAF must be a
+/// number, a boolean or null; object KEYS are exempt because the only ones here
+/// are the fixed `CONTENT_ISSUE_CODES` vocabulary.
+///
+/// Mutation check: record `json!({ "codes": { "factual.unsourced_metric":
+/// "cut costs by 47%" } })` and this fails; it passed before the recursion.
 #[test]
 fn recorded_stage_artifacts_are_content_free() {
-    let ledger = RunLedger::new();
-    ledger.record("validate", json!({ "issues": 3, "criticals": 1 }));
-    let artifact = ledger.artifact("validate").expect("recorded");
-    let flat: BTreeMap<String, serde_json::Value> =
-        serde_json::from_value(artifact).expect("object");
-    for (key, value) in flat {
-        assert!(
-            value.is_number() || value.is_boolean() || value.is_object() || value.is_null(),
-            "artifact field {key} must be a count/flag, not text"
-        );
+    fn assert_leaves_are_content_free(path: &str, value: &serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, nested) in map {
+                    assert_leaves_are_content_free(&format!("{path}.{key}"), nested);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for (index, nested) in items.iter().enumerate() {
+                    assert_leaves_are_content_free(&format!("{path}[{index}]"), nested);
+                }
+            }
+            other => assert!(
+                other.is_number() || other.is_boolean() || other.is_null(),
+                "artifact field {path} must be a count/flag, not text; got {other}"
+            ),
+        }
     }
+
+    // A REAL validate artifact, nested histogram included — a hand-written flat
+    // object would only pin the shape the test itself invented.
+    let report = validate_content(&ContentInput {
+        generated: "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 47%.\n",
+        source_resume: "Jane Doe\n\nPROFESSIONAL SUMMARY\nA payments engineer.\n",
+        job_ad: "We need a payments engineer.",
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    let histogram = super::stages::code_histogram(&report);
+    assert!(
+        histogram.as_object().is_some_and(|codes| !codes.is_empty()),
+        "the fixture must produce a NESTED histogram, or the recursion is untested"
+    );
+
+    let ledger = RunLedger::new();
+    ledger.record(
+        "validate",
+        json!({ "issues": report.issues.len(), "criticals": 1, "codes": histogram }),
+    );
+    ledger.record(
+        "repair",
+        json!({ "rounds": 1, "reverted": false, "timedOut": false, "criticalsRemaining": 0 }),
+    );
+    for stage in ["validate", "repair"] {
+        let artifact = ledger.artifact(stage).expect("recorded");
+        assert_leaves_are_content_free(stage, &artifact);
+    }
+}
+
+// ── The repair loop, end to end ─────────────────────────────────────────────
+//
+// Through the injected-provider seam (`repair_loop`), against the REAL
+// validator: the loop's decisions are arithmetic over validator output, and a
+// stubbed validator would let them pass against numbers no validator produces.
+
+/// A source résumé and a draft that fabricates a metric in its summary — the
+/// same pair the grouping test uses, so the loop is exercised on a document the
+/// validator genuinely flags.
+const REPAIR_SOURCE: &str = "Jane Doe\n\nPROFESSIONAL SUMMARY\nA payments engineer.\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+const REPAIR_DRAFT: &str = "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 47% across 12 teams.\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+/// The corrected summary: the fabricated figures are gone.
+const REPAIR_FIXED_SUMMARY: &str = "PROFESSIONAL SUMMARY\nA payments engineer.";
+
+fn repair_report(generated: &str) -> crate::validate::content::ContentReport {
+    validate_content(&ContentInput {
+        generated,
+        source_resume: REPAIR_SOURCE,
+        job_ad: "We need a payments engineer with ledger experience.",
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    })
+}
+
+/// The real validator, as the loop's `revalidate` seam.
+async fn repair_revalidate(
+    candidate: String,
+) -> crate::error::AppResult<(
+    crate::validate::content::ContentReport,
+    Option<crate::validate::content::ContentReport>,
+)> {
+    Ok((repair_report(&candidate), None))
+}
+
+/// A deadline that is already spent — `Duration::ZERO` is passed, so no test
+/// ever sleeps.
+fn expired_deadline() -> super::RunDeadline {
+    super::RunDeadline::starting_now(std::time::Duration::ZERO)
+}
+
+fn live_deadline() -> super::RunDeadline {
+    super::RunDeadline::starting_now(std::time::Duration::from_secs(3_600))
+}
+
+/// **The happy path, whole.** One round, one section, the splice lands, the
+/// re-validation clears the Critical, and the loop stops because there is
+/// nothing left to fix — not because it ran out of rounds.
+///
+/// Mutation check: make the loop keep the candidate WITHOUT re-validating (drop
+/// the `report = candidate_report` assignment) and the "no criticals remain"
+/// assertion fails; drop the `after == 0` break and `rounds` becomes 2.
+#[tokio::test]
+async fn the_repair_loop_splices_revalidates_and_stops_when_clean() {
+    let mut calls = 0u32;
+    let (document, report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            calls += 1;
+            assert_eq!(
+                key,
+                SectionKey::Summary,
+                "only the failing section is asked"
+            );
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the summary exists");
+            let spliced = sections::splice(&document, section, REPAIR_FIXED_SUMMARY);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        repair_revalidate,
+    )
+    .await
+    .expect("the loop only errors when re-validation cannot run");
+
+    assert_eq!(calls, 1, "one failing section, one call");
+    assert_eq!(stats.rounds, 1);
+    assert_eq!(stats.calls, 1);
+    assert!(!stats.reverted);
+    assert!(!stats.timed_out && !stats.budgeted);
+    assert!(
+        !document.contains("47%"),
+        "the corrected section must actually be in the document"
+    );
+    assert!(
+        document.contains("Built the ledger service"),
+        "the untouched sections survive the splice"
+    );
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .filter(|i| i.severity == crate::validate::Severity::Critical)
+            .count(),
+        0,
+        "the report the loop returns is the one it validated, not the one it started with"
+    );
+}
+
+/// **A round that makes things worse is reverted, totally.** The candidate is a
+/// clone, so the revert is the absence of a write rather than a rollback — and
+/// the loop stops there rather than spending its second round.
+///
+/// Mutation check: assign `draft = candidate` before the `round_is_worse` check
+/// and the "original document survives" assertion fails.
+#[tokio::test]
+async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
+    // A "correction" that invents MORE unsourced figures than it removed.
+    // Three-digit-or-percent figures on purpose: `metrics_in` deliberately
+    // ignores bare numbers under three digits with no `%`/`x` unit, so "30
+    // teams" would count for nothing and the round would not be worse at all.
+    let worse = "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 61% across 340 teams in 125 markets.";
+    let (document, report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the summary exists");
+            let spliced = sections::splice(&document, section, worse);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        repair_revalidate,
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert!(stats.reverted, "a strictly-worse round must revert");
+    assert_eq!(stats.rounds, 1, "…and stop, not spend the second round");
+    assert_eq!(
+        document, REPAIR_DRAFT,
+        "the ORIGINAL document survives byte-for-byte — the round worked on a clone"
+    );
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.severity == crate::validate::Severity::Critical),
+        "the reverted round's report must not be kept either"
+    );
+}
+
+/// **The deadline is enforced INSIDE the loop.** `StageHooks::before` cannot
+/// reach here: `repair` is the last stage, so there is no boundary after it,
+/// and one round can spend four provider calls at up to `OLLAMA_COMPLETION`
+/// each. A run past its deadline makes NO call and stops with `RunTimeout`,
+/// keeping whatever it already had.
+///
+/// Mutation check: delete the `deadline.passed()` check at the top of the loop
+/// and `calls` becomes 1 while `timed_out` becomes false — which is exactly the
+/// ~2400 s overrun the run deadline was silently allowing.
+#[tokio::test]
+async fn the_repair_loop_stops_at_the_run_deadline_without_paying_for_a_call() {
+    let mut calls = 0u32;
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        expired_deadline(),
+        |_key, _document, _issues| {
+            calls += 1;
+            async move { Ok(super::stages::SectionOutcome::Replaced(String::new())) }
+        },
+        repair_revalidate,
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(calls, 0, "a run out of time must not pay for another call");
+    assert!(stats.timed_out, "…and must say WHY it stopped");
+    assert_eq!(stats.rounds, 0);
+    assert_eq!(
+        document, REPAIR_DRAFT,
+        "the document produced so far is kept, never discarded"
+    );
+}
+
+/// **The deadline is checked between the round's own CALLS, not only between
+/// rounds.** One round can spend `MAX_SECTIONS_PER_ROUND` (4) calls at up to
+/// `OLLAMA_COMPLETION` (300 s) each: a round-granular check lets a run overrun
+/// its deadline by ~20 minutes, which is most of the gap the whole AH2 finding
+/// is about.
+///
+/// The deadline here is LIVE when the round starts and expires inside the first
+/// call, so only the per-section check can catch it.
+///
+/// Mutation check: this is the one the between-ROUNDS check cannot cover —
+/// delete the per-section `deadline.passed()` and `calls` becomes 2 while
+/// `timed_out` stays false. (Verified: with only the round-level check present,
+/// this test fails and `..._without_paying_for_a_call` still passes.)
+#[tokio::test]
+async fn the_repair_loop_stops_between_section_calls_not_only_between_rounds() {
+    // Two failing sections, so there IS a second call for the check to refuse.
+    let source = "Jane Doe\n\nPROFESSIONAL SUMMARY\nA payments engineer.\n\nSKILLS\nGo, Rust\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+    let draft = "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 47% and grew revenue by 220%.\n\nSKILLS\nGo, Rust, Kubernetes across 370 clusters\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+    let report = validate_content(&ContentInput {
+        generated: draft,
+        source_resume: source,
+        job_ad: "We need a payments engineer.",
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+    assert!(
+        criticals_by_section(draft, &report).len() >= 2,
+        "the premise: the round has more than one section to work through"
+    );
+
+    let mut calls = 0u32;
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        draft.to_string(),
+        report,
+        None,
+        2,
+        // Live now, spent by the time the first call returns.
+        super::RunDeadline::starting_now(std::time::Duration::from_millis(40)),
+        |key, document, _issues| {
+            calls += 1;
+            let clean = match key {
+                SectionKey::Summary => "PROFESSIONAL SUMMARY\nA payments engineer.",
+                _ => "SKILLS\nGo, Rust",
+            };
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the section exists");
+            let spliced = sections::splice(&document, section, clean);
+            async move {
+                // The overrun a round-granular check cannot see.
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                Ok(super::stages::SectionOutcome::Replaced(spliced))
+            }
+        },
+        |candidate| {
+            let candidate = candidate.clone();
+            async move {
+                Ok((
+                    validate_content(&ContentInput {
+                        generated: &candidate,
+                        source_resume: source,
+                        job_ad: "We need a payments engineer.",
+                        top_requirements: &[],
+                        target_language: "en",
+                        doc_kind: DocKind::Resume,
+                    }),
+                    None,
+                ))
+            }
+        },
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(
+        calls, 1,
+        "the second section must not be paid for once the run is out of time"
+    );
+    assert!(stats.timed_out);
+    assert_eq!(stats.rounds, 1);
+    assert!(
+        !document.contains("47%"),
+        "the work the round DID finish is kept — the deadline ends the loop, it does not \
+         discard progress"
+    );
+}
+
+/// **A per-section provider error is a failed attempt, not a failed run**, and
+/// **a daily-cap refusal is `Budgeted`** — the two halves of "the terminal state
+/// must not lie". A `?` here used to throw away a document the run had already
+/// produced, which is the opposite of what every `StoppedReason` promises.
+///
+/// Mutation check: restore the `?` on `regenerate_one_section` and the first
+/// case returns `Err` (no document at all); treat `RateLimited` as an ordinary
+/// error and `budgeted` stays false.
+#[tokio::test]
+async fn the_repair_loop_survives_a_section_error_and_stops_on_the_daily_cap() {
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |_key, _document, _issues| async move {
+            Err(crate::error::AppError::Provider(
+                "the model fell over".to_string(),
+            ))
+        },
+        repair_revalidate,
+    )
+    .await
+    .expect("a provider error must not fail the stage");
+    assert_eq!(stats.failed, 1, "counted as a failed attempt");
+    assert!(!stats.budgeted);
+    assert_eq!(
+        document, REPAIR_DRAFT,
+        "the run keeps the document it already had"
+    );
+
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |_key, _document, _issues| async move {
+            Err(crate::error::AppError::RateLimited(
+                "daily provider ceiling reached".to_string(),
+            ))
+        },
+        repair_revalidate,
+    )
+    .await
+    .expect("a budget refusal must not fail the stage either");
+    assert!(
+        stats.budgeted,
+        "the day's cap has its own StoppedReason precisely so this is not reported as a failure"
+    );
+    assert_eq!(stats.failed, 0, "a refusal is not a failed attempt");
+    assert_eq!(document, REPAIR_DRAFT);
+}
+
+/// **A section the document does not have costs NO provider round-trip, and is
+/// not counted as one.**
+///
+/// `regenerate_one_section` used to fold "no such section" and "the model
+/// answered unusably" into one `Ok(None)`, and the loop counted a call for
+/// both — so every run whose validator named a section the split could not
+/// resolve over-reported its own provider spend in the metrics the user (and
+/// the cost accounting) reads. Three outcomes, not two.
+///
+/// Mutation check: count a call for `Missing` and `stats.calls` becomes 1.
+#[tokio::test]
+async fn a_missing_section_is_not_counted_as_a_provider_call() {
+    let (document, _report, _letter, stats) = super::stages::repair_loop(
+        REPAIR_DRAFT.to_string(),
+        repair_report(REPAIR_DRAFT),
+        None,
+        2,
+        live_deadline(),
+        |_key, _document, _issues| async move { Ok(super::stages::SectionOutcome::Missing) },
+        repair_revalidate,
+    )
+    .await
+    .expect("re-validation ran");
+
+    assert_eq!(stats.calls, 0, "no provider was asked anything");
+    assert_eq!(
+        stats.truncated, 0,
+        "…and it is not a truncated answer either"
+    );
+    assert_eq!(stats.failed, 0, "…nor an error");
+    assert_eq!(
+        stats.rounds, 1,
+        "the round happened; it just achieved nothing"
+    );
+    assert_eq!(document, REPAIR_DRAFT);
+}
+
+/// **A round spends its budget on the WORST sections, not the alphabetically
+/// first ones.** A `BTreeMap` is ordered by wire key — `education` <
+/// `experience:0` < `projects` < `skills` < `summary` — so a document with five
+/// failing sections starved `summary` deterministically, every round, forever.
+///
+/// Mutation check: return the `BTreeMap`'s own order and the assertion below
+/// fails on the first entry.
+#[test]
+fn repair_spends_its_round_on_the_sections_with_the_most_criticals() {
+    // Two Criticals in the summary (two unsourced figures), one in skills.
+    // Percent/three-digit figures: `metrics_in` ignores bare numbers under
+    // three digits with no `%`/`x` unit.
+    let source = "Jane Doe\n\nPROFESSIONAL SUMMARY\nA payments engineer.\n\nSKILLS\nGo, Rust\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+    let generated = "PROFESSIONAL SUMMARY\nA payments engineer who cut costs by 47% and grew revenue by 220%.\n\nSKILLS\nGo, Rust, Kubernetes across 370 clusters\n\nWORK EXPERIENCE\n\nAcme Payments | Senior Engineer | 2021 - Present\n- Built the ledger service\n";
+    let report = validate_content(&ContentInput {
+        generated,
+        source_resume: source,
+        job_ad: "We need a payments engineer.",
+        top_requirements: &[],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    });
+
+    let grouped = criticals_by_section(generated, &report);
+    assert!(
+        grouped.len() >= 2,
+        "fixture must fail in at least two sections, or the ordering is untested; got {:?}",
+        grouped.iter().map(|(key, _)| key).collect::<Vec<_>>()
+    );
+    let counts: Vec<usize> = grouped.iter().map(|(_, issues)| issues.len()).collect();
+    assert!(
+        counts.windows(2).all(|pair| pair[0] >= pair[1]),
+        "sections must be ordered worst-first; got {:?}",
+        grouped
+            .iter()
+            .map(|(key, issues)| (key, issues.len()))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        counts[0] > 1,
+        "the worst section must carry more than one Critical, or the order is coincidence"
+    );
 }

@@ -17,33 +17,75 @@ import {
  */
 const TIERS = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
+/**
+ * The run's INNER per-call bounds, spelled out from constants that are NOT part
+ * of `qualityRunDeadlineSecs`' own formula — which is the whole point.
+ *
+ * The previous version of the "clears the inner bounds" test below recomputed
+ * `QUALITY_RUN_FIXED_SECS + STREAM_BASELINE_SECS × QUALITY_RUN_GENERATION_PASSES
+ * × multiplier` and compared it against the function built from those exact
+ * terms: an identity that cannot fail, and whose claimed mutation ("drop
+ * QUALITY_RUN_FIXED_SECS and the bottom tiers fail") was FALSE — both sides move
+ * together. These numbers are the Rust-side facts the deadline has to cover, so
+ * dropping either shared term now actually fails.
+ */
+/** `timeouts::OLLAMA_COMPLETION` — the longest per-call non-streaming bound. */
+const OLLAMA_COMPLETION_SECS = 300;
+/** `analyze_job`, `match_evidence`, `strategy`. */
+const JSON_STAGES = 3;
+/** `Completer::complete_json` allows exactly one re-ask. */
+const ROUND_TRIPS_PER_JSON_STAGE = 2;
+/** `Budget::max_repair_attempts`. */
+const REPAIR_ROUNDS = 2;
+/** `pipeline::resume::stages::repair::MAX_SECTIONS_PER_ROUND`. */
+const REPAIR_SECTIONS_PER_ROUND = 4;
+
 describe('qualityRunDeadlineSecs', () => {
   it('pins the derived per-tier table', () => {
-    // Every value is `QUALITY_RUN_FIXED_SECS + 300 × 3 × multiplier`. Pinned as
+    // Every value is `QUALITY_RUN_FIXED_SECS + 300 × 1 × multiplier`. Pinned as
     // literals (not recomputed from the constants) so a change to either term
     // has to be re-argued against the derivation in the source doc, and so the
     // Rust twin (`timeouts::quality_run_deadline`) has a table to match.
-    expect(qualityRunDeadlineSecs(undefined)).toBe(2_700);
-    expect(qualityRunDeadlineSecs('minimal')).toBe(2_700);
-    expect(qualityRunDeadlineSecs('low')).toBe(2_700);
-    expect(qualityRunDeadlineSecs('medium')).toBe(3_150);
-    expect(qualityRunDeadlineSecs('high')).toBe(3_600);
-    expect(qualityRunDeadlineSecs('xhigh')).toBe(4_050);
-    expect(qualityRunDeadlineSecs('max')).toBe(4_500);
+    expect(qualityRunDeadlineSecs(undefined)).toBe(4_500);
+    expect(qualityRunDeadlineSecs('minimal')).toBe(4_500);
+    expect(qualityRunDeadlineSecs('low')).toBe(4_500);
+    expect(qualityRunDeadlineSecs('medium')).toBe(4_650);
+    expect(qualityRunDeadlineSecs('high')).toBe(4_800);
+    expect(qualityRunDeadlineSecs('xhigh')).toBe(4_950);
+    expect(qualityRunDeadlineSecs('max')).toBe(5_100);
   });
 
   it('clears the inner per-call bounds it wraps at every tier', () => {
     // The invariant the derivation exists for: the run deadline must exceed the
     // sum of the deadlines the run's own calls are allowed to consume, or it
     // becomes the binding constraint and the actionable per-call error never
-    // fires. Mutation check: drop `QUALITY_RUN_FIXED_SECS` to the old flat
-    // 30-minute budget (1_800 → 900) and the bottom tiers fail.
+    // fires. Mutation checks (both applied, both caught): set
+    // QUALITY_RUN_FIXED_SECS back to 1_800 (the pre-fix value that ignored the
+    // repair fan-out) and every tier fails; set QUALITY_RUN_GENERATION_PASSES
+    // to 0 and every tier fails.
+    const flatCalls =
+      OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE +
+      OLLAMA_COMPLETION_SECS * REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND;
     for (const effort of TIERS) {
       const multiplier = (effort ? EFFORT_TIMEOUT_MULTIPLIER[effort] : undefined) ?? 1;
-      const innerBounds =
-        QUALITY_RUN_FIXED_SECS + STREAM_BASELINE_SECS * QUALITY_RUN_GENERATION_PASSES * multiplier;
+      // The draft is the run's only streamed (effort-scaled) call.
+      const innerBounds = flatCalls + STREAM_BASELINE_SECS * multiplier;
       expect(qualityRunDeadlineSecs(effort)).toBeGreaterThanOrEqual(innerBounds);
     }
+  });
+
+  it('accounts for the repair fan-out in a term that does not scale with effort', () => {
+    // The second half of the AH2 fix, pinned separately from the sum above:
+    // the 8 repair calls are bounded by a FLAT constant, so they must sit in
+    // `QUALITY_RUN_FIXED_SECS`. Mutation check: move them back into the scaled
+    // term (FIXED 1_800 + PASSES 9) and the fixed-term assertion fails — while
+    // the sum above still passes at the bottom tier, which is exactly why this
+    // needs its own guard.
+    expect(QUALITY_RUN_FIXED_SECS).toBeGreaterThanOrEqual(
+      OLLAMA_COMPLETION_SECS * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE +
+        OLLAMA_COMPLETION_SECS * REPAIR_ROUNDS * REPAIR_SECTIONS_PER_ROUND
+    );
+    expect(QUALITY_RUN_GENERATION_PASSES).toBe(1);
   });
 
   it('is monotonically nondecreasing across the ascending tier order', () => {
