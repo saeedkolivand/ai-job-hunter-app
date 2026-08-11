@@ -281,12 +281,20 @@ async fn score_one(
         let jv = posting_vector_or_embed(store, active, io, budget, job_id, &job_text).await;
         (rv, jv)
     };
-    let semantic = match (&resume_vec, &job_vec) {
-        (Some(a), Some(b)) => crate::commands::ai_provider::compare(a, b)
-            .map(|s| (s.clamp(0.0, 1.0) * 100.0).round())
-            .unwrap_or(0.0),
-        _ => 0.0, // embeddings unavailable or disabled.
+    // ONE comparison, and both the number and its availability are derived from
+    // it. `compare` refuses a cross-space pair (`Err`) — presence of two vectors
+    // is not comparability, and the two answers must not be sourced separately:
+    // asking `is_some()` about the vectors while the score came from a refused
+    // `compare` is exactly how a placeholder becomes a published measurement.
+    //
+    // `None` here means "no cosine exists": embeddings disabled, one/both sides
+    // unavailable (offline provider, failed embed, ceiling refusal), or a pair
+    // whose spaces do not match.
+    let comparison = match (&resume_vec, &job_vec) {
+        (Some(a), Some(b)) => crate::commands::ai_provider::compare(a, b).ok(),
+        _ => None,
     };
+    let semantic = comparison.map_or(0.0, |s| (s.clamp(0.0, 1.0) * 100.0).round());
 
     // ATS: how many job keywords appear in the resume text. The JD language
     // defines the stemmer; both sides are stemmed with the SAME stemmer when the
@@ -350,14 +358,18 @@ async fn score_one(
     // round-trip). `semantic == 0.0` is NOT a usable proxy for it: a real cosine
     // can legitimately clamp to zero.
     //
-    // BOTH vectors are required, and the MIXED shape is the reason this is
-    // spelled out: a cosine is computed from a pair, so the `semantic` match
-    // above already yields 0.0 unless both sides are present. Asking only about
-    // the posting (a cached posting vector, a résumé embed that was refused or
-    // failed) declared that 0.0 a measurement — publishing `0.6 × 0 + 0.4 × ats`
-    // as a "combined" score, caching it under the semantic key, and serving that
-    // ~40%-of-keyword number for the whole cache TTL.
-    let semantic_available = resume_vec.is_some() && job_vec.is_some();
+    // It is the COMPARISON that is available or not — never the vectors. Two
+    // mistakes live on this line historically, and both published
+    // `0.6 × 0 + 0.4 × ats` as a "combined" score, cached it under the semantic
+    // key, and served that ~40%-of-keyword number for the whole cache TTL:
+    //
+    // - `job_vec.is_some()` — a MIXED pair (cached posting, résumé embed refused
+    //   or failed) called the placeholder a measurement;
+    // - `resume_vec.is_some() && job_vec.is_some()` — presence of BOTH is still
+    //   not comparability. `compare` returns `Err` for a cross-space pair and the
+    //   `.ok()` above flattens it to the same `0.0`, so an incomparable pair
+    //   passed a presence check while no cosine had been computed at all.
+    let semantic_available = comparison.is_some();
     let combined = if semantic_available {
         (0.6 * semantic + 0.4 * ats).round()
     } else {

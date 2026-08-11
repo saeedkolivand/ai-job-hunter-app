@@ -871,6 +871,24 @@ fn seed_posting_vector(store: &DocumentStore, io: &FakeScoreIo, job_id: &str, te
         .unwrap();
 }
 
+/// A vector in the ACTIVE provider/model/version but a DIFFERENT dimensionality
+/// than [`FakeScoreIo::vector`] — the shape an OpenAI-compatible `base_url`
+/// switch leaves behind. `EmbeddingConfig::matches` compares provider + model +
+/// version and never `dim`, so such a row is a cache HIT; `EmbeddingSpace`'s
+/// `PartialEq` DOES include `dim`, so the pair is incomparable at `compare()`.
+fn stale_space_vector(store: &DocumentStore, dim: usize) -> EmbeddingVector {
+    let active = store.embedding_config();
+    EmbeddingVector {
+        values: vec![0.5; dim],
+        space: crate::commands::ai_provider::EmbeddingSpace {
+            provider: active.provider,
+            model: active.model,
+            dim,
+            version: EMBEDDING_VECTOR_VERSION,
+        },
+    }
+}
+
 /// The semantic cache key of one autopilot job, as the kernel writes it.
 fn semantic_key<'a>(
     resume_id: &'a str,
@@ -967,11 +985,13 @@ async fn an_evicted_resume_vector_is_a_charged_round_trip_of_its_own() {
     assert_eq!(budget.charges(), 1);
 }
 
-// ── the degrade needs BOTH vectors, not just the posting ─────────────────────
+// ── the degrade needs BOTH vectors, and they must be COMPARABLE ──────────────
 //
 // A cosine is computed from a PAIR. Every shape below therefore has to agree on
 // one question — did an embedding actually back this number — and the two MIXED
-// shapes are what an all-present / all-absent fixture can never see.
+// shapes are what an all-present / all-absent fixture can never see. Presence is
+// necessary but NOT sufficient: two vectors from different embedding spaces are
+// both present and still yield no measurement.
 
 /// Posting vector cached, résumé embed refused: the mixed shape that survived
 /// two review rounds because `semantic_available` asked only `job_vec.is_some()`.
@@ -1047,6 +1067,107 @@ async fn a_cached_resume_alone_is_not_a_semantic_score_either() {
         Some(SCORE_SOURCE_KEYWORD)
     );
     assert_eq!(result["combined"].as_f64(), result["ats"].as_f64());
+}
+
+/// Both vectors PRESENT and still no measurement: `compare()` refuses a
+/// cross-space pair, and the `.ok()` that keeps the caller's degrade contract
+/// flattens that refusal to the formula's `0.0` placeholder. Availability read
+/// as presence therefore called it measured — `0.6 × 0 + 0.4 × ats` published as
+/// "combined", explained as "Semantic similarity 0%", frozen under the semantic
+/// key for the whole TTL, and adopted by the Autopilot's `rerank_score_from`
+/// (which resets the degrade breaker, so the pass keeps paying for more of them).
+///
+/// Reachable with no race at all: `ai_set_embedding_config` clears
+/// `posting_vectors` + `match_scores` but never the `vectors` table, and
+/// `EmbeddingConfig::matches` compares provider + model + version — never `dim`.
+/// So switching an OpenAI-compatible `base_url` from a 1536-dim endpoint to a
+/// 768-dim gateway advertising the SAME model name leaves every résumé vector in
+/// place, reading as fresh, and incomparable with every posting embedded after.
+#[tokio::test]
+async fn an_incomparable_vector_pair_is_not_a_semantic_score() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let job_id = "job-cross-space";
+    let active = store.embedding_config();
+    let resume = DocumentRecord {
+        id: "doc-stale-space".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: RESUME_TEXT.to_string(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    // The survivor of the base_url switch: same provider/model/version, wider.
+    let survivor = stale_space_vector(&store, 4);
+    assert!(
+        crate::commands::ai_provider::compare(&survivor, &io.vector()).is_err(),
+        "fixture precondition: the two spaces really are incomparable"
+    );
+    store.upsert_vector(&resume.id, &survivor).unwrap();
+
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        job_id,
+        Some(GERMAN_JD.to_string()),
+        1,
+        MatchSurface::JobsPage,
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        io.embedded(),
+        vec![ENGLISH_JD.to_string()],
+        "fixture precondition: the stale résumé vector is a cache HIT (matches() \
+         never looks at dim), so only the posting embeds — BOTH sides are present"
+    );
+    let ats = result["ats"].as_f64().expect("ats is a number");
+    assert!(
+        ats > 0.0,
+        "fixture precondition: the pair must have real keyword coverage, or \
+         `combined == ats` below would hold vacuously at zero"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_KEYWORD),
+        "no cosine was computed, so this number is keyword-only — presence of \
+         two vectors is not comparability"
+    );
+    assert_eq!(
+        result["combined"].as_f64(),
+        Some(ats),
+        "the degrade keeps the keyword score; it must never publish 40% of it \
+         as if a 0% similarity had been measured"
+    );
+    let explanation = result["explanation"].as_str().unwrap_or_default();
+    assert!(
+        !explanation.contains("Semantic similarity"),
+        "no cosine was computed, so no similarity may be reported: {explanation}"
+    );
+    assert!(
+        explanation.contains("could not be computed"),
+        "the honest phrasing names the missing measurement: {explanation}"
+    );
+    assert!(
+        store
+            .get_match_score(&semantic_key(
+                &resume.id,
+                job_id,
+                &active,
+                &sha256_hex(ENGLISH_JD)
+            ))
+            .is_none(),
+        "…and a keyword-only number must not be frozen under the semantic key, \
+         where the next run would read it back as the semantic answer"
+    );
 }
 
 /// The explanation has to describe the same reality `scoreSource` does. Saying

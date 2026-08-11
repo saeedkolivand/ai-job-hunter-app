@@ -1610,6 +1610,58 @@ fn merge_score_provisional_moves_with_score_across_resurface() {
     );
 }
 
+#[test]
+fn merge_score_source_moves_with_score_across_resurface() {
+    // The mirror of the test above, for the OTHER field paired with `score`.
+    // `score_source` says which KERNEL produced the number, and it drives the
+    // user-facing label (`autopilot.scoreLabel.{coverage,combined}`) plus its
+    // tier cut points — so a resurface that refreshes `score` must refresh
+    // `score_source` alongside it, in both directions.
+
+    // (a) a semantic re-rank's combined score, resurfaced by a later run whose
+    // re-rank never reached this job (semantic turned off, the daily ceiling,
+    // the wall clock, the degrade breaker, an offline provider). The keyword
+    // number must not inherit the previous run's "combined" label.
+    let mut existing_combined = found_job("https://a.com/1", 100);
+    existing_combined.score = Some(91.0);
+    existing_combined.score_source = ScoreSource::Combined;
+
+    let mut resurfaced_keyword = found_job("https://a.com/1", 999);
+    resurfaced_keyword.score = Some(62.0);
+    resurfaced_keyword.score_source = ScoreSource::Keyword;
+
+    let merged = merge_found_jobs(&[existing_combined], vec![resurfaced_keyword]);
+    let row = merged.iter().find(|j| j.url == "https://a.com/1").unwrap();
+    assert_eq!(row.score, Some(62.0));
+    assert_eq!(
+        row.score_source,
+        ScoreSource::Keyword,
+        "a keyword score resurfacing over a prior combined score must carry the \
+         keyword label — the two kernels are different scales, and the stale \
+         label would relabel 62 as a semantic verdict it never was"
+    );
+
+    // (b) the reverse: a keyword row that this run's re-rank DID reach must
+    // pick the combined label up, or the semantic number keeps being displayed
+    // (and banded) as plain coverage.
+    let mut existing_keyword = found_job("https://b.com/1", 100);
+    existing_keyword.score = Some(62.0);
+    existing_keyword.score_source = ScoreSource::Keyword;
+
+    let mut resurfaced_combined = found_job("https://b.com/1", 999);
+    resurfaced_combined.score = Some(91.0);
+    resurfaced_combined.score_source = ScoreSource::Combined;
+
+    let merged = merge_found_jobs(&[existing_keyword], vec![resurfaced_combined]);
+    let row = merged.iter().find(|j| j.url == "https://b.com/1").unwrap();
+    assert_eq!(row.score, Some(91.0));
+    assert_eq!(
+        row.score_source,
+        ScoreSource::Combined,
+        "a re-ranked score must arrive with its own label"
+    );
+}
+
 // ── AutopilotStore::create filter fallback ────────────────────────────────────
 
 #[test]

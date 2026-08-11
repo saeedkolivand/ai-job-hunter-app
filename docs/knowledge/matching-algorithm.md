@@ -6,12 +6,12 @@ Canonical source: `apps/desktop/src-tauri/src/documents/keywords.rs` → `covera
 
 The AI Job Hunter uses **two complementary scoring strategies**:
 
-1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free, deterministic, zero API calls, safe for headless scheduling.
+1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free by default (when semantic scoring is disabled); when enabled, the top candidates re-rank through the combined kernel with per-job keyword-only degrade (see ADR-020 addendum).
 2. **Combined scoring** (Jobs page analysis): hybrid (**60% semantic embedding similarity + 40% keyword ATS**), semantically heavier but requires embedding lookup.
 
 ## Keyword-Coverage Kernel
 
-The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for embedding-free scoring. It powers:
+The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for keyword-only scoring (the default Autopilot path). It powers:
 
 - **Autopilot ranking** (`commands::autopilot::build_found_job` → `coverage_score()`): filters + sorts candidates by keyword match %.
 - **ATS component** of the Jobs page combined score.

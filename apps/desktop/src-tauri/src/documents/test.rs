@@ -2800,7 +2800,7 @@ fn import_skips_a_synthetic_id_vector_instead_of_aborting_the_restore() {
 
 /// The autopilot re-rank's résumé snapshot lives in this cache, so deleting the
 /// autopilot needs a single-row delete (the cache is otherwise bounded only by
-/// its TTL and row cap — see `commands::autopilot::drop_orphaned_resume_vector`).
+/// its TTL and row cap — see `commands::autopilot::drop_orphaned_resume_cache`).
 #[test]
 #[serial]
 fn delete_posting_vector_removes_only_that_row() {

@@ -1168,7 +1168,9 @@ pub(crate) trait Embedder: Send + Sync {
 /// cached path short-circuits.
 ///
 /// `Err` means the ceiling refused: the round-trip must NOT happen.
-pub trait EmbedBudget: Send + Sync {
+/// `pub(crate)` for the same reason as [`Embedder`]: "charged exactly once" is
+/// only a guarantee while every implementor is in this crate.
+pub(crate) trait EmbedBudget: Send + Sync {
     fn charge_one_embed(&self) -> AppResult<()>;
 }
 
