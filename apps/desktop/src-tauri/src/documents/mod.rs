@@ -955,6 +955,23 @@ impl DocumentStore {
         .await
     }
 
+    /// Drop every cached match score computed FOR one résumé id.
+    ///
+    /// A `match_scores` row is résumé-derived content — its gaps,
+    /// recommendations and explanation all describe that résumé — so it must
+    /// die with the résumé, not at the TTL. Sibling of
+    /// [`Self::delete_posting_vector`] for the other half of an Autopilot
+    /// snapshot's cache footprint. Idempotent.
+    pub fn delete_match_scores_for_resume(&self, resume_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM match_scores WHERE resume_id = ?1",
+            params![resume_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Drop the entire match-result cache (e.g. on embedding-config change).
     pub fn clear_match_scores(&self) -> AppResult<()> {
         let conn = self.conn.lock();
@@ -1130,8 +1147,10 @@ pub(crate) fn posting_vector_is_fresh(
 /// test over a real [`DocumentStore`] instead of a hand-retyped mirror of the
 /// kernel's own cache logic — which is exactly the shape that let an
 /// untranslated-hash charge predicate pass review.
+/// `pub(crate)`, not `pub`: the choke point is only a guarantee while every
+/// implementor is in this crate and reachable from `embed_charged`.
 #[async_trait::async_trait]
-pub trait Embedder: Send + Sync {
+pub(crate) trait Embedder: Send + Sync {
     /// `None` on any failure — the caller degrades to keyword-only scoring.
     async fn embed_one(&self, text: &str) -> Option<EmbeddingVector>;
 }
@@ -1177,7 +1196,7 @@ pub(crate) async fn embed_charged<E: Embedder + ?Sized>(
 ///
 /// `embed` already logs its own failure (see its doc), so `.ok()` here only
 /// discards the error from this `Option`-returning seam.
-pub struct AppEmbedder<'a>(pub &'a AppHandle);
+pub(crate) struct AppEmbedder<'a>(pub &'a AppHandle);
 
 #[async_trait::async_trait]
 impl Embedder for AppEmbedder<'_> {

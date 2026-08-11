@@ -342,13 +342,22 @@ async fn score_one(
     // "developer", not the Snowball stems "kubernet" / "develop".
     let gaps = readable_gaps(&gap_stems, &display_forms(&job_text, &stemmer));
 
-    // ONE decision, two consumers: the combined formula below AND the
-    // `scoreSource` label in the result. Both hang off this single boolean, so a
-    // caller can never be told "combined" for a number that is really
-    // keyword-only — the degrade case (semantic disabled, or an embed that
-    // failed / a provider that is offline). `semantic == 0.0` is NOT a usable
-    // proxy for it: a real cosine can legitimately clamp to zero.
-    let semantic_available = job_vec.is_some();
+    // ONE decision, three consumers: the combined formula below, the
+    // `scoreSource` label, and the explanation. All hang off this single
+    // boolean, so a caller can never be told "combined" for a number that is
+    // really keyword-only — the degrade case (semantic disabled, or an embed
+    // that failed / a provider that is offline / the ceiling refusing the
+    // round-trip). `semantic == 0.0` is NOT a usable proxy for it: a real cosine
+    // can legitimately clamp to zero.
+    //
+    // BOTH vectors are required, and the MIXED shape is the reason this is
+    // spelled out: a cosine is computed from a pair, so the `semantic` match
+    // above already yields 0.0 unless both sides are present. Asking only about
+    // the posting (a cached posting vector, a résumé embed that was refused or
+    // failed) declared that 0.0 a measurement — publishing `0.6 × 0 + 0.4 × ats`
+    // as a "combined" score, caching it under the semantic key, and serving that
+    // ~40%-of-keyword number for the whole cache TTL.
+    let semantic_available = resume_vec.is_some() && job_vec.is_some();
     let combined = if semantic_available {
         (0.6 * semantic + 0.4 * ats).round()
     } else {
@@ -368,9 +377,20 @@ async fn score_one(
             "Keyword coverage {ats:.0}% across {} job keywords (semantic scoring disabled). {GUIDANCE}",
             job_keywords.len()
         )
-    } else {
+    } else if semantic_available {
         format!(
             "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {} job keywords. {GUIDANCE}",
+            job_keywords.len()
+        )
+    } else {
+        // Semantic scoring is ON but no embedding pair exists (provider offline,
+        // an embed that failed, or the daily ceiling refusing the round-trip).
+        // Reporting the formula's placeholder as "Semantic similarity 0%" states
+        // a measurement that never happened — and reads as "you are a terrible
+        // match" — while `scoreSource` next to it says keyword. Distinct from
+        // the disabled branch above: the user did not opt out here.
+        format!(
+            "Keyword coverage {ats:.0}% across {} job keywords (semantic similarity could not be computed — no embedding was available for this pair). {GUIDANCE}",
             job_keywords.len()
         )
     };
@@ -391,7 +411,7 @@ async fn score_one(
         // consumer that branches on it (the Autopilot re-rank) writes its own
         // fresh rows under its own `resume_id`/`job_id` namespace, so it never
         // reads a field-less legacy row.
-        "scoreSource": if semantic_available { "combined" } else { "keyword" },
+        "scoreSource": if semantic_available { SCORE_SOURCE_COMBINED } else { SCORE_SOURCE_KEYWORD },
     });
     // Cache only a result the key can honestly describe. A `semantic_enabled = 1`
     // key promises a semantic answer; when the embed did not happen (provider
@@ -465,6 +485,11 @@ pub(crate) async fn score_adhoc_keyword_only(
 /// error object, a field-less legacy cache row — is a degrade. One constant so
 /// the producer and the Autopilot consumer can't drift.
 pub(crate) const SCORE_SOURCE_COMBINED: &str = "combined";
+
+/// The `scoreSource` value for a `combined` number that is really the keyword
+/// score — semantic scoring off, or an embedding that did not happen. The
+/// degrade half of [`SCORE_SOURCE_COMBINED`], named for the same reason.
+pub(crate) const SCORE_SOURCE_KEYWORD: &str = "keyword";
 
 /// Content-addressed cache identity for an Autopilot's résumé snapshot.
 ///

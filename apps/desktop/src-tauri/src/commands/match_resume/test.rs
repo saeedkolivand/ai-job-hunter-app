@@ -967,6 +967,162 @@ async fn an_evicted_resume_vector_is_a_charged_round_trip_of_its_own() {
     assert_eq!(budget.charges(), 1);
 }
 
+// ── the degrade needs BOTH vectors, not just the posting ─────────────────────
+//
+// A cosine is computed from a PAIR. Every shape below therefore has to agree on
+// one question — did an embedding actually back this number — and the two MIXED
+// shapes are what an all-present / all-absent fixture can never see.
+
+/// Posting vector cached, résumé embed refused: the mixed shape that survived
+/// two review rounds because `semantic_available` asked only `job_vec.is_some()`.
+/// The cosine needs both sides, so `semantic` is 0.0 and the published number
+/// becomes `0.6 × 0 + 0.4 × ats` — an ats of 86 shipping as a "combined" 34,
+/// cached under the semantic key, where the Autopilot's `rerank_score_from`
+/// adopts it and the early return serves that 34 for the whole TTL.
+#[tokio::test]
+async fn a_cached_posting_alone_is_not_a_semantic_score() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let job_id = "autopilot:posting-only";
+    let resume_id = autopilot_resume_id(RESUME_TEXT);
+    let active = store.embedding_config();
+    seed_posting_vector(&store, &io, job_id, ENGLISH_JD);
+    // The ceiling refuses the résumé round-trip. An offline provider and a
+    // failed embed produce the IDENTICAL shape — this is the whole degrade class.
+    let budget = CountingBudget::exhausted();
+
+    let result = score_autopilot(&io, &store, &budget, job_id, GERMAN_JD).await;
+
+    let ats = result["ats"].as_f64().expect("ats is a number");
+    assert!(
+        ats > 0.0,
+        "fixture precondition: the pair must have real keyword coverage, or \
+         `combined == ats` below would hold vacuously at zero"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_KEYWORD),
+        "no résumé vector means no cosine — this number is keyword-only"
+    );
+    assert_eq!(
+        result["combined"].as_f64(),
+        Some(ats),
+        "the degrade keeps the keyword score; it must never publish 40% of it \
+         as if a 0% similarity had been measured"
+    );
+    assert!(
+        store
+            .get_match_score(&semantic_key(
+                &resume_id,
+                job_id,
+                &active,
+                &sha256_hex(ENGLISH_JD)
+            ))
+            .is_none(),
+        "…and a keyword-only number must not be frozen under the semantic key, \
+         where the next run would read it back as the semantic answer"
+    );
+}
+
+/// The mirror shape — résumé vector cached, posting embed refused. Tested as its
+/// own case deliberately: the two sides are what an all-present/all-absent
+/// fixture cannot distinguish, and the asymmetry is how the defect above
+/// survived.
+#[tokio::test]
+async fn a_cached_resume_alone_is_not_a_semantic_score_either() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let job_id = "autopilot:resume-only";
+    seed_posting_vector(&store, &io, &autopilot_resume_id(RESUME_TEXT), RESUME_TEXT);
+    let budget = CountingBudget::exhausted();
+
+    let result = score_autopilot(&io, &store, &budget, job_id, GERMAN_JD).await;
+
+    assert!(
+        io.embedded().is_empty(),
+        "the résumé was cached and the posting was refused: no round-trip happened"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_KEYWORD)
+    );
+    assert_eq!(result["combined"].as_f64(), result["ats"].as_f64());
+}
+
+/// The explanation has to describe the same reality `scoreSource` does. Saying
+/// "Semantic similarity 0%" for a measurement that never ran reads as "you are
+/// a terrible match" when the truth is "we could not check" — three distinct
+/// states, three distinct sentences.
+#[tokio::test]
+async fn the_explanation_never_reports_a_similarity_that_was_not_measured() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let resume = autopilot_resume_record(RESUME_TEXT);
+    let active = store.embedding_config();
+    let explanation = |v: &Value| v["explanation"].as_str().unwrap_or_default().to_string();
+
+    // 1. Semantic ON but no embedding happened (offline / refused).
+    let degraded = explanation(
+        &score_autopilot(
+            &io,
+            &store,
+            &CountingBudget::exhausted(),
+            "autopilot:offline",
+            GERMAN_JD,
+        )
+        .await,
+    );
+    assert!(
+        !degraded.contains("Semantic similarity"),
+        "no cosine was computed, so no similarity may be reported: {degraded}"
+    );
+    assert!(
+        degraded.contains("could not be computed"),
+        "the honest phrasing names the missing measurement: {degraded}"
+    );
+    assert!(
+        !degraded.contains("disabled"),
+        "the user did NOT switch semantic scoring off — that is a different state: {degraded}"
+    );
+
+    // 2. Semantic OFF — the user's own choice, and its own distinct wording.
+    let disabled = explanation(
+        &score_one(
+            &io,
+            &store,
+            &resume,
+            None,
+            &active,
+            "autopilot:off",
+            Some(GERMAN_JD.to_string()),
+            0,
+            MatchSurface::Autopilot,
+            None,
+        )
+        .await,
+    );
+    assert!(
+        disabled.contains("semantic scoring disabled"),
+        "a deliberate opt-out keeps its own sentence: {disabled}"
+    );
+
+    // 3. A real measurement still reports the number it measured.
+    let measured = explanation(
+        &score_autopilot(
+            &io,
+            &store,
+            &CountingBudget::new(),
+            "autopilot:live",
+            GERMAN_JD,
+        )
+        .await,
+    );
+    assert!(
+        measured.contains("Semantic similarity"),
+        "…and a score that DID embed must still report its similarity: {measured}"
+    );
+}
+
 /// A refused charge stops the round-trip (that is the point of a ceiling) and
 /// the job degrades to keyword-only.
 #[tokio::test]

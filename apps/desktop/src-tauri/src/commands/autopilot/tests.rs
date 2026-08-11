@@ -649,6 +649,91 @@ async fn semantic_rerank_charges_the_daily_ceiling_and_stops_when_it_is_hit() {
     assert_eq!(jobs[2].score_source, ScoreSource::Keyword);
 }
 
+/// An offline embedding provider degrades EVERY job, so the per-job degrade
+/// contract alone spends a full phase — up to `SEMANTIC_RERANK_MAX` provider
+/// timeouts — on every scheduled run to produce nothing. After
+/// `RERANK_DEGRADE_BREAKER` consecutive degrades the provider is plainly down
+/// and the pass stops; the rest of the list keeps its keyword scores, which is
+/// the ordinary degrade.
+#[tokio::test]
+async fn a_run_of_consecutive_degrades_stops_the_phase() {
+    let mut jobs: Vec<FoundJob> = (0..RERANK_DEGRADE_BREAKER + 4)
+        .map(|i| ranked(&format!("https://example.com/{i}"), 50.0))
+        .collect();
+    // Only the LAST job is scriptable — the provider is "down" for every job
+    // before it, so a pass without a breaker would walk the whole list.
+    let env = FakeRerankEnv::new(vec![(
+        autopilot_job_id(jobs.last().expect("non-empty")),
+        99.0,
+    )]);
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
+
+    assert_eq!(
+        env.calls(),
+        RERANK_DEGRADE_BREAKER,
+        "an offline provider must cost a bounded number of attempts, not one per job"
+    );
+    assert_eq!(summary.degraded, RERANK_DEGRADE_BREAKER);
+    assert_eq!(summary.rescored, 0);
+    assert!(
+        jobs.iter().all(|j| j.score_source == ScoreSource::Keyword),
+        "a stopped pass leaves every job on its keyword score — the run still completes"
+    );
+    assert_eq!(
+        jobs.last().and_then(|j| j.score),
+        Some(50.0),
+        "the unvisited tail is untouched, exactly as for the daily ceiling"
+    );
+}
+
+/// …and the counter is CONSECUTIVE, not cumulative: an unscorable posting
+/// between healthy ones must not close the breaker on a working provider.
+#[tokio::test]
+async fn isolated_degrades_never_stop_a_healthy_pass() {
+    // Alternating degrade / success, with more degrades in total than the
+    // breaker allows — but never two in a row.
+    let mut jobs: Vec<FoundJob> = (0..2 * RERANK_DEGRADE_BREAKER + 2)
+        .map(|i| ranked(&format!("https://example.com/{i}"), 50.0))
+        .collect();
+    let env = FakeRerankEnv::new(
+        jobs.iter()
+            .enumerate()
+            .filter(|(i, _)| i % 2 == 1)
+            .map(|(_, j)| (autopilot_job_id(j), 88.0))
+            .collect::<Vec<_>>(),
+    );
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
+
+    assert_eq!(
+        env.calls(),
+        jobs.len(),
+        "every job is still visited: a success resets the consecutive counter"
+    );
+    assert!(
+        summary.degraded > RERANK_DEGRADE_BREAKER,
+        "test premise: more total degrades than the breaker, none of them consecutive"
+    );
+    assert_eq!(summary.rescored, jobs.len() / 2);
+}
+
 #[tokio::test]
 async fn semantic_rerank_stops_on_cancellation_without_spending() {
     let mut jobs = vec![ranked("https://example.com/a", 80.0)];
@@ -919,17 +1004,80 @@ fn the_candidate_url_set_covers_the_scorable_head_and_nothing_else() {
     );
 }
 
-/// …and it stops at the same top-N ceiling the loop does, so a pathological
-/// harvest cannot make the map big either.
+/// …and it must NOT be capped by POSITION. The loop's own `considered` counter
+/// is the cost bound, and it only counts jobs that got past the blob and
+/// URL-variant filters — both of which it applies AFTER the candidate set was
+/// built. A positional cap therefore under-covers by exactly the number of rows
+/// the loop skips, and a skipped row is silently dropped (no blob → `continue`),
+/// so the phase quietly re-ranks fewer jobs than the ceiling allows.
 #[test]
-fn the_candidate_url_set_stops_at_the_top_n_ceiling() {
+fn the_candidate_url_set_is_not_capped_by_position() {
     let jobs: Vec<FoundJob> = (0..SEMANTIC_RERANK_MAX + 7)
         .map(|i| ranked(&format!("https://example.com/{i}"), 90.0))
         .collect();
 
     assert_eq!(
         rerank_candidate_urls(&jobs, NO_CLUSTERS).len(),
-        SEMANTIC_RERANK_MAX
+        jobs.len(),
+        "every scored canonical is reachable by the loop, so every one of them \
+         needs its blob — the ceiling is enforced by the loop, not by this set"
+    );
+}
+
+/// The defect a positional cap causes, end to end through the REAL phase with
+/// the REAL candidate set feeding the blob map exactly as `autopilot_run` does:
+/// two URL variants of one posting are collapsed by `seen_this_run` WITHOUT
+/// counting toward `considered`, so the 20th distinct job sits past position 20
+/// — where a capped set no longer has its blob. The run then pays for 19 of the
+/// 20 slots the user is entitled to, silently.
+#[tokio::test]
+async fn a_collapsed_url_variant_does_not_cost_a_later_job_its_rerank_slot() {
+    // Two variants of ONE posting (they share a cache id), then exactly
+    // SEMANTIC_RERANK_MAX distinct postings behind them.
+    let mut jobs = vec![
+        ranked("https://example.com/job", 99.0),
+        ranked("https://example.com/job?utm_source=alerts", 99.0),
+    ];
+    jobs.extend(
+        (0..SEMANTIC_RERANK_MAX).map(|i| ranked(&format!("https://example.com/{i}"), 90.0)),
+    );
+    assert_eq!(
+        autopilot_job_id(&jobs[0]),
+        autopilot_job_id(&jobs[1]),
+        "test premise: the first two rows must collapse to one cache identity"
+    );
+
+    let env = std::sync::Arc::new(FakeRerankEnv::new(
+        jobs.iter()
+            .map(|j| (autopilot_job_id(j), 99.0))
+            .collect::<Vec<_>>(),
+    ));
+    let all_blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank_phase(
+        true,
+        "rust engineer, kubernetes",
+        &mut jobs,
+        NO_CLUSTERS,
+        &CancellationToken::new(),
+        |candidates| {
+            // Production shape: the map is keyed on the candidate set, so a
+            // candidate missing from it loses its blob and is skipped.
+            let blobs = all_blobs
+                .iter()
+                .filter(|(url, _)| candidates.contains(url.as_str()))
+                .map(|(url, blob)| (url.clone(), blob.clone()))
+                .collect();
+            Some((std::sync::Arc::clone(&env), blobs))
+        },
+    )
+    .await;
+
+    assert_eq!(
+        summary.map(|s| s.rescored),
+        Some(SEMANTIC_RERANK_MAX),
+        "the full top-N budget must still be spent on real jobs — a collapsed \
+         duplicate costs a list position, never a re-rank slot"
     );
 }
 
@@ -984,7 +1132,7 @@ fn deleting_an_autopilot_drops_its_resume_snapshot_vector() {
     .unwrap();
     assert!(docs.get_posting_vector(&id).is_some(), "seeded");
 
-    drop_orphaned_resume_vector(&docs, Some(resume), &[]);
+    drop_orphaned_resume_cache(&docs, Some(resume), &[]);
 
     assert!(
         docs.get_posting_vector(&id).is_none(),
@@ -1008,13 +1156,134 @@ fn a_resume_shared_with_another_autopilot_keeps_its_vector() {
     .unwrap();
 
     let survivor = autopilot_with_resume(Some(resume));
-    drop_orphaned_resume_vector(&docs, Some(resume), std::slice::from_ref(&survivor));
+    drop_orphaned_resume_cache(&docs, Some(resume), std::slice::from_ref(&survivor));
     assert!(docs.get_posting_vector(&id).is_some());
 
     // A remaining autopilot with a DIFFERENT résumé is not a producer of it.
     let other = autopilot_with_resume(Some("python data engineer"));
-    drop_orphaned_resume_vector(&docs, Some(resume), std::slice::from_ref(&other));
+    drop_orphaned_resume_cache(&docs, Some(resume), std::slice::from_ref(&other));
     assert!(docs.get_posting_vector(&id).is_none());
+}
+
+/// The vector is only half the résumé's cache footprint: every `match_scores`
+/// row keyed on `autopilot-resume:<sha>` holds résumé-DERIVED content too — the
+/// gaps, the recommendations and the explanation all describe that résumé — and
+/// nothing else can ever reach those rows once the record is gone.
+#[test]
+fn dropping_a_resume_snapshot_also_drops_the_scores_it_produced() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let docs = crate::documents::DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let resume = "rust engineer, kubernetes, distributed systems";
+    let id = crate::commands::match_resume::autopilot_resume_id(resume);
+    docs.upsert_posting_vector(
+        &id,
+        &crate::documents::sha256_hex(resume),
+        &snapshot_vector(&docs),
+    )
+    .unwrap();
+    // Two scored jobs for this résumé, plus one for an unrelated one.
+    let job_hash = crate::documents::sha256_hex("We need a Rust engineer");
+    let other_resume = crate::commands::match_resume::autopilot_resume_id("python data engineer");
+    for resume_id in [&id, &id, &other_resume] {
+        docs.upsert_match_score(
+            &snapshot_score_key(resume_id, "autopilot:job-1", &job_hash),
+            "{\"combined\":91,\"gaps\":[\"kubernetes\"]}",
+        )
+        .unwrap();
+    }
+    assert!(
+        docs.get_match_score(&snapshot_score_key(&id, "autopilot:job-1", &job_hash))
+            .is_some(),
+        "seeded"
+    );
+
+    drop_orphaned_resume_cache(&docs, Some(resume), &[]);
+
+    assert!(
+        docs.get_match_score(&snapshot_score_key(&id, "autopilot:job-1", &job_hash))
+            .is_none(),
+        "the résumé's cached scores must die with it, not linger for the TTL"
+    );
+    assert!(
+        docs.get_match_score(&snapshot_score_key(
+            &other_resume,
+            "autopilot:job-1",
+            &job_hash
+        ))
+        .is_some(),
+        "…and the delete must be scoped to THAT résumé — another autopilot's \
+         scores are untouched"
+    );
+}
+
+/// The UPDATE shape, which shipped with exactly the defect the DELETE path had
+/// just closed: the cache id is `sha256(resume_text)`, so replacing the text
+/// orphans the old rows just as thoroughly as deleting the record.
+///
+/// No before/after diff is needed to see it — the post-mutation snapshot still
+/// contains this record carrying its NEW text, so the old text has no producer
+/// left; an update that did NOT touch the résumé leaves the record as its own
+/// producer and keeps the rows.
+#[test]
+fn editing_an_autopilots_resume_orphans_the_previous_snapshot() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let docs = crate::documents::DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let before = "rust engineer, kubernetes, distributed systems";
+    let id = crate::commands::match_resume::autopilot_resume_id(before);
+    let job_hash = crate::documents::sha256_hex("We need a Rust engineer");
+    let seed = || {
+        docs.upsert_posting_vector(
+            &id,
+            &crate::documents::sha256_hex(before),
+            &snapshot_vector(&docs),
+        )
+        .unwrap();
+        docs.upsert_match_score(
+            &snapshot_score_key(&id, "autopilot:job-1", &job_hash),
+            "{\"combined\":91}",
+        )
+        .unwrap();
+    };
+
+    // An update that did NOT change the résumé: the record still carries it.
+    seed();
+    let unchanged = autopilot_with_resume(Some(before));
+    drop_orphaned_resume_cache(&docs, Some(before), std::slice::from_ref(&unchanged));
+    assert!(
+        docs.get_posting_vector(&id).is_some(),
+        "an update that leaves resume_text alone must not evict its own cache"
+    );
+
+    // An update that REPLACED the résumé: nothing produces the old rows now.
+    let edited = autopilot_with_resume(Some("staff platform engineer, terraform"));
+    drop_orphaned_resume_cache(&docs, Some(before), std::slice::from_ref(&edited));
+    assert!(
+        docs.get_posting_vector(&id).is_none(),
+        "the replaced résumé's snapshot vector is unreachable — it must not survive the TTL"
+    );
+    assert!(
+        docs.get_match_score(&snapshot_score_key(&id, "autopilot:job-1", &job_hash))
+            .is_none(),
+        "…and neither may the scores it produced"
+    );
+}
+
+/// The `match_scores` key an Autopilot re-rank writes for a résumé snapshot.
+fn snapshot_score_key<'a>(
+    resume_id: &'a str,
+    job_id: &'a str,
+    job_text_hash: &'a str,
+) -> crate::documents::MatchScoreKey<'a> {
+    crate::documents::MatchScoreKey {
+        resume_id,
+        job_id,
+        provider: "ollama",
+        model: "nomic-embed-text",
+        semantic_enabled: 1,
+        formula_version: 2,
+        vector_version: 1,
+        job_text_hash,
+    }
 }
 
 /// A vector in the active embedding space, so `get_posting_vector` reads it back.

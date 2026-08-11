@@ -125,47 +125,65 @@ pub async fn autopilot_update(
             target.country_code = derive_country_code(target.location.as_deref()).await;
         }
     }
-    let ap = store(&app).lock().update(
-        &autopilot_id,
-        serde_json::to_value(&req).unwrap_or_default(),
-    );
+    let patch = serde_json::to_value(&req).unwrap_or_default();
+    let ap = mutate_record(&app, &autopilot_id, |records| {
+        records.lock().update(&autopilot_id, patch)
+    });
     json!(ap)
 }
 
 #[tauri::command]
 pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
-    let removed = store(&app).lock().get(&autopilot_id);
-    store(&app).lock().remove(&autopilot_id);
-    // The re-rank's résumé snapshot vector is derived from THIS record's résumé
-    // text; deleting the record must delete it too (see
-    // `drop_orphaned_resume_vector`). `try_state` because a run/delete must
-    // never panic on an unmanaged store.
-    if let Some(docs) = app.try_state::<crate::documents::DocumentStore>() {
-        let remaining = store(&app).lock().list();
-        drop_orphaned_resume_vector(
-            docs.inner(),
-            removed.as_ref().and_then(|a| a.resume_text.as_deref()),
-            &remaining,
-        );
-    }
+    mutate_record(&app, &autopilot_id, |records| {
+        records.lock().remove(&autopilot_id)
+    });
     json!(null)
 }
 
-/// Delete the deleted autopilot's résumé snapshot vector from the posting-vector
-/// cache — unless another autopilot still carries the same résumé text.
+/// Run a mutation of ONE autopilot record and drop whatever résumé-derived
+/// cache rows it orphaned.
+///
+/// Both halves live here so a mutation path cannot ship with only the first: a
+/// DELETE and a `resume_text` REPLACE orphan the identical rows, because the
+/// cache identity IS the résumé's content hash. (An UPDATE shipped without this
+/// exact defect and it took a second review round to notice.)
+///
+/// The "what is orphaned" question needs no diff: the list snapshot taken AFTER
+/// the mutation still contains this record carrying its NEW text, so an
+/// unchanged résumé is its own live producer and keeps its rows — the same
+/// content-addressed rule that lets two autopilots share one row.
+fn mutate_record<T>(
+    app: &AppHandle,
+    autopilot_id: &str,
+    mutate: impl FnOnce(&Mutex<AutopilotStore>) -> T,
+) -> T {
+    let records = store(app);
+    let previous_resume = records.lock().get(autopilot_id).and_then(|a| a.resume_text);
+    let out = mutate(&records);
+    // `try_state` because a mutation must never panic on an unmanaged store.
+    if let Some(docs) = app.try_state::<crate::documents::DocumentStore>() {
+        let remaining = records.lock().list();
+        drop_orphaned_resume_cache(docs.inner(), previous_resume.as_deref(), &remaining);
+    }
+    out
+}
+
+/// Delete the cache rows derived from a résumé no autopilot carries any more —
+/// its snapshot vector AND its cached match scores.
 ///
 /// The re-rank caches the résumé under a content-addressed
 /// `autopilot-resume:<sha256(text)>` id (see
-/// `match_resume::autopilot_resume_id`). That row is résumé-derived user
-/// content living in a cache whose only bounds are a TTL and a row cap, so
-/// without this it outlives the record it came from by up to the TTL (7 days at
-/// the default tier). The same-text check is what keeps a shared résumé working:
-/// the id is the CONTENT, so a second autopilot with the same résumé is still a
-/// live producer of that row.
+/// `match_resume::autopilot_resume_id`), and every `match_scores` row that id
+/// produced holds résumé-derived content of its own (gaps, recommendations, the
+/// explanation). Both live in caches whose only bounds are a TTL and a row cap,
+/// so without this they outlive the record they came from by up to the TTL (7
+/// days at the default tier). The same-text check is what keeps a shared résumé
+/// working: the id is the CONTENT, so another autopilot with the same résumé is
+/// still a live producer of those rows.
 ///
 /// Best-effort: a failed delete is logged, never surfaced — the caller has
-/// already removed the record.
-fn drop_orphaned_resume_vector(
+/// already mutated the record.
+fn drop_orphaned_resume_cache(
     docs: &crate::documents::DocumentStore,
     removed_resume: Option<&str>,
     remaining: &[Autopilot],
@@ -177,11 +195,14 @@ fn drop_orphaned_resume_vector(
         .iter()
         .any(|a| a.resume_text.as_deref() == Some(text))
     {
-        return; // another autopilot still produces this exact row
+        return; // another autopilot still produces these exact rows
     }
     let id = crate::commands::match_resume::autopilot_resume_id(text);
     if let Err(e) = docs.delete_posting_vector(&id) {
-        log::warn!("[autopilot] could not drop the résumé snapshot vector on delete: {e}");
+        log::warn!("[autopilot] could not drop the résumé snapshot vector: {e}");
+    }
+    if let Err(e) = docs.delete_match_scores_for_resume(&id) {
+        log::warn!("[autopilot] could not drop the résumé's cached match scores: {e}");
     }
 }
 
@@ -423,11 +444,12 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             // `requirements`, so re-deriving it here would score different text
             // than the keyword phase did on the boards that populate that field.
             //
-            // Built for the RE-RANK CANDIDATES only (≤ SEMANTIC_RERANK_MAX), not
-            // for the whole harvest: a run can scrape ~100 postings and this map
-            // holds a full JD blob per entry, so keying it on the ≤20 rows that
-            // can actually be scored keeps a discovery run's peak memory
-            // proportional to what phase 2 will spend, not to what it scraped.
+            // Built for the RE-RANK CANDIDATES (see `rerank_candidate_urls`),
+            // not for the whole harvest: the unscored rows and the hidden
+            // cluster members can never be scored, so their blobs are dead
+            // weight. It is deliberately NOT trimmed to the top-N — the loop
+            // reaches past position N whenever it skips a row, and a blob the
+            // map lacks is a candidate silently dropped.
             let blobs: std::collections::HashMap<String, String> = postings
                 .iter()
                 .filter(|p| candidates.contains(p.url.as_str()))
@@ -783,6 +805,30 @@ fn by_rank(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
 // harvest, not a tuning knob — raise it only with a measurement.
 const SEMANTIC_RERANK_MAX: usize = 20;
 
+/// How many CONSECUTIVE degraded jobs end the re-rank pass.
+///
+/// The per-job degrade contract is what keeps a run from failing over one bad
+/// posting — but it also means a provider that is simply DOWN gets attempted
+/// once per job, every scheduled run, each attempt carrying the provider's own
+/// connect/read timeout. At the top-N ceiling that is a full
+/// [`RERANK_STEP_TIMEOUT`] phase (300s) burned hourly to produce nothing.
+///
+/// Three in a row is the signal, and the number is chosen for what it rules
+/// OUT: one degrade is ordinary (an unscorable posting), two can be
+/// coincidence, three consecutive failures across DIFFERENT postings is not a
+/// per-job shape — it is the provider. Small enough to bound the wasted phase
+/// at three timeouts, large enough that an isolated bad posting never stops a
+/// healthy run (the counter resets on every success).
+///
+/// This is a per-RUN circuit breaker only: it stops the loop, exactly like the
+/// daily ceiling and cancellation already do, leaving every unvisited job on
+/// its keyword score. Nothing is persisted and nothing is cached — a degraded
+/// score is never written under the semantic key ([`crate::commands::match_resume`]'s
+/// `cacheable` gate), so the next run retries from scratch. That is the
+/// distinction from the frozen-cache defect: this bounds cost, it does not
+/// remember the failure.
+const RERANK_DEGRADE_BREAKER: usize = 3;
+
 /// Cache identity for an Autopilot posting in the ADR-017 caches.
 ///
 /// Keyed on `canonical_job_key` — the SAME identity `merge_found_jobs` uses —
@@ -825,7 +871,8 @@ pub(crate) enum RerankOutcome {
     /// No semantic score for this job — an embed that failed, a provider that
     /// is offline, or an error object from the kernel. The job keeps its
     /// keyword score and the loop continues: a run NEVER fails because of
-    /// scoring.
+    /// scoring. A RUN of these in a row is a different signal and trips
+    /// [`RERANK_DEGRADE_BREAKER`].
     Degraded,
     /// The shared per-provider daily ceiling refused the call, so no provider
     /// work happened. Every remaining job stays on its keyword score.
@@ -1042,13 +1089,21 @@ where
 /// The urls phase 2 could spend an embed on, so the caller can build its blob
 /// map for those instead of for every posting the run scraped.
 ///
-/// A **superset** of what [`semantic_rerank`]'s loop actually visits, and
-/// deliberately so: the loop additionally collapses URL variants that share a
-/// cache id, which needs the derived id rather than the url. Superset is the
-/// safe direction — the loop SKIPS a candidate whose blob is missing, so an
-/// under-inclusive set would silently drop re-rank candidates. Both walk
-/// `found_jobs` in the same (already ranked) order under the same two filters,
-/// so the prefix they agree on is the one that matters.
+/// A true **superset** of what [`semantic_rerank`]'s loop visits: the two
+/// filters here (scored, cluster-canonical) are the loop's own, and the loop
+/// then applies two MORE of its own — a missing blob, and URL variants that
+/// collapse to one cache id — which need the derived id rather than the url.
+/// Superset is the required direction, because the loop SKIPS a candidate whose
+/// blob is missing: an under-inclusive set drops re-rank candidates silently.
+///
+/// Deliberately NOT capped at [`SEMANTIC_RERANK_MAX`]. The ceiling is enforced
+/// by the loop's `considered` counter, which only counts jobs that got PAST
+/// those two later filters — so every skip inside the first N positions pushes a
+/// real candidate beyond position N, where a positionally-capped set no longer
+/// has its blob. That is a capability loss (fewer jobs re-ranked than the user's
+/// ceiling allows, with nothing in the summary saying so), traded here against
+/// holding a JD blob for the scored canonicals of one harvest — bounded by the
+/// per-board scrape cap, ~1 MB at the pathological end.
 fn rerank_candidate_urls<'a>(
     found_jobs: &'a [FoundJob],
     clusters: &[crate::scraping::cluster::ClusterAssignment],
@@ -1057,7 +1112,6 @@ fn rerank_candidate_urls<'a>(
         .iter()
         .enumerate()
         .filter(|(i, job)| job.score.is_some() && clusters.get(*i).is_none_or(|c| c.canonical))
-        .take(SEMANTIC_RERANK_MAX)
         .map(|(_, job)| job.url.as_str())
         .collect()
 }
@@ -1086,8 +1140,9 @@ fn rerank_candidate_urls<'a>(
 ///   entirely: there is nothing to re-rank and no reason to spend an embed;
 /// - a job whose scoring degrades keeps its keyword score AND its `Keyword`
 ///   label, and the loop moves on to the next job;
-/// - the daily ceiling and cancellation stop the loop, leaving every
-///   not-yet-visited job on its keyword score.
+/// - the daily ceiling, cancellation and [`RERANK_DEGRADE_BREAKER`] consecutive
+///   degrades stop the loop, leaving every not-yet-visited job on its keyword
+///   score.
 ///
 /// Split from the command (mirroring `run_notes_loop`) so a fake `env` unit-tests
 /// this control flow without a provider.
@@ -1108,6 +1163,9 @@ async fn semantic_rerank(
     // collapsed by the canonical check below instead; this set is what still
     // holds when no clustering verdicts are available.
     let mut seen_this_run: HashSet<String> = HashSet::new();
+    // Circuit breaker — see [`RERANK_DEGRADE_BREAKER`]. Reset by every success,
+    // so it can only fire on a provider that is failing right now.
+    let mut consecutive_degraded = 0usize;
     for (i, job) in found_jobs.iter_mut().enumerate() {
         if summary.considered >= SEMANTIC_RERANK_MAX {
             break; // top-N ceiling — the hard cost bound
@@ -1145,10 +1203,22 @@ async fn semantic_rerank(
                 job.score = Some(combined);
                 job.score_source = ScoreSource::Combined;
                 summary.rescored += 1;
+                consecutive_degraded = 0;
             }
             // Per-job degrade: keep the keyword score and the `Keyword` label,
-            // keep going. One offline embed must not cost the whole run.
-            RerankOutcome::Degraded => summary.degraded += 1,
+            // keep going. One offline embed must not cost the whole run — but a
+            // RUN of them is the provider, not the postings, so the breaker
+            // stops the pass rather than paying a provider timeout per job.
+            RerankOutcome::Degraded => {
+                summary.degraded += 1;
+                consecutive_degraded += 1;
+                if consecutive_degraded >= RERANK_DEGRADE_BREAKER {
+                    log::warn!(
+                        "[autopilot] semantic re-rank stopped after {consecutive_degraded} consecutive degraded jobs; the provider looks unavailable and the rest stay keyword-only"
+                    );
+                    break;
+                }
+            }
             RerankOutcome::BudgetExhausted => {
                 summary.degraded += 1;
                 break;
