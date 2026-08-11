@@ -614,7 +614,10 @@ impl GeminiClient {
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
         let body = build_embed_body(m, text);
         let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(
+        // The embed entry point (per-attempt bound ≠ sequence budget) so a
+        // timed-out first attempt is still retried — see `retry::
+        // send_embed_with_retry`.
+        let resp = super::retry::send_embed_with_retry(
             || {
                 crate::net::http::shared()
                     .post(&url)

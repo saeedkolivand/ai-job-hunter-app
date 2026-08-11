@@ -126,9 +126,15 @@ pub(crate) fn apply_stop(
 ///   (`quality_report.is_some()`, i.e. a non-empty draft, a report, and a
 ///   successful save), and it makes the two paths agree. Only `RunTimeout`
 ///   qualifies: a provider error or a JSON stage that never produced its
-///   artifact leaves a document nothing downstream can honestly describe. A run
-///   whose cancel TOKEN fired is left exactly as it was — the user acted, and
-///   this relabel does not reach into that decision.
+///   artifact leaves a document nothing downstream can honestly describe.
+/// * **"The user acted" is what the TOKEN says, not what the ledger says.**
+///   `RunLedger::stop` is first-writer-wins, so a run that had already recorded
+///   `run_timeout`/`budgeted` keeps that reason when the cancel lands — and
+///   reading the STATUS off the reason alone then reported `failed` for a run
+///   the user cancelled, while the doc here argued the opposite. The reason is
+///   still first-writer-wins (it answers "what stopped it", and the timeout DID
+///   come first); the status is the token's, which is also what routes the job
+///   event to `job_cancel` instead of `job_fail` in `execute`.
 ///
 /// Returns the wire token rather than the enum so the caller writes one
 /// `Option<String>` straight into the row.
@@ -148,10 +154,13 @@ pub(crate) fn terminal_state(
     // The run produced a usable document and stopped for the one reason that
     // does not invalidate it — the same outcome the in-loop deadline check
     // produces, reached from the boundary check.
-    let timed_out_with_document =
-        !ok && persisted && stopped == Some(StoppedReason::RunTimeout) && !token_cancelled;
+    let timed_out_with_document = !ok && persisted && stopped == Some(StoppedReason::RunTimeout);
     let usable = ok || timed_out_with_document;
-    let status = match (usable, stopped == Some(StoppedReason::Cancelled)) {
+    // The token, not just the ledger's (first-writer-wins) reason — see the doc
+    // above. Cancellation outranks every other outcome, exactly as `apply_stop`
+    // already ranks it against the deadline.
+    let cancelled = stopped == Some(StoppedReason::Cancelled) || (!ok && token_cancelled);
+    let status = match (usable, cancelled) {
         (_, true) => super::STATUS_CANCELLED,
         (false, _) => super::STATUS_FAILED,
         (true, _) if needs_review => super::STATUS_NEEDS_REVIEW,

@@ -23,6 +23,12 @@
 //! client timeouts) was short by that factor. The streaming path had this budget
 //! from the start; the one-shot path did not, which is the bug this shape closes.
 //!
+//! One consequence is structural and worth naming: when the per-attempt timeout
+//! IS the whole budget, a timed-out attempt can never be retried. That is the
+//! intended trade for a 120 s/300 s completion and the wrong one for a 15 s
+//! embedding, so [`send_embed_with_retry`] separates the two values for that one
+//! call shape (see its doc for the cold-model-load case it exists to recover).
+//!
 //! The retry *decision* ([`should_retry`], [`backoff_delay`]) is pure and
 //! unit-tested; [`send_with_retry`] is the thin async wrapper that rebuilds and
 //! re-sends the request each attempt (a `RequestBuilder` is consumed by `send`,
@@ -53,6 +59,29 @@ const MAX_DELAY_MS: u64 = 8_000;
 /// shows the job as running throughout. Still bounded, and still capped by the
 /// request's own `stream_deadline`.
 const MAX_STREAM_DELAY_MS: u64 = 30_000;
+
+/// The smallest remainder worth starting another attempt with.
+///
+/// A retry needs enough time for a WHOLE round trip — DNS, TCP connect, the TLS
+/// handshake, the request, and the provider's response. Below that it cannot
+/// possibly finish, and starting it anyway is strictly harmful, not merely
+/// wasteful: the doomed attempt ends in a transport TIMEOUT, and that timeout
+/// becomes the loop's return value, REPLACING the actionable outcome the
+/// previous attempt already had. A 429 with a `Retry-After` (the caller maps it
+/// to a rate-limit error the UI can explain) came back to the user as a generic
+/// "request timed out" — the last real answer thrown away by an attempt that
+/// never had a chance. Executed, not theorised.
+///
+/// 2 s is a deliberate small value: a cloud 429 rejection round-trips in a few
+/// hundred milliseconds, so this is roughly 4× the observed floor plus
+/// handshake headroom, while staying far below the SMALLEST per-attempt bound
+/// that reaches this loop (`timeouts::OLLAMA_EMBED`, 15 s) — so it can only ever
+/// refuse an attempt that was already doomed, never one that had a real chance.
+const MIN_RETRY_ATTEMPT_FLOOR: Duration = Duration::from_secs(2);
+
+/// How many per-attempt timeouts one EMBED call may spend in total (see
+/// [`send_embed_with_retry`]).
+const EMBED_BUDGET_ATTEMPTS: u32 = 3;
 
 /// Whether a response status is worth retrying. 429 (rate limit / quota) and 5xx
 /// (service errors) are transient; everything else (success, 4xx client errors)
@@ -126,7 +155,36 @@ pub async fn send_with_retry<F>(build: F, timeout: Duration) -> reqwest::Result<
 where
     F: FnMut() -> RequestBuilder,
 {
-    send_with_retry_capped(build, MAX_DELAY_MS, timeout).await
+    send_with_retry_capped(build, MAX_DELAY_MS, timeout, timeout).await
+}
+
+/// [`send_with_retry`] for an EMBEDDINGS call, where the per-attempt timeout and
+/// the sequence budget are deliberately NOT the same value: each attempt is
+/// bounded by `per_attempt` (`timeouts::EMBED` / `timeouts::OLLAMA_EMBED`) and
+/// the sequence by [`EMBED_BUDGET_ATTEMPTS`] × that.
+///
+/// **Why this one call shape keeps a real retry.** Collapsing the two into one
+/// argument made "retry after a TIMEOUT" structurally unreachable everywhere:
+/// attempt 1 IS the whole budget, so `Err(timeout) => transient` can never lead
+/// to a second attempt. That is the intended trade for a 120 s/300 s completion
+/// — an attempt that spent five minutes is not worth repeating, and the outer
+/// `quality_run_deadline` counts exactly one of them per call. It is the WRONG
+/// trade here: `OLLAMA_EMBED` is 15 s, and the case that needs a second attempt
+/// is the first embed of an indexing run, where Ollama is COLD-LOADING the
+/// embedding model and the first request times out while the load completes. A
+/// fresh attempt then succeeds immediately; without one, the first document of
+/// an indexing run fails for a reason that has already gone away.
+///
+/// The worst case is unchanged from before that collapse (`MAX_ATTEMPTS` × the
+/// per-attempt timeout + backoff), it is bounded, and no outer deadline is
+/// derived from the embed constants — indexing has no run-level deadline that
+/// counts them.
+pub async fn send_embed_with_retry<F>(build: F, per_attempt: Duration) -> reqwest::Result<Response>
+where
+    F: FnMut() -> RequestBuilder,
+{
+    let budget = per_attempt.saturating_mul(EMBED_BUDGET_ATTEMPTS);
+    send_with_retry_capped(build, MAX_DELAY_MS, per_attempt, budget).await
 }
 
 /// [`send_with_retry`] for a STREAM's initial send.
@@ -150,25 +208,29 @@ pub async fn send_stream_with_retry<F>(build: F, deadline: Duration) -> reqwest:
 where
     F: FnMut() -> RequestBuilder,
 {
-    send_with_retry_capped(build, MAX_STREAM_DELAY_MS, deadline).await
+    send_with_retry_capped(build, MAX_STREAM_DELAY_MS, deadline, deadline).await
 }
 
-/// The shared loop. `budget` is BOTH the per-attempt `.timeout()` and the bound
-/// on the whole sequence:
+/// The shared loop. Every attempt is bounded by `per_attempt` and the WHOLE
+/// sequence by `budget`:
 ///
-/// * the first attempt gets the full `budget` — an unretried call behaves
+/// * the first attempt gets `per_attempt` — for the completion/stream entry
+///   points the two arguments are the same value, so an unretried call behaves
 ///   exactly as it did when the call site set its own `.timeout()`;
-/// * a retry is only started when the backoff AND some request time still fit
-///   inside what is left, and it is given exactly that remainder, so the
-///   sequence cannot outlive `budget` no matter how many attempts it makes.
+/// * a retry is only started when the backoff AND a usable slice of request time
+///   ([`MIN_RETRY_ATTEMPT_FLOOR`]) still fit inside what is left, and it is given
+///   `min(per_attempt, remainder)`, so the sequence cannot outlive `budget` no
+///   matter how many attempts it makes.
 ///
-/// The consequence that matters: an attempt that spends its whole timeout is
-/// never retried. A prompt rejection (a 429 that comes back in milliseconds — the
-/// normal shape of a rate limit) still is, which is the case retries were added
-/// for.
+/// The consequence that matters when `per_attempt == budget`: an attempt that
+/// spends its whole timeout is never retried. A prompt rejection (a 429 that
+/// comes back in milliseconds — the normal shape of a rate limit) still is, which
+/// is the case retries were added for. [`send_embed_with_retry`] is the one
+/// caller that separates the two, and its doc says why.
 async fn send_with_retry_capped<F>(
     mut build: F,
     max_delay_ms: u64,
+    per_attempt: Duration,
     budget: Duration,
 ) -> reqwest::Result<Response>
 where
@@ -176,7 +238,7 @@ where
 {
     let started = Instant::now();
     let mut attempt = 1u32;
-    let mut attempt_timeout = budget;
+    let mut attempt_timeout = per_attempt.min(budget);
     loop {
         let outcome = build().timeout(attempt_timeout).send().await;
         let (transient, retry_after) = match &outcome {
@@ -192,14 +254,24 @@ where
         let delay = backoff_delay_capped(attempt, retry_after, max_delay_ms);
 
         // Only start another attempt if the budget can still pay for the backoff
-        // AND leave time for the request itself. `spent` is projected past the
+        // AND leave a USABLE slice of request time. `spent` is projected past the
         // sleep so the remainder handed to the next attempt is what will
         // actually be left when it starts.
+        //
+        // The floor is what makes this a real refusal rather than a formality: a
+        // remainder of a few milliseconds is not zero, so it used to admit an
+        // attempt that could only end in a transport timeout — and that timeout
+        // then REPLACED the actionable outcome this loop already held (a 429 with
+        // its `Retry-After`). Refusing it returns the last REAL outcome instead.
         let spent = started.elapsed() + delay;
-        let Some(remaining) = budget.checked_sub(spent).filter(|left| !left.is_zero()) else {
+        let Some(remaining) = budget
+            .checked_sub(spent)
+            .filter(|left| *left >= MIN_RETRY_ATTEMPT_FLOOR)
+        else {
             tracing::warn!(
                 "ai retry: budget spent after attempt {attempt}/{MAX_ATTEMPTS} \
-                 ({spent:?} of {budget:?}), returning the last outcome"
+                 ({spent:?} of {budget:?}, less than {MIN_RETRY_ATTEMPT_FLOOR:?} left), \
+                 returning the last outcome"
             );
             return outcome;
         };
@@ -211,7 +283,7 @@ where
             delay
         );
         tokio::time::sleep(delay).await;
-        attempt_timeout = remaining;
+        attempt_timeout = per_attempt.min(remaining);
         attempt += 1;
     }
 }
@@ -350,6 +422,123 @@ mod retry_loop_tests {
             run_retry_with(vec![429, 200], Duration::ZERO, Duration::from_secs(30)).await;
         assert_eq!(calls, 2, "a fast 429 leaves budget for the retry");
         assert!(is_ok, "the eventual 200 must be returned as Ok");
+    }
+
+    /// Mount one mock per `(status, delay)`, consumed in FIFO order — the
+    /// per-response variant of [`run_retry_with`]'s uniform delay, needed by the
+    /// two tests below where the point is that attempt 2 behaves DIFFERENTLY
+    /// from attempt 1.
+    async fn mount_sequence(server: &MockServer, responses: &[(u16, Duration)]) {
+        for (code, delay) in responses {
+            Mock::given(method("GET"))
+                .respond_with(ResponseTemplate::new(*code).set_delay(*delay))
+                .up_to_n_times(1)
+                .mount(server)
+                .await;
+        }
+    }
+
+    /// Drive one call and report `(call_count, the status of the RESPONSE that
+    /// came back)` — `None` when the loop returned a transport error instead of a
+    /// response, which is the whole distinction the floor test turns on.
+    async fn run_sequenced(
+        responses: Vec<(u16, Duration)>,
+        per_attempt: Duration,
+        embed: bool,
+    ) -> (u32, Option<u16>) {
+        let server = MockServer::start().await;
+        mount_sequence(&server, &responses).await;
+        let url = server.uri();
+        let client = crate::net::http::shared();
+        let call_count = Arc::new(AtomicU32::new(0));
+        let counter = call_count.clone();
+        let build = || {
+            counter.fetch_add(1, Ordering::SeqCst);
+            client.get(&url)
+        };
+        let result = if embed {
+            super::send_embed_with_retry(build, per_attempt).await
+        } else {
+            send_with_retry(build, per_attempt).await
+        };
+        (
+            call_count.load(Ordering::SeqCst),
+            result.ok().map(|resp| resp.status().as_u16()),
+        )
+    }
+
+    /// **A remainder too small to finish a request must not be spent** — because
+    /// the attempt it buys can only end in a timeout, and that timeout REPLACES
+    /// the actionable outcome the loop already has.
+    ///
+    /// `!left.is_zero()` admitted any positive sliver: after a 429 at ~100 ms plus
+    /// the 500 ms backoff, ~1.3 s of a 1.9 s budget was left, so a second attempt
+    /// started against a provider that needs 5 s — and the 429 (which the caller
+    /// maps to a rate-limit error naming `Retry-After`) came back to the user as
+    /// a generic transport timeout instead.
+    ///
+    /// Shape rather than a tight wall clock, and one-sided: the remainder is at
+    /// MOST 1.3 s (a slower host only shrinks it), always under the 2 s floor, so
+    /// the refusal is provable on any machine. Mutation check: drop the floor
+    /// (`filter(|left| !left.is_zero())`) and this becomes 2 calls returning
+    /// `None`.
+    #[tokio::test]
+    async fn a_remainder_too_small_to_finish_keeps_the_last_real_outcome() {
+        let (calls, status) = run_sequenced(
+            vec![
+                (429, Duration::from_millis(100)),
+                (200, Duration::from_secs(5)),
+            ],
+            Duration::from_millis(1_900),
+            false,
+        )
+        .await;
+        assert_eq!(
+            calls, 1,
+            "a sub-floor remainder must not buy a doomed attempt; got {calls} calls"
+        );
+        assert_eq!(
+            status,
+            Some(429),
+            "the caller must get the actionable 429, not the doomed attempt's timeout"
+        );
+    }
+
+    /// **An embed whose first attempt TIMES OUT still gets a second one.**
+    ///
+    /// Collapsing the per-attempt timeout into the sequence budget made
+    /// retry-after-timeout structurally unreachable at every call site — correct
+    /// for a 300 s completion, wrong for a 15 s embed, where the first request of
+    /// an indexing run times out while Ollama cold-loads the embedding model and
+    /// a fresh attempt then succeeds at once. `send_embed_with_retry` separates
+    /// the two values so that recovery exists again.
+    ///
+    /// The 2 s per-attempt bound is scaled down from `OLLAMA_EMBED`'s 15 s but the
+    /// arithmetic is the real one: attempt 1 burns the full per-attempt timeout,
+    /// the 500 ms backoff follows, and the 3× sequence budget still leaves 3.5 s —
+    /// comfortably over the 2 s floor, so a slow host cannot flip it. Mutation
+    /// check: route this call through `send_with_retry` (the collapsed shape) and
+    /// it becomes 1 call returning `None`.
+    #[tokio::test]
+    async fn an_embed_that_times_out_cold_still_gets_a_second_attempt() {
+        let (calls, status) = run_sequenced(
+            vec![
+                (200, Duration::from_secs(5)),
+                (200, Duration::from_millis(0)),
+            ],
+            Duration::from_secs(2),
+            true,
+        )
+        .await;
+        assert_eq!(
+            calls, 2,
+            "a timed-out first attempt must be retried inside the embed budget; got {calls}"
+        );
+        assert_eq!(
+            status,
+            Some(200),
+            "the second attempt's success is what the caller sees"
+        );
     }
 
     /// [`run_retry`] driven through the STREAMING entry point instead. `budget`

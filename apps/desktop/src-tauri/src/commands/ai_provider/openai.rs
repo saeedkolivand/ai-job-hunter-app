@@ -689,7 +689,10 @@ impl OpenAiClient {
         let endpoint = self.endpoint_url("embeddings")?;
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
         let body = json!({ "model": model, "input": text });
-        let resp = send_with_retry(
+        // The embed entry point (per-attempt bound ≠ sequence budget) so a
+        // timed-out first attempt is still retried — see `retry::
+        // send_embed_with_retry`.
+        let resp = super::retry::send_embed_with_retry(
             || {
                 crate::net::http::shared()
                     .post(endpoint.clone())

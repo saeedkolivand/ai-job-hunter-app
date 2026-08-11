@@ -477,13 +477,16 @@ fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
         ("failed", Some("run_timeout".to_string()))
     );
 
-    // A run already stopped for a reason of its own, cancelled afterwards:
-    // first-writer-wins keeps the earlier cause, and the status follows it.
+    // A run already stopped for a reason of its own, cancelled afterwards: the
+    // two halves come from different places on purpose. The REASON is
+    // first-writer-wins (the budget ceiling is what stopped it, and it did come
+    // first); the STATUS is the token's, because the user acted — and `execute`
+    // reads the status to choose `job_cancel` over `job_fail`.
     let budgeted = RunLedger::new();
     budgeted.stop(StoppedReason::Budgeted);
     assert_eq!(
         super::hooks::terminal_state(&budgeted, false, true, false, true),
-        ("failed", Some("budgeted".to_string()))
+        ("cancelled", Some("budgeted".to_string()))
     );
 }
 
@@ -499,8 +502,9 @@ fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
 /// is the one that tells the user their run produced nothing.
 ///
 /// Mutation check: drop the `persisted` term from `terminal_state` (or the
-/// `RunTimeout` test in it) and the first two assertions fail; drop the
-/// `!token_cancelled` term and the cancel assertion fails.
+/// `RunTimeout` test in it) and the first two assertions fail; derive
+/// `cancelled` from the ledger's reason alone (drop the `!ok && token_cancelled`
+/// term) and the cancel assertion fails.
 #[test]
 fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
     // Undecided findings in the saved report — the ordinary shape of a run the
@@ -521,15 +525,19 @@ fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
         ("completed", Some("run_timeout".to_string()))
     );
 
-    // A run whose CANCEL TOKEN fired is left exactly as it was: the user acted,
-    // and this relabel does not reach into that decision. (First-writer-wins
-    // keeps `run_timeout` as the reason — the same row the `budgeted` case in
-    // the table above already pins, unchanged by this fix.)
+    // A run whose CANCEL TOKEN fired: the user acted, so the STATUS is
+    // `cancelled` — the outcome the comment on this row always argued for and
+    // the one `execute` needs to emit `job_cancel` rather than `job_fail`. The
+    // REASON stays first-writer-wins (`run_timeout` is what stopped it, and it
+    // happened first), which is the same split the `budgeted` row in the table
+    // above pins. Reading the status off the reason alone reported `failed`
+    // here, i.e. "your run produced nothing", for a run the user themselves
+    // ended.
     let cancelled = RunLedger::new();
     cancelled.stop(StoppedReason::RunTimeout);
     assert_eq!(
         super::hooks::terminal_state(&cancelled, false, true, true, true),
-        ("failed", Some("run_timeout".to_string()))
+        ("cancelled", Some("run_timeout".to_string()))
     );
 
     // Only `RunTimeout` qualifies. A provider error mid-run leaves a document

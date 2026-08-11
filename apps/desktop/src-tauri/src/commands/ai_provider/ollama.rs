@@ -618,7 +618,11 @@ fn build_ollama_embed_body(model: &str, text: &str) -> Value {
 pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     let body = build_ollama_embed_body(model, text);
     let endpoint = format!("{}/api/embeddings", host());
-    let resp = super::retry::send_with_retry(
+    // `send_embed_with_retry`, not `send_with_retry`: the per-attempt bound and
+    // the sequence budget are different values here, so a first attempt that
+    // times out while Ollama COLD-LOADS the embedding model still gets a second
+    // one (the first embed of an indexing run is exactly that case).
+    let resp = super::retry::send_embed_with_retry(
         || crate::net::http::shared().post(&endpoint).json(&body),
         timeouts::OLLAMA_EMBED,
     )

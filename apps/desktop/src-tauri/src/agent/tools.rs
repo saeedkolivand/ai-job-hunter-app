@@ -224,27 +224,57 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
     .collect()
 });
 
+/// Break every `<` that survives INSIDE a kept attribute run: `<` plus at most
+/// ONE following whitespace character becomes `< `.
+///
+/// Writing the matched run back verbatim (the DL1 fix) is what re-opened the
+/// boundary [`neutralize_one`] exists to close, for the SAME tag it was
+/// breaking. Three facts compose into it: `[^>]*` admits `<`, `replace_all`
+/// scans the ORIGINAL string and never rescans its own replacement, and each
+/// tag gets exactly one pass over the body — so
+/// `<job_posting x=</job_posting>` came out `< job_posting x=</job_posting>`,
+/// carrying a byte-perfect closer on fully attacker-controlled input (the
+/// scraped ad), and idempotence made it permanent rather than transient.
+/// Executed, not theorised. (Cross-tag nesting was already covered — the
+/// `job_posting` pass runs over the `question` pass's output — which is exactly
+/// why only the same-tag case slipped through.)
+///
+/// Consuming one following whitespace char is what keeps the whole transform a
+/// FIXED POINT (`< ` maps to `< `), which [`neutralize_transcript_boundaries`]
+/// depends on. The two alternatives were both worse: `<\s*` is a fixed point too
+/// but DELETES whitespace (`<\n\n` → `< `), which is the DL1 data-loss defect one
+/// character at a time; a bare `<` → `< ` is not idempotent at all
+/// (`< ` → `<  ` → …), so re-fencing would drift.
+static INNER_LT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"<\s?").expect("inner-lt pattern is always valid regex")
+});
+
 /// Apply one compiled fence-tag pattern to `body`, replacing a forged
 /// opening/closing `tag` token with a visibly-broken variant (a space right
 /// after `<`) rather than silently stripping it.
 ///
-/// **The attribute run is KEPT.** Only the `<` is broken; everything the match
-/// swallowed is written back. Dropping it made this transform DELETE untrusted
-/// text rather than defuse it, and `[^>]` matches newlines, so the deletion was
-/// not limited to something tag-shaped: a job posting reading
-/// `<question mark of the day … 5 > 3 says the ad` lost the two lines in
-/// between before the model ever saw them (executed, not theorised). Nothing is
-/// gained by dropping it either — the boundary is already dead once `<` is not
-/// adjacent to the tag name, and the text was in the body to begin with.
+/// **The attribute run is KEPT** (with every `<` inside it broken by
+/// [`INNER_LT`] — see there for the nesting hole that costs). Only the `<`s are
+/// broken; every other byte the match swallowed is written back. Dropping the
+/// run made this transform DELETE untrusted text rather than defuse it, and
+/// `[^>]` matches newlines, so the deletion was not limited to something
+/// tag-shaped: a job posting reading `<question mark of the day … 5 > 3 says
+/// the ad` lost the two lines in between before the model ever saw them
+/// (executed, not theorised). Nothing is gained by dropping it either — the
+/// boundary is already dead once `<` is not adjacent to the tag name, and the
+/// text was in the body to begin with.
 ///
 /// Still idempotent, which matters because untrusted text can pass through both
 /// [`fenced`] and `controller::tool_result_fence`: `< tag attrs>` re-matches and
-/// maps to itself.
+/// maps to itself, and so does every `< ` [`INNER_LT`] left behind.
 fn neutralize_one(body: &str, tag: &str, pattern: &regex::Regex) -> String {
     pattern
         .replace_all(body, |caps: &regex::Captures| {
             let slash = if &caps[1] == "/" { "/" } else { "" };
-            let attrs = caps.get(2).map_or("", |m| m.as_str());
+            let attrs = caps
+                .get(2)
+                .map(|m| INNER_LT.replace_all(m.as_str(), "< "))
+                .unwrap_or_default();
             format!("< {slash}{tag}{attrs}>")
         })
         .into_owned()
@@ -341,11 +371,15 @@ fn neutralize_tool_result_marker(body: &str) -> String {
 /// whitespace plus a fixed tag — so neither can create or hide a match for
 /// the other, and their order is immaterial.
 ///
-/// **Idempotent**: each pass rewrites a match to a canonical broken form
-/// (`< tag>` / `< /tag>` / `[ tool_result`) that still matches its own
-/// pattern and therefore maps to itself. Text that has already been through
-/// here (a `fenced` body later re-scanned by `tool_result_fence`) comes out
-/// byte-identical — no cumulative corruption.
+/// **Idempotent**: each pass rewrites a match to a canonical broken form that
+/// still matches its own pattern and therefore maps to itself. For the tag
+/// passes that form is `< {/}{tag}{attrs}>` — the tag token broken by the space
+/// after `<`, the attribute run KEPT, and every `<` inside that run broken the
+/// same way (`< ` — see [`INNER_LT`], without which a same-tag `<tag x=</tag>`
+/// nested inside the run came back out intact). For the marker pass it is
+/// `[ tool_result`. Text that has already been through here (a `fenced` body
+/// later re-scanned by `tool_result_fence`) comes out byte-identical — no
+/// cumulative corruption.
 ///
 /// **Accepted trade-off**: legitimate prose that happens to contain one of
 /// these literals is broken too (a candidate writing "our tool_result
@@ -358,11 +392,23 @@ pub(crate) fn neutralize_transcript_boundaries(body: &str) -> String {
     neutralize_known_fence_tags(&neutralize_tool_result_marker(body))
 }
 
-/// Fence one blob as `<tag>…</tag>`, capped to `cap` chars (char-boundary
-/// safe), making the body inert as a boundary FIRST (see
+/// Fence one blob as `<tag>…</tag>`, TRUNCATED to `cap` chars (char-boundary
+/// safe) and then made inert as a boundary (see
 /// [`neutralize_transcript_boundaries`]) — so untrusted text can never forge
 /// this fence's own boundary, a sibling tag's, or a tool-result marker, to
 /// break out of / falsify a block.
+///
+/// **`cap` bounds the INPUT, not the output.** Neutralization only ever inserts
+/// a space, never deletes, so the fenced body can come back longer than `cap` —
+/// by at most one char per `<` and per `[tool_result` occurrence in the
+/// truncated input, plus the wrapper. That is deliberate and the cheaper side of
+/// the trade: the
+/// alternative (truncate AFTER neutralizing) would cut a defused body at an
+/// arbitrary point, and the DL1 lesson is that this primitive must not remove
+/// bytes. Callers use `cap` as a context/cost guard against a huge résumé or
+/// posting, and a bound that can be exceeded by the count of `<` in an
+/// already-capped string is still a bound — but it is not an exact byte limit,
+/// so nothing downstream may treat it as one.
 pub(crate) fn fenced(tag: &str, body: &str, cap: usize) -> String {
     let body: String = body.chars().take(cap).collect();
     let mut body = neutralize_transcript_boundaries(&body);
