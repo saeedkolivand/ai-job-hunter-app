@@ -24,13 +24,26 @@ export type PipelineStagePhase = (typeof PIPELINE_STAGE_PHASES)[number];
  * longer. The longest legal key is `experience:255` (14), so this is pure
  * headroom — the point is that a value derived from MODEL output can never be
  * long enough to matter, no matter what the model emits.
+ *
+ * Emitted into Rust by `pnpm gen:ipc` (`ipc_contracts::events`) alongside
+ * {@link PIPELINE_SECTION_KEYS_FIXED} and
+ * {@link PIPELINE_SECTION_EXPERIENCE_PREFIX}, so "normative for the Rust
+ * emitter" is a generated constant rather than a hand-copied literal.
  */
 export const SECTION_KEY_MAX_LENGTH = 24;
 
-/** The section keys that carry no index. */
-const FIXED_SECTION_KEYS = ['summary', 'skills', 'projects', 'education'] as const;
+/**
+ * The section keys that carry no index — the fixed half of the
+ * {@link PipelineSectionKey} grammar.
+ *
+ * Exported (and prefixed) because `pnpm gen:ipc` reads it as the source of
+ * truth for the Rust `PIPELINE_SECTION_KEYS_FIXED`; the package barrel is flat,
+ * so the name has to say which grammar it belongs to.
+ */
+export const PIPELINE_SECTION_KEYS_FIXED = ['summary', 'skills', 'projects', 'education'] as const;
 
-const EXPERIENCE_PREFIX = 'experience:';
+/** The indexed half: `experience:<u8>`. Also codegen'd into Rust. */
+export const PIPELINE_SECTION_EXPERIENCE_PREFIX = 'experience:';
 
 /** `0`–`255`, no leading zeros — the u8 index of one experience entry. */
 const EXPERIENCE_INDEX = /^(0|[1-9][0-9]{0,2})$/;
@@ -49,7 +62,8 @@ const EXPERIENCE_INDEX = /^(0|[1-9][0-9]{0,2})$/;
  * runtime (a template-literal type cannot express "u8" or a length bound).
  */
 export type PipelineSectionKey =
-  (typeof FIXED_SECTION_KEYS)[number] | `${typeof EXPERIENCE_PREFIX}${number}`;
+  | (typeof PIPELINE_SECTION_KEYS_FIXED)[number]
+  | `${typeof PIPELINE_SECTION_EXPERIENCE_PREFIX}${number}`;
 
 /**
  * Runtime guard for {@link PipelineSectionKey} — the checkable form of the
@@ -61,9 +75,9 @@ export type PipelineSectionKey =
  */
 export function isPipelineSectionKey(value: unknown): value is PipelineSectionKey {
   if (typeof value !== 'string' || value.length > SECTION_KEY_MAX_LENGTH) return false;
-  if ((FIXED_SECTION_KEYS as readonly string[]).includes(value)) return true;
-  if (!value.startsWith(EXPERIENCE_PREFIX)) return false;
-  const index = value.slice(EXPERIENCE_PREFIX.length);
+  if ((PIPELINE_SECTION_KEYS_FIXED as readonly string[]).includes(value)) return true;
+  if (!value.startsWith(PIPELINE_SECTION_EXPERIENCE_PREFIX)) return false;
+  const index = value.slice(PIPELINE_SECTION_EXPERIENCE_PREFIX.length);
   return EXPERIENCE_INDEX.test(index) && Number(index) <= 255;
 }
 

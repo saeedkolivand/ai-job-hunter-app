@@ -9,7 +9,9 @@
  * of 830 stop-gate LLM calls died in their own 120s timeout for 68 findings /
  * 8 blocks ever; the per-finish nested `claude -p` was the setup's single
  * largest recurring token cost. 2026-08-11: the pre-push half was removed too
- * (CodeRabbit + CI cover it), so CI is now the only LLM surface. The Stop gate
+ * (CodeRabbit + CI cover it), so CI is the only repository-owned automated LLM
+ * gate (the interactive pre-PR agent chain and CodeRabbit still review, outside
+ * this repo's own automation). The Stop gate
  * keeps every deterministic tier: guards → skip-list → ledger re-emits → Tier 0
  * ast-grep arch-guards → reviewed-hash cache → verdict. Unresolved ledger findings
  * (seeded by the CI LLM review) still re-block a finish until the file

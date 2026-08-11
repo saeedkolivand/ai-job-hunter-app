@@ -47,9 +47,21 @@ fn stopped_reason_serializes_to_the_pinned_wire_strings() {
 /// a variant to `StoppedReason` fails to COMPILE here (E0004) until it is named
 /// directly beneath the table it must also be added to, and the length pin fails
 /// if a row is deleted or duplicated without the arm count moving with it.
+///
+/// The per-variant UNIQUENESS check is what closes the last gap between those
+/// two: a row that is deleted and replaced by a DUPLICATE of another variant
+/// keeps `WIRE.len()` at 10 and keeps every remaining row agreeing with the
+/// match, so the omitted variant would silently stop being covered by every
+/// loop in this file. One row per variant, exactly.
 #[test]
 fn the_wire_table_pins_every_variant() {
     for (variant, wire) in WIRE {
+        assert_eq!(
+            WIRE.iter().filter(|(other, _)| other == variant).count(),
+            1,
+            "{variant:?} has more than one WIRE row — a duplicate keeps the length \
+             pin green while the variant it replaced drops out of every loop"
+        );
         let expected = match variant {
             StoppedReason::Done => "done",
             StoppedReason::MaxSteps => "max_steps",

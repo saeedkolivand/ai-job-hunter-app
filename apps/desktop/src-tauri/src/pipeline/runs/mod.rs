@@ -9,14 +9,23 @@
 //! * `pipeline_run_events` — the ordered per-stage trail of one run, each event
 //!   carrying a CLAMPED `artifact_json` (see [`ARTIFACT_CAP_BYTES`]).
 //!
-//! **Both free-form JSON columns are capped on BOTH paths** — at the write site
-//! and again on import — so neither a runaway stage nor a hand-edited backup can
-//! persist a multi-megabyte `metrics_json`/`artifact_json` value. `phase` is the
-//! one OTHER column with a bound, and it is a different kind: a closed
-//! vocabulary enforced by a schema CHECK (see [`CREATE_PIPELINE_RUNS_SQL`]), so
-//! it holds on the import path too. The remaining columns
-//! (id/job_url/kind/depth/status/stage) are unconstrained — a hand-edited backup
-//! can still restore an unbounded value there.
+//! **Every column is bounded on the import path**, in one of three ways, and
+//! the difference between them is deliberate:
+//!
+//! * the two free-form JSON columns are CLAMPED at the write site and again on
+//!   import (see [`ARTIFACT_CAP_BYTES`]/[`METRICS_CAP_BYTES`]) — a truncated
+//!   summary still tells the truth about a run;
+//! * `phase` is a closed vocabulary enforced by a schema CHECK (see
+//!   [`CREATE_PIPELINE_RUNS_SQL`]), which holds on both paths;
+//! * every identity/text column (id, job_url, kind, depth, status,
+//!   stopped_reason, stage) is REJECTED past its byte cap on import — see
+//!   [`check_run`] — because truncating an identity does not shorten it, it
+//!   changes what it points at. The bundle's ROW COUNTS are bounded the same
+//!   way ([`IMPORT_MAX_RUNS`]/[`IMPORT_MAX_EVENTS`]).
+//!
+//! A rejected bundle aborts the WHOLE import with the pre-existing history
+//! intact, the same semantics as a malformed row — the caps fail BEFORE the
+//! transaction opens, and the schema CHECK fails inside it and rolls back.
 //!
 //! **`kind` is the discriminator, not the table name.** This store is also the
 //! future home of agent runs: an agent run and a résumé-pipeline run have the
@@ -89,6 +98,46 @@ const _: () = assert!(METRICS_CAP_BYTES > TRUNCATION_MARKER.len());
 /// posting's agent-run trail. `kind` is this module's first-class discriminator,
 /// so it discriminates retention too.
 pub const RETENTION_RUNS_PER_JOB: usize = 3;
+
+/// Byte cap on an IMPORTED `id` / `run_id`.
+///
+/// Ids are GENERATED, never typed: the widest this app can produce is a uuid
+/// (36 bytes), so 128 is more than three times the real ceiling while still
+/// bounding a hand-edited bundle. Rejected, not truncated — see [`check_len`].
+pub const IMPORT_ID_CAP_BYTES: usize = 128;
+
+/// Byte cap on an IMPORTED `job_url` — deliberately the loosest of the three.
+///
+/// A real posting URL is 60–300 bytes, but board URLs carry tracking query
+/// strings and this column is a RETENTION KEY: a rejected import is worse than
+/// a long URL, so the cap sits at the de-facto HTTP request-line ceiling
+/// (2 KiB) rather than at anything measured from today's boards.
+pub const IMPORT_JOB_URL_CAP_BYTES: usize = 2_048;
+
+/// Byte cap on the small label columns — `kind`, `depth`, `status`,
+/// `stopped_reason`, and an event's `stage`.
+///
+/// Every value these hold is a short backend-chosen token (`"resume"`,
+/// `"full"`, `"running"`, `"max_tool_calls"`, `"draft"`); the widest today is
+/// 14 bytes. 64 leaves room for names nobody has invented yet without leaving
+/// the door open for a megabyte of prose.
+pub const IMPORT_LABEL_CAP_BYTES: usize = 64;
+
+/// Max runs one imported bundle may carry.
+///
+/// Retention keeps [`RETENTION_RUNS_PER_JOB`] runs per `(job_url, kind)`, so
+/// 5 000 runs is ~1 600 postings' worth of full history for a single kind —
+/// far past what a real backup holds, which is exactly what a hostile-input
+/// bound should be. It bounds what gets PERSISTED and the per-row SQLite work,
+/// NOT the transient parse: `data_import` has already read the file into a
+/// `String` and `serde_json` has already built the bundle by the time this is
+/// checked. A byte cap is not a memory cap.
+pub const IMPORT_MAX_RUNS: usize = 5_000;
+
+/// Max events one imported bundle may carry — ten per run at
+/// [`IMPORT_MAX_RUNS`], which is a five-stage run's `start`/`finish` pairs.
+/// Same "bounds the writes, not the parse" caveat as the run cap.
+pub const IMPORT_MAX_EVENTS: usize = 50_000;
 
 /// One recorded run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +228,73 @@ pub fn clamp_artifact(artifact: &str) -> String {
 /// Clamp one run's `metrics_json` to [`METRICS_CAP_BYTES`].
 pub fn clamp_metrics(metrics: &str) -> String {
     clamp_json(metrics, METRICS_CAP_BYTES)
+}
+
+/// REJECT one imported identity/text column that exceeds `cap` bytes.
+///
+/// The opposite of [`clamp_json`] two functions up, on purpose: `metrics_json`
+/// and `artifact_json` are free-form SUMMARIES, so a truncated one still tells
+/// the truth about a run. An identity column does not degrade that way — a
+/// truncated `id` is a DIFFERENT run, a truncated `job_url` points at a
+/// different posting, and a truncated `run_id` orphans its event. Shortening
+/// those silently corrupts the trail, so the bundle is refused instead.
+///
+/// The message names the column and the sizes but never echoes the VALUE: it
+/// reaches a log and a renderer toast, and this module is content-free by
+/// construction (ADR-027) — quoting an oversized column would be the one place
+/// user data leaked out of it.
+fn check_len(column: &str, value: &str, cap: usize) -> AppResult<()> {
+    if value.len() > cap {
+        return Err(AppError::Validation(format!(
+            "pipelineRuns: {column} is {} bytes, over the {cap}-byte cap",
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
+/// Bound every identity/text column of one imported run.
+fn check_run(run: &RunRow) -> AppResult<()> {
+    check_len("run id", &run.id, IMPORT_ID_CAP_BYTES)?;
+    check_len("run jobUrl", &run.job_url, IMPORT_JOB_URL_CAP_BYTES)?;
+    check_len("run kind", &run.kind, IMPORT_LABEL_CAP_BYTES)?;
+    check_len("run depth", &run.depth, IMPORT_LABEL_CAP_BYTES)?;
+    check_len("run status", &run.status, IMPORT_LABEL_CAP_BYTES)?;
+    if let Some(reason) = &run.stopped_reason {
+        check_len("run stoppedReason", reason, IMPORT_LABEL_CAP_BYTES)?;
+    }
+    Ok(())
+}
+
+/// Bound every identity/text column of one imported event.
+///
+/// `phase` is absent BY DESIGN: it is closed at the schema by the CHECK in
+/// [`CREATE_PIPELINE_RUNS_SQL`], which is a strictly stronger bound than any
+/// length cap (six legal bytes, and a rolled-back transaction for anything
+/// else). A second, weaker guard here would only raise the question of which
+/// one is authoritative.
+fn check_event(event: &RunEventRow) -> AppResult<()> {
+    check_len("event runId", &event.run_id, IMPORT_ID_CAP_BYTES)?;
+    check_len("event stage", &event.stage, IMPORT_LABEL_CAP_BYTES)?;
+    Ok(())
+}
+
+/// Bound how many rows one bundle may restore.
+///
+/// Separate from [`check_run`]/[`check_event`] and taking plain counts so the
+/// decision is testable at its boundary without building a 50 000-row fixture.
+fn check_bundle_size(runs: usize, events: usize) -> AppResult<()> {
+    if runs > IMPORT_MAX_RUNS {
+        return Err(AppError::Validation(format!(
+            "pipelineRuns: bundle carries {runs} runs, over the {IMPORT_MAX_RUNS}-run cap"
+        )));
+    }
+    if events > IMPORT_MAX_EVENTS {
+        return Err(AppError::Validation(format!(
+            "pipelineRuns: bundle carries {events} events, over the {IMPORT_MAX_EVENTS}-event cap"
+        )));
+    }
+    Ok(())
 }
 
 /// This store's single migration, hoisted out of the closure so it is a NAMED
@@ -509,6 +625,19 @@ impl DataStore for PipelineRunStore {
         // import without having cleared the tables (mirrors the other stores).
         let bundle: RunsBundle = serde_json::from_value(data.clone())
             .map_err(|e| AppError::Validation(format!("pipelineRuns: {e}")))?;
+
+        // …and VALIDATE everything before mutating, for the same reason. The
+        // row caps and the identity/text caps both run here — before the
+        // transaction exists — so a refused bundle leaves the existing history
+        // untouched rather than rolled back, and a 5 001-run bundle is refused
+        // without inserting 5 000 of them first.
+        check_bundle_size(bundle.runs.len(), bundle.events.len())?;
+        for run in &bundle.runs {
+            check_run(run)?;
+        }
+        for event in &bundle.events {
+            check_event(event)?;
+        }
 
         let mut guard = self.conn.lock();
         let tx = guard.transaction()?;

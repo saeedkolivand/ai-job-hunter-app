@@ -25,3 +25,25 @@ pub const EXTENSION_BRIDGE_CHANGED: &str = "extensionBridge:changed";
 /// Source of truth: `PIPELINE_STAGE_PHASES` in
 /// packages/shared/src/events/pipeline.ts.
 pub const PIPELINE_STAGE_PHASES: &[&str] = &["start", "finish", "error"];
+
+/// Longest a `pipeline:stage` event's `sectionKey` may be, in UTF-16 code
+/// units (the unit the TS guard counts). Every LEGAL key is ASCII, so bytes,
+/// chars and UTF-16 units agree for anything that could pass the grammar; a
+/// byte-length check on a hostile value is only ever STRICTER, and such a
+/// value fails the grammar regardless.
+///
+/// NORMATIVE: an over-length `sectionKey` must be REJECTED, never truncated —
+/// a truncated key names a different section.
+pub const SECTION_KEY_MAX_LENGTH: usize = 24;
+
+/// The `sectionKey` values that carry no index — the fixed half of the closed
+/// grammar (`summary` | `skills` | `experience:<u8>` | `projects` |
+/// `education`). Source of truth: `PIPELINE_SECTION_KEYS_FIXED` in
+/// packages/shared/src/events/pipeline.ts.
+pub const PIPELINE_SECTION_KEYS_FIXED: &[&str] = &["summary", "skills", "projects", "education"];
+
+/// Prefix of the indexed half: `experience:` followed by a decimal u8 with no
+/// leading zeros. The index grammar itself is not codegen (a TS regex is not a
+/// Rust one) — the Phase-3 emitter parses the remainder as a `u8`, which is the
+/// same closed set.
+pub const PIPELINE_SECTION_EXPERIENCE_PREFIX: &str = "experience:";

@@ -38,7 +38,7 @@ Cross-cutting critics (no author; fixes route to the owning domain author): `tau
 
 **Per-change defaults (cost-tiered, ADR-025):**
 
-- **Trivial diffs** (docs/config/comments/renames/single-file ≤10 lines): the **main session edits directly**, no swarm. The deterministic Tier-0 Stop gate + the pre-push AI review still cover them.
+- **Trivial diffs** (docs/config/comments/renames/single-file ≤10 lines): the **main session edits directly**, no swarm. The deterministic Tier-0 Stop gate covers them; LLM review happens at pre-PR/CI for higher-risk changes.
 - **Single-domain, non-risk changes**: author → **ONE sibling critic** (resolve HIGH/CRITICAL; LOW/MEDIUM advisory) → if testable logic, `test-author` → `testing-reviewer`.
 - **Risk-bearing** (any `tauri-security-reviewer` secondary glob) **or multi-domain**: full trio incl. security critic (≤3 critics/task).
 - `project-steward` closes **once per PR** (docs/lessons sync + `graphify update .`), not once per change. Context flows via `.claude/scratch/<task>.md`. Orchestrate all sub-agents from the main session (agents can't call agents).

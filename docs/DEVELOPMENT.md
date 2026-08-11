@@ -241,8 +241,8 @@ Storage is a set of **per-domain [SQLite][sqlite] files** (rusqlite, bundled) in
 app data directory — there is no single `app.db` and no separate vector store. The main
 files include `documents.db` (imported documents **plus** embedding vectors — the
 `vectors`, `posting_vectors`, `match_scores` tables), `jobs.db`, `applications.db`,
-`ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`, and
-`pipeline_cache.db`.
+`ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`,
+`pipeline_cache.db`, and `pipeline_runs.db`.
 
 App-data directory per OS (rooted at your home directory, `<HOME>`):
 
@@ -319,13 +319,14 @@ scoop install gitleaks               # Windows (alternative)
 
 Then run `gitleaks detect --source . -v` in the repo root to catch hardcoded credentials, API keys, etc. The reviewer falls back to a grep-based scan if gitleaks is absent.
 
-### Pre-push AI review
+### Pre-push deterministic gate
 
-An LLM review runs immediately before each push. The gate has **three layers** (run sequentially, cheapest first, short-circuiting on the first blocking layer):
+A deterministic review runs immediately before each push (LLM review was removed 2026-08-11; see CLAUDE.md Review gates). The gate has **two layers** (run sequentially, cheapest first, short-circuiting on the first blocking layer):
 
 1. **Cache fast-path** — hunks already reviewed by a prior Stop gate pass through in <1s
 2. **ast-grep deterministic scan** — structural rules from `.claude/review-rules/` (zero false-positives); any HIGH/CRITICAL finding **blocks the push immediately**
-3. **One Sonnet schema-1 review** — in `RATCHET warn mode` (advisory); set `REVIEW_MODE=block` via environment variable (`REVIEW_MODE=block git push`) or permanently by exporting it / flipping the script default to enforce block-on-finding after `/review-stats` shows a clean false-positive rate
+
+**(Removed)** — Layer 3 (One Sonnet schema-1 review in RATCHET warn mode, with REVIEW_MODE environment variable) was the pre-push LLM review, removed per owner decision. LLM review now happens at pre-PR via the internal agent chain, CodeRabbit, and CI (`🤖 AI Review OK` required check).
 
 **Escape hatches:**
 

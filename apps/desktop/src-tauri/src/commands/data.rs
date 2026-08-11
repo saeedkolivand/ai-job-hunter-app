@@ -479,16 +479,33 @@ mod tests {
     /// WIRING PIN. Every section the pre-pass validates must also be ROUTED in
     /// `data_import` — a key that is validated but never imported is a section
     /// that looks supported and restores nothing.
+    ///
+    /// The scan matches the two ROUTING FORMS `data_import` actually uses, not a
+    /// bare quoted key: every `DataStore` goes through the
+    /// `import_into("<key>", …)` closure, and `interactions` — whose store is not
+    /// a `DataStore` — is read straight off the bundle with
+    /// `stores.get("interactions")`. A bare-key scan would be satisfied by a
+    /// comment, a log line, or an error message naming a section nothing routes.
+    /// (There are no `match` arms on the key; if routing ever becomes a `match`,
+    /// this pin must learn that form too rather than being loosened back.)
+    ///
+    /// Both needles are assembled at RUNTIME: this module is part of the file it
+    /// scans, so a written-out form could let the test satisfy its own scan if
+    /// the scanned region ever widened past `#[cfg(test)]`.
     #[test]
     fn every_validated_section_is_routed_on_import() {
         let importer = region(
             &format!("pub async fn data_{}(", "import"),
             &format!("#[cfg({})]", "test"),
         );
+        let via_closure = format!("{}_into(", "import");
+        let via_bundle = format!("stores.{}(", "get");
         for key in ARRAY_SECTIONS.iter().chain(OBJECT_SECTIONS) {
             assert!(
-                importer.contains(&format!("\"{key}\"")),
-                "section '{key}' is validated but never routed in data_import"
+                importer.contains(&format!("{via_closure}\"{key}\","))
+                    || importer.contains(&format!("{via_bundle}\"{key}\")")),
+                "section '{key}' is validated but never routed in data_import — \
+                 no `import_into(\"{key}\", …)` call and no `stores.get(\"{key}\")`"
             );
         }
     }
