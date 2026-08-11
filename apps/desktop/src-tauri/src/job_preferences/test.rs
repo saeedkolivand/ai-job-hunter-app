@@ -525,3 +525,140 @@ fn test_migration_drops_unused_columns_and_preserves_kept_fields() {
         "extra_agency_companies"
     ));
 }
+
+// ── semantic_scoring mirror (ADR-020 addendum) ────────────────────────────────
+
+/// The default is the load-bearing half: every install that predates this
+/// column (and every user who never touched the toggle) must read `false`, or
+/// the headless Autopilot would silently start embedding.
+#[test]
+fn semantic_scoring_defaults_off_and_round_trips() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    assert!(
+        !store.semantic_scoring(),
+        "an unset (NULL) mirror must read false — the app-wide semanticScoring default"
+    );
+
+    store.set_semantic_scoring(true).unwrap();
+    assert!(store.semantic_scoring());
+
+    store.set_semantic_scoring(false).unwrap();
+    assert!(
+        !store.semantic_scoring(),
+        "turning the setting back off must stick"
+    );
+}
+
+/// Single-column discipline, both directions: the semantic write must not
+/// disturb the other columns, and — the easier regression to introduce — a
+/// full-row `set()` (a Settings edit elsewhere, or a backup restore) must not
+/// silently clear the user's semantic-scoring choice.
+#[test]
+fn semantic_scoring_and_the_other_columns_cannot_clobber_each_other() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    store
+        .set(&JobPreferences {
+            location: Some("Berlin".to_string()),
+            country_code: Some("DE".to_string()),
+            tech_stack: None,
+            salary_expectation: Some("€75,000".to_string()),
+            extra_agency_companies: None,
+        })
+        .unwrap();
+    store.set_semantic_scoring(true).unwrap();
+
+    // The semantic write left every other column alone.
+    let prefs = store.get();
+    assert_eq!(prefs.location, Some("Berlin".to_string()));
+    assert_eq!(prefs.salary_expectation, Some("€75,000".to_string()));
+
+    // …and a later full-row write (which knows nothing about this column) left
+    // the semantic bit alone.
+    store
+        .set(&JobPreferences {
+            location: Some("Hamburg".to_string()),
+            country_code: None,
+            tech_stack: None,
+            salary_expectation: None,
+            extra_agency_companies: None,
+        })
+        .unwrap();
+    assert!(
+        store.semantic_scoring(),
+        "a full-row set() must not reset the semantic-scoring mirror"
+    );
+
+    // Factory reset DOES clear it (it is user data like everything else here).
+    store.clear().unwrap();
+    assert!(!store.semantic_scoring());
+}
+
+#[test]
+fn semantic_scoring_column_exists_after_the_migration_chain() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = JobPreferencesStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let conn = store.conn.lock();
+    // v6 column, APPENDED to the chain (migrations are position-indexed).
+    assert!(crate::db::column_exists(
+        &conn,
+        "job_preferences",
+        "semantic_scoring"
+    ));
+}
+
+/// …and the UPGRADE path, which the fresh-install test above cannot see: every
+/// existing user opens a v5 database, where the column does not exist yet. A
+/// fresh install runs the whole chain from zero and would still pass if
+/// migration 6 were mis-numbered, mis-ordered, or wrong about the starting
+/// schema — this seeds the real v5 shape and reopens through the store.
+#[test]
+fn a_version_5_database_gains_the_semantic_scoring_column_on_open() {
+    let temp_dir = TempDir::new().unwrap();
+    let data_dir = temp_dir.path().to_path_buf();
+
+    // The schema as of migration 5 (`add_job_preferences_extra_agency_companies`):
+    // the dropped-column recreate has already run and the three ADD COLUMNs with
+    // it. No `semantic_scoring`.
+    {
+        let conn = crate::db::open(&data_dir.join("job_preferences.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE job_preferences (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 location TEXT,
+                 tech_stack TEXT,
+                 country_code TEXT,
+                 salary_expectation TEXT,
+                 extra_agency_companies TEXT
+             );
+             INSERT OR IGNORE INTO job_preferences (id, location) VALUES (1, 'Berlin');
+             PRAGMA user_version = 5;",
+        )
+        .unwrap();
+        assert!(
+            !crate::db::column_exists(&conn, "job_preferences", "semantic_scoring"),
+            "fixture precondition: a v5 database has no semantic_scoring column"
+        );
+    }
+
+    let store = JobPreferencesStore::open(&data_dir).expect("the v5 → v6 upgrade must succeed");
+
+    assert!(
+        crate::db::column_exists(&store.conn.lock(), "job_preferences", "semantic_scoring"),
+        "opening a v5 database must run migration 6"
+    );
+    assert!(
+        !store.semantic_scoring(),
+        "the added column is NULL for every upgraded install, and NULL must read \
+         false — the app-wide default that keeps a scheduled run embedding-free \
+         until the user opts in"
+    );
+    assert_eq!(
+        store.get().location,
+        Some("Berlin".to_string()),
+        "…and the upgrade is an ADD COLUMN, so the user's existing row survives it"
+    );
+}

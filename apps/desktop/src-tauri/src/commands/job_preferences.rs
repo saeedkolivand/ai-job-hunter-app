@@ -62,3 +62,48 @@ pub async fn job_preferences_set_salary_expectation(
         Err(e) => json!({ "error": e.to_string() }),
     }
 }
+
+/// Single-column semantic-scoring write (ADR-020 addendum) — the renderer's
+/// `semanticScoring` preference lives in the webview's `localStorage`, which no
+/// Rust code can read, so the headless Autopilot scheduler needs this mirror to
+/// know whether to run the semantic re-rank. Same single-column discipline as
+/// `job_preferences_set_salary_expectation`: it can never NULL another column.
+///
+/// Returns `AppResult<()>` — the `email_watch_*` shape — NOT the sibling
+/// setters' `Value`-with-an-`error`-key. That difference is load-bearing: a
+/// `Value` return RESOLVES the invoke promise even for `{"error": …}`, so the
+/// renderer's `onError` / `.catch` never runs and a failed write is invisible.
+/// This particular write is the one whose silent failure diverges two scoring
+/// surfaces (the user turns semantic scoring OFF, the mirror write fails, and
+/// the headless scheduler keeps embedding), so it must REJECT. `AppError`
+/// serializes as a plain string, so the rejection carries the store's message.
+#[tauri::command]
+pub async fn job_preferences_set_semantic_scoring(
+    app: AppHandle,
+    enabled: bool,
+) -> crate::error::AppResult<()> {
+    let store = app.state::<crate::job_preferences::JobPreferencesStore>();
+    store.set_semantic_scoring(enabled)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// A compile-time pin on the wire contract above. Reverting this command to
+    /// the sibling `Value` shape (`{"error": …}`) makes the crate's tests fail
+    /// to build here — which is the only place the difference is observable
+    /// in-process: `invoke`'s resolve-vs-reject behaviour is decided by this
+    /// return type, and this crate has no `tauri::test` mock-app harness to
+    /// drive the command end to end.
+    #[test]
+    fn the_semantic_scoring_mirror_rejects_instead_of_resolving_an_error_object() {
+        fn assert_rejects_on_failure<F, Fut>(_command: F)
+        where
+            F: Fn(AppHandle, bool) -> Fut,
+            Fut: std::future::Future<Output = crate::error::AppResult<()>>,
+        {
+        }
+        assert_rejects_on_failure(job_preferences_set_semantic_scoring);
+    }
+}

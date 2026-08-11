@@ -71,6 +71,8 @@ const STEP_ICON: Record<string, string> = {
   scrape_start: '⟳',
   scrape_done: '✓',
   scrape_diag: '⚠',
+  rerank_start: '◇',
+  rerank_timeout: '◷',
   rank_done: '★',
   cancelled: '⊘',
   complete: '✓',
@@ -113,20 +115,49 @@ const NEEDS_CONFIG_BADGE = {
 };
 
 /**
- * Hover/screen-reader copy for a PROVISIONAL coverage score: what the tier
- * means, then why it is only an estimate.
+ * Every metric a found-job score can be rendered as (ADR-020 addendum).
  *
- * Both, not either. They answer different questions — the tier description says
- * what "High" is claiming, `provisionalScoreHint` says how much to trust the
- * number behind it — so dropping one leaves a real gap. Composed here rather
- * than inside `MatchBand` because this wrapper already owns the `title` and the
- * sr-only span; letting the band render its own would put a second `title`
- * inside this one (the inner wins on hover over the badge, hiding the caveat)
- * and announce twice.
+ * A runtime tuple, not just a type: each variant owns an
+ * `autopilot.scoreLabel.*` / `autopilot.scoreAbbr.*` key built by template
+ * string, which TypeScript cannot check. Exported so the i18n test enumerates
+ * the REAL set — restating the two strings there is how a third variant would
+ * ship with no localized label.
  */
-function provisionalScoreDetail(t: (key: string) => string, score: number): string {
-  const tier = t(matchBandDescriptionKey(scoreTier(score, 'coverage').key, 'coverage'));
-  return `${tier} ${t('autopilot.provisionalScoreHint')}`;
+export const SCORE_VARIANTS = ['coverage', 'combined'] as const;
+export type ScoreVariant = (typeof SCORE_VARIANTS)[number];
+
+/**
+ * The band variant a found job's score should render as. `'combined'` ONLY when
+ * the backend says that job's score came from the semantic+ATS kernel — the
+ * two metrics have different meanings AND different tier cut points, so showing
+ * a keyword number on the combined scale (or vice versa) mislabels it. A job
+ * that degraded back to keyword-only mid-run reports `'keyword'` and is
+ * rendered as such (ADR-020 addendum).
+ */
+function scoreVariant(job: AutopilotFoundJob): ScoreVariant {
+  return job.scoreSource === 'combined' ? 'combined' : 'coverage';
+}
+
+/**
+ * Hover/screen-reader copy for a found job's score: WHICH metric it is
+ * ("Keyword Coverage %" vs "Match %" — ADR-020 asked for this distinction and
+ * it had never been surfaced), what the tier means, and — when provisional —
+ * why the number is only an estimate.
+ *
+ * All three, not one of them. They answer different questions: the metric name
+ * says what is being measured, the tier description says what "High" is
+ * claiming, and `provisionalScoreHint` says how much to trust the number behind
+ * it — so dropping any leaves a real gap. Composed here rather than inside
+ * `MatchBand` because this wrapper owns the `title` and the sr-only span;
+ * letting the band render its own would put a second `title` inside this one
+ * (the inner wins on hover over the badge, hiding the rest) and announce twice.
+ */
+function scoreDetail(t: (key: string) => string, job: AutopilotFoundJob): string {
+  const variant = scoreVariant(job);
+  const label = t(`autopilot.scoreLabel.${variant}`);
+  const tier = t(matchBandDescriptionKey(scoreTier(job.score ?? 0, variant).key, variant));
+  const provisional = job.scoreProvisional ? ` ${t('autopilot.provisionalScoreHint')}` : '';
+  return `${label}: ${tier}${provisional}`;
 }
 
 /** Badges that carry a hover/focus explainer now that the chip strip exists. */
@@ -166,6 +197,18 @@ export function AutopilotCard({
   const foundJobs = useMemo(
     () => (ap.foundJobs ?? []).filter((j) => j.clusterCanonical !== false),
     [ap.foundJobs]
+  );
+  // Does this list hold BOTH scales at once? After a semantic re-rank it can:
+  // the re-ranked head carries the combined "Match %", the tail keyword
+  // coverage, and the backend sorts them as two separate blocks — so a 58 can
+  // legitimately sit above a 62. Until now the only visible difference was the
+  // tier colour (screen-reader users always had the sr-only metric name), which
+  // reads as a sorting bug. When the list mixes, each row names its metric;
+  // when it doesn't — the overwhelmingly common case — nothing is added, since
+  // a label repeated identically on every row is noise.
+  const mixedScoreSources = useMemo(
+    () => new Set(foundJobs.filter((j) => typeof j.score === 'number').map(scoreVariant)).size > 1,
+    [foundJobs]
   );
   // Persisted per-board outcome of the most recent run (PR B). Unlike the live
   // step log (below), this survives the run ending, so a zero/partial/failed
@@ -633,51 +676,65 @@ export function AutopilotCard({
                             {job.location && <span className="truncate">· {job.location}</span>}
                           </div>
                         </div>
-                        {typeof job.score === 'number' &&
-                          (job.scoreProvisional ? (
-                            // Provisional score (audit root cause 6): computed
-                            // over a truncated aggregator snippet, so the detail
-                            // pane's full-text re-score may differ. Mark it
-                            // honestly — a muted band (ALL tiers, `muted`, not
-                            // `subtle` — a provisional HIGH must read muted too,
-                            // unlike `subtle`'s High-stays-bright contract) + "~"
-                            // prefix + a hover `title` AND an always-present
-                            // sr-only span (the TrustBadge non-interactive
-                            // precedent: a `title` alone isn't reliably
-                            // announced). No focusable HoverPopover — this whole
-                            // row is already a <Button>; a focusable popover
-                            // trigger nested in it would be invalid
-                            // button-in-button HTML (same reason TrustBadge
-                            // above renders interactive=false).
-                            <span
-                              className="inline-flex shrink-0 items-center gap-0.5"
-                              title={provisionalScoreDetail(t, job.score)}
-                            >
+                        {typeof job.score === 'number' && (
+                          // One wrapper for both cases so the metric label
+                          // ("Keyword Coverage %" / "Match %") is always
+                          // announced. A provisional score (audit root cause 6)
+                          // is computed over a truncated aggregator snippet, so
+                          // the detail pane's full-text re-score may differ —
+                          // it additionally gets a muted band (ALL tiers,
+                          // `muted`, not `subtle` — a provisional HIGH must read
+                          // muted too, unlike `subtle`'s High-stays-bright
+                          // contract), a "~" prefix and the caveat in the copy.
+                          // The hover `title` plus an always-present sr-only
+                          // span follows the TrustBadge non-interactive
+                          // precedent (a `title` alone isn't reliably
+                          // announced). No focusable HoverPopover — this whole
+                          // row is already a <Button>; a focusable popover
+                          // trigger nested in it would be invalid
+                          // button-in-button HTML.
+                          <span
+                            className="inline-flex shrink-0 items-center gap-0.5"
+                            title={scoreDetail(t, job)}
+                          >
+                            {mixedScoreSources && (
+                              // The scale this number is on, shown only while
+                              // the list actually mixes the two (see
+                              // `mixedScoreSources`). aria-hidden because the
+                              // sr-only span below already announces the full
+                              // metric name — this is the sighted-user half of
+                              // the same fact, not a second announcement.
+                              <span
+                                aria-hidden="true"
+                                className="shrink-0 text-[8px] font-semibold uppercase tracking-wider text-foreground/40"
+                              >
+                                {t(`autopilot.scoreAbbr.${scoreVariant(job)}`)}
+                              </span>
+                            )}
+                            {job.scoreProvisional && (
                               <span
                                 aria-hidden="true"
                                 className="text-[11px] leading-none text-foreground/35"
                               >
                                 ~
                               </span>
-                              {/* describe={false}: this wrapper owns the copy —
-                                  the band's own `title` would otherwise win on
-                                  hover over the badge itself and hide the
-                                  provisional caveat, and its sr-only suffix
-                                  would double up with the one below. Same
-                                  caller-owns-richer-copy split as RowMatchScore. */}
-                              <MatchBand
-                                value={job.score}
-                                variant="coverage"
-                                muted
-                                describe={false}
-                              />
-                              <span className="sr-only">
-                                : {provisionalScoreDetail(t, job.score)}
-                              </span>
-                            </span>
-                          ) : (
-                            <MatchBand value={job.score} variant="coverage" />
-                          ))}
+                            )}
+                            {/* describe={false}: this wrapper owns the copy —
+                                the band's own `title` would otherwise win on
+                                hover over the badge itself and hide the metric
+                                label (and the provisional caveat), and its
+                                sr-only suffix would double up with the one
+                                below. Same caller-owns-richer-copy split as
+                                RowMatchScore. */}
+                            <MatchBand
+                              value={job.score}
+                              variant={scoreVariant(job)}
+                              muted={job.scoreProvisional}
+                              describe={false}
+                            />
+                            <span className="sr-only">: {scoreDetail(t, job)}</span>
+                          </span>
+                        )}
                         <ExternalLink size={11} className="shrink-0 text-foreground/25" />
                       </Button>
                       <Button

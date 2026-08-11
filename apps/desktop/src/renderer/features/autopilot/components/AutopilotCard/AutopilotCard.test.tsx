@@ -629,11 +629,16 @@ describe('AutopilotCard — provisional score marker', () => {
     const band = screen.getByTestId('match-band');
     expect(band).toHaveAttribute('data-tier', 'High');
     expect(band).toHaveAttribute('data-muted', 'false');
-    // This band has NO wrapper carrying an explanation, so it must describe
-    // itself. Opting out here (as a blanket "opt out at both call sites" fix
-    // would have) leaves the badge a bare, unexplained word — the exact gap
-    // this feature exists to close.
-    expect(band).toHaveAttribute('data-describe', 'true');
+    // The band opts out of describing itself because its WRAPPER now owns the
+    // richer copy (metric name + tier description) for every score, provisional
+    // or not. The invariant that matters is unchanged: the badge is never a
+    // bare, unexplained word — so assert the explanation is actually there,
+    // exactly once, rather than which component happens to render it.
+    expect(band).toHaveAttribute('data-describe', 'false');
+    const marker = band.closest('[title]') as HTMLElement;
+    expect(marker.title).toContain('jobs.matchBand.desc.coverage.High');
+    expect(marker.querySelectorAll('[title]')).toHaveLength(0);
+    expect(marker.querySelectorAll('.sr-only')).toHaveLength(1);
   });
 
   it('treats an absent scoreProvisional field (older records) as non-provisional', async () => {
@@ -648,6 +653,136 @@ describe('AutopilotCard — provisional score marker', () => {
 
     expect(screen.queryByTitle('autopilot.provisionalScoreHint')).not.toBeInTheDocument();
     expect(screen.getByTestId('match-band')).toHaveAttribute('data-muted', 'false');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// scoreSource — the metric label flips to "Match %" ONLY for a job the backend
+// actually re-ranked through the semantic kernel (ADR-020 addendum).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('AutopilotCard — score metric label', () => {
+  /** Expand the found-jobs panel and return the band + its titled wrapper. */
+  async function renderScored(job: AutopilotFoundJob) {
+    renderCard(makeAutopilot([job]));
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+    const band = screen.getByTestId('match-band');
+    return { band, marker: band.closest('[title]') as HTMLElement };
+  }
+
+  it('labels a keyword-scored job "Keyword Coverage %" on the coverage scale', async () => {
+    const job = { ...makeJob('https://example.com/job/kw', 60), scoreSource: 'keyword' as const };
+    const { band, marker } = await renderScored(job);
+
+    expect(marker.title).toContain('autopilot.scoreLabel.coverage');
+    expect(marker.title).not.toContain('autopilot.scoreLabel.combined');
+    expect(band).toHaveAttribute('data-variant', 'coverage');
+    // 60 is High on the coverage scale (>=55) but only Medium on the combined
+    // one (>=50) — so the tier here also proves the right cut points ran, not
+    // just that the right word was printed.
+    expect(band).toHaveAttribute('data-tier', 'High');
+    expect(marker.querySelectorAll('.sr-only')[0]?.textContent).toBe(`: ${marker.title}`);
+  });
+
+  it('flips to "Match %" on the combined scale when the backend re-ranked the job', async () => {
+    const job = { ...makeJob('https://example.com/job/sem', 60), scoreSource: 'combined' as const };
+    const { band, marker } = await renderScored(job);
+
+    expect(marker.title).toContain('autopilot.scoreLabel.combined');
+    expect(marker.title).not.toContain('autopilot.scoreLabel.coverage');
+    expect(band).toHaveAttribute('data-variant', 'combined');
+    // Same 60, different metric → Medium, not High. A label-only flip that left
+    // the variant on 'coverage' would still read High here and fail.
+    expect(band).toHaveAttribute('data-tier', 'Medium');
+    expect(marker.title).toContain('jobs.matchBand.desc.combined.Medium');
+  });
+
+  it('treats an absent scoreSource (every pre-existing record) as keyword coverage', async () => {
+    // makeJob() sets no scoreSource — the legacy record shape, and also what a
+    // run with semantic scoring OFF writes.
+    const { band, marker } = await renderScored(makeJob('https://example.com/job/legacy', 60));
+
+    expect(marker.title).toContain('autopilot.scoreLabel.coverage');
+    expect(band).toHaveAttribute('data-variant', 'coverage');
+  });
+
+  // ── the mixed-scale affordance ──────────────────────────────────────────
+  //
+  // After a semantic re-rank the list holds TWO scales and is sorted in two
+  // blocks, so a combined 58 legitimately sits above a keyword 62. The metric
+  // was only ever in the tier colour and the sr-only text, which reads to a
+  // sighted user as a sorting bug.
+
+  /** Expand the found-jobs panel for a whole list. */
+  async function renderList(jobs: AutopilotFoundJob[]) {
+    renderCard(makeAutopilot(jobs));
+    const header = document.querySelector('[aria-expanded]') as HTMLElement;
+    await act(async () => {
+      header.click();
+    });
+  }
+
+  const combined = (url: string, score: number): AutopilotFoundJob => ({
+    ...makeJob(url, score),
+    scoreSource: 'combined' as const,
+  });
+  const keyword = (url: string, score: number): AutopilotFoundJob => ({
+    ...makeJob(url, score),
+    scoreSource: 'keyword' as const,
+  });
+
+  it('names each row’s metric when the list mixes the two scales', async () => {
+    // The exact reported shape: the re-ranked head scores LOWER than the
+    // keyword tail, so without a visible metric the order looks broken.
+    await renderList([combined('https://example.com/a', 58), keyword('https://example.com/b', 62)]);
+
+    expect(screen.getByText('autopilot.scoreAbbr.combined')).toBeInTheDocument();
+    expect(screen.getByText('autopilot.scoreAbbr.coverage')).toBeInTheDocument();
+  });
+
+  it('adds nothing when every score is on the same scale', async () => {
+    // The overwhelmingly common case (semantic scoring off, or a run where
+    // every job re-ranked): an identical label on every row is pure noise.
+    await renderList([keyword('https://example.com/a', 62), keyword('https://example.com/b', 40)]);
+
+    expect(screen.queryByText('autopilot.scoreAbbr.coverage')).not.toBeInTheDocument();
+    expect(screen.queryByText('autopilot.scoreAbbr.combined')).not.toBeInTheDocument();
+  });
+
+  it('ignores unscored rows when deciding whether the list mixes', async () => {
+    // An unscored job renders no band at all, so it cannot be one of the two
+    // scales — counting it would label a uniform list.
+    await renderList([keyword('https://example.com/a', 62), makeJob('https://example.com/b')]);
+
+    expect(screen.queryByText('autopilot.scoreAbbr.coverage')).not.toBeInTheDocument();
+  });
+
+  it('keeps the metric out of the accessible name, which already carries it', async () => {
+    // aria-hidden: the sr-only span next to the band announces the FULL label
+    // ("Keyword Coverage %"), so an announced abbreviation would be a second,
+    // shorter duplicate of the same fact.
+    await renderList([combined('https://example.com/a', 58), keyword('https://example.com/b', 62)]);
+
+    expect(screen.getByText('autopilot.scoreAbbr.coverage')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('keeps the provisional caveat alongside the flipped label', async () => {
+    // A re-ranked aggregator job is BOTH semantic and snippet-derived: the
+    // label flips, and the "~"/muted/caveat treatment must survive.
+    const job = {
+      ...makeJob('https://example.com/job/both', 60),
+      scoreSource: 'combined' as const,
+      scoreProvisional: true,
+    };
+    const { band, marker } = await renderScored(job);
+
+    expect(marker.title).toContain('autopilot.scoreLabel.combined');
+    expect(marker.title).toContain('autopilot.provisionalScoreHint');
+    expect(screen.getByText('~')).toBeInTheDocument();
+    expect(band).toHaveAttribute('data-muted', 'true');
   });
 });
 
