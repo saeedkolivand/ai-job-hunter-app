@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786428867469,
+  "lastUpdate": 1786438354392,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6629,6 +6629,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 208488,
             "range": "± 12470",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7e331463ef67c7b1b10dc449a8c547160e79fc01",
+          "message": "feat: autopilot adopts semantic scoring when enabled (#966)\n\n* feat: autopilot adopts semantic scoring when enabled\n\nScheduled runs re-rank the keyword prefilter's top survivors through the\nsame combined kernel as the jobs page — score_one semantics including\nlanguages_align, closing the known divergence on this path — when the user\nhas semantic scoring on. The webview-only toggle gets a rust-readable\nsingle-column mirror on job_preferences written by settings and boot-sync,\ndeliberately not a struct field so the full-row set() can never clobber it\n(the salary_expectation precedent). Phase two runs after cluster_aware_retain\nso minMatchScore keeps its keyword meaning and only deduped survivors cost\nan embed, capped at twenty per run from the aggregator's posting cap;\ncache ids hash canonical_job_key and the resume text so tracking-param\nvariants hit the paid row and a resume edit is a miss by construction.\nEmbed failure degrades that job to keyword-only via an explicit scoreSource\nemitted from the same option check as the blend — a run never fails because\nof scoring, and the formula version stays unbumped because no score changes.\nThe autopilot percent label flips to match percent only when semantic is on,\nen and de.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: critic blockers on the autopilot semantic re-rank\n\nThe translate flag becomes a MatchSurface enum with one shared translates()\ntable — every surface labelled match percent runs the full jobs-page\npre-processing including translation (the skipped step collapsed coverage\nto language-neutral tokens and embedded a cross-lingual cosine, two\ndifferent numbers under one label), false only for the extension's\nstructural zero-egress; pinned by a cross-surface parity test. The\nsynthetic resume snapshot vector moves out of the shared vectors index into\nposting_vectors with its TTL discipline, the write site itself now refuses\nsynthetic scoring ids (documents/sql.rs split for R8), and a test pins the\nindex count and stale arithmetic across a semantic run. The tautological\nsemantic-off test is replaced by should_semantic_rerank plus a phase\nfunction owning the gate, the wall clock (per-run timeout with keyword-only\ndegrade and a rerank_start step) and a lazy setup closure, so zero-cost-off\nis a property of the tested function. Re-ranked head and keyword tail sort\nas two blocks; only cluster canonicals are re-ranked (an unreachable\nbelt-and-braces dedup guard was deleted rather than shipped); daily-cap\ncharges move inside score() behind an actual-round-trip predicate; the\nautopilot locale source now matches the jobs page with detect-and-backfill\nrecorded as a deferral; mirror-write failures surface a notification.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: charge embeds at the call on the exact bytes and close the advisory gaps\n\nThe will-this-reach-the-provider predicate answered a different question\nthan the call — it hashed the untranslated blob while the embed consumed\ntranslated text (phantom charges on every cache-hit run of a translated\nposting) and never saw the resume embed at all (uncharged real embeds,\nincluding after ceiling exhaustion). It is deleted rather than patched:\ndocuments::embed_charged charges at the single choke point all three\nembeds pass through, on the miss path only, with a latching per-run budget\nthat still degrades a refused job to keyword-only. The provider-reaching\neffects sit behind a ScoreIo seam so the kernel is testable without an\nAppHandle, and the required fixture exists: a translator that actually\nrewrites the text, pinning zero charges on a fully-cached translated\nposting and exactly one per real embed. score_one also stops caching a\nkeyword-only number under the semantic key when no embedding backed it —\na refused or provider-offline job no longer freezes the wrong number for\nthe cache TTL (a pre-existing jobs-page trap). Autopilot delete drops its\norphaned resume vector unless another autopilot shares the text; the\nsemantic-scoring command returns a real Result so mirror-write failures\nreject the promise and the notification can fire; the blob map is\ncandidate-scoped; import warns-and-skips a synthetic vector row instead of\naborting the restore.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: delta-review findings on the semantic score cache and rerank loop\n\nsemantic_available now requires BOTH vectors — a cached posting with a\nrefused resume embed produced combined = 0.4 x ats labeled combined and\nfroze it under the semantic cache key for the TTL; both mixed shapes are\npinned as separate tests so the asymmetry that hid this cannot recur, and\nthe degrade explanation gains a third branch instead of reporting a\nsimilarity that was never measured. The candidate-url set drops its\npositional cap (the loop's own counter bounds embeds; the cap silently\ncost later jobs their rerank slot when head entries collapsed as URL\nvariants). Autopilot update and remove both route through one mutate_record\npath that drops the orphaned resume snapshot vector AND its resume-scoped\nmatch_scores rows. A consecutive-degrade breaker (3) stops the phase when\nthe provider is plainly down, bounding offline cost without reintroducing\nthe frozen-cache bug. Embedder types go pub(crate) so the charge choke\npoint is a visibility guarantee, and score sources emit via the shared\nconstants.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: ensemble findings — comparability, merge pairing, translation cache key\n\nsemantic_available now derives from the one comparison rather than vector\npresence: a cross-space pair (a stale resume vector surviving a base-url\nswitch under the same model name) made compare() err, flattened to a\nmeasured zero, published as combined, cached for the TTL and promoted by\nthe re-rank — it now degrades honestly to a keyword score, pinned by the\ncrate's first test of compare()'s error branch with fixture preconditions\nproving the mechanism (the pair is genuinely present AND genuinely\nincomparable). The root cause (vectors survive a config write) is a\nrecorded cost deferral — the stale vector now yields an honest recomputed\nkeyword score instead of a lying combined one. merge_found_jobs' new\nscore_source pairing gets the resurface test its score_provisional sibling\nalways had (deleting the line failed nothing before). The translation cache\nkeys on (job_id, sha256(text)) with a bounded size, so a board updating a\nposting under this branch's cross-run-stable ids is a natural miss instead\nof a stale translation feeding a stale score forever. ADR-020 gains the\naddendum eighteen call sites already cited, and the embedding-free claims\nin the knowledge base become conditional on the toggle.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: coderabbit round-1 findings on the semantic re-rank surface\n\nFive tests that asserted against local copies of the formula, guidance\nsentence or stemmer guard are rewritten against the real kernel with fixed\ninputs (or deleted as redundant with the seam tests); the weights pin\nseeds a known cosine and a verbatim-contained resume so the combined value\nhas exactly one correct answer. A timed-out re-rank now returns its\npartial summary through caller-owned state and emits a distinct\nrerank_timeout step instead of reading like a keyword-only run. The\npreference gate logs when the store is unmanaged; a source-pin asserts\nmutate_record is the only record writer; the match-path prune amortizes\nonce per 64 writes like its sibling; posting-vector cache-write failures\nwarn content-free; the v5-to-v6 migration upgrade is pinned by a reorder\nmutation; sql.rs's only tauri marker was spawn_blocking so it moves to\ntokio and the R2 allowlist entry is deleted; the score-variant union is\nexported and derived in the i18n test; and the mixed-scale list gains a\nvisible per-block metric label in both locales. The R8 cap forced phase\ntwo into commands/autopilot/rerank.rs as a pure move. Docs: the status\nrow annotation, the ADR duplication and line-anchor, and the\nmatching-algorithm pipeline section all updated to the two-phase model.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T10:40:24+02:00",
+          "tree_id": "7aac32b6ac736cd6e6593083452f41ecd44d785f",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/7e331463ef67c7b1b10dc449a8c547160e79fc01"
+        },
+        "date": 1786438352947,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2185624,
+            "range": "± 17125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2568010,
+            "range": "± 31802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 299658,
+            "range": "± 10820",
             "unit": "ns/iter"
           }
         ]
