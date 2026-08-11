@@ -3,10 +3,20 @@
  * ruleset shared across every generation surface (résumé, cover letter, referral,
  * application answers, inline rewrite).
  *
- * Distilled from the `humanizer` Claude skill and Wikipedia's "Signs of AI writing"
- * (the catalogue of giveaways: AI-vocabulary, promotional self-adjectives, vague
- * attributions, filler, em-dash overuse, rule-of-three, negative parallelisms,
- * "-ing" depth-faking, passive voice, abstraction over concrete fact).
+ * Distilled from the `humanizer` and `no-ai-slop` Claude skills and Wikipedia's
+ * "Signs of AI writing" (the catalogue of giveaways: AI-vocabulary, promotional
+ * self-adjectives, vague attributions, filler, em-dash overuse, rule-of-three,
+ * negative parallelisms, "-ing" depth-faking, passive voice, abstraction over
+ * concrete fact, plus the named constructions: colon reveals, faux-insight and
+ * throat-clearing setups, interpretive metadiscourse, importance puffery,
+ * fake-profound kickers and summary-recap endings).
+ *
+ * Those sources are English-language writing advice, and only the English
+ * ruleset grew from them. Curating `de` means finding the KI-Floskeln a
+ * German-language model actually reaches for, which is a different exercise
+ * from translating an English tell (see the per-language design below): a
+ * translated list bans phrases no German writer would produce and misses the
+ * real ones, so `de` is unchanged here and stays curated on its own evidence.
  *
  * Two-tier split so each surface gets exactly the rules that are safe for it:
  * - {@link antiAiTellLexical}. The shared lexical core: word/phrase bans only.
@@ -53,18 +63,28 @@
  * Normal hyphens appear only where a hyphen is genuinely part of a word.
  */
 const ANTI_AI_TELL_LEXICAL_EN = `NATURAL VOICE (anti-AI-tell). Applies to any words YOU introduce, never to exact job-ad keywords already grounded in the résumé:
-- Drop AI-vocabulary: delve, leverage, robust, seamless, cutting-edge, tapestry, testament, landscape (abstract), navigate (abstract), realm, underscore, showcase, foster, intricate, pivotal, vibrant, garner, vital, crucial, harness, elevate, streamline, unlock, empower. Use the plain word for the real thing instead.
-- No promotional / inflated self-adjectives: passionate, results-driven, proven track record, team player, go-getter, synergy, dynamic, detail-oriented, world-class, cutting-edge.
-- No vague attributions / weasel words: "studies show", "experts say", "industry reports", "it is widely known".
-- Cut filler phrases: "in order to" -> "to", "due to the fact that" -> "because", "at this point in time" -> "now", "has the ability to" -> "can".`;
+- Drop AI-vocabulary: delve, leverage, robust, seamless, cutting-edge, tapestry, testament, landscape (abstract), navigate (abstract), realm, beacon, underscore, showcase, foster, intricate, pivotal, paramount, vibrant, garner, vital, crucial, harness, elevate, embark, streamline, supercharge, unlock, empower, transformative, multifaceted, ever-evolving, paradigm shift, game changer. Use the plain word for the real thing instead.
+- No promotional / inflated self-adjectives: passionate, results-driven, proven track record, team player, go-getter, synergy, dynamic, detail-oriented, meticulous, world-class, cutting-edge.
+- No vague attributions / weasel words: "studies show", "experts say", "industry reports", "many argue", "widely regarded as", "it is widely known".
+- No importance puffery: "stands as a testament", "marks a pivotal moment", "plays a vital role", "solidifies its position", "underscores its significance". State the fact and let the reader judge whether it matters.
+- Cut filler phrases: "in order to" -> "to", "due to the fact that" -> "because", "at this point in time" -> "now", "has the ability to" -> "can". Delete these outright: "at the end of the day", "when it comes to", "at its core", "in terms of", "with regard to", "going forward", "in today's world".
+- Plain verbs beat bloated ones: "utilize" -> "use", "facilitate" -> "run", "made a decision" -> "decided". Never manufacture a strong verb where "is" or "has" is clearer ("serves as a centralized hub for X" -> say what it actually does with X).
+- Cut empty adverbs that add nothing: just, simply, actually, truly, literally, honestly, fundamentally, importantly, crucially, inherently, inevitably. Keep one only when it carries real emphasis, contrast, or uncertainty.
+- PORTABILITY TEST: a sentence that could move unchanged to another candidate, company, or role is filler. Cut it, or replace it with a number, tool, mechanism, or consequence specific to THIS one.
+- SHOW, DO NOT TELL: never label a point important, impressive, or surprising. Give the fact and let the reader draw the conclusion.`;
 
 const ANTI_AI_TELL_PROSE_EN = `${ANTI_AI_TELL_LEXICAL_EN}
 PROSE FLOW (anti-AI-tell, for connected writing):
 - EM-DASH HARD BAN: never use a long dash (em or en) anywhere. Replace it with a period, comma, colon, or parentheses.
 - Vary sentence length and rhythm; do not run several same-shaped sentences in a row.
 - No rule-of-three: do not force ideas into groups of three.
-- No negative parallelisms ("not just X, but Y" / "it's not about X, it's about Y").
+- No negative parallelisms ("not just X, but Y" / "it's not about X, it's about Y" / "the question isn't X, it's Y") and no negative listing ("Not a X. Not a Y. A Z."). State Y directly.
 - No superficial "-ing" openers or tails (highlighting, showcasing, reflecting, ensuring, underscoring) that fake depth.
+- No throat-clearing, faux-insight, or rhetorical setups: "Here's the thing", "Let me be clear", "I'll be honest", "The truth is", "What most people get wrong", "Here's what nobody tells you", "What if I told you", "Think about it:", or a question you immediately answer yourself. Cut the setup and make the claim.
+- No colon reveals and no interpretive metadiscourse: no noun phrase plus colon plus dramatic lowercase reveal ("The best part: it learns"), and never tell the reader what to notice or how to weigh it ("the key point is", "as you can see", "this distinction matters", "in other words", "it is worth noting"). Colons are for lists, labels, and quotes.
+- No stacked punchy fragments ("That's it. That's the whole thing.") and no synonym cycling: repeat the clear word instead of rotating terms for style.
+- No fake-profound kicker and no summary-recap ending: never close on a metaphor, aphorism, or mic-drop line, and never open the last paragraph with "In conclusion", "Ultimately", or "Overall". End on the clearest concrete sentence you already have, or on the next step.
+- Formatting follows the content: no emoji, no bold sprinkled mid-sentence for emphasis, no bullet list where two sentences of prose read better.
 - No passive voice where active is natural.
 - Concrete over abstract: name the real thing and what changed, not adjectives.`;
 
@@ -104,6 +124,35 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
  * prompt instructs the model with the prose; the validator checks the
  * generated output against these arrays, so the check never drifts from what
  * a DIFFERENT list would flag.
+ *
+ * ## The two tiers, and why a word lands in one and not the other
+ *
+ * The prompt prose above is the WIDER tier: it can ban a word conditionally, in
+ * one construction, or as a judgement call, because the model can read the
+ * sentence it is writing. These arrays are the NARROWER tier: every entry
+ * becomes a word-boundary substring check over a document nobody reviewed, and
+ * a wrong Warning on a truthful résumé costs more than a missed AI tell (see
+ * `validate::content`'s module doc). So an entry has to clear all four of:
+ *
+ * 1. **Fixed form.** A word or a fixed phrase, never a construction. The
+ *    construction-dependent rules stay prompt-only for the reason
+ *    {@link AI_TELL_PROSE_WORDS_EN} spells out.
+ * 2. **Zero factual content.** Deleting it removes decoration, never a claim
+ *    about what the candidate did. This is what keeps résumé verbs out:
+ *    "utilize", "facilitate", "spearhead", "supercharge" and friends name an
+ *    action a real person really performed, so flagging one tells a truthful
+ *    candidate their own work reads as machine-written. They are banned in the
+ *    prompt (plain verbs beat bloated ones) and never checked here.
+ * 3. **Unconditional in the prompt.** The prompt must ban it wherever it
+ *    appears, or the validator would be stricter than the instruction it
+ *    exists to verify.
+ * 4. **No hidden domain meaning.** "beacon" is prompt-only for exactly this:
+ *    a BLE/iBeacon fleet is real infrastructure a real engineer really shipped.
+ *
+ * Entries are matched with a word boundary at both ends
+ * (`documents::evidence::contains_word`) and English gets NO inflection
+ * tolerance (that is German-only, deliberately), so a base form only ever
+ * catches the base form: prefer the surface form a model actually writes.
  */
 export const AI_TELL_LEXICAL_WORDS_EN = [
   // AI vocabulary
@@ -124,11 +173,16 @@ export const AI_TELL_LEXICAL_WORDS_EN = [
   'garner',
   'vital',
   'crucial',
+  'paramount',
   'harness',
   'elevate',
   'streamline',
   'unlock',
   'empower',
+  'transformative',
+  'multifaceted',
+  'ever-evolving',
+  'paradigm shift',
   // Promotional / inflated self-adjectives
   'passionate',
   'results-driven',
@@ -137,11 +191,15 @@ export const AI_TELL_LEXICAL_WORDS_EN = [
   'go-getter',
   'synergy',
   'detail-oriented',
+  // The exact synonym of 'detail-oriented' above; banning one and not the
+  // other would be an incoherent catalog rather than a curation decision.
+  'meticulous',
   'world-class',
   // Vague attributions / weasel words
   'studies show',
   'experts say',
   'industry reports',
+  'widely regarded as',
   'it is widely known',
   // Filler phrases
   'in order to',
@@ -202,6 +260,25 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
  * spells out "not just X, but Y", so banning "not only" would check a word
  * the model was never told to avoid.
  *
+ * Same verdict, same reason, for every construction the prose block adds on
+ * top: colon reveals, throat-clearing and faux-insight setups, self-answered
+ * questions, stacked fragments, synonym cycling, fake-profound kickers and
+ * summary-recap endings are all shapes rather than strings. Their fixed-string
+ * halves stay out too, on the FALSE-POSITIVE test rather than the construction
+ * one: "in conclusion", "as you can see", "at the end of the day", "when it
+ * comes to" and "the truth is" are ordinary things a truthful human writes in
+ * a cover letter, and a Warning that reads "this is an AI tell" on one of them
+ * is the trust cost this module is not willing to pay. The prompt bans them
+ * all; only the deterministic checker abstains.
+ *
+ * Contraction forms are absent for a MECHANICAL reason, not an editorial one:
+ * matching is a literal comparison over `flattened_lower` text, which
+ * normalizes whitespace and case but not punctuation, and a model writes the
+ * typographic apostrophe (U+2019) about as often as the ASCII one. A
+ * `"it's worth noting"` entry would therefore silently miss half its target,
+ * the same dead-entry failure the German inflection bug was. Only the
+ * apostrophe-free spelling is checked; the prompt bans both.
+ *
  * The prompt keeps every one of these rules (see
  * {@link ANTI_AI_TELL_PROSE_EN}'s negative-parallelism and "-ing" lines and
  * {@link HUMANIZE_PROSE}'s CUT THE CLICHES line) — the model is still
@@ -209,6 +286,7 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
  */
 export const AI_TELL_PROSE_WORDS_EN = [
   'it is important to note',
+  'it is worth noting',
   'generally speaking',
   'with that in mind',
   'building on this',

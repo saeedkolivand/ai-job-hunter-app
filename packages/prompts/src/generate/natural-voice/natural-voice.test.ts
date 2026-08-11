@@ -41,6 +41,15 @@
  * 10. FORCED SPECIFICS     — the cover-letter system prompt requires concrete
  *                            resume/job-ad-grounded specifics and a non-generic
  *                            opening hook.
+ * 14. CATALOG SHAPE        — every lexicon array is unique, lowercase, trimmed,
+ *                            dash-free and apostrophe-free (the matcher is a
+ *                            literal comparison, so a curly-apostrophe document
+ *                            would silently miss an ASCII-apostrophe entry).
+ * 15. NO-AI-SLOP TIERING   — the `no-ai-slop` catalog's résumé-plausible words
+ *                            and construction rules reach the PROMPT and stay
+ *                            OUT of the validated arrays; the high-precision
+ *                            fixed phrases are in both; German gained no
+ *                            translated English tell.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -64,6 +73,7 @@ import {
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
   TEMPLATE_OPENERS_DE,
+  TEMPLATE_OPENERS_EN,
   toneDirective,
 } from './natural-voice.js';
 
@@ -921,6 +931,7 @@ describe('construction-dependent prose rules: kept in the prompt, absent from th
   it('every surviving EN entry is a phrase the prompt bans wherever it appears', () => {
     expect(AI_TELL_PROSE_WORDS_EN).toEqual([
       'it is important to note',
+      'it is worth noting',
       'generally speaking',
       'with that in mind',
       'building on this',
@@ -959,5 +970,213 @@ describe('construction-dependent prose rules: kept in the prompt, absent from th
     ]) {
       expect(LETTER_DE_PROMPT).toContain(rule);
     }
+  });
+});
+
+// ─── 14. CATALOG SHAPE ────────────────────────────────────────────────────────
+// Every array here is generated verbatim into `lexicon.rs` and compared against
+// `flattened_lower` text (lowercased, whitespace-collapsed, punctuation
+// UNTOUCHED) with a word boundary at both ends. Each rule below is a way an
+// entry can be silently DEAD rather than wrong, which is the failure mode a
+// list like this actually has (the German inflection bug, PR #963 R4-F5).
+
+describe('lexicon arrays — shape rules that keep an entry from being silently dead', () => {
+  const ARRAYS = {
+    AI_TELL_LEXICAL_WORDS_EN,
+    AI_TELL_LEXICAL_WORDS_DE,
+    AI_TELL_PROSE_WORDS_EN,
+    AI_TELL_PROSE_WORDS_DE,
+    TEMPLATE_OPENERS_EN,
+    TEMPLATE_OPENERS_DE,
+  } as const;
+
+  for (const [name, entries] of Object.entries(ARRAYS)) {
+    describe(name, () => {
+      it('has no duplicate entry', () => {
+        expect([...new Set(entries)]).toEqual([...entries]);
+      });
+
+      it('is lowercase and trimmed (the haystack is lowercased before matching)', () => {
+        for (const entry of entries) {
+          expect(entry).toBe(entry.toLowerCase());
+          expect(entry).toBe(entry.trim());
+          expect(entry.length).toBeGreaterThan(0);
+        }
+      });
+
+      it('contains no em- or en-dash (self-consistency with the dash ban)', () => {
+        for (const entry of entries) expect(entry).not.toMatch(/[—–]/);
+      });
+
+      // A model writes the typographic apostrophe (U+2019) about as often as
+      // the ASCII one, and the matcher normalizes whitespace and case but NOT
+      // punctuation, so either spelling misses the other half of its target.
+      // The apostrophe-free wording ("it is worth noting") is checked instead
+      // and the prompt bans both.
+      it('contains no apostrophe (either form would be half-dead against real output)', () => {
+        for (const entry of entries) expect(entry).not.toMatch(/['’]/);
+      });
+    });
+  }
+
+  it('no phrase is listed in both the lexical and the prose tier of one language', () => {
+    for (const [lexical, prose] of [
+      [AI_TELL_LEXICAL_WORDS_EN, AI_TELL_PROSE_WORDS_EN],
+      [AI_TELL_LEXICAL_WORDS_DE, AI_TELL_PROSE_WORDS_DE],
+    ] as const) {
+      expect(prose.filter((entry) => (lexical as readonly string[]).includes(entry))).toEqual([]);
+    }
+  });
+});
+
+// ─── 15. NO-AI-SLOP TIERING ──────────────────────────────────────────────────
+// The `no-ai-slop` pattern catalog was curated into three dispositions, and the
+// disposition IS the decision worth pinning: a later "this word is obviously an
+// AI tell, add it to the array" has to argue with the reason instead of with an
+// absence. See `AI_TELL_LEXICAL_WORDS_EN`'s doc for the four-part test.
+
+describe('no-ai-slop catalog — validated tier (fixed form, zero factual content)', () => {
+  const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  it.each([
+    'paramount',
+    'transformative',
+    'multifaceted',
+    'ever-evolving',
+    'paradigm shift',
+    'meticulous',
+    'widely regarded as',
+  ])('%j is checked by the validator AND spelled out in the résumé prompt', (entry) => {
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain(entry);
+    expect(RESUME_EN.toLowerCase()).toContain(entry);
+  });
+
+  it('"it is worth noting" is a PROSE-tier entry: letters only, never a résumé bullet', () => {
+    expect(AI_TELL_PROSE_WORDS_EN).toContain('it is worth noting');
+    expect(AI_TELL_LEXICAL_WORDS_EN).not.toContain('it is worth noting');
+    expect(LETTER_EN.toLowerCase()).toContain('it is worth noting');
+  });
+
+  it('"meticulous" joins the promotional family "detail-oriented" already belongs to', () => {
+    // Banning one synonym and not the other is an incoherent catalog, which is
+    // the whole argument for this entry.
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain('detail-oriented');
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain('meticulous');
+  });
+});
+
+describe('no-ai-slop catalog — prompt-guidance tier (instructed, never validated)', () => {
+  const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  const isValidated = (word: string) =>
+    AI_TELL_LEXICAL_WORDS_EN.includes(word) || AI_TELL_PROSE_WORDS_EN.includes(word);
+
+  // Words that name something a real candidate really DID. Flagging one tells a
+  // truthful user their own work reads as machine-written, so the model is told
+  // to prefer the plain verb and the checker never sees them.
+  it.each(['utilize', 'facilitate', 'supercharge', 'embark'])(
+    'résumé-plausible verb %j is prompt-only',
+    (word) => {
+      expect(isValidated(word)).toBe(false);
+      expect(RESUME_EN.toLowerCase()).toContain(word);
+    }
+  );
+
+  // "beacon" is the domain-collision case: a BLE/iBeacon fleet is real
+  // infrastructure a real engineer really shipped.
+  it('"beacon" is prompt-only because it has a real technical meaning', () => {
+    expect(isValidated('beacon')).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain('beacon');
+  });
+
+  // Fillers a truthful human writes constantly. Zero factual content, but a
+  // Warning reading "this is an AI tell" on one of them is the trust cost.
+  it.each([
+    'at the end of the day',
+    'when it comes to',
+    'at its core',
+    'in terms of',
+    'with regard to',
+    'going forward',
+    "in today's world",
+    'game changer',
+    'many argue',
+  ])('conversational filler %j is prompt-only', (phrase) => {
+    expect(isValidated(phrase)).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain(phrase);
+  });
+
+  it.each(['in conclusion', 'as you can see', 'the key point is', 'in other words'])(
+    'letter-register filler %j is prompt-only',
+    (phrase) => {
+      expect(isValidated(phrase)).toBe(false);
+      expect(LETTER_EN.toLowerCase()).toContain(phrase);
+    }
+  );
+
+  // Redundant rather than rejected: the single word already fires, so adding
+  // the phrase would report ONE span twice.
+  it.each([
+    ['stands as a testament', 'testament'],
+    ['marks a pivotal moment', 'pivotal'],
+    ['plays a vital role', 'vital'],
+  ])('puffery phrase %j is prompt-only because %j already fires on it', (phrase, word) => {
+    expect(isValidated(phrase)).toBe(false);
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain(word);
+    expect(RESUME_EN.toLowerCase()).toContain(phrase);
+  });
+
+  it.each([
+    ['binary contrast', "the question isn't X, it's Y"],
+    ['negative listing', 'Not a X. Not a Y. A Z.'],
+    ['throat-clearing opener', "Here's the thing"],
+    ['faux-insight setup', 'What most people get wrong'],
+    ['rhetorical setup', 'What if I told you'],
+    ['self-answered question', 'a question you immediately answer yourself'],
+    ['colon reveal', 'The best part: it learns'],
+    ['dramatic fragmentation', "That's it. That's the whole thing."],
+    ['synonym cycling', 'synonym cycling'],
+    ['fake-profound kicker', 'fake-profound kicker'],
+    ['summary-recap ending', 'In conclusion'],
+    ['formatting slop', 'Formatting follows the content'],
+  ])('the %s construction reaches the cover-letter prompt as prose (%j)', (_name, anchor) => {
+    expect(LETTER_EN).toContain(anchor);
+  });
+
+  it.each([
+    ['portability test', 'PORTABILITY TEST'],
+    ['show-do-not-tell', 'SHOW, DO NOT TELL'],
+    ['plain verbs', 'Plain verbs beat bloated ones'],
+    ['empty adverbs', 'Cut empty adverbs'],
+    ['importance puffery', 'No importance puffery'],
+  ])('the %s rule reaches the résumé prompt too (%j)', (_name, anchor) => {
+    expect(RESUME_EN).toContain(anchor);
+  });
+
+  // Constraint from the module doc: the English catalog grew, German did not.
+  // A translated English tell in the German list bans phrasing no German writer
+  // produces and misses the real KI-Floskeln.
+  it('the German arrays gained no translated English tell', () => {
+    for (const english of [
+      'paramount',
+      'transformative',
+      'multifaceted',
+      'ever-evolving',
+      'paradigm shift',
+      'meticulous',
+      'widely regarded as',
+      'it is worth noting',
+    ]) {
+      expect(AI_TELL_LEXICAL_WORDS_DE).not.toContain(english);
+      expect(AI_TELL_PROSE_WORDS_DE).not.toContain(english);
+    }
+    // "robust" is in BOTH curated lists, and legitimately so: it is a tell a
+    // German-language model really produces, arrived at on German evidence
+    // rather than carried across. That is the distinction this test draws.
+    expect(AI_TELL_LEXICAL_WORDS_DE).toContain('robust');
+    // The DE prose tier is still empty for its own documented reason.
+    expect(AI_TELL_PROSE_WORDS_DE).toEqual([]);
   });
 });

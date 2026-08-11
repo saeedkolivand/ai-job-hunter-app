@@ -1740,6 +1740,100 @@ fn english_ai_tell_matching_is_unchanged_by_the_german_inflection_rule() {
     silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
 }
 
+// ── no-ai-slop catalog: the two tiers ───────────────────────────────────────
+//
+// The `no-ai-slop` pattern catalog was curated into a CHECKED tier (fixed
+// phrases carrying no factual content) and a PROMPT-ONLY tier (everything a
+// real candidate might truthfully write, plus every construction rule) — see
+// `AI_TELL_LEXICAL_WORDS_EN`'s doc in `natural-voice.ts` for the four-part
+// test an entry has to clear. The split IS the decision, so both halves are
+// pinned: the checked entries must fire, and the prompt-only vocabulary must
+// never reach a user's document.
+
+/// Every phrase the no-ai-slop pass added to the CHECKED tier fires.
+///
+/// Deliberately one fixture carrying all of them: an entry that silently
+/// stopped matching (the shape of the German inflection bug above) would still
+/// pass a test that only asserted "some AI tell fired".
+#[test]
+fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
+    let letter = "Dear Hiring Manager,\n\n\
+                  Your platform is widely regarded as the standard in payments, and \
+                  reliability is paramount there. My meticulous approach to release \
+                  engineering drove transformative change across a multifaceted team, \
+                  and in an ever-evolving market that was a genuine paradigm shift. \
+                  It is worth noting that the work continues.\n\n\
+                  Best regards,\nJane Doe\n";
+    let report = en_letter(letter);
+    let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    for entry in [
+        "widely regarded as",
+        "paramount",
+        "meticulous",
+        "transformative",
+        "multifaceted",
+        "ever-evolving",
+        "paradigm shift",
+        "it is worth noting",
+    ] {
+        assert!(
+            evidence.contains(&entry),
+            "{entry:?} is on the prompt's own ban list and must fire; got {evidence:?}"
+        );
+    }
+    assert!(
+        report.ok,
+        "voice findings stay advice — a model may never produce a Critical"
+    );
+}
+
+/// The negative control the tiering exists for: a TRUTHFUL letter written
+/// entirely out of the catalog's prompt-only vocabulary must stay silent.
+///
+/// Every phrase here either names something a real candidate really did
+/// ("utilize", "facilitate", "embark", "supercharge"), carries a real technical
+/// meaning ("beacon", as in a BLE/iBeacon fleet), or is ordinary human filler
+/// ("at the end of the day", "in conclusion", "as you can see"). The prompt
+/// tells the model to avoid all of them; a Warning reading "this is an AI tell"
+/// on one is a false accusation against the user, which this module prices
+/// higher than a missed tell.
+#[test]
+fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
+    let letter = "Dear Hiring Manager,\n\n\
+                  I chose to utilize Terraform to facilitate the AWS move at Acme, \
+                  which in today's world is table stakes. At its core the settlement \
+                  system is a queue. When it comes to on-call, going forward I want \
+                  fewer pages, not more. As you can see in terms of scale, the BLE \
+                  beacon fleet I ran was the real game changer, and at the end of the \
+                  day I would embark on this again. It did supercharge our deploys.\n\n\
+                  In conclusion, with regard to the timeline, I can start in March.\n\n\
+                  Best regards,\nJane Doe\n";
+    silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
+}
+
+/// The same control on the RÉSUMÉ surface, where the lexical tier also runs.
+/// Present-tense bullets are an ordinary convention for a current role, and
+/// "Utilize" / "Facilitate" / "Spearhead" are exactly what a real résumé writes
+/// — the class of word this pass deliberately kept out of the checked tier.
+#[test]
+fn no_ai_slop_prompt_only_verbs_are_silent_on_an_ordinary_resume() {
+    let source = "EXPERIENCE\n\nPlatform Engineer | Acme Payments | 2021 - Present\n\
+                  - Provision the AWS fleet with Terraform\n\
+                  - Run the weekly release meeting\n\
+                  - Own the warehouse beacon rollout\n";
+    let generated = "EXPERIENCE\n\nPlatform Engineer | Acme Payments | 2021 - Present\n\
+                     - Utilize Terraform to provision the AWS fleet across three regions\n\
+                     - Facilitate the weekly release meeting for twelve engineers\n\
+                     - Spearhead the BLE beacon rollout across forty warehouses\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        VOICE_AI_TELL_LEXICAL,
+    );
+}
+
 /// R4-F7 — [`issue`] clamped `message` and `evidence` but copied `section`
 /// VERBATIM, and an ATX heading (`# …`) has no length rule of its own. 200
 /// per-line issues each carrying a 1 KB heading blew the byte budget the cap
