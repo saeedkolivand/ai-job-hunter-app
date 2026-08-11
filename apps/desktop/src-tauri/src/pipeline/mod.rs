@@ -363,6 +363,53 @@ impl Completer {
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
+    /// [`stream`](Self::stream), plus the completed answer text.
+    ///
+    /// Exists because a STAGED run needs both halves of a stream: the deltas,
+    /// so the user watches the résumé appear, and the finished text, so the
+    /// validate and repair stages have something to check. `chat_stream` itself
+    /// returns `()` — it is written for a caller whose only consumer is the
+    /// renderer.
+    ///
+    /// The text is read back from the job tracker rather than re-accumulated
+    /// here, deliberately: `stream::finish` persists it as the job result AFTER
+    /// `strip_think_blocks`, so this returns the exact bytes the renderer
+    /// assembled from the same stream. A second accumulator would be a second
+    /// think-stripping implementation, and the two would disagree on an
+    /// unterminated `<think>` block.
+    ///
+    /// Charges the shared per-provider daily ceiling BEFORE the request, like
+    /// [`complete_json`](Self::complete_json) — `chat_stream` records spend on
+    /// success but charges nothing, because its own callers charge at
+    /// admission.
+    ///
+    /// `Err` when the stream failed OR when it completed with no persisted
+    /// text: an empty draft must never reach validation as a document.
+    pub async fn stream_captured(&self, job_id: &str, req: AiGenerateRequest) -> AppResult<String> {
+        self.charge_daily()?;
+        self.stream(job_id, req).await?;
+        let text = self
+            .app
+            .state::<parking_lot::Mutex<crate::jobs::JobTracker>>()
+            .lock()
+            .get(job_id)
+            .and_then(|record| record.result.clone())
+            .and_then(|result| {
+                result
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
+        if text.trim().is_empty() {
+            return Err(AppError::Provider(
+                "The model produced no résumé text. Try again, or pick a different model."
+                    .to_string(),
+            ));
+        }
+        Ok(text)
+    }
+
     /// One agentic tool-calling turn through the active provider — the multi-turn
     /// analogue of [`research`](Self::research). Delegates to
     /// [`AiProvider::chat_with_tools`](crate::commands::ai_provider::AiProvider::chat_with_tools):
@@ -458,7 +505,14 @@ impl Completer {
     /// Resolves the managed `Arc<Limiter>` the same way
     /// `agent::tools::complete_trusted` does; the limiter is managed
     /// unconditionally in `lib.rs::setup`, before any command can run.
-    fn charge_daily(&self) -> AppResult<()> {
+    ///
+    /// `pub(crate)` for [`stream_captured`](Self::stream_captured)'s caller and
+    /// for the résumé pipeline's own non-`complete_json` round-trips (the
+    /// repair loop's section rewrites go through [`complete`](Self::complete),
+    /// which records spend but does not charge): every provider call a
+    /// multi-stage run makes has to hit this ceiling, or the run is the one
+    /// fan-out shape that escapes the day's cap.
+    pub(crate) fn charge_daily(&self) -> AppResult<()> {
         self.app
             .state::<std::sync::Arc<crate::limits::Limiter>>()
             .inner()

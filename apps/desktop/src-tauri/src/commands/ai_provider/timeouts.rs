@@ -16,7 +16,10 @@
 
 use std::time::Duration;
 
-use crate::ipc_contracts::ai_timeouts::{EFFORT_TIMEOUT_MULTIPLIER, STREAM_BASELINE_SECS};
+use crate::ipc_contracts::ai_timeouts::{
+    EFFORT_TIMEOUT_MULTIPLIER, QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES,
+    STREAM_BASELINE_SECS,
+};
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
 
@@ -140,6 +143,37 @@ pub const RESEARCH_BASELINE: Duration = Duration::from_secs(90);
 /// here for free.
 pub fn research_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(RESEARCH_BASELINE.as_secs_f64() * effort_multiplier(effort))
+}
+
+// ── Staged résumé pipeline ──────────────────────────────────────────────────────
+
+/// Deadline for ONE WHOLE quality-depth résumé pipeline run — what makes
+/// `StoppedReason::RunTimeout` reachable.
+///
+/// **Not `baseline × multiplier`, unlike [`stream_deadline`] and
+/// [`research_deadline`].** Half of a run's cost does not scale with reasoning
+/// effort at all: the three JSON stages go through `complete_with_usage`, whose
+/// bounds ([`COMPLETION`] / [`OLLAMA_COMPLETION`]) are flat constants. So the
+/// formula is `fixed + baseline × passes × multiplier`, where the fixed half is
+/// 3 stages × 2 round-trips (`complete_json` allows exactly one re-ask) ×
+/// [`OLLAMA_COMPLETION`] = 1800 s, and the scaling half is the draft plus one
+/// generation pass per repair round.
+///
+/// Both terms come from `packages/shared/src/ai-timeouts.ts` through
+/// `pnpm gen:ipc`; the resulting per-tier table is pinned on BOTH sides
+/// (`quality_run_deadline_pins_the_derived_table` here,
+/// `qualityRunDeadlineSecs > pins the derived per-tier table` there), which is
+/// what keeps the shared arithmetic from drifting even though each side spells
+/// it out.
+///
+/// This is a BACKSTOP, not a target: [`stream_deadline`]/[`OLLAMA_COMPLETION`]
+/// catch a single hung call, and `Budget::step_timeout` catches a hung stage.
+/// This one catches the run that answers every step just slowly enough never to
+/// trip either.
+pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
+    let generation =
+        STREAM.as_secs_f64() * QUALITY_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
+    Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
 }
 
 // ── Model discovery & health ────────────────────────────────────────────────────
@@ -277,5 +311,101 @@ mod tests {
             RESEARCH_BASELINE
         );
         assert_eq!(research_deadline(None), RESEARCH_BASELINE);
+    }
+
+    // ── quality_run_deadline ────────────────────────────────────────────────
+
+    /// The cross-language lock. `packages/shared/src/ai-timeouts.test.ts` pins
+    /// the identical seven values against `qualityRunDeadlineSecs`; the two
+    /// constants are generated, but the ARITHMETIC is spelled out on both
+    /// sides, so only a matched pair of pinned tables catches a drift in the
+    /// formula itself. Mutation check: change either side's `fixed + …` to
+    /// `baseline × …` and one of the two tables fails.
+    #[test]
+    fn quality_run_deadline_pins_the_derived_table() {
+        for (effort, secs) in [
+            (None, 2_700),
+            (Some("minimal"), 2_700),
+            (Some("low"), 2_700),
+            (Some("medium"), 3_150),
+            (Some("high"), 3_600),
+            (Some("xhigh"), 4_050),
+            (Some("max"), 4_500),
+        ] {
+            assert_eq!(
+                quality_run_deadline(effort),
+                Duration::from_secs(secs),
+                "quality_run_deadline({effort:?})"
+            );
+        }
+    }
+
+    /// The outer bound must clear the inner bounds it wraps, at EVERY tier —
+    /// the same rule `research_deadline_exceeds_the_inner_search_bounds_it_wraps`
+    /// states. Three JSON stages, each allowed one re-ask, each round-trip
+    /// bounded by `OLLAMA_COMPLETION`, plus the effort-scaled generation
+    /// passes. Mutation check: drop `QUALITY_RUN_FIXED_SECS` in the shared
+    /// source and every tier fails here.
+    #[test]
+    fn quality_run_deadline_clears_the_inner_per_call_bounds() {
+        const JSON_STAGES: u32 = 3;
+        const ROUND_TRIPS_PER_JSON_STAGE: u32 = 2; // the one budgeted re-ask
+        let json_half = OLLAMA_COMPLETION * JSON_STAGES * ROUND_TRIPS_PER_JSON_STAGE;
+        for effort in [
+            None,
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ] {
+            let generation = stream_deadline(effort) * 3;
+            assert!(
+                quality_run_deadline(effort) >= json_half + generation,
+                "quality_run_deadline({effort:?}) must cover the calls it wraps"
+            );
+        }
+    }
+
+    /// The budget constant is the FLOOR the effort-blind path falls back to, so
+    /// the two must agree at the bottom tier — otherwise `run_deadline`'s
+    /// `max()` silently picks whichever is larger and the derivation in
+    /// `ai-timeouts.ts` stops describing what actually runs.
+    #[test]
+    fn quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier() {
+        assert_eq!(
+            quality_run_deadline(None),
+            crate::pipeline::budget::Budget::RESUME_QUALITY.run_timeout
+        );
+    }
+
+    #[test]
+    fn quality_run_deadline_is_monotonically_nondecreasing_by_effort_tier() {
+        let tiers = [
+            None,
+            Some("minimal"),
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+        ];
+        let mut prev = Duration::from_secs(0);
+        for effort in tiers {
+            let d = quality_run_deadline(effort);
+            assert!(
+                d >= prev,
+                "quality_run_deadline({effort:?}) = {d:?} < {prev:?}"
+            );
+            prev = d;
+        }
+        assert!(quality_run_deadline(Some("max")) > quality_run_deadline(None));
+    }
+
+    #[test]
+    fn quality_run_deadline_falls_back_to_baseline_for_an_unrecognized_effort_string() {
+        assert_eq!(
+            quality_run_deadline(Some("ultra-mega-think")),
+            quality_run_deadline(None)
+        );
     }
 }

@@ -20,8 +20,10 @@ mod event_payloads_test;
 pub mod events;
 #[cfg(test)]
 mod events_test;
+pub mod generation_depths;
 pub mod matching;
 pub mod provider_slots;
 pub mod referrals;
 pub mod resume;
+pub mod resume_pipeline;
 pub mod scrape;

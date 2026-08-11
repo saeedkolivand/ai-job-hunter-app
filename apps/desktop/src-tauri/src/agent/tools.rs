@@ -181,6 +181,23 @@ static FENCE_TAG_PATTERNS: std::sync::LazyLock<
         // "your JSON was rejected because …" verdict the model treats as the
         // system's own.
         "invalid_json_detail",
+        // The résumé pipeline's own block tags
+        // (`pipeline::resume::prompts`). Every quality-depth stage prompt
+        // composes SEVERAL fenced blocks into one turn — the shape this
+        // cross-tag neutralization exists for — and, unlike every tag above,
+        // three of these wrap PRIOR-STAGE MODEL OUTPUT (`job_analysis`,
+        // `evidence_map`, `resume_strategy`), which ADR-010 treats as untrusted
+        // exactly like a scraped posting. Without these entries, a job ad
+        // carrying a forged `<resume_strategy>` block would ride into the draft
+        // turn looking like the pipeline's own plan — the highest-value forgery
+        // available here, since the draft is written FROM that block.
+        "job_analysis",
+        "evidence_map",
+        "resume_strategy",
+        "company_roster",
+        "resume_section",
+        "section_issues",
+        "section_note",
     ]
     .into_iter()
     .map(|tag| (tag, compile_fence_tag_pattern(tag)))

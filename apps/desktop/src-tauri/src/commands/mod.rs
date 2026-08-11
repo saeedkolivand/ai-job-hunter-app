@@ -30,6 +30,7 @@ pub mod privacy;
 pub mod profile_import;
 pub mod referrals;
 pub mod resume;
+pub mod resume_pipeline;
 pub mod scrape;
 pub mod support;
 pub mod system;

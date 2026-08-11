@@ -643,6 +643,48 @@ impl AiGenerationStore {
         Ok(id)
     }
 
+    /// The aggregate row for one posting, matched the way
+    /// [`save_application`](Self::save_application) matches it: on the
+    /// NORMALIZED url first, falling back to the raw one for a row written
+    /// before normalization. Two lookups, one rule — a reader that matched only
+    /// the raw url would miss the row every writer since normalization has been
+    /// updating, which on a query-id board (Indeed) is most of them.
+    ///
+    /// The staged pipeline's read path: a run's document and its quality report
+    /// live HERE, not in the run store, so `resumePipeline.get` joins the two.
+    pub fn find_for_job(&self, job_url: &str) -> Option<AiGenerationRecord> {
+        let normalized = crate::applications::normalize_job_url(job_url);
+        self.find_by_job_url(&normalized).or_else(|| {
+            (normalized != job_url)
+                .then(|| self.find_by_job_url(job_url))
+                .flatten()
+        })
+    }
+
+    /// Overwrite ONE row's `quality_report`, selected by `id`.
+    ///
+    /// The report-only sibling of [`update_texts`](Self::update_texts), and
+    /// deliberately a direct overwrite rather than a merge: the caller has just
+    /// read this exact blob, edited one decision inside it, and is writing it
+    /// back. Routing it through `save_application`'s
+    /// per-top-level-key merge would re-union it with itself, and a caller that
+    /// wanted to CLEAR a slot could never do so.
+    ///
+    /// Clamped like every other write path into this column, so a hand-built
+    /// blob cannot exceed [`QUALITY_REPORT_MAX_BYTES`] here either.
+    pub fn update_quality_report(&self, id: &str, quality_report: String) -> AppResult<()> {
+        let report = sanitize_quality_report(quality_report, "update_quality_report");
+        let conn = self.conn.lock();
+        let changed = conn.execute(
+            "UPDATE ai_generations SET quality_report = ?2 WHERE id = ?1",
+            params![id, report],
+        )?;
+        if changed == 0 {
+            return Err(format!("generation not found: {id}").into());
+        }
+        Ok(())
+    }
+
     /// Distinct non-empty `job_url`s that have at least one saved generation —
     /// the set used to derive a found job's `applied` flag.
     pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {

@@ -9,3 +9,13 @@ pub const STREAM_BASELINE_SECS: u64 = 300;
 /// (including `None`) gets an implicit 1.0 multiplier.
 pub const EFFORT_TIMEOUT_MULTIPLIER: &[(&str, f64)] =
     &[("medium", 1.5), ("high", 2.0), ("xhigh", 2.5), ("max", 3.0)];
+
+/// The EFFORT-INVARIANT half of one quality-depth run's deadline: the three
+/// JSON stages, each allowed one re-ask, each round-trip bounded by
+/// `timeouts::OLLAMA_COMPLETION`. See `qualityRunDeadlineSecs` in
+/// packages/shared/src/ai-timeouts.ts for the full derivation.
+pub const QUALITY_RUN_FIXED_SECS: u64 = 1800;
+
+/// Whole-document generation passes one quality run may make (the draft plus
+/// one per repair round) — the term that DOES scale with reasoning effort.
+pub const QUALITY_RUN_GENERATION_PASSES: u64 = 3;
