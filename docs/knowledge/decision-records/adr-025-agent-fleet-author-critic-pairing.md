@@ -1,6 +1,6 @@
 # ADR-025: Agent fleet — paired author/critic per domain
 
-Last updated: 2026-07-28
+Last updated: 2026-08-11
 
 **Status:** Accepted
 
@@ -32,9 +32,13 @@ The initial design routed **every change** through the agent fleet (author + sib
 - **Pre-PR security gate** (`/review-security`): always tauri-security-reviewer (Opus xhigh).
 - **Pre-PR logic gate** (`/review`): always pr-reviewer (Opus xhigh) as the final fence before merge.
 
-**Telemetry shift:** usage/cost metrics (scripts/pre-push-review.mjs) exist **before** a review surface ships, not after. Pre-push MCP boot-timeout is hardcoded (fail-close on timeout, never retry), so stuck pushes are detectable as MCP-server metrics rather than silent stalls.
+**Telemetry shift:** usage/cost metrics were measured **before** review surfaces shipped, not after. Pre-push MCP boot-timeout is hardcoded (fail-close on timeout, never retry), so stuck pushes are detectable as MCP-server metrics rather than silent stalls.
 
-**Consequence:** the Stop hook's per-finish LLM review is retired; review depth is author-side determinism + risk-based critic assignment + pre-push/pre-PR explicit gates. Full rigor remains on demand via `/review` + `/review-security` + CI + CodeRabbit.
+**Consequence:** the Stop hook's per-finish LLM review is retired; review depth is author-side determinism + risk-based critic assignment + deterministic pre-push gate + pre-PR explicit gates. Full rigor remains on demand via `/review` + `/review-security` + CI + CodeRabbit.
+
+## Amendment: pre-push script removal (2026-08-11)
+
+The pre-push LLM review lane (`scripts/pre-push-review.mjs`) was removed per owner decision. The deterministic pre-push gate remains (fmt/clippy/tests/deny/drift); AI review now happens exclusively at pre-PR via the internal agent chain + CodeRabbit + CI. References to the pre-push script above are historical context only.
 
 ## Related
 

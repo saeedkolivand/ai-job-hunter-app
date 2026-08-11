@@ -44,7 +44,7 @@ Cross-cutting critics (no author; fixes route to the owning domain author): `tau
 - `project-steward` closes **once per PR** (docs/lessons sync + `graphify update .`), not once per change. Context flows via `.claude/scratch/<task>.md`. Orchestrate all sub-agents from the main session (agents can't call agents).
 - **Before a PR:** `/review-security` (HIGH/CRITICAL block) then `/review` (🔴+🟠 block); both complement CodeRabbit.
 
-**Review gates:** the Stop hook (`.claude/hooks/review-gate.mjs`) is **deterministic-only** (ast-grep Tier-0 + ledger re-emits, near-free, blocks on introduced arch violations and unresolved findings). The **LLM review runs at pre-push** (`scripts/pre-push-review.mjs`, ADR-0008 ratchet) and in CI; metrics in `.claude/.review-metrics.jsonl` now include token usage + cost.
+**Review gates:** the Stop hook (`.claude/hooks/review-gate.mjs`) is **deterministic-only** (ast-grep Tier-0 + ledger re-emits, near-free, blocks on introduced arch violations and unresolved findings). **LLM review happens pre-PR via the agent internal chain + CodeRabbit + CI** (`🤖 AI Review OK` required check); metrics in `.claude/.review-metrics.jsonl` include token usage + cost.
 
 **Hard rules:**
 

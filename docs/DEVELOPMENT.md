@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 This guide gets you from zero to a running dev environment.
 
@@ -329,11 +329,11 @@ An LLM review runs immediately before each push. The gate has **three layers** (
 
 **Escape hatches:**
 
-- `REVIEW_SKIP=1 git push` — skips AI review but is **audited** in `.claude/.review-metrics.jsonl` (preferred over `--no-verify`, which hides the audit trail)
+- `REVIEW_SKIP=1 git push` — skips the local Stop gate review but is **audited** in `.claude/.review-metrics.jsonl` (preferred over `--no-verify`, which hides the audit trail)
 - `AJH_SKIP_CARGO_TEST=1` — skip `cargo test` only (legacy Windows `STATUS_ENTRYPOINT_NOT_FOUND` DLL fault; fixed in build.rs via delay-load comctl32; CI is authoritative). Use this escape hatch only on hosts without the fix.
 - `--no-verify` — unsafe; bypasses entire hook but leaves no audit trail
 
-The hook flows: `CHANGED` files → `RANGES` per commit → passed to `scripts/pre-push-review.mjs` via `PREPUSH_RANGES` env var. If the script exits non-zero, the push fails; `REVIEW_SKIP=1` allows the push and logs it.
+The hook flows: `CHANGED` files → `RANGES` per commit → deterministic scanning (ast-grep Tier-0, fmt/clippy/tests/deny/drift). If a violation is found, the push fails; `REVIEW_SKIP=1` allows the push and logs it. AI review happens later at pre-PR via internal agent chain + CodeRabbit + CI.
 
 ---
 
