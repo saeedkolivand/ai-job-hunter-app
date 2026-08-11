@@ -9,8 +9,9 @@
 //! completes as a `jobs:event`.
 //!
 //! Requires a tool-capable model ([`require_tool_capable`]) and is user-cancellable
-//! via `jobs_cancel` (the run's token is registered with the shared
-//! [`crate::scraping::ScraperEngine`] token registry, mirroring `scrape_boards`).
+//! via `jobs_cancel` (the run's token is registered with the shared, domain-neutral
+//! [`crate::jobs::cancel::CancelRegistry`] the scraper engine also dispatches
+//! through, mirroring `scrape_boards`).
 
 use std::sync::Arc;
 
@@ -28,15 +29,15 @@ use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::events::{emit_event, AGENT_STEP};
 use crate::ipc_contracts::agent::{AgentConfirmRequest, AgentRunRequest};
+use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::Completer;
-use crate::scraping::ScraperEngine;
 
 /// Fail the run: mark the job Failed and release its cancel-token registration.
 /// Shared by every validation step that now runs INSIDE the spawned task (see
 /// `agent_run`'s fix note) so each one doesn't hand-roll the same two calls.
-async fn fail_run(app: &AppHandle, engine: &ScraperEngine, job_id: &str, msg: String) {
+async fn fail_run(app: &AppHandle, cancels: &CancelRegistry, job_id: &str, msg: String) {
     crate::commands::jobs::job_fail(app, job_id, msg);
-    engine.unregister_token(job_id).await;
+    cancels.unregister(job_id).await;
 }
 
 /// Prepare one job application via the agentic loop. Returns `{ jobId }`
@@ -81,17 +82,16 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
     // HIGH-1(a): register the cancel token BEFORE spawning (mirrors
     // `commands::scrape::scrape_boards`) so a fast `jobs_cancel` call arriving
     // between this return and the spawned task waking is never a no-op.
-    // TODO(arch): borrowing `ScraperEngine`'s job-token registry works today
-    // (`jobs_cancel` already dispatches through it for every job kind) but a
-    // dedicated, domain-neutral job-cancellation registry would be the cleaner
-    // long-term shape than tying agent runs to the scraper engine.
+    // Registration goes to the shared, domain-neutral `CancelRegistry` — the
+    // SAME map `jobs_cancel` reaches via `ScraperEngine::cancel` — so an agent
+    // run no longer has to borrow the scraper engine to be cancellable.
     let cancel = CancellationToken::new();
-    let engine = app.state::<Arc<ScraperEngine>>().inner().clone();
-    engine.register_token(&job_id, cancel.clone()).await;
+    let cancels = app.state::<Arc<CancelRegistry>>().inner().clone();
+    cancels.register(&job_id, cancel.clone()).await;
 
     let app_task = app.clone();
     let job_id_task = job_id.clone();
-    let engine_task = engine.clone();
+    let cancels_task = cancels.clone();
     tauri::async_runtime::spawn(async move {
         let _guard = guard; // release the concurrency slot when the run ends
 
@@ -106,7 +106,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         let completer = match Completer::from_active(&app_task) {
             Ok(c) => c,
             Err(e) => {
-                fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+                fail_run(&app_task, &cancels_task, &job_id_task, e.to_string()).await;
                 return;
             }
         };
@@ -119,7 +119,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         // guard. The model comes from the RESOLVED completer (the store), never the
         // request.
         if let Err(e) = require_tool_capable(completer.capabilities(), completer.model()) {
-            fail_run(&app_task, &engine_task, &job_id_task, e.to_string()).await;
+            fail_run(&app_task, &cancels_task, &job_id_task, e.to_string()).await;
             return;
         }
 
@@ -128,7 +128,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         let Some(resume) = app_task.state::<DocumentStore>().get(&req.resume_id) else {
             fail_run(
                 &app_task,
-                &engine_task,
+                &cancels_task,
                 &job_id_task,
                 format!("resume not found: {}", req.resume_id),
             )
@@ -139,7 +139,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
         else {
             fail_run(
                 &app_task,
-                &engine_task,
+                &cancels_task,
                 &job_id_task,
                 format!("job not found in cache: {}", req.job_id),
             )
@@ -173,7 +173,7 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
             &cancel,
         )
         .await;
-        engine_task.unregister_token(&job_id_task).await;
+        cancels_task.unregister(&job_id_task).await;
 
         match outcome {
             // HIGH-1(b): a cancelled run must not resurrect the job to Completed

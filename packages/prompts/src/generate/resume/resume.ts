@@ -22,8 +22,12 @@ import {
  * ATS keyword match outranks the anti-AI-tell word bans: an exact <job_ad> term
  * that the résumé truthfully supports is kept even if it is on the discouraged
  * list. The bans only govern words the model introduces on its own.
+ *
+ * Exported because `pnpm gen:prompts` freezes it into Rust
+ * (`pipeline/resume/prompt_blocks.rs`) so the backend's staged résumé prompts
+ * carry the identical precedence rule rather than a paraphrase of it.
  */
-const ATS_PRECEDENCE = `ATS PRECEDENCE: If a word the anti-AI-tell rules discourage is an EXACT term from the <job_ad> and is truthfully grounded in the candidate's résumé, keep it (ATS keyword match wins). The anti-AI-tell bans govern only words the model introduces on its own.`;
+export const ATS_PRECEDENCE = `ATS PRECEDENCE: If a word the anti-AI-tell rules discourage is an EXACT term from the <job_ad> and is truthfully grounded in the candidate's résumé, keep it (ATS keyword match wins). The anti-AI-tell bans govern only words the model introduces on its own.`;
 
 /**
  * The résumé-tier counterpart to `HUMANIZE_PROSE`'s tone gate: tone shapes word

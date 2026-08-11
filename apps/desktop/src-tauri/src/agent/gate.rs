@@ -117,12 +117,13 @@ impl AgentGate {
 
 // ── Suspend-and-execute mechanics for one Write call ─────────────────────────
 
-/// How long a suspended Write confirmation may wait for the user before
-/// [`resolve_write`] gives up and treats it as a DENY (never an execute). A
-/// generous ceiling — the human is expected to answer in seconds — but bounded so
-/// a forgotten/abandoned prompt can never hang the run forever nor hold an
-/// `AGENT_RUN_CONCURRENCY_MAX` slot indefinitely.
-pub(super) const CONFIRM_TIMEOUT: Duration = Duration::from_secs(300);
+// How long a suspended Write confirmation may wait for the user before
+// `resolve_write` gives up and treats it as a DENY (never an execute) is
+// `Budget::AGENT_PREP.confirm_timeout` (`crate::pipeline::budget`) — the
+// controller passes it in as `confirm_timeout` rather than this module owning a
+// second number. A generous ceiling (the human is expected to answer in
+// seconds) but bounded, so a forgotten prompt can never hang the run forever
+// nor hold an `AGENT_RUN_CONCURRENCY_MAX` slot indefinitely.
 
 /// Char cap applied to each string leaf of a Write tool's args before they are put
 /// on the `confirm_request` step for display/edit.
@@ -432,6 +433,11 @@ async fn run_write_raced(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The production confirm ceiling, read from the ONE place it is declared
+    /// (`Budget::AGENT_PREP.confirm_timeout`) rather than re-typed here — the
+    /// tests below assert against whatever the shipped budget actually is.
+    const CONFIRM_TIMEOUT: Duration = crate::pipeline::budget::Budget::AGENT_PREP.confirm_timeout;
 
     #[test]
     fn resolve_unknown_call_returns_false_and_does_not_panic() {

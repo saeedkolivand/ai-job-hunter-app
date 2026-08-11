@@ -20,6 +20,7 @@ use crate::job_preferences::JobPreferencesStore;
 use crate::jobs::JobTracker;
 use crate::notifications::NotificationStore;
 use crate::pipeline::cache::KvCache;
+use crate::pipeline::runs::PipelineRunStore;
 use crate::postings::{InteractionStore, PostingsCache};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -117,6 +118,14 @@ impl Resettable for KvCache {
         self.clear();
     }
 }
+impl Resettable for PipelineRunStore {
+    fn reset(&self) {
+        // Both tables: the run rows AND their per-stage event trail. A reset
+        // that left the events behind would keep a searchable record of which
+        // postings the user ran, which is the thing being wiped.
+        self.clear_all();
+    }
+}
 impl Resettable for SpendStore {
     fn reset(&self) {
         self.clear_all();
@@ -158,6 +167,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "cache",
     "dedup_tombstones",
     "discovered_companies",
+    "pipeline_runs",
 ];
 
 /// Registry of factory-reset actions, populated as stores are managed and
@@ -600,6 +610,7 @@ mod tests {
         reg.register::<KvCache>("cache");
         reg.register::<DedupStore>("dedup_tombstones");
         reg.register::<DiscoveredCompanyStore>("discovered_companies");
+        reg.register::<PipelineRunStore>("pipeline_runs");
 
         let labels = reg.labels();
         for label in expected {

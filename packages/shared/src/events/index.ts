@@ -32,6 +32,7 @@ import { EXTENSION_BRIDGE_EVENTS } from './extensionBridge.js';
 import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
+import { PIPELINE_EVENTS, type PipelineStageEvent, type PipelineStagePhase } from './pipeline.js';
 import { SCRAPE_EVENTS, type ScrapeItemEvent, type ScrapeProgressEvent } from './scrape.js';
 import { SYSTEM_EVENTS } from './system.js';
 import { UPDATER_EVENTS } from './updater.js';
@@ -46,6 +47,7 @@ export const EVENT_CHANNELS = {
   updater: UPDATER_EVENTS,
   menu: MENU_EVENTS,
   autopilot: AUTOPILOT_EVENTS,
+  pipeline: PIPELINE_EVENTS,
   scrape: SCRAPE_EVENTS,
   boards: BOARDS_EVENTS,
   system: SYSTEM_EVENTS,
@@ -73,6 +75,7 @@ export interface AppEvents {
   'menu:action': MenuActionEvent;
   'autopilot:focus': AutopilotFocusEvent;
   'autopilot:step': AutopilotStepEvent;
+  'pipeline:stage': PipelineStageEvent;
   'scrape:progress': ScrapeProgressEvent;
   'scrape:item': ScrapeItemEvent;
   'boards:login-status': BoardsLoginStatusEvent;
@@ -91,6 +94,9 @@ export {
   JOBS_EVENTS,
   MENU_EVENTS,
   NOTIFICATIONS_EVENTS,
+  PIPELINE_EVENTS,
+  type PipelineStageEvent,
+  type PipelineStagePhase,
   SCRAPE_EVENTS,
   type ScrapeItemEvent,
   type ScrapeProgressEvent,

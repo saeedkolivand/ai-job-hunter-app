@@ -1,0 +1,208 @@
+//! Budget + `StoppedReason` pins: the WIRE compatibility of the relocated enum,
+//! the internal consistency of each shipped budget, and the security lock that
+//! no budget is renderer-supplied.
+
+use serde_json::json;
+
+use super::{Budget, StoppedReason, DEFAULT_MAX_REPAIR_ATTEMPTS, DEFAULT_MAX_SECTIONS};
+
+// ── Wire compatibility (the relocation must be invisible on the wire) ─────────
+
+/// Every variant's wire string, in the order the enum declares them. The seven
+/// leading entries are the EXACT strings `agent::controller::StoppedReason`
+/// serialized to before this type moved into `pipeline::budget`; the renderer's
+/// `STOPPED_SUFFIX` map (PrepApplicationPanel) keys on them, and an `agent.run`
+/// job result carries one in its `stoppedReason` field. Changing one is a
+/// breaking wire change, not a rename.
+const WIRE: &[(StoppedReason, &str)] = &[
+    (StoppedReason::Done, "done"),
+    (StoppedReason::MaxSteps, "max_steps"),
+    (StoppedReason::MaxTokens, "max_tokens"),
+    (StoppedReason::Cancelled, "cancelled"),
+    (StoppedReason::Truncated, "truncated"),
+    (StoppedReason::Budgeted, "budgeted"),
+    (StoppedReason::Timeout, "timeout"),
+    // Added by the move — unreachable until Phase 3 wires them, but frozen now.
+    (StoppedReason::RunTimeout, "run_timeout"),
+    (StoppedReason::MaxToolCalls, "max_tool_calls"),
+    (StoppedReason::MaxRepairs, "max_repairs"),
+];
+
+#[test]
+fn stopped_reason_serializes_to_the_pinned_wire_strings() {
+    for (variant, wire) in WIRE {
+        assert_eq!(
+            serde_json::to_value(variant).unwrap(),
+            json!(wire),
+            "{variant:?} must serialize to {wire:?} — the renderer keys on it"
+        );
+    }
+}
+
+#[test]
+fn stopped_reason_round_trips_through_json() {
+    for (variant, _) in WIRE {
+        let encoded = serde_json::to_string(variant).unwrap();
+        let decoded: StoppedReason = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(&decoded, variant);
+    }
+}
+
+/// The re-export at the OLD path must be the SAME type, not a copy: a second
+/// enum would serialize identically today and drift silently tomorrow.
+#[test]
+fn the_agent_re_export_is_this_exact_type() {
+    let via_old_path: crate::agent::controller::StoppedReason = StoppedReason::MaxSteps;
+    assert_eq!(via_old_path, StoppedReason::MaxSteps);
+    assert_eq!(
+        serde_json::to_value(via_old_path).unwrap(),
+        json!("max_steps")
+    );
+}
+
+/// A reason the shell has never emitted must not deserialize — an unknown value
+/// arriving from a tampered bundle should fail loudly, not map to `Done`.
+#[test]
+fn an_unknown_wire_string_is_rejected() {
+    assert!(serde_json::from_str::<StoppedReason>("\"finished_ok\"").is_err());
+}
+
+// ── Budget internal consistency ──────────────────────────────────────────────
+
+/// Sanity for every budget we ship: no zero ceiling that would stop a run before
+/// its first step, and no timeout ordering that makes a field unreachable.
+#[test]
+fn every_shipped_budget_is_internally_consistent() {
+    for (label, b) in [
+        ("AGENT_PREP", Budget::AGENT_PREP),
+        ("RESUME_QUALITY", Budget::RESUME_QUALITY),
+    ] {
+        assert!(b.max_steps > 0, "{label}: a run must get at least one step");
+        assert!(b.max_tokens > 0, "{label}: max_tokens must be positive");
+        assert!(
+            b.max_sections > 0,
+            "{label}: a document must get at least one section"
+        );
+        assert!(
+            !b.step_timeout.is_zero() && !b.run_timeout.is_zero(),
+            "{label}: a zero timeout expires before the first await"
+        );
+        assert!(
+            b.run_timeout >= b.step_timeout,
+            "{label}: run_timeout below step_timeout makes step_timeout unreachable"
+        );
+    }
+}
+
+// `AGENT_PREP` must still fit the prep flow's fixed sequence, and
+// `RESUME_QUALITY` must still fit a full section list. Both relations are
+// between compile-time constants, so they are asserted at COMPILE time — a
+// budget shrunk past what its flow needs fails the BUILD rather than waiting
+// for the test binary. (A runtime `assert!` on two consts is also what clippy's
+// `assertions_on_constants` correctly objects to.) The prompt-side half of the
+// agent arithmetic lives in `agent::flows`; this is the budget-side half.
+
+/// 8 fixed tool turns + 1 rationed optional quality call + 1 `validate_resume`
+/// re-check after a fix.
+const PREP_WORST_CASE_TOOL_CALLS: usize = 10;
+/// ...plus a planning turn and a closing-summary turn.
+const PREP_WORST_CASE_TURNS: usize = PREP_WORST_CASE_TOOL_CALLS + 2;
+
+const _: () = assert!(
+    Budget::AGENT_PREP.max_steps > PREP_WORST_CASE_TURNS,
+    "AGENT_PREP.max_steps must leave slack above the 12-turn prep worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
+    "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
+    "a run that exhausts its tool calls must still have turns left to summarize"
+);
+const _: () = assert!(
+    Budget::RESUME_QUALITY.max_steps > DEFAULT_MAX_SECTIONS,
+    "RESUME_QUALITY.max_steps must fit one step per section plus the framing stages"
+);
+
+/// The résumé pipeline runs no tools; zero is the deliberate bound, so a stage
+/// that starts calling tools has to justify raising it rather than inheriting
+/// the agent's allowance.
+#[test]
+fn resume_quality_allows_no_tool_calls_and_covers_every_section() {
+    assert_eq!(Budget::RESUME_QUALITY.max_tool_calls, 0);
+    assert_eq!(Budget::RESUME_QUALITY.max_sections, DEFAULT_MAX_SECTIONS);
+    assert_eq!(
+        Budget::RESUME_QUALITY.max_repair_attempts,
+        DEFAULT_MAX_REPAIR_ATTEMPTS
+    );
+}
+
+// ── Security lock: budgets are backend-owned, never renderer-supplied ─────────
+
+/// Same lock shape as `commands::agent`'s routing lock (task #25): the wire
+/// request struct has NO budget field, so a compromised renderer that appends
+/// `maxSteps`/`maxTokens`/`maxToolCalls` cannot widen a paid run's ceiling —
+/// serde drops the unknown keys because there is nowhere to bind them. The
+/// anti-abuse limiter caps how OFTEN a run starts; only this struct's SHAPE caps
+/// how much one run may spend. The gate is `gen:ipc:check` (Rust↔TS parity) plus
+/// this assertion.
+#[test]
+fn the_run_request_carries_no_budget_field() {
+    let req: crate::ipc_contracts::agent::AgentRunRequest = serde_json::from_value(json!({
+        "resumeId": "res-1",
+        "jobId": "job-9",
+        // A compromised renderer's attempted budget escalation — ignored.
+        "maxSteps": 100_000,
+        "maxToolCalls": 100_000,
+        "maxTokens": 100_000_000,
+        "maxSections": 4_000,
+        "maxRepairAttempts": 999,
+        "stepTimeoutSecs": 86_400,
+        "runTimeoutSecs": 86_400,
+        "budget": { "maxSteps": 100_000 },
+    }))
+    .expect("deserializes from the identity-only wire shape, ignoring budget keys");
+    assert_eq!(req.resume_id, "res-1");
+    assert_eq!(req.job_id, "job-9");
+
+    // Re-serializing the accepted request must not carry any budget key back —
+    // proof the values were dropped, not stashed in a catch-all field.
+    let echoed = serde_json::to_value(&req).unwrap();
+    let keys: Vec<&str> = echoed
+        .as_object()
+        .expect("request serializes to an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    for forbidden in [
+        "maxSteps",
+        "maxToolCalls",
+        "maxTokens",
+        "maxSections",
+        "maxRepairAttempts",
+        "stepTimeoutSecs",
+        "runTimeoutSecs",
+        "budget",
+    ] {
+        assert!(
+            !keys.contains(&forbidden),
+            "AgentRunRequest must not carry a renderer-supplied budget key ({forbidden})"
+        );
+    }
+}
+
+/// The budgets themselves are compile-time constants, so there is no setter to
+/// call from a command handler either. `Copy` (not `Clone`-into-a-cell) is the
+/// mechanism: a caller gets a VALUE, and mutating it cannot affect the constant.
+#[test]
+fn a_budget_copy_cannot_mutate_the_shipped_constant() {
+    let mut local = Budget::AGENT_PREP;
+    local.max_tokens = usize::MAX;
+    assert_eq!(local.max_tokens, usize::MAX, "the copy did change");
+    assert_eq!(
+        Budget::AGENT_PREP.max_tokens,
+        120_000,
+        "the shipped constant must be unaffected by a caller's copy"
+    );
+}

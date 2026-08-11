@@ -399,6 +399,13 @@ const R3_ALLOW: &[&str] = &[
     "email_watch/mod.rs",
     "jobs/mod.rs",
     "pipeline/cache/mod.rs",
+    // The pipeline/agent run store: its own `pipeline_runs.db` (ADR-022 shape —
+    // `db::open` + position-indexed migrations), backed up via `DataStore` and
+    // wiped via `Resettable`, exactly like the per-domain stores above. It sits
+    // under `pipeline/` rather than at the top level because `kind` — not a
+    // separate module — is what separates a résumé run from an agent run, so a
+    // sibling store would have been a second copy of the same two tables.
+    "pipeline/runs/mod.rs",
     // Reads the installed browser's EXTERNAL Cookies SQLite (read-only, copied to
     // temp) for session import — not our app DB, so it has no domain store. R3
     // confines OUR persistence; reading a foreign SQLite legitimately needs

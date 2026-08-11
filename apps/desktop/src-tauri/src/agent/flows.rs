@@ -26,7 +26,7 @@
 /// **Step budget.** The fixed sequence is 10 turns (a plan turn, 8 tool turns,
 /// a closing summary), plus AT MOST 2 extra tool turns the prompt itself
 /// rations: one `validate_resume` re-check after a fix, and one optional call.
-/// 12 worst case, against [`crate::agent::controller::MAX_AGENT_STEPS`] = 14 —
+/// 12 worst case, against [`crate::pipeline::budget::Budget::AGENT_PREP`]'s `max_steps` = 14 —
 /// 2 turns of slack for a model that splits a step across two turns or retries
 /// a declined confirm. That arithmetic is checked, not just narrated, by
 /// `prep_application_sequence_fits_the_step_budget`: adding a numbered step
@@ -95,7 +95,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::agent::controller::MAX_AGENT_STEPS;
+    use crate::pipeline::budget::Budget;
+
+    /// The shipped step budget, read from its ONE declaration.
+    const MAX_AGENT_STEPS: usize = Budget::AGENT_PREP.max_steps;
     use crate::agent::tools::prep_application_tools;
 
     /// Extra tool turns [`PREP_APPLICATION_SYSTEM`] rations on top of its

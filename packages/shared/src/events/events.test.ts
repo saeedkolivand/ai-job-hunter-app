@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { IPC_CHANNELS } from '../ipc/contracts/index';
-import { type AppEvents, EVENT_CHANNELS } from './index';
+import { type AppEvents, EVENT_CHANNELS, type PipelineStageEvent } from './index';
 
 /** Flatten every event-channel wire string out of the namespaced registry. */
 function flattenEventChannels(): string[] {
@@ -34,6 +34,7 @@ describe('EVENT_CHANNELS', () => {
       'jobs',
       'menu',
       'notifications',
+      'pipeline',
       'scrape',
       'system',
       'updater',
@@ -81,6 +82,7 @@ describe('EVENT_CHANNELS', () => {
       'menu:action',
       'autopilot:focus',
       'autopilot:step',
+      'pipeline:stage',
       'scrape:progress',
       'scrape:item',
       'boards:login-status',
@@ -90,5 +92,79 @@ describe('EVENT_CHANNELS', () => {
     ];
     const eventChannels = flattenEventChannels().sort();
     expect((appEventKeys as string[]).slice().sort()).toEqual(eventChannels);
+  });
+});
+
+describe('PipelineStageEvent', () => {
+  /**
+   * Wire-shape lock for `pipeline:stage`. The Rust emitter (Phase 3) and this
+   * interface are hand-synced, so the field NAMES are the contract: renaming
+   * one silently breaks the renderer with no type error on the Rust side.
+   * The `satisfies` annotation catches a required field being added or removed;
+   * the key assertion catches a rename or a casing slip.
+   */
+  it('pins the full camelCase field set', () => {
+    const full = {
+      runId: 'run-1',
+      jobId: 'job-1',
+      stage: 'draft',
+      phase: 'finish',
+      index: 2,
+      total: 6,
+      attempt: 1,
+      sectionKey: 'experience',
+      ms: 1234,
+      issueCount: 3,
+      criticalCount: 1,
+    } satisfies PipelineStageEvent;
+
+    expect(Object.keys(full).sort()).toEqual(
+      [
+        'attempt',
+        'criticalCount',
+        'index',
+        'issueCount',
+        'jobId',
+        'ms',
+        'phase',
+        'runId',
+        'sectionKey',
+        'stage',
+        'total',
+      ].sort()
+    );
+  });
+
+  /**
+   * The five optional fields really are optional: a `start` event has no
+   * duration, no issue counts, and (for a non-section stage) no section key.
+   * A required-by-accident field would strand the emitter with nothing to send.
+   */
+  it('accepts a start event with only the required fields', () => {
+    const start = {
+      runId: 'run-1',
+      jobId: 'job-1',
+      stage: 'plan',
+      phase: 'start',
+      index: 0,
+      total: 6,
+      attempt: 1,
+    } satisfies PipelineStageEvent;
+
+    expect(Object.keys(start).sort()).toEqual([
+      'attempt',
+      'index',
+      'jobId',
+      'phase',
+      'runId',
+      'stage',
+      'total',
+    ]);
+  });
+
+  /** The phase vocabulary is closed — three values, no free-form strings. */
+  it('pins the phase vocabulary', () => {
+    const phases: Array<PipelineStageEvent['phase']> = ['start', 'finish', 'error'];
+    expect(phases).toEqual(['start', 'finish', 'error']);
   });
 });

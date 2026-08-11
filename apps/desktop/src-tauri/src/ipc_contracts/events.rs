@@ -14,6 +14,7 @@ pub const MENU_NAVIGATE: &str = "menu:navigate";
 pub const MENU_ACTION: &str = "menu:action";
 pub const AUTOPILOT_FOCUS: &str = "autopilot:focus";
 pub const AUTOPILOT_STEP: &str = "autopilot:step";
+pub const PIPELINE_STAGE: &str = "pipeline:stage";
 pub const SCRAPE_PROGRESS: &str = "scrape:progress";
 pub const SCRAPE_ITEM: &str = "scrape:item";
 pub const BOARDS_LOGIN_STATUS: &str = "boards:login-status";

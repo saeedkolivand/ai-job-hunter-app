@@ -19,6 +19,7 @@ use crate::dedup::DedupStore;
 use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
+use crate::pipeline::runs::PipelineRunStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -66,8 +67,16 @@ fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
         "dedupTombstones",
         "discoveredCompanies",
     ];
-    // Sections whose export is a single JSON object (single-row settings stores).
-    const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile", "aiProviderConfig"];
+    // Sections whose export is a single JSON object. Two shapes share this
+    // check: the single-row settings stores, and `pipelineRuns`, whose export is
+    // an object of two arrays (`{ runs, events }`) so an event whose run failed
+    // to deserialize can't silently vanish with it.
+    const OBJECT_SECTIONS: &[&str] = &[
+        "jobPreferences",
+        "contactProfile",
+        "aiProviderConfig",
+        "pipelineRuns",
+    ];
 
     for key in ARRAY_SECTIONS {
         if let Some(section) = stores.get(*key) {
@@ -142,6 +151,12 @@ fn build_bundle(app: &AppHandle) -> Value {
     // Passively-harvested ATS company slugs + watched-company stars (ADR-030).
     // Public slugs + display names only — no secrets — so it round-trips.
     if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    // Pipeline/agent run history + its per-stage event trail. Local run
+    // bookkeeping (ids, the job URL, stage names, clamped summary artifacts) —
+    // no secrets, no generated documents — so it round-trips through backups.
+    if let Some(s) = app.try_state::<PipelineRunStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
 
@@ -286,6 +301,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
         import_into("discoveredCompanies", s.inner());
+    }
+    if let Some(s) = app.try_state::<PipelineRunStore>() {
+        import_into("pipelineRuns", s.inner());
     }
     // `import_into` (the `imported`/`had_error`-capturing closure) is never
     // called again after this point, so NLL can end its borrow here — letting
