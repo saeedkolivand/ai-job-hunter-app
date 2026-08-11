@@ -14,10 +14,10 @@ import { PdfPreview } from '@/components/generation/PdfPreview';
 import { QualityBadge } from '@/components/generation/QualityReportPanel';
 import { useDebouncedCommit } from '@/hooks/use-debounced-commit';
 import {
+  atsModeHintKey,
   buildFilename,
   type GenerationMeta,
   isDesignTier,
-  isTwoColumnTemplate,
   type LetterLayoutId,
   type QualityReport,
   TEMPLATE_IDS,
@@ -337,11 +337,7 @@ export function GenerationOutput({
                   StepTemplate's switch markup; reuses the aiGenerate.atsMode keys). */}
               {activeOut === 'resume' && isDesignTier(templateId) && (
                 <div
-                  title={t(
-                    isTwoColumnTemplate(templateId)
-                      ? 'aiGenerate.atsModeHintTwoColumn'
-                      : 'aiGenerate.atsModeHintPhoto'
-                  )}
+                  title={t(atsModeHintKey(templateId))}
                   className={cn(
                     'flex h-auto items-center gap-1.5 rounded-lg border px-2 py-1 transition-all',
                     atsMode

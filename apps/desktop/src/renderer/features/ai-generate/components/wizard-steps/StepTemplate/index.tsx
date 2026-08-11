@@ -6,8 +6,8 @@ import { Button, cn, Image } from '@ajh/ui';
 import { AccentPicker } from '@/components/generation/AccentPicker';
 import { LetterLayoutPicker } from '@/components/generation/LetterLayoutPicker';
 import {
+  atsModeHintKey,
   isDesignTier,
-  isTwoColumnTemplate,
   type LetterLayoutId,
   type TemplateId,
   TEMPLATES,
@@ -69,7 +69,7 @@ export function StepTemplate({
     // 'both' (and 'resume') intentionally use the résumé thumbnails — the template is shared
     // and the résumé is the primary document; only cover-only swaps to cover-letter style previews.
     const image = isCover ? COVER_TEMPLATE_PREVIEWS[tpl.id] : TEMPLATE_PREVIEWS[tpl.id];
-    const caption = TEMPLATE_CAPTIONS[tpl.id];
+    const caption = t(TEMPLATE_CAPTIONS[tpl.id]);
     const selected = templateId === tpl.id;
 
     return (
@@ -185,11 +185,7 @@ export function StepTemplate({
               {t('aiGenerate.atsMode')}
             </div>
             <div className="text-[10px] text-foreground/35 mt-0.5">
-              {t(
-                isTwoColumnTemplate(templateId)
-                  ? 'aiGenerate.atsModeHintTwoColumn'
-                  : 'aiGenerate.atsModeHintPhoto'
-              )}
+              {t(atsModeHintKey(templateId))}
             </div>
           </div>
           <div

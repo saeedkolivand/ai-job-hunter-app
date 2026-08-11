@@ -219,6 +219,7 @@ export {
   type SectionSummary,
   type SourceSpan,
   type StructuredResume,
+  type TemplateId,
   type TemplateRecommendation,
   type TemplateRecommendSignals,
 } from './documents.js';

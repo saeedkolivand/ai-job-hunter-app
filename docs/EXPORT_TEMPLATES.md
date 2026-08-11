@@ -1,8 +1,8 @@
 # Export Templates — the resume/cover-letter rendering contract
 
-Last updated: 2026-07-16
+Last updated: 2026-08-10
 
-The normative reference for the document export system: the twelve templates, the
+The normative reference for the document export system: the sixteen templates, the
 single PDF engine, and the cross-cutting rules (page size, ATS mode, links, fonts,
 validation). This is a **contract** — behavior described here is locked by tests;
 changing it means changing the tests too.
@@ -79,7 +79,7 @@ gate in `markdown.roundtrip.test.ts`.
 
 ---
 
-## The twelve templates
+## The sixteen templates
 
 `TemplateId` (kebab-case on the wire) in `export/types.rs`. Unknown / removed IDs
 (e.g. a saved `"modern"`, or a stale frontend sending `"two-column"` /
@@ -101,17 +101,28 @@ live in each `Template::*` constructor in `export/templates/mod.rs`.
 | `throughline`   | Throughline   | ats    | Single column  | Vertical timeline spine per experience/project entry                                        | Engineering / product; tenure-story emphasis |
 | `cadence`       | Cadence       | ats    | Single column  | Inter, 28pt name, letter-spaced all-caps ruled headings, underlined links, blue-grey accent | Modern & parser-safe; software / product     |
 | `regent`        | Regent        | ats    | Single column  | Source Serif 4, burgundy small-caps headings, rose rule, first-line-indent letter           | Executive / leadership roles                 |
+| `cologne-navy`  | Cologne Navy  | ats    | Single column  | Centred tracked-caps navy header, rule-underlined uppercase headings, blue company names    | European market; formal executive            |
+| `jake`          | Jake          | ats    | Single column  | Ultra-minimal single column, centred name, thin ruled headings, compact entry lines         | LaTeX classic aesthetic; print-first         |
 | `atelier`       | Atelier       | design | **Two column** | Shaded sidebar rail, slate-indigo accent, serif headings                                    | Design; skills-forward                       |
 | `portrait`      | Portrait      | design | **Two column** | Circular photo top-left, name/title right, slate-teal keyline                               | European market; personal brand              |
 | `lebenslauf`    | Lebenslauf    | design | Single column  | DACH DIN-style tabular, photo top-right, formal A4                                          | German-speaking market                       |
 | `aria`          | Aria          | design | **Two column** | Untinted RIGHT sidebar, rectangular top-right photo, 30pt Manrope name, slate accent        | Minimalist personal brand                    |
 | `saffron`       | Saffron       | design | **Two column** | Tinted LEFT sidebar, circular ringed photo, terracotta accent, serif small-caps headings    | Warm personal brand                          |
+| `awesome`       | Awesome       | design | Single column  | Thin accent-tinted header band, accent-bar section markers, single column body              | Vibrant personal brand; design-forward       |
+| `deedy`         | Deedy         | design | Single column  | Bold name block with accent-colored surname, generous section spacing, subtle grey metadata | Modern personal brand; visual emphasis       |
 
-Seven **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
-`meridian`, `throughline`, `cadence`, `regent`) and five **design-tier** templates
-(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron` — photo and/or two-column).
-`cadence` and `regent` render through the parametric `single_column.typ` (no bespoke
-`.typ`); `aria` and `saffron` each have a bespoke `.typ`.
+Nine **ATS-tier** single-column templates (`classic`, `swiss-minimal`, `academic`,
+`meridian`, `throughline`, `cadence`, `regent`, `cologne-navy`, `jake`) and seven **design-tier** templates
+(`atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`, `awesome`, `deedy` — photo, two-column
+and/or decorative colour; `awesome` and `deedy` are single-column with no photo, and earn the
+tier through the colour they drop under ATS mode).
+All sixteen route through `engine.rs`'s `TypstTemplate::from_template` (an exhaustive
+match — no fallback). Six render through the parametric `single_column.typ` with no
+bespoke `.typ` at all, styled entirely from their registry palette via `data.style`:
+`classic`, `swiss-minimal`, `academic`, `cadence`, `regent`, `jake`.
+The other ten each have their own `.typ` under `export/typst_engine/templates/`:
+`meridian`, `throughline`, `atelier`, `portrait`, `lebenslauf`, `aria`, `saffron`,
+`cologne-navy`, `awesome`, `deedy`.
 
 Adding a template is **localized and additive**: one `TemplateId` variant + one
 `Template::*` constructor (with its `tier`) in `export/templates/mod.rs` + a `.typ`
@@ -135,6 +146,16 @@ render behavior**. It does two things:
 Turning ATS mode on for a design-tier template **linearizes** it (two columns
 collapse to one, photo dropped) — the honesty the tier advertises. ATS-tier
 templates are already parser-safe and don't need the toggle.
+
+**Both formats must drop the same things.** `Awesome`'s résumé DOCX approximates its
+PDF header band with **paragraph-level shading in a pale tint of the accent, keeping the
+normal dark ink** — never white text on a raw-accent run, which disappears wherever run
+shading is ignored. The tint itself is `docx::band_tint_hex` (shared with the `Banded`
+cover letter so the two can't drift); it is applied in `model_docx::add_header`, which
+takes `ats_mode` so the DOCX drops the band exactly when `awesome.typ` drops it. **Which**
+templates are banded is `theme::has_header_band` — the same owner as `theme::is_two_column`,
+so PDF and DOCX can't disagree on the roster. Read those three for the exact lightening
+amount and roster; don't copy them here.
 
 ### Document accent (per-export color knob)
 

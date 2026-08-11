@@ -111,8 +111,10 @@ pub(crate) fn generate_resume_docx_in(
         .add_abstract_numbering(abstract_num)
         .add_numbering(num);
 
-    // Header spans the full width, above any columns.
-    docx = add_header(docx, &model.header, template, &colors);
+    // Header spans the full width, above any columns. `ats_mode` reaches it
+    // because the Awesome band is decorative colour the ATS toggle drops —
+    // exactly as `awesome.typ` drops it behind `is-ats`.
+    docx = add_header(docx, &model.header, template, &colors, ats_mode);
 
     if two_column {
         docx = add_two_column_body(docx, &model, template, &colors, geom);
@@ -153,16 +155,46 @@ fn content_width_dxa(template: &Template, geom: PageGeometry) -> usize {
 
 // ─── Header ───────────────────────────────────────────────────────────────────
 
-fn add_header(mut docx: Docx, header: &HeaderBlock, t: &Template, colors: &DocxColors) -> Docx {
+fn add_header(
+    mut docx: Docx,
+    header: &HeaderBlock,
+    t: &Template,
+    colors: &DocxColors,
+    ats_mode: bool,
+) -> Docx {
     if !header.name.is_empty() {
-        let mut p = Paragraph::new().add_run(
-            Run::new()
-                .add_text(&header.name)
-                .size(pt_to_half_points(t.name_pt))
-                .bold()
-                .color(colors.name.as_str())
-                .fonts(docx_run_fonts(t.fonts.name_family)),
-        );
+        let name_run = Run::new()
+            .add_text(&header.name)
+            .size(pt_to_half_points(t.name_pt))
+            .bold()
+            .color(colors.name.as_str())
+            .fonts(docx_run_fonts(t.fonts.name_family));
+
+        let mut p = Paragraph::new().add_run(name_run);
+
+        // A banded template's PDF (`awesome.typ`) draws a full-width
+        // accent-tinted band behind the name. `docx-rs` has no page-background
+        // primitive, so approximate it exactly the way the Banded cover-letter
+        // layout does (`docx::mod`'s `header_band` branch): PARAGRAPH-level
+        // shading, filled with the accent lightened toward white by
+        // `docx::band_tint_hex`, keeping the normal dark ink. Run-level `w:shd`
+        // would only tint the glyph boxes, and white ink on it disappears
+        // entirely in any reader that ignores run shading — the invisible-name
+        // hazard `awesome_matches_spec` guards the registry against.
+        //
+        // WHICH templates are banded is `theme::has_header_band`'s call (the
+        // same owner as `is_two_column`/`placement_for`), so PDF and DOCX can't
+        // disagree on the roster. WHETHER to draw it stays here: ATS mode drops
+        // the band, matching `awesome.typ`'s `is-ats` branch (which renders a
+        // plain black-on-white header).
+        if theme::has_header_band(t.id) && !ats_mode {
+            p.property = p.property.shading(
+                Shading::new()
+                    .shd_type(ShdType::Clear)
+                    .color("auto")
+                    .fill(crate::export::docx::band_tint_hex(t.accent_color)),
+            );
+        }
         if t.name_centered {
             p = p.align(AlignmentType::Center);
         }

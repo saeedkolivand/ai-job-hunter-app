@@ -63,6 +63,32 @@ pub fn is_two_column(id: TemplateId) -> bool {
     )
 }
 
+/// Returns `true` when a template carries a **droppable** filled header band —
+/// the roster both renderers key their header band off, so PDF and DOCX cannot
+/// disagree about it. The structural counterpart to [`is_two_column`]: a
+/// per-template layout fact the backends ask about instead of each re-deriving
+/// it from its own `TemplateId` match.
+///
+/// `Awesome` is the only member. `awesome.typ` paints the band into
+/// `page.background`; `model_docx::add_header` approximates it with
+/// paragraph-level shading (`docx-rs` has no page-background primitive).
+///
+/// **`Meridian` is a deliberate non-member even though `meridian.typ` does draw
+/// a full-width 38 mm accent band.** The band here has to be *droppable*: both
+/// renderers drop it in ATS mode, and the ATS-mode toggle only surfaces for
+/// **design-tier** templates (`TemplateTier`). Meridian is ATS-tier, so a DOCX
+/// band on it could never be turned off — it would permanently shade the header
+/// of a template whose whole promise is that it is plain. Its PDF band is a
+/// pre-existing PDF-only divergence; widening this predicate to "the PDF paints
+/// a band" would change Meridian's DOCX output and break that promise.
+/// `header_band_templates_are_all_design_tier` pins the rule.
+///
+/// WHETHER to draw the band (the `ats_mode` gate) stays with the caller — that
+/// is a per-export mode decision, not a template property.
+pub fn has_header_band(id: TemplateId) -> bool {
+    matches!(id, TemplateId::Awesome)
+}
+
 /// How hyperlinks render for a template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LinkStyle {
@@ -96,6 +122,43 @@ mod tests {
     fn template_accessor_matches_registry() {
         assert_eq!(template(TemplateId::Classic).id, TemplateId::Classic);
         assert_eq!(template(TemplateId::Atelier).id, TemplateId::Atelier);
+    }
+
+    /// A header band must be DROPPABLE, and the ATS-mode toggle that drops it
+    /// only surfaces for design-tier templates. So a band on an ATS-tier
+    /// template could never be turned off — it would permanently shade the
+    /// header of a template sold as plain. Adding one to an ATS-tier template
+    /// (the easy mistake: `Meridian`, whose PDF genuinely paints a 38 mm band)
+    /// fails here rather than shipping an undroppable tint into DOCX.
+    #[test]
+    fn header_band_templates_are_all_design_tier() {
+        use crate::export::templates::{TemplateTier, CANONICAL_TEMPLATE_IDS};
+        let mut banded = 0;
+        for id in CANONICAL_TEMPLATE_IDS {
+            if !has_header_band(id) {
+                continue;
+            }
+            banded += 1;
+            assert_eq!(
+                template(id).tier,
+                TemplateTier::Design,
+                "{id:?} carries a header band but is ATS-tier — it never surfaces \
+                 the ATS toggle, so the band could never be dropped"
+            );
+        }
+        assert_eq!(
+            banded, 1,
+            "expected exactly one banded template (Awesome); the roster changed"
+        );
+        assert!(
+            has_header_band(TemplateId::Awesome),
+            "Awesome is the banded template both renderers key off"
+        );
+        assert!(
+            !has_header_band(TemplateId::Meridian),
+            "Meridian's PDF band is a deliberate PDF-only divergence — see \
+             `has_header_band`; enrolling it here silently changes its DOCX"
+        );
     }
 
     #[test]

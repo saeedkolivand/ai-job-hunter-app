@@ -57,6 +57,19 @@ pub enum TemplateId {
     /// terracotta accent). Certifications read in the main column. Renders through
     /// the bespoke `saffron.typ`.
     Saffron,
+    /// Jake — after "Jake's Resume" (community LaTeX classic): ultra-minimal
+    /// single column, centred name, thin ruled section headings, compact entry
+    /// lines (title/subtitle left, right-aligned date). Renders through the
+    /// parametric `single_column.typ`.
+    Jake,
+    /// Awesome — after Awesome-CV: thin accent-tinted header band (name +
+    /// contact line), accent-bar section-title markers, single column body.
+    /// Bespoke `awesome.typ`.
+    Awesome,
+    /// Deedy — after the modern single-column Deedy revision: bold name block
+    /// with an accent-colored surname, generous section spacing, subtle grey
+    /// meta-line under entries. Bespoke `deedy.typ`.
+    Deedy,
 }
 
 impl<'de> serde::Deserialize<'de> for TemplateId {
@@ -79,6 +92,9 @@ impl<'de> serde::Deserialize<'de> for TemplateId {
             "cologne-navy" => TemplateId::CologneNavy,
             "aria" => TemplateId::Aria,
             "saffron" => TemplateId::Saffron,
+            "jake" => TemplateId::Jake,
+            "awesome" => TemplateId::Awesome,
+            "deedy" => TemplateId::Deedy,
             // Any unknown / removed id (e.g. "two-column", "refined-executive",
             // "executive", "editorial-serif", "mono-technical", "bogus") falls
             // back to Classic so a stale frontend never breaks export.
@@ -354,6 +370,9 @@ mod tests {
             (TemplateId::CologneNavy, "\"cologne-navy\""),
             (TemplateId::Aria, "\"aria\""),
             (TemplateId::Saffron, "\"saffron\""),
+            (TemplateId::Jake, "\"jake\""),
+            (TemplateId::Awesome, "\"awesome\""),
+            (TemplateId::Deedy, "\"deedy\""),
         ];
         for (id, expected_json) in cases {
             let serialized = serde_json::to_string(&id).expect("serialize");
