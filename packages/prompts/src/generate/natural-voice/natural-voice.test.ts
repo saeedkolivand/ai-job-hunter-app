@@ -61,6 +61,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PromptTarget } from '../../provider/index.js';
+import { buildApplicationEmailPrompt } from '../application-email/index.js';
 import {
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
@@ -1292,7 +1293,9 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
   const CHECKED_PROSE = [
     'EM-DASH HARD BAN', // voice.em_dash_overuse
     'No rule-of-three', // voice.rule_of_three_density
-    'Delete these outright', // voice.ai_tell_prose ("in today's world", "it is worth noting")
+    // The prose array, reported under voice.ai_tell_lexical like the lexical
+    // one ("in today's world", "it is worth noting"). There is no prose CODE.
+    'Delete these outright',
   ];
   /** Constructions a substring check cannot judge — `full`/`task` only. */
   const GUIDANCE_PROSE = [
@@ -1407,9 +1410,39 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
   describe('every validated entry is still spelled out at BRIEF depth', () => {
     const RESUME_BRIEF = buildResumeSystemPrompt('ats', BRIEF_TARGET, undefined, 'en');
     const LETTER_BRIEF = buildCoverLetterSystemPrompt('recruiter', BRIEF_TARGET, undefined, 'en');
-    const normalize = (s: string) => s.toLowerCase().replace(/it's/g, 'it is');
+    /**
+     * The same two folds the checker applies, so a mismatch here can only ever
+     * mean "the prompt does not ban this entry" and never "the two spell the
+     * apostrophe differently":
+     *
+     * 1. U+2019 -> U+0027, exactly what `voice.rs::ai_tell_issues` (and
+     *    `template_opener_issues`) do before matching. Without it an entry like
+     *    "in today's world" fails the moment a prompt line is written with a
+     *    typographic apostrophe — a spelling failure wearing a missing-ban
+     *    failure's clothes.
+     * 2. The its/it-is class: the arrays deliberately carry BOTH spellings
+     *    ("it's worth noting" is its own entry because a full-phrase match
+     *    cannot cross the contraction), while the prompt spells the pair out
+     *    once, expanded.
+     */
+    const normalize = (s: string) => s.toLowerCase().replace(/’/g, "'").replace(/it's/g, 'it is');
     const bannedBy = (prompt: string, entry: string) =>
       normalize(prompt).includes(normalize(entry));
+
+    // Mutation-visible on its own: drop either fold and one direction breaks.
+    // The curly renderings stand in for a future prompt (or lexicon) line typed
+    // with the apostrophe a word processor inserts.
+    const curly = (s: string) => s.replace(/'/g, '’');
+
+    it.each(AI_TELL_PROSE_WORDS_EN.filter((entry) => entry.includes("'")))(
+      'apostrophe-bearing entry %j matches whichever apostrophe either side spells',
+      (entry) => {
+        expect(bannedBy(LETTER_BRIEF, entry)).toBe(true);
+        expect(bannedBy(curly(LETTER_BRIEF), entry)).toBe(true);
+        expect(bannedBy(LETTER_BRIEF, curly(entry))).toBe(true);
+        expect(bannedBy(curly(LETTER_BRIEF), curly(entry))).toBe(true);
+      }
+    );
 
     it.each(AI_TELL_LEXICAL_WORDS_EN)(
       'lexical entry %j is banned by the BRIEF résumé prompt',
@@ -1454,11 +1487,25 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
      * reach for, not a ban). Split on the quote character rather than matched
      * with a regex: odd-indexed segments are the quoted ones, and the segment
      * before each says whether an arrow introduced it.
+     *
+     * That "odd-indexed" rule is only true while every line closes the quotes
+     * it opens, so the parity of the split is checked before it is trusted. One
+     * missing quote silently swaps the two halves of the line from there on:
+     * the prose between two bans becomes a "ban" (and fails against the lexicon
+     * for the wrong reason) while the real bans become prose and go unchecked.
+     * A parser that guesses is worse than one that stops.
      */
     const quotedBans = (block: string): string[] => {
       const bans: string[] = [];
       for (const line of block.split('\n')) {
         const parts = line.split('"');
+        if (parts.length % 2 === 0) {
+          throw new Error(
+            `unbalanced double quotes (${parts.length - 1}, expected an even count) in the ` +
+              `BRIEF block line ${JSON.stringify(line)} — every quoted ban after it would be ` +
+              `parsed as prose and silently stop being checked. Fix the quoting, not this test.`
+          );
+        }
         for (let i = 1; i < parts.length; i += 2) {
           if ((parts[i - 1] ?? '').trimEnd().endsWith('->')) continue;
           bans.push((parts[i] ?? '').toLowerCase());
@@ -1466,6 +1513,16 @@ describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
       }
       return bans;
     };
+
+    it('the quoted-ban parser refuses an unbalanced line instead of mis-parsing it', () => {
+      const unbalanced = '- Delete these outright: "in today\'s world, "it is worth noting".';
+      expect(() => quotedBans(unbalanced)).toThrow(/unbalanced double quotes \(3,/);
+      // The balanced form of the same line parses, so the guard rejects the
+      // defect and not the shape.
+      expect(
+        quotedBans('- Delete these outright: "in today\'s world", "it is worth noting".')
+      ).toEqual(["in today's world", 'it is worth noting']);
+    });
 
     /** The comma-separated word list a `- <label>: a, b, c.` line bans. */
     const listedBans = (block: string, label: string): string[] => {
@@ -1668,11 +1725,29 @@ describe('depth reaches every surface that composes the anti-AI-tell block', () 
     after: ' It still runs nightly.',
   };
 
+  const EMAIL_PARAMS = {
+    resume: STUB_RESUME,
+    jobAd: 'Acme is hiring a Senior Engineer to scale the settlement platform.',
+    meta: {
+      resumeLanguage: 'en',
+      jobAdLanguage: 'en',
+      mismatch: false,
+      candidateName: 'Jane Dev',
+      jobTitle: 'Senior Engineer',
+      companyName: 'Acme',
+      targetLanguage: 'en',
+      topRequirements: ['Rust', 'payments'],
+    } satisfies GenerationMeta,
+  };
+
   /** Every prose surface, as a builder taking only the provider target. */
   const PROSE_SURFACES: ReadonlyArray<readonly [string, (target: PromptTarget) => string]> = [
     ['referral (generate)', (t) => buildReferralPrompt(REFERRAL_PARAMS, t).system],
     ['referral (improve)', (t) => buildReferralImprovePrompt(IMPROVE_PARAMS, t).system],
     ['application answers', (t) => buildApplicationAnswerSystemPrompt(undefined, 'en', t)],
+    // Absent from this list until round 4: the block was composed in the `full`
+    // branch only, so threading `depth` had nothing to tier on the other two.
+    ['application email', (t) => buildApplicationEmailPrompt(EMAIL_PARAMS, t).system],
     ['interview questions', (t) => buildInterviewQuestionsSystemPrompt('en', t)],
     ['likely interview questions', (t) => buildLikelyQuestionsSystemPrompt(t)],
     ['STAR feedback', (t) => buildStarFeedbackSystemPrompt(t)],

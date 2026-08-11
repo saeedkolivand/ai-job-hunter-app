@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LETTER_MARKET_IDS } from '../../locale/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { toneDirective } from '../natural-voice/index.js';
+import { antiAiTellProse, HUMANIZE_PROSE, toneDirective } from '../natural-voice/index.js';
 import { type ApplicationEmailParams, buildApplicationEmailPrompt } from './application-email.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -38,6 +38,17 @@ const BASE: ApplicationEmailParams = {
   jobAd: 'Globex is hiring a Senior Backend Engineer to scale our distributed systems.',
   meta: META,
 };
+
+/**
+ * One `PromptTarget` per resolved depth (see `resolveProfile`), labelled by the
+ * depth it resolves to so an `it.each` failure names the path rather than the
+ * provider tier: 'small' -> brief, {kind:'cli'} -> task, 'large' -> full.
+ */
+const ALL_DEPTHS = [
+  ['brief', 'small'],
+  ['task', { kind: 'cli' }],
+  ['full', 'large'],
+] as const;
 
 // ─── Subject-line contract ─────────────────────────────────────────────────────
 
@@ -552,36 +563,95 @@ describe('buildApplicationEmailPrompt — provider tier / résumé truncation', 
   });
 });
 
-// ─── Humanization (positive HUMANIZE_PROSE block) ─────────────────────────────
-// The VOICE block (and the anti-AI-tell prose ruleset with it) is only rendered
-// at the 'full' depth (see application-email.ts) — mirrors that scope exactly.
+// ─── The VOICE block: composed at EVERY depth, tiered by depth ────────────────
+// It used to be composed in the `full` branch ONLY. `antiAiTellProse` is itself
+// depth-scoped, so threading `depth` into it fixed the ARGUMENT but not which
+// branches compose it: a small or CLI model was told nothing about AI
+// vocabulary, em dashes or rule-of-three, and the FORMAT skeleton's two opener
+// examples were the whole anti-tell surface on those paths. Now every depth
+// composes the block and the TIER is the only thing that differs.
 
-describe('buildApplicationEmailPrompt — humanization (full depth only)', () => {
-  it('the full-depth system prompt carries the positive HUMANIZE_PROSE cadence anchor', () => {
-    const { system } = buildApplicationEmailPrompt(BASE, 'large');
+describe('buildApplicationEmailPrompt — the voice block reaches every depth', () => {
+  /** Lines a `voice.*` check verifies — shipped at every depth, by the tier's own rule. */
+  const CHECKED_ANCHORS = [
+    'Drop AI-vocabulary',
+    'No promotional / inflated self-adjectives',
+    'No vague attributions / weasel words',
+    'EM-DASH HARD BAN',
+    'No rule-of-three',
+    'Delete these outright',
+  ];
+  /** Judgement calls and construction rules — `task`/`full` only. */
+  const GUIDANCE_ANCHORS = [
+    'PORTABILITY TEST',
+    'SHOW, DO NOT TELL',
+    'No colon reveals',
+    'No fake-profound kicker',
+  ];
+
+  it.each(CHECKED_ANCHORS)('the BRIEF prompt carries the checked-tier line %j', (anchor) => {
+    expect(buildApplicationEmailPrompt(BASE, 'small').system).toContain(anchor);
+  });
+
+  it.each(GUIDANCE_ANCHORS)(
+    'the BRIEF prompt drops the guidance-tier line %j (asserted present at full, so a deleted rule fails too)',
+    (anchor) => {
+      expect(buildApplicationEmailPrompt(BASE, 'large').system).toContain(anchor);
+      expect(buildApplicationEmailPrompt(BASE, 'small').system).not.toContain(anchor);
+    }
+  );
+
+  it.each([...CHECKED_ANCHORS, ...GUIDANCE_ANCHORS])(
+    'the TASK prompt carries %j (task gets the complete text, exactly like full)',
+    (anchor) => {
+      expect(buildApplicationEmailPrompt(BASE, { kind: 'cli' }).system).toContain(anchor);
+    }
+  );
+
+  it('every depth composes the block for ITS OWN tier, verbatim', () => {
+    expect(buildApplicationEmailPrompt(BASE, 'small').system).toContain(
+      antiAiTellProse('en', 'brief')
+    );
+    expect(buildApplicationEmailPrompt(BASE, { kind: 'cli' }).system).toContain(
+      antiAiTellProse('en', 'task')
+    );
+    expect(buildApplicationEmailPrompt(BASE, 'large').system).toContain(antiAiTellProse('en'));
+  });
+
+  // The positive counterpart the bans are documented to be composed WITH on
+  // every prose surface (cover letter, referral, answers, rewrite). Its CADENCE
+  // line is what states the sentence-rhythm rule at `brief`, where the block's
+  // own "Vary sentence length" line lives in the dropped guidance tier.
+  it.each(ALL_DEPTHS)('HUMANIZE_PROSE rides along at %s depth', (_label, target) => {
+    const { system } = buildApplicationEmailPrompt(BASE, target);
+    expect(system).toContain(HUMANIZE_PROSE);
     expect(system).toContain('CADENCE');
   });
 
-  it('the brief/task depths do not carry the VOICE/HUMANIZE_PROSE block (unchanged scope)', () => {
-    const { system: small } = buildApplicationEmailPrompt(BASE, 'small');
-    const { system: task } = buildApplicationEmailPrompt(BASE, { kind: 'cli' });
-    expect(small).not.toContain('CADENCE');
-    expect(task).not.toContain('CADENCE');
+  it('brief stays materially smaller than full: the tier shrinks, not the wiring', () => {
+    const brief = buildApplicationEmailPrompt(BASE, 'small').system;
+    const full = buildApplicationEmailPrompt(BASE, 'large').system;
+    expect(brief.length).toBeLessThan(full.length * 0.7);
   });
 
-  it('carries the German lexicon (not the English ban-list) for a German target', () => {
-    const { system } = buildApplicationEmailPrompt(
-      { ...BASE, meta: { ...META, targetLanguage: 'de' } },
-      'large'
-    );
-    expect(system).toContain('KI-Floskeln');
-    expect(system).not.toContain('Drop AI-vocabulary');
-  });
+  it.each(ALL_DEPTHS)(
+    'a German target gets the curated German lexicon at %s depth (DE is depth-invariant)',
+    (_label, target) => {
+      const { system } = buildApplicationEmailPrompt(
+        { ...BASE, meta: { ...META, targetLanguage: 'de' } },
+        target
+      );
+      expect(system).toContain('KI-Floskeln');
+      expect(system).not.toContain('Drop AI-vocabulary');
+    }
+  );
 
-  it('defaults to the English ban-list when the target language is English', () => {
-    const { system } = buildApplicationEmailPrompt(BASE, 'large');
-    expect(system).toContain('Drop AI-vocabulary');
-  });
+  it.each(ALL_DEPTHS)(
+    'an English target gets the English ban-list at %s depth',
+    (_label, target) => {
+      expect(buildApplicationEmailPrompt(BASE, target).system).toContain('Drop AI-vocabulary');
+    }
+  );
 });
 
 // ─── Output tone (parity with the cover-letter wiring) ───────────────────────

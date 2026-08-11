@@ -132,8 +132,11 @@ const LEXICAL_GUIDANCE_EN = `- Drop these too, unless the word is genuinely the 
  *
  * - the dash ban backs `voice.em_dash_overuse`;
  * - the rule-of-three ban backs `voice.rule_of_three_density`;
- * - the deletion line backs `voice.ai_tell_prose` (both quoted phrases ARE
- *   {@link AI_TELL_PROSE_WORDS_EN} entries, and nothing else is quoted here).
+ * - the deletion line backs the PROSE half of `voice.ai_tell_lexical` (both
+ *   quoted phrases ARE {@link AI_TELL_PROSE_WORDS_EN} entries, and nothing else
+ *   is quoted here). There is no separate `voice.ai_tell_prose` CODE:
+ *   `voice.rs::ai_tell_issues` merges this array into the lexical one on the
+ *   letter path and reports every hit under the single lexical code.
  *
  * `voice.low_burstiness` is the one check whose instruction is NOT here: it is
  * covered at every depth, more concretely, by {@link HUMANIZE_PROSE}'s CADENCE
@@ -209,8 +212,9 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
 
 /**
  * Discrete, lowercase, substring-matchable word/phrase lists for the Rust
- * content validator's `voice.ai_tell_lexical` / `voice.ai_tell_prose` /
- * `voice.template_opener` checks
+ * content validator's `voice.ai_tell_lexical` and `voice.template_opener`
+ * checks (there is no separate prose code — `voice.rs::ai_tell_issues` reports
+ * both AI-tell arrays under the lexical one)
  * (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`, generated from
  * these exact arrays by `packages/prompts/scripts/gen-prompts-rust.ts` — run
  * `pnpm gen:prompts` after editing any of them). Deliberately kept separate

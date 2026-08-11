@@ -115,6 +115,25 @@ fn silent(report: &ContentReport, code: &str) {
     );
 }
 
+/// The first `code` issue's evidence, or `None` when `code` never fired.
+///
+/// The alternative, `fired(report, code)[0].evidence`, asserts inside the
+/// SHARED helper, so the failure can only ever name the rule — and a test that
+/// runs one claim over several fixtures (the apostrophe-fold pair below renders
+/// the same letter twice) then cannot say WHICH fixture missed. Returning an
+/// `Option` moves the whole claim into the caller's own `assert_eq!`, whose
+/// message names the rule, the fixture, and what the report carried instead.
+///
+/// `None` covers both "the rule did not fire" and "it fired with no evidence";
+/// callers print [`codes`] alongside, which tells the two apart.
+fn first_evidence<'a>(report: &'a ContentReport, code: &str) -> Option<&'a str> {
+    report
+        .issues
+        .iter()
+        .find(|i| i.code == code)
+        .and_then(|i| i.evidence.as_deref())
+}
+
 /// Assert `code` fired, and return its issues.
 #[track_caller]
 fn fired<'a>(report: &'a ContentReport, code: &str) -> Vec<&'a ContentIssue> {
@@ -1858,9 +1877,11 @@ fn template_openers_fire_with_either_apostrophe() {
     ] {
         let report = en_letter(&letter);
         assert_eq!(
-            fired(&report, VOICE_TEMPLATE_OPENER)[0].evidence.as_deref(),
+            first_evidence(&report, VOICE_TEMPLATE_OPENER),
             Some("i'm excited to apply"),
-            "the contraction opener must fire on the {shape} spelling"
+            "{VOICE_TEMPLATE_OPENER} must report the contraction opener on the {shape} \
+             spelling; the report carried {:?}",
+            codes(&report)
         );
     }
 }
@@ -1885,8 +1906,11 @@ fn german_template_openers_are_unaffected_by_the_apostrophe_fold() {
         doc_kind: DocKind::CoverLetter,
     });
     assert_eq!(
-        fired(&report, VOICE_TEMPLATE_OPENER)[0].evidence.as_deref(),
-        Some("hiermit bewerbe ich mich")
+        first_evidence(&report, VOICE_TEMPLATE_OPENER),
+        Some("hiermit bewerbe ich mich"),
+        "{VOICE_TEMPLATE_OPENER} must report the German opener on the apostrophe-free German \
+         fixture; the report carried {:?}",
+        codes(&report)
     );
 }
 
@@ -1906,6 +1930,25 @@ fn german_template_openers_are_unaffected_by_the_apostrophe_fold() {
 /// the per-phrase exemption in [`super::voice`] reads the SOURCE RÉSUMÉ only,
 /// never the job ad, so a letter addressed to Paramount Global had the
 /// employer's own name reported back as machine-written.
+///
+/// ## Why ONE `silent` covers BOTH lexicon arrays
+///
+/// There is no separate `voice.ai_tell_prose` CODE. On the letter path
+/// [`super::voice::validate_letter`] calls `ai_tell_issues(ctx, true)`, which
+/// merges [`super::lexicon::ai_tell_lexical`] and
+/// [`super::lexicon::ai_tell_prose`] into one hit list and reports every hit
+/// under [`VOICE_AI_TELL_LEXICAL`] — pinned from the positive side by
+/// [`no_ai_slop_checked_tier_fires_on_a_slop_letter`], where the PROSE entries
+/// "it is worth noting" and "in today's world" fire under exactly that code. So
+/// promoting any phrase in this fixture into EITHER array fails the line below;
+/// splitting the prose tier into its own code later would fail the positive
+/// test first, which is where that decision has to be made.
+///
+/// [`VOICE_TEMPLATE_OPENER`] is a genuinely separate code and is pinned
+/// separately. It is NOT pinned on the résumé control below: `voice::validate`
+/// never calls `template_opener_issues` for a résumé, so the assertion could
+/// not fail there for any edit — a guard that cannot fail reads as coverage and
+/// is not.
 #[test]
 fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
     let letter = "Dear Hiring Manager,\n\n\
@@ -1920,7 +1963,9 @@ fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
                   work I did for Paramount Global is the closest match to this role.\n\n\
                   In conclusion, with regard to the timeline, I can start in March.\n\n\
                   Best regards,\nJane Doe\n";
-    silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
+    let report = en_letter(letter);
+    silent(&report, VOICE_AI_TELL_LEXICAL);
+    silent(&report, VOICE_TEMPLATE_OPENER);
 }
 
 /// The same control on the RÉSUMÉ surface, where the lexical tier also runs.
