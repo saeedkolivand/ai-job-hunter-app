@@ -5,6 +5,7 @@ import {
   type AppEvents,
   EVENT_CHANNELS,
   isPipelineSectionKey,
+  PIPELINE_STAGE_PHASES,
   type PipelineSectionKey,
   type PipelineStageEvent,
   SECTION_KEY_MAX_LENGTH,
@@ -169,9 +170,15 @@ describe('PipelineStageEvent', () => {
     ]);
   });
 
-  /** The phase vocabulary is closed — three values, no free-form strings. */
+  /**
+   * The phase vocabulary is closed — three values, no free-form strings.
+   * Asserts against the EXPORTED array (the type's own source of truth), not
+   * a literal duplicated here, so a phase added to the array without a
+   * corresponding update to this expectation fails — the type itself cannot
+   * drift from the array since it is derived from it.
+   */
   it('pins the phase vocabulary', () => {
-    const phases: Array<PipelineStageEvent['phase']> = ['start', 'finish', 'error'];
+    const phases: readonly PipelineStageEvent['phase'][] = PIPELINE_STAGE_PHASES;
     expect(phases).toEqual(['start', 'finish', 'error']);
   });
 

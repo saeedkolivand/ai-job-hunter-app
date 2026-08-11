@@ -7,8 +7,15 @@ export const PIPELINE_EVENTS = {
  * - `start` — the stage is about to run (emitted from the hook's `before`).
  * - `finish` — it completed successfully.
  * - `error` — it failed; the run aborts after this event.
+ *
+ * The array is the source of truth (NORMATIVE for the Phase-3 emitter);
+ * {@link PipelineStagePhase} is derived from it so a value can never be added
+ * to the type without also widening the array the lock test asserts against.
  */
-export type PipelineStagePhase = 'start' | 'finish' | 'error';
+export const PIPELINE_STAGE_PHASES = ['start', 'finish', 'error'] as const;
+
+/** The closed phase vocabulary — see {@link PIPELINE_STAGE_PHASES}. */
+export type PipelineStagePhase = (typeof PIPELINE_STAGE_PHASES)[number];
 
 /**
  * Longest a `sectionKey` may be ON THE WIRE, in UTF-16 code units.

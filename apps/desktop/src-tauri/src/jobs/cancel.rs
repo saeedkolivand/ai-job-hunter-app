@@ -12,7 +12,8 @@
 //! **Ownership rule (unchanged, and the reason `cancel` does not remove):**
 //! whoever registers a slot removes it. Cancelling leaves the slot IN PLACE so a
 //! cancel that lands before the run reaches its worker is not lost — see
-//! [`CancelRegistry::cancel`] and [`CancelRegistry::get_or_register`].
+//! [`crate::jobs::cancel::CancelRegistry::cancel`] and
+//! [`crate::jobs::cancel::CancelRegistry::get_or_register`].
 //!
 //! L1, Tauri-free: a `HashMap` behind a `tokio::sync::Mutex`, exactly the shape
 //! (and the `.await` points) the engine held inline, so every existing cancel

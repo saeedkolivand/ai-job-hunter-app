@@ -11,7 +11,10 @@
 //!
 //! **Both free-form JSON columns are capped on BOTH paths** — at the write site
 //! and again on import — so neither a runaway stage nor a hand-edited backup can
-//! persist a multi-megabyte row.
+//! persist a multi-megabyte `metrics_json`/`artifact_json` value. The other
+//! columns (id/job_url/kind/depth/status/stage/phase) are NOT clamped by
+//! `import()` — a hand-edited backup can still restore an unbounded value
+//! there.
 //!
 //! **`kind` is the discriminator, not the table name.** This store is also the
 //! future home of agent runs: an agent run and a résumé-pipeline run have the

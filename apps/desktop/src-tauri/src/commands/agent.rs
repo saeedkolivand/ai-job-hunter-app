@@ -183,8 +183,9 @@ pub async fn agent_run(app: AppHandle, req: AgentRunRequest) -> Value {
                 crate::commands::jobs::job_cancel(&app_task, &job_id_task);
             }
             // A hung/misconfigured provider or tool call: the controller's own
-            // step timeout stopped the loop (see `agent::controller::
-            // AGENT_STEP_TIMEOUT`). This is a FAILURE, never a silent success —
+            // step timeout stopped the loop (see
+            // `crate::pipeline::budget::Budget::AGENT_PREP`'s `step_timeout`).
+            // This is a FAILURE, never a silent success —
             // the renderer must show an error, not a completed proposal built on
             // a run that never actually finished.
             Ok(o) if o.stopped_reason == StoppedReason::Timeout => {

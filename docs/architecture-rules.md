@@ -72,9 +72,9 @@ L0  Shared infra       error, observability, performance, db, data_store, net, p
 
 - **Allowed deps:** L0 + L1 + sibling L2.
 - **Forbidden deps:** L3 (`crate::commands`, etc.). **No `#[tauri::command]`** (handlers
-  belong in L3). Ad-hoc SQL and `reqwest::Client` construction are forbidden; compose
-  domain stores via `net::http`. **Exception:** per-domain store `mod.rs` files (e.g.,
-  `pipeline/cache`, `pipeline/runs`) may use `db::open()` where R3-allowlisted.
+  belong in L3). Ad-hoc SQL and `reqwest::Client` construction are forbidden (compose
+  domain stores + `net::http`). **Exception:** per-domain store `mod.rs` files (e.g.,
+  `pipeline/cache`, `pipeline/runs`) may use `rusqlite::` directly where R3-allowlisted.
 - **Public API:** `pipeline` exposes `Stage`/`Pipeline`; orchestrators expose their
   run/schedule entry points.
 - **Documented exceptions:** `pipeline`, `documents`-adjacent flows, and `cover_letter`

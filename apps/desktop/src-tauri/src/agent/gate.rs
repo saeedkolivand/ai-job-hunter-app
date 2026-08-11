@@ -317,8 +317,8 @@ pub(super) enum WriteResolution {
 
 /// SUSPEND the loop on a `ToolKind::Write` call: emit a `confirm_request` step,
 /// register a [`oneshot`] with the [`AgentGate`], then block on the user's decision
-/// raced against BOTH cancellation and [`CONFIRM_TIMEOUT`]. The gate entry is
-/// ALWAYS removed before returning (every branch).
+/// raced against BOTH cancellation and [`crate::pipeline::budget::Budget::AGENT_PREP`]'s
+/// `confirm_timeout`. The gate entry is ALWAYS removed before returning (every branch).
 ///
 /// SECURITY: the write executes ONLY on `Approve`/`ApproveEdited`; `Deny`, a
 /// timeout, a closed channel, and cancel all default to NOT acting. `ApproveEdited`

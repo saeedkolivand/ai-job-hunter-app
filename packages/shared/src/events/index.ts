@@ -35,6 +35,7 @@ import { NOTIFICATIONS_EVENTS } from './notifications.js';
 import {
   isPipelineSectionKey,
   PIPELINE_EVENTS,
+  PIPELINE_STAGE_PHASES,
   type PipelineSectionKey,
   type PipelineStageEvent,
   type PipelineStagePhase,
@@ -103,6 +104,7 @@ export {
   MENU_EVENTS,
   NOTIFICATIONS_EVENTS,
   PIPELINE_EVENTS,
+  PIPELINE_STAGE_PHASES,
   type PipelineSectionKey,
   type PipelineStageEvent,
   type PipelineStagePhase,
