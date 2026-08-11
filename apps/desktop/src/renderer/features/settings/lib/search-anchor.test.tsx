@@ -63,6 +63,8 @@ vi.mock('@/services', () => ({
   useChangelog: () => ({ data: undefined, isPending: false }),
   // AppearanceCard
   useSystemAccent: () => ({ data: { supported: false } }),
+  // GenerationDepthPreferences → useSmallModelWarning
+  useGenerateConfig: () => ({ provider: 'openai', model: 'gpt-5', isPending: false }),
   // ContactProfileTab / ApplicantDetailsSection
   useContactProfile: () => ({ data: undefined }),
   useSetContactProfile: () => ({ mutate: vi.fn(), isPending: false }),
@@ -137,10 +139,12 @@ vi.mock('@/store/preferences-store', () => ({
       setOutputTone: vi.fn(),
       setPerformanceMode: vi.fn(),
       setCustomPerformance: vi.fn(),
+      setGenerationDepth: vi.fn(),
       setFetchCompanyLogos: vi.fn(),
     }),
   useFetchCompanyLogos: () => false,
   useDebugMode: () => false,
+  useGenerationDepth: () => 'fast',
   useOutputTone: () => 'professional',
   usePerformanceMode: () => 'balanced',
   useResolvedPerformanceProfile: () => ({
@@ -337,8 +341,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 31 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(31);
+  it('has exactly 32 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(32);
   });
 
   it('every SectionId has at least one entry', () => {

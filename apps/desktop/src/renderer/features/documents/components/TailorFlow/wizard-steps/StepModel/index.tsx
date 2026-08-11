@@ -4,8 +4,10 @@ import { Controller, useFormContext } from 'react-hook-form';
 import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
+import { DepthSelector, useSmallModelWarning } from '@/components/generation/DepthSelector';
 import { ModelSelector } from '@/components/ui/ModelSelector';
 import { useNeedsResearchKey } from '@/hooks/use-needs-research-key';
+import { useGenerationDepth } from '@/store/preferences-store';
 
 import type { TailorWizardState } from '../../lib/tailor-state';
 
@@ -13,12 +15,18 @@ interface StepModelProps {
   canUse: boolean;
   /** Why AI is unavailable, if it is — drives the inline disabled hint. */
   reason?: string;
+  /** Why quality depth can't run from this flow yet, if it can't — passed
+   *  through to the depth picker as an honest note (never a silent downgrade). */
+  depthUnavailableReason?: string;
 }
 
-/** Final step: the global AI model + the opt-in company-research toggle. */
-export function StepModel({ canUse, reason }: StepModelProps) {
+/** Final step: the global AI model, the generation depth, and the opt-in
+ *  company-research toggle. */
+export function StepModel({ canUse, reason, depthUnavailableReason }: StepModelProps) {
   const { t } = useTranslation();
   const { control } = useFormContext<TailorWizardState>();
+  const defaultDepth = useGenerationDepth();
+  const smallModel = useSmallModelWarning();
   // Ollama-family provider missing the free account key — research (when the
   // toggle below is on) silently returns nothing without it. Non-blocking:
   // shown regardless of the toggle's state, never disables it.
@@ -46,6 +54,19 @@ export function StepModel({ canUse, reason }: StepModelProps) {
               : t('autopilot.apply.selectModel')}
         </p>
       )}
+
+      <Controller
+        control={control}
+        name="depth"
+        render={({ field }) => (
+          <DepthSelector
+            value={field.value ?? defaultDepth}
+            onChange={field.onChange}
+            smallModel={smallModel}
+            {...(depthUnavailableReason ? { unavailableReason: depthUnavailableReason } : {})}
+          />
+        )}
+      />
 
       <Controller
         control={control}

@@ -12,6 +12,7 @@ import { AppearanceCard } from '@/features/settings/components/general-section/A
 import { AgencyCompaniesPreferences } from '@/features/settings/components/preferences/AgencyCompaniesPreferences';
 import { AggregatorKeysSettings } from '@/features/settings/components/preferences/AggregatorKeysSettings';
 import { DeveloperPreferences } from '@/features/settings/components/preferences/DeveloperPreferences';
+import { GenerationDepthPreferences } from '@/features/settings/components/preferences/GenerationDepthPreferences';
 import { JobLocationPreferences } from '@/features/settings/components/preferences/JobLocationPreferences';
 import { OutputTonePreferences } from '@/features/settings/components/preferences/OutputTonePreferences';
 import { PerformancePreferences } from '@/features/settings/components/preferences/PerformancePreferences';
@@ -66,6 +67,9 @@ export function SettingsContent({
       <>
         <div data-settings-anchor="ai-provider">
           <AISettingsTab />
+        </div>
+        <div data-settings-anchor="ai-depth">
+          <GenerationDepthPreferences />
         </div>
         <div data-settings-anchor="ai-tone">
           <OutputTonePreferences />

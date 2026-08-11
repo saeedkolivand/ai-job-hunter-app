@@ -316,3 +316,53 @@ describe('generation store — hydrate (cold-entry seed)', () => {
     expect(useGenerationStore.getState().getSession(id).resumeOut).toBe('SAVED-RESUME');
   });
 });
+
+describe('generation store — staged-pipeline siblings (ADR-006)', () => {
+  beforeEach(() => useGenerationStore.setState({ sessions: {} }));
+
+  it('starts every session with all three siblings null', () => {
+    expect(EMPTY_SESSION.runId).toBeNull();
+    expect(EMPTY_SESSION.pipelineStage).toBeNull();
+    expect(EMPTY_SESSION.sectionStates).toBeNull();
+  });
+
+  it('patches one sibling without disturbing the other two', () => {
+    const id = 'quality:job-1';
+    const store = useGenerationStore.getState();
+    store.setPipeline(id, { runId: 'run-9' });
+    store.setPipeline(id, {
+      pipelineStage: { stage: 'draft', phase: 'start', index: 3, total: 6, attempt: 1 },
+    });
+    store.setPipeline(id, { sectionStates: { summary: 'clean' } });
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.runId).toBe('run-9');
+    expect(s.pipelineStage).toMatchObject({ stage: 'draft', index: 3 });
+    expect(s.sectionStates).toEqual({ summary: 'clean' });
+  });
+
+  it('leaves the fast path byte-identical — a run writes no pipeline sibling', async () => {
+    // The whole point of ADR-006 siblings: `GenerationPhase` is untouched and
+    // the one-shot path behaves exactly as before. If `runTailor` ever starts
+    // writing these, the quality surface would light up for a fast generation.
+    const id = 'fast:job-1';
+    await useGenerationStore.getState().runTailor({ contextId: id, target: 'resume', ...base });
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.resumeOut).toBe('RESUME');
+    expect(s.runId).toBeNull();
+    expect(s.pipelineStage).toBeNull();
+    expect(s.sectionStates).toBeNull();
+  });
+
+  it('clears the siblings when a session is cancelled', () => {
+    const id = 'quality:job-2';
+    const store = useGenerationStore.getState();
+    store.setPipeline(id, { runId: 'run-9', sectionStates: { skills: 'needsChanges' } });
+    store.cancel(id);
+
+    const s = useGenerationStore.getState().getSession(id);
+    expect(s.runId).toBeNull();
+    expect(s.sectionStates).toBeNull();
+  });
+});

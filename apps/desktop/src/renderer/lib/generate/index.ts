@@ -1,5 +1,12 @@
 export { buildFilename, exportDOCX, exportPDF, exportTXT, renderDocumentPreview } from './export';
 export {
+  type Fabrication,
+  type FabricationPresentation,
+  parseFabrications,
+  presentFabrication,
+  unresolvedCount,
+} from './fabrications';
+export {
   extractMetadata,
   generateApplicationAnswer,
   generateApplicationEmail,
@@ -28,6 +35,13 @@ export {
   type StarFeedback,
   synthesizeResume,
 } from './generation';
+export {
+  ALL_GENERATION_DEPTHS,
+  type GenerationDepth,
+  isDepthRunnable,
+  resolveRunnableDepth,
+  RUNNABLE_GENERATION_DEPTHS,
+} from './generation-depth';
 export { buildLinkSuggestions } from './links';
 export {
   OUTPUT_LANGUAGES,
@@ -45,6 +59,11 @@ export {
   type QualityReportSlot,
   serializeQualityReport,
 } from './quality-report';
+export {
+  buildSectionVerdicts,
+  sectionKeyForHeading,
+  type SectionVerdict,
+} from './section-verdicts';
 export {
   type AtsModeHintKey,
   atsModeHintKey,

@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
-import { hashText, type QualityReport } from '@/lib/generate';
+import { hashText, type QualityReport, unresolvedCount } from '@/lib/generate';
 
-import { QualityReportPanel } from './QualityReportPanel';
+import { type QualityPipelineReview, QualityReportPanel } from './QualityReportPanel';
 
 export interface QualityBadgeProps {
   /** The generation session's full report — resume + coverLetter slots. */
@@ -27,6 +27,13 @@ export interface QualityBadgeProps {
   onRecheck?: () => void;
   rechecking?: boolean;
   className?: string;
+  /**
+   * Staged-run extras, forwarded to the panel. Their presence also changes the
+   * BADGE: while flagged claims are undecided the run is `needsReview`, and
+   * this chip must never read "no issues" for it — the document is usable but
+   * unfinished, and that is the state the terminal review exists to surface.
+   */
+  pipeline?: QualityPipelineReview;
 }
 
 /**
@@ -48,6 +55,7 @@ export function QualityBadge({
   onRecheck,
   rechecking,
   className,
+  pipeline,
 }: QualityBadgeProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -61,12 +69,17 @@ export function QualityBadge({
   const stale = hashText(currentText) !== slot.sourceTextHash;
 
   const critical = docReport.issues.filter((issue) => issue.severity === 'critical').length;
-  const clean = docReport.issues.length === 0;
+  // Undecided flagged claims count as open issues here even when the
+  // deterministic pass came back empty: the run is `needsReview`, and a green
+  // "no issues" on it would be the exact misreport the review panel prevents.
+  const pendingClaims = pipeline ? unresolvedCount(pipeline.fabrications) : 0;
+  const openIssues = docReport.issues.length + pendingClaims;
+  const clean = openIssues === 0;
   const label = stale
     ? t('quality.badge.stale')
     : clean
       ? t('quality.badge.clean')
-      : t('quality.badge.issues', { count: docReport.issues.length, critical });
+      : t('quality.badge.issues', { count: openIssues, critical });
 
   return (
     <>
@@ -95,6 +108,7 @@ export function QualityBadge({
         stale={stale}
         onRecheck={onRecheck}
         rechecking={rechecking}
+        pipeline={pipeline}
       />
     </>
   );
