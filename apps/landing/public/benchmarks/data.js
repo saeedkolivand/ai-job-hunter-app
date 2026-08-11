@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786387816330,
+  "lastUpdate": 1786428867469,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6587,6 +6587,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 304878,
             "range": "± 4256",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3ca7d9cb6411670f85bbf5f63ecf3cc08a66b9d8",
+          "message": "feat: add jake, awesome and deedy resume templates from the latex classics (#965)\n\n* feat: add jake, awesome, and deedy resume templates\n\nPort three classic LaTeX community resume designs into the Typst engine.\nJake (ATS tier) routes through the parametric single_column.typ with no new\nknobs. Awesome and Deedy (design tier) get bespoke .typ files - a thin\naccent-tinted header band with accent-bar section markers, and a bold name\nblock with an accent-colored surname, respectively.\n\nAwesome's white band-text registry field would otherwise leak into the\ngeneric DOCX renderer as invisible white-on-white text, so name_color stays\na real dark ink and the .typ hardcodes white for its own band (mirroring\nmeridian.typ's existing c-band-text convention). DOCX approximates the band\nas run-level shading behind the name run, echoing the Banded cover-letter\nlayout's flat-shading precedent.\n\n* test: cover jake, awesome, and deedy templates in the golden test matrices\n\nAdd the three new templates to canonical_template_ids (every-template PDF\nrender/extraction/tier tests pick them up automatically), plus dedicated\nspec-pin, DOCX-shading, and ATS-mode-honesty tests for Awesome and Deedy.\nSync the frontend picker's tier-badge counts and ATS-toggle gate lists.\n\nRegenerate resume + cover-letter template preview SVGs and the showcase\nbanner via the offline #[ignore] generators (ran fine on this host in debug\nprofile). This also refreshes several older templates' previews that had\ngone stale since their last regen (a pre-existing gap the generators'\nown doc comments already flagged), not just the three new ones.\n\n* chore: regenerate resume + cover-letter template preview assets\n\nNew SVGs for jake, awesome, and deedy (resume + cover-letter previews) and\nthe 16-column showcase banner. Also refreshes academic, atelier, classic,\nlebenslauf, meridian, portrait, swiss-minimal, and throughline previews that\nhad gone stale since their last regen — a pre-existing gap the ignored\ngenerators' own doc comments already flagged, surfaced by running the\nrequired regen for the three new templates.\n\n* docs: sync export templates doc to the sixteen-template set\n\nThe doc was stale two PRs deep (still said twelve): cologne-navy from #953\nwas never added, and this branch adds jake, awesome, and deedy. Counts,\ntable rows, tier breakdown (nine ats / seven design), and the\nparametric-vs-bespoke route note verified against the TemplateId enum and\ntemplate constructors in source.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: honest ats-mode hint for decorative templates and a shared template id type\n\nThe ats toggle hint was a two-way guess (two-column or photo) that predated\ndesign-tier templates with neither trait — awesome and deedy fell to the\nphoto branch and promised to remove a photo that does not exist. A\nPHOTO_TEMPLATE_IDS trait set plus one atsModeHintKey helper now routes all\nthree cases (two-column, photo, decorative) with new en+de copy, and both\ncall sites consume the helper so they cannot drift apart again.\n\ntemplates.ts also stops declaring its own sixteen-literal TemplateId union:\nit imports the wire contract's type from @ajh/shared (newly re-exported\nthrough the contracts barrel — it was never in the curated export list), so\na template id added to only one side becomes a tsc error instead of a\nsilent Classic fallback at deserialization.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: seven export-side review findings on the new templates\n\njake's name_centered was a render no-op — align(center) inside an\nauto-width block; the name, title and contact blocks now take width 100%\nwhen centred (contact included deliberately: the docx path centres all\nthree off the same flag), pinned by a glyph-geometry test measured from the\nrendered svg with a left-aligned control, and the fourteen non-centred\ntemplates verified byte-identical by svg hash. Awesome's docx band becomes\nparagraph-level shading with the shared band tint (accent lightened 85%)\nand dark ink — the run-level crimson-plus-white approximation contradicted\nthe banded-letter precedent it cited and hardcoded the invisible-white-text\nhazard the registry test guards against — and the band now gates on\nats_mode like its pdf sibling. The suspected band overflow was real but\nworse than predicted: the unbounded background layout pushed a long contact\nline off the sheet entirely (x=630 on a 595pt page); the header now wraps\ninside the printable width and the band grows to 28mm when a title is\npresent, both pinned by render measurements. deedy's local scale supplement\nbecomes the section_above_extra registry knob (rule_thickness precedent,\nrender byte-identical). The validator matrices derive from\ncanonical_template_ids so a new template cannot skip validator coverage.\nPreview assets regenerated (jake, awesome, showcase); export docs and the\nstale preview-regeneration note in the knowledge base corrected.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: template captions through i18n and a hint test that can actually fail\n\nTEMPLATE_CAPTIONS shipped all sixteen captions as raw English rendered\nstraight into the template cards; the map now stores translation keys\nresolved through t() at the render site, with faithful en and de entries\nfor every template, pinned by a test using the real translations instance\n(it fails on the raw-string map) and a render-level test that fails if the\nsite skips t(). The atsModeHintKey routing test restated the\nimplementation's branch order and could not fail; it is replaced by a\ndesign-tier totality check and an overlap invariant — the two-column and\nphoto sets intentionally intersect on portrait, aria and saffron, so the\nsuggested disjointness assertion would be false; the overlap is pinned to\nexactly those three instead.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: eight coderabbit findings on the awesome band, theme routing and test rigor\n\nThe band's two-line contact budget was confirmed reachable through the real\nadapter path — extra_links is an unbounded vec, and twelve of them wrapped a\nthird line to baseline y=86 against a 79.4pt band bottom, white on white.\nband-h is now measured from its own content inside a context (the 24/28mm\nthin minimums become floors; descender padding tuned so one and two lines\nstay byte-identical), making any line count safe. The duplicated rich-text\nladder collapses to one render-runs-in(runs, link-fill) — and mutating the\nband's link fill to the body accent revealed no test pinned it, so the band\nregion now asserts zero accent-filled glyphs. The docx band decision routes\nthrough theme::has_header_band with droppable-band semantics (meridian also\npaints a band but is ats-tier with no toggle; a test pins band templates to\nthe design tier, and meridian's pre-existing pdf/docx divergence is recorded,\nnot changed). Tier matrix gains a length-plus-membership guard, awesome's\nname color is pinned by equality, and the svg measurement helper now panics\non transforms it cannot parse instead of returning zero — the strict parser\nfired on nothing across the engine suite, and the silent zero had been\nhiding the link-fill gap above. Docs: route matrix completed to all sixteen,\nthe copied lightening literal replaced with pointers, and the preview\npipeline documented as its actual two consumers. All rendered svgs verified\nbyte-identical before and after by hash.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T07:58:30+02:00",
+          "tree_id": "fac4cd7de6b833a6f85a78f74a70bb2eff483045",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/3ca7d9cb6411670f85bbf5f63ecf3cc08a66b9d8"
+        },
+        "date": 1786428858096,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1666480,
+            "range": "± 116807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2020322,
+            "range": "± 25936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 208488,
+            "range": "± 12470",
             "unit": "ns/iter"
           }
         ]
