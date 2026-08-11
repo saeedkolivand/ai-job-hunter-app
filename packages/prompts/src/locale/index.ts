@@ -390,6 +390,13 @@ export function hasResumeConventions(locale?: string): boolean {
   return key in CONVENTIONS;
 }
 
+/**
+ * Every locale {@link resumeConventions} has a curated entry for. Exported so
+ * the Rust codegen (`pnpm gen:prompts`) can enumerate the SAME set instead of
+ * hardcoding a second list that silently misses a locale added here.
+ */
+export const RESUME_CONVENTION_LOCALES: readonly string[] = Object.keys(CONVENTIONS);
+
 // ─── Token estimation factors ─────────────────────────────────────────────────
 
 /**

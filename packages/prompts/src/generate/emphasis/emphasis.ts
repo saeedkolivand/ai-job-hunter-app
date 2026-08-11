@@ -129,6 +129,23 @@ export function buildGroundingBlock(resumeBody: string, topRequirements: string[
 }
 
 /**
+ * The one-line factual-grounding rule appended to every user prompt that hands
+ * the model a résumé plus a job ad: the résumé is the ONLY source of claims
+ * about the candidate, and the job ad is a target, never evidence.
+ *
+ * Extracted because it was the SAME sentence, byte for byte, in the cover
+ * letter, the application email, and the application-questions prompts — the
+ * shape this codebase keeps re-discovering, where a hardening lands on one copy
+ * and silently not the others. It is also frozen into Rust by
+ * `pnpm gen:prompts` (`pipeline/resume/prompt_blocks.rs`) so the backend's own
+ * staged prompts use the identical wording rather than a fourth paraphrase.
+ *
+ * Deliberately NOT parameterized: the fence tag names (`<candidate_resume>`,
+ * `<job_ad>`) are the crate-wide ADR-010 tags every one of those prompts uses.
+ */
+export const FACTUAL_GROUNDING_RULES = `Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.`;
+
+/**
  * Neutralize a fence tag inside untrusted text so it can't forge a boundary of
  * the fence it's about to be wrapped in (e.g. a hostile note containing
  * `</web_search_notes>` closing the block early and appending fake

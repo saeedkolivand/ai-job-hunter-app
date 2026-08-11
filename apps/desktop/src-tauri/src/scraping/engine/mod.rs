@@ -11,8 +11,10 @@ use futures::StreamExt as _;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
+
+use crate::jobs::cancel::CancelRegistry;
 
 mod location_filter;
 
@@ -128,7 +130,13 @@ pub struct ScraperEngine {
     /// without cancelling running work.
     semaphore: ArcSwap<Semaphore>,
     /// Active jobs keyed by job_id. Used by `cancel(job_id)`.
-    jobs: Arc<Mutex<HashMap<String, CancellationToken>>>,
+    ///
+    /// Shared, not owned: this is the app-wide [`CancelRegistry`] (L1
+    /// `jobs::cancel`), which agent runs — and, from Phase 3, pipeline runs —
+    /// also register against, so ONE `jobs_cancel` reaches every job kind. The
+    /// engine keeps the same three verbs it always had; they are now thin
+    /// delegations.
+    jobs: Arc<CancelRegistry>,
     /// Process-wide browser semaphore — one chromiumoxide session at a time.
     /// Shared across concurrent `scrape_boards` calls so two jobs that each
     /// include a browser board cannot spin up two headless instances at once.
@@ -139,7 +147,7 @@ impl ScraperEngine {
     pub fn new() -> Self {
         Self {
             semaphore: ArcSwap::from_pointee(Semaphore::new(2)),
-            jobs: Arc::new(Mutex::new(HashMap::new())),
+            jobs: Arc::new(CancelRegistry::new()),
             browser_sem: Arc::new(Semaphore::new(1)),
         }
     }
@@ -586,16 +594,7 @@ impl ScraperEngine {
         // token for the whole run) or mint a fresh one. Track whether WE minted it
         // so we only remove the slot when we own it — a pre-registered token is
         // managed by the caller (Autopilot calls `unregister_token` itself).
-        let (parent, we_minted) = {
-            let mut jobs = self.jobs.lock().await;
-            if let Some(existing) = jobs.get(&job_id) {
-                (existing.clone(), false)
-            } else {
-                let token = CancellationToken::new();
-                jobs.insert(job_id.clone(), token.clone());
-                (token, true)
-            }
-        };
+        let (parent, we_minted) = self.jobs.get_or_register(&job_id).await;
 
         // Dedupe (first-seen order) + truncate to max_boards_per_batch() (the
         // registry size) so a crafted payload with thousands of valid ids
@@ -845,7 +844,7 @@ impl ScraperEngine {
         // F5 — only remove the token slot when we minted it. A pre-registered
         // token (Autopilot pre-registers its own) is managed by the caller.
         if we_minted {
-            self.jobs.lock().await.remove(&job_id);
+            self.jobs.unregister(&job_id).await;
         }
 
         let mut all_postings: Vec<JobPosting> = Vec::new();
@@ -957,41 +956,38 @@ impl ScraperEngine {
 
     /// Signal cancellation to a running job by id. No-op if the id is unknown.
     ///
-    /// Cancels the slot **in place** — it is deliberately NOT removed. Removing
-    /// it lost any cancel that landed before the run reached
-    /// [`Self::scrape_boards_with_resolver_and_overrides`]: that function mints a
-    /// FRESH (un-cancelled) token when it finds no slot, so the run proceeded as
-    /// if nothing had been cancelled. Callers do pre-scrape async work between
-    /// `register_token` and the engine call — `commands::scrape` awaits a geocode
-    /// backfill, and the engine's own `sem.acquire_owned()` can wait seconds
-    /// behind other scrapes — so that window is real, not theoretical. Leaving
-    /// the cancelled token in place makes the mint-fresh path unreachable for a
-    /// cancelled job: the run reuses the slot, sees `is_cancelled()`, and stops.
+    /// Thin delegation to the shared [`CancelRegistry`], which owns the
+    /// cancel-in-place semantics and the "whoever registered removes it"
+    /// ownership rule — see [`CancelRegistry::cancel`] for both, and
+    /// [`Self::cancel_registry`] for why the map is no longer the engine's.
     ///
-    /// No leak: the slot is owned by whoever registered it, and every owner
-    /// removes it on EVERY exit path — `commands::scrape::scrape_boards` (both
-    /// the early cancelled return and after the engine call),
-    /// `commands::autopilot::autopilot_run` (scrape-Err, cancelled, and success
-    /// paths), and `commands::agent::agent_run` (every validation failure via
-    /// `fail_run`, plus the spawned loop's own exit) — while an engine-minted
-    /// slot is removed by the `we_minted` branch. An unknown id still inserts
-    /// nothing.
+    /// The owners that remove their own slot are unchanged:
+    /// `commands::scrape::scrape_boards` (early cancelled return and after the
+    /// engine call), `commands::autopilot::autopilot_run` (scrape-Err,
+    /// cancelled, and success paths), and `commands::agent::agent_run` (every
+    /// validation failure via `fail_run`, plus the spawned loop's own exit) —
+    /// while an engine-minted slot is removed by the `we_minted` branch.
     pub async fn cancel(&self, job_id: &str) {
-        let jobs = self.jobs.lock().await;
-        if let Some(token) = jobs.get(job_id) {
-            token.cancel();
-        }
+        self.jobs.cancel(job_id).await;
     }
 
     /// Register a job token so it can be reached by `cancel(job_id)`. Used by
-    /// the apply flow, which manages its own token outside `scrape_boards`.
+    /// callers that manage their own token outside `scrape_boards`.
     pub async fn register_token(&self, job_id: &str, token: CancellationToken) {
-        self.jobs.lock().await.insert(job_id.to_string(), token);
+        self.jobs.register(job_id, token).await;
     }
 
     /// Remove a registered token. Idempotent.
     pub async fn unregister_token(&self, job_id: &str) {
-        self.jobs.lock().await.remove(job_id);
+        self.jobs.unregister(job_id).await;
+    }
+
+    /// The shared cancel registry this engine dispatches through, so a caller
+    /// with no scraping concern (agent runs; pipeline runs from Phase 3) can
+    /// register against the SAME map `jobs_cancel` reaches without borrowing the
+    /// engine. `lib.rs::setup` manages this clone as app state.
+    pub fn cancel_registry(&self) -> Arc<CancelRegistry> {
+        self.jobs.clone()
     }
 
     /// Resize the concurrency limit. Already-running jobs keep their permits

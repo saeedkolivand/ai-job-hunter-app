@@ -95,11 +95,16 @@ jobs:
 
       - name: 🧭 Path filter
         id: filter
-        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             frontend:
               - 'apps/desktop/src/**'
+              # Root-level build/test config (vite/vitest/playwright/tsconfig/
+              # package.json/index.html/e2e.html). Patterns are picomatch: without
+              # '**' they match apps/desktop/ root ONLY, so src-tauri/ is untouched
+              # and the rust filter stays the sole owner of it.
+              - 'apps/desktop/*.{json,ts,html}'
               - 'apps/landing/**'
               - 'packages/**'
               - 'package.json'
@@ -119,6 +124,9 @@ jobs:
               - 'packages/shared/**'
               - 'pnpm-lock.yaml'
               - 'tsconfig*.json'
+              # The extension job runs through turbo, so its task graph/cache
+              # config is a build input (same reason the frontend filter lists it).
+              - 'turbo.json'
               - '.github/workflows/**'
               - '.github/actions/**'
 
@@ -667,6 +675,9 @@ jobs:
       # pass/fail. fail-on-empty is intentionally left unset (defaults off).
       - name: 🧪 Frontend test report
         if: always()
+        # Advisory: a fork PR's read-only token 403s the check-run API itself —
+        # that must not fail a green tests job (same guard as the coverage steps).
+        continue-on-error: true
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Frontend tests (vitest)
@@ -679,6 +690,8 @@ jobs:
 
       - name: 🦀 Rust test report
         if: always()
+        # Advisory: same fork-PR 403 guard as the frontend report step above.
+        continue-on-error: true
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Rust tests (nextest)

@@ -14,8 +14,71 @@ pub const MENU_NAVIGATE: &str = "menu:navigate";
 pub const MENU_ACTION: &str = "menu:action";
 pub const AUTOPILOT_FOCUS: &str = "autopilot:focus";
 pub const AUTOPILOT_STEP: &str = "autopilot:step";
+pub const PIPELINE_STAGE: &str = "pipeline:stage";
 pub const SCRAPE_PROGRESS: &str = "scrape:progress";
 pub const SCRAPE_ITEM: &str = "scrape:item";
 pub const BOARDS_LOGIN_STATUS: &str = "boards:login-status";
 pub const SYSTEM_ACCENT_CHANGED: &str = "system:accentChanged";
 pub const EXTENSION_BRIDGE_CHANGED: &str = "extensionBridge:changed";
+
+/// Closed phase vocabulary for a `pipeline:stage` event, in lifecycle order.
+/// Source of truth: `PIPELINE_STAGE_PHASES` in
+/// packages/shared/src/events/pipeline.ts.
+pub const PIPELINE_STAGE_PHASES: &[&str] = &["start", "finish", "error"];
+
+/// Longest a `pipeline:stage` event's `sectionKey` may be, in UTF-16 code
+/// units (the unit the TS guard counts). Every LEGAL key is ASCII, so bytes,
+/// chars and UTF-16 units agree for anything that could pass the grammar; a
+/// byte-length check on a hostile value is only ever STRICTER, and such a
+/// value fails the grammar regardless.
+///
+/// NORMATIVE: an over-length `sectionKey` must be REJECTED, never truncated —
+/// a truncated key names a different section.
+pub const SECTION_KEY_MAX_LENGTH: usize = 24;
+
+/// The `sectionKey` values that carry no index — the fixed half of the closed
+/// grammar (`summary` | `skills` | `experience:<u8>` | `projects` |
+/// `education`). Source of truth: `PIPELINE_SECTION_KEYS_FIXED` in
+/// packages/shared/src/events/pipeline.ts.
+pub const PIPELINE_SECTION_KEYS_FIXED: &[&str] = &["summary", "skills", "projects", "education"];
+
+/// Prefix of the indexed half: `experience:` followed by the CANONICAL decimal
+/// form of a `u8` — ASCII digits only, no sign, no whitespace, and no leading
+/// zeros (`0` itself is legal). Source of truth:
+/// `PIPELINE_SECTION_EXPERIENCE_PREFIX` in packages/shared/src/events/pipeline.ts.
+pub const PIPELINE_SECTION_EXPERIENCE_PREFIX: &str = "experience:";
+
+/// Runtime guard for a `pipeline:stage` `sectionKey` — the Rust twin of the TS
+/// `isPipelineSectionKey`, checked in the same order: length first (so a hostile
+/// value is rejected before any further work), then the fixed half, then the
+/// indexed half.
+///
+/// NORMATIVE: a `sectionKey` that fails this must never reach the wire.
+///
+/// The index is validated as canonical ASCII decimal BEFORE it is parsed,
+/// because `str::parse::<u8>` is LOOSER than the grammar: it accepts `+1` and
+/// `007`, which the TS regex `^(0|[1-9][0-9]{0,2})$` rejects. A bare parse would
+/// let `experience:01` — a second spelling of `experience:1` — onto a wire whose
+/// vocabulary is supposed to be closed.
+pub fn is_pipeline_section_key(value: &str) -> bool {
+    // Bytes, not UTF-16 units: every LEGAL key is ASCII so the two agree on
+    // anything that could pass, and a byte count is only ever stricter.
+    if value.len() > SECTION_KEY_MAX_LENGTH {
+        return false;
+    }
+    if PIPELINE_SECTION_KEYS_FIXED.contains(&value) {
+        return true;
+    }
+    let Some(index) = value.strip_prefix(PIPELINE_SECTION_EXPERIENCE_PREFIX) else {
+        return false;
+    };
+    if index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    if index.len() > 1 && index.starts_with('0') {
+        return false;
+    }
+    // Only now is a parse safe to trust: it contributes the `<= 255` bound the
+    // TS guard applies with `Number(index) <= 255`.
+    index.parse::<u8>().is_ok()
+}

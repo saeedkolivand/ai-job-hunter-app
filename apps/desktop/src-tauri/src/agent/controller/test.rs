@@ -4,6 +4,14 @@ use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::VecDeque;
 
+// The loop's shipped ceilings, read from the ONE place they are declared
+// (`BUDGET` = `Budget::AGENT_PREP`) rather than re-typed here, so these tests
+// assert against whatever is actually configured.
+const MAX_AGENT_STEPS: usize = BUDGET.max_steps;
+const MAX_AGENT_TOKENS: usize = BUDGET.max_tokens;
+const AGENT_STEP_TIMEOUT: Duration = BUDGET.step_timeout;
+const CONFIRM_TIMEOUT: Duration = BUDGET.confirm_timeout;
+
 /// A scripted fake: pops a canned [`AgentTurn`] per `turn()` (repeating the last
 /// one forever), records executed read tools + narrated steps + the exact
 /// transcript it was handed each call, and returns a canned read result. No

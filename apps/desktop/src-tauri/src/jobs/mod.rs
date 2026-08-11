@@ -19,6 +19,10 @@ use serde_json::Value;
 
 use crate::db::{now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 
+/// Cancellation tokens for in-flight jobs/runs, keyed by id — the tracker's
+/// sibling: this module records what a job DID, `cancel` records how to STOP it.
+pub mod cancel;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]

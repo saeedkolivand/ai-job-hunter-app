@@ -1,6 +1,6 @@
 # Development Setup — AI Job Hunter
 
-Last updated: 2026-08-07
+Last updated: 2026-08-11
 
 This guide gets you from zero to a running dev environment.
 
@@ -241,8 +241,8 @@ Storage is a set of **per-domain [SQLite][sqlite] files** (rusqlite, bundled) in
 app data directory — there is no single `app.db` and no separate vector store. The main
 files include `documents.db` (imported documents **plus** embedding vectors — the
 `vectors`, `posting_vectors`, `match_scores` tables), `jobs.db`, `applications.db`,
-`ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`, and
-`pipeline_cache.db`.
+`ai_generations.db`, `job_preferences.db`, `contact_profile.db`, `referrals.db`,
+`pipeline_cache.db`, and `pipeline_runs.db`.
 
 App-data directory per OS (rooted at your home directory, `<HOME>`):
 
@@ -319,21 +319,22 @@ scoop install gitleaks               # Windows (alternative)
 
 Then run `gitleaks detect --source . -v` in the repo root to catch hardcoded credentials, API keys, etc. The reviewer falls back to a grep-based scan if gitleaks is absent.
 
-### Pre-push AI review
+### Pre-push deterministic gate
 
-An LLM review runs immediately before each push. The gate has **three layers** (run sequentially, cheapest first, short-circuiting on the first blocking layer):
+A deterministic review runs immediately before each push (LLM review was removed 2026-08-11; see CLAUDE.md Review gates). The gate has **two layers** (run sequentially, cheapest first, short-circuiting on the first blocking layer):
 
 1. **Cache fast-path** — hunks already reviewed by a prior Stop gate pass through in <1s
 2. **ast-grep deterministic scan** — structural rules from `.claude/review-rules/` (zero false-positives); any HIGH/CRITICAL finding **blocks the push immediately**
-3. **One Sonnet schema-1 review** — in `RATCHET warn mode` (advisory); set `REVIEW_MODE=block` via environment variable (`REVIEW_MODE=block git push`) or permanently by exporting it / flipping the script default to enforce block-on-finding after `/review-stats` shows a clean false-positive rate
+
+**(Removed)** — Layer 3 (One Sonnet schema-1 review in RATCHET warn mode, with REVIEW_MODE environment variable) was the pre-push LLM review, removed per owner decision. LLM review now happens at pre-PR via the internal agent chain, CodeRabbit, and CI (`🤖 AI Review OK` required check).
 
 **Escape hatches:**
 
-- `REVIEW_SKIP=1 git push` — skips AI review but is **audited** in `.claude/.review-metrics.jsonl` (preferred over `--no-verify`, which hides the audit trail)
+- `REVIEW_SKIP=1 git push` — skips the local Stop gate review but is **audited** in `.claude/.review-metrics.jsonl` (preferred over `--no-verify`, which hides the audit trail)
 - `AJH_SKIP_CARGO_TEST=1` — skip `cargo test` only (legacy Windows `STATUS_ENTRYPOINT_NOT_FOUND` DLL fault; fixed in build.rs via delay-load comctl32; CI is authoritative). Use this escape hatch only on hosts without the fix.
 - `--no-verify` — unsafe; bypasses entire hook but leaves no audit trail
 
-The hook flows: `CHANGED` files → `RANGES` per commit → passed to `scripts/pre-push-review.mjs` via `PREPUSH_RANGES` env var. If the script exits non-zero, the push fails; `REVIEW_SKIP=1` allows the push and logs it.
+The hook flows: `CHANGED` files → `RANGES` per commit → deterministic scanning (ast-grep Tier-0, fmt/clippy/tests/deny/drift). If a violation is found, the push fails; `REVIEW_SKIP=1` allows the push and logs it. AI review happens later at pre-PR via internal agent chain + CodeRabbit + CI.
 
 ---
 

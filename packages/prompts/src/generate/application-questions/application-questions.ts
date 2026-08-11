@@ -23,6 +23,7 @@ import {
   buildSalaryRangeBlock,
   buildStyleReferenceBlock,
   buildWebSearchBlock,
+  FACTUAL_GROUNDING_RULES,
   type SalaryRange,
 } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
@@ -204,7 +205,7 @@ ${resumeBody}
 
 ${buildJobAdBlock(jobAd, jobAdChars)}
 ${researchBlock}${webSearchBlock}${applicantBlock}${salaryBlock}${styleBlock}
-Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
+${FACTUAL_GROUNDING_RULES}
 
 ### CONTEXT ###
 Role: ${meta.jobTitle || 'this role'} at ${meta.companyName || 'this company'}

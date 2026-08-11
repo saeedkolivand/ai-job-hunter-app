@@ -5,13 +5,16 @@
  * NEVER hard-fails the session: any error → exit 0 (don't block the user on a hook bug),
  * but every meaningful run — including failures — logs one line to .claude/.review-metrics.jsonl.
  *
- * 2026-07-28: the LLM review moved OFF the Stop hook to pre-push
- * (scripts/pre-push-review.mjs) and CI — 74.7% of 830 stop-gate LLM calls died in
- * their own 120s timeout for 68 findings / 8 blocks ever; the per-finish nested
- * `claude -p` was the setup's single largest recurring token cost. The Stop gate
+ * 2026-07-28: the LLM review moved OFF the Stop hook to pre-push and CI — 74.7%
+ * of 830 stop-gate LLM calls died in their own 120s timeout for 68 findings /
+ * 8 blocks ever; the per-finish nested `claude -p` was the setup's single
+ * largest recurring token cost. 2026-08-11: the pre-push half was removed too
+ * (CodeRabbit + CI cover it), so CI is the only repository-owned automated LLM
+ * gate (the interactive pre-PR agent chain and CodeRabbit still review, outside
+ * this repo's own automation). The Stop gate
  * keeps every deterministic tier: guards → skip-list → ledger re-emits → Tier 0
  * ast-grep arch-guards → reviewed-hash cache → verdict. Unresolved ledger findings
- * (seeded by the pre-push/CI LLM reviews) still re-block a finish until the file
+ * (seeded by the CI LLM review) still re-block a finish until the file
  * actually changes.
  * Scope: the full branch range (merge-base with origin/main → HEAD) PLUS the working
  *        tree and untracked files — committing does not blind the gate.
@@ -342,8 +345,12 @@ try {
   }
 
   // 6. reviewed-hash cache (body-only hunk hashes; line-number agnostic).
-  // Seeded ONLY by the pre-push/CI LLM reviews now — the Stop gate reads it to
-  // fast-exit on already-reviewed-clean code but never writes reviewed-clean state.
+  // READ-ONLY here — the Stop gate fast-exits on already-reviewed-clean code but
+  // never writes reviewed-clean state. Its only writer was the pre-push LLM gate,
+  // deleted 2026-08-11, so on a fresh clone the file is simply absent and every
+  // run falls through to the deterministic tiers below (a slower pass, never a
+  // wrong one). Left in place: a still-present cache from before the removal is
+  // valid, and the CI surface may seed it again.
   const cachePath = path.join(cwd, '.claude', '.review-cache');
   let cache = new Set();
   try {
