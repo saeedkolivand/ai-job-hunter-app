@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786438354392,
+  "lastUpdate": 1786446866768,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6671,6 +6671,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 299658,
             "range": "± 10820",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5dc139577a3b6a76c2f2f4101d7a901197413080",
+          "message": "feat: integrate the no-ai-slop catalog into the anti-ai-tell system (#967)\n\n* feat: integrate the no-ai-slop catalog into the anti-ai-tell system\n\nCurates all ~90 catalog items through a four-rule checkability bar (fixed\nform, zero factual content, unconditional prompt ban, no hidden domain\nmeaning): eight high-precision entries join the validated lexical tier\n(paramount, transformative, multifaceted, ever-evolving, paradigm shift,\nmeticulous, widely regarded as, it is worth noting), ~44 items — including\nevery construction pattern (binary contrasts, colon reveals, fake-profound\nkickers, portability test, show-don't-tell) — become prompt guidance the\nmodel is instructed by but user text is never flagged for, and ~19 are\nskipped with recorded reasons. Zero structural checks shipped: both\ncandidates fired on truthful counter-examples (\"shipped a status page,\nshowcasing live latency\"; a polite self-answered close) — the family\nalready removed twice. Words naming real work (utilize, facilitate,\nspearhead, beacon) stay validator-invisible by rule, pinned by negative\ncontrols over an ordinary resume; apostrophe-bearing entries are blocked by\na shape test (matching never normalizes punctuation, so they were half-dead\nby construction); German stays curated-not-translated with a leak pin.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: depth-aware guidance tier and the critic advisories on the tell catalog\n\nThe anti-tell blocks split into checked and guidance tiers per depth: brief\nships exactly the lines that back a voice.* check (the validator cannot see\nwhich depth produced the output, so brief may only instruct what it also\nverifies), dropping the block share of the small-model letter prompt from\n48 to 26 percent; full and task keep the complete text and every other call\nsite is byte-identical via the depth default. The voice formatting line is\nscoped so it no longer contradicts the letter's keyword-bolding output\nrules, pinned by a prompt-consistency test. transformative moves to the\nprompt tier — it fails the catalog's own no-hidden-domain-meaning rule on\ntransformative learning and transformative justice, both now negative\ncontrols. Curly apostrophes fold to ascii at the two ai_tell_issues call\nsites only (header-name matching untouched), making contraction tells\ncheckable: it's worth noting, it's important to note and the today's-world\nfiller join their frequent surface forms — the uncontracted twins needed\ntheir own entries, the for-free hypothesis tested false. Shape guards gain\ndouble-space and leading-non-word checks; the German construction-guidance\nasymmetry is recorded as an evidence-driven deferral.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: ensemble findings — depth everywhere, honest tiers, paramount out\n\nThe depth tiering reaches all nine prose consumers instead of two:\nreferral, application-email, rewrite and the interview and answer builders\nthread their resolved depth (the last three gained a backward-compatible\ntarget param), roughly halving every small-model system prompt — a brief\nreferral note drops from 7129 to 4140 chars. The CHECKED constants now\ncarry only validator-backed phrases: ten prose phrases and nine lexical\nstrays the module's own tests classify as never-validated moved to the\nguidance tier, enforced by a mechanical reverse test that parses the\nquoted bans out of the checked lines (a bogus phrase added there now\nfails it), shrinking the brief blocks further. paramount moves to the\nprompt tier — Paramount Global is a real employer and the exemption reads\nonly the resume, never the job ad; the employer-name exemption widening is\nrecorded as a deferral with its injection risk noted (company name, not ad\nbody). The intermediate-commit baselines are reworded to what main\nactually shipped, the budget bound ratchets to a quarter, the opener\nmatcher folds curly apostrophes like its siblings (with a contraction\nopener appended and the load-bearing indices documented), and the vacuous\nbold-ban iteration is replaced by unguarded cases per ban-bearing depth.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n* fix: coderabbit round-1 findings on the voice-block composition and test rigor\n\nThe application-email builder composed its voice block only in the full\nbranch — brief and task carried no anti-tell rules at all, the format\nskeleton's two opener examples being the entire anti-slop surface; the\ndepth-scoped block is now hoisted into one local composed by all three\nbranches (full byte-identical), pinned per depth with mutations failing\nexactly the branch they remove. The opener tests assert through a\nfirst_evidence Option so a miss names the fixture; the letter negative\ncontrol gains the genuinely missing template-opener silence pin while four\ncomments naming a voice.ai_tell_prose code that never existed are\ncorrected; the honesty test's normalize folds curly apostrophes like the\nmatcher it mirrors; and the quoted-ban parser throws loudly on an\nunbalanced quote instead of silently shifting every later ban into prose.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-08-11T13:03:06+02:00",
+          "tree_id": "fdba463ea95cb1a761db790dbed469f246597f28",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/5dc139577a3b6a76c2f2f4101d7a901197413080"
+        },
+        "date": 1786446866420,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2167338,
+            "range": "± 9267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2553596,
+            "range": "± 17642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 295607,
+            "range": "± 7506",
             "unit": "ns/iter"
           }
         ]
