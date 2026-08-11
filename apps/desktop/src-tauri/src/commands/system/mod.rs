@@ -237,6 +237,19 @@ pub async fn system_set_performance_mode(
         );
     }
 
+    // Same reclaim moment for the pipeline/agent run history. It takes NO tier
+    // knobs on purpose: a run trail is user HISTORY, not a cache, so the
+    // low-memory tier must not be able to delete the run the user is looking
+    // at. Its bound is the fixed newest-N-per-job retention
+    // (`PipelineRunStore::prune`); this hook is only where "reclaim now" happens.
+    if let Some(runs) = app.try_state::<crate::pipeline::runs::PipelineRunStore>() {
+        runs.prune();
+    } else {
+        tracing::warn!(
+            "system_set_performance_mode: PipelineRunStore unavailable; skipping run-history prune"
+        );
+    }
+
     json!(null)
 }
 

@@ -18,6 +18,8 @@ pub mod event_payloads;
 #[cfg(test)]
 mod event_payloads_test;
 pub mod events;
+#[cfg(test)]
+mod events_test;
 pub mod matching;
 pub mod provider_slots;
 pub mod referrals;

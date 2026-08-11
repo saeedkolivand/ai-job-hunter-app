@@ -32,6 +32,17 @@ import { EXTENSION_BRIDGE_EVENTS } from './extensionBridge.js';
 import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
+import {
+  isPipelineSectionKey,
+  PIPELINE_EVENTS,
+  PIPELINE_SECTION_EXPERIENCE_PREFIX,
+  PIPELINE_SECTION_KEYS_FIXED,
+  PIPELINE_STAGE_PHASES,
+  type PipelineSectionKey,
+  type PipelineStageEvent,
+  type PipelineStagePhase,
+  SECTION_KEY_MAX_LENGTH,
+} from './pipeline.js';
 import { SCRAPE_EVENTS, type ScrapeItemEvent, type ScrapeProgressEvent } from './scrape.js';
 import { SYSTEM_EVENTS } from './system.js';
 import { UPDATER_EVENTS } from './updater.js';
@@ -46,6 +57,7 @@ export const EVENT_CHANNELS = {
   updater: UPDATER_EVENTS,
   menu: MENU_EVENTS,
   autopilot: AUTOPILOT_EVENTS,
+  pipeline: PIPELINE_EVENTS,
   scrape: SCRAPE_EVENTS,
   boards: BOARDS_EVENTS,
   system: SYSTEM_EVENTS,
@@ -73,6 +85,7 @@ export interface AppEvents {
   'menu:action': MenuActionEvent;
   'autopilot:focus': AutopilotFocusEvent;
   'autopilot:step': AutopilotStepEvent;
+  'pipeline:stage': PipelineStageEvent;
   'scrape:progress': ScrapeProgressEvent;
   'scrape:item': ScrapeItemEvent;
   'boards:login-status': BoardsLoginStatusEvent;
@@ -88,12 +101,21 @@ export {
   BOARDS_EVENTS,
   type BoardsLoginStatusEvent,
   EXTENSION_BRIDGE_EVENTS,
+  isPipelineSectionKey,
   JOBS_EVENTS,
   MENU_EVENTS,
   NOTIFICATIONS_EVENTS,
+  PIPELINE_EVENTS,
+  PIPELINE_SECTION_EXPERIENCE_PREFIX,
+  PIPELINE_SECTION_KEYS_FIXED,
+  PIPELINE_STAGE_PHASES,
+  type PipelineSectionKey,
+  type PipelineStageEvent,
+  type PipelineStagePhase,
   SCRAPE_EVENTS,
   type ScrapeItemEvent,
   type ScrapeProgressEvent,
+  SECTION_KEY_MAX_LENGTH,
   SYSTEM_EVENTS,
   UPDATER_EVENTS,
 };

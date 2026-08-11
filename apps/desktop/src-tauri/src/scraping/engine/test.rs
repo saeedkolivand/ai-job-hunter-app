@@ -639,6 +639,43 @@ async fn cancel_leaves_the_slot_in_place_and_is_idempotent() {
     );
 }
 
+/// The engine's three cancel verbs now DELEGATE to the shared
+/// `jobs::cancel::CancelRegistry`, and `lib.rs` manages the very handle
+/// `cancel_registry()` returns as app state. That sharing is what keeps a
+/// non-scraping run cancellable: `commands::agent::agent_run` registers through
+/// the registry while `jobs_cancel` still dispatches through `engine.cancel`.
+/// If the two ever became separate maps, an agent run's Stop button would
+/// silently do nothing — so pin BOTH directions.
+#[tokio::test]
+async fn the_engine_and_its_exposed_registry_are_the_same_map() {
+    let engine = ScraperEngine::new();
+    let registry = engine.cancel_registry();
+
+    // Registered like an agent run (registry side) → cancelled like any job
+    // (engine side, which is what `jobs_cancel` calls).
+    let agent_token = CancellationToken::new();
+    registry.register("job-agent", agent_token.clone()).await;
+    engine.cancel("job-agent").await;
+    assert!(
+        agent_token.is_cancelled(),
+        "a registry-side registration must be reachable by engine.cancel"
+    );
+
+    // ...and the reverse: an engine-side registration is visible to the registry.
+    let scrape_token = CancellationToken::new();
+    engine
+        .register_token("job-scrape", scrape_token.clone())
+        .await;
+    registry.cancel("job-scrape").await;
+    assert!(scrape_token.is_cancelled());
+
+    // Both slots live in ONE map, and either side can release them.
+    assert_eq!(registry.live_count().await, 2);
+    engine.unregister_token("job-agent").await;
+    registry.unregister("job-scrape").await;
+    assert_eq!(registry.live_count().await, 0);
+}
+
 // ── run_boards tests ──────────────────────────────────────────────────────────
 
 #[tokio::test]

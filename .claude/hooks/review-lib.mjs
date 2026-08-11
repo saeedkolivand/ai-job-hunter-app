@@ -1,7 +1,10 @@
 /**
  * review-lib.mjs — shared core for every AI-review surface (ADR-0008 program):
- * the Stop gate (review-gate.mjs), the pre-push gate (scripts/pre-push-review.mjs)
- * and the CI verdict script (scripts/ci-review-verdict.mjs).
+ * the Stop gate (review-gate.mjs) and the CI verdict script
+ * (scripts/ci-review-verdict.mjs). The pre-push LLM gate was the third surface
+ * until 2026-08-11, when it was removed from .husky/pre-push and its script
+ * deleted (CodeRabbit + CI cover the same ground); the review/parse/metrics
+ * contracts below are unchanged.
  *
  * Owns the four contracts:
  *  1. Finding schema v1 — the ONLY model output (one fenced ```json block).
