@@ -10,6 +10,7 @@
  * `console.warn`, never thrown) rather than surfacing a user-facing error.
  */
 import type { ContentReportPayload } from '@ajh/shared/ipc';
+import { GENERATION_DEPTHS, type GenerationDepth } from '@ajh/shared/schemas';
 
 import { getClient } from '../app-client';
 import { errorDetail } from '../error-class';
@@ -23,7 +24,18 @@ const EMPTY_REPORT_PLACEHOLDER = '{}';
  * the exact text that produced it, as one indivisible unit.
  */
 export interface QualityReportSlot {
-  /** This document's deterministic content report. */
+  /**
+   * This document's deterministic content report.
+   *
+   * **A slot may carry keys this interface does not declare.** The staged
+   * pipeline writes `fabrications` (see `PipelineQualityReportSlot` in
+   * `@ajh/shared/ipc`) into the same wrapper, and the renderer round-trips that
+   * wrapper on every "Re-check". Those keys travel through `parseSlot` and
+   * `mergeRecheckedReport` as OPAQUE data — deliberately untyped and
+   * unvalidated here, because typing them without validating them is the M-1
+   * defect (an unvalidated cast reaching a panel). A renderer surface that
+   * wants to READ them adds its own validating parser.
+   */
   report: ContentReportPayload;
   /**
    * djb2 hash of the EXACT text `report` validated — same document text, same
@@ -57,9 +69,16 @@ export interface QualityReportSlot {
  */
 export interface QualityReport {
   schemaVersion: 2;
-  /** Which validation pipeline produced this — 'fast' is the only one today
-   *  (the deterministic checks); reserved for a future slower/deeper pass. */
-  pipeline: 'fast';
+  /**
+   * Which pipeline produced this wrapper. `'fast'` is the renderer's own
+   * deterministic pass (`computeQualityReport`); the staged Rust pipeline
+   * writes `'quality'`/`'max'` into the SAME record, and the renderer parses
+   * and re-serializes those wrappers on every "Re-check". Narrowing this back
+   * to the `'fast'` literal would make the round-trip relabel a quality run as
+   * fast. Widened to the shared depth vocabulary so a new depth needs no
+   * renderer change.
+   */
+  pipeline: GenerationDepth;
   generatedAt: number;
   resume?: QualityReportSlot;
   coverLetter?: QualityReportSlot;
@@ -147,6 +166,16 @@ export async function computeQualityReport(params: {
  * disturbs a cover-letter report sitting alongside it. Powers the quality
  * panel's "Re-check" action, which also clears staleness (the fresh hash
  * matches the just-validated text).
+ *
+ * **Replaces only what the re-check actually produced.** A re-check produces a
+ * `ContentReportPayload` and a hash — nothing else. Anything else the slot
+ * carries (the staged pipeline's `fabrications` and the user's per-bullet
+ * Remove/Keep verdicts) is carried over, because this merged wrapper is
+ * PERSISTED: Rust's `merge_quality_report` overlays per top-level key, so a
+ * slot rebuilt from scratch here erases the stored review state — after which
+ * `resolveFabrication` (which only stamps decisions onto existing entries)
+ * no-ops and the run is stuck `needsReview` forever. Same reason `pipeline`
+ * comes from `base` rather than being re-stamped.
  */
 export function mergeRecheckedReport(
   existing: QualityReport | null,
@@ -156,10 +185,16 @@ export function mergeRecheckedReport(
 ): QualityReport {
   const base: QualityReport = existing ?? {
     schemaVersion: 2,
+    // No prior wrapper means no prior pipeline: this IS the fast pass.
     pipeline: 'fast',
     generatedAt: Date.now(),
   };
-  const slot: QualityReportSlot = { report: payload, sourceTextHash: hashText(currentText) };
+  const previous = docKind === 'resume' ? base.resume : base.coverLetter;
+  const slot: QualityReportSlot = {
+    ...previous,
+    report: payload,
+    sourceTextHash: hashText(currentText),
+  };
   return docKind === 'resume' ? { ...base, resume: slot } : { ...base, coverLetter: slot };
 }
 
@@ -178,6 +213,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
+}
+
+/**
+ * The wrapper's own depth, matched against the shared vocabulary so a depth
+ * added to `GENERATION_DEPTHS` survives a round-trip with no change here.
+ * Anything unrecognised (or absent, as in every wrapper written before the
+ * staged pipeline) reads as `'fast'` — the renderer's deterministic pass.
+ */
+function parsePipeline(value: unknown): GenerationDepth {
+  return GENERATION_DEPTHS.find((depth) => depth === value) ?? 'fast';
 }
 
 /** One issue entry's expected shape; a malformed entry is dropped rather than
@@ -235,11 +280,17 @@ function parseSubReport(value: unknown): ContentReportPayload | undefined {
  * either half is dropped entirely rather than half-loaded — a report without
  * its hash is precisely the "green badge on text it never saw" state the slot
  * shape exists to prevent.
+ *
+ * Validated keys are OVERLAID on the source slot, never rebuilt from it: this
+ * parse is one half of a round-trip that ends in a persisting write (parse →
+ * merge → serialize → save), so any key dropped here is deleted from the
+ * record. `fabrications` (and whatever the pipeline adds next) survives as
+ * opaque data — see {@link QualityReportSlot}.
  */
 function parseSlot(value: unknown): QualityReportSlot | undefined {
   if (!isRecord(value) || typeof value.sourceTextHash !== 'number') return undefined;
   const report = parseSubReport(value.report);
-  return report ? { report, sourceTextHash: value.sourceTextHash } : undefined;
+  return report ? { ...value, report, sourceTextHash: value.sourceTextHash } : undefined;
 }
 
 /**
@@ -258,6 +309,13 @@ function parseSlot(value: unknown): QualityReportSlot | undefined {
  * generation" is the correct degrade. Re-pairing a v1 map's hashes with its
  * sub-reports would also resurrect the very ambiguity (which hash belongs to
  * which report after a partial merge?) that v2 exists to remove.
+ *
+ * Everything else about the wrapper is PRESERVED, not re-derived: the parsed
+ * value flows straight back out through `mergeRecheckedReport` →
+ * `serializeQualityReport` → save, so a field this parser invents overwrites
+ * the stored one. `pipeline` is therefore read from the blob (an unknown or
+ * missing depth degrades to `'fast'`, which is what every v1/v2-fast wrapper
+ * written before the staged pipeline existed means anyway).
  */
 export function parseQualityReport(raw: string | undefined): QualityReport | null {
   if (!raw || raw === EMPTY_REPORT_PLACEHOLDER) return null;
@@ -274,7 +332,7 @@ export function parseQualityReport(raw: string | undefined): QualityReport | nul
 
   return {
     schemaVersion: 2,
-    pipeline: 'fast',
+    pipeline: parsePipeline(parsed.pipeline),
     generatedAt: typeof parsed.generatedAt === 'number' ? parsed.generatedAt : 0,
     ...(resume ? { resume } : {}),
     ...(coverLetter ? { coverLetter } : {}),
