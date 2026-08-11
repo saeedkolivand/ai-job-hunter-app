@@ -13,6 +13,8 @@
  *    the Stop affordance (machine reaches `done`).
  *  - A `job.failed` event for the run's own jobId surfaces ErrorState; a
  *    mismatched jobId is ignored.
+ *  - Every wire `stoppedReason` gets its own honest label, and an unknown one
+ *    falls back to the neutral "stopped" key — never to "done"/success-green.
  *  - `job.cancelled` renders the distinct "cancelled" copy, NOT ErrorState.
  *  - Stop calls jobs.cancel with the run's jobId.
  *  - Retry-from-error restarts the run and can reach `done` again.
@@ -497,6 +499,64 @@ describe('PrepApplicationPanel — view the created application', () => {
     await clickStart();
 
     expect(screen.queryByText('jobs.prep.viewApplication')).not.toBeInTheDocument();
+  });
+});
+
+describe('PrepApplicationPanel — stopped-reason labelling', () => {
+  /** Drive a run to a completed terminal state carrying `stoppedReason`. */
+  async function completeWithReason(stoppedReason: string) {
+    openModal();
+    await clickStart();
+    act(() => {
+      stepHandler?.(turnStep({ step: 5, text: 'Proposal.', tools: [], kind: 'proposal' }));
+    });
+    act(() => {
+      jobEventHandler?.({
+        type: 'job.completed',
+        jobId: 'job-1',
+        data: { finalText: 'Proposal.', steps: 4, stoppedReason },
+        ts: 0,
+      });
+    });
+  }
+
+  // The Phase 2 `StoppedReason` variants (Rust `pipeline::budget`). Each needs
+  // its OWN key: unmapped, they collapsed onto `jobs.prep.stopped.done` (the old
+  // `?? 'done'` fallback) and an aborted run reported itself as "Completed" —
+  // the i18n `defaultValue` can't rescue that, because `…stopped.done` exists.
+  it.each([
+    ['run_timeout', 'jobs.prep.stopped.runTimeout'],
+    ['max_tool_calls', 'jobs.prep.stopped.maxToolCalls'],
+    ['max_repairs', 'jobs.prep.stopped.maxRepairs'],
+  ])('labels a %s stop with its own key, warning-toned', async (reason, key) => {
+    await completeWithReason(reason);
+
+    const chip = screen.getByText(key);
+    expect(chip).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.stopped.done')).not.toBeInTheDocument();
+    // Tone follows the same lookup as the copy — an early stop is never
+    // success-green (Tag's `warning`/`success` colour classes).
+    expect(chip.className).toContain('text-amber-400');
+    expect(chip.className).not.toContain('emerald');
+  });
+
+  it('falls back to the neutral stopped label — never "done" — for a reason this build does not know', async () => {
+    await completeWithReason('some_future_reason');
+
+    const chip = screen.getByText('jobs.prep.stopped.stopped');
+    expect(chip).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.stopped.done')).not.toBeInTheDocument();
+    // The raw wire string is not user-facing copy either.
+    expect(screen.queryByText('some_future_reason')).not.toBeInTheDocument();
+    expect(chip.className).toContain('text-amber-400');
+  });
+
+  it('still shows the success-toned completed label for a real `done` stop', async () => {
+    await completeWithReason('done');
+
+    const chip = screen.getByText('jobs.prep.stopped.done');
+    expect(chip.className).toContain('text-emerald-400');
+    expect(screen.queryByText('jobs.prep.stopped.stopped')).not.toBeInTheDocument();
   });
 });
 

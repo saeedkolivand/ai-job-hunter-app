@@ -1960,6 +1960,10 @@
         "budgeted": "Stopped — budget limit reached",
         "maxSteps": "Stopped — reached the step limit",
         "maxTokens": "Stopped — reached the token limit",
+        "runTimeout": "Stopped — the run ran out of time",
+        "maxToolCalls": "Stopped — reached the tool-call limit",
+        "maxRepairs": "Stopped — the output kept failing its checks",
+        "stopped": "Stopped before finishing",
         "cancelled": "Cancelled"
       },
       "confirm": {
