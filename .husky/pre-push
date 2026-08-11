@@ -4,8 +4,9 @@
 # Quality gate mirroring CI, but PATH-FILTERED to the files actually being pushed
 # (the local analogue of CI's dorny/paths-filter). A docs-only or JS-only push
 # skips the Rust/cargo steps entirely — so it can't hit the ajh-tauri.exe build
-# lock — and a Rust-only push skips the JS gate. The filter groups match CI's
-# `frontend`/`rust` filters in .github/workflows/ci-pipeline.yml.
+# lock — and a Rust-only push skips the JS gate. The filter groups mirror CI's
+# `frontend`/`rust`/`extension` filters in .github/workflows/ci-pipeline.yml,
+# which remain the authoritative definitions — keep them in sync.
 #
 # Safety: on ANY uncertainty (no push range, detached state) it falls back to the
 # FULL gate; cross-cutting paths (packages/**, ci-pipeline.yml, .github/actions/**)
@@ -70,9 +71,17 @@ export TURBO_FORCE=1
 ZERO=0000000000000000000000000000000000000000
 CHANGED=""
 HAVE_RANGE=0
+# `git push origin some-other-branch` pushes a ref that is NOT HEAD. The docs
+# fast path below classifies HEAD's own diff, so remember when anything other
+# than HEAD is being pushed and make that case take the full gate instead.
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
+PUSHED_NON_HEAD=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [ -z "${local_sha:-}" ] || [ "$local_sha" = "$ZERO" ]; then
     continue # nothing to push on this ref (or a branch deletion)
+  fi
+  if [ -z "$HEAD_SHA" ] || [ "$local_sha" != "$HEAD_SHA" ]; then
+    PUSHED_NON_HEAD=1
   fi
   if [ "${remote_sha:-$ZERO}" = "$ZERO" ]; then
     base=$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || true)
@@ -85,7 +94,15 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   else
     range="$remote_sha..$local_sha"
   fi
-  files=$(git diff --name-only "$range" 2>/dev/null || true)
+  # A FAILED diff (force-push whose old remote sha is no longer in the local
+  # object DB, a pruned/rewritten sha…) must NOT read as "no files changed" —
+  # that would silently skip every gate. Treat it exactly like an unresolvable
+  # merge-base above: no range → full gate.
+  if ! files=$(git diff --name-only "$range" 2>/dev/null); then
+    HAVE_RANGE=0
+    CHANGED=""
+    break
+  fi
   CHANGED="$CHANGED
 $files"
   HAVE_RANGE=1
@@ -105,8 +122,10 @@ done
 # .claude/settings*, scripts/**, package.json, lockfiles, tsconfig, *.config.*,
 # Cargo.*, .github/**, or any *.rs/*.mjs/*.ts/*.sh/…) drops straight to the full
 # gate below — as does PREPUSH_FULL=1, an undetermined push range (HAVE_RANGE=0),
-# or an unresolvable merge-base. Uncertainty always takes the full gate.
-if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
+# an unresolvable merge-base, or a push of any ref that is not HEAD
+# (PUSHED_NON_HEAD=1), since HEAD's diff would then describe the wrong commits.
+# Uncertainty always takes the full gate.
+if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ] && [ "$PUSHED_NON_HEAD" -eq 0 ]; then
   own_base=$(git merge-base origin/main HEAD 2>/dev/null || true)
   own_files=""
   if [ -n "$own_base" ]; then
@@ -141,11 +160,13 @@ fi
 RUST=""
 NODE=""
 LANDING=""
+EXTENSION=""
 WORKFLOWS=""
 if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
   RUST=1
   NODE=1
   LANDING=1
+  EXTENSION=1
   WORKFLOWS=1
   if [ -n "${PREPUSH_FULL:-}" ]; then
     echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
@@ -161,18 +182,28 @@ else
   if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src-tauri/|(^|/)Cargo\.(toml|lock)\$|\.rs\$|$GATE_AFFECTING"; then
     RUST=1
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src/|^packages/|^package\.json\$|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^eslint\.config\.mjs\$|^vitest\.config\.ts\$|^turbo\.json\$|$GATE_AFFECTING"; then
+  # apps/desktop/<root>.{json,ts,html} = vite/vitest/playwright/tsconfig/
+  # package.json/index.html — build+test inputs that live beside src/, so they
+  # must trip NODE too (mirrors CI's `frontend` filter). Anchored to the app root
+  # via [^/]+ so src-tauri/ still belongs to RUST alone.
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src/|^apps/desktop/[^/]+\.(json|ts|html)\$|^packages/|^package\.json\$|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^eslint\.config\.mjs\$|^vitest\.config\.ts\$|^turbo\.json\$|$GATE_AFFECTING"; then
     NODE=1
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^apps/landing/'; then
     LANDING=1
   fi
+  # Mirrors CI's `extension` filter — that job (ci-pipeline.yml → `extension`)
+  # is the authoritative definition; keep the two in sync. The extension build
+  # consumes @ajh/shared and runs through turbo, hence the cross-cutting paths.
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/extension/|^packages/shared/|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^turbo\.json\$|$GATE_AFFECTING"; then
+    EXTENSION=1
+  fi
   if printf '%s\n' "$CHANGED" | grep -qE '^\.github/workflows/'; then
     WORKFLOWS=1
   fi
   count=$(printf '%s\n' "$CHANGED" | grep -c . || true)
-  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} WORKFLOWS=${WORKFLOWS:-0} (${count} files changed)"
-  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ]; then
+  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} EXTENSION=${EXTENSION:-0} WORKFLOWS=${WORKFLOWS:-0} (${count} files changed)"
+  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ] && [ -z "$EXTENSION" ]; then
     echo "✓ No gated paths changed — skipping the build/test gate."
   fi
 fi
@@ -193,6 +224,15 @@ if [ -n "$NODE" ]; then
 
   echo "▶ Running package tests..."
   pnpm test
+fi
+
+# ── Extension gate (CI `extension` filter) ─────────────────────────────────────
+# Mirrors CI's Extension job, which is the authoritative gate. turbo's `^build`
+# dependsOn builds @ajh/shared first; lint/prettier are covered by the NODE gate
+# (and by CI's always-on lint-format job), so they aren't repeated here.
+if [ -n "$EXTENSION" ]; then
+  echo "▶ Typechecking + testing + building the extension..."
+  pnpm turbo run typecheck test build --filter=@ajh/extension
 fi
 
 # ── IPC codegen drift ──────────────────────────────────────────────────────────

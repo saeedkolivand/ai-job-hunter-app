@@ -100,6 +100,11 @@ jobs:
           filters: |
             frontend:
               - 'apps/desktop/src/**'
+              # Root-level build/test config (vite/vitest/playwright/tsconfig/
+              # package.json/index.html/e2e.html). Patterns are picomatch: without
+              # '**' they match apps/desktop/ root ONLY, so src-tauri/ is untouched
+              # and the rust filter stays the sole owner of it.
+              - 'apps/desktop/*.{json,ts,html}'
               - 'apps/landing/**'
               - 'packages/**'
               - 'package.json'
@@ -119,6 +124,9 @@ jobs:
               - 'packages/shared/**'
               - 'pnpm-lock.yaml'
               - 'tsconfig*.json'
+              # The extension job runs through turbo, so its task graph/cache
+              # config is a build input (same reason the frontend filter lists it).
+              - 'turbo.json'
               - '.github/workflows/**'
               - '.github/actions/**'
 
