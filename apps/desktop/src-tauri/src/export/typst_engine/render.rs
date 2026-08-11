@@ -189,6 +189,12 @@ pub(super) struct JsonStyle {
     /// (all of which are `0.5`) renders byte-identical; only Cadence (`0.75`) sets
     /// a non-default value.
     pub rule_thickness: f32,
+    /// Extra space in pt added ABOVE every section heading, on top of the shared
+    /// `_scale.typ` `sp-section-above`. `0.0` (every template but Deedy) leaves
+    /// the house rhythm untouched. Exists so a template that wants a wider
+    /// rhythm declares it in the registry instead of forking `_scale.typ`'s
+    /// locked values with a local constant in its own `.typ`.
+    pub section_above_extra: f32,
 }
 
 #[derive(Serialize)]
@@ -268,6 +274,7 @@ pub(crate) fn style_from_template(t: &Template) -> JsonStyle {
         heading_tracking: t.heading_tracking,
         link_underline: t.link_underline,
         rule_thickness: t.rule_thickness,
+        section_above_extra: t.section_above_extra,
     }
 }
 

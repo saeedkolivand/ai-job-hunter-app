@@ -8,8 +8,15 @@ import { TEMPLATES } from '@/lib/generate';
 
 import { StepTemplate } from './index';
 
+// `t` is identity EXCEPT for the two caption keys the i18n-resolution test
+// below exercises — those map to distinguishable copy so that test can tell a
+// resolved translation apart from the raw key (see #965 R7).
+const CAPTION_TRANSLATIONS: Record<string, string> = {
+  'aiGenerate.templateCaption.classic': 'Best for maximum ATS safety.',
+  'aiGenerate.templateCaption.jake': 'Best for a dense, classic single column.',
+};
 vi.mock('@ajh/translations', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => CAPTION_TRANSLATIONS[key] ?? key }),
 }));
 
 // TEMPLATE_PREVIEWS, COVER_TEMPLATE_PREVIEWS, and TEMPLATE_CAPTIONS use
@@ -32,7 +39,11 @@ vi.mock('../../../samples', () => {
   return {
     TEMPLATE_PREVIEWS: resumePreviews as Record<string, string>,
     COVER_TEMPLATE_PREVIEWS: coverPreviews as Record<string, string>,
-    TEMPLATE_CAPTIONS: {} as Record<string, string>,
+    // Real captions are i18n keys, not display text — mirrors samples.ts.
+    TEMPLATE_CAPTIONS: {
+      classic: 'aiGenerate.templateCaption.classic',
+      jake: 'aiGenerate.templateCaption.jake',
+    } as Record<string, string>,
   };
 });
 
@@ -398,10 +409,10 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.tier.design')).toBeInTheDocument();
   });
 
-  it('shows a tier badge on every card (8 ATS + 5 design)', () => {
+  it('shows a tier badge on every card (9 ATS + 7 design)', () => {
     renderStep();
-    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(8);
-    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(5);
+    expect(screen.getAllByText('aiGenerate.tier.atsBadge')).toHaveLength(9);
+    expect(screen.getAllByText('aiGenerate.tier.designBadge')).toHaveLength(7);
   });
 
   it('renders the cologne-navy card with an ATS badge', () => {
@@ -414,9 +425,23 @@ describe('StepTemplate', () => {
     expect(within(card as HTMLElement).getByText('aiGenerate.tier.atsBadge')).toBeInTheDocument();
   });
 
+  // ── template caption resolves through i18n (#965 R7) ────────────────────────
+  // TEMPLATE_CAPTIONS holds i18n KEYS; the card must call t() on them, not
+  // render the key (or a raw baked-in string) verbatim.
+
+  it('renders the translated caption for two templates, not the raw i18n keys', () => {
+    // The full gallery renders regardless of the `templateId` prop (selection
+    // only styles the card), so both cards are visible from a single render.
+    renderStep();
+    expect(screen.getByText('Best for maximum ATS safety.')).toBeInTheDocument();
+    expect(screen.getByText('Best for a dense, classic single column.')).toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.templateCaption.classic')).not.toBeInTheDocument();
+    expect(screen.queryByText('aiGenerate.templateCaption.jake')).not.toBeInTheDocument();
+  });
+
   // ── ATS toggle gate is tier-aware (the Lebenslauf photo fix) ─────────────────
 
-  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron'] as const)(
+  it.each(['atelier', 'portrait', 'lebenslauf', 'aria', 'saffron', 'awesome', 'deedy'] as const)(
     'shows the ATS toggle for the design-tier template %s',
     (id) => {
       renderStep({ templateId: id });
@@ -432,6 +457,8 @@ describe('StepTemplate', () => {
     'throughline',
     'cadence',
     'regent',
+    'cologne-navy',
+    'jake',
   ] as const)('hides the ATS toggle for the ATS-tier template %s', (id) => {
     renderStep({ templateId: id });
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
@@ -447,6 +474,19 @@ describe('StepTemplate', () => {
     expect(screen.getByText('aiGenerate.atsModeHintPhoto')).toBeInTheDocument();
     expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
   });
+
+  // Awesome/Deedy are design-tier but neither two-column NOR photo-bearing —
+  // routing them to the photo hint is factually false (no photo to remove).
+  // They need the decorative-only hint instead (F1).
+  it.each(['awesome', 'deedy'] as const)(
+    'uses the decorative hint (not the false photo hint) for %s',
+    (id) => {
+      renderStep({ templateId: id });
+      expect(screen.getByText('aiGenerate.atsModeHintDecorative')).toBeInTheDocument();
+      expect(screen.queryByText('aiGenerate.atsModeHintPhoto')).not.toBeInTheDocument();
+      expect(screen.queryByText('aiGenerate.atsModeHintTwoColumn')).not.toBeInTheDocument();
+    }
+  );
 
   // Portrait is two-column AND has a photo — it must get the (inclusive)
   // two-column hint copy, which also covers photo removal, not the photo-only key.

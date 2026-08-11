@@ -388,22 +388,12 @@ fn two_column_resume_embeds_contact_link_annotations() {
 /// (pinned by the serde round-trip test in types.rs and the TS sync guard).
 /// Shared by every test that iterates "all templates" so a newly added
 /// template is covered automatically rather than needing a remembered edit.
-fn canonical_template_ids() -> [TemplateId; 13] {
-    [
-        TemplateId::Classic,
-        TemplateId::SwissMinimal,
-        TemplateId::Academic,
-        TemplateId::Atelier,
-        TemplateId::Meridian,
-        TemplateId::Throughline,
-        TemplateId::Portrait,
-        TemplateId::Lebenslauf,
-        TemplateId::Cadence,
-        TemplateId::Regent,
-        TemplateId::Aria,
-        TemplateId::Saffron,
-        TemplateId::CologneNavy,
-    ]
+///
+/// Now a thin alias over `templates::CANONICAL_TEMPLATE_IDS`: the validator
+/// matrices in `validate/tests.rs` iterate the same list, so a new template
+/// cannot be covered here and silently skipped there.
+fn canonical_template_ids() -> [TemplateId; 16] {
+    crate::export::templates::CANONICAL_TEMPLATE_IDS
 }
 
 /// The part of an extracted cover letter AFTER the sign-off, i.e. the signature
@@ -441,10 +431,347 @@ fn normalize_like_validator(s: &str) -> String {
 /// validator would not have blocked the export.
 const NO_EXTRACTABLE_TEXT_THRESHOLD: usize = 20;
 
+// ── Render-measurement helpers (glyph geometry from typst-svg) ────────────────
+//
+// A registry field can claim "centred name" while the layout silently ignores
+// it, so the tests below assert against the RENDERED page, not `data.style`.
+
+/// Value of attribute `name` in an SVG start tag (`name="…"`), if present.
+/// Matches on `" name=\""` — the leading space is what stops `x` from matching
+/// `xlink:href` and `fill` from matching `fill-rule`.
+fn svg_attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let needle = format!(" {name}=\"");
+    let start = tag.find(&needle)? + needle.len();
+    let len = tag[start..].find('"')?;
+    Some(&tag[start..start + len])
+}
+
+/// Parse the translation component of a typst-svg `transform` attribute.
+/// typst-svg only ever emits pure translations (`translate(x)` / `translate(x
+/// y)`) and the baseline y-flip (`matrix(1 0 0 -1 e f)`), and never nests two
+/// flips — so a glyph's page position is the running sum of these pairs plus its
+/// own `x`.
+///
+/// **Panics on any other transform**, rather than the `(0.0, 0.0)` this used to
+/// return. A silent zero here is the worst possible failure mode for a
+/// measurement helper: every geometry assertion built on it (band containment,
+/// centring, section offsets) keeps passing while measuring the wrong place. A
+/// `scale(…)`/`rotate(…)`/general-`matrix(…)` group would also invalidate the
+/// running-sum model itself, not just shift the origin — so the only correct
+/// response is to stop and say the helper needs extending.
+fn svg_translation(transform: &str) -> (f64, f64) {
+    let inner = transform
+        .split_once('(')
+        .and_then(|(_, rest)| rest.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("svg_translation: malformed transform {transform:?}"));
+    let nums: Vec<f64> = inner
+        .split([' ', ','])
+        .filter(|t| !t.is_empty())
+        // Strict: an unparseable component used to be dropped by `filter_map`,
+        // which silently turned `translate(3 bogus)` into the 1-arg form.
+        .map(|t| {
+            t.parse::<f64>()
+                .unwrap_or_else(|_| panic!("svg_translation: bad number {t:?} in {transform:?}"))
+        })
+        .collect();
+
+    if let Some(kind) = transform.split('(').next() {
+        match (kind, nums.len()) {
+            ("translate", 2) => return (nums[0], nums[1]),
+            // SVG's one-argument form: `translate(x)` means ty = 0. typst-svg
+            // emits it whenever a group only shifts horizontally — dropping it
+            // silently under-reports x by the whole shift.
+            ("translate", 1) => return (nums[0], 0.0),
+            ("matrix", 6) => {
+                // Only the identity and the pure y-flip keep "page position =
+                // running sum of translations" true. Anything else (a scale, a
+                // rotation, a skew) also transforms the CHILD coordinates, which
+                // this walker does not model at all.
+                let linear = (nums[0], nums[1], nums[2], nums[3]);
+                assert!(
+                    linear == (1.0, 0.0, 0.0, 1.0) || linear == (1.0, 0.0, 0.0, -1.0),
+                    "svg_translation: {transform:?} has a non-identity, non-y-flip \
+                     linear part {linear:?} — it scales/rotates its children, so the \
+                     running-sum model is invalid. Extend this helper (and every \
+                     caller's assumptions) rather than measuring the wrong geometry."
+                );
+                return (nums[4], nums[5]);
+            }
+            _ => {}
+        }
+    }
+    panic!(
+        "svg_translation: unsupported transform {transform:?} — this helper models \
+         only `translate(x)`, `translate(x y)` and `matrix(1 0 0 ±1 e f)`. Returning \
+         zero here would silently corrupt every geometry assertion built on it."
+    );
+}
+
+/// Walk a typst-svg document's start tags, tracking the cumulative `<g
+/// transform>` translation, and hand every non-group tag to `visit` together
+/// with the offset in force at that point.
+///
+/// Shared by [`glyph_positions`] and [`first_filled_rect_bottom`] so the
+/// group-stack rules (self-closing groups, balance checks) exist once and cannot
+/// drift between the two.
+fn walk_svg_tags(svg: &str, mut visit: impl FnMut(&str, (f64, f64)) -> bool) {
+    let mut stack: Vec<(f64, f64)> = vec![(0.0, 0.0)];
+    let mut rest = svg;
+    while let Some(lt) = rest.find('<') {
+        let after = &rest[lt + 1..];
+        let Some(gt) = after.find('>') else { break };
+        let tag = &after[..gt];
+        rest = &after[gt + 1..];
+
+        if tag == "/g" {
+            assert!(
+                stack.len() > 1,
+                "walk_svg_tags: `</g>` with no matching `<g>` — the transform \
+                 stack underflowed, so every later offset would be wrong"
+            );
+            stack.pop();
+        } else if tag == "g" || tag.starts_with("g ") {
+            // A SELF-CLOSING group (`<g … />`, which `xmlwriter` emits for a
+            // group it never wrote children into) has no `</g>` to pop it.
+            // Pushing it would leave the stack permanently deep and shift every
+            // following sibling by its transform.
+            if tag.ends_with('/') {
+                continue;
+            }
+            let (dx, dy) = svg_attr(tag, "transform")
+                .map(svg_translation)
+                .unwrap_or((0.0, 0.0));
+            let top = *stack.last().expect("transform stack is never empty");
+            stack.push((top.0 + dx, top.1 + dy));
+        } else if visit(tag, *stack.last().expect("transform stack is never empty")) {
+            return;
+        }
+    }
+    assert_eq!(
+        stack.len(),
+        1,
+        "walk_svg_tags: {} unclosed `<g>` element(s) — the document is truncated \
+         or the tag scanner lost sync",
+        stack.len() - 1
+    );
+}
+
+/// Every glyph in a typst-svg page as `(page_x, baseline_y, fill)`, in Typst
+/// points with the page's top-left as the origin. Glyphs are `<use>` elements;
+/// decorative `<path>` shapes (page background, rules, bars) are ignored.
+fn glyph_positions(svg: &str) -> Vec<(f64, f64, String)> {
+    let mut out = Vec::new();
+    walk_svg_tags(svg, |tag, (ox, oy)| {
+        if tag.starts_with("use ") {
+            let gx: f64 = svg_attr(tag, "x")
+                .map(|v| {
+                    v.parse()
+                        .unwrap_or_else(|_| panic!("glyph_positions: bad `use` x={v:?}"))
+                })
+                .unwrap_or(0.0);
+            // A `<use y=…>` would need the enclosing y-flip applied to it; the
+            // walker only sums translations, so a non-zero one it silently
+            // ignored would misplace the glyph vertically.
+            let gy: f64 = svg_attr(tag, "y")
+                .map(|v| {
+                    v.parse()
+                        .unwrap_or_else(|_| panic!("glyph_positions: bad `use` y={v:?}"))
+                })
+                .unwrap_or(0.0);
+            assert_eq!(
+                gy, 0.0,
+                "glyph_positions: `<use y=\"{gy}\">` — glyph-local vertical offsets \
+                 are not modelled (the enclosing y-flip would have to be applied); \
+                 extend the helper instead of dropping it"
+            );
+            let fill = svg_attr(tag, "fill").unwrap_or("").to_string();
+            out.push((ox + gx, oy, fill));
+        }
+        false
+    });
+    out
+}
+
+/// Bottom edge (page y, in points) of the first FULL-WIDTH rectangle painted in
+/// `fill` — for a header-band template that is the band itself, drawn first as
+/// the page background. Narrow accent shapes (section-marker bars) share the
+/// fill, so anything under 100pt wide is skipped.
+///
+/// Reading the band out of the render instead of restating its constant is what
+/// makes the containment assertions real: a test that compares glyphs against a
+/// hardcoded band height silently keeps passing when the band shrinks.
+fn first_filled_rect_bottom(svg: &str, fill: &str) -> Option<f64> {
+    let mut found = None;
+    walk_svg_tags(svg, |tag, (_, oy)| {
+        if !tag.starts_with("path ") {
+            return false;
+        }
+        if !svg_attr(tag, "fill").is_some_and(|f| f.eq_ignore_ascii_case(fill)) {
+            return false;
+        }
+        // `d="M x yv Hh WvΩ-HZ"` — the axis-aligned rect typst-svg emits for
+        // a `rect(...)`: origin, height (v), width (h).
+        let Some(d) = svg_attr(tag, "d") else {
+            return false;
+        };
+        let nums: Vec<f64> = d
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter_map(|t| t.parse::<f64>().ok())
+            .collect();
+        if nums.len() >= 4 && nums[3].abs() >= 100.0 {
+            found = Some(oy + nums[1] + nums[2]);
+            return true; // stop the walk
+        }
+        false
+    });
+    found
+}
+
+/// Collapse [`glyph_positions`] to one entry per text line: `(baseline_y,
+/// leftmost_x, rightmost_x)`, ordered top-to-bottom. Glyphs sharing a baseline
+/// are one line.
+fn text_lines(svg: &str) -> Vec<(f64, f64, f64)> {
+    let mut lines: Vec<(f64, f64, f64)> = Vec::new();
+    for (x, y, _) in glyph_positions(svg) {
+        match lines.iter_mut().find(|l| (l.0 - y).abs() < 0.01) {
+            Some(line) => {
+                line.1 = line.1.min(x);
+                line.2 = line.2.max(x);
+            }
+            None => lines.push((y, x, x)),
+        }
+    }
+    lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+    lines
+}
+
+// ── Tests for the measurement helpers themselves ──────────────────────────────
+//
+// Every geometry assertion in this file is only as trustworthy as these three
+// functions. Their old failure mode was SILENT: an unparsed transform became
+// `(0.0, 0.0)` and a self-closing `<g/>` unbalanced the stack, both of which
+// move measurements without failing anything. These pin the hardened behavior.
+
+#[test]
+fn svg_translation_parses_the_forms_typst_actually_emits() {
+    assert_eq!(svg_translation("translate(3 4)"), (3.0, 4.0));
+    assert_eq!(svg_translation("translate(3,4)"), (3.0, 4.0));
+    // One-argument form: ty is 0, not "unparsed".
+    assert_eq!(svg_translation("translate(5)"), (5.0, 0.0));
+    // The baseline y-flip.
+    assert_eq!(svg_translation("matrix(1 0 0 -1 7 8)"), (7.0, 8.0));
+    assert_eq!(svg_translation("matrix(1 0 0 1 7 8)"), (7.0, 8.0));
+    assert_eq!(svg_translation("translate(-2.5 -0.75)"), (-2.5, -0.75));
+}
+
+#[test]
+#[should_panic(expected = "unsupported transform")]
+fn svg_translation_rejects_scale_instead_of_reading_it_as_zero() {
+    // Used to return (0.0, 0.0): a scaled group's contents would be reported at
+    // their parent's origin, and every containment assertion would still pass.
+    svg_translation("scale(2)");
+}
+
+#[test]
+#[should_panic(expected = "unsupported transform")]
+fn svg_translation_rejects_rotate_instead_of_reading_it_as_zero() {
+    svg_translation("rotate(90)");
+}
+
+#[test]
+#[should_panic(expected = "non-identity, non-y-flip linear part")]
+fn svg_translation_rejects_a_scaling_matrix() {
+    // Shape-wise a valid 6-number matrix, so the old `starts_with("matrix(")`
+    // arm accepted it and returned (e, f) — silently dropping a 2x scale of
+    // every child coordinate.
+    svg_translation("matrix(2 0 0 2 10 20)");
+}
+
+#[test]
+fn glyph_positions_ignores_self_closing_groups() {
+    // `xmlwriter` writes `<g …/>` for a group it never put children into. It has
+    // no `</g>`, so pushing it left the stack permanently deep and shifted every
+    // later sibling — here, the second glyph would read x=1030 instead of 30.
+    let svg = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg">"##,
+        r##"<g transform="translate(10 20)"><use x="5" fill="#111111"/></g>"##,
+        r##"<g transform="translate(1000 1000)"/>"##,
+        r##"<g transform="translate(30 40)"><use x="0" fill="#222222"/></g>"##,
+        r##"</svg>"##,
+    );
+    let glyphs = glyph_positions(svg);
+    assert_eq!(
+        glyphs,
+        vec![
+            (15.0, 20.0, "#111111".to_string()),
+            (30.0, 40.0, "#222222".to_string()),
+        ],
+        "a self-closing <g/> must contribute no offset to its siblings"
+    );
+}
+
+#[test]
+fn glyph_positions_accumulates_nested_group_translations() {
+    // The property every measurement here relies on, pinned directly.
+    let svg = concat!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg">"##,
+        r##"<g transform="translate(10 20)">"##,
+        r##"<g transform="matrix(1 0 0 -1 1 2)"><use x="3" fill="#abcdef"/></g>"##,
+        r##"</g>"##,
+        r##"<use x="7" fill="#000000"/>"##,
+        r##"</svg>"##,
+    );
+    assert_eq!(
+        glyph_positions(svg),
+        vec![
+            (14.0, 22.0, "#abcdef".to_string()),
+            // After `</g></g>` the stack is back at the root, not still nested.
+            (7.0, 0.0, "#000000".to_string()),
+        ]
+    );
+}
+
+#[test]
+#[should_panic(expected = "underflowed")]
+fn walk_svg_tags_rejects_an_unbalanced_closing_group() {
+    glyph_positions(r#"<svg><g transform="translate(1 1)"></g></g></svg>"#);
+}
+
+#[test]
+#[should_panic(expected = "unclosed")]
+fn walk_svg_tags_rejects_a_truncated_document() {
+    glyph_positions(r##"<svg><g transform="translate(1 1)"><use x="0" fill="#fff"/>"##);
+}
+
+/// Render page 1 of `template` for `model` to SVG.
+fn svg_page1(
+    model: &crate::model::document::DocumentModel,
+    template: &Template,
+    ats: bool,
+) -> String {
+    let mut opts = opts_a4();
+    opts.ats = ats;
+    render_resume_svg_pages(
+        model,
+        TypstTemplate::from_template(template),
+        &opts,
+        Some(template),
+    )
+    .unwrap_or_else(|e| {
+        panic!(
+            "render_resume_svg_pages({:?}) should succeed: {e:?}",
+            template.id
+        )
+    })
+    .into_iter()
+    .next()
+    .unwrap_or_else(|| panic!("{:?}: at least one SVG page", template.id))
+}
+
 #[test]
 fn every_template_renders_a_valid_pdf() {
     let ids = canonical_template_ids();
-    assert_eq!(ids.len(), 13, "expected the thirteen canonical templates");
+    assert_eq!(ids.len(), 16, "expected the sixteen canonical templates");
 
     let model = model_from_resume_text(FIXTURE_RESUME);
     for id in ids {
@@ -512,6 +839,445 @@ fn every_template_extracts_accented_latin_content() {
             "{id:?}: only {normalized_len} normalized chars extracted — the real \
              validator's no_extractable_text gate (< {NO_EXTRACTABLE_TEXT_THRESHOLD}) \
              would block this export; got {extracted:?}"
+        );
+    }
+}
+
+/// A4 width in Typst points — the page every `opts_a4()` render uses.
+const A4_WIDTH_PT: f64 = 595.275_590_551;
+/// `single_column.typ`'s locked page margin (25.4 mm) in points. Left-aligned
+/// header lines start exactly here.
+const SINGLE_COLUMN_MARGIN_PT: f64 = 72.0;
+
+/// `Template::name_centered` must be a fact about the RENDERED page, not just a
+/// registry field. `single_column.typ` centres with `align(center, …)`, which
+/// does nothing inside an `auto`-width block (the block shrinks to its content,
+/// so there is no slack to centre in): Jake shipped `name_centered: true` while
+/// its name rendered at x=72.0 — the left margin, byte-identical in position to
+/// the `name_centered: false` templates. `jake_matches_spec` passed throughout,
+/// because a field pin cannot see the layout.
+///
+/// Midpoints are computed from glyph ORIGINS, so they sit half of the last
+/// glyph's advance left of the true visual centre; the tolerance covers that.
+/// The bug's signature was ~186pt off centre, so it has an enormous margin.
+#[test]
+fn name_centered_actually_centres_the_rendered_header() {
+    let centre = A4_WIDTH_PT / 2.0;
+    let mut model = model_from_resume_text(FIXTURE_RESUME);
+    model.header.title = Some("Senior Software Engineer".to_string());
+
+    let jake = Template::get(TemplateId::Jake);
+    assert!(
+        jake.name_centered,
+        "fixture guard: Jake is this test's centred single-column case"
+    );
+    let lines = text_lines(&svg_page1(&model, &jake, false));
+    assert!(
+        lines.len() >= 3,
+        "expected at least name/title/contact lines, got {lines:?}"
+    );
+    for (label, (y, lo, hi)) in ["name", "title", "contact"]
+        .into_iter()
+        .zip(lines.iter().copied())
+    {
+        let mid = (lo + hi) / 2.0;
+        assert!(
+            (mid - centre).abs() < 15.0,
+            "jake's {label} line is not centred: y={y:.2} x=[{lo:.2}..{hi:.2}] \
+             midpoint {mid:.2} vs page centre {centre:.2}"
+        );
+    }
+
+    // Control: the same three lines on a `name_centered: false` template must
+    // still start exactly on the left margin. This is what makes the assertion
+    // above about CENTRING rather than about "the header moved".
+    for id in [
+        TemplateId::Classic,
+        TemplateId::SwissMinimal,
+        TemplateId::Academic,
+        TemplateId::Cadence,
+        TemplateId::Regent,
+    ] {
+        let t = Template::get(id);
+        assert!(
+            !t.name_centered,
+            "{id:?}: this control list is the left-aligned single-column set"
+        );
+        for (y, lo, hi) in text_lines(&svg_page1(&model, &t, false))
+            .into_iter()
+            .take(3)
+        {
+            assert!(
+                (lo - SINGLE_COLUMN_MARGIN_PT).abs() < 0.01,
+                "{id:?}: header line y={y:.2} x=[{lo:.2}..{hi:.2}] must stay flush \
+                 to the {SINGLE_COLUMN_MARGIN_PT}pt left margin — the centring fix \
+                 must not leak to left-aligned templates"
+            );
+        }
+    }
+}
+
+// ── Phase 8 Track B: Awesome / Deedy bespoke-behavior pins ─────────────────────
+
+/// Awesome's design-tier ATS toggle must be more than cosmetic: `ats=true`
+/// drops the accent-tinted header band, its keyline, AND the accent-bar
+/// section markers, leaving only accent-colored hyperlinks (unaffected by
+/// `is-ats`, matching every other non-Classic ATS-safe template). typst-svg
+/// renders decorative shapes (the band rect, the keyline, each accent bar) as
+/// `<path fill="#…"` / `stroke="#…"` elements, distinct from glyph refs
+/// (`<use … fill="#…"`) — the same fill-color detection technique
+/// `letter_banded_band_draws_on_page_one_only` uses for the cover-letter band,
+/// narrowed to SHAPES so accent-colored link text (unaffected by `is-ats`,
+/// same as every other template) can't mask the assertion.
+#[test]
+fn awesome_ats_mode_drops_the_header_band_and_section_markers() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let template = Template::get(TemplateId::Awesome);
+    let accent_hex = format!(
+        "#{:02x}{:02x}{:02x}",
+        template.accent_color.0, template.accent_color.1, template.accent_color.2
+    );
+    let fill_needle = format!(r#"<path fill="{accent_hex}""#);
+    let stroke_needle = format!(r#"stroke="{accent_hex}""#);
+    let count_shapes =
+        |svg: &str| svg.matches(&fill_needle).count() + svg.matches(&stroke_needle).count();
+
+    let banded_opts = opts_a4();
+    let banded = render_resume_svg_pages(
+        &model,
+        TypstTemplate::from_template(&template),
+        &banded_opts,
+        Some(&template),
+    )
+    .expect("render_resume_svg_pages(awesome, ats=false) should succeed");
+    let banded_page1 = banded
+        .first()
+        .expect("awesome ats=false: at least one page");
+
+    let mut ats_opts = opts_a4();
+    ats_opts.ats = true;
+    let plain = render_resume_svg_pages(
+        &model,
+        TypstTemplate::from_template(&template),
+        &ats_opts,
+        Some(&template),
+    )
+    .expect("render_resume_svg_pages(awesome, ats=true) should succeed");
+    let plain_page1 = plain.first().expect("awesome ats=true: at least one page");
+
+    let banded_shapes = count_shapes(banded_page1);
+    let plain_shapes = count_shapes(plain_page1);
+    assert!(
+        banded_shapes >= 2,
+        "awesome (ats=false) must draw at least the band rect + keyline as \
+         accent-fill/stroke shapes; got {banded_shapes}"
+    );
+    // `plain_shapes` isn't zero because the ATS branch draws its OWN decoration:
+    // a thin accent-colored `line` under each section heading (`awesome.typ`'s
+    // `is-ats` arm; `rule_color == accent_color` in the registry). The non-ATS
+    // branch draws no such rule — it draws the band rect, the keyline and one
+    // accent bar per section instead — so the two counts are not a subset
+    // relation, just strictly ordered. A non-strictly-lower count would mean
+    // `is-ats` failed to drop the band/keyline/bars.
+    assert!(
+        plain_shapes < banded_shapes,
+        "awesome (ats=true) must draw fewer decorative accent-fill/stroke shapes \
+         than ats=false (band + keyline + section-marker bars must be dropped) — \
+         banded={banded_shapes} plain={plain_shapes}"
+    );
+}
+
+/// Awesome's header is placed inside `page.background`, which lays out at
+/// UNBOUNDED width: before `awesome.typ` bounded it to `band-box-w`, a 125-char
+/// contact line did not wrap — it ran to x=630pt on a 595pt-wide sheet and the
+/// tail was simply not on the page. Bounding it makes it wrap, which only helps
+/// while the band is tall enough to hold the wrapped line; otherwise white band
+/// ink lands on white paper below the band. Both halves are pinned here against
+/// the render, for the two band heights `awesome.typ` budgets (title present or
+/// not), because white ink exists ONLY inside the band.
+#[test]
+fn awesome_band_contains_its_white_header_text() {
+    const MM: f64 = 72.0 / 25.4;
+    // `awesome.typ`'s `body-margin-h`; the band content shares the body margins.
+    let margin = 20.0 * MM;
+    let template = Template::get(TemplateId::Awesome);
+
+    for (label, title, band_mm, contact) in [
+        (
+            "no title, short contact",
+            None,
+            24.0,
+            "jane@example.com | https://linkedin.com/in/janedoe | https://github.com/janedoe",
+        ),
+        (
+            "title + 125-char contact",
+            Some("Principal Distributed Systems Engineer"),
+            28.0,
+            "alexandra.konstantinopoulos@example.com | +1 (415) 555-0189 | San Francisco, CA \
+             | https://linkedin.com/in/alexandrakonst | https://alexandrakonstantinopoulos.dev",
+        ),
+    ] {
+        let mut model = model_from_resume_text(FIXTURE_RESUME);
+        model.header.name = "Alexandra Konstantinopoulos".to_string();
+        model.header.title = title.map(str::to_string);
+        model.header.contact = crate::model::rich::tokenize_rich(contact);
+
+        let svg = svg_page1(&model, &template, false);
+        let white: Vec<(f64, f64)> = glyph_positions(&svg)
+            .into_iter()
+            .filter(|(_, _, fill)| fill.eq_ignore_ascii_case("#ffffff"))
+            .map(|(x, y, _)| (x, y))
+            .collect();
+        assert!(
+            white.len() > 20,
+            "[{label}] expected the band's white name/contact glyphs, found {}",
+            white.len()
+        );
+
+        // The band the reader actually sees, measured off the rendered rect —
+        // not `band_mm` restated, or shrinking the band would keep this green.
+        // `band_mm` only pins that the band stayed THIN (its design brief).
+        let accent = format!(
+            "#{:02x}{:02x}{:02x}",
+            template.accent_color.0, template.accent_color.1, template.accent_color.2
+        );
+        let band_bottom = first_filled_rect_bottom(&svg, &accent)
+            .unwrap_or_else(|| panic!("[{label}] no full-width accent band rect in the render"));
+
+        // Vertical: every white baseline, plus room for its descenders, inside
+        // the band. Without the taller band the wrapped contact line lands at
+        // y=71.70 against a 68.03pt band bottom — invisible white-on-white.
+        let lowest = white.iter().map(|(_, y)| *y).fold(f64::MIN, f64::max);
+        assert!(
+            lowest + 3.0 <= band_bottom,
+            "[{label}] white header text reaches baseline y={lowest:.2} but the band \
+             ends at {band_bottom:.2}pt — the overflow renders white-on-white"
+        );
+        // The band is content-measured (`awesome.typ`'s `#context`), so this is
+        // the other half of that rule: for a common 1–2-line header the thin
+        // `band-min-h` must still DOMINATE the measurement — the band grows only
+        // for genuine overflow (`awesome_band_grows_to_contain_any_contact_line_count`),
+        // never creeping wider on ordinary input. Raising `band-pad-bottom` far
+        // enough to inflate these two cases fails here.
+        assert!(
+            (band_bottom - band_mm * MM).abs() < 0.5,
+            "[{label}] band is {band_bottom:.2}pt tall, expected the thin {:.2}pt \
+             minimum — an ordinary header must not grow the band",
+            band_mm * MM
+        );
+
+        // No band glyph may be painted in the ACCENT — the band's own fill. The
+        // contact line is mostly link runs (LinkedIn / GitHub / Website), and
+        // links are the one run kind that carries its own colour: `render-runs`
+        // draws them in the accent for the body, `render-runs-white` in the
+        // band's white. Both are now one parametrised ladder
+        // (`render-runs-in`), and pointing the band at the body's fill paints
+        // #c41e3a links onto a #c41e3a band — invisible contact details, passing
+        // every other assertion here (the surrounding non-link text stays white,
+        // so the white-glyph count and the containment bounds are unmoved).
+        let accent_in_band = glyph_positions(&svg)
+            .into_iter()
+            .filter(|(_, y, fill)| *y <= band_bottom && fill.eq_ignore_ascii_case(&accent))
+            .count();
+        assert_eq!(
+            accent_in_band, 0,
+            "[{label}] {accent_in_band} header glyph(s) are painted in the accent \
+             {accent} inside the band, which is filled with that same accent — \
+             band text (links included) must use the band's white"
+        );
+
+        // Horizontal: inside the printable width. Without `box(width: band-box-w)`
+        // this reads 630.03 on a 595.28pt page.
+        let rightmost = white.iter().map(|(x, _)| *x).fold(f64::MIN, f64::max);
+        assert!(
+            rightmost <= A4_WIDTH_PT - margin,
+            "[{label}] white header text reaches x={rightmost:.2}, past the right \
+             margin at {:.2}pt — the placed header is laying out unbounded and \
+             running off the sheet",
+            A4_WIDTH_PT - margin
+        );
+    }
+}
+
+/// The companion to [`awesome_band_contains_its_white_header_text`]: that test
+/// pins the THIN band for the common 1–2-line header, this one pins that the
+/// band still contains a header that outgrows it.
+///
+/// `awesome.typ` used to budget "name + optional title + up to TWO contact
+/// lines" as a fixed 24mm/28mm. Nothing caps a header at two lines:
+/// `ContactProfile.extra_links` is an unbounded `Vec` and `apply_to_header`
+/// copies the whole rendered line into `header.contact`. Built through that real
+/// adapter path, a twelve-extra-link profile wraps to THREE lines and put a whole
+/// white baseline at y=86.03 against a band ending at 79.37pt — invisible
+/// white-on-white ink, and contact details silently gone from the page.
+///
+/// The fix measures the band from its own content, so this holds for ANY line
+/// count, not just three — which is why the assertions below are all relative to
+/// the measured band and the measured line count, with nothing restating 24/28mm.
+#[test]
+fn awesome_band_grows_to_contain_any_contact_line_count() {
+    let template = Template::get(TemplateId::Awesome);
+    let mut model = model_from_resume_text(FIXTURE_RESUME);
+    model.header.name = "Alexandra Konstantinopoulos".to_string();
+    model.header.title = Some("Principal Distributed Systems Engineer".to_string());
+    // The adapter path: a blank contact line filled from the profile.
+    model.header.contact = Vec::new();
+
+    let profile = crate::contact_profile::ContactProfile {
+        full_name: Some("Alexandra Konstantinopoulos".to_string()),
+        email: Some("alexandra.konstantinopoulos@example.com".to_string()),
+        phone: Some("+1 (415) 555-0189".to_string()),
+        location: Some(crate::contact_profile::LocalizedText {
+            default: "San Francisco, California".to_string(),
+            by_lang: Default::default(),
+        }),
+        linkedin: Some("https://linkedin.com/in/alexandrakonst".to_string()),
+        github: Some("https://github.com/alexandrakonst".to_string()),
+        website: Some("https://alexandrakonstantinopoulos.dev".to_string()),
+        extra_links: [
+            "Portfolio",
+            "Stack Overflow",
+            "Google Scholar",
+            "Speaker Deck",
+            "Dribbble",
+            "Behance",
+            "Medium",
+            "Dev.to",
+            "Mastodon",
+            "Bluesky",
+            "ORCID",
+            "Personal Blog",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, label)| crate::contact_profile::ContactLink {
+            label: label.to_string(),
+            url: format!("https://example.com/alexandra/{i}"),
+        })
+        .collect(),
+        photo: None,
+    };
+    profile.apply_to_header(&mut model.header, "en");
+    assert!(
+        !model.header.contact.is_empty(),
+        "fixture guard: the profile must have filled the blank contact line"
+    );
+
+    let svg = svg_page1(&model, &template, false);
+    let white: Vec<(f64, f64)> = glyph_positions(&svg)
+        .into_iter()
+        .filter(|(_, _, fill)| fill.eq_ignore_ascii_case("#ffffff"))
+        .map(|(x, y, _)| (x, y))
+        .collect();
+    let accent = format!(
+        "#{:02x}{:02x}{:02x}",
+        template.accent_color.0, template.accent_color.1, template.accent_color.2
+    );
+    let band_bottom = first_filled_rect_bottom(&svg, &accent)
+        .expect("no full-width accent band rect in the render");
+
+    // Fixture guard. The white baselines are name + title + one per wrapped
+    // contact line, so fewer than five means the contact did NOT wrap to three
+    // lines and this test silently degraded into a copy of the 2-line one —
+    // testing the overflow path not at all.
+    let mut baselines: Vec<f64> = white.iter().map(|(_, y)| *y).collect();
+    baselines.sort_by(f64::total_cmp);
+    baselines.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+    assert!(
+        baselines.len() >= 5,
+        "fixture guard: expected name + title + 3+ wrapped contact lines in the \
+         band, got {} white baselines ({baselines:?}) — this fixture must exceed \
+         the old two-line budget or it tests nothing",
+        baselines.len()
+    );
+
+    // The band grew past the thin minimum it would otherwise have been pinned at
+    // (28mm with a title). Without this, a band that grew to exactly the minimum
+    // — i.e. the fix not firing — could still satisfy the containment check on a
+    // luckier fixture.
+    const MM: f64 = 72.0 / 25.4;
+    assert!(
+        band_bottom > 28.0 * MM,
+        "the band is still {band_bottom:.2}pt — it must grow beyond the 28mm thin \
+         minimum to hold a three-line contact"
+    );
+
+    let lowest = baselines.last().copied().unwrap_or(f64::MIN);
+    assert!(
+        lowest + 3.0 <= band_bottom,
+        "white header text reaches baseline y={lowest:.2} but the band ends at \
+         {band_bottom:.2}pt — the overflow renders white-on-white"
+    );
+
+    // Horizontal containment must survive the taller band too.
+    let rightmost = white.iter().map(|(x, _)| *x).fold(f64::MIN, f64::max);
+    let margin = 20.0 * MM;
+    assert!(
+        rightmost <= A4_WIDTH_PT - margin,
+        "white header text reaches x={rightmost:.2}, past the right margin at {:.2}pt",
+        A4_WIDTH_PT - margin
+    );
+}
+
+/// Deedy's "generous section spacing" moved out of `deedy.typ` (where it was a
+/// local `sp-section-extra = 8pt`, the one template forking `_scale.typ`'s
+/// locked rhythm) into `Template::section_above_extra`. The knob has to reach
+/// the RENDER, not just sit in the registry: zero it and the first section
+/// heading must rise by exactly those 8pt. A field nobody reads moves nothing.
+#[test]
+fn deedy_section_above_extra_moves_the_rendered_headings() {
+    let model = model_from_resume_text(FIXTURE_RESUME);
+    let deedy = Template::get(TemplateId::Deedy);
+    assert_eq!(
+        deedy.section_above_extra, 8.0,
+        "fixture guard: Deedy is the template carrying the rhythm supplement"
+    );
+    let mut flat = deedy.clone();
+    flat.section_above_extra = 0.0;
+
+    // Line 0 = name, line 1 = contact (this fixture has no title), line 2 = the
+    // first section heading — the first thing the supplement pushes down.
+    let heading_y = |t: &Template| -> f64 {
+        let lines = text_lines(&svg_page1(&model, t, false));
+        assert!(lines.len() > 2, "expected a section heading, got {lines:?}");
+        lines[2].0
+    };
+
+    let with = heading_y(&deedy);
+    let without = heading_y(&flat);
+    assert!(
+        (with - without - 8.0).abs() < 0.1,
+        "section_above_extra=8.0 must push the first heading down 8pt: \
+         {with:.2} with the knob vs {without:.2} without ({:.2}pt apart)",
+        with - without
+    );
+}
+
+/// `deedy.typ`'s name-block splits `header.name` on the last space to color the
+/// surname separately — guarded for a single-token name (`name-tokens.len() <=
+/// 1`) that has nothing to split. This is the edge path a naive
+/// `.slice(0, len - 1)` would panic on for an empty/underflowing range; render
+/// it end-to-end (not just unit-test the split) to prove the guard actually
+/// reaches production.
+#[test]
+fn deedy_single_token_name_does_not_panic() {
+    let mut model = model_from_resume_text(FIXTURE_RESUME);
+    model.header.name = "Cher".to_string();
+    let template = Template::get(TemplateId::Deedy);
+
+    for ats in [false, true] {
+        let mut opts = opts_a4();
+        opts.ats = ats;
+        let bytes = render_pdf(
+            &model,
+            TypstTemplate::from_template(&template),
+            &opts,
+            Some(&template),
+        )
+        .unwrap_or_else(|e| panic!("deedy single-token name (ats={ats}) should render: {e:?}"));
+        assert!(
+            bytes.starts_with(b"%PDF"),
+            "deedy single-token name (ats={ats}) must start with %PDF"
         );
     }
 }
@@ -4385,6 +5151,9 @@ fn generate_templates_showcase_banner() {
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
         (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
+        (TemplateId::Jake, "Jake", "jake"),
+        (TemplateId::Awesome, "Awesome", "awesome"),
+        (TemplateId::Deedy, "Deedy", "deedy"),
     ];
     assert_eq!(
         templates.len(),
@@ -4677,6 +5446,9 @@ fn generate_cover_template_previews() {
         (TemplateId::Aria, "Aria", "aria"),
         (TemplateId::Saffron, "Saffron", "saffron"),
         (TemplateId::CologneNavy, "CologneNavy", "cologne-navy"),
+        (TemplateId::Jake, "Jake", "jake"),
+        (TemplateId::Awesome, "Awesome", "awesome"),
+        (TemplateId::Deedy, "Deedy", "deedy"),
     ];
     assert_eq!(
         templates.len(),

@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -46,7 +46,14 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
 
 **Letter layouts** (`LetterLayout { Classic, Refined, Banded }`, wire `letterLayoutId` in `export/types.rs`) select the letter **arrangement** — orthogonal to the résumé template. `letter_source` dispatches to `letter.typ` / `letter_refined.typ` / `letter_banded.typ`. Layout owns composition; palette/fonts inherit via `LetterStyle`; market conventions (`data.opts`) own semantics — **layouts gate structural elements on `data.opts`, never on the layout id**. DOCX approximates (Banded's angled band → flat accent-tinted shading; PDF small-caps → uppercase). Caveat: bundled Source Serif 4 lacks `smcp`, so PDF small-caps are visually inert pending a font swap. See [`docs/EXPORT_TEMPLATES.md` § Letter layouts](../EXPORT_TEMPLATES.md#letter-layouts-classic--refined--banded).
 
-**Template previews** (for the AI-Generate template picker): offline test `generate_cover_template_previews` in `typst_engine/test.rs` renders every résumé template's cover-letter style to SVG (per-template; vector, no raster). Owned by: `export/typst_engine/`. Consumed by: `samples/cover-template-previews.ts` Vite glob → `COVER_TEMPLATE_PREVIEWS` → renderer UI. Preview assets for the new templates + the showcase banner await regeneration (the `#[ignore]` generators can't run on the dev host). See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
+**Template previews** (for the AI-Generate template picker) are **two separate pipelines**, each with its own generator, asset dir, and consumer module — don't cite one for the other. Both are per-template SVG (vector, no raster), owned by `export/typst_engine/`, and rendered by `#[ignore]`d offline tests in `typst_engine/test.rs`:
+
+| Preview          | Generator (`typst_engine/test.rs`)   | Assets (`features/ai-generate/assets/`) | Consumer (`features/ai-generate/samples/`)               |
+| ---------------- | ------------------------------------ | --------------------------------------- | -------------------------------------------------------- |
+| **Résumé**       | `generate_templates_showcase_banner` | `template-previews/<id>.svg`            | `template-previews.ts` → `TEMPLATE_PREVIEWS`             |
+| **Cover letter** | `generate_cover_template_previews`   | `cover-template-previews/<id>.svg`      | `cover-template-previews.ts` → `COVER_TEMPLATE_PREVIEWS` |
+
+Each consumer is a Vite `import.meta.glob` over its own dir, so an id with no committed SVG degrades to a caption-only card. `generate_templates_showcase_banner` also composes the marketing banner. Preview assets are current for all sixteen templates (the generators run on the dev host; last regenerated 2026-08-10 with the jake/awesome render fixes). See [`docs/EXPORT_TEMPLATES.md` § Cover-letter template previews](../EXPORT_TEMPLATES.md#cover-letter-template-previews-ai-generate-ui).
 
 ## Candidate photo
 

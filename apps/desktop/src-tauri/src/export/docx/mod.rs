@@ -412,7 +412,7 @@ fn generate_cover_letter_docx_layout(
     let name_family = template.fonts.name_family;
     let accent_hex = rgb_to_hex(template.accent_color);
     let rule_hex = rgb_to_hex(template.rule_color);
-    let band_hex = rgb_to_hex(lighten_rgb(template.accent_color, 0.85));
+    let band_hex = band_tint_hex(template.accent_color);
 
     // Market convention — consulted here only for Refined's reference-line
     // label, so it matches the same market convention `letter_refined.typ`
@@ -758,6 +758,18 @@ fn generate_cover_letter_docx_layout(
     let (page_w, page_h) = page_size_dxa();
     docx = docx.page_size(page_w, page_h).page_margin(page_margin);
     Ok(docx)
+}
+
+/// Shading fill for every DOCX "header band" approximation: the template
+/// accent lightened 85 % toward white.
+///
+/// DOCX has no page-background primitive, so a PDF band becomes paragraph
+/// shading — and paragraph shading is only legible behind the normal dark ink
+/// if the fill is a pale tint. Both users (this file's Banded cover letter and
+/// [`super::model_docx`]'s Awesome résumé header) call this, so the two can
+/// never drift to different tints of the same accent.
+pub(super) fn band_tint_hex(accent: (u8, u8, u8)) -> String {
+    rgb_to_hex(lighten_rgb(accent, 0.85))
 }
 
 /// Lighten an RGB colour toward white by `amount` (0.0..=1.0), mirroring

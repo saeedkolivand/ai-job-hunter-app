@@ -4,6 +4,7 @@
 //! blocking of valid documents.
 
 use super::*;
+use crate::export::templates::{Template, TemplateTier, CANONICAL_TEMPLATE_IDS};
 use crate::export::types::{GenerationMeta, LetterLayout, TemplateId};
 
 fn expected(headings: &[&str]) -> Expected {
@@ -735,85 +736,101 @@ fn typst_validate_ats(template_id: TemplateId) -> (Vec<u8>, ExportReport) {
     .expect("typst pdf export (ats)")
 }
 
-#[test]
-fn typst_single_column_pdf_passes_validation() {
-    for id in [
-        TemplateId::Classic,
-        TemplateId::SwissMinimal,
-        TemplateId::Academic,
-        TemplateId::Meridian,
-        TemplateId::Throughline,
-        TemplateId::Lebenslauf,
-        TemplateId::Cadence,
-        TemplateId::Regent,
-    ] {
-        let (bytes, report) = typst_validate(id);
-        assert!(!bytes.is_empty(), "{id:?}: empty PDF");
-        assert!(
-            report.ok,
-            "{id:?}: Typst single-column PDF must pass validate_and_fix — issues: {:?}",
-            report.issues
-        );
-        assert!(
-            !report
-                .issues
-                .iter()
-                .any(|i| i.severity == Severity::Critical),
-            "{id:?}: no critical issues expected on a valid Typst PDF, got: {:?}",
-            report.issues
-        );
-    }
+/// Assert a rendered export cleared the validator outright.
+fn assert_validation_clean(id: TemplateId, label: &str, bytes: &[u8], report: &ExportReport) {
+    assert!(!bytes.is_empty(), "{id:?} ({label}): empty PDF");
+    assert!(
+        report.ok,
+        "{id:?} ({label}): Typst PDF must pass validate_and_fix — issues: {:?}",
+        report.issues
+    );
+    assert!(
+        !report
+            .issues
+            .iter()
+            .any(|i| i.severity == Severity::Critical),
+        "{id:?} ({label}): no critical issues expected on a valid Typst PDF, got: {:?}",
+        report.issues
+    );
 }
 
+/// Every canonical template must clear the validator, split by column count so
+/// the two layout paths stay explicit — `theme::is_two_column` is the same
+/// single source of truth the renderer gates on, so the split can't drift from
+/// what actually gets rendered.
+///
+/// Driven off [`CANONICAL_TEMPLATE_IDS`] rather than hardcoded id lists,
+/// because the hardcoded ones silently stopped growing: they covered 8 + 4 of
+/// twelve-then-sixteen templates, leaving Cologne Navy, Jake, Awesome and Deedy
+/// with no validator coverage at all — including Awesome, which emits its
+/// contact hyperlinks from inside `page.background`, precisely the annotation
+/// shape the `empty_anchor_link` critical looks for.
+///
+/// **Cost is deliberate.** This test and
+/// [`typst_ats_mode_pdf_passes_validation_for_every_toggle_bearing_template`]
+/// below together compile 16 + 7 real Typst PDFs on every run — by far the
+/// slowest thing in this file. That is the point: the coverage gap above existed
+/// precisely *because* someone kept the list short. **Never trim the list to
+/// speed it up** — a template dropped from the matrix is a template with no
+/// validator coverage, and nothing else will notice.
+///
+/// The sanctioned mitigation, if the runtime ever genuinely hurts, is to move
+/// the whole-roster matrices behind a slower test target (a `#[ignore]`d
+/// nightly/CI job, or a separate `--test` binary) that still runs EVERY
+/// template — not to sample a subset here.
 #[test]
-fn typst_two_column_atelier_pdf_passes_validation() {
-    for id in [
-        TemplateId::Atelier,
-        TemplateId::Portrait,
-        TemplateId::Aria,
-        TemplateId::Saffron,
-    ] {
+fn typst_every_canonical_template_pdf_passes_validation() {
+    let mut single = 0;
+    let mut two_col = 0;
+    for id in CANONICAL_TEMPLATE_IDS {
         let (bytes, report) = typst_validate(id);
-        assert!(!bytes.is_empty(), "{id:?}: empty PDF");
-        assert!(
-            report.ok,
-            "Typst two-column {id:?} PDF must pass validate_and_fix — issues: {:?}",
-            report.issues
+        let two_column = crate::theme::is_two_column(id);
+        assert_validation_clean(
+            id,
+            if two_column {
+                "two-column"
+            } else {
+                "single-column"
+            },
+            &bytes,
+            &report,
         );
-        assert!(
-            !report
-                .issues
-                .iter()
-                .any(|i| i.severity == Severity::Critical),
-            "{id:?}: no critical issues expected on a valid Typst PDF, got: {:?}",
-            report.issues
-        );
+        if two_column {
+            two_col += 1;
+        } else {
+            single += 1;
+        }
     }
+    // Both arms must actually be exercised — a `is_two_column` that started
+    // answering `false` everywhere would otherwise turn this into a
+    // single-column-only test without failing.
+    assert!(
+        single > 0 && two_col > 0,
+        "expected both layout paths to be covered; got {single} single-column \
+         and {two_col} two-column templates"
+    );
 }
 
-/// Aria/Saffron (PR4 design two-column templates) must also round-trip the
-/// validator in ATS mode — same pattern as `typst_single_column_pdf_passes_validation`,
-/// just with `ats_mode: true` so the linearized, photo-dropped render is what's
-/// checked (the non-ATS assertion above only covers the two-column render).
+/// ATS mode is a second render path (linearized, photo dropped, decorative
+/// colour dropped) that the validator must also clear — and it is exactly the
+/// path the design tier advertises. Every design-tier template surfaces the
+/// toggle (`TemplateTier` doc comment), so that is the set checked here.
 #[test]
-fn typst_two_column_ats_mode_pdf_passes_validation() {
-    for id in [TemplateId::Aria, TemplateId::Saffron] {
+fn typst_ats_mode_pdf_passes_validation_for_every_toggle_bearing_template() {
+    let mut checked = 0;
+    for id in CANONICAL_TEMPLATE_IDS {
+        if Template::get(id).tier != TemplateTier::Design {
+            continue;
+        }
         let (bytes, report) = typst_validate_ats(id);
-        assert!(!bytes.is_empty(), "{id:?}: empty ATS-mode PDF");
-        assert!(
-            report.ok,
-            "{id:?}: Typst ATS-mode PDF must pass validate_and_fix — issues: {:?}",
-            report.issues
-        );
-        assert!(
-            !report
-                .issues
-                .iter()
-                .any(|i| i.severity == Severity::Critical),
-            "{id:?}: no critical issues expected on a valid ATS-mode Typst PDF, got: {:?}",
-            report.issues
-        );
+        assert_validation_clean(id, "ats", &bytes, &report);
+        checked += 1;
     }
+    assert!(
+        checked >= 6,
+        "expected the design tier to surface the ATS toggle on at least six \
+         templates; only {checked} were checked"
+    );
 }
 
 /// The cover-letter path also runs through Typst; validate that it passes.
