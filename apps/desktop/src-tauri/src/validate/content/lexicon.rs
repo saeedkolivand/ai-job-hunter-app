@@ -87,6 +87,9 @@ const AI_TELL_LEXICAL_EN: &[&str] = &[
     "streamline",
     "unlock",
     "empower",
+    "multifaceted",
+    "ever-evolving",
+    "paradigm shift",
     "passionate",
     "results-driven",
     "proven track record",
@@ -94,10 +97,12 @@ const AI_TELL_LEXICAL_EN: &[&str] = &[
     "go-getter",
     "synergy",
     "detail-oriented",
+    "meticulous",
     "world-class",
     "studies show",
     "experts say",
     "industry reports",
+    "widely regarded as",
     "it is widely known",
     "in order to",
     "due to the fact that",
@@ -130,6 +135,10 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
 
 const AI_TELL_PROSE_EN: &[&str] = &[
     "it is important to note",
+    "it's important to note",
+    "it is worth noting",
+    "it's worth noting",
+    "in today's world",
     "generally speaking",
     "with that in mind",
     "building on this",
@@ -148,6 +157,7 @@ const TEMPLATE_OPENERS_EN: &[&str] = &[
     "i hope this message finds you well",
     "i hope this email finds you well",
     "as a passionate",
+    "i'm excited to apply",
 ];
 
 const TEMPLATE_OPENERS_DE: &[&str] = &[

@@ -65,8 +65,18 @@ export const INTERVIEW_QUESTION_MARKERS = { question: 'Q:', why: 'WHY:', audienc
  * selects the anti-AI-tell ruleset (see {@link antiAiTellProse}); defaults to
  * English. Without it, questions written in German were still policed by the
  * English tell-list.
+ *
+ * `target` is the provider profile the user prompt already resolves (see
+ * {@link buildInterviewQuestionsPrompt}), used here for its `depth` only: a
+ * small local model gets the checked-ban core instead of the full construction
+ * catalog. Optional and defaulting to `large`, so an existing caller keeps
+ * today's text verbatim.
  */
-export function buildInterviewQuestionsSystemPrompt(language?: string): string {
+export function buildInterviewQuestionsSystemPrompt(
+  language?: string,
+  target: PromptTarget = 'large'
+): string {
+  const { depth } = resolveProfile(target);
   return `You are helping a job candidate prepare SHARP questions to ASK their interviewer.
 
 GOAL: questions that leave a strong positive impression — each one signals genuine interest, real research, and seniority, and opens a substantive conversation.
@@ -85,7 +95,7 @@ Q: <the question, a single sentence>
 WHY: <one short line: what asking it signals / why it lands>
 AUDIENCE: <recruiter | hiringManager | team | leadership | general>
 
-${antiAiTellProse(language)}
+${antiAiTellProse(language, depth)}
 ${HUMANIZE_PROSE}`;
 }
 

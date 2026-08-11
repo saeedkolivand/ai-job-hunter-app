@@ -12,7 +12,9 @@
  * {@link GenerationMeta.targetLanguage} and the resolved letter market
  * ({@link ApplicationEmailParams.market} → {@link letterConventions}) for the
  * greeting and sign-off. No-fabrication: same résumé-grounded honesty contract
- * as cover-letter and referral generation.
+ * as cover-letter and referral generation. Depth-aware voice: all three depths
+ * compose the anti-AI-tell block, tiered by {@link antiAiTellProse} (see the
+ * `voice` local below) — never one branch's worth of rules on one path only.
  */
 
 import { truncateResume } from '../../context-manager/index.js';
@@ -245,6 +247,30 @@ export function buildApplicationEmailPrompt(
   // and word choice only, never overriding honesty or the market conventions.
   const toneLine = toneDirective(tone);
 
+  // ── Voice block (shared across all depths; only its TIER changes) ─────────
+  // `antiAiTellProse` is depth-scoped: `brief` returns the validator-backed
+  // checked core (AI vocabulary, promotional self-adjectives, weasel
+  // attributions, filler substitutions, the em-dash hard ban, no rule-of-three,
+  // the letter-register deletions) and `task`/`full` add the judgement calls and
+  // construction catalog on top. Composing it HERE, once, is what makes that
+  // tier the only difference between the three depths.
+  //
+  // It used to be composed in the `full` branch alone, which is a different bug
+  // from the one threading `depth` fixed: the argument was right, the branch was
+  // missing, so a small or CLI model was told nothing about AI vocabulary, em
+  // dashes or rule-of-three and the FORMAT skeleton's two opener examples were
+  // the whole anti-tell surface on those paths.
+  //
+  // `HUMANIZE_PROSE` rides along at every depth exactly as it does on every
+  // other prose surface (cover letter, referral, application answers, inline
+  // rewrite): it is the positive counterpart the bans are documented to be
+  // composed WITH, and its CADENCE line is what states the sentence-rhythm rule
+  // at `brief`, where the block's own "Vary sentence length" line sits in the
+  // dropped guidance tier.
+  const voice = `VOICE:
+${antiAiTellProse(lang, depth)}
+${HUMANIZE_PROSE}`;
+
   // ── Format skeleton (shared across all depths) ────────────────────────────
   const formatSkeleton = `FORMAT:
 Subject: [concise, specific subject — role name + "Application" or similar; no "RE:" or filler]
@@ -273,6 +299,8 @@ ${OUTPUT_CONTRACT}
 
 ${EMAIL_HONESTY}
 
+${voice}
+
 ${toneLine}
 
 ${langNote}
@@ -284,6 +312,8 @@ ${formatSkeleton}`;
 ${OUTPUT_CONTRACT}
 
 ${EMAIL_HONESTY}
+
+${voice}
 
 ACCEPTANCE CHECKS (verify and revise until all pass):
 - Line 1 is exactly "Subject: …" — nothing before it.
@@ -300,16 +330,19 @@ ${langNote}
 
 ${formatSkeleton}`;
   } else {
-    // full (cloud)
+    // full (cloud). The four bullets below stay full-only on purpose: each one
+    // restates a rule the FORMAT skeleton already gives at every depth (body
+    // length, the opener ban, the résumé/CV reference, the bare sign-off), so
+    // shipping them at `brief` would spend the small path's budget saying the
+    // same thing twice. The tiered VOICE block above is the part every depth
+    // needs.
     system = `You write short, professional job-application emails. The kind a thoughtful candidate actually sends: concise, warm, grounded in real experience, and clearly ${hasCompany ? 'about THIS role at THIS company' : 'about THIS role'} — not a templated blast.
 
 ${OUTPUT_CONTRACT}
 
 ${EMAIL_HONESTY}
 
-VOICE:
-${antiAiTellProse(lang)}
-${HUMANIZE_PROSE}
+${voice}
 - Conversational-professional: the candidate talking to a person, not reciting a spec. Email-length (2 to 3 paragraphs, ~120 to 200 words) — NOT a cover letter.
 - Lead with a genuine, résumé-backed fit reason. Never "${EMAIL_OPENER_EXAMPLE_EXCITED}" or "${EMAIL_OPENER_EXAMPLE_WRITING}".
 - Reference attaching the résumé/CV naturally in the closing paragraph.

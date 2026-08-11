@@ -1,9 +1,10 @@
 /**
  * Prompt -> Rust content-validator lexicon codegen.
  *
- * The content validator's `voice.ai_tell_lexical` / `voice.ai_tell_prose` /
- * `voice.template_opener` checks
- * (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`) must ban exactly
+ * The content validator's `voice.ai_tell_lexical` and `voice.template_opener`
+ * checks (`apps/desktop/src-tauri/src/validate/content/lexicon.rs`) — there is
+ * no separate prose CODE: `voice.rs::ai_tell_issues` merges the lexical and the
+ * prose array and reports both under `voice.ai_tell_lexical` — must ban exactly
  * what the generation prompt's natural-voice ruleset
  * (`packages/prompts/src/generate/natural-voice/natural-voice.ts`) instructs
  * the model to avoid — a validator checking a different list than the prompt

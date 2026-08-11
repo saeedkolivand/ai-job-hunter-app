@@ -115,6 +115,25 @@ fn silent(report: &ContentReport, code: &str) {
     );
 }
 
+/// The first `code` issue's evidence, or `None` when `code` never fired.
+///
+/// The alternative, `fired(report, code)[0].evidence`, asserts inside the
+/// SHARED helper, so the failure can only ever name the rule — and a test that
+/// runs one claim over several fixtures (the apostrophe-fold pair below renders
+/// the same letter twice) then cannot say WHICH fixture missed. Returning an
+/// `Option` moves the whole claim into the caller's own `assert_eq!`, whose
+/// message names the rule, the fixture, and what the report carried instead.
+///
+/// `None` covers both "the rule did not fire" and "it fired with no evidence";
+/// callers print [`codes`] alongside, which tells the two apart.
+fn first_evidence<'a>(report: &'a ContentReport, code: &str) -> Option<&'a str> {
+    report
+        .issues
+        .iter()
+        .find(|i| i.code == code)
+        .and_then(|i| i.evidence.as_deref())
+}
+
 /// Assert `code` fired, and return its issues.
 #[track_caller]
 fn fired<'a>(report: &'a ContentReport, code: &str) -> Vec<&'a ContentIssue> {
@@ -1738,6 +1757,235 @@ fn english_ai_tell_matching_is_unchanged_by_the_german_inflection_rule() {
                   day. I read the posting twice before writing this.\n\n\
                   Best regards,\nJane Doe\n";
     silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
+}
+
+// ── no-ai-slop catalog: the two tiers ───────────────────────────────────────
+//
+// The `no-ai-slop` pattern catalog was curated into a CHECKED tier (fixed
+// phrases carrying no factual content) and a PROMPT-ONLY tier (everything a
+// real candidate might truthfully write, plus every construction rule) — see
+// `AI_TELL_LEXICAL_WORDS_EN`'s doc in `natural-voice.ts` for the four-part
+// test an entry has to clear. The split IS the decision, so both halves are
+// pinned: the checked entries must fire, and the prompt-only vocabulary must
+// never reach a user's document.
+
+/// Every phrase the no-ai-slop pass added to the CHECKED tier fires.
+///
+/// Deliberately one fixture carrying all of them: an entry that silently
+/// stopped matching (the shape of the German inflection bug above) would still
+/// pass a test that only asserted "some AI tell fired".
+#[test]
+fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
+    let letter = "Dear Hiring Manager,\n\n\
+                  Your platform is widely regarded as the standard in payments. My \
+                  meticulous approach to release engineering carried a multifaceted \
+                  team through an ever-evolving market, and that was a genuine \
+                  paradigm shift. It is worth noting that in today's world the work \
+                  continues.\n\n\
+                  Best regards,\nJane Doe\n";
+    let report = en_letter(letter);
+    let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+        .iter()
+        .filter_map(|i| i.evidence.as_deref())
+        .collect();
+    for entry in [
+        "widely regarded as",
+        "meticulous",
+        "multifaceted",
+        "ever-evolving",
+        "paradigm shift",
+        "it is worth noting",
+        "in today's world",
+    ] {
+        assert!(
+            evidence.contains(&entry),
+            "{entry:?} is on the prompt's own ban list and must fire; got {evidence:?}"
+        );
+    }
+    assert!(
+        report.ok,
+        "voice findings stay advice — a model may never produce a Critical"
+    );
+}
+
+/// The contraction spellings a model actually writes, in BOTH apostrophe
+/// shapes.
+///
+/// [`flattened_lower`] normalizes case and whitespace but NOT punctuation, and
+/// a model emits the typographic apostrophe (U+2019) about as often as the
+/// ASCII one. That is why the first pass refused apostrophe entries outright:
+/// either spelling would have been half-dead. `ai_tell_issues` now folds
+/// U+2019 onto U+0027 before matching, so ONE ASCII entry covers both — this
+/// test is what makes that fold load-bearing (drop it and the typographic half
+/// goes silent).
+#[test]
+fn contraction_ai_tells_fire_with_either_apostrophe() {
+    let typographic = "Dear Hiring Manager,\n\n\
+                       It\u{2019}s worth noting that I built the settlement ledger you \
+                       advertise for. It\u{2019}s important to note that it still runs \
+                       every night. In today\u{2019}s world that is rarer than it \
+                       sounds.\n\n\
+                       Best regards,\nJane Doe\n";
+    let ascii = typographic.replace('\u{2019}', "'");
+    for (shape, letter) in [
+        ("typographic U+2019", typographic.to_string()),
+        ("ASCII U+0027", ascii),
+    ] {
+        let report = en_letter(&letter);
+        let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+            .iter()
+            .filter_map(|i| i.evidence.as_deref())
+            .collect();
+        for entry in [
+            "it's worth noting",
+            "it's important to note",
+            "in today's world",
+        ] {
+            assert!(
+                evidence.contains(&entry),
+                "{entry:?} must fire on the {shape} spelling; got {evidence:?}"
+            );
+        }
+    }
+}
+
+/// The opener check owes the apostrophe fold too.
+///
+/// [`super::lexicon::TEMPLATE_OPENERS_EN`]'s shape rule is the same
+/// one-directional rule the AI-tell arrays carry (U+0027 allowed, U+2019
+/// banned), and the prompt-side catalog-shape test asserts it over ALL SIX
+/// arrays — but `template_opener_issues` matched UNFOLDED text, so an
+/// apostrophe-bearing opener entry was half-dead while the shape rule said it
+/// was whole. Folding at this call site too (never inside the shared
+/// `flattened_lower`, same reasoning as `ai_tell_issues`) makes the rule true
+/// everywhere.
+///
+/// Its control lives in
+/// [`german_template_openers_are_unaffected_by_the_apostrophe_fold`], a
+/// SEPARATE test on purpose: inside one test the German half would sit behind
+/// the English panic and prove nothing about the mutation.
+#[test]
+fn template_openers_fire_with_either_apostrophe() {
+    let typographic = "Dear Hiring Manager,\n\n\
+                       I\u{2019}m excited to apply for the payments role. At Acme I \
+                       built the settlement ledger that clears twelve thousand orders \
+                       a night, and I read your posting twice before writing.\n\n\
+                       Best regards,\nJane Doe\n";
+    for (shape, letter) in [
+        ("typographic U+2019", typographic.to_string()),
+        ("ASCII U+0027", typographic.replace('\u{2019}', "'")),
+    ] {
+        let report = en_letter(&letter);
+        assert_eq!(
+            first_evidence(&report, VOICE_TEMPLATE_OPENER),
+            Some("i'm excited to apply"),
+            "{VOICE_TEMPLATE_OPENER} must report the contraction opener on the {shape} \
+             spelling; the report carried {:?}",
+            codes(&report)
+        );
+    }
+}
+
+/// German opener entries carry no apostrophe, so the fold above must be a
+/// no-op for them. Separate from the English test so that removing the fold
+/// leaves this one GREEN — which is what makes it a control rather than a
+/// second copy of the same assertion.
+#[test]
+fn german_template_openers_are_unaffected_by_the_apostrophe_fold() {
+    let german = "Sehr geehrte Damen und Herren,\n\n\
+                  hiermit bewerbe ich mich auf die ausgeschriebene Stelle als \
+                  Backend-Entwicklerin in Ihrem Unternehmen und freue mich sehr über \
+                  eine Rückmeldung von Ihnen.\n\n\
+                  Mit freundlichen Grüßen\nJana Mustermann\n";
+    let report = validate_content(&ContentInput {
+        generated: german,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::CoverLetter,
+    });
+    assert_eq!(
+        first_evidence(&report, VOICE_TEMPLATE_OPENER),
+        Some("hiermit bewerbe ich mich"),
+        "{VOICE_TEMPLATE_OPENER} must report the German opener on the apostrophe-free German \
+         fixture; the report carried {:?}",
+        codes(&report)
+    );
+}
+
+/// The negative control the tiering exists for: a TRUTHFUL letter written
+/// entirely out of the catalog's prompt-only vocabulary must stay silent.
+///
+/// Every phrase here either names something a real candidate really did
+/// ("utilize", "facilitate", "embark", "supercharge"), carries a real domain
+/// meaning ("beacon", as in a BLE/iBeacon fleet; "transformative justice", a
+/// named social-work practice; "Paramount Global", a real employer), or is
+/// ordinary human filler ("at the end of the day", "in conclusion", "as you can
+/// see"). The prompt tells the model to avoid all of them; a Warning reading
+/// "this is an AI tell" on one is a false accusation against the user, which
+/// this module prices higher than a missed tell.
+///
+/// "Paramount" is the third-pass addition and the sharpest case of the class:
+/// the per-phrase exemption in [`super::voice`] reads the SOURCE RÉSUMÉ only,
+/// never the job ad, so a letter addressed to Paramount Global had the
+/// employer's own name reported back as machine-written.
+///
+/// ## Why ONE `silent` covers BOTH lexicon arrays
+///
+/// There is no separate `voice.ai_tell_prose` CODE. On the letter path
+/// [`super::voice::validate_letter`] calls `ai_tell_issues(ctx, true)`, which
+/// merges [`super::lexicon::ai_tell_lexical`] and
+/// [`super::lexicon::ai_tell_prose`] into one hit list and reports every hit
+/// under [`VOICE_AI_TELL_LEXICAL`] — pinned from the positive side by
+/// [`no_ai_slop_checked_tier_fires_on_a_slop_letter`], where the PROSE entries
+/// "it is worth noting" and "in today's world" fire under exactly that code. So
+/// promoting any phrase in this fixture into EITHER array fails the line below;
+/// splitting the prose tier into its own code later would fail the positive
+/// test first, which is where that decision has to be made.
+///
+/// [`VOICE_TEMPLATE_OPENER`] is a genuinely separate code and is pinned
+/// separately. It is NOT pinned on the résumé control below: `voice::validate`
+/// never calls `template_opener_issues` for a résumé, so the assertion could
+/// not fail there for any edit — a guard that cannot fail reads as coverage and
+/// is not.
+#[test]
+fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
+    let letter = "Dear Hiring Manager,\n\n\
+                  I chose to utilize Terraform to facilitate the AWS move at Acme, \
+                  which for a payments team is table stakes. At its core the settlement \
+                  system is a queue. When it comes to on-call, going forward I want \
+                  fewer pages, not more. As you can see in terms of scale, the BLE \
+                  beacon fleet I ran was the real game changer, and at the end of the \
+                  day I would embark on this again. It did supercharge our deploys. \
+                  Before that I coordinated the county's transformative justice pilot \
+                  and taught a transformative learning module on Mezirow. The billing \
+                  work I did for Paramount Global is the closest match to this role.\n\n\
+                  In conclusion, with regard to the timeline, I can start in March.\n\n\
+                  Best regards,\nJane Doe\n";
+    let report = en_letter(letter);
+    silent(&report, VOICE_AI_TELL_LEXICAL);
+    silent(&report, VOICE_TEMPLATE_OPENER);
+}
+
+/// The same control on the RÉSUMÉ surface, where the lexical tier also runs.
+/// Present-tense bullets are an ordinary convention for a current role, and
+/// "Utilize" / "Facilitate" / "Spearhead" are exactly what a real résumé writes
+/// — the class of word this pass deliberately kept out of the checked tier.
+#[test]
+fn no_ai_slop_prompt_only_verbs_are_silent_on_an_ordinary_resume() {
+    let source = "EXPERIENCE\n\nPlatform Engineer | Acme Payments | 2021 - Present\n\
+                  - Provision the AWS fleet with Terraform\n\
+                  - Run the weekly release meeting\n\
+                  - Own the warehouse beacon rollout\n";
+    let generated = "EXPERIENCE\n\nPlatform Engineer | Acme Payments | 2021 - Present\n\
+                     - Utilize Terraform to provision the AWS fleet across three regions\n\
+                     - Facilitate the weekly release meeting for twelve engineers\n\
+                     - Spearhead the BLE beacon rollout across forty warehouses\n";
+    silent(
+        &report_for(generated, source, EN_JOB_AD, &[]),
+        VOICE_AI_TELL_LEXICAL,
+    );
 }
 
 /// R4-F7 — [`issue`] clamped `message` and `evidence` but copied `section`
