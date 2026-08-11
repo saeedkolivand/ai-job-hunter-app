@@ -977,6 +977,7 @@ pub fn run() {
             commands::job_preferences::job_preferences_get,
             commands::job_preferences::job_preferences_set,
             commands::job_preferences::job_preferences_set_salary_expectation,
+            commands::job_preferences::job_preferences_set_semantic_scoring,
             commands::job_preferences::job_preferences_set_extra_agency_companies,
             // contact profile (header source of truth)
             commands::contact_profile::contact_profile_get,

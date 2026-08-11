@@ -57,6 +57,73 @@ fn upsert_vector_persists_an_older_space_version_instead_of_force_advancing_it()
     );
 }
 
+/// `vectors` is the DOCUMENT index: the Embeddings panel counts every row in it
+/// (`count_vectors_in_space`, no join to `documents`) and derives `stale` as
+/// `total_docs - indexed`, and NOTHING deletes a row whose document does not
+/// exist (delete/re-embed iterate real documents; `prune_caches` only touches
+/// `posting_vectors`/`match_scores`). So one synthetic scoring id written here
+/// — an Autopilot run's résumé snapshot, say — would permanently inflate
+/// "indexed", clamp `stale` to 0 through the `saturating_sub`, and report
+/// "N/N indexed" over a genuinely stale index. The write refuses it.
+#[test]
+fn the_document_vector_index_refuses_a_synthetic_scoring_id() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // One real, UNINDEXED document — the "genuinely stale index" baseline.
+    store
+        .insert(&DocumentRecord {
+            id: "doc-real".into(),
+            title: "CV".into(),
+            name: "CV".into(),
+            locale: None,
+            text: "rust engineer".into(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap();
+    let indexed_before = store.count_vectors_in_space("ollama", "nomic-embed-text");
+    assert_eq!(indexed_before, 0);
+
+    // What an Autopilot semantic run would have written under its
+    // content-addressed résumé id.
+    let synthetic = crate::commands::match_resume::autopilot_resume_id("an autopilot résumé");
+    assert!(store
+        .upsert_vector(&synthetic, &ev(vec![0.1, 0.2]))
+        .is_err());
+    assert!(store.get_vector(&synthetic).is_none());
+    // The extension bridge's ad-hoc namespace is refused on the same rule.
+    assert!(store
+        .upsert_vector("adhoc:abc123", &ev(vec![0.1, 0.2]))
+        .is_err());
+
+    let indexed_after = store.count_vectors_in_space("ollama", "nomic-embed-text");
+    assert_eq!(
+        indexed_after, indexed_before,
+        "an autopilot semantic run must leave the document index untouched: count before == after"
+    );
+    // The Embeddings panel's arithmetic (`total.saturating_sub(indexed)`) is
+    // therefore still honest about the one unindexed document.
+    assert_eq!(
+        store.list().len().saturating_sub(indexed_after),
+        1,
+        "stale must still be 1 — an orphan row is exactly what would clamp it to 0"
+    );
+
+    // The guard is narrow: a real document id still indexes normally.
+    store
+        .upsert_vector("doc-real", &ev(vec![0.1, 0.2]))
+        .unwrap();
+    assert_eq!(
+        store.count_vectors_in_space("ollama", "nomic-embed-text"),
+        1
+    );
+    assert_eq!(store.list().len().saturating_sub(1), 0);
+}
+
 #[test]
 fn test_open_store() {
     let temp_dir = TempDir::new().unwrap();
@@ -1953,6 +2020,90 @@ fn count_table(store: &DocumentStore, table: &str) -> i64 {
         .unwrap_or(0)
 }
 
+// ── Amortized per-write eviction: match_scores ────────────────────────────────
+
+/// The `match_scores` cache prunes on the SAME amortized cadence as its
+/// `posting_vectors` sibling — one eviction pass per [`sql::CACHE_PRUNE_EVERY`]
+/// writes, rather than two DELETEs under the held connection lock on EVERY
+/// write. The match path is the bigger batch of the two (an Autopilot re-rank
+/// writes a row per scored job, on top of whatever the Jobs page scores), so
+/// per-write was up to ~2000 extra DELETEs per run.
+///
+/// Both halves matter and both are asserted here: an amortized prune that never
+/// fires is just a deleted prune, and a "prune" that fires on every write is the
+/// cost this change exists to remove. A stale row is the probe — the read-side
+/// TTL would hide it from `get_match_score` whether or not eviction ran, so the
+/// assertion counts raw rows.
+#[test]
+#[serial]
+fn the_match_score_prune_is_amortized_but_still_fires_across_a_batch() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    set_perf(Some(3600), None); // 1h TTL, no row cap
+
+    // One row already two hours past the TTL, inserted underneath the store so
+    // no write counter is spent on it.
+    {
+        let conn = store.conn.lock();
+        conn.execute(
+            "INSERT INTO match_scores
+             (resume_id, job_id, provider, model, semantic_enabled, formula_version,
+              vector_version, job_text_hash, score_json, created_at)
+             VALUES ('r', 'stale-job', 'ollama', 'nomic-embed-text', 1, 1, 1, 'h', '{}', ?1)",
+            params![ts_to_db(now_ms() - 2 * 3600 * 1000)],
+        )
+        .unwrap();
+    }
+
+    let fresh = |i: u64| {
+        let hash = sha256_hex(&format!("job-text-{i}"));
+        let job_id = format!("job-{i}");
+        move |store: &DocumentStore| {
+            store
+                .upsert_match_score(
+                    &MatchScoreKey {
+                        resume_id: "r",
+                        job_id: &job_id,
+                        provider: "ollama",
+                        model: "nomic-embed-text",
+                        semantic_enabled: 1,
+                        formula_version: 1,
+                        vector_version: 1,
+                        job_text_hash: &hash,
+                    },
+                    "{}",
+                )
+                .unwrap();
+        }
+    };
+
+    // Every write but the last one leaves the expired row in place — that is
+    // what "amortized" means, and a per-write prune fails here.
+    for i in 0..sql::CACHE_PRUNE_EVERY - 1 {
+        fresh(i)(&store);
+    }
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        sql::CACHE_PRUNE_EVERY as i64,
+        "the expired row plus every fresh one: within a batch the cache is \
+         allowed to hold rows past the TTL"
+    );
+
+    // …and the write that completes the cadence evicts it, so the bound still
+    // holds over the batch as a whole.
+    fresh(sql::CACHE_PRUNE_EVERY)(&store);
+    assert_eq!(
+        count_table(&store, "match_scores"),
+        sql::CACHE_PRUNE_EVERY as i64,
+        "the write that completes the cadence pruned the expired row while adding \
+         its own, so the count holds instead of growing — an amortized prune that \
+         never fires would read {} here",
+        sql::CACHE_PRUNE_EVERY as i64 + 1
+    );
+
+    reset_perf_to_balanced();
+}
+
 // ── Row-cap eviction: match_scores ────────────────────────────────────────────
 //
 // Implementation note: `prune_table_locked` uses
@@ -2671,4 +2822,88 @@ fn test_sha256_hex_is_deterministic_and_distinct() {
         sha256_hex(""),
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
+}
+
+/// A hand-edited bundle carrying a `<namespace>:` document id must not BRICK the
+/// restore. `clear_all()` runs before the first insert, so propagating the
+/// document-index write guard from here would leave the library half-restored
+/// with nothing to retry from — the very failure mode `import`'s up-front
+/// validation pass exists to prevent. The one embedding is skipped (it
+/// re-embeds on demand); every document still lands.
+///
+/// Unreachable for a bundle this app produced (`export()` only walks real
+/// `documents` rows), which is why it is a robustness guard rather than a fix.
+#[test]
+fn import_skips_a_synthetic_id_vector_instead_of_aborting_the_restore() {
+    use crate::data_store::DataStore;
+
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let bundle = serde_json::json!([
+        {
+            "_id": "autopilot-resume:deadbeef",
+            "title": "Hand-edited",
+            "name": "x.pdf",
+            "text": "first",
+            "createdAt": 1,
+            "indexed": false,
+            "isDefault": false,
+            "vector": [0.1, 0.2, 0.3],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 3 },
+        },
+        {
+            "_id": "doc-real",
+            "title": "Real",
+            "name": "r.pdf",
+            "text": "second",
+            "createdAt": 2,
+            "indexed": false,
+            "isDefault": true,
+            "vector": [0.4, 0.5, 0.6],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 3 },
+        },
+    ]);
+
+    let count = store.import(&bundle).expect("restore must not fail");
+
+    assert_eq!(count, 2, "every document is restored");
+    assert_eq!(store.list().len(), 2);
+    assert!(
+        store.get_vector("autopilot-resume:deadbeef").is_none(),
+        "the document index still refuses the synthetic id — it is skipped, not written"
+    );
+    assert_eq!(
+        store.get_vector("doc-real").map(|v| v.values),
+        Some(vec![0.4, 0.5, 0.6]),
+        "…and the rows AFTER it are still restored, embeddings included"
+    );
+}
+
+// ── one posting-vector row can be dropped with its producer ──────────────────
+
+/// The autopilot re-rank's résumé snapshot lives in this cache, so deleting the
+/// autopilot needs a single-row delete (the cache is otherwise bounded only by
+/// its TTL and row cap — see `commands::autopilot::drop_orphaned_resume_cache`).
+#[test]
+#[serial]
+fn delete_posting_vector_removes_only_that_row() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    store
+        .upsert_posting_vector("autopilot-resume:aaa", "hash-a", &ev(vec![0.1, 0.2]))
+        .unwrap();
+    store
+        .upsert_posting_vector("autopilot:bbb", "hash-b", &ev(vec![0.3, 0.4]))
+        .unwrap();
+
+    store.delete_posting_vector("autopilot-resume:aaa").unwrap();
+
+    assert!(store.get_posting_vector("autopilot-resume:aaa").is_none());
+    assert!(
+        store.get_posting_vector("autopilot:bbb").is_some(),
+        "the neighbouring posting row is untouched"
+    );
+    // Idempotent: deleting a missing row is not an error.
+    store.delete_posting_vector("autopilot-resume:aaa").unwrap();
 }

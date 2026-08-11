@@ -23,6 +23,17 @@ export interface JobPreferencesContract {
    * clears the list.
    */
   setExtraAgencyCompanies(companies: string[] | undefined): Promise<void>;
+
+  /**
+   * Single-column mirror of the renderer's `semanticScoring` preference
+   * (ADR-020 addendum). The setting itself lives in the webview's
+   * `localStorage`, which no Rust code can read — the headless Autopilot
+   * scheduler needs this copy to decide whether to run its semantic re-rank.
+   * Write-only from the renderer's perspective (the preference store stays the
+   * source of truth); like the two setters above it NEVER touches another
+   * column.
+   */
+  setSemanticScoring(enabled: boolean): Promise<void>;
 }
 
 export const JOB_PREFERENCES_CHANNELS = {
@@ -30,4 +41,5 @@ export const JOB_PREFERENCES_CHANNELS = {
   set: 'jobPreferences:set',
   setSalaryExpectation: 'jobPreferences:setSalaryExpectation',
   setExtraAgencyCompanies: 'jobPreferences:setExtraAgencyCompanies',
+  setSemanticScoring: 'jobPreferences:setSemanticScoring',
 } as const;

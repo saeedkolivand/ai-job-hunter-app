@@ -170,6 +170,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       set: noop,
       setSalaryExpectation: noop,
       setExtraAgencyCompanies: noop,
+      setSemanticScoring: noop,
     },
 
     dedup: {

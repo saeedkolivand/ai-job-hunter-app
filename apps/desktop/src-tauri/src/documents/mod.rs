@@ -21,9 +21,15 @@ use crate::data_store::DataStore;
 use crate::db::{column_exists, now_ms, run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::AppResult;
 
+use sql::{
+    get_match_score_with_conn, get_vector_with_conn, prune_due, prune_table_locked,
+    spawn_blocking_db, upsert_match_score_with_conn, upsert_vector_with_conn,
+};
+
 pub mod evidence;
 pub mod keywords;
 mod mojibake_repair;
+mod sql;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -228,14 +234,15 @@ pub struct DocumentStore {
     /// is not reentrant — never re-lock while a guard is held, and never hold a
     /// guard across an `.await`.
     conn: Arc<Mutex<Connection>>,
-    /// Monotonic count of `upsert_posting_vector` writes, used to amortize the
-    /// posting-vector cache prune onto a cheap cadence (every
-    /// [`Self::POSTING_PRUNE_EVERY`] writes) instead of running two DELETEs under
-    /// the held connection lock on *every* write. A re-embed (`ai_reembed_all`)
-    /// upserts hundreds of postings back-to-back, so the old per-write prune was
-    /// pure overhead — the cache can briefly exceed its bound between prunes,
-    /// which is fine for a best-effort cache.
+    /// Monotonic count of `upsert_posting_vector` writes, used to amortize that
+    /// cache's prune onto a cheap cadence — see [`sql::prune_due`], which owns
+    /// the rationale and the cadence both counters share.
     posting_writes: std::sync::atomic::AtomicU64,
+    /// The same, for `match_scores`. Its own counter, not a shared one: the two
+    /// tables are written by different paths at wildly different rates (a
+    /// re-embed batch touches only postings; a scoring run writes both), and one
+    /// counter would let the busy path drag its quiet sibling's prune along.
+    match_score_writes: std::sync::atomic::AtomicU64,
 }
 
 impl DocumentStore {
@@ -518,13 +525,9 @@ impl DocumentStore {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             posting_writes: std::sync::atomic::AtomicU64::new(0),
+            match_score_writes: std::sync::atomic::AtomicU64::new(0),
         })
     }
-
-    /// Prune the posting-vector cache once per this many writes (see
-    /// [`DocumentStore::posting_writes`]). 64 keeps re-embed batches (hundreds of
-    /// upserts) cheap while still bounding the cache regularly under steady use.
-    const POSTING_PRUNE_EVERY: u64 = 64;
 
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
@@ -798,24 +801,35 @@ impl DocumentStore {
             ],
         )
         .map_err(|e| e.to_string())?;
-        // Amortized eviction: prune only once per `POSTING_PRUNE_EVERY` writes,
-        // reusing the held lock (must NOT re-lock). A re-embed upserts hundreds of
-        // postings back-to-back, so the previous per-write prune ran two DELETEs
-        // on every call for no benefit; the cache may briefly exceed its bound
-        // between prunes, which is fine for a best-effort cache.
-        let n = self
-            .posting_writes
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            + 1;
-        if n.is_multiple_of(Self::POSTING_PRUNE_EVERY) {
+        // Amortized eviction on the shared cadence, reusing the held lock (must
+        // NOT re-lock) — see `sql::prune_due`.
+        if prune_due(&self.posting_writes) {
             let cfg = crate::performance::current();
-            Self::prune_table_locked(
+            prune_table_locked(
                 &conn,
                 "posting_vectors",
                 cfg.cache_ttl_secs,
                 cfg.cache_max_rows,
             );
         }
+        Ok(())
+    }
+
+    /// Drop ONE cached posting vector.
+    ///
+    /// The cache is otherwise bounded only by its TTL and row cap, which is the
+    /// right discipline for a derived row whose producer still exists. It is
+    /// the wrong one for a row derived from user CONTENT that has just been
+    /// deleted (an Autopilot's résumé snapshot, `autopilot-resume:<sha>`): that
+    /// row must go with its producer, not linger for the TTL. Idempotent — a
+    /// missing row is not an error.
+    pub fn delete_posting_vector(&self, job_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM posting_vectors WHERE job_id = ?1",
+            params![job_id],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -831,47 +845,12 @@ impl DocumentStore {
     /// table to the newest `max_rows`. `None` for a knob disables that bound
     /// (today's unbounded behavior). Best-effort — a failed prune never blocks
     /// the caller. Pure of its inputs (does not read the live global), so the
-    /// command can pass the exact tier it just applied.
+    /// command can pass the exact tier it just applied. Unlike the amortized
+    /// per-write prune, this one always runs: its caller is the settings change.
     pub fn prune_caches(&self, ttl_secs: Option<i64>, max_rows: Option<i64>) {
         let conn = self.conn.lock();
-        Self::prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
-        Self::prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
-    }
-
-    /// Prune one cache table to the given TTL + row cap, reusing an already-held
-    /// connection lock (callers hold `self.conn`; parking_lot Mutex is NOT
-    /// reentrant, so we must never call a `self.*` method that re-locks). No-op
-    /// when a knob is `None`. Table names are hardcoded literals (not user
-    /// input), so formatting them into the SQL is safe.
-    fn prune_table_locked(
-        conn: &Connection,
-        table: &str,
-        ttl_secs: Option<i64>,
-        max_rows: Option<i64>,
-    ) {
-        if let Some(ttl) = ttl_secs {
-            // created_at is epoch-MILLIS; ttl is seconds.
-            let cutoff = ts_to_db(now_ms()).saturating_sub(ttl.saturating_mul(1000));
-            let _ = conn.execute(
-                &format!("DELETE FROM {table} WHERE created_at < ?1"),
-                params![cutoff],
-            );
-        }
-        if let Some(n) = max_rows {
-            // Index-friendly row cap: delete everything older than the n-th newest
-            // row. The subquery uses idx_*_created_at (ORDER BY created_at DESC
-            // LIMIT 1 OFFSET n) instead of an unindexed full-table NOT IN sort.
-            // ≤ n rows → subquery is NULL → `created_at < NULL` deletes nothing.
-            // Ties on created_at may retain slightly more than n rows — fine for a
-            // cache bound. `{table}` is a hardcoded literal; `n` is bound.
-            let _ = conn.execute(
-                &format!(
-                    "DELETE FROM {table} WHERE created_at < \
-                     (SELECT created_at FROM {table} ORDER BY created_at DESC LIMIT 1 OFFSET ?1)"
-                ),
-                params![n],
-            );
-        }
+        prune_table_locked(&conn, "posting_vectors", ttl_secs, max_rows);
+        prune_table_locked(&conn, "match_scores", ttl_secs, max_rows);
     }
 
     // ── Match-result cache (self-invalidating) ────────────────────────────────
@@ -909,26 +888,50 @@ impl DocumentStore {
     }
 
     /// Store (or replace) the cached match-score JSON result for the given key.
+    ///
+    /// The amortized-prune decision is taken HERE, not in the SQL helper: the
+    /// counter belongs to the store and the helper only holds a `&Connection`.
     pub fn upsert_match_score(&self, key: &MatchScoreKey, score_json: &str) -> AppResult<()> {
+        let prune = prune_due(&self.match_score_writes);
         let conn = self.conn.lock();
-        upsert_match_score_with_conn(&conn, key, score_json)
+        upsert_match_score_with_conn(&conn, key, score_json, prune)
     }
 
     /// Async variant of [`upsert_match_score`] — runs the blocking write + lazy
     /// eviction off the async worker. Takes owned key + json so the closure is
-    /// `'static`. The TTL/row-cap prune reads `performance::current()` *inside*
-    /// the closure, reusing the held lock (never re-locks → no deadlock).
+    /// `'static`; the prune decision is likewise resolved before the move, since
+    /// the counter lives on `self`. The TTL/row-cap prune reads
+    /// `performance::current()` *inside* the closure, reusing the held lock
+    /// (never re-locks → no deadlock).
     pub async fn upsert_match_score_async(
         &self,
         key: OwnedMatchScoreKey,
         score_json: String,
     ) -> AppResult<()> {
         let conn = Arc::clone(&self.conn);
+        let prune = prune_due(&self.match_score_writes);
         spawn_blocking_db(move || {
             let conn = conn.lock();
-            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json)
+            upsert_match_score_with_conn(&conn, &key.as_ref(), &score_json, prune)
         })
         .await
+    }
+
+    /// Drop every cached match score computed FOR one résumé id.
+    ///
+    /// A `match_scores` row is résumé-derived content — its gaps,
+    /// recommendations and explanation all describe that résumé — so it must
+    /// die with the résumé, not at the TTL. Sibling of
+    /// [`Self::delete_posting_vector`] for the other half of an Autopilot
+    /// snapshot's cache footprint. Idempotent.
+    pub fn delete_match_scores_for_resume(&self, resume_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM match_scores WHERE resume_id = ?1",
+            params![resume_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     }
 
     /// Drop the entire match-result cache (e.g. on embedding-config change).
@@ -1063,6 +1066,23 @@ pub(crate) fn sha256_hex(text: &str) -> String {
         })
 }
 
+/// Whether `id` belongs to a synthetic, content-addressed SCORING identity
+/// (`adhoc:…` from the extension bridge, `autopilot:…` / `autopilot-resume:…`
+/// from the headless re-rank) rather than a real `documents` row.
+///
+/// The app-wide convention for such an id is a `<namespace>:` prefix; a real
+/// document id is `doc-<millis>-<uuid8>` (see [`make_doc_id`]) and never
+/// contains a colon. Used by [`upsert_vector_with_conn`] to keep the DOCUMENT
+/// index free of rows that have no document: nothing would ever delete them
+/// (document delete and re-embed both iterate real documents; `prune_caches`
+/// only touches `posting_vectors`/`match_scores`), and
+/// [`DocumentStore::count_vectors_in_space`] counts every row — so one orphan
+/// makes the Embeddings panel report "N/N indexed, stale 0" over an index that
+/// is genuinely stale.
+pub(crate) fn is_synthetic_scoring_id(id: &str) -> bool {
+    id.contains(':')
+}
+
 /// Cache-precedence predicate for the posting-vector cache: a cached row is a
 /// HIT iff its embedding space matches the `active` config AND it was stored for
 /// the exact text we're requesting (`requested_hash == cached.text_hash`). A
@@ -1080,174 +1100,112 @@ pub(crate) fn posting_vector_is_fresh(
     }
 }
 
+/// ONE embedding round-trip, behind a seam.
+///
+/// The scoring kernel's only reach into the provider layer. It is a trait (not
+/// a bare `AppHandle` call) because this crate has no `tauri::test` mock-app
+/// harness: with the round-trip behind a seam, "how many provider calls did
+/// this score make, on what bytes, and what did each one cost" is a plain unit
+/// test over a real [`DocumentStore`] instead of a hand-retyped mirror of the
+/// kernel's own cache logic — which is exactly the shape that let an
+/// untranslated-hash charge predicate pass review.
+/// `pub(crate)`, not `pub`: the choke point is only a guarantee while every
+/// implementor is in this crate and reachable from `embed_charged`.
+#[async_trait::async_trait]
+pub(crate) trait Embedder: Send + Sync {
+    /// `None` on any failure — the caller degrades to keyword-only scoring.
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector>;
+}
+
+/// A budget consulted immediately before each ACTUAL embedding round-trip.
+///
+/// The charge belongs HERE, at the call, evaluated on the exact bytes the call
+/// consumes — never in a caller that predicts the call from earlier state. The
+/// two answers diverge in practice: a caller sees the pre-translation blob (so
+/// its hash never matches the cached row for a translated posting → it charges
+/// on every total cache hit), and it cannot see the résumé-side embed at all
+/// (an evicted résumé vector then makes a real, uncharged round-trip). Same
+/// rule as `extension_bridge::answer_assist`: charge immediately before the
+/// work that reaches the provider, once per round-trip, and not at all when a
+/// cached path short-circuits.
+///
+/// `Err` means the ceiling refused: the round-trip must NOT happen.
+/// `pub(crate)` for the same reason as [`Embedder`]: "charged exactly once" is
+/// only a guarantee while every implementor is in this crate.
+pub(crate) trait EmbedBudget: Send + Sync {
+    fn charge_one_embed(&self) -> AppResult<()>;
+}
+
+/// Charge (if a budget is present) and then make one embedding round-trip.
+///
+/// The single choke point for every provider call the scoring kernel makes, so
+/// "charged exactly once per actual embed" is a property of one function rather
+/// than a convention each call site has to remember. A refused charge returns
+/// `None` — the same degrade-to-keyword-only signal as a failed embed.
+pub(crate) async fn embed_charged<E: Embedder + ?Sized>(
+    embedder: &E,
+    budget: Option<&dyn EmbedBudget>,
+    text: &str,
+) -> Option<EmbeddingVector> {
+    if let Some(budget) = budget {
+        if let Err(e) = budget.charge_one_embed() {
+            log::info!("[embed] round-trip refused by the daily ceiling: {e}");
+            return None;
+        }
+    }
+    embedder.embed_one(text).await
+}
+
+/// Production [`Embedder`]: the app's configured embedding provider.
+///
+/// `embed` already logs its own failure (see its doc), so `.ok()` here only
+/// discards the error from this `Option`-returning seam.
+pub(crate) struct AppEmbedder<'a>(pub &'a AppHandle);
+
+#[async_trait::async_trait]
+impl Embedder for AppEmbedder<'_> {
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector> {
+        embed(self.0, text).await.ok()
+    }
+}
+
 /// Resolve the embedding for a job posting's (possibly translated) `text`,
 /// using the persisted `posting_vectors` cache. A hit avoids the embed call
 /// entirely. The cache is guarded by BOTH the active embedding space and a
 /// `text_hash` of the exact `text` passed here, so a stale or wrong-language
 /// row is a natural miss. Does NOT touch `PostingsCache` (raw-text vectors).
-pub async fn posting_vector_or_embed(
-    app: &AppHandle,
+///
+/// `budget` is charged only on the miss path, immediately before the call —
+/// see [`EmbedBudget`]. `active` comes from the caller (which already resolved
+/// it for its own cache key) so the hit decision and the score are computed
+/// against one snapshot of the embedding space.
+pub(crate) async fn posting_vector_or_embed<E: Embedder + ?Sized>(
+    store: &DocumentStore,
+    active: &EmbeddingConfig,
+    embedder: &E,
+    budget: Option<&dyn EmbedBudget>,
     job_id: &str,
     text: &str,
 ) -> Option<EmbeddingVector> {
     // Snapshot everything from the store before any await — the store methods
     // each take/release the lock internally and return owned values, so no DB
     // lock is held across the embed call below.
-    let active = app.state::<DocumentStore>().embedding_config();
     let hash = sha256_hex(text);
-    let cached = app.state::<DocumentStore>().get_posting_vector(job_id);
+    let cached = store.get_posting_vector(job_id);
     // Single cache-hit decision (space + text_hash), shared with its unit test.
-    if posting_vector_is_fresh(&active, &hash, cached.as_ref()) {
-        return cached.map(|(v, _)| v); // cache hit — no embed
+    if posting_vector_is_fresh(active, &hash, cached.as_ref()) {
+        return cached.map(|(v, _)| v); // cache hit — no embed, no charge
     }
-    // `embed` now surfaces its error (see its own doc comment); this caller's
-    // contract stays "gracefully skip semantic scoring on failure" — the
-    // warning is already logged inside `embed`, so `.ok()` here doesn't lose
-    // it, just discards it from this Option-returning caller.
-    let v = embed(app, text).await.ok()?;
-    app.state::<DocumentStore>()
-        .upsert_posting_vector(job_id, &hash, &v)
-        .ok();
+    let v = embed_charged(embedder, budget, text).await?;
+    // Best-effort cache write: the embed already succeeded, so a failed upsert
+    // must not fail the score — it only means the NEXT call re-embeds (and
+    // re-charges) this posting. Logged rather than dropped, because a
+    // persistently failing write is invisible otherwise and reads downstream as
+    // "the cache never hits". Content-free: the id and the error, never the text.
+    if let Err(e) = store.upsert_posting_vector(job_id, &hash, &v) {
+        log::warn!("[documents] posting vector not cached for {job_id}: {e}");
+    }
     Some(v)
-}
-
-// ── Connection-bound SQL helpers ───────────────────────────────────────────────
-//
-// The hot match-path methods (`*_vector` / `*_match_score`) have both a sync
-// form (used by the synchronous `DataStore` trait + tests) and an async form
-// that offloads the blocking lock + query onto `spawn_blocking`. Both share the
-// SQL through these `&Connection`-bound free functions so the query lives in
-// exactly one place. They take `&Connection` (the caller already holds the
-// lock), so they never re-lock — `parking_lot::Mutex` is not reentrant.
-
-fn upsert_vector_with_conn(conn: &Connection, doc_id: &str, v: &EmbeddingVector) -> AppResult<()> {
-    let json = serde_json::to_string(&v.values)?;
-    // Persists the vector's OWN `space.version` rather than force-advancing to
-    // `EMBEDDING_VECTOR_VERSION`. Every caller that produces a *fresh* vector
-    // already builds it at the current version (`embed_text`), so binding the
-    // field is equivalent for them — but `import()` deliberately tags a restored
-    // backup vector `version: 0` (it is an old-format, pre-chunk-pool value), and
-    // force-advancing here silently overwrote that to the current version, so the
-    // restored vector read as fresh and was never re-embedded. A write path must
-    // persist an identity field, not re-derive it.
-    conn.execute(
-        "INSERT INTO vectors (doc_id, vector, provider, model, dim, version)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-         ON CONFLICT(doc_id) DO UPDATE SET
-            vector = excluded.vector, provider = excluded.provider,
-            model = excluded.model, dim = excluded.dim, version = excluded.version",
-        params![
-            doc_id,
-            json,
-            v.space.provider,
-            v.space.model,
-            v.space.dim as i64,
-            v.space.version,
-        ],
-    )?;
-    Ok(())
-}
-
-fn get_vector_with_conn(conn: &Connection, doc_id: &str) -> Option<EmbeddingVector> {
-    conn.query_row(
-        "SELECT vector, provider, model, dim, version FROM vectors WHERE doc_id = ?1",
-        params![doc_id],
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, i64>(4)?,
-            ))
-        },
-    )
-    .ok()
-    .and_then(|(json, provider, model, dim, version)| {
-        let values: Vec<f64> = serde_json::from_str(&json).ok()?;
-        Some(EmbeddingVector {
-            values,
-            space: EmbeddingSpace {
-                provider,
-                model,
-                dim: dim as usize,
-                version,
-            },
-        })
-    })
-}
-
-fn get_match_score_with_conn(conn: &Connection, key: &MatchScoreKey) -> Option<serde_json::Value> {
-    // Read-side TTL: an expired-but-not-yet-evicted row is a miss. None ttl = no expiry.
-    let cutoff = ttl_cutoff_ms();
-    conn.query_row(
-        "SELECT score_json FROM match_scores
-         WHERE resume_id = ?1 AND job_id = ?2 AND provider = ?3 AND model = ?4
-           AND semantic_enabled = ?5 AND formula_version = ?6 AND vector_version = ?7
-           AND job_text_hash = ?8
-           AND created_at >= ?9",
-        params![
-            key.resume_id,
-            key.job_id,
-            key.provider,
-            key.model,
-            key.semantic_enabled,
-            key.formula_version,
-            key.vector_version,
-            key.job_text_hash,
-            cutoff,
-        ],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
-    .and_then(|json| serde_json::from_str(&json).ok())
-}
-
-fn upsert_match_score_with_conn(
-    conn: &Connection,
-    key: &MatchScoreKey,
-    score_json: &str,
-) -> AppResult<()> {
-    conn.execute(
-        "INSERT INTO match_scores
-            (resume_id, job_id, provider, model, semantic_enabled, formula_version,
-             vector_version, job_text_hash, score_json, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-         ON CONFLICT(resume_id, job_id, provider, model, semantic_enabled, formula_version,
-                     vector_version, job_text_hash)
-         DO UPDATE SET score_json = excluded.score_json, created_at = excluded.created_at",
-        params![
-            key.resume_id,
-            key.job_id,
-            key.provider,
-            key.model,
-            key.semantic_enabled,
-            key.formula_version,
-            key.vector_version,
-            key.job_text_hash,
-            score_json,
-            ts_to_db(now_ms()),
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    // Lazy per-write eviction, reusing the held lock (must NOT re-lock).
-    let cfg = crate::performance::current();
-    DocumentStore::prune_table_locked(conn, "match_scores", cfg.cache_ttl_secs, cfg.cache_max_rows);
-    Ok(())
-}
-
-/// Run a fallible blocking DB closure on the `spawn_blocking` pool and flatten
-/// the `JoinError` into the typed [`AppError`] hierarchy. A panic in the closure
-/// (or pool shutdown) surfaces as an `AppError::Storage`, matching how every
-/// other rusqlite failure on this store is categorized. Used by the write-side
-/// async methods, where the `?`-propagated result must distinguish failure.
-async fn spawn_blocking_db<F>(f: F) -> AppResult<()>
-where
-    F: FnOnce() -> AppResult<()> + Send + 'static,
-{
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| crate::error::AppError::Storage(format!("documents db task failed: {e}")))?
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1378,7 +1336,18 @@ impl DataStore for DocumentStore {
             self.insert(record)?;
             if let Some(vector) = vector {
                 if !text_was_repaired {
-                    self.upsert_vector(&record.id, vector)?;
+                    // A `<namespace>:` id is refused by the document-index write
+                    // guard (`is_synthetic_scoring_id`). Unreachable for a bundle
+                    // this app produced — `export()` only walks real `documents`
+                    // rows — but a hand-edited backup must not BRICK the restore:
+                    // `clear_all()` has already run, so propagating here would
+                    // leave the library half-restored with nothing to retry from.
+                    // Skip the one vector (it re-embeds on demand) and keep going.
+                    if let Err(e) = self.upsert_vector(&record.id, vector) {
+                        log::warn!(
+                            "[documents] import: skipping the embedding of one restored document ({e})"
+                        );
+                    }
                 }
             }
             count += 1;

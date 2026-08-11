@@ -547,6 +547,7 @@ fn stub_job(url: &str) -> FoundJob {
         salary_currency: None,
         score: None,
         score_provisional: false,
+        score_source: crate::autopilot::ScoreSource::Keyword,
         found_at: 0,
         is_new: true,
         applied: false,

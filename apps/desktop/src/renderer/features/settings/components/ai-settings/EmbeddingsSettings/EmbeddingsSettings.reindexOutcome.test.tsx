@@ -58,6 +58,10 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 let jobEventHandler: ((event: JobEvent) => void) | undefined;
 const mockReembedMutateAsync = vi.fn().mockResolvedValue({ jobId: 'reembed-1' });
 
+const { mockSetSemanticScoring } = vi.hoisted(() => ({
+  mockSetSemanticScoring: vi.fn(),
+}));
+
 vi.mock('@/services', () => ({
   useEmbeddingStatus: () => ({
     data: {
@@ -69,6 +73,7 @@ vi.mock('@/services', () => ({
   }),
   useSetEmbeddingConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useReembedAll: () => ({ mutateAsync: mockReembedMutateAsync, isPending: false }),
+  useSetSemanticScoring: () => ({ mutate: mockSetSemanticScoring, isPending: false }),
   useJobEvents: (cb: (event: JobEvent) => void) => {
     jobEventHandler = cb;
   },
