@@ -82,7 +82,6 @@ const AI_TELL_LEXICAL_EN: &[&str] = &[
     "garner",
     "vital",
     "crucial",
-    "paramount",
     "harness",
     "elevate",
     "streamline",
@@ -158,6 +157,7 @@ const TEMPLATE_OPENERS_EN: &[&str] = &[
     "i hope this message finds you well",
     "i hope this email finds you well",
     "as a passionate",
+    "i'm excited to apply",
 ];
 
 const TEMPLATE_OPENERS_DE: &[&str] = &[

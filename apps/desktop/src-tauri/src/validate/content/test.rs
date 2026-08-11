@@ -1758,11 +1758,11 @@ fn english_ai_tell_matching_is_unchanged_by_the_german_inflection_rule() {
 #[test]
 fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
     let letter = "Dear Hiring Manager,\n\n\
-                  Your platform is widely regarded as the standard in payments, and \
-                  reliability is paramount there. My meticulous approach to release \
-                  engineering carried a multifaceted team through an ever-evolving \
-                  market, and that was a genuine paradigm shift. It is worth noting \
-                  that in today's world the work continues.\n\n\
+                  Your platform is widely regarded as the standard in payments. My \
+                  meticulous approach to release engineering carried a multifaceted \
+                  team through an ever-evolving market, and that was a genuine \
+                  paradigm shift. It is worth noting that in today's world the work \
+                  continues.\n\n\
                   Best regards,\nJane Doe\n";
     let report = en_letter(letter);
     let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
@@ -1771,7 +1771,6 @@ fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
         .collect();
     for entry in [
         "widely regarded as",
-        "paramount",
         "meticulous",
         "multifaceted",
         "ever-evolving",
@@ -1831,17 +1830,82 @@ fn contraction_ai_tells_fire_with_either_apostrophe() {
     }
 }
 
+/// The opener check owes the apostrophe fold too.
+///
+/// [`super::lexicon::TEMPLATE_OPENERS_EN`]'s shape rule is the same
+/// one-directional rule the AI-tell arrays carry (U+0027 allowed, U+2019
+/// banned), and the prompt-side catalog-shape test asserts it over ALL SIX
+/// arrays — but `template_opener_issues` matched UNFOLDED text, so an
+/// apostrophe-bearing opener entry was half-dead while the shape rule said it
+/// was whole. Folding at this call site too (never inside the shared
+/// `flattened_lower`, same reasoning as `ai_tell_issues`) makes the rule true
+/// everywhere.
+///
+/// Its control lives in
+/// [`german_template_openers_are_unaffected_by_the_apostrophe_fold`], a
+/// SEPARATE test on purpose: inside one test the German half would sit behind
+/// the English panic and prove nothing about the mutation.
+#[test]
+fn template_openers_fire_with_either_apostrophe() {
+    let typographic = "Dear Hiring Manager,\n\n\
+                       I\u{2019}m excited to apply for the payments role. At Acme I \
+                       built the settlement ledger that clears twelve thousand orders \
+                       a night, and I read your posting twice before writing.\n\n\
+                       Best regards,\nJane Doe\n";
+    for (shape, letter) in [
+        ("typographic U+2019", typographic.to_string()),
+        ("ASCII U+0027", typographic.replace('\u{2019}', "'")),
+    ] {
+        let report = en_letter(&letter);
+        assert_eq!(
+            fired(&report, VOICE_TEMPLATE_OPENER)[0].evidence.as_deref(),
+            Some("i'm excited to apply"),
+            "the contraction opener must fire on the {shape} spelling"
+        );
+    }
+}
+
+/// German opener entries carry no apostrophe, so the fold above must be a
+/// no-op for them. Separate from the English test so that removing the fold
+/// leaves this one GREEN — which is what makes it a control rather than a
+/// second copy of the same assertion.
+#[test]
+fn german_template_openers_are_unaffected_by_the_apostrophe_fold() {
+    let german = "Sehr geehrte Damen und Herren,\n\n\
+                  hiermit bewerbe ich mich auf die ausgeschriebene Stelle als \
+                  Backend-Entwicklerin in Ihrem Unternehmen und freue mich sehr über \
+                  eine Rückmeldung von Ihnen.\n\n\
+                  Mit freundlichen Grüßen\nJana Mustermann\n";
+    let report = validate_content(&ContentInput {
+        generated: german,
+        source_resume: DE_SOURCE,
+        job_ad: DE_JOB_AD,
+        top_requirements: &[],
+        target_language: "de",
+        doc_kind: DocKind::CoverLetter,
+    });
+    assert_eq!(
+        fired(&report, VOICE_TEMPLATE_OPENER)[0].evidence.as_deref(),
+        Some("hiermit bewerbe ich mich")
+    );
+}
+
 /// The negative control the tiering exists for: a TRUTHFUL letter written
 /// entirely out of the catalog's prompt-only vocabulary must stay silent.
 ///
 /// Every phrase here either names something a real candidate really did
 /// ("utilize", "facilitate", "embark", "supercharge"), carries a real domain
 /// meaning ("beacon", as in a BLE/iBeacon fleet; "transformative justice", a
-/// named social-work practice), or is ordinary human filler ("at the end of the
-/// day", "in conclusion", "as you can see"). The prompt tells the model to
-/// avoid all of them; a Warning reading "this is an AI tell" on one is a false
-/// accusation against the user, which this module prices higher than a missed
-/// tell.
+/// named social-work practice; "Paramount Global", a real employer), or is
+/// ordinary human filler ("at the end of the day", "in conclusion", "as you can
+/// see"). The prompt tells the model to avoid all of them; a Warning reading
+/// "this is an AI tell" on one is a false accusation against the user, which
+/// this module prices higher than a missed tell.
+///
+/// "Paramount" is the third-pass addition and the sharpest case of the class:
+/// the per-phrase exemption in [`super::voice`] reads the SOURCE RÉSUMÉ only,
+/// never the job ad, so a letter addressed to Paramount Global had the
+/// employer's own name reported back as machine-written.
 #[test]
 fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
     let letter = "Dear Hiring Manager,\n\n\
@@ -1852,7 +1916,8 @@ fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
                   beacon fleet I ran was the real game changer, and at the end of the \
                   day I would embark on this again. It did supercharge our deploys. \
                   Before that I coordinated the county's transformative justice pilot \
-                  and taught a transformative learning module on Mezirow.\n\n\
+                  and taught a transformative learning module on Mezirow. The billing \
+                  work I did for Paramount Global is the closest match to this role.\n\n\
                   In conclusion, with regard to the timeline, I can start in March.\n\n\
                   Best regards,\nJane Doe\n";
     silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);

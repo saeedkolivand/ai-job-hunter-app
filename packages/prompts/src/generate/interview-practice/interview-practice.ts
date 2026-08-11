@@ -32,8 +32,17 @@ export const STAR_FEEDBACK_MARKERS = {
   rewrite: 'REWRITE:',
 };
 
-/** System prompt — the quality bar for likely mock-interview questions. */
-export function buildLikelyQuestionsSystemPrompt(): string {
+/**
+ * System prompt — the quality bar for likely mock-interview questions.
+ *
+ * `target` is the provider profile the user prompt already resolves (see
+ * {@link buildLikelyQuestionsPrompt}), used here for its `depth` only: a small
+ * local model gets the anti-AI-tell checked-ban core instead of the full
+ * construction catalog. Optional and defaulting to `large`, so an existing
+ * caller keeps today's text verbatim.
+ */
+export function buildLikelyQuestionsSystemPrompt(target: PromptTarget = 'large'): string {
+  const { depth } = resolveProfile(target);
   return `You are a mock interviewer helping a job candidate PRACTICE for a real interview.
 
 GOAL: write the sharpest, most likely questions THIS interviewer would actually ask THIS candidate for THIS role, so the candidate can rehearse real answers before the real thing.
@@ -49,7 +58,7 @@ OUTPUT FORMAT — repeat this 2-line block per question, separated by ONE blank 
 Q: <the question, a single sentence>
 TYPE: <behavioral | roleSpecific | technical>
 
-${antiAiTellProse()}
+${antiAiTellProse(undefined, depth)}
 ${HUMANIZE_PROSE}`;
 }
 
@@ -100,8 +109,15 @@ ${marketNote}
 Write ${count} strong, specific questions this interviewer is likely to ask the candidate for this role, mixing behavioral, role-specific, and technical. Follow every ABSOLUTE RULE. Output ONLY the delimited list:`;
 }
 
-/** System prompt — the STAR-rubric coaching contract for one practice answer. */
-export function buildStarFeedbackSystemPrompt(): string {
+/**
+ * System prompt — the STAR-rubric coaching contract for one practice answer.
+ *
+ * `target` is the provider profile the user prompt already resolves (see
+ * {@link buildStarFeedbackPrompt}), used here for its `depth` only — same
+ * treatment as {@link buildLikelyQuestionsSystemPrompt}.
+ */
+export function buildStarFeedbackSystemPrompt(target: PromptTarget = 'large'): string {
+  const { depth } = resolveProfile(target);
   return `You are a supportive but honest interview coach reviewing a candidate's PRACTICE ANSWER to a mock interview question.
 
 GOAL: give the candidate concrete, actionable feedback so their real answer lands better.
@@ -131,7 +147,7 @@ RESULT: <present|missing>
 REWRITE:
 <one tightened rewrite of the candidate's answer, first person>
 
-${antiAiTellProse()}
+${antiAiTellProse(undefined, depth)}
 ${HUMANIZE_PROSE}`;
 }
 

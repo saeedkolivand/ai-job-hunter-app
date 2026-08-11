@@ -300,7 +300,11 @@ ${langNote}
 
 ${formatSkeleton}`;
   } else {
-    // full (cloud)
+    // full (cloud). The VOICE block is composed at THIS depth only (brief and
+    // task carry the format skeleton's own rules instead), so passing `depth`
+    // to `antiAiTellProse` is a no-op today — it is threaded anyway so that
+    // adding the block to another branch cannot silently reintroduce the
+    // full construction catalog on the small-model path.
     system = `You write short, professional job-application emails. The kind a thoughtful candidate actually sends: concise, warm, grounded in real experience, and clearly ${hasCompany ? 'about THIS role at THIS company' : 'about THIS role'} — not a templated blast.
 
 ${OUTPUT_CONTRACT}
@@ -308,7 +312,7 @@ ${OUTPUT_CONTRACT}
 ${EMAIL_HONESTY}
 
 VOICE:
-${antiAiTellProse(lang)}
+${antiAiTellProse(lang, depth)}
 ${HUMANIZE_PROSE}
 - Conversational-professional: the candidate talking to a person, not reciting a spec. Email-length (2 to 3 paragraphs, ~120 to 200 words) — NOT a cover letter.
 - Lead with a genuine, résumé-backed fit reason. Never "${EMAIL_OPENER_EXAMPLE_EXCITED}" or "${EMAIL_OPENER_EXAMPLE_WRITING}".

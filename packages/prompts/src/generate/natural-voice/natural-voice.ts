@@ -62,42 +62,65 @@ import type { PromptDepth } from '../../provider/index.js';
  * is claimed.
  *
  * DEPTH-AWARE: `brief` carries what a CHECK verifies, nothing else. The whole
- * ruleset used to be appended undifferentiated at every depth, which made it
- * 47.8% of the BRIEF cover-letter prompt and ~42% of the BRIEF résumé prompt —
- * the small-model path, whose model has the least room to apply style rules,
- * was spending most of its budget on them. The line that decides which tier a
- * rule lands in is VERIFIABILITY, because that is also the honesty rule: the
- * Rust validator runs on the OUTPUT and knows nothing about which depth
- * produced it, so a ban that survives in `lexicon.rs` but not in the brief
- * prompt is a Warning the model was never told about on that path (rule 3 of
- * the curation test below, applied per depth). Everything else is a judgement
- * call a 3B model cannot act on anyway. `*_CHECKED_EN` therefore ships at EVERY
- * depth and `*_GUIDANCE_EN` only at `full`/`task`; `brief` is a strict subset of
- * `full`, so no wording is invented for the small path and there is still
- * exactly one editorial source per line.
+ * ruleset used to be appended undifferentiated at every depth: on the brief
+ * cover-letter prompt the block was 25.0% of the prompt as shipped on `main`,
+ * and the expanded catalog would have taken it to 47.8% had it landed
+ * undifferentiated (brief résumé: 22.3% shipped, ~42% undifferentiated). That
+ * is the small-model path, whose model has the least room to apply style rules,
+ * spending a quarter to a half of its budget on them. The line that decides
+ * which tier a rule lands in is VERIFIABILITY, because that is also the honesty
+ * rule: the Rust validator runs on the OUTPUT and knows nothing about which
+ * depth produced it, so a ban that survives in `lexicon.rs` but not in the
+ * brief prompt is a Warning the model was never told about on that path (rule 3
+ * of the curation test below, applied per depth). The converse holds too, and
+ * is what keeps the tier honest in the other direction: a phrase NO check will
+ * ever verify does not belong in `*_CHECKED_EN`, because shipping it at `brief`
+ * spends the small path's budget on a judgement call it cannot act on.
+ * `*_CHECKED_EN` therefore ships at EVERY depth and `*_GUIDANCE_EN` only at
+ * `full`/`task`; `brief` is a strict subset of `full`, so no wording is
+ * invented for the small path and there is still exactly one editorial source
+ * per line.
+ *
+ * Both builders take `depth` and EVERY consumer threads its already-resolved
+ * profile depth through: résumé, cover letter, referral (generate + improve),
+ * application answers, application email, interview questions, likely
+ * questions, STAR feedback, and the inline rewrite. The parameter still
+ * defaults to `full`, but nothing in this package relies on that default —
+ * a new surface that forgets to pass its depth is the one regression the
+ * per-surface pins in `natural-voice.test.ts` section 18 exist to catch.
  *
  * Self-consistency: these constants contain NO em or en dashes used as punctuation.
  * Normal hyphens appear only where a hyphen is genuinely part of a word.
  */
 
 /**
- * Lexical bans a deterministic check verifies: every word spelled out here is
- * an {@link AI_TELL_LEXICAL_WORDS_EN} entry (or the prompt-only sibling quoted
- * beside one), so `voice.ai_tell_lexical` never reports a ban this line did not
- * issue.
+ * Lexical bans a deterministic check verifies. The tier rule runs BOTH ways:
+ * every {@link AI_TELL_LEXICAL_WORDS_EN} entry is spelled out here (or the
+ * validator would be stricter than the instruction it verifies at `brief`),
+ * and NOTHING here is a word the validator will never check (or the small
+ * path would be paying for a judgement call it cannot act on, which is what
+ * the `brief` tier exists to stop). Both directions are mechanically pinned in
+ * `natural-voice.test.ts` section 16, by parsing this exact text.
+ *
+ * The prompt-only siblings that used to ride along in these lists — "beacon",
+ * "transformative", "supercharge", "landscape (abstract)" and friends — live in
+ * {@link LEXICAL_GUIDANCE_EN} instead. They are still banned, just at the depth
+ * where a model can weigh them.
  */
 const LEXICAL_CHECKED_EN = `NATURAL VOICE (anti-AI-tell). Applies to any words YOU introduce, never to exact job-ad keywords already grounded in the résumé:
-- Drop AI-vocabulary: delve, leverage, robust, seamless, cutting-edge, tapestry, testament, landscape (abstract), navigate (abstract), realm, beacon, underscore, showcase, foster, intricate, pivotal, paramount, vibrant, garner, vital, crucial, harness, elevate, embark, streamline, supercharge, unlock, empower, transformative, multifaceted, ever-evolving, paradigm shift, game changer. Use the plain word for the real thing instead.
-- No promotional / inflated self-adjectives: passionate, results-driven, proven track record, team player, go-getter, synergy, dynamic, detail-oriented, meticulous, world-class, cutting-edge.
-- No vague attributions / weasel words: "studies show", "experts say", "industry reports", "many argue", "widely regarded as", "it is widely known".
+- Drop AI-vocabulary: delve, leverage, robust, seamless, cutting-edge, tapestry, testament, realm, underscore, showcase, foster, intricate, pivotal, vibrant, garner, vital, crucial, harness, elevate, streamline, unlock, empower, multifaceted, ever-evolving, paradigm shift. Use the plain word for the real thing instead.
+- No promotional / inflated self-adjectives: passionate, results-driven, proven track record, team player, go-getter, synergy, detail-oriented, meticulous, world-class, cutting-edge.
+- No vague attributions / weasel words: "studies show", "experts say", "industry reports", "widely regarded as", "it is widely known".
 - Cut filler phrases: "in order to" -> "to", "due to the fact that" -> "because", "at this point in time" -> "now", "has the ability to" -> "can".`;
 
 /**
  * Lexical judgement calls: nothing here is (or could be) a substring check, and
- * the words they name are deliberately prompt-only (see rule 2 below). `full`
- * and `task` only.
+ * the words they name are deliberately prompt-only (see rule 2 and rule 4
+ * below). `full` and `task` only.
  */
-const LEXICAL_GUIDANCE_EN = `- No importance puffery: "stands as a testament", "marks a pivotal moment", "plays a vital role", "solidifies its position", "underscores its significance". State the fact and let the reader judge whether it matters.
+const LEXICAL_GUIDANCE_EN = `- Drop these too, unless the word is genuinely the subject rather than decoration: landscape (abstract), navigate (abstract), beacon, embark, supercharge, paramount, transformative, game changer, dynamic (as a self-description). Each names a real thing in some field ("transformative justice" is a named practice, a BLE beacon fleet is real infrastructure, Paramount is a real employer), which is why these are judgement calls rather than hard bans.
+- More weasel attribution, same rule as above: "many argue", "experts agree". Name who, or drop the claim.
+- No importance puffery: "stands as a testament", "marks a pivotal moment", "plays a vital role", "solidifies its position", "underscores its significance". State the fact and let the reader judge whether it matters.
 - Plain verbs beat bloated ones: "utilize" -> "use", "facilitate" -> "run", "made a decision" -> "decided". Never manufacture a strong verb where "is" or "has" is clearer ("serves as a centralized hub for X" -> say what it actually does with X).
 - Cut empty adverbs that add nothing: just, simply, actually, truly, literally, honestly, fundamentally, importantly, crucially, inherently, inevitably. Keep one only when it carries real emphasis, contrast, or uncertainty.
 - PORTABILITY TEST: a sentence that could move unchanged to another candidate, company, or role is filler. Cut it, or replace it with a number, tool, mechanism, or consequence specific to THIS one.
@@ -109,8 +132,8 @@ const LEXICAL_GUIDANCE_EN = `- No importance puffery: "stands as a testament", "
  *
  * - the dash ban backs `voice.em_dash_overuse`;
  * - the rule-of-three ban backs `voice.rule_of_three_density`;
- * - the two phrase lines back `voice.ai_tell_prose` (their quoted phrases ARE
- *   {@link AI_TELL_PROSE_WORDS_EN} entries).
+ * - the deletion line backs `voice.ai_tell_prose` (both quoted phrases ARE
+ *   {@link AI_TELL_PROSE_WORDS_EN} entries, and nothing else is quoted here).
  *
  * `voice.low_burstiness` is the one check whose instruction is NOT here: it is
  * covered at every depth, more concretely, by {@link HUMANIZE_PROSE}'s CADENCE
@@ -119,23 +142,30 @@ const LEXICAL_GUIDANCE_EN = `- No importance puffery: "stands as a testament", "
  * backed by the cover-letter builder's own all-depth `LETTER_SPECIFICS`.
  *
  * The filler DELETIONS live here rather than in the lexical core because they
- * are letter register: "when it comes to" and "at the end of the day" cannot
- * occur in an ATS bullet, so a résumé prompt was paying ~120 characters to ban
- * prose it never writes.
+ * are letter register: "in today's world" cannot occur in an ATS bullet, so a
+ * résumé prompt was paying ~120 characters to ban prose it never writes. Their
+ * never-validated siblings ("at the end of the day", "when it comes to", the
+ * metadiscourse signposts) moved the other way, into
+ * {@link PROSE_GUIDANCE_EN}: they are ordinary things a truthful human writes,
+ * which is exactly why no check will ever verify them, which is exactly why
+ * they do not belong on the small path.
  */
 const PROSE_CHECKED_EN = `PROSE FLOW (anti-AI-tell, for connected writing):
 - EM-DASH HARD BAN: never use a long dash (em or en) anywhere. Replace it with a period, comma, colon, or parentheses.
 - No rule-of-three: do not force ideas into groups of three.
-- Delete these outright: "at the end of the day", "when it comes to", "at its core", "in terms of", "with regard to", "going forward", "in today's world".
-- Never tell the reader what to notice or how to weigh it: "the key point is", "as you can see", "this distinction matters", "in other words", "it is worth noting".`;
+- Delete these outright: "in today's world", "it is worth noting".`;
 
 /**
- * Prose CONSTRUCTIONS. Every rule here is a shape rather than a string, which
- * is exactly why {@link AI_TELL_PROSE_WORDS_EN} refuses to carry them — and why
- * they are the first thing dropped when the budget is tight: a model small
- * enough to need the brief prompt cannot judge them either. `full`/`task` only.
+ * Prose CONSTRUCTIONS, plus the stock phrases that read as a construction
+ * rather than a fixed tell. Every rule here is a shape or a judgement rather
+ * than a string, which is exactly why {@link AI_TELL_PROSE_WORDS_EN} refuses to
+ * carry them — and why they are the first thing dropped when the budget is
+ * tight: a model small enough to need the brief prompt cannot judge them
+ * either. `full`/`task` only.
  */
-const PROSE_GUIDANCE_EN = `- Vary sentence length and rhythm; do not run several same-shaped sentences in a row.
+const PROSE_GUIDANCE_EN = `- Cut the stock connectives where they carry nothing: "at the end of the day", "when it comes to", "at its core", "in terms of", "with regard to", "going forward".
+- Never tell the reader what to notice or how to weigh it: "the key point is", "as you can see", "this distinction matters", "in other words". Give the fact and stop.
+- Vary sentence length and rhythm; do not run several same-shaped sentences in a row.
 - No negative parallelisms ("not just X, but Y" / "it's not about X, it's about Y" / "the question isn't X, it's Y") and no negative listing ("Not a X. Not a Y. A Z."). State Y directly.
 - No superficial "-ing" openers or tails (highlighting, showcasing, reflecting, ensuring, underscoring) that fake depth.
 - No throat-clearing, faux-insight, or rhetorical setups: "Here's the thing", "Let me be clear", "I'll be honest", "The truth is", "What most people get wrong", "Here's what nobody tells you", "What if I told you", "Think about it:", or a question you immediately answer yourself. Cut the setup and make the claim.
@@ -219,8 +249,21 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
  *    So is "transformative": "transformative learning" is Mezirow's standard
  *    L&D curriculum term and "transformative justice" is a named social-work
  *    practice, so the checked tier would have told those candidates their own
- *    job title reads as machine-written. A word that looks like pure decoration
- *    in one industry is a field's name in another; when in doubt, prompt tier.
+ *    job title reads as machine-written. So is "paramount", found on the third
+ *    pass and the reason this rule now names PROPER NOUNS explicitly: Paramount
+ *    Global, Paramount Pictures and Paramount Network are real employers, and
+ *    the per-phrase exemption in `voice.rs::ai_tell_issues` reads only the
+ *    SOURCE RÉSUMÉ, never the job ad — so a letter addressed to Paramount was
+ *    told the employer's own name is an AI tell. A word that looks like pure
+ *    decoration in one industry is a field's name (or a company's name) in
+ *    another; when in doubt, prompt tier.
+ *
+ *    The same shape sits, pre-existing, on `realm`, `harness` and `foster`
+ *    (Realm the mobile database, Harness the CI vendor, Foster Farms). They
+ *    stay checked for now: unlike "paramount" they were not added by this pass,
+ *    and the honest fix for the whole class is to widen the exemption to the
+ *    posting/company name rather than to keep demoting entries one at a time.
+ *    Recorded as a deferral, not done here.
  *
  * Entries are matched with a word boundary at both ends
  * (`documents::evidence::contains_word`) and English gets NO inflection
@@ -246,7 +289,6 @@ export const AI_TELL_LEXICAL_WORDS_EN = [
   'garner',
   'vital',
   'crucial',
-  'paramount',
   'harness',
   'elevate',
   'streamline',
@@ -408,6 +450,16 @@ export const AI_TELL_PROSE_WORDS_DE: string[] = [];
  * prompt's opener ban (see `LETTER_SPECIFICS` in
  * `packages/prompts/src/generate/cover-letter/cover-letter.ts`) and the Rust
  * validator's `voice.template_opener` check, generated as above.
+ *
+ * ORDER IS LOAD-BEARING at indices 1 and 3: `cover-letter.ts` and
+ * `application-email.ts` quote those two as the prompt's worked examples.
+ * APPEND new openers, never insert.
+ *
+ * Contraction spellings follow the same rule as
+ * {@link AI_TELL_PROSE_WORDS_EN}: ASCII apostrophe (U+0027) only, because
+ * `voice.rs::template_opener_issues` folds U+2019 onto U+0027 before matching,
+ * exactly as `ai_tell_issues` does. Without that fold an apostrophe entry here
+ * would have been half-dead while the catalog-shape test said otherwise.
  */
 export const TEMPLATE_OPENERS_EN = [
   'i am writing to apply',
@@ -420,6 +472,11 @@ export const TEMPLATE_OPENERS_EN = [
   'i hope this message finds you well',
   'i hope this email finds you well',
   'as a passionate',
+  // The contraction twin of index 3, and every bit as stock. A full-phrase
+  // entry cannot match across the contraction (same finding as
+  // "it's worth noting"), so it needs its own entry; the apostrophe fold makes
+  // this one spelling cover both.
+  "i'm excited to apply",
 ];
 
 /** German (de) twin of {@link TEMPLATE_OPENERS_EN} (Standardfloskeln). */

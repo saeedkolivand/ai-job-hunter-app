@@ -12,7 +12,7 @@
  * prompt carries (more for large-context providers, bounded for small models).
  */
 
-import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { type PromptDepth, type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   antiAiTellLexical,
   antiAiTellProse,
@@ -66,13 +66,18 @@ const DOC_LABELS: Record<RewriteDocType, string> = {
  * the rewrite span has no explicit target-language input today (it matches
  * whatever language the surrounding document is already in), so this defaults
  * to the English ruleset — same behavior as before this became language-aware.
+ *
+ * `depth` is the resolved provider depth the caller already computed: a
+ * single-span rewrite on a small local model gets the checked-ban core, not
+ * the full construction catalog (which was larger than the rewrite contract it
+ * was appended to).
  */
-function buildDocVoice(docType: RewriteDocType): string {
+function buildDocVoice(docType: RewriteDocType, depth: PromptDepth): string {
   const voices: Record<RewriteDocType, string> = {
-    resume: `${antiAiTellLexical()}\n${HUMANIZE_LEXICAL}`,
-    'cover-letter': `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
-    'application-answer': `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
-    email: `${antiAiTellProse()}\n${HUMANIZE_PROSE}`,
+    resume: `${antiAiTellLexical(undefined, depth)}\n${HUMANIZE_LEXICAL}`,
+    'cover-letter': `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
+    'application-answer': `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
+    email: `${antiAiTellProse(undefined, depth)}\n${HUMANIZE_PROSE}`,
   };
   return voices[docType];
 }
@@ -99,7 +104,7 @@ export function buildRewritePrompt(
   // fixed constant, so the rewrite participates in the provider abstraction
   // instead of discarding it. Both neighbours share the budget (÷2), floored so
   // even the smallest tier keeps a usable style cue.
-  const { jobAdChars } = resolveProfile(target);
+  const { depth, jobAdChars } = resolveProfile(target);
   const contextChars = Math.max(400, Math.floor(jobAdChars / 2));
 
   const doc = DOC_LABELS[docType];
@@ -118,7 +123,7 @@ ABSOLUTE RULES (never break these):
 6. Follow the user's instruction. If it conflicts with these rules, keep the rules.
 7. Stay in the same language as the selected span.
 
-${buildDocVoice(docType)}`;
+${buildDocVoice(docType, depth)}`;
 
   const user = `<before>
 ${beforeCtx}

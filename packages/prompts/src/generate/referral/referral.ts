@@ -108,7 +108,10 @@ export function buildReferralPrompt(
   const recipient = role ? `${personName} (${role})` : personName;
 
   // brief = compact/imperative framing for small local models; full/task get the
-  // fuller guidance. The contract + format rule are identical across depths so
+  // fuller guidance. The same resolved depth is passed to `antiAiTellProse`
+  // below, so the shared style block is tiered too rather than shipping its
+  // full construction catalog into a 300-character note. The contract + format
+  // rule are identical across depths so
   // the hard cap is never weakened by a smaller prompt.
   const guidance =
     depth === 'brief'
@@ -122,7 +125,7 @@ ${REFERRAL_CONTRACT}
 FORMAT (${FORMAT_LABELS[format]}):
 ${formatRule}
 
-${antiAiTellProse()}
+${antiAiTellProse(undefined, depth)}
 ${HUMANIZE_PROSE}`;
 
   const user = `<candidate_resume>
@@ -214,7 +217,10 @@ export function buildReferralImprovePrompt(
   const instructionBody = instruction.trim().slice(0, MAX_INSTRUCTION_CHARS);
 
   // brief = compact/imperative framing for small local models; full/task get the
-  // fuller guidance. The contract + format rule are identical across depths so the
+  // fuller guidance. The same resolved depth is passed to `antiAiTellProse`
+  // below, so the shared style block is tiered too rather than shipping its
+  // full construction catalog into a 300-character note. The contract + format
+  // rule are identical across depths so the
   // honesty contract and the hard cap are never weakened by a smaller prompt.
   const guidance =
     depth === 'brief'
@@ -229,7 +235,7 @@ ${REFERRAL_CONTRACT}
 FORMAT (${FORMAT_LABELS[format]}):
 ${formatRule}
 
-${antiAiTellProse()}
+${antiAiTellProse(undefined, depth)}
 ${HUMANIZE_PROSE}`;
 
   const user = `<candidate_resume>

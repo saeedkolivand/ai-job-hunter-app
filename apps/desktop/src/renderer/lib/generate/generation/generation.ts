@@ -1032,7 +1032,7 @@ export async function generateApplicationAnswer(params: {
   const applicant = usePreferencesStore.getState().applicant;
   const tone = usePreferencesStore.getState().outputTone;
 
-  const system = buildApplicationAnswerSystemPrompt(tone, meta.targetLanguage);
+  const system = buildApplicationAnswerSystemPrompt(tone, meta.targetLanguage, profile);
   const user = buildApplicationAnswerPrompt({
     question,
     resume,
@@ -1181,7 +1181,7 @@ export async function generateInterviewQuestions(params: {
   // which silently misses the curated German lexicon. Normalize once, here.
   const languageCode = toLanguageCode(lang?.code ?? language ?? meta.targetLanguage ?? '');
 
-  const system = buildInterviewQuestionsSystemPrompt(languageCode);
+  const system = buildInterviewQuestionsSystemPrompt(languageCode, profile);
   const user = buildInterviewQuestionsPrompt({
     resume,
     jobAd,
@@ -1236,7 +1236,7 @@ export async function generateLikelyInterviewQuestions(params: {
     targetLanguage: meta.targetLanguage,
   });
 
-  const system = buildLikelyQuestionsSystemPrompt();
+  const system = buildLikelyQuestionsSystemPrompt(profile);
   const user = buildLikelyQuestionsPrompt({ resume, jobAd, meta, target: profile, market });
   // Prose, same intent (and same `questions` key) as the other interview surfaces.
   const sampling = resolveSampling('questions', 'prose');
@@ -1278,7 +1278,7 @@ export async function generateStarFeedback(params: {
     targetLanguage: meta.targetLanguage,
   });
 
-  const system = buildStarFeedbackSystemPrompt();
+  const system = buildStarFeedbackSystemPrompt(profile);
   const user = buildStarFeedbackPrompt({
     question,
     answer,

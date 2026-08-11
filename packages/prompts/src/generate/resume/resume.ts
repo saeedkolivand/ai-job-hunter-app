@@ -47,8 +47,11 @@ export function buildResumeSystemPrompt(
   // stays ATS-safe regardless of tone; see HUMANIZE_LEXICAL/TONE_PRECEDENCE).
   const toneBlock = `${toneDirective(tone, { lexical: true })}\n${TONE_PRECEDENCE}`;
   // Depth-aware: the `brief` path gets the checked-ban core only, so the
-  // small-model prompt does not spend ~42% of its budget on style guidance a
-  // 3B model cannot apply (see `antiAiTellLexical`).
+  // small-model prompt does not spend a fifth to a half of its budget on style
+  // guidance a 3B model cannot apply (22.3% of the brief résumé prompt as
+  // shipped on `main`, ~42% had the expanded catalog landed undifferentiated;
+  // it is 22.8% now, of a smaller block in a smaller prompt — see
+  // `antiAiTellLexical`).
   const lexical = antiAiTellLexical(language, depth);
   if (depth === 'task') return buildResumeSystemTaskBrief(mode, modeInstr, toneBlock, lexical);
   if (depth !== 'brief') return buildResumeSystemFull(mode, modeInstr, toneBlock, lexical);

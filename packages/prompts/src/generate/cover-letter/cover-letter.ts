@@ -74,7 +74,8 @@ Write the letter in ${targetLanguage}, but follow ${c.country} cover-letter etiq
  * one for that language (see {@link antiAiTellProse}), not an English list
  * silently injected into every locale, and the resolved `depth` so the `brief`
  * path carries the checked-ban core instead of the full construction catalog
- * (which was 47.8% of the brief letter prompt).
+ * (25.0% of the brief letter prompt as shipped on `main`, and 47.8% had the
+ * expanded catalog landed undifferentiated; it is 20.9% now).
  */
 function buildLetterVoice(language?: string, depth: PromptDepth = 'full'): string {
   return `VOICE: write like a real person, not a keyword optimizer.

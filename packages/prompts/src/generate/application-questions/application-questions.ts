@@ -102,8 +102,19 @@ export const APPLICATION_QUESTIONS: ApplicationQuestion[] = [
  * System prompt — the no-fabrication / résumé-grounding contract for answers.
  * `language` (ISO-639-1, e.g. `meta.targetLanguage`) selects the anti-AI-tell
  * ruleset (see {@link antiAiTellProse}); defaults to English.
+ *
+ * `target` is the provider profile the user prompt already resolves (see
+ * {@link buildApplicationAnswerPrompt}), used here for its `depth` only: a
+ * small local model gets the checked-ban core instead of the full construction
+ * catalog. Optional and defaulting to `large`, so an existing caller keeps
+ * today's text verbatim.
  */
-export function buildApplicationAnswerSystemPrompt(tone?: OutputTone, language?: string): string {
+export function buildApplicationAnswerSystemPrompt(
+  tone?: OutputTone,
+  language?: string,
+  target: PromptTarget = 'large'
+): string {
+  const { depth } = resolveProfile(target);
   return `You are helping a job candidate answer an application question truthfully and specifically.
 
 ABSOLUTE RULES (never break these):
@@ -115,7 +126,7 @@ ABSOLUTE RULES (never break these):
 6. First person, natural, 60 to 120 words, in the target language and the target market's register. Avoid clichés.
 7. Output the answer only. No preamble, no restating the question, no commentary.
 
-${antiAiTellProse(language)}
+${antiAiTellProse(language, depth)}
 ${HUMANIZE_PROSE}
 ${toneDirective(tone)}`;
 }

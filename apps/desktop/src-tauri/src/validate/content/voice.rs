@@ -155,8 +155,16 @@ fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
 }
 
 /// `voice.template_opener` — a letter that opens like every other letter.
+///
+/// Folded with [`fold_apostrophes`] for the same reason [`ai_tell_issues`] is,
+/// and at the same kind of call-site-local scope: `TEMPLATE_OPENERS_EN` obeys
+/// the one-directional apostrophe rule (U+0027 allowed, U+2019 banned) that the
+/// prompt-side catalog-shape test asserts over ALL SIX lexicon arrays, and
+/// without the fold here an entry such as "i'm excited to apply" would match
+/// only the ASCII spelling while that shape rule claimed it was whole. German
+/// openers carry no apostrophe, so this is a no-op for them.
 fn template_opener_issues(ctx: &Analysis) -> Vec<ContentIssue> {
-    let opening: String = flattened_lower(ctx.input.generated)
+    let opening: String = fold_apostrophes(&flattened_lower(ctx.input.generated))
         .chars()
         .take(TEMPLATE_OPENER_SCAN_CHARS)
         .collect();
