@@ -1964,6 +1964,10 @@
         "budgeted": "Gestoppt — Budgetlimit erreicht",
         "maxSteps": "Gestoppt — Schrittlimit erreicht",
         "maxTokens": "Gestoppt — Token-Limit erreicht",
+        "runTimeout": "Gestoppt — Zeitlimit für den Lauf erreicht",
+        "maxToolCalls": "Gestoppt — Limit für Tool-Aufrufe erreicht",
+        "maxRepairs": "Gestoppt — Ausgabe bestand die Prüfung auch nach Korrekturversuchen nicht",
+        "stopped": "Vorzeitig gestoppt",
         "cancelled": "Abgebrochen"
       },
       "confirm": {

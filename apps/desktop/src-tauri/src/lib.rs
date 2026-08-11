@@ -759,7 +759,15 @@ pub fn run() {
                 Err(e) => log::warn!("[setup] email watch store failed to open (non-fatal): {e}"),
             }
             app.manage(Mutex::new(UpdaterState::default()));
-            app.manage(std::sync::Arc::new(ScraperEngine::new()));
+            // ONE cancel registry for every job kind (`jobs::cancel`). The
+            // engine dispatches through it (`ScraperEngine::cancel`, which
+            // `jobs_cancel` calls for every job id regardless of kind), and it
+            // is also managed on its own so a non-scraping run — an agent run
+            // today, a pipeline run from Phase 3 — registers its token without
+            // borrowing the scraper. Process-local, holds no user data.
+            let scraper_engine = std::sync::Arc::new(ScraperEngine::new());
+            app.manage(scraper_engine.cancel_registry());
+            app.manage(scraper_engine);
             // In-memory anti-abuse limiter (rate + concurrency + per-provider daily
             // ceiling) for the expensive commands `ai_generate`, `scrape_board`, and
             // `scrape_url`. Process-local; resets on restart. Not in the reset
@@ -810,6 +818,14 @@ pub fn run() {
                     manage_resettable(app, &mut reset_registry, "discovered_companies", store)
                 }
                 Err(e) => log::warn!("[setup] discovered store failed to open (non-fatal): {e}"),
+            }
+            // Pipeline/agent run history + per-stage event trail. Its own DB
+            // (`pipeline_runs.db`); retention is newest-3-per-job, pruned on the
+            // performance-tier hook (`system_set_performance_mode`). Registered
+            // last, so its label sits at the tail of `MANAGE_RESETTABLE_LABELS`.
+            match pipeline::runs::PipelineRunStore::open(&data_dir) {
+                Ok(store) => manage_resettable(app, &mut reset_registry, "pipeline_runs", store),
+                Err(e) => log::warn!("[setup] pipeline run store failed to open (non-fatal): {e}"),
             }
 
             // Guard: the registry must contain exactly the labels the

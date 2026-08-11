@@ -4,8 +4,9 @@
 # Quality gate mirroring CI, but PATH-FILTERED to the files actually being pushed
 # (the local analogue of CI's dorny/paths-filter). A docs-only or JS-only push
 # skips the Rust/cargo steps entirely — so it can't hit the ajh-tauri.exe build
-# lock — and a Rust-only push skips the JS gate. The filter groups match CI's
-# `frontend`/`rust` filters in .github/workflows/ci-pipeline.yml.
+# lock — and a Rust-only push skips the JS gate. The filter groups mirror CI's
+# `frontend`/`rust`/`extension` filters in .github/workflows/ci-pipeline.yml,
+# which remain the authoritative definitions — keep them in sync.
 #
 # Safety: on ANY uncertainty (no push range, detached state) it falls back to the
 # FULL gate; cross-cutting paths (packages/**, ci-pipeline.yml, .github/actions/**)
@@ -69,11 +70,21 @@ export TURBO_FORCE=1
 # diff against the merge-base with origin/main. Any failure → FULL gate.
 ZERO=0000000000000000000000000000000000000000
 CHANGED=""
-RANGES=""
 HAVE_RANGE=0
+# `git push origin some-other-branch` pushes a ref that is NOT HEAD. The docs
+# fast path below classifies HEAD's own diff, so remember when anything other
+# than HEAD is being pushed and make that case take the FULL gate. Skipping only
+# the fast path is not enough: the flow would fall through to the group regexes
+# and a docs-only non-HEAD push would land on "No gated paths changed" — LESS
+# checking (no prettier, no drift checks) than the very fast path we distrusted.
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
+PUSHED_NON_HEAD=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [ -z "${local_sha:-}" ] || [ "$local_sha" = "$ZERO" ]; then
     continue # nothing to push on this ref (or a branch deletion)
+  fi
+  if [ -z "$HEAD_SHA" ] || [ "$local_sha" != "$HEAD_SHA" ]; then
+    PUSHED_NON_HEAD=1
   fi
   if [ "${remote_sha:-$ZERO}" = "$ZERO" ]; then
     base=$(git merge-base origin/main "$local_sha" 2>/dev/null || git rev-parse origin/main 2>/dev/null || true)
@@ -86,8 +97,15 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   else
     range="$remote_sha..$local_sha"
   fi
-  files=$(git diff --name-only "$range" 2>/dev/null || true)
-  RANGES="$RANGES $range"
+  # A FAILED diff (force-push whose old remote sha is no longer in the local
+  # object DB, a pruned/rewritten sha…) must NOT read as "no files changed" —
+  # that would silently skip every gate. Treat it exactly like an unresolvable
+  # merge-base above: no range → full gate.
+  if ! files=$(git diff --name-only "$range" 2>/dev/null); then
+    HAVE_RANGE=0
+    CHANGED=""
+    break
+  fi
   CHANGED="$CHANGED
 $files"
   HAVE_RANGE=1
@@ -107,8 +125,10 @@ done
 # .claude/settings*, scripts/**, package.json, lockfiles, tsconfig, *.config.*,
 # Cargo.*, .github/**, or any *.rs/*.mjs/*.ts/*.sh/…) drops straight to the full
 # gate below — as does PREPUSH_FULL=1, an undetermined push range (HAVE_RANGE=0),
-# or an unresolvable merge-base. Uncertainty always takes the full gate.
-if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
+# an unresolvable merge-base, or a push of any ref that is not HEAD
+# (PUSHED_NON_HEAD=1), since HEAD's diff would then describe the wrong commits.
+# Uncertainty always takes the full gate.
+if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ] && [ "$PUSHED_NON_HEAD" -eq 0 ]; then
   own_base=$(git merge-base origin/main HEAD 2>/dev/null || true)
   own_files=""
   if [ -n "$own_base" ]; then
@@ -124,7 +144,7 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
     && ! printf '%s\n' "$own_files" | grep -qvE "$DOCS_ALLOW" \
     && ! printf '%s\n' "$own_files" | grep -qE "$DOCS_DENY"; then
     n=$(printf '%s\n' "$own_files" | grep -c .)
-    echo "▶ Path filter: DOCS/META fast path (${n} files — branch is docs/meta only; skipping build/typecheck/test + rust + AI review). PREPUSH_FULL=1 forces the full gate."
+    echo "▶ Path filter: DOCS/META fast path (${n} files — branch is docs/meta only; skipping build/typecheck/test + rust). PREPUSH_FULL=1 forces the full gate."
     if printf '%s\n' "$own_files" | grep -qE '^\.claude/|^CLAUDE\.md$'; then
       echo "▶ Checking agent-system drift..."
       node scripts/check-agent-system.mjs
@@ -143,16 +163,20 @@ fi
 RUST=""
 NODE=""
 LANDING=""
+EXTENSION=""
 WORKFLOWS=""
-if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
+if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ] || [ "$PUSHED_NON_HEAD" -eq 1 ]; then
   RUST=1
   NODE=1
   LANDING=1
+  EXTENSION=1
   WORKFLOWS=1
   if [ -n "${PREPUSH_FULL:-}" ]; then
     echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
-  else
+  elif [ "$HAVE_RANGE" -eq 0 ]; then
     echo "▶ Path filter: FULL gate (push range undetermined)"
+  else
+    echo "▶ Path filter: FULL gate (pushed ref is not HEAD)"
   fi
 else
   # Only the CI gate definition itself (ci-pipeline.yml) and the composite
@@ -163,18 +187,28 @@ else
   if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src-tauri/|(^|/)Cargo\.(toml|lock)\$|\.rs\$|$GATE_AFFECTING"; then
     RUST=1
   fi
-  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src/|^packages/|^package\.json\$|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^eslint\.config\.mjs\$|^vitest\.config\.ts\$|^turbo\.json\$|$GATE_AFFECTING"; then
+  # apps/desktop/<root>.{json,ts,html} = vite/vitest/playwright/tsconfig/
+  # package.json/index.html — build+test inputs that live beside src/, so they
+  # must trip NODE too (mirrors CI's `frontend` filter). Anchored to the app root
+  # via [^/]+ so src-tauri/ still belongs to RUST alone.
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/desktop/src/|^apps/desktop/[^/]+\.(json|ts|html)\$|^packages/|^package\.json\$|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^eslint\.config\.mjs\$|^vitest\.config\.ts\$|^turbo\.json\$|$GATE_AFFECTING"; then
     NODE=1
   fi
   if printf '%s\n' "$CHANGED" | grep -qE '^apps/landing/'; then
     LANDING=1
   fi
+  # Mirrors CI's `extension` filter — that job (ci-pipeline.yml → `extension`)
+  # is the authoritative definition; keep the two in sync. The extension build
+  # consumes @ajh/shared and runs through turbo, hence the cross-cutting paths.
+  if printf '%s\n' "$CHANGED" | grep -qE "^apps/extension/|^packages/shared/|^pnpm-lock\.yaml\$|^tsconfig.*\.json\$|^turbo\.json\$|$GATE_AFFECTING"; then
+    EXTENSION=1
+  fi
   if printf '%s\n' "$CHANGED" | grep -qE '^\.github/workflows/'; then
     WORKFLOWS=1
   fi
   count=$(printf '%s\n' "$CHANGED" | grep -c . || true)
-  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} WORKFLOWS=${WORKFLOWS:-0} (${count} files changed)"
-  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ]; then
+  echo "▶ Path filter: NODE=${NODE:-0} RUST=${RUST:-0} LANDING=${LANDING:-0} EXTENSION=${EXTENSION:-0} WORKFLOWS=${WORKFLOWS:-0} (${count} files changed)"
+  if [ -z "$RUST" ] && [ -z "$NODE" ] && [ -z "$LANDING" ] && [ -z "$EXTENSION" ]; then
     echo "✓ No gated paths changed — skipping the build/test gate."
   fi
 fi
@@ -195,6 +229,15 @@ if [ -n "$NODE" ]; then
 
   echo "▶ Running package tests..."
   pnpm test
+fi
+
+# ── Extension gate (CI `extension` filter) ─────────────────────────────────────
+# Mirrors CI's Extension job, which is the authoritative gate. turbo's `^build`
+# dependsOn builds @ajh/shared first; lint/prettier are covered by the NODE gate
+# (and by CI's always-on lint-format job), so they aren't repeated here.
+if [ -n "$EXTENSION" ]; then
+  echo "▶ Typechecking + testing + building the extension..."
+  pnpm turbo run typecheck test build --filter=@ajh/extension
 fi
 
 # ── IPC codegen drift ──────────────────────────────────────────────────────────
@@ -295,17 +338,13 @@ if [ -n "$RUST" ]; then
   cd "$GIT_ROOT"
 fi
 
-# ── AI review of the push range (ADR-0008) ─────────────────────────────────────
-# Deterministic findings (ast-grep) block from day one; LLM findings are in
-# RATCHET warn mode (REVIEW_MODE=block to enforce). REVIEW_SKIP=1 skips but is
-# AUDITED in .claude/.review-metrics.jsonl — prefer it over --no-verify, which
-# silently skips this whole gate.
-if [ -n "${REVIEW_SKIP:-}" ]; then
-  echo "⚠ REVIEW_SKIP=1 — AI pre-push review skipped (audited)."
-  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs --log-skip || true
-else
-  echo "▶ AI review of push range..."
-  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs
-fi
+# AI review of the push range was removed 2026-08-11 (owner decision): it was
+# the slowest step (~3 min LLM round-trip) and the internal pre-PR review chain
+# + CodeRabbit + CI cover the same ground. scripts/pre-push-review.mjs was
+# deleted with it — nothing else invoked it (it needed PREPUSH_RANGES, which
+# only this hook ever set), and it was the ONLY writer of .claude/.review-cache.
+# The Stop gate (.claude/hooks/review-gate.mjs) uses .claude/hooks/review-lib.mjs
+# directly and only ever READ that cache, so it keeps working — its fast-path
+# just stops getting fresh entries and falls through to the deterministic scan.
 
 echo "✓ Pre-push gate complete"

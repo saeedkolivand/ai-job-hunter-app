@@ -26,6 +26,7 @@ import {
   buildJobAdBlock,
   buildResumeVoiceDirective,
   buildStyleReferenceBlock,
+  FACTUAL_GROUNDING_RULES,
 } from '../emphasis/index.js';
 import { stripLinkBlock } from '../links/index.js';
 import type { GenerationMeta } from '../modes/index.js';
@@ -363,7 +364,7 @@ ${resumeBody}
 
 ${buildJobAdBlock(jobAd, jobAdChars)}
 ${buildCompanyResearchBlock(companyBrief)}${styleBlock}
-Every factual claim about the candidate MUST be traceable to a line in <candidate_resume>. Never claim skills or experience from <job_ad> alone.
+${FACTUAL_GROUNDING_RULES}
 
 ### CONTEXT ###
 Candidate: ${candidateName}

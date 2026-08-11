@@ -19,6 +19,7 @@ use crate::dedup::DedupStore;
 use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
+use crate::pipeline::runs::PipelineRunStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -47,6 +48,34 @@ fn date_stamp() -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Sections whose export is a JSON array of records.
+///
+/// Module-level (not fn-local) with [`OBJECT_SECTIONS`] because together they
+/// are the bundle's section-key list, which the tests pin against the stores'
+/// own `DataStore::key()` and against the import routing in [`data_import`].
+const ARRAY_SECTIONS: &[&str] = &[
+    "documents",
+    "aiGenerations",
+    "applications",
+    "referrals",
+    "autopilots",
+    "interactions",
+    "spend",
+    "dedupTombstones",
+    "discoveredCompanies",
+];
+
+/// Sections whose export is a single JSON object. Two shapes share this check:
+/// the single-row settings stores, and `pipelineRuns`, whose export is an object
+/// of two arrays (`{ runs, events }`) so an event whose run failed to
+/// deserialize can't silently vanish with it.
+const OBJECT_SECTIONS: &[&str] = &[
+    "jobPreferences",
+    "contactProfile",
+    "aiProviderConfig",
+    "pipelineRuns",
+];
+
 /// Structurally validate every section that is present in `stores`, returning
 /// `Err(message)` for the first section whose top-level shape does not match what
 /// its store's `import` requires. Runs BEFORE any store is mutated so a malformed
@@ -54,21 +83,6 @@ fn date_stamp() -> String {
 /// top-level shape (array vs object); deep per-record validation happens
 /// atomically inside each store's transactional `import`.
 fn validate_sections(stores: &Value) -> crate::error::AppResult<()> {
-    // Sections whose export is a JSON array of records.
-    const ARRAY_SECTIONS: &[&str] = &[
-        "documents",
-        "aiGenerations",
-        "applications",
-        "referrals",
-        "autopilots",
-        "interactions",
-        "spend",
-        "dedupTombstones",
-        "discoveredCompanies",
-    ];
-    // Sections whose export is a single JSON object (single-row settings stores).
-    const OBJECT_SECTIONS: &[&str] = &["jobPreferences", "contactProfile", "aiProviderConfig"];
-
     for key in ARRAY_SECTIONS {
         if let Some(section) = stores.get(*key) {
             if !section.is_array() {
@@ -142,6 +156,12 @@ fn build_bundle(app: &AppHandle) -> Value {
     // Passively-harvested ATS company slugs + watched-company stars (ADR-030).
     // Public slugs + display names only — no secrets — so it round-trips.
     if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
+        stores.insert(s.key().to_string(), s.export());
+    }
+    // Pipeline/agent run history + its per-stage event trail. Local run
+    // bookkeeping (ids, the job URL, stage names, clamped summary artifacts) —
+    // no secrets, no generated documents — so it round-trips through backups.
+    if let Some(s) = app.try_state::<PipelineRunStore>() {
         stores.insert(s.key().to_string(), s.export());
     }
 
@@ -287,6 +307,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     if let Some(s) = app.try_state::<DiscoveredCompanyStore>() {
         import_into("discoveredCompanies", s.inner());
     }
+    if let Some(s) = app.try_state::<PipelineRunStore>() {
+        import_into("pipelineRuns", s.inner());
+    }
     // `import_into` (the `imported`/`had_error`-capturing closure) is never
     // called again after this point, so NLL can end its borrow here — letting
     // the interactions block below touch `imported`/`had_error` directly.
@@ -313,4 +336,185 @@ pub async fn data_import(app: AppHandle) -> Value {
         "partial": had_error,
         "imported": Value::Object(imported),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::{
+        json, validate_sections, DataStore, PipelineRunStore, ARRAY_SECTIONS, OBJECT_SECTIONS,
+    };
+    use crate::pipeline::runs::RunRow;
+
+    /// This file's own source, for the two WIRING pins at the bottom. Both
+    /// commands here are `AppHandle`-bound and this crate has no `tauri::test`
+    /// mock-app harness, so a source pin is the cheapest honest guard (the
+    /// `commands::autopilot` / `pipeline::json` precedent); `include_str!` also
+    /// makes rustc track the file, so this can never read a stale copy.
+    const SRC: &str = include_str!("data.rs");
+
+    fn a_run() -> RunRow {
+        RunRow {
+            id: "run-1".to_string(),
+            job_url: "https://example.test/job/1".to_string(),
+            kind: "resume".to_string(),
+            depth: "full".to_string(),
+            status: "done".to_string(),
+            started_at: 1_700_000_000_000,
+            finished_at: Some(1_700_000_050_000),
+            stopped_reason: Some("done".to_string()),
+            metrics_json: r#"{"steps":3}"#.to_string(),
+        }
+    }
+
+    /// `pipelineRuns` is the one section whose export is an OBJECT OF TWO ARRAYS
+    /// rather than the array shape most stores use, so it belongs in
+    /// [`OBJECT_SECTIONS`] — and this pre-pass is what stops a bundle that got
+    /// the shape wrong from reaching `import` and clearing the store first.
+    #[test]
+    fn validate_sections_holds_pipeline_runs_to_its_object_shape() {
+        validate_sections(&json!({ "pipelineRuns": { "runs": [], "events": [] } }))
+            .expect("the exported `{ runs, events }` shape must validate");
+
+        let err = validate_sections(&json!({ "pipelineRuns": [] }))
+            .expect_err("an array-shaped pipelineRuns section must be rejected")
+            .to_string();
+        assert!(
+            err.contains("pipelineRuns"),
+            "the error must name the offending section, got: {err}"
+        );
+
+        // An absent section is legal: a backup taken before this store existed
+        // must still restore everything it does contain.
+        validate_sections(&json!({})).expect("a bundle without the section still restores");
+    }
+
+    /// The section key is not a literal anyone maintains twice: it comes from
+    /// `DataStore::key()`. This walks the whole bundle contract for one real
+    /// store — export → the section key it lands under → the shape pre-pass →
+    /// `import` back — which is everything `data_export`/`data_import` do to it
+    /// except resolving the store from `AppHandle` state.
+    #[test]
+    fn the_run_store_round_trips_through_the_bundle_contract() {
+        let dir = TempDir::new().unwrap();
+        let source = PipelineRunStore::open(dir.path()).unwrap();
+        source.upsert_run(&a_run()).unwrap();
+
+        let key = source.key();
+        assert!(
+            OBJECT_SECTIONS.contains(&key),
+            "the store exports under '{key}', which no section list knows about — \
+             it would be written into a backup and silently skipped on restore"
+        );
+
+        let stores = json!({ key: source.export() });
+        validate_sections(&stores).expect("a REAL export must satisfy the pre-pass");
+
+        let dir2 = TempDir::new().unwrap();
+        let restored = PipelineRunStore::open(dir2.path()).unwrap();
+        let section = stores.get(key).expect("the bundle must carry the section");
+        assert_eq!(restored.import(section).unwrap(), 1);
+        assert_eq!(restored.run("run-1"), source.run("run-1"));
+    }
+
+    /// Pull the type argument out of every `try_state::<T>()` in `src`.
+    ///
+    /// The needle is assembled at runtime, never written out as one literal:
+    /// this module is part of the file it scans, so an inline needle would make
+    /// the scan match itself.
+    fn state_types(src: &str) -> std::collections::BTreeSet<String> {
+        let needle = format!("try_{}::<", "state");
+        src.match_indices(&needle)
+            .map(|(at, _)| {
+                let rest = &src[at + needle.len()..];
+                let end = rest
+                    .find(">()")
+                    .expect("unterminated `try_state` turbofish");
+                rest[..end].to_string()
+            })
+            .collect()
+    }
+
+    /// `SRC` from `start` up to `end` (or EOF), both assembled by the caller.
+    fn region(start: &str, end: &str) -> &'static str {
+        let from = SRC
+            .find(start)
+            .unwrap_or_else(|| panic!("`{start}` no longer appears in commands/data.rs"));
+        let rest = &SRC[from..];
+        &rest[..rest.find(end).unwrap_or(rest.len())]
+    }
+
+    /// WIRING PIN. A store must be on BOTH sides or neither: one that
+    /// `build_bundle` exports but `data_import` never routes back writes a
+    /// section into every backup that is silently dropped on restore — the
+    /// user's data is in the file and never comes home. `PipelineRunStore` is
+    /// asserted by name so deleting it from both sides fails too.
+    ///
+    /// Rustfmt assumption: a `try_state::<T>()` turbofish stays on one line.
+    #[test]
+    fn every_store_the_bundle_exports_is_also_restored() {
+        let exported = state_types(region(
+            &format!("fn build_{}(", "bundle"),
+            &format!("pub async fn data_{}(", "export"),
+        ));
+        let imported = state_types(region(
+            &format!("pub async fn data_{}(", "import"),
+            &format!("#[cfg({})]", "test"),
+        ));
+
+        for (side, types) in [("exported", &exported), ("imported", &imported)] {
+            assert!(
+                types.iter().any(|t| t.contains("PipelineRunStore")),
+                "the pipeline run store is not {side} — its history never leaves \
+                 (or never returns to) a backup"
+            );
+        }
+        assert_eq!(
+            exported, imported,
+            "a store on only one side of the backup is a silent one-way trip"
+        );
+    }
+
+    /// WIRING PIN. Every section the pre-pass validates must also be ROUTED in
+    /// `data_import` — a key that is validated but never imported is a section
+    /// that looks supported and restores nothing.
+    ///
+    /// The scan matches the ROUTING FORM each section actually uses, not a bare
+    /// quoted key: every `DataStore` section must go through the
+    /// `import_into("<key>", …)` closure, and `interactions` — the ONE section
+    /// whose store is not a `DataStore` — must be read straight off the bundle
+    /// with `stores.get("interactions")`. A bare-key scan would be satisfied by a
+    /// comment, a log line, or an error message naming a section nothing routes.
+    /// The form is required PER SECTION rather than as an either/or, because
+    /// accepting the bundle-read form for a `DataStore` section would let a lone
+    /// `stores.get("<key>")` — a read that inspects the section and imports
+    /// nothing — stand in for the missing `import`.
+    /// (There are no `match` arms on the key; if routing ever becomes a `match`,
+    /// this pin must learn that form too rather than being loosened back.)
+    ///
+    /// Both needles are assembled at RUNTIME: this module is part of the file it
+    /// scans, so a written-out form could let the test satisfy its own scan if
+    /// the scanned region ever widened past `#[cfg(test)]`.
+    #[test]
+    fn every_validated_section_is_routed_on_import() {
+        let importer = region(
+            &format!("pub async fn data_{}(", "import"),
+            &format!("#[cfg({})]", "test"),
+        );
+        let via_closure = format!("{}_into(", "import");
+        let via_bundle = format!("stores.{}(", "get");
+        for key in ARRAY_SECTIONS.iter().chain(OBJECT_SECTIONS) {
+            let needle = if *key == "interactions" {
+                format!("{via_bundle}\"{key}\")")
+            } else {
+                format!("{via_closure}\"{key}\",")
+            };
+            assert!(
+                importer.contains(&needle),
+                "section '{key}' is validated but never routed in data_import — \
+                 expected the `{needle}` routing form"
+            );
+        }
+    }
 }

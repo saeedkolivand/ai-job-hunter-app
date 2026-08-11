@@ -69,21 +69,49 @@ const CHECKLIST: ChecklistItem[] = [
   { key: 'propose', tool: null },
 ];
 
+/** The `jobs.prep.stopped.*` suffixes this build knows how to label. */
+type StoppedSuffix =
+  | 'done'
+  | 'maxSteps'
+  | 'maxTokens'
+  | 'cancelled'
+  | 'truncated'
+  | 'budgeted'
+  | 'runTimeout'
+  | 'maxToolCalls'
+  | 'maxRepairs';
+
 /**
- * Rust `StoppedReason` (`#[serde(rename_all = "snake_case")]`) → the
- * `jobs.prep.stopped.*` key suffix.
+ * Rust `StoppedReason` (`pipeline::budget`, `#[serde(rename_all = "snake_case")]`)
+ * → the `jobs.prep.stopped.*` key suffix. Every wire variant that can ride a
+ * COMPLETED job result needs an entry here.
+ *
+ * `timeout` is deliberately absent: `commands::agent` turns it into a job
+ * FAILURE, so it surfaces as the ErrorState below and never reaches this tag —
+ * and if that ever changes it lands on {@link UNKNOWN_STOPPED_SUFFIX}, which is
+ * honest, rather than on "Completed".
  */
-const STOPPED_SUFFIX: Record<
-  string,
-  'done' | 'maxSteps' | 'maxTokens' | 'cancelled' | 'truncated' | 'budgeted'
-> = {
+const STOPPED_SUFFIX: Record<string, StoppedSuffix> = {
   done: 'done',
   max_steps: 'maxSteps',
   max_tokens: 'maxTokens',
   cancelled: 'cancelled',
   truncated: 'truncated',
   budgeted: 'budgeted',
+  run_timeout: 'runTimeout',
+  max_tool_calls: 'maxToolCalls',
+  max_repairs: 'maxRepairs',
 };
+
+/**
+ * Label for a reason this build doesn't know — a variant added to the Rust enum
+ * after this renderer shipped.
+ *
+ * It must NEVER be `done`: `jobs.prep.stopped.done` exists, so an i18n
+ * `defaultValue` can't rescue an unmapped reason, and a timed-out or
+ * budget-exhausted run would render as "Completed". Vague beats wrong.
+ */
+const UNKNOWN_STOPPED_SUFFIX = 'stopped';
 
 /**
  * Last step in the log matching `item` (a turn can revisit the same tool, or
@@ -383,7 +411,6 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   }, [rows, t]);
 
   const proposalStep = steps.find((s) => s.kind === 'proposal');
-  const stoppedSuffix = result ? (STOPPED_SUFFIX[result.stoppedReason] ?? 'done') : 'done';
 
   const showEmpty = machineState === 'idle' && steps.length === 0;
   const showStarting = isBusy && steps.length === 0;
@@ -616,12 +643,23 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
                 </span>
                 {result && (
                   <Tag
-                    color={result.stoppedReason === 'done' ? 'success' : 'warning'}
+                    // Same lookup as the label, so tone and copy can never
+                    // disagree: only a mapped `done` is success-green; every
+                    // other reason — including one this build doesn't know —
+                    // stays warning-amber. `result` is non-null here (guarded
+                    // above), so both reads resolve the same suffix.
+                    color={
+                      (STOPPED_SUFFIX[result.stoppedReason] ?? UNKNOWN_STOPPED_SUFFIX) === 'done'
+                        ? 'success'
+                        : 'warning'
+                    }
                     className="text-[9px]"
                   >
-                    {t(`jobs.prep.stopped.${stoppedSuffix}` as const, {
-                      defaultValue: result.stoppedReason,
-                    })}
+                    {t(
+                      `jobs.prep.stopped.${
+                        STOPPED_SUFFIX[result.stoppedReason] ?? UNKNOWN_STOPPED_SUFFIX
+                      }` as const
+                    )}
                   </Tag>
                 )}
               </div>

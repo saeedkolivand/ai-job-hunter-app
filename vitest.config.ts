@@ -15,6 +15,10 @@ export default defineConfig({
       'packages/ui/vitest.storybook.config.ts',
       'apps/landing',
       'apps/desktop',
+      // Browser extension (MV3, jsdom). Also runs standalone in the
+      // path-filtered `extension` CI job via turbo; listed here so its tests
+      // and sources join the single aggregated coverage report.
+      'apps/extension',
       // Node-env project for build/release scripts (e.g. the empty-release-notes
       // guard plugin). Config: scripts/vitest.config.ts.
       'scripts',
@@ -28,6 +32,8 @@ export default defineConfig({
         'packages/prompts/src/**/*.ts',
         'packages/ui/src/**/*.{ts,tsx}',
         'apps/desktop/src/**/*.{ts,tsx}',
+        'apps/landing/src/**/*.{ts,tsx}',
+        'apps/extension/src/**/*.ts',
       ],
       exclude: [
         '**/*.d.ts',
@@ -49,6 +55,13 @@ export default defineConfig({
         'apps/desktop/src/TauriWindowControls.tsx', // native window-chrome (E2E)
         '**/test-support.tsx', // shared test harness (not production code)
         '**/mock-client.ts', // test/storybook/web-adapter stub, not runtime code
+        // Next.js route shells only — thin composition over the covered
+        // components, same rationale as the desktop routes above; rendered
+        // output is gated by the landing a11y + parity checks. Scoped to the
+        // framework filenames so co-located logic (e.g. app/world/world-config.ts,
+        // which has its own tests) stays measured.
+        'apps/landing/src/app/**/{page,layout,route,not-found,error,loading,template,default,sitemap,robots,manifest,icon,apple-icon,opengraph-image,twitter-image}.{ts,tsx}',
+        'apps/extension/src/manifest.ts', // build-time MV3 manifest, emitted by vite.config
       ],
       // Count every source file matched by `include`, even ones no test imports,
       // so the percentages reflect the whole surface rather than just touched files.
