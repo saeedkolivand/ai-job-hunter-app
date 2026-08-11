@@ -63,6 +63,51 @@ export const useSetExtraAgencyCompanies = () => {
 };
 
 /**
+ * Write-through for the `semanticScoring` preference (ADR-020 addendum) — the
+ * backend-readable mirror the headless Autopilot scheduler reads to decide
+ * whether to run its semantic re-rank. The renderer's preference store stays
+ * the source of truth; this only keeps Rust's copy aligned.
+ *
+ * Deliberately does NOT invalidate the `jobPreferences` query (unlike the two
+ * write-throughs above): the mirror is write-only — it is not part of the
+ * `JobPreferences` payload `get()` returns — so there is no cached read that
+ * could go stale.
+ */
+export const useSetSemanticScoring = () => {
+  const api = useAppClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => api.jobPreferences.setSemanticScoring(enabled),
+  });
+};
+
+/**
+ * Boot-time push of the persisted `semanticScoring` preference onto its
+ * backend-readable mirror — the exact `useSyncSalaryExpectation` shape below
+ * (read once at mount via `getState()`, not a reactive selector, so it fires
+ * exactly once; best-effort, never retried, never surfaced).
+ *
+ * Two gaps this closes that the toggle's own onChange cannot: a user who
+ * enabled semantic scoring BEFORE the mirror existed, and a factory reset /
+ * fresh profile where the backend copy is NULL while `localStorage` still says
+ * true. Unlike the salary sync it pushes `false` too — "off" is a meaningful
+ * value here (it is what keeps a scheduled run embedding-free), not an absence.
+ * Mount once in an app-global root.
+ */
+export const useSyncSemanticScoring = () => {
+  const api = useAppClient();
+  const pushed = useRef(false);
+  useEffect(() => {
+    if (pushed.current) return;
+    pushed.current = true;
+    const enabled = usePreferencesStore.getState().semanticScoring ?? false;
+    void api.jobPreferences.setSemanticScoring(enabled).catch(() => {
+      // Best-effort boot sync — a failure just means "not synced this launch";
+      // the toggle's onChange still fires normally on the next edit.
+    });
+  }, [api]);
+};
+
+/**
  * Boot-time push of the renderer-only `applicant.salaryExpectation` onto the
  * backend-owned `job_preferences` store (Task #30) — the bridge's
  * `answers.suggest` reads it from there for the synthetic salary-question row

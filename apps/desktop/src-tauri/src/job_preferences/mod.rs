@@ -184,6 +184,20 @@ impl JobPreferencesStore {
                 Ok(())
             },
         },
+        // Backend-readable copy of the renderer's `semanticScoring` preference
+        // (ADR-020 addendum: the headless Autopilot scheduler adopts semantic
+        // scoring when the user has it on). Same safe `ADD COLUMN` shape as the
+        // migrations above, and — per the repo's migration rule — APPENDED, never
+        // inserted, because migrations are position-indexed.
+        Migration {
+            name: "add_job_preferences_semantic_scoring",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE job_preferences ADD COLUMN semantic_scoring INTEGER;",
+                )?;
+                Ok(())
+            },
+        },
     ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
@@ -226,11 +240,52 @@ impl JobPreferencesStore {
         })
     }
 
+    /// Backend-readable copy of the renderer's `semanticScoring` preference
+    /// (ADR-020 addendum). Deliberately NOT a [`JobPreferences`] field: the
+    /// renderer owns the setting (Zustand → `localStorage`) and only ever
+    /// WRITES it here, so putting it on the struct would add a wire field no
+    /// reader wants and would drag it into `set`'s full-row `UPDATE` — the
+    /// exact clobber foot-gun [`set_salary_expectation`](Self::set_salary_expectation)
+    /// exists to avoid. It is likewise excluded from the `DataStore`
+    /// export/import round-trip for the same reason: the value is a mirror, and
+    /// the renderer's boot-time push re-establishes it on the next launch.
+    ///
+    /// Unset (NULL — every install before this column existed) reads `false`,
+    /// matching the app-wide `semanticScoring: false` default and
+    /// `match_resume`'s `semantic_enabled_bit`, so an un-synced install keeps
+    /// today's zero-embed Autopilot behaviour.
+    pub fn semantic_scoring(&self) -> bool {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT semantic_scoring FROM job_preferences WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|v| v != 0)
+    }
+
+    /// Update ONLY `semantic_scoring` — a single-column `UPDATE`, same
+    /// structural discipline as [`set_salary_expectation`](Self::set_salary_expectation):
+    /// the Settings toggle that calls this has no `location`/`tech_stack`/
+    /// `country_code` on hand, so it must never be able to reach `set()`'s
+    /// full-row write.
+    pub fn set_semantic_scoring(&self, enabled: bool) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE job_preferences SET semantic_scoring = ?1 WHERE id = 1",
+            params![i64::from(enabled)],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Reset all job preferences to empty (factory reset).
     pub fn clear(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
-            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL, salary_expectation = NULL, extra_agency_companies = NULL WHERE id = 1",
+            "UPDATE job_preferences SET location = NULL, tech_stack = NULL, country_code = NULL, salary_expectation = NULL, extra_agency_companies = NULL, semantic_scoring = NULL WHERE id = 1",
             [],
         )
         .map_err(|e| e.to_string())?;

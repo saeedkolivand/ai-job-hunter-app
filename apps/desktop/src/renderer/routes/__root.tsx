@@ -35,6 +35,7 @@ import {
   useNotificationEvents,
   useSyncCloseToTray,
   useSyncSalaryExpectation,
+  useSyncSemanticScoring,
 } from '@/services';
 import {
   useOnboardingCompleted,
@@ -148,6 +149,10 @@ function RootLayout() {
   // Push the persisted salary expectation onto the backend job_preferences
   // store once on boot (Task #30) — existing users' saved value lands there.
   useSyncSalaryExpectation();
+  // Push the persisted semantic-scoring preference onto its backend-readable
+  // mirror once on boot (ADR-020 addendum) — the headless Autopilot scheduler
+  // has no other way to read a webview-localStorage setting.
+  useSyncSemanticScoring();
   // Sync taskbar progress + flash attention on job completion/failure.
   useWindowTaskbarSync();
   // One-shot: if Zustand says not completed, check the disk mirror (survives

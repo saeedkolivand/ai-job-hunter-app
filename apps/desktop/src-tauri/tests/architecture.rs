@@ -386,6 +386,10 @@ const R3_ALLOW: &[&str] = &[
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
     // still lives entirely inside the `documents` domain store.
     "documents/mojibake_repair.rs",
+    // Same store, same reason: the connection-bound SQL of the hot match path,
+    // split out so `documents/mod.rs` stays under R8's LOC cap. Every query it
+    // holds was moved verbatim from that file.
+    "documents/sql.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",

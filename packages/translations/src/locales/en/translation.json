@@ -1160,6 +1160,7 @@
       "reindexPartial": "{{failed}} of {{total}} documents failed to re-index.",
       "semanticScoring": "Semantic scoring",
       "semanticScoringDesc": "Uses embeddings for deeper match quality. Disable for faster keyword-only scoring.",
+      "semanticScoringSyncFailed": "Saved here, but scheduled Autopilot runs could not be updated. Toggle it again to retry.",
       "staleAutoOne": "{{count}} document isn't indexed yet — indexing it now.",
       "staleAutoOther": "{{count}} documents aren't indexed yet — indexing them now.",
       "autoIndex": "Index automatically",
@@ -1549,6 +1550,14 @@
     "applyJob": "Apply",
     "aiNote": "AI note",
     "provisionalScoreHint": "Estimated from a summary — open the job for the exact match score.",
+    "scoreLabel": {
+      "coverage": "Keyword Coverage %",
+      "combined": "Match %"
+    },
+    "scoreAbbr": {
+      "coverage": "Keyword",
+      "combined": "Match"
+    },
     "delete": "Delete",
     "deleteTitle": "Delete this autopilot?",
     "deleteDescription": "This stops its schedule and permanently removes the autopilot and its found-jobs history.",

@@ -169,6 +169,15 @@ pub struct FoundJob {
     /// written before this field existed loads as `false`.
     #[serde(default)]
     pub score_provisional: bool,
+    /// WHICH kernel produced [`Self::score`] — the free keyword-coverage
+    /// prefilter, or the combined semantic+ATS kernel the Jobs page uses
+    /// (ADR-020 addendum). Set per job, so a posting whose embed failed and
+    /// degraded back to keyword-only is labelled honestly even in a run where
+    /// every other job re-ranked. Drives the renderer's metric label + band
+    /// thresholds; `#[serde(default)]` makes every pre-existing record load as
+    /// [`ScoreSource::Keyword`], which is exactly what it holds.
+    #[serde(default)]
+    pub score_source: ScoreSource,
     pub found_at: u64,
     /// First surfaced in the most recent run (set by the dedup merge in
     /// [`AutopilotStore::record_run`]). Drives the "New" badge.
@@ -224,6 +233,23 @@ pub struct FoundJob {
 /// annotation reads as its own canonical row.
 fn default_true() -> bool {
     true
+}
+
+/// Which scoring kernel produced a [`FoundJob::score`].
+///
+/// `Keyword` is the default in every sense: it is what the embedding-free
+/// prefilter produces, what every record written before this enum existed
+/// holds, and what a job degrades back to when its embed fails — so `Combined`
+/// is only ever set by an explicit, successful semantic re-rank.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ScoreSource {
+    /// Embedding-free keyword coverage (`documents::keywords::coverage_score`).
+    #[default]
+    Keyword,
+    /// The Jobs-page combined semantic+ATS kernel
+    /// (`commands::match_resume::score_one`).
+    Combined,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1000,14 +1026,17 @@ fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -> Vec<Found
                     row.description = inc.description.clone();
                 }
                 if inc.score.is_some() {
-                    // Paired fields — `score_provisional` describes WHICH score
-                    // is on the row, so it must move with `score`, never be left
-                    // stale from a prior source (e.g. a full-text board's
-                    // authoritative score resurfacing over an old aggregator
-                    // snippet score, or vice versa — a snippet score must never
-                    // display as authoritative).
+                    // Paired fields — `score_provisional` and `score_source`
+                    // both describe WHICH score is on the row, so they must move
+                    // with `score`, never be left stale from a prior source
+                    // (e.g. a full-text board's authoritative score resurfacing
+                    // over an old aggregator snippet score, or vice versa — a
+                    // snippet score must never display as authoritative; and a
+                    // run where the user turned semantic scoring OFF must not
+                    // leave last run's "combined" label on a keyword number).
                     row.score = inc.score;
                     row.score_provisional = inc.score_provisional;
+                    row.score_source = inc.score_source;
                 }
                 // Same fill-without-clobbering pattern as `board`/`description`: a
                 // re-scrape that newly learns the salary updates the row, but never

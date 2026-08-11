@@ -6,12 +6,12 @@ Canonical source: `apps/desktop/src-tauri/src/documents/keywords.rs` → `covera
 
 The AI Job Hunter uses **two complementary scoring strategies**:
 
-1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free, deterministic, zero API calls, safe for headless scheduling.
-2. **Combined scoring** (Jobs page analysis): hybrid (**60% semantic embedding similarity + 40% keyword ATS**), semantically heavier but requires embedding lookup.
+1. **Keyword-coverage scoring** (Autopilot + fast ATS screening): **pure keyword-based scoring** — embedding-free by default (when semantic scoring is disabled); when enabled, the top candidates re-rank through the combined kernel with per-job keyword-only degrade (see ADR-020 addendum).
+2. **Combined scoring** (Jobs page analysis, and Autopilot's opt-in re-rank): a hybrid of semantic embedding similarity and the keyword ATS score — semantically heavier, but it requires an embedding lookup. The weights live in the code (see "Jobs Page Combined Score" below); this document deliberately does not restate them.
 
 ## Keyword-Coverage Kernel
 
-The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for embedding-free scoring. It powers:
+The `coverage_score()` function (in `documents::keywords`) is the **single source of truth** for keyword-only scoring (the default Autopilot path). It powers:
 
 - **Autopilot ranking** (`commands::autopilot::build_found_job` → `coverage_score()`): filters + sorts candidates by keyword match %.
 - **ATS component** of the Jobs page combined score.
@@ -29,15 +29,22 @@ For the exact algorithm steps, parameters, and implementation, see `apps/desktop
 
 ## Autopilot Ranking
 
-Autopilot's ranking pipeline (in `commands/autopilot.rs` → `build_found_job()`):
+Two phases. **Phase 1 always runs and is embedding-free**; phase 2 runs only when the user has enabled semantic scoring app-wide (default OFF), in which case a scheduled run makes zero embed calls and does not even resolve the scoring state.
+
+**Phase 1 — keyword prefilter** (`commands/autopilot.rs` → `build_found_job()`):
 
 1. Fetch job postings.
-2. For each job, call `coverage_score()` (cached result if in `match_scores` table).
-3. Filter by `minMatchScore` threshold.
+2. For each job, call `coverage_score()` (cached result if in the `match_scores` table).
+3. Filter by the `minMatchScore` threshold (cluster-aware, ADR-029 §g).
 4. Sort by coverage % descending.
-5. Return top results for the user to approve/apply.
 
-**Autopilot's displayed score** is keyword-coverage, rendered as a Low/Medium/High MatchBand (variant='coverage', relaxed thresholds; '~'-prefixed muted when provisional from aggregator snippet) — distinct from the Jobs page combined-score band.
+**Phase 2 — bounded semantic re-rank** (`commands/autopilot/rerank.rs` → `semantic_rerank_phase()`):
+
+5. Re-score the top `SEMANTIC_RERANK_MAX` **cluster canonicals** through the same `match_resume::score_one` kernel the Jobs page uses — including the full pre-processing pipeline (translation, locale resolution), so the two "Match %" surfaces cannot disagree on the same pair.
+6. Degrade per job, never per run: an embed/provider failure leaves THAT job on its keyword score and the loop continues. The daily ceiling, cancellation, a run of consecutive degrades, and a wall clock each stop the loop, leaving every unvisited job keyword-scored. A run never fails because of scoring.
+7. Sort as **two blocks** — re-ranked head by combined score, keyword tail by coverage — because one axis over two scales would let a never-re-ranked keyword score outrank a re-ranked one.
+
+**Autopilot's displayed score** is therefore per-job: a Low/Medium/High MatchBand whose variant (and tier cut points, and metric label) **flips with that job's `scoreSource`** — `coverage` for a keyword score, `combined` for a re-ranked one; '~'-prefixed and muted when provisional from an aggregator snippet. When one list holds both, each row also shows its metric so the two-block order does not read as a sorting bug.
 
 ## Jobs Page Combined Score
 
@@ -54,7 +61,7 @@ Both scores are cached in SQLite:
 
 ## Testing
 
-Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection), `commands/autopilot.rs` (ranking uses the shared kernel), and `commands/match_resume.rs::tests` (combined formula). See ARCHITECTURE_STATUS.md for the full coverage.
+Keyword-coverage tests live in `documents/keywords.rs::tests` (unit tests for stemming, matching, language detection), `commands/autopilot/tests.rs` (ranking uses the shared kernel; the phase-2 gate, cost bounds and degrade rules), and `commands/match_resume/test.rs` (the combined formula's weights, the degrade boundary, and the per-round-trip embed charge — all driven through the real `score_one` against a real `DocumentStore`). See ARCHITECTURE_STATUS.md for the full coverage.
 
 ## Intentional simplification: flat keyword coverage
 

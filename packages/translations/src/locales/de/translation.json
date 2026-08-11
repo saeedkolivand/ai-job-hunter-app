@@ -1164,6 +1164,7 @@
       "reindexPartial": "{{failed}} von {{total}} Dokumenten konnten nicht neu indiziert werden.",
       "semanticScoring": "Semantische Bewertung",
       "semanticScoringDesc": "Nutzt Embeddings für höhere Abgleichqualität. Deaktivieren für schnellere reine Stichwortbewertung.",
+      "semanticScoringSyncFailed": "Hier gespeichert, aber geplante Autopilot-Läufe konnten nicht aktualisiert werden. Erneut umschalten, um es nochmal zu versuchen.",
       "staleAutoOne": "{{count}} Dokument ist noch nicht indexiert – wird jetzt indexiert.",
       "staleAutoOther": "{{count}} Dokumente sind noch nicht indexiert – werden jetzt indexiert.",
       "autoIndex": "Automatisch indexieren",
@@ -1553,6 +1554,14 @@
     "applyJob": "Bewerben",
     "aiNote": "KI-Notiz",
     "provisionalScoreHint": "Aus einer Kurzfassung geschätzt — öffne den Job für den genauen Match-Score.",
+    "scoreLabel": {
+      "coverage": "Stichwortabdeckung %",
+      "combined": "Match %"
+    },
+    "scoreAbbr": {
+      "coverage": "Stichwort",
+      "combined": "Match"
+    },
     "delete": "Löschen",
     "deleteTitle": "Diesen Autopilot löschen?",
     "deleteDescription": "Dies stoppt den Zeitplan und entfernt den Autopilot und seinen Verlauf gefundener Jobs dauerhaft.",
