@@ -6,15 +6,15 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
-use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
+use crate::commands::ai_provider::{EmbeddingVector, EMBEDDING_VECTOR_VERSION};
 use crate::documents::evidence::{rank_bullets, EvidenceBullet};
 use crate::documents::keywords::{
     apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, languages_align,
     make_stemmer, readable_gaps,
 };
 use crate::documents::{
-    embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
-    MatchScoreKey,
+    embed_charged, posting_vector_or_embed, sha256_hex, AppEmbedder, DocumentRecord, DocumentStore,
+    EmbedBudget, Embedder, EmbeddingConfig, MatchScoreKey,
 };
 use crate::ipc_contracts::matching::{MatchResumeRequest, ResumeTrimSuggestionsRequest};
 use crate::ipc_contracts::resume::ResumeExtractTextRequest;
@@ -117,6 +117,39 @@ impl MatchSurface {
     }
 }
 
+/// The scoring kernel's outside world: the local-only JD translation and the
+/// embedding round-trip, behind ONE seam.
+///
+/// [`score_one`] needs nothing else from the `AppHandle`, so this makes the
+/// whole kernel — translation, cache identity, the charge, the degrade — a
+/// plain unit test over a real [`DocumentStore`]. That matters here
+/// specifically: the two effects are ordered (translate, THEN hash + embed the
+/// TRANSLATED bytes), and an untestable kernel is how a budget predicate came
+/// to hash the pre-translation blob.
+#[async_trait::async_trait]
+pub(crate) trait ScoreIo: Embedder {
+    /// Rewrite the JD into `target_lang` when a local provider can (cloud
+    /// providers are excluded upstream); returns `text` unchanged otherwise.
+    async fn translate(&self, job_id: &str, text: String, target_lang: &str) -> String;
+}
+
+/// Production [`ScoreIo`]: the real translation command + the real embedder.
+pub(crate) struct AppScoreIo<'a>(pub &'a AppHandle);
+
+#[async_trait::async_trait]
+impl Embedder for AppScoreIo<'_> {
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector> {
+        AppEmbedder(self.0).embed_one(text).await
+    }
+}
+
+#[async_trait::async_trait]
+impl ScoreIo for AppScoreIo<'_> {
+    async fn translate(&self, job_id: &str, text: String, target_lang: &str) -> String {
+        crate::commands::translation::translate_if_needed(self.0, job_id, &text, target_lang).await
+    }
+}
+
 /// The résumé language `score_one` matches in: the PERSISTED
 /// `DocumentRecord.locale` (nullable — `documents_add`'s `locale` is optional),
 /// falling back to `"en"`.
@@ -151,9 +184,17 @@ pub(crate) fn resume_target_lang(resume: &DocumentRecord) -> &str {
 /// "Match %" surface; off for the extension, whose zero-egress guarantee means
 /// the call is skipped ENTIRELY, not just short-circuited), and where the
 /// résumé vector is cached ([`MatchSurface::resume_vector_home`]).
+///
+/// `budget`, when present, is charged **once per actual embedding round-trip**
+/// this call makes — résumé and posting counted separately, nothing charged for
+/// a cache hit. It is threaded down to the call rather than evaluated by the
+/// caller because only here are the exact bytes known: the posting embed
+/// consumes the POST-translation text, and whether the résumé side embeds at
+/// all depends on a second cache this function owns. `None` for the interactive
+/// surfaces, which are user-initiated and not budgeted.
 #[allow(clippy::too_many_arguments)] // house convention (see clippy.toml threshold=8) — this fn legitimately threads every cache-key input plus the surface
 async fn score_one(
-    app: &AppHandle,
+    io: &dyn ScoreIo,
     store: &DocumentStore,
     resume: &DocumentRecord,
     resume_raw_keywords: Option<&[String]>,
@@ -162,6 +203,7 @@ async fn score_one(
     job_text: Option<String>,
     semantic_enabled: i64,
     surface: MatchSurface,
+    budget: Option<&dyn EmbedBudget>,
 ) -> Value {
     let Some(job_text) = job_text else {
         return json!({ "error": format!("job not found in cache: {}", job_id) });
@@ -174,8 +216,8 @@ async fn score_one(
     // excluded, so this never incurs an unexpected API cost. Skipped entirely
     // (no call at all, not just a no-op) when the surface does not translate.
     let job_text = if surface.translates() {
-        let target_lang = resume_target_lang(resume);
-        crate::commands::translation::translate_if_needed(app, job_id, &job_text, target_lang).await
+        io.translate(job_id, job_text, resume_target_lang(resume))
+            .await
     } else {
         job_text
     };
@@ -209,10 +251,11 @@ async fn score_one(
             ResumeVectorHome::DocumentIndex => match store.get_vector_async(&resume.id).await {
                 Some(v) if active.matches(&v.space) => Some(v),
                 _ => {
-                    // `embed` surfaces its error (already logged inside it); this
-                    // caller keeps its existing "degrade to keyword-only" contract
-                    // for match scoring, so `.ok()` discards it here.
-                    let v = embed(app, &resume.text).await.ok();
+                    // A real round-trip, so it goes through the same charged
+                    // choke point as every other embed here. The embedder logs
+                    // its own failure; this caller keeps its existing "degrade
+                    // to keyword-only" contract for match scoring.
+                    let v = embed_charged(io, budget, &resume.text).await;
                     if let Some(ref ev) = v {
                         let _ = store.upsert_vector_async(&resume.id, ev).await;
                     }
@@ -229,10 +272,13 @@ async fn score_one(
             // résumé, every later job (and every repeat run inside the TTL)
             // hits this row.
             ResumeVectorHome::EphemeralCache => {
-                posting_vector_or_embed(app, &resume.id, &resume.text).await
+                posting_vector_or_embed(store, active, io, budget, &resume.id, &resume.text).await
             }
         };
-        let jv = posting_vector_or_embed(app, job_id, &job_text).await;
+        // The posting embed consumes the POST-translation text — which is what
+        // its cache row is keyed on, and therefore what the charge above is
+        // decided on.
+        let jv = posting_vector_or_embed(store, active, io, budget, job_id, &job_text).await;
         (rv, jv)
     };
     let semantic = match (&resume_vec, &job_vec) {
@@ -347,11 +393,21 @@ async fn score_one(
         // reads a field-less legacy row.
         "scoreSource": if semantic_available { "combined" } else { "keyword" },
     });
-    if let Ok(s) = serde_json::to_string(&result) {
-        store
-            .upsert_match_score_async(cache_key.to_owned_key(), s)
-            .await
-            .ok();
+    // Cache only a result the key can honestly describe. A `semantic_enabled = 1`
+    // key promises a semantic answer; when the embed did not happen (provider
+    // offline, or the daily ceiling refused the round-trip) the number is
+    // keyword-only, and freezing it under that key would make the NEXT run —
+    // provider back, ceiling reset — read the degrade as the semantic answer and
+    // never retry, for the whole cache TTL. A keyword-only key (`semantic_enabled
+    // = 0`) is always honest and always cached: that is the whole result.
+    let cacheable = skip_semantic || semantic_available;
+    if cacheable {
+        if let Ok(s) = serde_json::to_string(&result) {
+            store
+                .upsert_match_score_async(cache_key.to_owned_key(), s)
+                .await
+                .ok();
+        }
     }
     result
 }
@@ -389,7 +445,7 @@ pub(crate) async fn score_adhoc_keyword_only(
     job_text: String,
 ) -> Value {
     score_one(
-        app,
+        &AppScoreIo(app),
         store,
         resume,
         resume_raw_keywords,
@@ -399,6 +455,7 @@ pub(crate) async fn score_adhoc_keyword_only(
         0, // semantic_enabled hardcoded OFF — never caller-configurable
         // Never translates: this entry point must not reach the provider layer.
         MatchSurface::Extension,
+        None, // keyword-only: there is no round-trip to budget
     )
     .await
 }
@@ -485,6 +542,11 @@ pub(crate) fn autopilot_resume_record(resume_text: &str) -> DocumentRecord {
 /// "Match %" label, and translation is cloud-excluded (local providers only, so
 /// it cannot incur an API cost), cached per job id for the session, and bounded
 /// by the caller's top-N ceiling.
+///
+/// `budget` is the headless run's share of the shared per-provider daily
+/// ceiling. It is charged inside the kernel, once per embed that actually
+/// happens (see [`score_one`]) — a fully-cached job costs nothing, and a job
+/// that has to embed BOTH the résumé snapshot and the posting costs two.
 pub(crate) async fn score_autopilot_semantic(
     app: &AppHandle,
     store: &DocumentStore,
@@ -492,10 +554,11 @@ pub(crate) async fn score_autopilot_semantic(
     active: &EmbeddingConfig,
     job_id: &str,
     job_text: String,
+    budget: &dyn EmbedBudget,
 ) -> Value {
     let resume = autopilot_resume_record(resume_text);
     score_one(
-        app,
+        &AppScoreIo(app),
         store,
         &resume,
         None, // no cached keyword list for a raw résumé snapshot — live-extract
@@ -504,6 +567,7 @@ pub(crate) async fn score_autopilot_semantic(
         Some(job_text),
         1, // semantic_enabled: this entry point exists only for the semantic re-rank
         MatchSurface::Autopilot,
+        Some(budget),
     )
     .await
 }
@@ -542,7 +606,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
     let job_text = job_text_for(&app, &req.job_id);
 
     score_one(
-        &app,
+        &AppScoreIo(&app),
         &store,
         &resume,
         resume_raw_keywords.as_deref(),
@@ -551,6 +615,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         job_text,
         semantic_enabled,
         MatchSurface::JobsPage,
+        None, // user-initiated: not charged against the unattended daily ceiling
     )
     .await
 }

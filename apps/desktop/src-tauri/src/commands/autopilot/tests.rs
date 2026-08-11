@@ -715,7 +715,7 @@ async fn semantic_off_never_resolves_the_rerank_env_and_makes_zero_scoring_calls
         &mut jobs,
         NO_CLUSTERS,
         &CancellationToken::new(),
-        || {
+        |_candidates| {
             setup_ran.store(true, std::sync::atomic::Ordering::SeqCst);
             Some((std::sync::Arc::clone(&env), blobs.clone()))
         },
@@ -755,7 +755,7 @@ async fn semantic_on_runs_the_phase_through_the_same_entry_point() {
         &mut jobs,
         NO_CLUSTERS,
         &CancellationToken::new(),
-        || Some((std::sync::Arc::clone(&env), blobs.clone())),
+        |_candidates| Some((std::sync::Arc::clone(&env), blobs.clone())),
     )
     .await;
 
@@ -793,7 +793,7 @@ async fn the_rerank_phase_gives_up_on_the_wall_clock_and_keeps_the_rest_keyword_
         &mut jobs,
         NO_CLUSTERS,
         &CancellationToken::new(),
-        || Some((std::sync::Arc::clone(&env), blobs.clone())),
+        |_candidates| Some((std::sync::Arc::clone(&env), blobs.clone())),
     )
     .await;
 
@@ -851,49 +851,204 @@ async fn a_cached_job_is_re_ranked_without_charging_the_daily_budget() {
     );
 }
 
-/// The production predicate behind that charge, against a REAL store: an
-/// unknown posting will reach the provider; one with a fresh cached vector for
-/// the same text will not.
+/// The production budget object the kernel is handed. It charges the SHARED
+/// per-provider ceiling once per call and, on a refusal, latches the flag
+/// `LiveRerankEnv::score` reads to turn a keyword-only degrade into
+/// `BudgetExhausted` — the only thing that stops the loop.
+///
+/// There is no charge PREDICATE left to test: the charge is made by the call
+/// that reaches the provider, on the bytes it consumes (see
+/// `commands::match_resume::test`'s cache/charge pins, which drive the real
+/// kernel against a real store).
 #[test]
-fn a_cached_posting_vector_means_no_provider_round_trip() {
-    use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
-    use crate::documents::{sha256_hex, DocumentStore};
+fn the_rerank_budget_charges_the_shared_ceiling_and_latches_its_refusal() {
+    use crate::documents::EmbedBudget;
 
+    let limiter = Arc::new(crate::limits::Limiter::new());
+    let budget = RerankBudget::new(Arc::clone(&limiter), "ollama".to_string());
+
+    assert!(!budget.is_exhausted());
+    budget
+        .charge_one_embed()
+        .expect("first embed is affordable");
+    assert!(
+        !budget.is_exhausted(),
+        "an accepted charge must not stop the loop"
+    );
+
+    // Drain the shared daily ceiling through the SAME limiter the interactive
+    // paths use — a parallel budget would defeat the point.
+    for _ in 1..crate::limits::PROVIDER_DAILY_MAX {
+        limiter
+            .charge_provider_daily("ollama", crate::limits::PROVIDER_DAILY_MAX)
+            .unwrap();
+    }
+
+    assert!(budget.charge_one_embed().is_err(), "the ceiling is reached");
+    assert!(
+        budget.is_exhausted(),
+        "the refusal must be visible to the loop: a refused embed degrades the job \
+         to keyword-only exactly like an offline provider, so the outcome alone \
+         cannot tell the loop to stop"
+    );
+}
+
+/// The blob map is built for the re-rank CANDIDATES, not for the whole harvest
+/// — and the set handed to `setup` must be a superset of what the loop visits,
+/// or a candidate silently loses its blob and is skipped.
+#[test]
+fn the_candidate_url_set_covers_the_scorable_head_and_nothing_else() {
+    let jobs = vec![
+        ranked("https://example.com/a", 80.0),
+        FoundJob {
+            url: "https://example.com/unscored".into(),
+            score: None,
+            ..found(None)
+        },
+        ranked("https://example.com/b", 60.0),
+    ];
+
+    let candidates = rerank_candidate_urls(&jobs, NO_CLUSTERS);
+
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.contains("https://example.com/a"));
+    assert!(candidates.contains("https://example.com/b"));
+    assert!(
+        !candidates.contains("https://example.com/unscored"),
+        "an unscored job is never re-ranked, so its blob is never needed"
+    );
+}
+
+/// …and it stops at the same top-N ceiling the loop does, so a pathological
+/// harvest cannot make the map big either.
+#[test]
+fn the_candidate_url_set_stops_at_the_top_n_ceiling() {
+    let jobs: Vec<FoundJob> = (0..SEMANTIC_RERANK_MAX + 7)
+        .map(|i| ranked(&format!("https://example.com/{i}"), 90.0))
+        .collect();
+
+    assert_eq!(
+        rerank_candidate_urls(&jobs, NO_CLUSTERS).len(),
+        SEMANTIC_RERANK_MAX
+    );
+}
+
+/// A cross-board duplicate's hidden member is not a candidate: the loop only
+/// re-ranks the cluster canonical, so paying to keep its blob in memory buys
+/// nothing.
+#[test]
+fn a_hidden_cluster_member_is_not_a_candidate() {
+    use crate::scraping::cluster::ClusterAssignment;
+
+    let jobs = vec![
+        ranked("https://a.example.com/job", 80.0),
+        ranked("https://b.example.com/job", 95.0),
+    ];
+    let clusters = vec![
+        ClusterAssignment {
+            cluster_id: "c1".into(),
+            canonical: true,
+            members: Vec::new(),
+            is_agency: false,
+        },
+        ClusterAssignment {
+            cluster_id: "c1".into(),
+            canonical: false,
+            members: Vec::new(),
+            is_agency: false,
+        },
+    ];
+
+    let candidates = rerank_candidate_urls(&jobs, &clusters);
+
+    assert_eq!(candidates.len(), 1);
+    assert!(candidates.contains("https://a.example.com/job"));
+}
+
+// ── the résumé snapshot vector dies with its autopilot ────────────────────
+
+/// `autopilot-resume:<sha>` is résumé-derived user content in a cache bounded
+/// only by a TTL and a row cap. Deleting the autopilot must delete it too,
+/// rather than leaving it readable for up to the TTL (7 days by default).
+#[test]
+fn deleting_an_autopilot_drops_its_resume_snapshot_vector() {
     let temp_dir = tempfile::TempDir::new().unwrap();
-    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-    let active = store.embedding_config();
-    let job_id = "autopilot:deadbeef";
-    let job_text = "We need a Rust engineer with Kubernetes experience";
+    let docs = crate::documents::DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let resume = "rust engineer, kubernetes, distributed systems";
+    let id = crate::commands::match_resume::autopilot_resume_id(resume);
+    docs.upsert_posting_vector(
+        &id,
+        &crate::documents::sha256_hex(resume),
+        &snapshot_vector(&docs),
+    )
+    .unwrap();
+    assert!(docs.get_posting_vector(&id).is_some(), "seeded");
+
+    drop_orphaned_resume_vector(&docs, Some(resume), &[]);
 
     assert!(
-        will_reach_provider(&store, &active, job_id, job_text),
-        "an un-embedded posting must be charged — it really does call the provider"
+        docs.get_posting_vector(&id).is_none(),
+        "the résumé-derived row must not outlive the record it was derived from"
     );
+}
 
-    store
-        .upsert_posting_vector(
-            job_id,
-            &sha256_hex(job_text),
-            &EmbeddingVector {
-                values: vec![0.1, 0.2, 0.3],
-                space: EmbeddingSpace {
-                    provider: active.provider.clone(),
-                    model: active.model.clone(),
-                    dim: 3,
-                    version: crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION,
-                },
-            },
-        )
-        .unwrap();
+/// …but the id is the CONTENT, so a second autopilot with the same résumé is
+/// still a live producer of that row: deleting it would just re-embed.
+#[test]
+fn a_resume_shared_with_another_autopilot_keeps_its_vector() {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let docs = crate::documents::DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let resume = "rust engineer, kubernetes, distributed systems";
+    let id = crate::commands::match_resume::autopilot_resume_id(resume);
+    docs.upsert_posting_vector(
+        &id,
+        &crate::documents::sha256_hex(resume),
+        &snapshot_vector(&docs),
+    )
+    .unwrap();
 
-    assert!(
-        !will_reach_provider(&store, &active, job_id, job_text),
-        "a cached posting vector for this exact text is a cache hit — no call, no charge"
-    );
-    assert!(
-        will_reach_provider(&store, &active, job_id, "a completely different posting"),
-        "different text is a different embed: the text hash guards the charge too"
-    );
+    let survivor = autopilot_with_resume(Some(resume));
+    drop_orphaned_resume_vector(&docs, Some(resume), std::slice::from_ref(&survivor));
+    assert!(docs.get_posting_vector(&id).is_some());
+
+    // A remaining autopilot with a DIFFERENT résumé is not a producer of it.
+    let other = autopilot_with_resume(Some("python data engineer"));
+    drop_orphaned_resume_vector(&docs, Some(resume), std::slice::from_ref(&other));
+    assert!(docs.get_posting_vector(&id).is_none());
+}
+
+/// A vector in the active embedding space, so `get_posting_vector` reads it back.
+fn snapshot_vector(
+    docs: &crate::documents::DocumentStore,
+) -> crate::commands::ai_provider::EmbeddingVector {
+    let active = docs.embedding_config();
+    crate::commands::ai_provider::EmbeddingVector {
+        values: vec![0.1, 0.2, 0.3],
+        space: crate::commands::ai_provider::EmbeddingSpace {
+            provider: active.provider,
+            model: active.model,
+            dim: 3,
+            version: crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION,
+        },
+    }
+}
+
+fn autopilot_with_resume(resume_text: Option<&str>) -> Autopilot {
+    let mut ap: Autopilot = serde_json::from_value(serde_json::json!({
+        "_id": "ap-1",
+        "name": "n",
+        "status": "active",
+        "target": { "boards": [], "query": "rust", "pages": 1 },
+        "filter": { "minMatchScore": 0.0 },
+        "schedule": "manual",
+        "totalFound": 0,
+        "totalApplied": 0,
+        "createdAt": 0,
+        "updatedAt": 0,
+    }))
+    .expect("autopilot fixture");
+    ap.resume_text = resume_text.map(String::from);
+    ap
 }
 
 // ── mixed-scale ordering ──────────────────────────────────────────────────

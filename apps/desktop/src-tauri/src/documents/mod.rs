@@ -825,6 +825,24 @@ impl DocumentStore {
         Ok(())
     }
 
+    /// Drop ONE cached posting vector.
+    ///
+    /// The cache is otherwise bounded only by its TTL and row cap, which is the
+    /// right discipline for a derived row whose producer still exists. It is
+    /// the wrong one for a row derived from user CONTENT that has just been
+    /// deleted (an Autopilot's résumé snapshot, `autopilot-resume:<sha>`): that
+    /// row must go with its producer, not linger for the TTL. Idempotent — a
+    /// missing row is not an error.
+    pub fn delete_posting_vector(&self, job_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "DELETE FROM posting_vectors WHERE job_id = ?1",
+            params![job_id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Drop the entire posting-vector cache (e.g. on embedding-config change).
     pub fn clear_posting_vectors(&self) -> AppResult<()> {
         let conn = self.conn.lock();
@@ -1103,34 +1121,100 @@ pub(crate) fn posting_vector_is_fresh(
     }
 }
 
+/// ONE embedding round-trip, behind a seam.
+///
+/// The scoring kernel's only reach into the provider layer. It is a trait (not
+/// a bare `AppHandle` call) because this crate has no `tauri::test` mock-app
+/// harness: with the round-trip behind a seam, "how many provider calls did
+/// this score make, on what bytes, and what did each one cost" is a plain unit
+/// test over a real [`DocumentStore`] instead of a hand-retyped mirror of the
+/// kernel's own cache logic — which is exactly the shape that let an
+/// untranslated-hash charge predicate pass review.
+#[async_trait::async_trait]
+pub trait Embedder: Send + Sync {
+    /// `None` on any failure — the caller degrades to keyword-only scoring.
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector>;
+}
+
+/// A budget consulted immediately before each ACTUAL embedding round-trip.
+///
+/// The charge belongs HERE, at the call, evaluated on the exact bytes the call
+/// consumes — never in a caller that predicts the call from earlier state. The
+/// two answers diverge in practice: a caller sees the pre-translation blob (so
+/// its hash never matches the cached row for a translated posting → it charges
+/// on every total cache hit), and it cannot see the résumé-side embed at all
+/// (an evicted résumé vector then makes a real, uncharged round-trip). Same
+/// rule as `extension_bridge::answer_assist`: charge immediately before the
+/// work that reaches the provider, once per round-trip, and not at all when a
+/// cached path short-circuits.
+///
+/// `Err` means the ceiling refused: the round-trip must NOT happen.
+pub trait EmbedBudget: Send + Sync {
+    fn charge_one_embed(&self) -> AppResult<()>;
+}
+
+/// Charge (if a budget is present) and then make one embedding round-trip.
+///
+/// The single choke point for every provider call the scoring kernel makes, so
+/// "charged exactly once per actual embed" is a property of one function rather
+/// than a convention each call site has to remember. A refused charge returns
+/// `None` — the same degrade-to-keyword-only signal as a failed embed.
+pub(crate) async fn embed_charged<E: Embedder + ?Sized>(
+    embedder: &E,
+    budget: Option<&dyn EmbedBudget>,
+    text: &str,
+) -> Option<EmbeddingVector> {
+    if let Some(budget) = budget {
+        if let Err(e) = budget.charge_one_embed() {
+            log::info!("[embed] round-trip refused by the daily ceiling: {e}");
+            return None;
+        }
+    }
+    embedder.embed_one(text).await
+}
+
+/// Production [`Embedder`]: the app's configured embedding provider.
+///
+/// `embed` already logs its own failure (see its doc), so `.ok()` here only
+/// discards the error from this `Option`-returning seam.
+pub struct AppEmbedder<'a>(pub &'a AppHandle);
+
+#[async_trait::async_trait]
+impl Embedder for AppEmbedder<'_> {
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector> {
+        embed(self.0, text).await.ok()
+    }
+}
+
 /// Resolve the embedding for a job posting's (possibly translated) `text`,
 /// using the persisted `posting_vectors` cache. A hit avoids the embed call
 /// entirely. The cache is guarded by BOTH the active embedding space and a
 /// `text_hash` of the exact `text` passed here, so a stale or wrong-language
 /// row is a natural miss. Does NOT touch `PostingsCache` (raw-text vectors).
-pub async fn posting_vector_or_embed(
-    app: &AppHandle,
+///
+/// `budget` is charged only on the miss path, immediately before the call —
+/// see [`EmbedBudget`]. `active` comes from the caller (which already resolved
+/// it for its own cache key) so the hit decision and the score are computed
+/// against one snapshot of the embedding space.
+pub(crate) async fn posting_vector_or_embed<E: Embedder + ?Sized>(
+    store: &DocumentStore,
+    active: &EmbeddingConfig,
+    embedder: &E,
+    budget: Option<&dyn EmbedBudget>,
     job_id: &str,
     text: &str,
 ) -> Option<EmbeddingVector> {
     // Snapshot everything from the store before any await — the store methods
     // each take/release the lock internally and return owned values, so no DB
     // lock is held across the embed call below.
-    let active = app.state::<DocumentStore>().embedding_config();
     let hash = sha256_hex(text);
-    let cached = app.state::<DocumentStore>().get_posting_vector(job_id);
+    let cached = store.get_posting_vector(job_id);
     // Single cache-hit decision (space + text_hash), shared with its unit test.
-    if posting_vector_is_fresh(&active, &hash, cached.as_ref()) {
-        return cached.map(|(v, _)| v); // cache hit — no embed
+    if posting_vector_is_fresh(active, &hash, cached.as_ref()) {
+        return cached.map(|(v, _)| v); // cache hit — no embed, no charge
     }
-    // `embed` now surfaces its error (see its own doc comment); this caller's
-    // contract stays "gracefully skip semantic scoring on failure" — the
-    // warning is already logged inside `embed`, so `.ok()` here doesn't lose
-    // it, just discards it from this Option-returning caller.
-    let v = embed(app, text).await.ok()?;
-    app.state::<DocumentStore>()
-        .upsert_posting_vector(job_id, &hash, &v)
-        .ok();
+    let v = embed_charged(embedder, budget, text).await?;
+    store.upsert_posting_vector(job_id, &hash, &v).ok();
     Some(v)
 }
 
@@ -1262,7 +1346,18 @@ impl DataStore for DocumentStore {
             self.insert(record)?;
             if let Some(vector) = vector {
                 if !text_was_repaired {
-                    self.upsert_vector(&record.id, vector)?;
+                    // A `<namespace>:` id is refused by the document-index write
+                    // guard (`is_synthetic_scoring_id`). Unreachable for a bundle
+                    // this app produced — `export()` only walks real `documents`
+                    // rows — but a hand-edited backup must not BRICK the restore:
+                    // `clear_all()` has already run, so propagating here would
+                    // leave the library half-restored with nothing to retry from.
+                    // Skip the one vector (it re-embeds on demand) and keep going.
+                    if let Err(e) = self.upsert_vector(&record.id, vector) {
+                        log::warn!(
+                            "[documents] import: skipping the embedding of one restored document ({e})"
+                        );
+                    }
                 }
             }
             count += 1;

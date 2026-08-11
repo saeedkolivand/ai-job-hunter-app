@@ -2739,3 +2739,87 @@ fn test_sha256_hex_is_deterministic_and_distinct() {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
+
+/// A hand-edited bundle carrying a `<namespace>:` document id must not BRICK the
+/// restore. `clear_all()` runs before the first insert, so propagating the
+/// document-index write guard from here would leave the library half-restored
+/// with nothing to retry from — the very failure mode `import`'s up-front
+/// validation pass exists to prevent. The one embedding is skipped (it
+/// re-embeds on demand); every document still lands.
+///
+/// Unreachable for a bundle this app produced (`export()` only walks real
+/// `documents` rows), which is why it is a robustness guard rather than a fix.
+#[test]
+fn import_skips_a_synthetic_id_vector_instead_of_aborting_the_restore() {
+    use crate::data_store::DataStore;
+
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    let bundle = serde_json::json!([
+        {
+            "_id": "autopilot-resume:deadbeef",
+            "title": "Hand-edited",
+            "name": "x.pdf",
+            "text": "first",
+            "createdAt": 1,
+            "indexed": false,
+            "isDefault": false,
+            "vector": [0.1, 0.2, 0.3],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 3 },
+        },
+        {
+            "_id": "doc-real",
+            "title": "Real",
+            "name": "r.pdf",
+            "text": "second",
+            "createdAt": 2,
+            "indexed": false,
+            "isDefault": true,
+            "vector": [0.4, 0.5, 0.6],
+            "vectorSpace": { "provider": "ollama", "model": "nomic-embed-text", "dim": 3 },
+        },
+    ]);
+
+    let count = store.import(&bundle).expect("restore must not fail");
+
+    assert_eq!(count, 2, "every document is restored");
+    assert_eq!(store.list().len(), 2);
+    assert!(
+        store.get_vector("autopilot-resume:deadbeef").is_none(),
+        "the document index still refuses the synthetic id — it is skipped, not written"
+    );
+    assert_eq!(
+        store.get_vector("doc-real").map(|v| v.values),
+        Some(vec![0.4, 0.5, 0.6]),
+        "…and the rows AFTER it are still restored, embeddings included"
+    );
+}
+
+// ── one posting-vector row can be dropped with its producer ──────────────────
+
+/// The autopilot re-rank's résumé snapshot lives in this cache, so deleting the
+/// autopilot needs a single-row delete (the cache is otherwise bounded only by
+/// its TTL and row cap — see `commands::autopilot::drop_orphaned_resume_vector`).
+#[test]
+#[serial]
+fn delete_posting_vector_removes_only_that_row() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    store
+        .upsert_posting_vector("autopilot-resume:aaa", "hash-a", &ev(vec![0.1, 0.2]))
+        .unwrap();
+    store
+        .upsert_posting_vector("autopilot:bbb", "hash-b", &ev(vec![0.3, 0.4]))
+        .unwrap();
+
+    store.delete_posting_vector("autopilot-resume:aaa").unwrap();
+
+    assert!(store.get_posting_vector("autopilot-resume:aaa").is_none());
+    assert!(
+        store.get_posting_vector("autopilot:bbb").is_some(),
+        "the neighbouring posting row is untouched"
+    );
+    // Idempotent: deleting a missing row is not an error.
+    store.delete_posting_vector("autopilot-resume:aaa").unwrap();
+}

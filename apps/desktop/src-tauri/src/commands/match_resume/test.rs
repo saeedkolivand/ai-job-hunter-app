@@ -727,3 +727,371 @@ fn no_market_targets_fewer_than_two_pages() {
         );
     }
 }
+
+// ── the budget is charged at the call, on the bytes the call consumes ────────
+//
+// These drive the REAL kernel (`score_one`) against a REAL `DocumentStore`, with
+// the two provider-reaching effects behind `ScoreIo`. That composition is the
+// point: the defect they replace was a charge PREDICATE evaluated by the caller
+// on the PRE-translation blob, which no fixture could catch while raw text ==
+// embedded text. Here the fake translator TRANSFORMS the text, so a charge
+// decided on anything other than what the embed consumes shows up as a count.
+
+/// A translator that rewrites the JD (German → English, the real cross-language
+/// case) and an embedder that records exactly which bytes it was asked to embed.
+struct FakeScoreIo {
+    /// `raw job text → translated job text`. A miss returns the text unchanged.
+    translations: std::collections::HashMap<String, String>,
+    /// Every text an ACTUAL round-trip was made for, in order.
+    embedded: Mutex<Vec<String>>,
+    space: crate::commands::ai_provider::EmbeddingSpace,
+}
+
+impl FakeScoreIo {
+    fn new(store: &DocumentStore, translations: &[(&str, &str)]) -> Self {
+        let active = store.embedding_config();
+        Self {
+            translations: translations
+                .iter()
+                .map(|(from, to)| ((*from).to_string(), (*to).to_string()))
+                .collect(),
+            embedded: Mutex::new(Vec::new()),
+            space: crate::commands::ai_provider::EmbeddingSpace {
+                provider: active.provider,
+                model: active.model,
+                dim: 3,
+                version: EMBEDDING_VECTOR_VERSION,
+            },
+        }
+    }
+    fn embedded(&self) -> Vec<String> {
+        self.embedded.lock().clone()
+    }
+    fn vector(&self) -> EmbeddingVector {
+        EmbeddingVector {
+            values: vec![0.1, 0.2, 0.3],
+            space: self.space.clone(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Embedder for FakeScoreIo {
+    async fn embed_one(&self, text: &str) -> Option<EmbeddingVector> {
+        self.embedded.lock().push(text.to_string());
+        Some(self.vector())
+    }
+}
+
+#[async_trait::async_trait]
+impl ScoreIo for FakeScoreIo {
+    async fn translate(&self, _job_id: &str, text: String, _target_lang: &str) -> String {
+        self.translations.get(&text).cloned().unwrap_or(text)
+    }
+}
+
+/// Counts charges against the shared daily ceiling. `affordable: false` models
+/// the ceiling already being reached (every charge refused).
+struct CountingBudget {
+    charges: std::sync::atomic::AtomicUsize,
+    affordable: bool,
+}
+
+impl CountingBudget {
+    fn new() -> Self {
+        Self {
+            charges: std::sync::atomic::AtomicUsize::new(0),
+            affordable: true,
+        }
+    }
+    fn exhausted() -> Self {
+        Self {
+            affordable: false,
+            ..Self::new()
+        }
+    }
+    fn charges(&self) -> usize {
+        self.charges.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl crate::documents::EmbedBudget for CountingBudget {
+    fn charge_one_embed(&self) -> crate::error::AppResult<()> {
+        self.charges
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.affordable {
+            Ok(())
+        } else {
+            Err(crate::error::AppError::RateLimited("daily ceiling".into()))
+        }
+    }
+}
+
+const GERMAN_JD: &str = "Wir suchen einen erfahrenen Rust-Entwickler mit Kubernetes-Erfahrung \
+                         für den Aufbau verteilter Systeme in Berlin.";
+const ENGLISH_JD: &str = "We are looking for an experienced Rust developer with Kubernetes \
+                          experience to build distributed systems in Berlin.";
+const RESUME_TEXT: &str = "Experienced Rust developer. Kubernetes, Postgres, distributed systems.";
+
+fn scoring_store() -> (tempfile::TempDir, DocumentStore) {
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    (temp_dir, store)
+}
+
+/// Run the Autopilot surface's kernel exactly as `score_autopilot_semantic`
+/// does, with the two provider seams faked.
+async fn score_autopilot(
+    io: &FakeScoreIo,
+    store: &DocumentStore,
+    budget: &CountingBudget,
+    job_id: &str,
+    raw_job_text: &str,
+) -> Value {
+    let resume = autopilot_resume_record(RESUME_TEXT);
+    let active = store.embedding_config();
+    score_one(
+        io,
+        store,
+        &resume,
+        None,
+        &active,
+        job_id,
+        Some(raw_job_text.to_string()),
+        1,
+        MatchSurface::Autopilot,
+        Some(budget),
+    )
+    .await
+}
+
+fn seed_posting_vector(store: &DocumentStore, io: &FakeScoreIo, job_id: &str, text: &str) {
+    store
+        .upsert_posting_vector(job_id, &sha256_hex(text), &io.vector())
+        .unwrap();
+}
+
+/// The semantic cache key of one autopilot job, as the kernel writes it.
+fn semantic_key<'a>(
+    resume_id: &'a str,
+    job_id: &'a str,
+    active: &'a EmbeddingConfig,
+    job_text_hash: &'a str,
+) -> MatchScoreKey<'a> {
+    MatchScoreKey {
+        resume_id,
+        job_id,
+        provider: &active.provider,
+        model: &active.model,
+        semantic_enabled: 1,
+        formula_version: MATCH_FORMULA_VERSION,
+        vector_version: EMBEDDING_VECTOR_VERSION,
+        job_text_hash,
+    }
+}
+
+/// THE regression: a translated posting whose vectors are all cached must cost
+/// NOTHING. The charge used to be decided against the UNTRANSLATED blob, whose
+/// hash can never match the row the embed wrote — so every hourly run of a
+/// German-locale autopilot billed the shared ceiling for 20 total cache hits.
+#[tokio::test]
+async fn a_fully_cached_translated_posting_charges_nothing() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let budget = CountingBudget::new();
+    let job_id = "autopilot:cached";
+    // Both vectors already cached, each under the text its embed consumed: the
+    // posting under the TRANSLATED JD, the résumé snapshot under its own text.
+    seed_posting_vector(&store, &io, job_id, ENGLISH_JD);
+    seed_posting_vector(&store, &io, &autopilot_resume_id(RESUME_TEXT), RESUME_TEXT);
+
+    let result = score_autopilot(&io, &store, &budget, job_id, GERMAN_JD).await;
+
+    assert!(
+        io.embedded().is_empty(),
+        "every vector was cached — no round-trip may happen"
+    );
+    assert_eq!(
+        budget.charges(),
+        0,
+        "a total cache hit must not touch the shared per-provider daily ceiling"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED),
+        "…and the cached vectors really were used: this is a semantic score"
+    );
+}
+
+/// Each ACTUAL embed is charged exactly once — the résumé snapshot and the
+/// posting counted separately, both on the bytes they consume. The old
+/// posting-only predicate could not see the résumé embed at all.
+#[tokio::test]
+async fn each_actual_embed_charges_exactly_one() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let budget = CountingBudget::new();
+
+    score_autopilot(&io, &store, &budget, "autopilot:cold", GERMAN_JD).await;
+
+    assert_eq!(
+        io.embedded(),
+        vec![RESUME_TEXT.to_string(), ENGLISH_JD.to_string()],
+        "two round-trips: the résumé snapshot, then the POST-translation posting text"
+    );
+    assert_eq!(
+        budget.charges(),
+        io.embedded().len(),
+        "one charge per actual round-trip — no more, no less"
+    );
+}
+
+/// The other half of the résumé blind spot: posting fresh, résumé vector
+/// evicted. The embed is real, so the charge must be real — the old predicate
+/// consulted only the posting row and let this one through free.
+#[tokio::test]
+async fn an_evicted_resume_vector_is_a_charged_round_trip_of_its_own() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let budget = CountingBudget::new();
+    let job_id = "autopilot:posting-fresh";
+    seed_posting_vector(&store, &io, job_id, ENGLISH_JD);
+
+    score_autopilot(&io, &store, &budget, job_id, GERMAN_JD).await;
+
+    assert_eq!(
+        io.embedded(),
+        vec![RESUME_TEXT.to_string()],
+        "only the résumé side embeds"
+    );
+    assert_eq!(budget.charges(), 1);
+}
+
+/// A refused charge stops the round-trip (that is the point of a ceiling) and
+/// the job degrades to keyword-only.
+#[tokio::test]
+async fn a_refused_charge_makes_no_provider_call_and_degrades_to_keyword_only() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let budget = CountingBudget::exhausted();
+
+    let result = score_autopilot(&io, &store, &budget, "autopilot:broke", GERMAN_JD).await;
+
+    assert!(
+        io.embedded().is_empty(),
+        "the ceiling refused: no bytes may reach the provider"
+    );
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some("keyword"),
+        "the job keeps its keyword score — a run never fails because of scoring"
+    );
+}
+
+/// …and that degrade must NOT be frozen under the semantic cache key. It was
+/// computed without the embedding the key promises, so caching it would make
+/// tomorrow's run — ceiling reset, provider back — read the degrade as the
+/// semantic answer and never retry, for the whole cache TTL.
+#[tokio::test]
+async fn a_degraded_score_is_not_cached_under_the_semantic_key() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let job_id = "autopilot:broke";
+    let resume_id = autopilot_resume_id(RESUME_TEXT);
+    let active = store.embedding_config();
+    let hash = sha256_hex(ENGLISH_JD);
+
+    let refused = CountingBudget::exhausted();
+    score_autopilot(&io, &store, &refused, job_id, GERMAN_JD).await;
+
+    assert!(
+        store
+            .get_match_score(&semantic_key(&resume_id, job_id, &active, &hash))
+            .is_none(),
+        "a keyword-only result must never occupy a semantic_enabled = 1 row"
+    );
+
+    // Proof the run really can recover: with budget, the same job scores
+    // semantically and THAT result is cached.
+    let funded = CountingBudget::new();
+    let result = score_autopilot(&io, &store, &funded, job_id, GERMAN_JD).await;
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED)
+    );
+    assert!(store
+        .get_match_score(&semantic_key(&resume_id, job_id, &active, &hash))
+        .is_some());
+}
+
+/// A second job in the same run reuses the résumé vector the first one paid
+/// for: the snapshot lands in the posting-vector cache under its
+/// content-addressed id, so only the new posting is charged.
+#[tokio::test]
+async fn the_second_job_of_a_run_only_pays_for_its_own_posting() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let budget = CountingBudget::new();
+
+    score_autopilot(&io, &store, &budget, "autopilot:one", GERMAN_JD).await;
+    assert_eq!(budget.charges(), 2, "first job: résumé + posting");
+
+    score_autopilot(
+        &io,
+        &store,
+        &budget,
+        "autopilot:two",
+        "A different posting entirely, in English already.",
+    )
+    .await;
+    assert_eq!(
+        budget.charges(),
+        3,
+        "second job: the posting only — the résumé snapshot is cached"
+    );
+}
+
+/// The interactive surfaces pass no budget, so the unattended ceiling can never
+/// refuse a user-initiated score.
+#[tokio::test]
+async fn the_jobs_page_is_not_metered_by_the_unattended_daily_ceiling() {
+    let (_dir, store) = scoring_store();
+    let io = FakeScoreIo::new(&store, &[(GERMAN_JD, ENGLISH_JD)]);
+    let resume = DocumentRecord {
+        id: "doc-1".into(),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: RESUME_TEXT.to_string(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    };
+    let active = store.embedding_config();
+
+    let result = score_one(
+        &io,
+        &store,
+        &resume,
+        None,
+        &active,
+        "job-1",
+        Some(GERMAN_JD.to_string()),
+        1,
+        MatchSurface::JobsPage,
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        result.get("scoreSource").and_then(Value::as_str),
+        Some(SCORE_SOURCE_COMBINED)
+    );
+    assert_eq!(
+        io.embedded(),
+        vec![RESUME_TEXT.to_string(), ENGLISH_JD.to_string()],
+        "the Jobs page still embeds both sides — it is simply not metered"
+    );
+}

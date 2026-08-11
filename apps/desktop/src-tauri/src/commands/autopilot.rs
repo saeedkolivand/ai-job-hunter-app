@@ -4,7 +4,7 @@ use std::sync::{Arc, LazyLock};
 use parking_lot::Mutex;
 
 use crate::autopilot::{
-    AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus, ScoreSource,
+    Autopilot, AutopilotFilter, AutopilotStatus, AutopilotStore, FoundJob, RunStatus, ScoreSource,
 };
 use crate::autopilot_helpers::autopilot_scrape;
 // The save-path `country_code` backfill (a location saved without a geocode
@@ -134,8 +134,55 @@ pub async fn autopilot_update(
 
 #[tauri::command]
 pub fn autopilot_remove(app: AppHandle, autopilot_id: String) -> Value {
+    let removed = store(&app).lock().get(&autopilot_id);
     store(&app).lock().remove(&autopilot_id);
+    // The re-rank's résumé snapshot vector is derived from THIS record's résumé
+    // text; deleting the record must delete it too (see
+    // `drop_orphaned_resume_vector`). `try_state` because a run/delete must
+    // never panic on an unmanaged store.
+    if let Some(docs) = app.try_state::<crate::documents::DocumentStore>() {
+        let remaining = store(&app).lock().list();
+        drop_orphaned_resume_vector(
+            docs.inner(),
+            removed.as_ref().and_then(|a| a.resume_text.as_deref()),
+            &remaining,
+        );
+    }
     json!(null)
+}
+
+/// Delete the deleted autopilot's résumé snapshot vector from the posting-vector
+/// cache — unless another autopilot still carries the same résumé text.
+///
+/// The re-rank caches the résumé under a content-addressed
+/// `autopilot-resume:<sha256(text)>` id (see
+/// `match_resume::autopilot_resume_id`). That row is résumé-derived user
+/// content living in a cache whose only bounds are a TTL and a row cap, so
+/// without this it outlives the record it came from by up to the TTL (7 days at
+/// the default tier). The same-text check is what keeps a shared résumé working:
+/// the id is the CONTENT, so a second autopilot with the same résumé is still a
+/// live producer of that row.
+///
+/// Best-effort: a failed delete is logged, never surfaced — the caller has
+/// already removed the record.
+fn drop_orphaned_resume_vector(
+    docs: &crate::documents::DocumentStore,
+    removed_resume: Option<&str>,
+    remaining: &[Autopilot],
+) {
+    let Some(text) = removed_resume.filter(|t| !t.is_empty()) else {
+        return;
+    };
+    if remaining
+        .iter()
+        .any(|a| a.resume_text.as_deref() == Some(text))
+    {
+        return; // another autopilot still produces this exact row
+    }
+    let id = crate::commands::match_resume::autopilot_resume_id(text);
+    if let Err(e) = docs.delete_posting_vector(&id) {
+        log::warn!("[autopilot] could not drop the résumé snapshot vector on delete: {e}");
+    }
 }
 
 /// Finalize a user-cancelled autopilot run identically at both cancel sites (a
@@ -355,7 +402,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &mut found_jobs,
         &clusters,
         &cancel_token,
-        || {
+        |candidates| {
             // `try_state` (not `state`) for both stores: a run must never fail
             // because of scoring, and `state` PANICS on an unmanaged type. A
             // startup failure that left either store unregistered degrades this
@@ -375,8 +422,15 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
             // Reuse phase 1's EXACT scoring blob per posting — `FoundJob` drops
             // `requirements`, so re-deriving it here would score different text
             // than the keyword phase did on the boards that populate that field.
+            //
+            // Built for the RE-RANK CANDIDATES only (≤ SEMANTIC_RERANK_MAX), not
+            // for the whole harvest: a run can scrape ~100 postings and this map
+            // holds a full JD blob per entry, so keying it on the ≤20 rows that
+            // can actually be scored keeps a discovery run's peak memory
+            // proportional to what phase 2 will spend, not to what it scraped.
             let blobs: std::collections::HashMap<String, String> = postings
                 .iter()
+                .filter(|p| candidates.contains(p.url.as_str()))
                 .filter_map(|p| {
                     crate::documents::keywords::posting_text_blob(
                         &p.title,
@@ -386,13 +440,14 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
                     .map(|blob| (p.url.clone(), blob))
                 })
                 .collect();
+            let active = doc_store.embedding_config();
             Some((
                 LiveRerankEnv {
                     app: &app,
                     store: doc_store.inner(),
                     resume,
-                    active: doc_store.embedding_config(),
-                    limiter: limiter.inner().clone(),
+                    budget: RerankBudget::new(limiter.inner().clone(), active.provider.clone()),
+                    active,
                 },
                 blobs,
             ))
@@ -784,17 +839,32 @@ pub(crate) enum RerankOutcome {
 /// daily-ceiling short-circuit, per-job degrade) is unit-testable with a fake —
 /// there is no way to fake a live embedding provider in-process. Prod wiring is
 /// [`LiveRerankEnv`].
+///
+/// COST NOTE — the kernel's translation step. Scoring a cross-language posting
+/// also runs `translate_if_needed`, so this phase can make up to
+/// [`SEMANTIC_RERANK_MAX`] LOCAL chat completions per run on top of the embeds.
+/// Those are deliberately NOT charged against `charge_provider_daily`: the
+/// ceiling meters a paid provider's API budget, and translation is structurally
+/// local-only (`translation::provider_allows_translation` excludes every cloud
+/// provider, and the embedding-config validation is what keeps a cloud endpoint
+/// out of this path), so a cloud round-trip is unreachable here. They are
+/// bounded instead by the phase's own [`RERANK_STEP_TIMEOUT`] wall clock, which
+/// covers embeds and translations together.
 #[async_trait::async_trait]
 trait RerankEnv: Send + Sync {
     /// Score one posting through the SHARED combined kernel, charging the
-    /// shared per-provider daily ceiling for an ACTUAL provider round-trip —
+    /// shared per-provider daily ceiling once per ACTUAL provider round-trip —
     /// never for a job the ADR-017 caches already answer.
     ///
-    /// The charge lives inside the implementation (the `answer_assist`
-    /// precedent: charge immediately before the work that reaches the provider,
-    /// and not at all when a cached/local path short-circuits) rather than in
-    /// the loop, which cannot see a cache hit. A steady-state repeat run
-    /// therefore costs ZERO budget instead of one charge per considered job.
+    /// The charge is made by the call that reaches the provider, deep inside
+    /// the kernel (`documents::embed_charged`, reached through the
+    /// [`RerankBudget`] this env hands down) — the `answer_assist` precedent:
+    /// charge immediately before the work that reaches the provider, on the
+    /// bytes it consumes, and not at all when a cached path short-circuits.
+    /// Neither this trait nor the loop can answer "will this reach the
+    /// provider": both see the PRE-translation blob and neither can see the
+    /// résumé-side cache. A steady-state repeat run therefore costs ZERO budget
+    /// instead of one charge per considered job.
     async fn score(&self, job_id: &str, job_text: String) -> RerankOutcome;
 }
 
@@ -823,54 +893,63 @@ struct LiveRerankEnv<'a> {
     store: &'a crate::documents::DocumentStore,
     resume: &'a str,
     active: crate::documents::EmbeddingConfig,
+    budget: RerankBudget,
+}
+
+/// The re-rank's share of the SAME per-provider daily ceiling as interactive AI
+/// — no parallel budget architecture (the `NoteEnv::charge_daily` precedent).
+/// Keyed on the EMBEDDING provider, not the generation provider the AI-notes
+/// step charges.
+///
+/// It is handed DOWN into the scoring kernel rather than consulted up here,
+/// because only the kernel knows what a given job will actually cost: whether
+/// the posting's cached vector matches the POST-translation text it is about to
+/// embed, and whether the résumé snapshot needs an embed of its own. A
+/// predicate evaluated at this level answered a different question than the one
+/// the call asks — it hashed the untranslated blob (so a translated posting was
+/// charged on every total cache hit) and could not see the résumé embed at all.
+///
+/// `exhausted` is the way the refusal travels back out: the charge happens deep
+/// inside `score_one`, which degrades to keyword-only rather than failing, so
+/// this flag is what tells the loop to STOP instead of walking the rest of the
+/// list making refused calls.
+struct RerankBudget {
     limiter: Arc<crate::limits::Limiter>,
+    provider: String,
+    exhausted: std::sync::atomic::AtomicBool,
 }
 
-/// Whether scoring this posting will reach the embedding provider — i.e.
-/// whether it should be charged.
-///
-/// The posting embed IS the round-trip on this path, and its cache decision is
-/// not re-derived here: [`crate::documents::posting_vector_is_fresh`] is the
-/// kernel's OWN single-source cache predicate, the same one
-/// `posting_vector_or_embed` consults moments later. A cached posting vector →
-/// no call → no charge, which is what makes a steady-state repeat run free.
-///
-/// Known imprecision, in the conservative direction: a job whose `match_scores`
-/// row is still valid but whose posting vector has been TTL-pruned is charged
-/// for an embed the cached score means it never makes. That over-counts by at
-/// most one per such job, never under-counts. Free function (not a method) so
-/// it is testable against a real `DocumentStore` without an `AppHandle`.
-fn will_reach_provider(
-    store: &crate::documents::DocumentStore,
-    active: &crate::documents::EmbeddingConfig,
-    job_id: &str,
-    job_text: &str,
-) -> bool {
-    let hash = crate::documents::sha256_hex(job_text);
-    let cached = store.get_posting_vector(job_id);
-    !crate::documents::posting_vector_is_fresh(active, &hash, cached.as_ref())
+impl RerankBudget {
+    fn new(limiter: Arc<crate::limits::Limiter>, provider: String) -> Self {
+        Self {
+            limiter,
+            provider,
+            exhausted: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    fn is_exhausted(&self) -> bool {
+        self.exhausted.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
-impl LiveRerankEnv<'_> {
-    /// Charge one embedding round-trip against the SAME per-provider daily
-    /// ceiling as interactive AI — no parallel budget architecture (the
-    /// `NoteEnv::charge_daily` precedent). Keyed on the EMBEDDING provider (not
-    /// the generation provider the AI-notes step charges).
-    fn charge_daily(&self) -> crate::error::AppResult<()> {
-        self.limiter
-            .charge_provider_daily(&self.active.provider, crate::limits::PROVIDER_DAILY_MAX)
+impl crate::documents::EmbedBudget for RerankBudget {
+    fn charge_one_embed(&self) -> crate::error::AppResult<()> {
+        let charged = self
+            .limiter
+            .charge_provider_daily(&self.provider, crate::limits::PROVIDER_DAILY_MAX);
+        if let Err(ref e) = charged {
+            log::info!("[autopilot] semantic re-rank stopped at daily ceiling: {e}");
+            self.exhausted
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        charged
     }
 }
 
 #[async_trait::async_trait]
 impl RerankEnv for LiveRerankEnv<'_> {
     async fn score(&self, job_id: &str, job_text: String) -> RerankOutcome {
-        if will_reach_provider(self.store, &self.active, job_id, &job_text) {
-            if let Err(e) = self.charge_daily() {
-                log::info!("[autopilot] semantic re-rank stopped at daily ceiling: {e}");
-                return RerankOutcome::BudgetExhausted;
-            }
-        }
         let result = crate::commands::match_resume::score_autopilot_semantic(
             self.app,
             self.store,
@@ -878,8 +957,16 @@ impl RerankEnv for LiveRerankEnv<'_> {
             &self.active,
             job_id,
             job_text,
+            &self.budget,
         )
         .await;
+        // Checked BEFORE the score is read: a refused round-trip degrades this
+        // job to keyword-only exactly like an offline provider would, so the
+        // outcome alone cannot distinguish "no semantic signal" from "the
+        // ceiling is gone" — and only the latter must stop the loop.
+        if self.budget.is_exhausted() {
+            return RerankOutcome::BudgetExhausted;
+        }
         match rerank_score_from(&result) {
             Some(combined) => RerankOutcome::Scored(combined),
             None => RerankOutcome::Degraded,
@@ -908,8 +995,10 @@ const RERANK_STEP_TIMEOUT: std::time::Duration =
 /// **only after the gate passes** — that is what makes "semantic OFF does no
 /// work at all" a property of this function (testable with a counting fake and
 /// a setup that records whether it ran) instead of a property of an untestable
-/// call site. Returns `None` when the gate is off, when setup finds the
-/// required state missing, or when the wall clock ran out.
+/// call site. It receives the [`rerank_candidate_urls`] set so the map it builds
+/// covers the candidates rather than the whole harvest. Returns `None` when the
+/// gate is off, when setup finds the required state missing, or when the wall
+/// clock ran out.
 async fn semantic_rerank_phase<E, F>(
     semantic_scoring: bool,
     resume: &str,
@@ -920,12 +1009,13 @@ async fn semantic_rerank_phase<E, F>(
 ) -> Option<RerankSummary>
 where
     E: RerankEnv,
-    F: FnOnce() -> Option<(E, std::collections::HashMap<String, String>)>,
+    F: FnOnce(&HashSet<&str>) -> Option<(E, std::collections::HashMap<String, String>)>,
 {
     if !should_semantic_rerank(semantic_scoring, resume) {
         return None;
     }
-    let Some((env, blobs)) = setup() else {
+    let candidates = rerank_candidate_urls(found_jobs, clusters);
+    let Some((env, blobs)) = setup(&candidates) else {
         log::warn!(
             "[autopilot] semantic re-rank skipped: document/limiter state unavailable; ranking stays keyword-only"
         );
@@ -947,6 +1037,29 @@ where
             None
         }
     }
+}
+
+/// The urls phase 2 could spend an embed on, so the caller can build its blob
+/// map for those instead of for every posting the run scraped.
+///
+/// A **superset** of what [`semantic_rerank`]'s loop actually visits, and
+/// deliberately so: the loop additionally collapses URL variants that share a
+/// cache id, which needs the derived id rather than the url. Superset is the
+/// safe direction — the loop SKIPS a candidate whose blob is missing, so an
+/// under-inclusive set would silently drop re-rank candidates. Both walk
+/// `found_jobs` in the same (already ranked) order under the same two filters,
+/// so the prefix they agree on is the one that matters.
+fn rerank_candidate_urls<'a>(
+    found_jobs: &'a [FoundJob],
+    clusters: &[crate::scraping::cluster::ClusterAssignment],
+) -> HashSet<&'a str> {
+    found_jobs
+        .iter()
+        .enumerate()
+        .filter(|(i, job)| job.score.is_some() && clusters.get(*i).is_none_or(|c| c.canonical))
+        .take(SEMANTIC_RERANK_MAX)
+        .map(|(_, job)| job.url.as_str())
+        .collect()
 }
 
 /// Phase 2's loop: re-score the top [`SEMANTIC_RERANK_MAX`] CLUSTER CANONICALS
