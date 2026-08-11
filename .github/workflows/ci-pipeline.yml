@@ -675,6 +675,9 @@ jobs:
       # pass/fail. fail-on-empty is intentionally left unset (defaults off).
       - name: 🧪 Frontend test report
         if: always()
+        # Advisory: a fork PR's read-only token 403s the check-run API itself —
+        # that must not fail a green tests job (same guard as the coverage steps).
+        continue-on-error: true
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Frontend tests (vitest)
@@ -687,6 +690,8 @@ jobs:
 
       - name: 🦀 Rust test report
         if: always()
+        # Advisory: same fork-PR 403 guard as the frontend report step above.
+        continue-on-error: true
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Rust tests (nextest)
