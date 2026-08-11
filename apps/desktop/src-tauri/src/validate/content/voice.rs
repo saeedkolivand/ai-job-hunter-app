@@ -56,6 +56,25 @@ const TRIPLET_CONJUNCTIONS: &[&str] = &[", and ", ", und ", ", or ", ", oder ", 
 /// fire "robert".
 const DE_INFLECTION_SUFFIXES: &[&str] = &["e", "em", "en", "er", "es"];
 
+/// Fold the typographic apostrophe (U+2019) onto the ASCII one (U+0027).
+///
+/// [`flattened_lower`] normalizes case and whitespace but NOT punctuation, and
+/// a model writes "it’s worth noting" about as often as "it's worth noting", so
+/// a lexicon entry carrying an apostrophe would otherwise catch one spelling
+/// and silently miss the other — the same dead-entry failure the German
+/// inflection bug was. Folding at match time lets ONE ASCII entry cover both
+/// (and makes the curly spelling unmatchable AS AN ENTRY, which the prompt-side
+/// catalog-shape test pins).
+///
+/// Applied here rather than inside [`flattened_lower`] on purpose: that helper
+/// is shared with `ats.rs`, where it normalizes résumé HEADER NAMES for an
+/// equality comparison that has nothing to do with this lexicon. Widening a
+/// shared normalizer for one caller's benefit is how the next false positive
+/// gets in.
+fn fold_apostrophes(text: &str) -> String {
+    text.replace('\u{2019}', "'")
+}
+
 /// [`contains_phrase`], plus a bounded inflection suffix for German.
 ///
 /// DE-only by construction: for every other language this is exactly
@@ -95,8 +114,10 @@ fn contains_lexicon_phrase(haystack: &str, phrase: &str, lang: &str) -> bool {
 /// hit itself: a source that says "leverage" exempts "leverage" and nothing
 /// else, so every other entry on the list still fires in the same document.
 fn ai_tell_issues(ctx: &Analysis, include_prose: bool) -> Vec<ContentIssue> {
-    let haystack = flattened_lower(ctx.input.generated);
-    let source = flattened_lower(ctx.input.source_resume);
+    // Both sides folded, so the per-phrase source exemption survives a résumé
+    // that spells the same contraction with the other apostrophe.
+    let haystack = fold_apostrophes(&flattened_lower(ctx.input.generated));
+    let source = fold_apostrophes(&flattened_lower(ctx.input.source_resume));
     let lists: Vec<&'static [&'static str]> = if include_prose {
         vec![
             lexicon::ai_tell_lexical(&ctx.lang),

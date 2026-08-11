@@ -1,3 +1,5 @@
+import type { PromptDepth } from '../../provider/index.js';
+
 /**
  * Anti-AI-tell writing rules. The centralized "sounds human, not machine-written"
  * ruleset shared across every generation surface (résumé, cover letter, referral,
@@ -59,34 +61,100 @@
  * per-surface HONESTY blocks): it changes HOW real content is written, never WHAT
  * is claimed.
  *
+ * DEPTH-AWARE: `brief` carries what a CHECK verifies, nothing else. The whole
+ * ruleset used to be appended undifferentiated at every depth, which made it
+ * 47.8% of the BRIEF cover-letter prompt and ~42% of the BRIEF résumé prompt —
+ * the small-model path, whose model has the least room to apply style rules,
+ * was spending most of its budget on them. The line that decides which tier a
+ * rule lands in is VERIFIABILITY, because that is also the honesty rule: the
+ * Rust validator runs on the OUTPUT and knows nothing about which depth
+ * produced it, so a ban that survives in `lexicon.rs` but not in the brief
+ * prompt is a Warning the model was never told about on that path (rule 3 of
+ * the curation test below, applied per depth). Everything else is a judgement
+ * call a 3B model cannot act on anyway. `*_CHECKED_EN` therefore ships at EVERY
+ * depth and `*_GUIDANCE_EN` only at `full`/`task`; `brief` is a strict subset of
+ * `full`, so no wording is invented for the small path and there is still
+ * exactly one editorial source per line.
+ *
  * Self-consistency: these constants contain NO em or en dashes used as punctuation.
  * Normal hyphens appear only where a hyphen is genuinely part of a word.
  */
-const ANTI_AI_TELL_LEXICAL_EN = `NATURAL VOICE (anti-AI-tell). Applies to any words YOU introduce, never to exact job-ad keywords already grounded in the résumé:
+
+/**
+ * Lexical bans a deterministic check verifies: every word spelled out here is
+ * an {@link AI_TELL_LEXICAL_WORDS_EN} entry (or the prompt-only sibling quoted
+ * beside one), so `voice.ai_tell_lexical` never reports a ban this line did not
+ * issue.
+ */
+const LEXICAL_CHECKED_EN = `NATURAL VOICE (anti-AI-tell). Applies to any words YOU introduce, never to exact job-ad keywords already grounded in the résumé:
 - Drop AI-vocabulary: delve, leverage, robust, seamless, cutting-edge, tapestry, testament, landscape (abstract), navigate (abstract), realm, beacon, underscore, showcase, foster, intricate, pivotal, paramount, vibrant, garner, vital, crucial, harness, elevate, embark, streamline, supercharge, unlock, empower, transformative, multifaceted, ever-evolving, paradigm shift, game changer. Use the plain word for the real thing instead.
 - No promotional / inflated self-adjectives: passionate, results-driven, proven track record, team player, go-getter, synergy, dynamic, detail-oriented, meticulous, world-class, cutting-edge.
 - No vague attributions / weasel words: "studies show", "experts say", "industry reports", "many argue", "widely regarded as", "it is widely known".
-- No importance puffery: "stands as a testament", "marks a pivotal moment", "plays a vital role", "solidifies its position", "underscores its significance". State the fact and let the reader judge whether it matters.
-- Cut filler phrases: "in order to" -> "to", "due to the fact that" -> "because", "at this point in time" -> "now", "has the ability to" -> "can". Delete these outright: "at the end of the day", "when it comes to", "at its core", "in terms of", "with regard to", "going forward", "in today's world".
+- Cut filler phrases: "in order to" -> "to", "due to the fact that" -> "because", "at this point in time" -> "now", "has the ability to" -> "can".`;
+
+/**
+ * Lexical judgement calls: nothing here is (or could be) a substring check, and
+ * the words they name are deliberately prompt-only (see rule 2 below). `full`
+ * and `task` only.
+ */
+const LEXICAL_GUIDANCE_EN = `- No importance puffery: "stands as a testament", "marks a pivotal moment", "plays a vital role", "solidifies its position", "underscores its significance". State the fact and let the reader judge whether it matters.
 - Plain verbs beat bloated ones: "utilize" -> "use", "facilitate" -> "run", "made a decision" -> "decided". Never manufacture a strong verb where "is" or "has" is clearer ("serves as a centralized hub for X" -> say what it actually does with X).
 - Cut empty adverbs that add nothing: just, simply, actually, truly, literally, honestly, fundamentally, importantly, crucially, inherently, inevitably. Keep one only when it carries real emphasis, contrast, or uncertainty.
 - PORTABILITY TEST: a sentence that could move unchanged to another candidate, company, or role is filler. Cut it, or replace it with a number, tool, mechanism, or consequence specific to THIS one.
 - SHOW, DO NOT TELL: never label a point important, impressive, or surprising. Give the fact and let the reader draw the conclusion.`;
 
-const ANTI_AI_TELL_PROSE_EN = `${ANTI_AI_TELL_LEXICAL_EN}
-PROSE FLOW (anti-AI-tell, for connected writing):
+/**
+ * Prose-flow lines a deterministic check verifies, and that nothing else in a
+ * composed prose prompt already states:
+ *
+ * - the dash ban backs `voice.em_dash_overuse`;
+ * - the rule-of-three ban backs `voice.rule_of_three_density`;
+ * - the two phrase lines back `voice.ai_tell_prose` (their quoted phrases ARE
+ *   {@link AI_TELL_PROSE_WORDS_EN} entries).
+ *
+ * `voice.low_burstiness` is the one check whose instruction is NOT here: it is
+ * covered at every depth, more concretely, by {@link HUMANIZE_PROSE}'s CADENCE
+ * line, which every prose call site composes alongside this block. The
+ * remaining letter checks (`voice.template_opener`, `voice.generic_letter`) are
+ * backed by the cover-letter builder's own all-depth `LETTER_SPECIFICS`.
+ *
+ * The filler DELETIONS live here rather than in the lexical core because they
+ * are letter register: "when it comes to" and "at the end of the day" cannot
+ * occur in an ATS bullet, so a résumé prompt was paying ~120 characters to ban
+ * prose it never writes.
+ */
+const PROSE_CHECKED_EN = `PROSE FLOW (anti-AI-tell, for connected writing):
 - EM-DASH HARD BAN: never use a long dash (em or en) anywhere. Replace it with a period, comma, colon, or parentheses.
-- Vary sentence length and rhythm; do not run several same-shaped sentences in a row.
 - No rule-of-three: do not force ideas into groups of three.
+- Delete these outright: "at the end of the day", "when it comes to", "at its core", "in terms of", "with regard to", "going forward", "in today's world".
+- Never tell the reader what to notice or how to weigh it: "the key point is", "as you can see", "this distinction matters", "in other words", "it is worth noting".`;
+
+/**
+ * Prose CONSTRUCTIONS. Every rule here is a shape rather than a string, which
+ * is exactly why {@link AI_TELL_PROSE_WORDS_EN} refuses to carry them — and why
+ * they are the first thing dropped when the budget is tight: a model small
+ * enough to need the brief prompt cannot judge them either. `full`/`task` only.
+ */
+const PROSE_GUIDANCE_EN = `- Vary sentence length and rhythm; do not run several same-shaped sentences in a row.
 - No negative parallelisms ("not just X, but Y" / "it's not about X, it's about Y" / "the question isn't X, it's Y") and no negative listing ("Not a X. Not a Y. A Z."). State Y directly.
 - No superficial "-ing" openers or tails (highlighting, showcasing, reflecting, ensuring, underscoring) that fake depth.
 - No throat-clearing, faux-insight, or rhetorical setups: "Here's the thing", "Let me be clear", "I'll be honest", "The truth is", "What most people get wrong", "Here's what nobody tells you", "What if I told you", "Think about it:", or a question you immediately answer yourself. Cut the setup and make the claim.
-- No colon reveals and no interpretive metadiscourse: no noun phrase plus colon plus dramatic lowercase reveal ("The best part: it learns"), and never tell the reader what to notice or how to weigh it ("the key point is", "as you can see", "this distinction matters", "in other words", "it is worth noting"). Colons are for lists, labels, and quotes.
+- No colon reveals: no noun phrase plus colon plus dramatic lowercase reveal ("The best part: it learns"). Colons are for lists, labels, and quotes.
 - No stacked punchy fragments ("That's it. That's the whole thing.") and no synonym cycling: repeat the clear word instead of rotating terms for style.
 - No fake-profound kicker and no summary-recap ending: never close on a metaphor, aphorism, or mic-drop line, and never open the last paragraph with "In conclusion", "Ultimately", or "Overall". End on the clearest concrete sentence you already have, or on the next step.
-- Formatting follows the content: no emoji, no bold sprinkled mid-sentence for emphasis, no bullet list where two sentences of prose read better.
+- Formatting follows the content: no emoji, no decorative bold beyond the few job-ad keywords the output rules ask for, no bullet list where two sentences of prose read better.
 - No passive voice where active is natural.
 - Concrete over abstract: name the real thing and what changed, not adjectives.`;
+
+const ANTI_AI_TELL_LEXICAL_EN = `${LEXICAL_CHECKED_EN}
+${LEXICAL_GUIDANCE_EN}`;
+
+const ANTI_AI_TELL_PROSE_EN = `${ANTI_AI_TELL_LEXICAL_EN}
+${PROSE_CHECKED_EN}
+${PROSE_GUIDANCE_EN}`;
+
+const ANTI_AI_TELL_PROSE_BRIEF_EN = `${LEXICAL_CHECKED_EN}
+${PROSE_CHECKED_EN}`;
 
 /**
  * Curated German (de) equivalent of {@link ANTI_AI_TELL_LEXICAL_EN} — the actual
@@ -148,6 +216,11 @@ PROSE-FLUSS (Anti-KI-Floskeln, für zusammenhängenden Text):
  *    exists to verify.
  * 4. **No hidden domain meaning.** "beacon" is prompt-only for exactly this:
  *    a BLE/iBeacon fleet is real infrastructure a real engineer really shipped.
+ *    So is "transformative": "transformative learning" is Mezirow's standard
+ *    L&D curriculum term and "transformative justice" is a named social-work
+ *    practice, so the checked tier would have told those candidates their own
+ *    job title reads as machine-written. A word that looks like pure decoration
+ *    in one industry is a field's name in another; when in doubt, prompt tier.
  *
  * Entries are matched with a word boundary at both ends
  * (`documents::evidence::contains_word`) and English gets NO inflection
@@ -179,7 +252,6 @@ export const AI_TELL_LEXICAL_WORDS_EN = [
   'streamline',
   'unlock',
   'empower',
-  'transformative',
   'multifaceted',
   'ever-evolving',
   'paradigm shift',
@@ -271,13 +343,22 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
  * is the trust cost this module is not willing to pay. The prompt bans them
  * all; only the deterministic checker abstains.
  *
- * Contraction forms are absent for a MECHANICAL reason, not an editorial one:
- * matching is a literal comparison over `flattened_lower` text, which
- * normalizes whitespace and case but not punctuation, and a model writes the
- * typographic apostrophe (U+2019) about as often as the ASCII one. A
- * `"it's worth noting"` entry would therefore silently miss half its target,
- * the same dead-entry failure the German inflection bug was. Only the
- * apostrophe-free spelling is checked; the prompt bans both.
+ * Contraction forms ARE carried now, with an ASCII apostrophe (U+0027) and
+ * never the typographic one. The earlier objection was mechanical: matching is
+ * a literal comparison over `flattened_lower` text, which normalizes whitespace
+ * and case but not punctuation, and a model writes U+2019 about as often as
+ * U+0027, so either spelling missed half its target. `voice.rs::ai_tell_issues`
+ * now FOLDS U+2019 onto U+0027 on both the generated text and the source
+ * résumé before matching, which makes the ASCII spelling whole and the curly
+ * one unmatchable — hence the one-directional shape rule (U+0027 allowed,
+ * U+2019 banned) the catalog-shape test pins.
+ *
+ * `"in today's world"` rides the same fix. It is prose tier rather than lexical
+ * because its ban lives in the letter-register filler line: an ATS bullet
+ * cannot contain it, so checking it on a résumé would be a rule the résumé
+ * prompt never states. (Its German twins, `in der heutigen zeit` / `welt`, were
+ * already validated — German spells the phrase without an apostrophe, which is
+ * the whole reason the asymmetry existed.)
  *
  * The prompt keeps every one of these rules (see
  * {@link ANTI_AI_TELL_PROSE_EN}'s negative-parallelism and "-ing" lines and
@@ -286,7 +367,10 @@ export const AI_TELL_LEXICAL_WORDS_DE = [
  */
 export const AI_TELL_PROSE_WORDS_EN = [
   'it is important to note',
+  "it's important to note",
   'it is worth noting',
+  "it's worth noting",
+  "in today's world",
   'generally speaking',
   'with that in mind',
   'building on this',
@@ -431,23 +515,29 @@ function normalizeLanguageCode(language?: string): string {
  * Lexical-tier anti-AI-tell ruleset for `language` (ISO-639-1, default "en").
  * Word/phrase bans only — safe inside a résumé bullet. See the module doc
  * comment above for the per-language design (curated en/de, generic elsewhere).
+ *
+ * `depth` mirrors `resolveProfile(target).depth`: `brief` returns the
+ * checked-ban core only (see {@link LEXICAL_CHECKED_EN}), `full`/`task` the
+ * complete block. Defaults to `full`, so a caller that does not know its depth
+ * keeps today's text verbatim. Non-English rulesets are depth-invariant.
  */
-export function antiAiTellLexical(language?: string): string {
+export function antiAiTellLexical(language?: string, depth: PromptDepth = 'full'): string {
   const code = normalizeLanguageCode(language);
   if (code === 'de') return ANTI_AI_TELL_LEXICAL_DE;
-  if (code === 'en') return ANTI_AI_TELL_LEXICAL_EN;
+  if (code === 'en') return depth === 'brief' ? LEXICAL_CHECKED_EN : ANTI_AI_TELL_LEXICAL_EN;
   return genericAntiAiTellLexical(code);
 }
 
 /**
  * Prose-tier anti-AI-tell ruleset for `language` (ISO-639-1, default "en"):
  * {@link antiAiTellLexical} PLUS prose-flow rules. For letters, messages, and
- * free-text answers. See the module doc comment above for the per-language design.
+ * free-text answers. See the module doc comment above for the per-language
+ * design, and {@link antiAiTellLexical} for `depth`.
  */
-export function antiAiTellProse(language?: string): string {
+export function antiAiTellProse(language?: string, depth: PromptDepth = 'full'): string {
   const code = normalizeLanguageCode(language);
   if (code === 'de') return ANTI_AI_TELL_PROSE_DE;
-  if (code === 'en') return ANTI_AI_TELL_PROSE_EN;
+  if (code === 'en') return depth === 'brief' ? ANTI_AI_TELL_PROSE_BRIEF_EN : ANTI_AI_TELL_PROSE_EN;
   return genericAntiAiTellProse(code);
 }
 

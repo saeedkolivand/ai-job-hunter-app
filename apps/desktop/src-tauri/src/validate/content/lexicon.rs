@@ -88,7 +88,6 @@ const AI_TELL_LEXICAL_EN: &[&str] = &[
     "streamline",
     "unlock",
     "empower",
-    "transformative",
     "multifaceted",
     "ever-evolving",
     "paradigm shift",
@@ -137,7 +136,10 @@ const AI_TELL_LEXICAL_DE: &[&str] = &[
 
 const AI_TELL_PROSE_EN: &[&str] = &[
     "it is important to note",
+    "it's important to note",
     "it is worth noting",
+    "it's worth noting",
+    "in today's world",
     "generally speaking",
     "with that in mind",
     "building on this",

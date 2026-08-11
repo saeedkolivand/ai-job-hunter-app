@@ -1760,9 +1760,9 @@ fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
     let letter = "Dear Hiring Manager,\n\n\
                   Your platform is widely regarded as the standard in payments, and \
                   reliability is paramount there. My meticulous approach to release \
-                  engineering drove transformative change across a multifaceted team, \
-                  and in an ever-evolving market that was a genuine paradigm shift. \
-                  It is worth noting that the work continues.\n\n\
+                  engineering carried a multifaceted team through an ever-evolving \
+                  market, and that was a genuine paradigm shift. It is worth noting \
+                  that in today's world the work continues.\n\n\
                   Best regards,\nJane Doe\n";
     let report = en_letter(letter);
     let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
@@ -1773,11 +1773,11 @@ fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
         "widely regarded as",
         "paramount",
         "meticulous",
-        "transformative",
         "multifaceted",
         "ever-evolving",
         "paradigm shift",
         "it is worth noting",
+        "in today's world",
     ] {
         assert!(
             evidence.contains(&entry),
@@ -1790,25 +1790,69 @@ fn no_ai_slop_checked_tier_fires_on_a_slop_letter() {
     );
 }
 
+/// The contraction spellings a model actually writes, in BOTH apostrophe
+/// shapes.
+///
+/// [`flattened_lower`] normalizes case and whitespace but NOT punctuation, and
+/// a model emits the typographic apostrophe (U+2019) about as often as the
+/// ASCII one. That is why the first pass refused apostrophe entries outright:
+/// either spelling would have been half-dead. `ai_tell_issues` now folds
+/// U+2019 onto U+0027 before matching, so ONE ASCII entry covers both — this
+/// test is what makes that fold load-bearing (drop it and the typographic half
+/// goes silent).
+#[test]
+fn contraction_ai_tells_fire_with_either_apostrophe() {
+    let typographic = "Dear Hiring Manager,\n\n\
+                       It\u{2019}s worth noting that I built the settlement ledger you \
+                       advertise for. It\u{2019}s important to note that it still runs \
+                       every night. In today\u{2019}s world that is rarer than it \
+                       sounds.\n\n\
+                       Best regards,\nJane Doe\n";
+    let ascii = typographic.replace('\u{2019}', "'");
+    for (shape, letter) in [
+        ("typographic U+2019", typographic.to_string()),
+        ("ASCII U+0027", ascii),
+    ] {
+        let report = en_letter(&letter);
+        let evidence: Vec<&str> = fired(&report, VOICE_AI_TELL_LEXICAL)
+            .iter()
+            .filter_map(|i| i.evidence.as_deref())
+            .collect();
+        for entry in [
+            "it's worth noting",
+            "it's important to note",
+            "in today's world",
+        ] {
+            assert!(
+                evidence.contains(&entry),
+                "{entry:?} must fire on the {shape} spelling; got {evidence:?}"
+            );
+        }
+    }
+}
+
 /// The negative control the tiering exists for: a TRUTHFUL letter written
 /// entirely out of the catalog's prompt-only vocabulary must stay silent.
 ///
 /// Every phrase here either names something a real candidate really did
-/// ("utilize", "facilitate", "embark", "supercharge"), carries a real technical
-/// meaning ("beacon", as in a BLE/iBeacon fleet), or is ordinary human filler
-/// ("at the end of the day", "in conclusion", "as you can see"). The prompt
-/// tells the model to avoid all of them; a Warning reading "this is an AI tell"
-/// on one is a false accusation against the user, which this module prices
-/// higher than a missed tell.
+/// ("utilize", "facilitate", "embark", "supercharge"), carries a real domain
+/// meaning ("beacon", as in a BLE/iBeacon fleet; "transformative justice", a
+/// named social-work practice), or is ordinary human filler ("at the end of the
+/// day", "in conclusion", "as you can see"). The prompt tells the model to
+/// avoid all of them; a Warning reading "this is an AI tell" on one is a false
+/// accusation against the user, which this module prices higher than a missed
+/// tell.
 #[test]
 fn no_ai_slop_prompt_only_vocabulary_never_reaches_the_validator() {
     let letter = "Dear Hiring Manager,\n\n\
                   I chose to utilize Terraform to facilitate the AWS move at Acme, \
-                  which in today's world is table stakes. At its core the settlement \
+                  which for a payments team is table stakes. At its core the settlement \
                   system is a queue. When it comes to on-call, going forward I want \
                   fewer pages, not more. As you can see in terms of scale, the BLE \
                   beacon fleet I ran was the real game changer, and at the end of the \
-                  day I would embark on this again. It did supercharge our deploys.\n\n\
+                  day I would embark on this again. It did supercharge our deploys. \
+                  Before that I coordinated the county's transformative justice pilot \
+                  and taught a transformative learning module on Mezirow.\n\n\
                   In conclusion, with regard to the timeline, I can start in March.\n\n\
                   Best regards,\nJane Doe\n";
     silent(&en_letter(letter), VOICE_AI_TELL_LEXICAL);
