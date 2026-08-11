@@ -411,9 +411,6 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
   }, [rows, t]);
 
   const proposalStep = steps.find((s) => s.kind === 'proposal');
-  const stoppedSuffix = result
-    ? (STOPPED_SUFFIX[result.stoppedReason] ?? UNKNOWN_STOPPED_SUFFIX)
-    : UNKNOWN_STOPPED_SUFFIX;
 
   const showEmpty = machineState === 'idle' && steps.length === 0;
   const showStarting = isBusy && steps.length === 0;
@@ -649,11 +646,20 @@ export function PrepApplicationPanel({ posting }: { posting: Posting }) {
                     // Same lookup as the label, so tone and copy can never
                     // disagree: only a mapped `done` is success-green; every
                     // other reason — including one this build doesn't know —
-                    // stays warning-amber.
-                    color={stoppedSuffix === 'done' ? 'success' : 'warning'}
+                    // stays warning-amber. `result` is non-null here (guarded
+                    // above), so both reads resolve the same suffix.
+                    color={
+                      (STOPPED_SUFFIX[result.stoppedReason] ?? UNKNOWN_STOPPED_SUFFIX) === 'done'
+                        ? 'success'
+                        : 'warning'
+                    }
                     className="text-[9px]"
                   >
-                    {t(`jobs.prep.stopped.${stoppedSuffix}` as const)}
+                    {t(
+                      `jobs.prep.stopped.${
+                        STOPPED_SUFFIX[result.stoppedReason] ?? UNKNOWN_STOPPED_SUFFIX
+                      }` as const
+                    )}
                   </Tag>
                 )}
               </div>

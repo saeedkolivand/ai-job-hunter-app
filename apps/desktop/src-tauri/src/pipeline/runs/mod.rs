@@ -11,10 +11,12 @@
 //!
 //! **Both free-form JSON columns are capped on BOTH paths** — at the write site
 //! and again on import — so neither a runaway stage nor a hand-edited backup can
-//! persist a multi-megabyte `metrics_json`/`artifact_json` value. The other
-//! columns (id/job_url/kind/depth/status/stage/phase) are NOT clamped by
-//! `import()` — a hand-edited backup can still restore an unbounded value
-//! there.
+//! persist a multi-megabyte `metrics_json`/`artifact_json` value. `phase` is the
+//! one OTHER column with a bound, and it is a different kind: a closed
+//! vocabulary enforced by a schema CHECK (see [`CREATE_PIPELINE_RUNS_SQL`]), so
+//! it holds on the import path too. The remaining columns
+//! (id/job_url/kind/depth/status/stage) are unconstrained — a hand-edited backup
+//! can still restore an unbounded value there.
 //!
 //! **`kind` is the discriminator, not the table name.** This store is also the
 //! future home of agent runs: an agent run and a résumé-pipeline run have the
@@ -127,7 +129,16 @@ pub struct RunEventRow {
     pub seq: u32,
     pub ts: u64,
     pub stage: String,
-    /// `"start"`/`"finish"`/… — the stage lifecycle phase.
+    /// The stage lifecycle phase — a CLOSED vocabulary, unlike
+    /// [`RunRow::stopped_reason`]: `start`/`finish`/`error` and nothing else,
+    /// frozen by `PIPELINE_STAGE_PHASES` in
+    /// `packages/shared/src/events/pipeline.ts` and enforced at the SCHEMA by a
+    /// CHECK (see [`CREATE_PIPELINE_RUNS_SQL`]), so a bogus phase cannot enter
+    /// through the write path OR through a hand-edited backup.
+    ///
+    /// Typed `String` rather than an enum because it is a wire/row value shared
+    /// with the TS contract; the CHECK is what makes the set closed, and
+    /// `phase_check_matches_the_generated_contract` fails if the two drift.
     pub phase: String,
     /// The stage's summary payload, already clamped to [`ARTIFACT_CAP_BYTES`].
     pub artifact_json: String,
@@ -170,6 +181,56 @@ pub fn clamp_metrics(metrics: &str) -> String {
     clamp_json(metrics, METRICS_CAP_BYTES)
 }
 
+/// This store's single migration, hoisted out of the closure so it is a NAMED
+/// STATIC the drift guard can read.
+///
+/// The `phase` CHECK was added to this entry IN PLACE rather than as a second
+/// migration, which is legal exactly once: the table has never shipped, so no
+/// install has run migration 0 yet. Every later change to the vocabulary must
+/// APPEND (see [`PipelineRunStore::MIGRATIONS`]).
+///
+/// Static on purpose: the `phase` CHECK spells its vocabulary out as literals
+/// rather than interpolating `ipc_contracts::events::PIPELINE_STAGE_PHASES`.
+/// Generating it from the const would make a widened TS vocabulary apply to NEW
+/// installs and silently NOT to migrated ones — two schemas, no failure
+/// anywhere. Written out, a widened contract instead fails
+/// `phase_check_matches_the_generated_contract` until someone APPENDS the
+/// migration that widens the CHECK on existing installs too.
+const CREATE_PIPELINE_RUNS_SQL: &str =
+    // `id TEXT PRIMARY KEY` alone is NOT enough: SQLite permits NULL in a TEXT
+    // PRIMARY KEY (the historical INTEGER-PRIMARY-KEY exemption, kept for
+    // backwards compatibility), and ONE null-id row turns any `NOT IN (SELECT id
+    // FROM pipeline_runs)` sweep into a permanent silent no-op. `NOT NULL` closes
+    // that hole at the schema; `PipelineRunStore::prune`'s NOT EXISTS closes it
+    // again in SQL.
+    "CREATE TABLE IF NOT EXISTS pipeline_runs (
+        id             TEXT PRIMARY KEY NOT NULL,
+        job_url        TEXT NOT NULL,
+        kind           TEXT NOT NULL,
+        depth          TEXT NOT NULL,
+        status         TEXT NOT NULL,
+        started_at     INTEGER NOT NULL,
+        finished_at    INTEGER,
+        stopped_reason TEXT,
+        metrics_json   TEXT NOT NULL DEFAULT '{}'
+     );
+     CREATE INDEX IF NOT EXISTS idx_pipeline_runs_job
+         ON pipeline_runs(job_url, started_at DESC);
+     CREATE TABLE IF NOT EXISTS pipeline_run_events (
+        run_id        TEXT NOT NULL,
+        seq           INTEGER NOT NULL,
+        ts            INTEGER NOT NULL,
+        stage         TEXT NOT NULL,
+        -- CLOSED vocabulary, unlike `stopped_reason` one table up: that one is
+        -- deliberately loose TEXT because its variants grow and an old bundle
+        -- must still restore, whereas a stage has exactly these three lifecycle
+        -- phases. Enforced here so it also holds for `import`, which writes rows
+        -- straight from a file the user can edit.
+        phase         TEXT NOT NULL CHECK (phase IN ('start', 'finish', 'error')),
+        artifact_json TEXT NOT NULL,
+        PRIMARY KEY (run_id, seq)
+     );";
+
 pub struct PipelineRunStore {
     conn: Mutex<Connection>,
 }
@@ -181,38 +242,7 @@ impl PipelineRunStore {
     /// install.
     const MIGRATIONS: &'static [Migration] = &[Migration {
         name: "create_pipeline_runs",
-        up: |conn| {
-            conn.execute_batch(
-                // `id TEXT PRIMARY KEY` alone is NOT enough: SQLite permits NULL
-                // in a TEXT PRIMARY KEY (the historical INTEGER-PRIMARY-KEY
-                // exemption, kept for backwards compatibility), and ONE null-id
-                // row turns any `NOT IN (SELECT id FROM pipeline_runs)` sweep
-                // into a permanent silent no-op. `NOT NULL` closes that hole at
-                // the schema; `Self::prune`'s NOT EXISTS closes it again in SQL.
-                "CREATE TABLE IF NOT EXISTS pipeline_runs (
-                    id             TEXT PRIMARY KEY NOT NULL,
-                    job_url        TEXT NOT NULL,
-                    kind           TEXT NOT NULL,
-                    depth          TEXT NOT NULL,
-                    status         TEXT NOT NULL,
-                    started_at     INTEGER NOT NULL,
-                    finished_at    INTEGER,
-                    stopped_reason TEXT,
-                    metrics_json   TEXT NOT NULL DEFAULT '{}'
-                );
-                 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_job
-                     ON pipeline_runs(job_url, started_at DESC);
-                 CREATE TABLE IF NOT EXISTS pipeline_run_events (
-                    run_id        TEXT NOT NULL,
-                    seq           INTEGER NOT NULL,
-                    ts            INTEGER NOT NULL,
-                    stage         TEXT NOT NULL,
-                    phase         TEXT NOT NULL,
-                    artifact_json TEXT NOT NULL,
-                    PRIMARY KEY (run_id, seq)
-                 );",
-            )
-        },
+        up: |conn| conn.execute_batch(CREATE_PIPELINE_RUNS_SQL),
     }];
 
     pub fn open(data_dir: &Path) -> AppResult<Self> {
