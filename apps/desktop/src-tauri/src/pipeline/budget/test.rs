@@ -2,6 +2,8 @@
 //! the internal consistency of each shipped budget, and the security lock that
 //! no budget is renderer-supplied.
 
+use std::time::Duration;
+
 use serde_json::json;
 
 use super::{Budget, StoppedReason, DEFAULT_MAX_REPAIR_ATTEMPTS, DEFAULT_MAX_SECTIONS};
@@ -37,6 +39,40 @@ fn stopped_reason_serializes_to_the_pinned_wire_strings() {
             "{variant:?} must serialize to {wire:?} — the renderer keys on it"
         );
     }
+}
+
+/// WIRE is hand-maintained, and nothing above forces a variant into it — the
+/// two loops iterate the TABLE, so a variant the table simply omits is never
+/// tested. This closes that half: the `match` below is WILDCARD-FREE, so adding
+/// a variant to `StoppedReason` fails to COMPILE here (E0004) until it is named
+/// directly beneath the table it must also be added to, and the length pin fails
+/// if a row is deleted or duplicated without the arm count moving with it.
+#[test]
+fn the_wire_table_pins_every_variant() {
+    for (variant, wire) in WIRE {
+        let expected = match variant {
+            StoppedReason::Done => "done",
+            StoppedReason::MaxSteps => "max_steps",
+            StoppedReason::MaxTokens => "max_tokens",
+            StoppedReason::Cancelled => "cancelled",
+            StoppedReason::Truncated => "truncated",
+            StoppedReason::Budgeted => "budgeted",
+            StoppedReason::Timeout => "timeout",
+            StoppedReason::RunTimeout => "run_timeout",
+            StoppedReason::MaxToolCalls => "max_tool_calls",
+            StoppedReason::MaxRepairs => "max_repairs",
+        };
+        assert_eq!(
+            *wire, expected,
+            "{variant:?}'s WIRE row disagrees with the exhaustive mapping"
+        );
+    }
+    assert_eq!(
+        WIRE.len(),
+        10,
+        "WIRE must carry exactly one row per StoppedReason variant — add the row \
+         (and bump this count) alongside the match arm the compiler just demanded"
+    );
 }
 
 #[test]
@@ -92,6 +128,46 @@ fn every_shipped_budget_is_internally_consistent() {
             "{label}: run_timeout below step_timeout makes step_timeout unreachable"
         );
     }
+}
+
+/// Literal pins for every `Duration` field of both shipped budgets.
+///
+/// The consistency test above checks only RELATIONS (non-zero, `run_timeout >=
+/// step_timeout`), and a typo can satisfy every one of them: a
+/// `confirm_timeout` of `from_secs(3)` instead of `from_secs(300)` is non-zero,
+/// is below `run_timeout`, and is never compared to anything — it just
+/// auto-denies a human-in-the-loop confirmation three seconds after asking,
+/// which looks like the user declining. `confirm_timeout` is also the field
+/// NOTHING else reads today (the pipeline suspends on nothing yet), so a literal
+/// pin is its only guard. Each number's rationale is in the budget's doc.
+#[test]
+fn every_budget_timeout_is_pinned_to_its_documented_literal() {
+    assert_eq!(
+        Budget::AGENT_PREP.step_timeout,
+        Duration::from_secs(360),
+        "AGENT_PREP.step_timeout sits above the 300s OLLAMA_COMPLETION timeout on purpose"
+    );
+    assert_eq!(Budget::AGENT_PREP.run_timeout, Duration::from_secs(45 * 60));
+    assert_eq!(
+        Budget::AGENT_PREP.confirm_timeout,
+        Duration::from_secs(300),
+        "a shrunken confirm_timeout silently auto-denies confirmations"
+    );
+
+    assert_eq!(
+        Budget::RESUME_QUALITY.step_timeout,
+        Duration::from_secs(360),
+        "RESUME_QUALITY.step_timeout deliberately matches AGENT_PREP's backstop"
+    );
+    assert_eq!(
+        Budget::RESUME_QUALITY.run_timeout,
+        Duration::from_secs(30 * 60)
+    );
+    assert_eq!(
+        Budget::RESUME_QUALITY.confirm_timeout,
+        Duration::from_secs(300),
+        "a shrunken confirm_timeout silently auto-denies confirmations"
+    );
 }
 
 // The budget-arithmetic relations (`max_steps` above the prep worst case,

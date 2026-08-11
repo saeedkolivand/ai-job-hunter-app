@@ -123,6 +123,11 @@ impl Resettable for PipelineRunStore {
         // Both tables: the run rows AND their per-stage event trail. A reset
         // that left the events behind would keep a searchable record of which
         // postings the user ran, which is the thing being wiped.
+        //
+        // Attempts both, reports neither: `reset` returns `()`, so a table that
+        // refuses to clear surfaces as a `warn!` line naming it (see
+        // `PipelineRunStore::clear_all`) rather than as a failed reset. That is
+        // the trait's contract for every store here, not this one's shortcut.
         self.clear_all();
     }
 }

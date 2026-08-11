@@ -403,10 +403,26 @@ impl PipelineRunStore {
     }
 
     /// Wipe every run and event (factory reset).
+    ///
+    /// Infallible BY SIGNATURE — `Resettable::reset` returns `()`, and the whole
+    /// reset sweep continues past any one store — but never SILENT: a discarded
+    /// `Err` here would report a privacy wipe as done while the rows the user
+    /// asked to be gone are still on disk. Each failure is logged at `warn`
+    /// naming the table, which is also the only level that survives: `lib.rs`'s
+    /// global filter is `Warn`, with an exception for `…::observability` only, so
+    /// an `info!` written from THIS module would never reach the log file.
+    ///
+    /// The two DELETEs are independent on purpose: the second must still run when
+    /// the first fails, because a partial wipe beats no wipe when the goal is
+    /// removing user data.
     pub fn clear_all(&self) {
         let conn = self.conn.lock();
-        let _ = conn.execute("DELETE FROM pipeline_run_events", []);
-        let _ = conn.execute("DELETE FROM pipeline_runs", []);
+        if let Err(e) = conn.execute("DELETE FROM pipeline_run_events", []) {
+            log::warn!("[pipeline] factory reset failed to clear pipeline_run_events: {e}");
+        }
+        if let Err(e) = conn.execute("DELETE FROM pipeline_runs", []) {
+            log::warn!("[pipeline] factory reset failed to clear pipeline_runs: {e}");
+        }
     }
 
     /// Every run, oldest first — a deterministic order for export.

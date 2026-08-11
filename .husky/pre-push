@@ -295,7 +295,11 @@ fi
 
 # AI review of the push range was removed 2026-08-11 (owner decision): it was
 # the slowest step (~3 min LLM round-trip) and the internal pre-PR review chain
-# + CodeRabbit + CI cover the same ground. scripts/pre-push-review.mjs remains
-# for the Stop-gate cache tooling it shares via .claude/hooks/review-lib.mjs.
+# + CodeRabbit + CI cover the same ground. scripts/pre-push-review.mjs was
+# deleted with it — nothing else invoked it (it needed PREPUSH_RANGES, which
+# only this hook ever set), and it was the ONLY writer of .claude/.review-cache.
+# The Stop gate (.claude/hooks/review-gate.mjs) uses .claude/hooks/review-lib.mjs
+# directly and only ever READ that cache, so it keeps working — its fast-path
+# just stops getting fresh entries and falls through to the deterministic scan.
 
 echo "✓ Pre-push gate complete"

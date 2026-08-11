@@ -20,3 +20,8 @@ pub const SCRAPE_ITEM: &str = "scrape:item";
 pub const BOARDS_LOGIN_STATUS: &str = "boards:login-status";
 pub const SYSTEM_ACCENT_CHANGED: &str = "system:accentChanged";
 pub const EXTENSION_BRIDGE_CHANGED: &str = "extensionBridge:changed";
+
+/// Closed phase vocabulary for a `pipeline:stage` event, in lifecycle order.
+/// Source of truth: `PIPELINE_STAGE_PHASES` in
+/// packages/shared/src/events/pipeline.ts.
+pub const PIPELINE_STAGE_PHASES: &[&str] = &["start", "finish", "error"];

@@ -551,6 +551,18 @@ describe('PrepApplicationPanel — stopped-reason labelling', () => {
     expect(chip.className).toContain('text-amber-400');
   });
 
+  it('falls back to the neutral stopped label for `timeout` — a real wire variant `commands::agent` currently converts to a job FAILURE; if that ever changes it must land here, never on "done"', async () => {
+    await completeWithReason('timeout');
+
+    const chip = screen.getByText('jobs.prep.stopped.stopped');
+    expect(chip).toBeInTheDocument();
+    expect(screen.queryByText('jobs.prep.stopped.done')).not.toBeInTheDocument();
+    // The raw wire string is not user-facing copy either.
+    expect(screen.queryByText('timeout')).not.toBeInTheDocument();
+    expect(chip.className).toContain('text-amber-400');
+    expect(chip.className).not.toContain('emerald');
+  });
+
   it('still shows the success-toned completed label for a real `done` stop', async () => {
     await completeWithReason('done');
 

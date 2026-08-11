@@ -190,9 +190,16 @@ const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
     "a run that exhausts its tool calls must still have turns left to summarize"
 );
+/// The résumé pipeline's fixed non-section stages: plan, header, assemble,
+/// validate. Named so the `max_steps` relation below asserts the arithmetic
+/// [`Budget::RESUME_QUALITY`]'s doc actually states (12 + 4 = 16) rather than
+/// merely "more than the section count" — which 13 would have satisfied,
+/// leaving a run to die at [`StoppedReason::MaxSteps`] three stages from the end.
+const RESUME_FRAMING_STAGES: usize = 4;
+
 const _: () = assert!(
-    Budget::RESUME_QUALITY.max_steps > DEFAULT_MAX_SECTIONS,
-    "RESUME_QUALITY.max_steps must fit one step per section plus the framing stages"
+    Budget::RESUME_QUALITY.max_steps >= DEFAULT_MAX_SECTIONS + RESUME_FRAMING_STAGES,
+    "RESUME_QUALITY.max_steps must fit one step per section PLUS the four framing stages"
 );
 
 /// Sections one document run may produce.

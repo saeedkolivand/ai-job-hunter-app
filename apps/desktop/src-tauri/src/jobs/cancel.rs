@@ -38,6 +38,18 @@ impl CancelRegistry {
     /// Register `token` under `id` so [`Self::cancel`] can reach it. Replaces any
     /// existing registration for the same id (last writer wins), matching the
     /// `HashMap::insert` semantics every caller already relies on.
+    ///
+    /// **Why last-writer-wins needs no generation/handle:** ids are MINTED per
+    /// run by [`crate::db::new_job_id`] (`job-{uuid-v4}`) and never derived from
+    /// anything stable like a job URL — `commands::scrape::scrape_boards`,
+    /// `commands::autopilot::autopilot_run` and `commands::agent::agent_run` are
+    /// the three registering call sites, each minting one id per invocation, and
+    /// the engine only ever [`Self::get_or_register`]s the id it was passed. So
+    /// two LIVE runs cannot share a key, and the "run A's late `unregister`
+    /// removes run B's token" interleaving has no way to arise. The one id used
+    /// by two owners — Autopilot pre-registering the token its own nested scrape
+    /// then reuses — is one run, resolved by `get_or_register`'s `we_minted`
+    /// flag rather than by identity.
     pub async fn register(&self, id: &str, token: CancellationToken) {
         self.tokens.lock().await.insert(id.to_string(), token);
     }
