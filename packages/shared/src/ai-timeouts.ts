@@ -77,6 +77,17 @@ function effortMultiplier(effort?: string): number {
  * `OLLAMA_COMPLETION`) are flat constants. Only the STREAM deadline is
  * effort-scaled, and the draft is the run's only streamed call.
  *
+ * **"300 s per call" is a statement about the RETRY LOOP, not just the
+ * `.timeout()`.** `commands::ai_provider::retry::send_with_retry` re-sends a
+ * transient failure up to `MAX_ATTEMPTS` (3) times, so it has to bound the whole
+ * sequence by the caller's timeout — which it does, applying the timeout itself
+ * and giving a retry only what is left of it. It did NOT when this term was first
+ * written: each attempt rebuilt its own full `.timeout()`, so one "300 s" call
+ * really cost up to 3 × 300 s + backoff (901 s) and these 14 of them up to
+ * ~12 600 s against an advertised 4 500 s. If that budget is ever removed, this
+ * whole derivation is wrong by a factor of `MAX_ATTEMPTS` — which is why the
+ * retry loop's own budget test is a load-bearing part of this number.
+ *
  * The rule this exists to satisfy is the same one
  * `research_deadline_exceeds_the_inner_search_bounds_it_wraps` states for
  * research: **an outer bound that does not clear the inner bounds it wraps
@@ -146,8 +157,35 @@ export function qualityRunDeadlineSecs(effort?: string): number {
  * the backend must give up FIRST, because it is the side that knows WHY (a
  * `StoppedReason`, a provider error) while the renderer can only say "it timed
  * out".
+ *
+ * **Sized against the OVERSHOOT, not picked as a round number.** The backend
+ * observes its deadline BETWEEN provider calls (`StageHooks::before`, the repair
+ * loop's per-round and per-section checks, and the guard in front of a JSON
+ * stage's re-ask) — never mid-call, because cancelling an in-flight completion
+ * would throw away work the run has already paid for. So a run whose deadline
+ * expires one millisecond into a call reports `run_timeout` only when that call
+ * returns, and the renderer must still be waiting then:
+ *
+ * | in-flight call when the deadline expires | bound                        |
+ * | ---------------------------------------- | ---------------------------- |
+ * | any flat call (JSON stage, repair splice) | `OLLAMA_COMPLETION` 300 s   |
+ * | the draft stream, top tier                | 300 × 3.0 = 900 s           |
+ *
+ * 900 + 60 s of slack for validation, persistence and the IPC hop. At 60 s (the
+ * previous value) the renderer's own timeout fired first on every run that
+ * actually timed out — precisely the inversion this constant exists to prevent.
+ *
+ * Only ONE call can be in flight at a time, which is what keeps this a single
+ * per-call bound rather than a multiple: the run is sequential, the retry loop
+ * bounds its whole sequence by that call's timeout (see
+ * {@link QUALITY_RUN_FIXED_SECS}), and a JSON stage's re-ask is refused once the
+ * deadline has passed rather than adding a second call after it.
+ *
+ * Flat rather than effort-scaled on purpose: over-waiting is the SAFE direction
+ * for this bound (the renderer only ever gives up early, never late), and a
+ * second effort-dependent formula on the client side buys nothing.
  */
-export const QUALITY_RUN_CLIENT_MARGIN_SECS = 60;
+export const QUALITY_RUN_CLIENT_MARGIN_SECS = 960;
 
 /**
  * The renderer's outer bound (ms) for one quality-depth run — strictly greater

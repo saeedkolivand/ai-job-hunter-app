@@ -619,13 +619,15 @@ impl OpenAiClient {
 
         let body = build_complete_body(model, system, user, temperature, caps, structured);
 
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(endpoint.clone())
-                .timeout(timeouts::COMPLETION)
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(endpoint.clone())
+                    .bearer_auth(&api_key)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,
@@ -687,13 +689,15 @@ impl OpenAiClient {
         let endpoint = self.endpoint_url("embeddings")?;
         let trace = RequestTrace::begin(self.id, model, "/embeddings", &self.base_url, false);
         let body = json!({ "model": model, "input": text });
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(endpoint.clone())
-                .timeout(timeouts::EMBED)
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(endpoint.clone())
+                    .bearer_auth(&api_key)
+                    .json(&body)
+            },
+            timeouts::EMBED,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,
@@ -999,7 +1003,6 @@ impl AiProvider for OpenAiClient {
             || {
                 crate::net::http::shared()
                     .post(endpoint.clone())
-                    .timeout(timeouts::stream_deadline(req.effort.as_deref()))
                     .bearer_auth(&api_key)
                     .json(&body)
             },
@@ -1294,13 +1297,15 @@ impl AiProvider for OpenAiClient {
             body["temperature"] = json!(temperature.unwrap_or(0.7));
         }
 
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(endpoint.clone())
-                .timeout(timeouts::COMPLETION)
-                .bearer_auth(&api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(endpoint.clone())
+                    .bearer_auth(&api_key)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,

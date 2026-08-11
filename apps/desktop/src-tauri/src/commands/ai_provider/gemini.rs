@@ -558,13 +558,15 @@ impl GeminiClient {
         let body = build_complete_body(model, system, user, temperature, structured);
 
         let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&url)
-                .timeout(timeouts::COMPLETION)
-                .header("x-goog-api-key", &api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(&url)
+                    .header("x-goog-api-key", &api_key)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,
@@ -612,13 +614,15 @@ impl GeminiClient {
         let trace = RequestTrace::begin(ProviderId::Gemini, model, &endpoint_label, BASE, false);
         let body = build_embed_body(m, text);
         let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&url)
-                .timeout(timeouts::EMBED)
-                .header("x-goog-api-key", &api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(&url)
+                    .header("x-goog-api-key", &api_key)
+                    .json(&body)
+            },
+            timeouts::EMBED,
+        )
         .await
         .map_err(|e| format!("Gemini unreachable: {e}"))?;
         let status = resp.status();
@@ -937,7 +941,6 @@ impl AiProvider for GeminiClient {
             || {
                 crate::net::http::shared()
                     .post(&url)
-                    .timeout(timeouts::stream_deadline(req.effort.as_deref()))
                     .header("x-goog-api-key", &api_key)
                     .json(&body)
             },
@@ -1219,13 +1222,15 @@ impl AiProvider for GeminiClient {
         }
 
         let url = format!("{BASE}{endpoint_label}");
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&url)
-                .timeout(timeouts::COMPLETION)
-                .header("x-goog-api-key", &api_key)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(&url)
+                    .header("x-goog-api-key", &api_key)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,

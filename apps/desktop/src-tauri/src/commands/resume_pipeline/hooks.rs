@@ -90,11 +90,10 @@ pub(crate) fn apply_stop(
     }
     if elapsed >= deadline {
         ledger.stop(StoppedReason::RunTimeout);
-        return Err(AppError::Message(format!(
-            "This generation ran past its {}-minute limit and was stopped. \
-             Try a lower reasoning effort, or a faster model.",
-            deadline.as_secs() / 60
-        )));
+        // The same text `pipeline::resume::guard_deadline` reports from inside a
+        // stage: which enforcement point saw the clock first is an
+        // implementation detail, not something to tell the user two ways.
+        return Err(crate::pipeline::resume::run_timeout_error(deadline));
     }
     Ok(())
 }
@@ -117,6 +116,19 @@ pub(crate) fn apply_stop(
 ///   labelled every failure as a clean finish, and the renderer maps `done` to
 ///   a SUCCESS suffix. A failure with no recorded stop reason now carries
 ///   `None` — absent, which the wire contract already allows.
+/// * **A timeout that still SAVED a document is not a failure.** The deadline
+///   has two enforcement points and they used to disagree about the same event:
+///   expiring INSIDE the repair loop ends the loop, keeps the accumulated
+///   document and returns `Ok`, so the run lands `needsReview` + `run_timeout`;
+///   expiring at the stage BOUNDARY one instant later ([`apply_stop`]) returns
+///   `Err`, which came out `failed` — even though `persist_document` had already
+///   written the same real, reviewable résumé. `persisted` is that document
+///   (`quality_report.is_some()`, i.e. a non-empty draft, a report, and a
+///   successful save), and it makes the two paths agree. Only `RunTimeout`
+///   qualifies: a provider error or a JSON stage that never produced its
+///   artifact leaves a document nothing downstream can honestly describe. A run
+///   whose cancel TOKEN fired is left exactly as it was — the user acted, and
+///   this relabel does not reach into that decision.
 ///
 /// Returns the wire token rather than the enum so the caller writes one
 /// `Option<String>` straight into the row.
@@ -125,6 +137,7 @@ pub(crate) fn terminal_state(
     ok: bool,
     token_cancelled: bool,
     needs_review: bool,
+    persisted: bool,
 ) -> (&'static str, Option<String>) {
     if !ok && token_cancelled {
         // First-writer-wins, so a run that had already recorded WHY it was
@@ -132,12 +145,21 @@ pub(crate) fn terminal_state(
         ledger.stop(StoppedReason::Cancelled);
     }
     let stopped = ledger.stopped();
-    let status = match (ok, stopped == Some(StoppedReason::Cancelled)) {
+    // The run produced a usable document and stopped for the one reason that
+    // does not invalidate it — the same outcome the in-loop deadline check
+    // produces, reached from the boundary check.
+    let timed_out_with_document =
+        !ok && persisted && stopped == Some(StoppedReason::RunTimeout) && !token_cancelled;
+    let usable = ok || timed_out_with_document;
+    let status = match (usable, stopped == Some(StoppedReason::Cancelled)) {
         (_, true) => super::STATUS_CANCELLED,
         (false, _) => super::STATUS_FAILED,
         (true, _) if needs_review => super::STATUS_NEEDS_REVIEW,
         (true, _) => super::STATUS_COMPLETED,
     };
+    // Still the ledger's own reason (`run_timeout`) — the status changed, the
+    // explanation did not. `Done` remains reserved for a run that actually
+    // reached the end of its last stage.
     let reason = stopped.or_else(|| ok.then_some(StoppedReason::Done));
     (status, reason.map(stopped_wire))
 }

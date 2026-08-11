@@ -481,15 +481,30 @@ impl Completer {
     ///
     /// Because the charge lives HERE, a Phase-3 stage calling this must not
     /// charge again for the same round-trip.
+    ///
+    /// **`guard` runs before EVERY round-trip, the re-ask included**, and an
+    /// `Err` aborts before the provider is reached — the caller's chance to
+    /// refuse a call it can no longer afford in some other currency than money.
+    /// A REQUIRED parameter, not an optional variant: the re-ask is a second
+    /// full provider call that this method decides on by itself, so a caller
+    /// with a wall-clock budget (the staged pipeline's `RunDeadline` — see
+    /// `pipeline::resume::guard_deadline`) has no other place to put that
+    /// decision, and making it easy to omit is how the repair loop's between-
+    /// calls hole got written the first time. Callers with nothing to guard pass
+    /// `|| Ok(())`.
     pub async fn complete_json<T: DeserializeOwned>(
         &self,
+        guard: impl Fn() -> AppResult<()>,
         system: &str,
         user: &str,
         schema_hint: &str,
         schema: Option<&Value>,
     ) -> AppResult<T> {
         complete_json_with(
-            || self.charge_daily(),
+            || {
+                guard()?;
+                self.charge_daily()
+            },
             |reask| self.structured_call(system, user, schema_hint, schema, reask),
             |usage| self.record_spend(usage),
         )

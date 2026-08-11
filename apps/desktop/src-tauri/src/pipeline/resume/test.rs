@@ -307,7 +307,8 @@ fn strategy_never_drops_renames_or_re_dates_a_role() {
         ..ResumeStrategy::default()
     };
 
-    let out = reseed(&roster, &model, &evidence_covering(&["payments"]));
+    let (out, dropped) = reseed(&roster, &model, &evidence_covering(&["payments"]));
+    assert_eq!(dropped, 0, "nothing was filtered out here");
     assert_eq!(out.len(), roster.len(), "no role may be dropped");
     for (planned, seed) in out.iter().zip(roster.iter()) {
         assert_eq!(planned.company, seed.company);
@@ -355,7 +356,7 @@ fn strategy_never_attaches_a_plan_to_a_role_by_position() {
         ..ResumeStrategy::default()
     };
 
-    let out = reseed(&roster, &model, &EvidenceMap::default());
+    let (out, _dropped) = reseed(&roster, &model, &EvidenceMap::default());
     assert!(
         out[0].angle.is_empty(),
         "a renamed employer matches nothing and must get no angle, not the first plan"
@@ -416,11 +417,22 @@ fn strategy_emphasis_keeps_only_what_the_evidence_map_supports() {
         ],
     };
 
-    let out = reseed(&roster, &model, &evidence);
+    let (out, dropped) = reseed(&roster, &model, &evidence);
     assert_eq!(
         out[0].emphasis,
         vec!["Payments".to_string(), "Ledgers".to_string()],
         "only the requirements the résumé can vouch for survive"
+    );
+    // The drop is COUNTED. Without this the artifact of a run whose evidence
+    // map spells a requirement differently from the strategy is
+    // indistinguishable from one where the model emphasized nothing — the
+    // filter matches requirement TEXT, so `"k8s"` against `"Kubernetes"` goes
+    // the same silent way these two did.
+    //
+    // Mutation check: return a constant 0 from `reseed` and this fails.
+    assert_eq!(
+        dropped, 2,
+        "both ungrounded terms are counted, not just removed"
     );
 }
 
@@ -1253,6 +1265,64 @@ async fn the_repair_loop_reverts_a_round_that_adds_criticals() {
     );
 }
 
+/// **The repair loop is not the only stage that calls a provider twice.**
+///
+/// `Completer::complete_json` is allowed exactly one re-ask, and it decides on
+/// that second call by itself — between two `OLLAMA_COMPLETION`-bounded round
+/// trips, with no stage boundary in between. `analyze_job`, `match_evidence` and
+/// `strategy` each go through it, so before this guard a run whose deadline
+/// expired during the first call paid for a second one nothing would look at
+/// (three stages × 300 s of it, worst case) and only THEN hit the boundary check.
+///
+/// Driven through the real [`complete_json_with`] seam with the real
+/// `guard_deadline`, and with a deadline that is LIVE at the first charge and
+/// spent by the second — the case a single expired-from-the-start deadline
+/// cannot distinguish (it would refuse the first call too, and pass against a
+/// guard that ran only once).
+///
+/// Mutation check: pass `|| Ok(())` as the guard (i.e. the pre-fix
+/// `complete_json`) and `calls` becomes 2 with no recorded stop reason.
+#[tokio::test]
+async fn a_json_stage_does_not_pay_for_a_re_ask_after_the_deadline() {
+    use crate::commands::ai_provider::Usage;
+
+    let ledger = RunLedger::new();
+    let deadline = super::RunDeadline::starting_now(std::time::Duration::from_millis(500));
+    let mut calls = 0u32;
+
+    let parsed: crate::error::AppResult<JobAnalysis> = crate::pipeline::complete_json_with(
+        || super::guard_deadline(&ledger, deadline),
+        |_reask| {
+            calls += 1;
+            async move {
+                // The first call outlives the run's remaining time — the
+                // ordinary slow-local-model case, not a hang.
+                tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                Ok(("this is not JSON".to_string(), Usage::default()))
+            }
+        },
+        |_usage| {},
+    )
+    .await;
+
+    assert_eq!(
+        calls, 1,
+        "the re-ask must be refused once the run is out of time"
+    );
+    assert_eq!(
+        ledger.stopped(),
+        Some(StoppedReason::RunTimeout),
+        "…and the run must say WHY it stopped, not blame the model's JSON"
+    );
+    let message = parsed
+        .expect_err("the stage cannot produce an artifact")
+        .to_string();
+    assert!(
+        message.contains("ran past its"),
+        "the error is the run's deadline, not the parse failure: {message}"
+    );
+}
+
 /// **The deadline is enforced INSIDE the loop.** `StageHooks::before` cannot
 /// reach here: `repair` is the last stage, so there is no boundary after it,
 /// and one round can spend four provider calls at up to `OLLAMA_COMPLETION`
@@ -1326,8 +1396,14 @@ async fn the_repair_loop_stops_between_section_calls_not_only_between_rounds() {
         report,
         None,
         2,
-        // Live now, spent by the time the first call returns.
-        super::RunDeadline::starting_now(std::time::Duration::from_millis(40)),
+        // Live now, spent by the time the first call returns. Half a second,
+        // not the 40 ms this first had: the deadline has to survive the
+        // grouping + validation that run before the first call, and a loaded CI
+        // box can spend longer than 40 ms there — which would assert
+        // `calls == 1` against a loop that made ZERO. Both margins are
+        // one-sided: a slower machine only makes the first call finish further
+        // PAST the deadline, never before it.
+        super::RunDeadline::starting_now(std::time::Duration::from_millis(500)),
         |key, document, _issues| {
             calls += 1;
             let clean = match key {
@@ -1339,7 +1415,7 @@ async fn the_repair_loop_stops_between_section_calls_not_only_between_rounds() {
             let spliced = sections::splice(&document, section, clean);
             async move {
                 // The overrun a round-granular check cannot see.
-                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(700)).await;
                 Ok(super::stages::SectionOutcome::Replaced(spliced))
             }
         },

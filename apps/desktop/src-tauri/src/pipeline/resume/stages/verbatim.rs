@@ -55,6 +55,14 @@ pub fn is_verbatim_in(normalized_source: &str, quote: &str) -> bool {
 
 /// [`is_verbatim_in`] for a caller with ONE quote to check, which normalizes
 /// the source for it.
+///
+/// **Test-only.** Every production caller checks many quotes against one résumé
+/// and therefore hoists the `normalize(source)` itself (that hoist is why
+/// [`is_verbatim_in`] carries the `_in` suffix). Kept because the filter's rules
+/// — the two allowed normalizations and the length floor — read far more
+/// clearly as `is_verbatim(source, quote)`, and gated so it cannot quietly
+/// become the convenient wrong choice in a loop.
+#[cfg(test)]
 pub fn is_verbatim(source: &str, quote: &str) -> bool {
     is_verbatim_in(&normalize(source), quote)
 }

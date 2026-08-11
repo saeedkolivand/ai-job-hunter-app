@@ -34,6 +34,9 @@ impl<'a> Stage<QualityCtx<'a>> for AnalyzeJob {
                 let analysis: JobAnalysis = ctx
                     .completer
                     .complete_json(
+                        // The re-ask is a second full provider call; a run
+                        // already out of time must not pay for it.
+                        ctx.deadline_guard(),
                         ANALYZE_JOB_SYSTEM,
                         &analyze_job_user(ctx.input.job_ad),
                         JobAnalysis::EXAMPLE,

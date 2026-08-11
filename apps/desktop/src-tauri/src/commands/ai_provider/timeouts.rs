@@ -114,6 +114,13 @@ pub const COMPLETION: Duration = Duration::from_secs(120);
 /// Non-streaming **local** Ollama completion (`complete`): the local daemon can
 /// be far slower than a cloud API on first token, so it gets the longer
 /// stream-class budget rather than the cloud [`COMPLETION`] bound.
+///
+/// Like [`COMPLETION`], this is handed to
+/// [`retry::send_with_retry`](super::retry::send_with_retry) rather than set on
+/// the request builder, so it bounds the whole retry SEQUENCE and not one
+/// attempt. Every outer deadline derived from these constants —
+/// [`quality_run_deadline`] above all — counts one of them per provider call and
+/// is wrong by `retry::MAX_ATTEMPTS` if that ever stops being true.
 pub const OLLAMA_COMPLETION: Duration = Duration::from_secs(300);
 
 // ── Embeddings ──────────────────────────────────────────────────────────────────
@@ -187,6 +194,15 @@ pub fn research_deadline(effort: Option<&str>) -> Duration {
 /// `qualityRunDeadlineSecs > pins the derived per-tier table` there), which is
 /// what keeps the shared arithmetic from drifting even though each side spells
 /// it out.
+///
+/// **Counting ONE [`OLLAMA_COMPLETION`] per call is a claim about
+/// [`retry`](super::retry), not just about `.timeout()`.** A transient failure is
+/// re-sent up to `retry::MAX_ATTEMPTS` times, so the retry loop bounds the whole
+/// sequence by the caller's timeout — it applies that timeout itself and gives a
+/// retry only the remainder. Before it did, one "300 s" call could cost 3 × 300 s
+/// plus backoff and this deadline was short by that factor;
+/// `retry::a_one_shot_call_stops_once_its_own_timeout_is_spent` is the guard that
+/// keeps this arithmetic true.
 ///
 /// This is a BACKSTOP, not a target: [`stream_deadline`]/[`OLLAMA_COMPLETION`]
 /// catch a single hung call, and `Budget::step_timeout` catches a hung stage.
@@ -373,6 +389,15 @@ mod tests {
     /// `OLLAMA_COMPLETION` — plus the one streamed draft. That is what makes
     /// this a guard rather than an identity: raising either repair constant
     /// without raising the deadline fails here.
+    ///
+    /// **One `OLLAMA_COMPLETION` per call, not `MAX_ATTEMPTS` of them.** That
+    /// holds only because `retry::send_with_retry` bounds the whole retry
+    /// sequence by the caller's timeout; the guard for THAT half lives next to
+    /// it (`a_one_shot_call_stops_once_its_own_timeout_is_spent`), because it is
+    /// a property of the loop's wall clock, not of this arithmetic. Multiplying
+    /// the term by `MAX_ATTEMPTS` here instead would pin a dependency the code
+    /// no longer has — an identity of exactly the kind this test was rebuilt to
+    /// stop being.
     ///
     /// Mutation checks (applied and reverted): `QUALITY_RUN_FIXED_SECS` back to
     /// 1_800 ⇒ every tier fails; `MAX_SECTIONS_PER_ROUND` 4 → 6 ⇒ every tier

@@ -47,6 +47,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
+use crate::error::{AppError, AppResult};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::{Completer, Pipeline};
@@ -223,6 +224,16 @@ impl<'a> QualityCtx<'a> {
         }
     }
 
+    /// The run's deadline guard, ready to hand to
+    /// [`Completer::complete_json`](crate::pipeline::Completer::complete_json) —
+    /// see [`guard_deadline`]. Owned (an `Arc` clone plus a `Copy` clock), so it
+    /// does not borrow the context across the call it guards.
+    pub fn deadline_guard(&self) -> impl Fn() -> AppResult<()> + 'static {
+        let ledger = Arc::clone(&self.ledger);
+        let deadline = self.deadline;
+        move || guard_deadline(&ledger, deadline)
+    }
+
     /// How many Criticals the current report carries. `0` when nothing has been
     /// validated yet — callers must not read that as "clean" without also
     /// checking that a report exists.
@@ -316,4 +327,43 @@ impl RunDeadline {
     pub fn passed(&self) -> bool {
         self.elapsed() >= self.limit
     }
+}
+
+/// The error a run stopped by its own deadline reports.
+///
+/// ONE string, shared by the boundary check
+/// (`commands::resume_pipeline::hooks::apply_stop`) and by [`guard_deadline`],
+/// so which of the deadline's enforcement points happened to see the clock
+/// first is not something the user can tell from the message.
+pub fn run_timeout_error(limit: Duration) -> AppError {
+    AppError::Message(format!(
+        "This generation ran past its {}-minute limit and was stopped. \
+         Try a lower reasoning effort, or a faster model.",
+        limit.as_secs() / 60
+    ))
+}
+
+/// Refuse the NEXT provider round-trip when the run is already out of time,
+/// recording WHY on the way out.
+///
+/// The boundary check cannot cover a stage that makes more than one call — the
+/// lesson the repair loop's per-section check already carries. The other
+/// multi-call shape is a JSON stage: [`Completer::complete_json`] is allowed one
+/// re-ask, which is a second full provider call decided on inside the stage, so
+/// a run whose deadline expired during the first call would pay for a second
+/// (up to `OLLAMA_COMPLETION`) that nothing would look at.
+///
+/// **Hard error rather than the repair loop's "stop and keep".** A JSON stage
+/// has no partial result to keep: the first response failed to parse, so there
+/// is no artifact, and every downstream stage reads it. Recording
+/// [`StoppedReason::RunTimeout`] and erroring is exactly what the boundary check
+/// does one instant later — the terminal state then depends on whether a
+/// document was already persisted, which is
+/// `commands::resume_pipeline::hooks::terminal_state`'s decision, not this one's.
+pub fn guard_deadline(ledger: &RunLedger, deadline: RunDeadline) -> AppResult<()> {
+    if deadline.passed() {
+        ledger.stop(StoppedReason::RunTimeout);
+        return Err(run_timeout_error(deadline.limit()));
+    }
+    Ok(())
 }

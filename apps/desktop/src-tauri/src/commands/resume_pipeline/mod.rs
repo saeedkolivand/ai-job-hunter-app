@@ -304,12 +304,15 @@ async fn execute(
         || ctx.critical_count() > 0;
 
     // Status and reason together — see `hooks::terminal_state` for why a
-    // cancelled draft used to come out `failed` + `"done"`.
+    // cancelled draft used to come out `failed` + `"done"`, and why a run whose
+    // deadline expired at a stage boundary is not a failure once
+    // `persist_document` has saved its document.
     let (status, stopped_reason) = hooks::terminal_state(
         &ledger,
         outcome.is_ok(),
         cancel.is_cancelled(),
         needs_review,
+        quality_report.is_some(),
     );
     let cancelled = status == STATUS_CANCELLED;
     row.status = status.to_string();
@@ -358,6 +361,19 @@ async fn execute(
         }
         Err(_) if cancelled => {
             crate::commands::jobs::job_cancel(app, job_id);
+            Ok(())
+        }
+        // The run row and the JOB must agree. `terminal_state` resolves a
+        // deadline that expired at a stage boundary AFTER the document was saved
+        // to `needsReview`/`completed` — the same outcome the in-loop check
+        // produces — so failing the job here would tell the renderer to discard
+        // a document its own run row calls reviewable.
+        Err(_) if status != STATUS_FAILED => {
+            crate::commands::jobs::job_complete(
+                app,
+                job_id,
+                json!({ "runId": run_id, "status": status, "text": ctx.draft }),
+            );
             Ok(())
         }
         Err(e) => Err(e),
@@ -587,9 +603,14 @@ fn ensure_latest_run(store: &PipelineRunStore, row: &RunRow) -> AppResult<()> {
         .into_iter()
         .find(|candidate| candidate.kind == row.kind);
     match newest {
+        // Deliberately does NOT say "open the latest run": the newest run may
+        // still be running, or may have failed before it saved anything, so
+        // pointing the user at a document that does not exist yet is the second
+        // wrong answer after the edit itself.
         Some(newest) if newest.id != row.id => Err(AppError::Validation(
-            "This posting has a newer run, and all of its runs share one saved résumé. \
-             Open the latest run to edit the document."
+            "There is a newer run for this posting, and all of its runs share one saved \
+             résumé — only the newest one can change it. If that run is still going, wait \
+             for it to finish."
                 .to_string(),
         )),
         _ => Ok(()),

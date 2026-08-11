@@ -197,6 +197,9 @@ impl<'a> Stage<QualityCtx<'a>> for MatchEvidence {
                 let raw: EvidenceMap = ctx
                     .completer
                     .complete_json(
+                        // The re-ask is a second full provider call; a run
+                        // already out of time must not pay for it.
+                        ctx.deadline_guard(),
                         &match_evidence_system(),
                         &match_evidence_user(ctx.input.source_resume, &ctx.analysis),
                         EvidenceMap::EXAMPLE,

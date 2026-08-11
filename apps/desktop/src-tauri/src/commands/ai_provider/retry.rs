@@ -11,8 +11,17 @@
 //! other: the response STATUS arrives before a single delta has been read, so a
 //! 429/5xx there is exactly the transient one-shot failure this module exists
 //! for. Treating it as terminal is what turned a provider rate-limit into a lost
-//! nine-minute generation in a reported session. See [`send_stream_with_retry`],
-//! which is the same loop with a deadline the caller can afford to spend.
+//! nine-minute generation in a reported session.
+//!
+//! **Both entry points own the caller's per-request timeout and bound the WHOLE
+//! retry sequence by it** — the caller passes the operation's timeout instead of
+//! setting `.timeout()` on the builder itself. Retries are free wall-clock
+//! otherwise: each attempt would rebuild its own full `.timeout()`, so an
+//! operation documented as "bounded by `OLLAMA_COMPLETION` (300 s)" really cost
+//! up to `MAX_ATTEMPTS × 300 s` + backoff, and every outer deadline derived from
+//! those per-call bounds (`timeouts::quality_run_deadline`, the renderer's own
+//! client timeouts) was short by that factor. The streaming path had this budget
+//! from the start; the one-shot path did not, which is the bug this shape closes.
 //!
 //! The retry *decision* ([`should_retry`], [`backoff_delay`]) is pure and
 //! unit-tested; [`send_with_retry`] is the thin async wrapper that rebuilds and
@@ -24,6 +33,13 @@ use std::time::{Duration, Instant};
 use reqwest::{RequestBuilder, Response, StatusCode};
 
 /// Maximum number of attempts (initial try + retries) for a transient failure.
+///
+/// **Not a multiplier on the caller's timeout.** Both entry points bound the
+/// whole sequence by the operation's own timeout (see the module doc), so
+/// raising this changes how many PROMPT rejections are retried inside that one
+/// bound, never how long the operation can take. That is what lets
+/// `timeouts::quality_run_deadline` count one `OLLAMA_COMPLETION` per call
+/// rather than three.
 pub const MAX_ATTEMPTS: u32 = 3;
 /// Base delay for the exponential schedule (attempt 1 → BASE, attempt 2 → 2·BASE…).
 const BASE_DELAY_MS: u64 = 500;
@@ -97,13 +113,20 @@ fn parse_retry_after(resp: &Response) -> Option<u64> {
 /// (since `send` consumes it). Returns the first success, the first terminal
 /// (non-retryable) response, or — when every attempt was transient — the last
 /// outcome (response or transport error). Never retries beyond [`MAX_ATTEMPTS`].
-pub async fn send_with_retry<F>(build: F) -> reqwest::Result<Response>
+///
+/// **`timeout` is the operation's own per-request bound (`timeouts::COMPLETION`,
+/// `timeouts::OLLAMA_COMPLETION`, `timeouts::EMBED`, …) and the caller must not
+/// set one on the builder** — this function applies it, and it bounds the WHOLE
+/// sequence rather than each attempt (see [`send_with_retry_capped`]). One
+/// argument rather than a builder `.timeout()` plus a budget parameter, because
+/// the two have to be the SAME value: a call site that set 300 s and passed 60 s
+/// would silently truncate, and one that passed 900 s would re-open the 3×
+/// overrun this bound exists to close.
+pub async fn send_with_retry<F>(build: F, timeout: Duration) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
-    // No total budget: these are one-shot calls whose own `.timeout()` already
-    // bounds each attempt to a fraction of a stream's.
-    send_with_retry_capped(build, MAX_DELAY_MS, None).await
+    send_with_retry_capped(build, MAX_DELAY_MS, timeout).await
 }
 
 /// [`send_with_retry`] for a STREAM's initial send.
@@ -113,37 +136,49 @@ where
 /// retry here re-sends a request that emitted nothing. Nothing restarts a stream
 /// that has already produced output.
 ///
-/// `budget` is the request's own `stream_deadline`, and it bounds the WHOLE
-/// sequence, not each attempt. Each attempt rebuilds its `.timeout()` fresh, so
-/// without this three attempts could run to 3x that deadline — past the
-/// renderer's own timeout, which would surface a generic "Generation timed out"
-/// instead of the actionable provider error, inverting the relationship
-/// `computeStreamTimeoutMs`'s test deliberately pins. A retry is only started
-/// while budget remains for it.
+/// `deadline` is the request's own `stream_deadline` — applied to each attempt
+/// and bounding the whole sequence, exactly like [`send_with_retry`]'s
+/// `timeout`. The only difference is the backoff ceiling
+/// ([`MAX_STREAM_DELAY_MS`]): the alternative to waiting here is discarding a
+/// generation the user has already waited minutes for.
 ///
 /// The practical effect matches the reported failure: that 429 came back after
 /// the full deadline had already elapsed, so it retries zero times and behaves
 /// exactly as before. Retries only help when a provider rejects promptly, which
 /// is the normal shape of a rate limit.
-pub async fn send_stream_with_retry<F>(build: F, budget: Duration) -> reqwest::Result<Response>
+pub async fn send_stream_with_retry<F>(build: F, deadline: Duration) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
-    send_with_retry_capped(build, MAX_STREAM_DELAY_MS, Some(budget)).await
+    send_with_retry_capped(build, MAX_STREAM_DELAY_MS, deadline).await
 }
 
+/// The shared loop. `budget` is BOTH the per-attempt `.timeout()` and the bound
+/// on the whole sequence:
+///
+/// * the first attempt gets the full `budget` — an unretried call behaves
+///   exactly as it did when the call site set its own `.timeout()`;
+/// * a retry is only started when the backoff AND some request time still fit
+///   inside what is left, and it is given exactly that remainder, so the
+///   sequence cannot outlive `budget` no matter how many attempts it makes.
+///
+/// The consequence that matters: an attempt that spends its whole timeout is
+/// never retried. A prompt rejection (a 429 that comes back in milliseconds — the
+/// normal shape of a rate limit) still is, which is the case retries were added
+/// for.
 async fn send_with_retry_capped<F>(
     mut build: F,
     max_delay_ms: u64,
-    budget: Option<Duration>,
+    budget: Duration,
 ) -> reqwest::Result<Response>
 where
     F: FnMut() -> RequestBuilder,
 {
     let started = Instant::now();
     let mut attempt = 1u32;
+    let mut attempt_timeout = budget;
     loop {
-        let outcome = build().send().await;
+        let outcome = build().timeout(attempt_timeout).send().await;
         let (transient, retry_after) = match &outcome {
             Ok(resp) if is_retryable_status(resp.status()) => (true, parse_retry_after(resp)),
             Ok(_) => (false, None),
@@ -156,18 +191,18 @@ where
 
         let delay = backoff_delay_capped(attempt, retry_after, max_delay_ms);
 
-        // Only start another attempt if the caller's total budget can still pay
-        // for the backoff AND leave time for the request itself.
-        if let Some(budget) = budget {
-            let elapsed = started.elapsed();
-            if elapsed + delay >= budget {
-                tracing::warn!(
-                    "ai retry: budget spent after attempt {attempt}/{MAX_ATTEMPTS} \
-                     ({elapsed:?} of {budget:?}), returning the last outcome"
-                );
-                return outcome;
-            }
-        }
+        // Only start another attempt if the budget can still pay for the backoff
+        // AND leave time for the request itself. `spent` is projected past the
+        // sleep so the remainder handed to the next attempt is what will
+        // actually be left when it starts.
+        let spent = started.elapsed() + delay;
+        let Some(remaining) = budget.checked_sub(spent).filter(|left| !left.is_zero()) else {
+            tracing::warn!(
+                "ai retry: budget spent after attempt {attempt}/{MAX_ATTEMPTS} \
+                 ({spent:?} of {budget:?}), returning the last outcome"
+            );
+            return outcome;
+        };
 
         tracing::warn!(
             // WARN, not DEBUG: a retry means the provider pushed back, which is
@@ -176,6 +211,7 @@ where
             delay
         );
         tokio::time::sleep(delay).await;
+        attempt_timeout = remaining;
         attempt += 1;
     }
 }
@@ -203,17 +239,34 @@ mod retry_loop_tests {
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{send_stream_with_retry, send_with_retry, MAX_ATTEMPTS};
+    use super::{send_stream_with_retry, send_with_retry, Duration, MAX_ATTEMPTS};
 
     /// Spin up a wiremock server that serves the given status codes in FIFO order
     /// and drive `send_with_retry` once.  Returns (call_count, is_ok).
     async fn run_retry(status_codes: Vec<u16>) -> (u32, bool) {
+        // Generous timeout: these tests are about the ATTEMPT COUNT. The budget
+        // itself has its own test below.
+        run_retry_with(
+            status_codes,
+            std::time::Duration::ZERO,
+            Duration::from_secs(60),
+        )
+        .await
+    }
+
+    /// [`run_retry`] with an explicit per-response `delay` and per-call
+    /// `timeout` (which is also the whole sequence's budget).
+    async fn run_retry_with(
+        status_codes: Vec<u16>,
+        delay: Duration,
+        timeout: Duration,
+    ) -> (u32, bool) {
         let server = MockServer::start().await;
 
         // Register one mock per expected response, consumed in FIFO order.
         for code in &status_codes {
             Mock::given(method("GET"))
-                .respond_with(ResponseTemplate::new(*code))
+                .respond_with(ResponseTemplate::new(*code).set_delay(delay))
                 .up_to_n_times(1)
                 .mount(&server)
                 .await;
@@ -224,10 +277,13 @@ mod retry_loop_tests {
         let call_count = Arc::new(AtomicU32::new(0));
         let counter = call_count.clone();
 
-        let result = send_with_retry(|| {
-            counter.fetch_add(1, Ordering::SeqCst);
-            client.get(&url)
-        })
+        let result = send_with_retry(
+            || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                client.get(&url)
+            },
+            timeout,
+        )
         .await;
 
         (call_count.load(Ordering::SeqCst), result.is_ok())
@@ -257,21 +313,61 @@ mod retry_loop_tests {
         );
     }
 
+    /// **The one-shot path's total budget** — the bound every derived deadline
+    /// (`timeouts::quality_run_deadline`, the renderer's client timeouts) counts
+    /// on when it counts ONE `OLLAMA_COMPLETION` per flat provider call.
+    ///
+    /// Without it each attempt rebuilt its own full `.timeout()`, so a call
+    /// documented as 300 s-bounded really cost up to `MAX_ATTEMPTS × 300 s` plus
+    /// backoff — 901 s — and a 14-call quality run was bounded by ~12 600 s
+    /// against an advertised 4 500 s.
+    ///
+    /// Shape rather than a tight wall-clock: the response is delayed 300 ms and
+    /// the budget is 700 ms, so the first backoff (500 ms) provably cannot fit
+    /// (300 + 500 > 700) on ANY machine — a slow host only makes `elapsed`
+    /// larger, never smaller. Mutation check: drop the budget (pass `None`
+    /// through to the loop, i.e. the pre-fix behaviour) and this becomes 3 calls.
+    #[tokio::test]
+    async fn a_one_shot_call_stops_once_its_own_timeout_is_spent() {
+        let (calls, _) = run_retry_with(
+            vec![429, 200],
+            Duration::from_millis(300),
+            Duration::from_millis(700),
+        )
+        .await;
+        assert_eq!(
+            calls, 1,
+            "the retry sequence must stay inside the caller's per-call timeout; got {calls} calls"
+        );
+    }
+
+    /// The same budget, unspent: a provider that rejects PROMPTLY is still
+    /// retried inside it. Together with the test above this pins the trade —
+    /// the bound is on wall time, not on retrying.
+    #[tokio::test]
+    async fn a_prompt_rejection_is_still_retried_inside_the_budget() {
+        let (calls, is_ok) =
+            run_retry_with(vec![429, 200], Duration::ZERO, Duration::from_secs(30)).await;
+        assert_eq!(calls, 2, "a fast 429 leaves budget for the retry");
+        assert!(is_ok, "the eventual 200 must be returned as Ok");
+    }
+
     /// [`run_retry`] driven through the STREAMING entry point instead. `budget`
     /// is the caller's `stream_deadline`; generous here so the attempt count is
     /// what is under test, except in the budget test below.
     async fn run_stream_retry(status_codes: Vec<u16>) -> (u32, bool) {
-        run_stream_retry_with_budget(status_codes, std::time::Duration::from_secs(60)).await
+        run_stream_retry_with_budget(status_codes, Duration::ZERO, Duration::from_secs(60)).await
     }
 
     async fn run_stream_retry_with_budget(
         status_codes: Vec<u16>,
-        budget: std::time::Duration,
+        delay: Duration,
+        budget: Duration,
     ) -> (u32, bool) {
         let server = MockServer::start().await;
         for code in &status_codes {
             Mock::given(method("GET"))
-                .respond_with(ResponseTemplate::new(*code))
+                .respond_with(ResponseTemplate::new(*code).set_delay(delay))
                 .up_to_n_times(1)
                 .mount(&server)
                 .await;
@@ -317,22 +413,27 @@ mod retry_loop_tests {
         );
     }
 
-    /// The budget bounds the WHOLE retry sequence, not each attempt.
+    /// The deadline bounds the WHOLE retry sequence, not each attempt.
     ///
-    /// Each attempt rebuilds its own `.timeout(stream_deadline(..))`, so without
-    /// this three attempts could run to 3x that deadline — past the renderer's
-    /// own timeout, which would replace the actionable provider error with a
-    /// generic "Generation timed out" and invert the relationship
-    /// `computeStreamTimeoutMs`'s test pins.
+    /// Without it three attempts could each get a full `stream_deadline` and run
+    /// to 3x it — past the renderer's own timeout, which would replace the
+    /// actionable provider error with a generic "Generation timed out" and
+    /// invert the relationship `computeStreamTimeoutMs`'s test pins.
     ///
-    /// A zero budget is the reported case in the extreme: that 429 came back
-    /// only after the full deadline had elapsed, so there was never budget for a
-    /// retry and behaviour is unchanged. Retries only help a provider that
-    /// rejects promptly, which is the normal shape of a rate limit.
+    /// Same shape as the one-shot twin above (a 300 ms response against a 700 ms
+    /// budget, so the 500 ms first backoff provably cannot fit) and the same
+    /// reported case: that 429 came back only after the deadline had elapsed, so
+    /// there was never budget for a retry and behaviour is unchanged. Retries
+    /// only help a provider that rejects promptly, which is the normal shape of
+    /// a rate limit.
     #[tokio::test]
     async fn stream_handshake_does_not_retry_once_the_budget_is_spent() {
-        let (calls, _) =
-            run_stream_retry_with_budget(vec![429, 200], std::time::Duration::ZERO).await;
+        let (calls, _) = run_stream_retry_with_budget(
+            vec![429, 200],
+            Duration::from_millis(300),
+            Duration::from_millis(700),
+        )
+        .await;
         assert_eq!(
             calls, 1,
             "no budget left means no retry, even though the 429 is transient"

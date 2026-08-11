@@ -436,12 +436,10 @@ impl AiProvider for OllamaClient {
         }
         body["keep_alive"] = json!(crate::performance::ollama_keep_alive());
 
-        let resp = match super::retry::send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::OLLAMA_COMPLETION)
-                .json(&body)
-        })
+        let resp = match super::retry::send_with_retry(
+            || crate::net::http::shared().post(&endpoint).json(&body),
+            timeouts::OLLAMA_COMPLETION,
+        )
         .await
         {
             Ok(r) => r,
@@ -620,12 +618,10 @@ fn build_ollama_embed_body(model: &str, text: &str) -> Value {
 pub async fn embed_with(model: &str, text: &str) -> AppResult<Vec<f64>> {
     let body = build_ollama_embed_body(model, text);
     let endpoint = format!("{}/api/embeddings", host());
-    let resp = super::retry::send_with_retry(|| {
-        crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(timeouts::OLLAMA_EMBED)
-            .json(&body)
-    })
+    let resp = super::retry::send_with_retry(
+        || crate::net::http::shared().post(&endpoint).json(&body),
+        timeouts::OLLAMA_EMBED,
+    )
     .await
     .map_err(|e| format!("Ollama unreachable: {e}"))?;
     let status = resp.status();
@@ -1051,12 +1047,7 @@ async fn stream_chat(
     // re-sends a request that emitted no deltas. Treating it as terminal is what
     // turned a provider rate-limit into a lost multi-minute generation.
     let response = super::retry::send_stream_with_retry(
-        || {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::stream_deadline(req.effort.as_deref()))
-                .json(&body)
-        },
+        || crate::net::http::shared().post(&endpoint).json(&body),
         timeouts::stream_deadline(req.effort.as_deref()),
     )
     .await;
@@ -1205,12 +1196,10 @@ async fn complete_impl(
 
     let body = build_complete_body(model, system, user, temperature, structured);
 
-    let resp = match super::retry::send_with_retry(|| {
-        crate::net::http::shared()
-            .post(&endpoint)
-            .timeout(timeouts::OLLAMA_COMPLETION)
-            .json(&body)
-    })
+    let resp = match super::retry::send_with_retry(
+        || crate::net::http::shared().post(&endpoint).json(&body),
+        timeouts::OLLAMA_COMPLETION,
+    )
     .await
     {
         Ok(r) => r,

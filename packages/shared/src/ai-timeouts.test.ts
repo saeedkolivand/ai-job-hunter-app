@@ -29,7 +29,20 @@ const TIERS = [undefined, 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as
  * together. These numbers are the Rust-side facts the deadline has to cover, so
  * dropping either shared term now actually fails.
  */
-/** `timeouts::OLLAMA_COMPLETION` — the longest per-call non-streaming bound. */
+/**
+ * These five are HARD LITERALS, deliberately: they are Rust-side facts, and the
+ * live guard against them drifting is the RUST twin
+ * (`timeouts::quality_run_deadline_clears_the_inner_per_call_bounds`), which
+ * reads `Budget::max_repair_attempts` / `MAX_SECTIONS_PER_ROUND` /
+ * `OLLAMA_COMPLETION` from the source. This side pins the same arithmetic so a
+ * TS-only edit to the deadline formula cannot pass alone.
+ */
+/**
+ * `timeouts::OLLAMA_COMPLETION` — the longest per-call non-streaming bound, and
+ * the bound on a whole `send_with_retry` SEQUENCE, not on one attempt (the retry
+ * loop applies the caller's timeout and gives a retry only the remainder). Were
+ * that budget removed, the real per-call figure would be `MAX_ATTEMPTS × 300`.
+ */
 const OLLAMA_COMPLETION_SECS = 300;
 /** `analyze_job`, `match_evidence`, `strategy`. */
 const JSON_STAGES = 3;
@@ -116,6 +129,24 @@ describe('qualityRunClientTimeoutMs', () => {
       );
     }
     expect(QUALITY_RUN_CLIENT_MARGIN_SECS).toBeGreaterThan(0);
+  });
+
+  it('covers the longest call that can still be in flight when the deadline expires', () => {
+    // "Strictly greater" is not enough on its own. The backend checks its
+    // deadline BETWEEN provider calls, so it reports `run_timeout` only once
+    // the call that was running returns — up to one whole per-call bound after
+    // the deadline. A margin smaller than that means the renderer times out
+    // first on every run that actually times out, which is the inversion the
+    // test above only LOOKS like it prevents.
+    //
+    // Mutation checks: margin back to 60 ⇒ fails; raise the top multiplier to
+    // 4.0 without raising the margin ⇒ fails.
+    const topMultiplier = Math.max(...Object.values(EFFORT_TIMEOUT_MULTIPLIER));
+    const longestInFlightCall = Math.max(
+      OLLAMA_COMPLETION_SECS, // any flat call: a JSON stage, a repair splice
+      STREAM_BASELINE_SECS * topMultiplier // the draft at the top tier
+    );
+    expect(QUALITY_RUN_CLIENT_MARGIN_SECS).toBeGreaterThan(longestInFlightCall);
   });
 
   it('is monotonically nondecreasing across the ascending tier order', () => {

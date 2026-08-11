@@ -414,7 +414,7 @@ fn a_cancel_the_ledger_never_saw_still_reports_cancelled() {
         "the premise: the ledger saw nothing"
     );
 
-    let (status, reason) = super::hooks::terminal_state(&ledger, false, true, false);
+    let (status, reason) = super::hooks::terminal_state(&ledger, false, true, false, false);
     assert_eq!(status, "cancelled");
     assert_eq!(reason.as_deref(), Some("cancelled"));
     assert_eq!(
@@ -433,7 +433,7 @@ fn a_cancel_the_ledger_never_saw_still_reports_cancelled() {
 #[test]
 fn a_failed_run_never_reports_done() {
     let ledger = RunLedger::new();
-    let (status, reason) = super::hooks::terminal_state(&ledger, false, false, false);
+    let (status, reason) = super::hooks::terminal_state(&ledger, false, false, false, false);
     assert_eq!(status, "failed");
     assert_eq!(
         reason, None,
@@ -449,13 +449,13 @@ fn a_failed_run_never_reports_done() {
 fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
     let clean = RunLedger::new();
     assert_eq!(
-        super::hooks::terminal_state(&clean, true, false, false),
+        super::hooks::terminal_state(&clean, true, false, false, true),
         ("completed", Some("done".to_string()))
     );
 
     let review = RunLedger::new();
     assert_eq!(
-        super::hooks::terminal_state(&review, true, false, true),
+        super::hooks::terminal_state(&review, true, false, true, true),
         ("needsReview", Some("done".to_string()))
     );
 
@@ -464,15 +464,16 @@ fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
     let repaired = RunLedger::new();
     repaired.stop(StoppedReason::MaxRepairs);
     assert_eq!(
-        super::hooks::terminal_state(&repaired, true, false, true),
+        super::hooks::terminal_state(&repaired, true, false, true, true),
         ("needsReview", Some("max_repairs".to_string()))
     );
 
-    // The deadline: the stage errored out, so the run failed — but it says WHY.
+    // The deadline with NOTHING saved: the stage errored out before a document
+    // existed, so the run failed — but it says WHY.
     let timed_out = RunLedger::new();
     timed_out.stop(StoppedReason::RunTimeout);
     assert_eq!(
-        super::hooks::terminal_state(&timed_out, false, false, false),
+        super::hooks::terminal_state(&timed_out, false, false, false, false),
         ("failed", Some("run_timeout".to_string()))
     );
 
@@ -481,8 +482,64 @@ fn the_terminal_state_table_holds_for_the_ordinary_outcomes() {
     let budgeted = RunLedger::new();
     budgeted.stop(StoppedReason::Budgeted);
     assert_eq!(
-        super::hooks::terminal_state(&budgeted, false, true, false),
+        super::hooks::terminal_state(&budgeted, false, true, false, true),
         ("failed", Some("budgeted".to_string()))
+    );
+}
+
+/// **The deadline's two enforcement points must reach the same verdict about
+/// the same run.**
+///
+/// Expiring INSIDE the repair loop breaks the loop, keeps the accumulated
+/// document and returns `Ok`, so the run lands `needsReview` + `run_timeout`.
+/// Expiring at the stage BOUNDARY one instant later goes through `apply_stop`,
+/// which returns `Err` — and that came out `failed`, even though
+/// `persist_document` had already written the same real, reviewable résumé to
+/// `ai_generations`. Same document, same reason, opposite verdict, and `failed`
+/// is the one that tells the user their run produced nothing.
+///
+/// Mutation check: drop the `persisted` term from `terminal_state` (or the
+/// `RunTimeout` test in it) and the first two assertions fail; drop the
+/// `!token_cancelled` term and the cancel assertion fails.
+#[test]
+fn a_deadline_that_still_saved_a_document_is_not_a_failure() {
+    // Undecided findings in the saved report — the ordinary shape of a run the
+    // repair loop ran out of time on.
+    let review = RunLedger::new();
+    review.stop(StoppedReason::RunTimeout);
+    assert_eq!(
+        super::hooks::terminal_state(&review, false, false, true, true),
+        ("needsReview", Some("run_timeout".to_string())),
+        "the boundary check must land where the in-loop check does"
+    );
+
+    // Nothing left to decide: the document is usable as it stands.
+    let clean = RunLedger::new();
+    clean.stop(StoppedReason::RunTimeout);
+    assert_eq!(
+        super::hooks::terminal_state(&clean, false, false, false, true),
+        ("completed", Some("run_timeout".to_string()))
+    );
+
+    // A run whose CANCEL TOKEN fired is left exactly as it was: the user acted,
+    // and this relabel does not reach into that decision. (First-writer-wins
+    // keeps `run_timeout` as the reason — the same row the `budgeted` case in
+    // the table above already pins, unchanged by this fix.)
+    let cancelled = RunLedger::new();
+    cancelled.stop(StoppedReason::RunTimeout);
+    assert_eq!(
+        super::hooks::terminal_state(&cancelled, false, true, true, true),
+        ("failed", Some("run_timeout".to_string()))
+    );
+
+    // Only `RunTimeout` qualifies. A provider error mid-run leaves a document
+    // whose report describes a different document, so it stays a failure even
+    // though something was saved.
+    let errored = RunLedger::new();
+    errored.stop(StoppedReason::MaxRepairs);
+    assert_eq!(
+        super::hooks::terminal_state(&errored, false, false, true, true),
+        ("failed", Some("max_repairs".to_string()))
     );
 }
 

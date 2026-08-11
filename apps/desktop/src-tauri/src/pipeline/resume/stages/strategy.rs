@@ -152,12 +152,20 @@ fn condensed_span<'a>(dates: impl Iterator<Item = &'a str>) -> String {
 ///
 /// Pure, so "never drops a role" and "never emphasizes a gap" are tests rather
 /// than claims.
+///
+/// Returns the rebuilt roster AND how many emphasis terms the grounding filter
+/// removed. The count is the only trace a drop leaves: the filter matches on the
+/// requirement text, so a model that emphasizes `"Kubernetes "` or `"k8s"`
+/// against a map listing `"Kubernetes"` loses it silently — indistinguishable,
+/// in the artifact, from a model that emphasized nothing. Counts only (ADR-027):
+/// the artifact never carries which term went.
 pub(crate) fn reseed(
     roster: &[CompanyPlan],
     model: &ResumeStrategy,
     evidence: &EvidenceMap,
-) -> Vec<CompanyPlan> {
-    roster
+) -> (Vec<CompanyPlan>, u32) {
+    let mut dropped = 0u32;
+    let plans = roster
         .iter()
         .map(|seed| {
             let proposed = model.per_company.iter().find(|plan| {
@@ -167,18 +175,24 @@ pub(crate) fn reseed(
                         .trim()
                         .eq_ignore_ascii_case(seed.company.trim())
             });
+            let emphasis = proposed
+                .map(|p| {
+                    let kept = grounded_emphasis(&p.emphasis, evidence);
+                    dropped += (p.emphasis.len() - kept.len()) as u32;
+                    kept
+                })
+                .unwrap_or_default();
             CompanyPlan {
                 company: seed.company.clone(),
                 title: seed.title.clone(),
                 dates: seed.dates.clone(),
                 condensed: seed.condensed,
                 angle: proposed.map(|p| p.angle.clone()).unwrap_or_default(),
-                emphasis: proposed
-                    .map(|p| grounded_emphasis(&p.emphasis, evidence))
-                    .unwrap_or_default(),
+                emphasis,
             }
         })
-        .collect()
+        .collect();
+    (plans, dropped)
 }
 
 /// The subset of `emphasis` the résumé can actually evidence.
@@ -218,6 +232,9 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                 );
                 ctx.completer
                     .complete_json(
+                        // The re-ask is a second full provider call; a run
+                        // already out of time must not pay for it.
+                        ctx.deadline_guard(),
                         &strategy_system(),
                         &user,
                         ResumeStrategy::EXAMPLE,
@@ -230,7 +247,8 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         // against the same source (the key chains it in), but re-seeding is
         // free and makes the invariant hold for every path out of this stage
         // rather than for one of them.
-        strategy.per_company = reseed(&roster, &strategy, &ctx.evidence);
+        let (per_company, emphasis_dropped) = reseed(&roster, &strategy, &ctx.evidence);
+        strategy.per_company = per_company;
 
         let json = serde_json::to_string(&strategy).unwrap_or_default();
         if !from_cache {
@@ -239,6 +257,10 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
         ctx.cache_key.extend(&json);
         ctx.ledger.count_call(from_cache);
         // Counts only — never a company name or an angle (ADR-027).
+        // `emphasisDropped` is how many emphasis terms the grounding filter
+        // removed: a silent drop otherwise looks exactly like a model that
+        // emphasized nothing, and a run with a high count is one whose evidence
+        // map and strategy disagree about how requirements are spelled.
         ctx.ledger.record(
             "strategy",
             json!({
@@ -246,6 +268,7 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                 "companies": strategy.per_company.len(),
                 "condensed": strategy.per_company.iter().filter(|p| p.condensed).count(),
                 "skillsGroups": strategy.skills_groups.len(),
+                "emphasisDropped": emphasis_dropped,
             }),
         );
         ctx.strategy = strategy;
