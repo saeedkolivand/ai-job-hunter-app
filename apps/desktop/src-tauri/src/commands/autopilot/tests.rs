@@ -160,7 +160,7 @@ fn cluster_aware_retain_keeps_below_bar_member_of_passing_cluster() {
         score: Some(40.0),
         ..found(None)
     };
-    let kept = cluster_aware_retain(vec![strong, weak], 50.0, &HashSet::new(), &[]);
+    let (kept, _) = cluster_aware_retain(vec![strong, weak], 50.0, &HashSet::new(), &[]);
     assert_eq!(
         kept.len(),
         2,
@@ -176,7 +176,7 @@ fn cluster_aware_retain_drops_a_failing_cluster() {
         score: Some(40.0),
         ..found(None)
     };
-    let kept = cluster_aware_retain(vec![weak], 50.0, &HashSet::new(), &[]);
+    let (kept, _) = cluster_aware_retain(vec![weak], 50.0, &HashSet::new(), &[]);
     assert!(kept.is_empty(), "a below-bar singleton cluster is dropped");
 }
 
@@ -186,7 +186,7 @@ fn cluster_aware_retain_keeps_fully_unscored_cluster() {
         url: "https://d.example.com/job".into(),
         ..found(None)
     };
-    let kept = cluster_aware_retain(vec![unscored], 50.0, &HashSet::new(), &[]);
+    let (kept, _) = cluster_aware_retain(vec![unscored], 50.0, &HashSet::new(), &[]);
     assert_eq!(
         kept.len(),
         1,
@@ -210,7 +210,7 @@ fn mixed_cluster_with_below_bar_scored_representative_is_dropped_even_with_unsco
         url: "https://b.example.com/job".into(),
         ..found(None)
     };
-    let kept = cluster_aware_retain(vec![scored_below, unscored], 50.0, &HashSet::new(), &[]);
+    let (kept, _) = cluster_aware_retain(vec![scored_below, unscored], 50.0, &HashSet::new(), &[]);
     assert!(
         kept.is_empty(),
         "a below-bar scored representative drops the whole cluster, unscored member included"
@@ -302,30 +302,56 @@ fn build_found_job_flags_aggregator_snippet_scores_as_provisional() {
 /// charge, so a test can pin "the scheduled path made ZERO scoring calls"
 /// rather than only asserting on the resulting scores (which a broken
 /// implementation could reproduce by accident).
+///
+/// It models the production seam faithfully on the one axis that matters for
+/// budget: a job the ADR-017 caches already answer is scored WITHOUT a charge
+/// (`LiveRerankEnv` decides that with the kernel's own
+/// `documents::posting_vector_is_fresh` — see
+/// `a_cached_posting_vector_means_no_provider_round_trip`, which pins the real
+/// predicate against a real store).
 struct FakeRerankEnv {
     /// url-independent: keyed by the derived cache job id → the score to
     /// return. A missing entry models "no semantic score available"
     /// (embed failed / provider offline) → the degrade path.
     scores: std::sync::Mutex<HashMap<String, f64>>,
+    /// Job ids whose score comes from cache: no provider round-trip, so no
+    /// daily charge.
+    cached: HashSet<String>,
     calls: std::sync::atomic::AtomicUsize,
     charges: std::sync::atomic::AtomicUsize,
-    /// When `Some(n)`, `charge_daily` fails from the n-th call onward —
+    /// When `Some(n)`, the charge fails from the n-th round-trip onward —
     /// models hitting the shared per-provider daily ceiling mid-run.
     charge_fails_after: Option<usize>,
+    /// Per-call latency, for the wall-clock-timeout test. Applied AFTER the
+    /// budget check, like a real provider call.
+    delay: Option<std::time::Duration>,
 }
 
 impl FakeRerankEnv {
     fn new(scores: Vec<(String, f64)>) -> Self {
         Self {
             scores: std::sync::Mutex::new(scores.into_iter().collect()),
+            cached: HashSet::new(),
             calls: std::sync::atomic::AtomicUsize::new(0),
             charges: std::sync::atomic::AtomicUsize::new(0),
             charge_fails_after: None,
+            delay: None,
         }
     }
+    /// Mark these job ids as already cached — scored, but with no round-trip.
+    fn with_cached(mut self, ids: impl IntoIterator<Item = String>) -> Self {
+        self.cached = ids.into_iter().collect();
+        self
+    }
+    fn with_delay(mut self, delay: std::time::Duration) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+    /// Scoring calls that actually ran (i.e. got past the budget check).
     fn calls(&self) -> usize {
         self.calls.load(std::sync::atomic::Ordering::SeqCst)
     }
+    /// Charges against the shared per-provider daily ceiling.
     fn charges(&self) -> usize {
         self.charges.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -333,23 +359,41 @@ impl FakeRerankEnv {
 
 #[async_trait::async_trait]
 impl RerankEnv for FakeRerankEnv {
-    async fn score(&self, job_id: &str, _job_text: String) -> Option<f64> {
+    async fn score(&self, job_id: &str, _job_text: String) -> RerankOutcome {
+        if !self.cached.contains(job_id) {
+            let n = self
+                .charges
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if self.charge_fails_after.is_some_and(|limit| n > limit) {
+                return RerankOutcome::BudgetExhausted;
+            }
+        }
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.scores.lock().unwrap().get(job_id).copied()
-    }
-    fn charge_daily(&self) -> crate::error::AppResult<()> {
-        let n = self
-            .charges
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            + 1;
-        match self.charge_fails_after {
-            Some(limit) if n > limit => Err(crate::error::AppError::RateLimited(
-                "daily ceiling reached".into(),
-            )),
-            _ => Ok(()),
+        if let Some(delay) = self.delay {
+            tokio::time::sleep(delay).await;
+        }
+        // The lock is never held across the await above.
+        let scored = self.scores.lock().unwrap().get(job_id).copied();
+        match scored {
+            Some(s) => RerankOutcome::Scored(s),
+            None => RerankOutcome::Degraded,
         }
     }
 }
+
+/// Lets a test keep a handle on the fake while `semantic_rerank_phase`'s
+/// `setup` closure hands one over by value.
+#[async_trait::async_trait]
+impl RerankEnv for std::sync::Arc<FakeRerankEnv> {
+    async fn score(&self, job_id: &str, job_text: String) -> RerankOutcome {
+        <FakeRerankEnv as RerankEnv>::score(self, job_id, job_text).await
+    }
+}
+
+/// No clustering verdicts — the per-job identity fallback. Used by the loop
+/// tests that are not about clustering.
+const NO_CLUSTERS: &[crate::scraping::cluster::ClusterAssignment] = &[];
 
 /// Build a scored job at `url` with a phase-1 keyword score.
 fn ranked(url: &str, score: f64) -> FoundJob {
@@ -383,7 +427,14 @@ async fn semantic_rerank_reorders_the_head_through_the_combined_kernel() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
     // The command re-sorts after the re-rank; mirror that here so the test
     // pins ORDER, not just the numbers.
     jobs.sort_by(|a, b| b.score.unwrap().partial_cmp(&a.score.unwrap()).unwrap());
@@ -431,7 +482,14 @@ async fn semantic_rerank_degrades_that_job_only_and_the_run_completes() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(
         summary,
@@ -469,7 +527,14 @@ async fn semantic_rerank_leaves_the_provisional_flag_untouched() {
     let env = FakeRerankEnv::new(vec![(autopilot_job_id(&jobs[0]), 88.0)]);
     let blobs = blobs_for(&jobs);
 
-    semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(jobs[0].score, Some(88.0));
     assert!(
@@ -487,7 +552,14 @@ async fn semantic_rerank_never_scores_an_unscored_job() {
     let env = FakeRerankEnv::new(vec![(autopilot_job_id(&jobs[1]), 77.0)]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(summary.considered, 1, "only the scored job is a candidate");
     assert_eq!(env.calls(), 1);
@@ -510,7 +582,14 @@ async fn semantic_rerank_stops_at_the_top_n_ceiling() {
     );
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(summary.considered, SEMANTIC_RERANK_MAX);
     assert_eq!(summary.rescored, SEMANTIC_RERANK_MAX);
@@ -541,7 +620,14 @@ async fn semantic_rerank_charges_the_daily_ceiling_and_stops_when_it_is_hit() {
     env.charge_fails_after = Some(2); // the 3rd charge is refused
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(
         env.charges(),
@@ -571,7 +657,7 @@ async fn semantic_rerank_stops_on_cancellation_without_spending() {
     let cancel = CancellationToken::new();
     cancel.cancel();
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &cancel).await;
+    let summary = semantic_rerank(&env, &mut jobs, NO_CLUSTERS, &blobs, &cancel).await;
 
     assert_eq!(env.calls(), 0);
     assert_eq!(
@@ -584,32 +670,64 @@ async fn semantic_rerank_stops_on_cancellation_without_spending() {
     assert_eq!(jobs[0].score_source, ScoreSource::Keyword);
 }
 
-/// Semantic OFF is the default and the load-bearing regression: a scheduled
-/// run must stay byte-for-byte the pre-existing embedding-free pipeline.
-/// `autopilot_run` gates the whole phase-2 block on the preference, so the
-/// gate is what this pins — with a counting env proving ZERO calls, not just
-/// unchanged scores.
+// ── the phase-2 gate (the REAL one) ───────────────────────────────────────
+
+/// The production gate itself. Semantic OFF is the default, so `false` here is
+/// what keeps a scheduled run embedding-free; a résumé-less autopilot has no
+/// phase-1 scores to re-rank at all.
+#[test]
+fn the_semantic_gate_needs_both_the_preference_and_a_resume() {
+    assert!(should_semantic_rerank(true, "rust engineer, kubernetes"));
+    assert!(
+        !should_semantic_rerank(false, "rust engineer, kubernetes"),
+        "the preference OFF (the default) is what keeps a scheduled run embedding-free"
+    );
+    assert!(!should_semantic_rerank(true, ""));
+    assert!(
+        !should_semantic_rerank(true, "  \n\t "),
+        "a whitespace-only résumé is no résumé"
+    );
+}
+
+/// Semantic OFF is the load-bearing regression: a scheduled run must stay the
+/// pre-existing embedding-free pipeline. This drives the REAL production
+/// function (`semantic_rerank_phase`, which owns the gate and the setup) — with
+/// a counting env proving ZERO calls AND a setup closure proving the run does
+/// not even resolve the scoring state or build the blob map.
 #[tokio::test]
-async fn semantic_off_makes_zero_scoring_calls_and_leaves_the_keyword_rank_intact() {
+async fn semantic_off_never_resolves_the_rerank_env_and_makes_zero_scoring_calls() {
     let mut jobs = vec![
         ranked("https://example.com/a", 80.0),
         ranked("https://example.com/b", 60.0),
     ];
     let before = jobs.clone();
-    let env = FakeRerankEnv::new(
+    let env = std::sync::Arc::new(FakeRerankEnv::new(
         jobs.iter()
             .map(|j| (autopilot_job_id(j), 99.0))
             .collect::<Vec<_>>(),
-    );
+    ));
     let blobs = blobs_for(&jobs);
+    let setup_ran = std::sync::atomic::AtomicBool::new(false);
 
-    // The command's gate, spelled out: with the preference off the re-rank
-    // is never entered at all.
-    let semantic_on = false;
-    if semantic_on {
-        semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
-    }
+    let summary = semantic_rerank_phase(
+        false, // the user's preference: semantic scoring OFF
+        "rust engineer, kubernetes",
+        &mut jobs,
+        NO_CLUSTERS,
+        &CancellationToken::new(),
+        || {
+            setup_ran.store(true, std::sync::atomic::Ordering::SeqCst);
+            Some((std::sync::Arc::clone(&env), blobs.clone()))
+        },
+    )
+    .await;
 
+    assert!(summary.is_none());
+    assert!(
+        !setup_ran.load(std::sync::atomic::Ordering::SeqCst),
+        "with the preference off the run must not even resolve the scoring state \
+         or build the blob map — the gate has to precede the setup"
+    );
     assert_eq!(
         env.calls(),
         0,
@@ -621,6 +739,287 @@ async fn semantic_off_makes_zero_scoring_calls_and_leaves_the_keyword_rank_intac
         before.iter().map(|j| j.score).collect::<Vec<_>>()
     );
     assert!(jobs.iter().all(|j| j.score_source == ScoreSource::Keyword));
+}
+
+/// …and the same real function DOES re-rank when the gate passes, so the test
+/// above cannot be satisfied by a gate that is stuck closed.
+#[tokio::test]
+async fn semantic_on_runs_the_phase_through_the_same_entry_point() {
+    let mut jobs = vec![ranked("https://example.com/a", 80.0)];
+    let env = std::sync::Arc::new(FakeRerankEnv::new(vec![(autopilot_job_id(&jobs[0]), 42.0)]));
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank_phase(
+        true,
+        "rust engineer, kubernetes",
+        &mut jobs,
+        NO_CLUSTERS,
+        &CancellationToken::new(),
+        || Some((std::sync::Arc::clone(&env), blobs.clone())),
+    )
+    .await;
+
+    assert_eq!(summary.map(|s| s.rescored), Some(1));
+    assert_eq!(env.calls(), 1);
+    assert_eq!(jobs[0].score, Some(42.0));
+    assert_eq!(jobs[0].score_source, ScoreSource::Combined);
+}
+
+/// A wall-clock ceiling, like the neighbouring AI-notes step: phase 2 runs
+/// BEFORE `record_run`/`on_new_jobs` and only checks cancellation BETWEEN jobs,
+/// so a hung provider must not delay the "new jobs" notification unboundedly.
+/// The degrade is per job: whatever was scored before the deadline is KEPT, the
+/// rest stay keyword-only, and the run continues.
+#[tokio::test(start_paused = true)]
+async fn the_rerank_phase_gives_up_on_the_wall_clock_and_keeps_the_rest_keyword_only() {
+    let mut jobs = vec![
+        ranked("https://example.com/a", 80.0),
+        ranked("https://example.com/b", 60.0),
+    ];
+    // Each score takes two thirds of the budget: the first finishes, the second
+    // is still in flight when the deadline passes.
+    let env = std::sync::Arc::new(
+        FakeRerankEnv::new(vec![
+            (autopilot_job_id(&jobs[0]), 95.0),
+            (autopilot_job_id(&jobs[1]), 90.0),
+        ])
+        .with_delay(RERANK_STEP_TIMEOUT * 2 / 3),
+    );
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank_phase(
+        true,
+        "rust engineer",
+        &mut jobs,
+        NO_CLUSTERS,
+        &CancellationToken::new(),
+        || Some((std::sync::Arc::clone(&env), blobs.clone())),
+    )
+    .await;
+
+    assert!(
+        summary.is_none(),
+        "the timed-out pass reports no summary — the step log must not claim a completed re-rank"
+    );
+    assert_eq!(
+        jobs[0].score,
+        Some(95.0),
+        "work done before the deadline is kept"
+    );
+    assert_eq!(jobs[0].score_source, ScoreSource::Combined);
+    assert_eq!(
+        jobs[1].score,
+        Some(60.0),
+        "the job cut off by the deadline degrades to keyword-only, it does not fail the run"
+    );
+    assert_eq!(jobs[1].score_source, ScoreSource::Keyword);
+}
+
+// ── budget: charge per ACTUAL provider round-trip ─────────────────────────
+
+/// The seam's contract: a job the caches already answer is re-ranked WITHOUT a
+/// daily charge. Charging per considered job (the old shape) billed a
+/// steady-state repeat run for up to `SEMANTIC_RERANK_MAX` embeds it never
+/// makes.
+#[tokio::test]
+async fn a_cached_job_is_re_ranked_without_charging_the_daily_budget() {
+    let mut jobs = vec![
+        ranked("https://example.com/a", 80.0),
+        ranked("https://example.com/b", 60.0),
+    ];
+    let ids: Vec<String> = jobs.iter().map(autopilot_job_id).collect();
+    let env = FakeRerankEnv::new(ids.iter().map(|id| (id.clone(), 91.0)).collect::<Vec<_>>())
+        .with_cached(ids);
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
+
+    assert_eq!(summary.rescored, 2);
+    assert_eq!(env.calls(), 2);
+    assert_eq!(
+        env.charges(),
+        0,
+        "a repeat run that hits the ADR-017 caches must cost NOTHING against the \
+         shared per-provider daily ceiling"
+    );
+}
+
+/// The production predicate behind that charge, against a REAL store: an
+/// unknown posting will reach the provider; one with a fresh cached vector for
+/// the same text will not.
+#[test]
+fn a_cached_posting_vector_means_no_provider_round_trip() {
+    use crate::commands::ai_provider::{EmbeddingSpace, EmbeddingVector};
+    use crate::documents::{sha256_hex, DocumentStore};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+    let active = store.embedding_config();
+    let job_id = "autopilot:deadbeef";
+    let job_text = "We need a Rust engineer with Kubernetes experience";
+
+    assert!(
+        will_reach_provider(&store, &active, job_id, job_text),
+        "an un-embedded posting must be charged — it really does call the provider"
+    );
+
+    store
+        .upsert_posting_vector(
+            job_id,
+            &sha256_hex(job_text),
+            &EmbeddingVector {
+                values: vec![0.1, 0.2, 0.3],
+                space: EmbeddingSpace {
+                    provider: active.provider.clone(),
+                    model: active.model.clone(),
+                    dim: 3,
+                    version: crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION,
+                },
+            },
+        )
+        .unwrap();
+
+    assert!(
+        !will_reach_provider(&store, &active, job_id, job_text),
+        "a cached posting vector for this exact text is a cache hit — no call, no charge"
+    );
+    assert!(
+        will_reach_provider(&store, &active, job_id, "a completely different posting"),
+        "different text is a different embed: the text hash guards the charge too"
+    );
+}
+
+// ── mixed-scale ordering ──────────────────────────────────────────────────
+
+/// After phase 2 the list carries two scales. They must not share one sort
+/// axis: `generate_assistant_notes` takes its ≤3 AI-note recipients straight
+/// off this order, so a never-re-ranked keyword 62 outranking a re-ranked
+/// combined 58 spends a provider completion on a job the re-rank demoted.
+#[test]
+fn re_ranked_jobs_form_the_head_and_the_keyword_tail_follows() {
+    let combined = |url: &str, score: f64| FoundJob {
+        score_source: ScoreSource::Combined,
+        ..ranked(url, score)
+    };
+    let mut jobs = [
+        ranked("https://example.com/keyword-62", 62.0),
+        combined("https://example.com/combined-58", 58.0),
+        ranked("https://example.com/keyword-40", 40.0),
+        combined("https://example.com/combined-91", 91.0),
+        FoundJob {
+            url: "https://example.com/unscored".into(),
+            ..found(None)
+        },
+    ];
+    jobs.sort_by(by_rank);
+
+    assert_eq!(
+        jobs.iter().map(|j| j.url.as_str()).collect::<Vec<_>>(),
+        vec![
+            "https://example.com/combined-91",
+            "https://example.com/combined-58",
+            "https://example.com/keyword-62",
+            "https://example.com/keyword-40",
+            "https://example.com/unscored",
+        ],
+        "re-ranked jobs (combined scale) first, ordered among themselves; then the \
+         keyword tail by coverage; unscored last"
+    );
+}
+
+// ── one embed per CLUSTER, spent on the displayed canonical ───────────────
+
+/// A cross-board duplicate pair has two different `canonical_job_key`s, so it
+/// used to take two top-N slots and two embeds — and the paid-for score could
+/// land on the copy the UI hides. Keyed on the clustering verdict, the pair
+/// costs ONE embed and the DISPLAYED canonical is the one that carries it.
+#[tokio::test]
+async fn a_cross_board_duplicate_pair_costs_one_embed_on_the_displayed_canonical() {
+    // Same job on two boards. The aggregator copy has the better keyword score
+    // (so it comes FIRST in the list) but no description, which is exactly what
+    // makes the other copy the cluster canonical — the row the UI displays.
+    let aggregator_copy = FoundJob {
+        url: "https://agg.example.com/job".into(),
+        board: Some(AGGREGATOR_SNIPPET_SOURCE.to_string()),
+        score: Some(90.0),
+        ..found(None)
+    };
+    let full_text_copy = FoundJob {
+        url: "https://boards.example.com/job".into(),
+        board: Some("greenhouse".into()),
+        description: Some("We need a Rust engineer".into()),
+        score: Some(50.0),
+        ..found(None)
+    };
+    let other_job = FoundJob {
+        url: "https://example.com/other".into(),
+        title: "Data Scientist".into(),
+        company: "Zeta".into(),
+        score: Some(70.0),
+        ..found(None)
+    };
+
+    // The REAL pairing the command uses: retention returns each surviving row's
+    // clustering verdict alongside it.
+    let (mut jobs, clusters) = cluster_aware_retain(
+        vec![aggregator_copy, full_text_copy, other_job],
+        0.0,
+        &HashSet::new(),
+        &[],
+    );
+    assert_eq!(jobs.len(), 3);
+    assert_eq!(
+        clusters[0].cluster_id, clusters[1].cluster_id,
+        "test premise: the two board copies must be ONE cluster"
+    );
+    assert!(
+        !clusters[0].canonical && clusters[1].canonical,
+        "test premise: the hidden (aggregator, description-less) copy is listed first"
+    );
+
+    // Every job is scriptable, so the assertions below are about WHICH ones the
+    // pass chooses to score, not about which ones it could.
+    let env = FakeRerankEnv::new(
+        jobs.iter()
+            .map(|j| (autopilot_job_id(j), 99.0))
+            .collect::<Vec<_>>(),
+    );
+    let blobs = blobs_for(&jobs);
+
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        &clusters,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
+
+    assert_eq!(
+        env.calls(),
+        2,
+        "one embed per CLUSTER: the duplicate pair must not buy two"
+    );
+    assert_eq!(summary.considered, 2);
+    assert_eq!(
+        jobs[1].score_source,
+        ScoreSource::Combined,
+        "the DISPLAYED canonical is the member that carries the combined score"
+    );
+    assert_eq!(jobs[1].score, Some(99.0));
+    assert_eq!(
+        jobs[0].score,
+        Some(90.0),
+        "the hidden member keeps its keyword score — the embed was not spent on it"
+    );
+    assert_eq!(jobs[0].score_source, ScoreSource::Keyword);
 }
 
 /// The degrade boundary, against REALISTIC `score_one` output shapes. A
@@ -745,7 +1144,14 @@ async fn semantic_rerank_pays_once_for_a_job_surfaced_under_two_url_variants() {
     ]);
     let blobs = blobs_for(&jobs);
 
-    let summary = semantic_rerank(&env, &mut jobs, &blobs, &CancellationToken::new()).await;
+    let summary = semantic_rerank(
+        &env,
+        &mut jobs,
+        NO_CLUSTERS,
+        &blobs,
+        &CancellationToken::new(),
+    )
+    .await;
 
     assert_eq!(
         env.calls(),

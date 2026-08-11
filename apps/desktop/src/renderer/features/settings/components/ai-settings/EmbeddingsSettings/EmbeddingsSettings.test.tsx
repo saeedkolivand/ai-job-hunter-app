@@ -27,8 +27,9 @@ vi.mock('@ajh/translations', () => ({
 
 // ── Service stubs — prevent any IPC / QueryClient dependency ──────────────────
 
-const { mockSetSemanticScoring } = vi.hoisted(() => ({
+const { mockSetSemanticScoring, mockNotifyError } = vi.hoisted(() => ({
   mockSetSemanticScoring: vi.fn(),
+  mockNotifyError: vi.fn(),
 }));
 
 vi.mock('@/services', () => ({
@@ -48,7 +49,7 @@ vi.mock('@ajh/ui', async (importOriginal) => {
     useNotification: () => ({
       open: vi.fn(),
       success: vi.fn(),
-      error: vi.fn(),
+      error: mockNotifyError,
       info: vi.fn(),
       warning: vi.fn(),
       destroy: vi.fn(),
@@ -159,7 +160,8 @@ describe('EmbeddingsSettings — cloud provider selected', () => {
 
 describe('EmbeddingsSettings — semantic scoring backend mirror', () => {
   beforeEach(() => {
-    mockSetSemanticScoring.mockClear();
+    mockSetSemanticScoring.mockReset();
+    mockNotifyError.mockClear();
     usePreferencesStore.getState().resetPreferences();
   });
 
@@ -169,12 +171,12 @@ describe('EmbeddingsSettings — semantic scoring backend mirror', () => {
 
     const toggle = screen.getByLabelText('settings.embeddings.semanticScoring');
     await user.click(toggle);
-    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(true);
+    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(true, expect.anything());
     // The local store moved too — the mirror must not replace it.
     expect(usePreferencesStore.getState().semanticScoring).toBe(true);
 
     await user.click(toggle);
-    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(false);
+    expect(mockSetSemanticScoring).toHaveBeenLastCalledWith(false, expect.anything());
     expect(mockSetSemanticScoring).toHaveBeenCalledTimes(2);
     expect(usePreferencesStore.getState().semanticScoring).toBe(false);
   });
@@ -185,5 +187,32 @@ describe('EmbeddingsSettings — semantic scoring backend mirror', () => {
 
     await user.click(screen.getByLabelText('settings.embeddings.autoIndex'));
     expect(mockSetSemanticScoring).not.toHaveBeenCalled();
+  });
+
+  // A silently-failed mirror write is the worst of both worlds: the in-app
+  // score follows the new value while a scheduled run keeps using the old one,
+  // with nothing on screen to say so.
+  it('surfaces a failed mirror write instead of diverging silently', async () => {
+    mockSetSemanticScoring.mockImplementation(
+      (_enabled: boolean, opts?: { onError?: (e: unknown) => void }) =>
+        opts?.onError?.(new Error('ipc down'))
+    );
+    const user = userEvent.setup();
+    render(<EmbeddingsSettings />);
+
+    await user.click(screen.getByLabelText('settings.embeddings.semanticScoring'));
+
+    expect(mockNotifyError).toHaveBeenCalledWith({
+      message: 'settings.embeddings.semanticScoringSyncFailed',
+    });
+  });
+
+  it('says nothing when the mirror write succeeds', async () => {
+    const user = userEvent.setup();
+    render(<EmbeddingsSettings />);
+
+    await user.click(screen.getByLabelText('settings.embeddings.semanticScoring'));
+
+    expect(mockNotifyError).not.toHaveBeenCalled();
   });
 });

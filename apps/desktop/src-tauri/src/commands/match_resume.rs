@@ -9,8 +9,8 @@ use crate::applications::{clamp_to_bytes, MAX_JOB_DESCRIPTION_BYTES};
 use crate::commands::ai_provider::EMBEDDING_VECTOR_VERSION;
 use crate::documents::evidence::{rank_bullets, EvidenceBullet};
 use crate::documents::keywords::{
-    apply_stemmer, detect_locale_tag, display_forms, keyword_coverage, keywords,
-    keywords_normalized, languages_align, make_stemmer, readable_gaps,
+    apply_stemmer, display_forms, keyword_coverage, keywords, keywords_normalized, languages_align,
+    make_stemmer, readable_gaps,
 };
 use crate::documents::{
     embed, posting_vector_or_embed, sha256_hex, DocumentRecord, DocumentStore, EmbeddingConfig,
@@ -54,6 +54,82 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
     }
 }
 
+/// Which user-facing surface is asking for a score.
+///
+/// The variants differ ONLY in **cache identity / where the résumé vector
+/// lives** — never in pre-processing. Every surface that renders its number
+/// under the app's "Match %" label (the Jobs page AND the headless Autopilot
+/// re-rank) runs the SAME pipeline, because the pre-processing comes with the
+/// label: [`crate::commands::translation::translate_if_needed`] rewrites the JD
+/// into the résumé language BEFORE both keyword extraction and the embed, so
+/// skipping it on one of them flips [`languages_align`] for a cross-language
+/// pair — collapsing coverage to language-neutral tech tokens and embedding a
+/// cross-lingual cosine. The same job would then show two materially different
+/// percentages on two screens.
+///
+/// [`MatchSurface::Extension`] is the ONE deliberate exception: it never shows
+/// a combined number, and its zero-egress guarantee has to be structural (no
+/// flag to flip) — see [`score_adhoc_keyword_only`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MatchSurface {
+    /// The in-app [`match_resume`] command (the Jobs page and everything routed
+    /// through it).
+    JobsPage,
+    /// The headless Autopilot phase-2 semantic re-rank.
+    Autopilot,
+    /// The browser extension's ad-hoc, keyword-only "Check fit".
+    Extension,
+}
+
+/// Where [`score_one`] reads/writes the RÉSUMÉ-side embedding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ResumeVectorHome {
+    /// The `vectors` table — the DOCUMENT index. Only a résumé that has a real
+    /// `documents` row belongs here: that index is what the Embeddings panel
+    /// counts (`count_vectors_in_space`) and what document delete / re-embed
+    /// maintain, and both iterate real documents.
+    DocumentIndex,
+    /// The TTL-pruned `posting_vectors` cache. For a résumé SNAPSHOT (Autopilot
+    /// stores résumé text, not a document reference): it still caches across a
+    /// run and across repeat runs, but it is bounded by the same TTL/row-cap
+    /// discipline as every other derived cache and can never be mistaken for an
+    /// indexed document.
+    EphemeralCache,
+}
+
+impl MatchSurface {
+    /// Whether [`score_one`] runs the optional local-only translation step.
+    ///
+    /// TRUE for every "Match %" surface — see the type doc. Flipping this off
+    /// for one of them is the metric-label divergence
+    /// `every_match_percent_surface_runs_the_same_pre_processing` pins.
+    pub(crate) fn translates(self) -> bool {
+        !matches!(self, Self::Extension)
+    }
+
+    /// Where this surface's résumé embedding is cached — see
+    /// [`ResumeVectorHome`].
+    pub(crate) fn resume_vector_home(self) -> ResumeVectorHome {
+        match self {
+            Self::Autopilot => ResumeVectorHome::EphemeralCache,
+            Self::JobsPage | Self::Extension => ResumeVectorHome::DocumentIndex,
+        }
+    }
+}
+
+/// The résumé language `score_one` matches in: the PERSISTED
+/// `DocumentRecord.locale` (nullable — `documents_add`'s `locale` is optional),
+/// falling back to `"en"`.
+///
+/// One function, so the translation target and the [`languages_align`] check
+/// can never resolve a résumé to two different languages, and so every entry
+/// point resolves it from the same source (an Autopilot résumé snapshot carries
+/// no persisted locale, so it lands on the same `"en"` fallback the Jobs page
+/// uses for a locale-less document).
+pub(crate) fn resume_target_lang(resume: &DocumentRecord) -> &str {
+    resume.locale.as_deref().unwrap_or("en")
+}
+
 /// Score a single resume against one job posting, returning a `MatchScore`
 /// JSON value (or a `{ "error": … }` object when the job isn't cached).
 ///
@@ -70,13 +146,12 @@ fn semantic_enabled_bit(flag: Option<bool>) -> i64 {
 /// before any `get_match_score`/`upsert_match_score`, so an error path can never
 /// read or pollute the result cache.
 ///
-/// `translate` gates the optional local-only translation step below: `true`
-/// (the in-app `match_resume` path, unchanged) may call `translate_if_needed`;
-/// `false` (the extension's [`score_adhoc_keyword_only`] path) skips the call
-/// entirely — not just short-circuits its effect — so that entry point can
-/// never reach the AI provider layer at all, structurally guaranteeing zero
-/// egress regardless of what provider is configured.
-#[allow(clippy::too_many_arguments)] // house convention (see clippy.toml threshold=8) — this fn legitimately threads every cache-key input plus the new translate gate
+/// `surface` carries the two per-entry-point decisions: whether the optional
+/// local-only translation step runs ([`MatchSurface::translates`] — on for every
+/// "Match %" surface; off for the extension, whose zero-egress guarantee means
+/// the call is skipped ENTIRELY, not just short-circuited), and where the
+/// résumé vector is cached ([`MatchSurface::resume_vector_home`]).
+#[allow(clippy::too_many_arguments)] // house convention (see clippy.toml threshold=8) — this fn legitimately threads every cache-key input plus the surface
 async fn score_one(
     app: &AppHandle,
     store: &DocumentStore,
@@ -86,7 +161,7 @@ async fn score_one(
     job_id: &str,
     job_text: Option<String>,
     semantic_enabled: i64,
-    translate: bool,
+    surface: MatchSurface,
 ) -> Value {
     let Some(job_text) = job_text else {
         return json!({ "error": format!("job not found in cache: {}", job_id) });
@@ -97,9 +172,9 @@ async fn score_one(
     // extraction (and embedding) so matching happens in the resume language.
     // Always falls back to the original text on any failure. Cloud providers are
     // excluded, so this never incurs an unexpected API cost. Skipped entirely
-    // (no call at all, not just a no-op) when `translate` is false.
-    let job_text = if translate {
-        let target_lang = resume.locale.as_deref().unwrap_or("en");
+    // (no call at all, not just a no-op) when the surface does not translate.
+    let job_text = if surface.translates() {
+        let target_lang = resume_target_lang(resume);
         crate::commands::translation::translate_if_needed(app, job_id, &job_text, target_lang).await
     } else {
         job_text
@@ -130,17 +205,31 @@ async fn score_one(
     let (resume_vec, job_vec) = if skip_semantic {
         (None, None)
     } else {
-        let rv = match store.get_vector_async(&resume.id).await {
-            Some(v) if active.matches(&v.space) => Some(v),
-            _ => {
-                // `embed` surfaces its error (already logged inside it); this
-                // caller keeps its existing "degrade to keyword-only" contract
-                // for match scoring, so `.ok()` discards it here.
-                let v = embed(app, &resume.text).await.ok();
-                if let Some(ref ev) = v {
-                    let _ = store.upsert_vector_async(&resume.id, ev).await;
+        let rv = match surface.resume_vector_home() {
+            ResumeVectorHome::DocumentIndex => match store.get_vector_async(&resume.id).await {
+                Some(v) if active.matches(&v.space) => Some(v),
+                _ => {
+                    // `embed` surfaces its error (already logged inside it); this
+                    // caller keeps its existing "degrade to keyword-only" contract
+                    // for match scoring, so `.ok()` discards it here.
+                    let v = embed(app, &resume.text).await.ok();
+                    if let Some(ref ev) = v {
+                        let _ = store.upsert_vector_async(&resume.id, ev).await;
+                    }
+                    v
                 }
-                v
+            },
+            // A résumé SNAPSHOT has no `documents` row, so its vector must not
+            // enter the document index — it would be counted as an indexed
+            // document forever (nothing deletes it: document delete/re-embed
+            // iterate real documents, `prune_caches` only touches
+            // posting_vectors/match_scores). The posting-vector cache is the
+            // right home: same space + text-hash guard, plus a TTL and a row
+            // cap. Reuse is unchanged — the first job of a run embeds the
+            // résumé, every later job (and every repeat run inside the TTL)
+            // hits this row.
+            ResumeVectorHome::EphemeralCache => {
+                posting_vector_or_embed(app, &resume.id, &resume.text).await
             }
         };
         let jv = posting_vector_or_embed(app, job_id, &job_text).await;
@@ -165,8 +254,7 @@ async fn score_one(
     // changed the text language). The decision itself lives in the keyword
     // kernel — `rank_trim_candidates` below routes through the same function, so
     // the trim panel and this score can't disagree on a cross-language pair.
-    let resume_locale = resume.locale.as_deref().unwrap_or("en");
-    let jd_matches_resume_locale = languages_align(&job_text, resume_locale);
+    let jd_matches_resume_locale = languages_align(&job_text, resume_target_lang(resume));
 
     // Symmetric treatment: stem BOTH sides with the JD stemmer when languages
     // match; leave BOTH sides normalized-only (unstemmed) when they diverge.
@@ -283,8 +371,8 @@ async fn score_one(
 ///
 /// Deliberately NO `semantic_enabled` parameter (unlike the removed
 /// `score_adhoc`): semantic scoring is hardcoded OFF below, not
-/// caller-configurable, and this NEVER translates (`translate: false` to
-/// [`score_one`]) — the extension bridge has no channel to the app's
+/// caller-configurable, and this NEVER translates ([`MatchSurface::Extension`]
+/// to [`score_one`]) — the extension bridge has no channel to the app's
 /// semantic-scoring setting (see `extension_bridge::match_live`'s module doc)
 /// and a CLI-agent provider configured as "local" still performs cloud egress
 /// despite `ProviderId::is_local()`, so the zero-egress guarantee for this
@@ -308,8 +396,9 @@ pub(crate) async fn score_adhoc_keyword_only(
         active,
         job_id,
         Some(job_text),
-        0,     // semantic_enabled hardcoded OFF — never caller-configurable
-        false, // translate hardcoded OFF — this entry point never calls translate_if_needed
+        0, // semantic_enabled hardcoded OFF — never caller-configurable
+        // Never translates: this entry point must not reach the provider layer.
+        MatchSurface::Extension,
     )
     .await
 }
@@ -324,17 +413,54 @@ pub(crate) const SCORE_SOURCE_COMBINED: &str = "combined";
 ///
 /// The Autopilot record persists `resume_text` (a raw string copied at setup
 /// time), not a `DocumentRecord` id, so the semantic path needs a stable id for
-/// the `vectors` / `match_scores` rows. Hashing the text makes it
+/// its `posting_vectors` / `match_scores` rows. Hashing the text makes it
 /// **self-invalidating**: editing the autopilot's résumé yields a different id,
 /// so a stale résumé vector can never be scored against — the same discipline
-/// `posting_vectors.text_hash` uses. Prefixed so it can never collide with a
-/// real document id (mirrors `extension_bridge::match_live::adhoc_job_id`'s
-/// `adhoc:` prefix).
+/// `posting_vectors.text_hash` uses.
+///
+/// The `autopilot-resume:` namespace prefix does two jobs. It marks the id as
+/// synthetic, so `DocumentStore::upsert_vector` REFUSES it (see
+/// `documents::is_synthetic_scoring_id`) and the document index can never
+/// acquire a row nothing ever deletes. And it separates this key space from the
+/// posting keys (`autopilot:<hash of canonical_job_key>`), which now share the
+/// `posting_vectors` table with it.
 ///
 /// `pub(crate)` so `commands::autopilot`'s cache-reuse test can assert against
 /// the REAL identity instead of a hand-retyped mirror of this format string.
 pub(crate) fn autopilot_resume_id(resume_text: &str) -> String {
-    format!("autopilot:{}", sha256_hex(resume_text))
+    format!("autopilot-resume:{}", sha256_hex(resume_text))
+}
+
+/// The synthetic [`DocumentRecord`] the Autopilot re-rank scores with — an
+/// Autopilot stores résumé TEXT, not a document reference.
+///
+/// Only the four fields `score_one` reads are meaningful:
+/// - `id` — [`autopilot_resume_id`], the content-addressed cache identity;
+/// - `text` — the résumé itself;
+/// - `locale` — **`None`, deliberately**: the Jobs page reads the persisted
+///   (nullable) `DocumentRecord.locale` and falls back to `"en"`
+///   ([`resume_target_lang`]), and a snapshot has no persisted locale, so
+///   `None` is the SAME source resolving the SAME way. Detecting the language
+///   here instead would make the two surfaces disagree about a non-English
+///   résumé — a parity break in the opposite direction from a missing
+///   translate step. (Detect-and-backfill onto the document row would be
+///   better behaviour for both surfaces; that is a separate change, not
+///   something to smuggle into one of them.)
+/// - `keywords_json: None` — no cached token list, so `score_one` live-extracts
+///   (its documented fallback).
+pub(crate) fn autopilot_resume_record(resume_text: &str) -> DocumentRecord {
+    DocumentRecord {
+        id: autopilot_resume_id(resume_text),
+        title: String::new(),
+        name: String::new(),
+        locale: None,
+        text: resume_text.to_string(),
+        pages: None,
+        created_at: 0,
+        indexed: false,
+        is_default: false,
+        keywords_json: None,
+    }
 }
 
 /// SEMANTIC (combined) scoring entry point for the headless Autopilot re-rank —
@@ -350,23 +476,15 @@ pub(crate) fn autopilot_resume_id(resume_text: &str) -> String {
 /// `commands::autopilot::autopilot_job_id`) — Autopilot postings never enter
 /// `PostingsCache`, so there is no real posting id to use.
 ///
-/// The résumé is wrapped in a synthetic [`DocumentRecord`] because an Autopilot
-/// stores résumé TEXT, not a document reference. Only the four fields
-/// `score_one` reads are meaningful:
-/// - `id` — [`autopilot_resume_id`], the content-addressed cache identity;
-/// - `text` — the résumé itself;
-/// - `locale` — [`detect_locale_tag`], which exists precisely for a résumé with
-///   no persisted locale; without it `languages_align` would compare against a
-///   hardcoded `"en"` and mis-stem every non-English résumé;
-/// - `keywords_json: None` — no cached token list, so `score_one` live-extracts
-///   (its documented fallback).
+/// The résumé is wrapped by [`autopilot_resume_record`] (see its doc for why
+/// every field is what it is).
 ///
-/// `translate: false`, unlike the in-app `match_resume` path. A scheduled run is
-/// unattended: `translate_if_needed` would fire one provider completion per
-/// foreign-language posting, unbounded and outside the embedding budget this
-/// step charges. `languages_align` already handles a cross-language pair
-/// symmetrically (both sides normalized-only), so the trade-off costs stemming
-/// precision on such a pair, never correctness.
+/// [`MatchSurface::Autopilot`] means the FULL pre-processing pipeline runs here,
+/// exactly as on the Jobs page — translation included. That is not a cost
+/// decision to re-litigate per surface: the number is rendered under the same
+/// "Match %" label, and translation is cloud-excluded (local providers only, so
+/// it cannot incur an API cost), cached per job id for the session, and bounded
+/// by the caller's top-N ceiling.
 pub(crate) async fn score_autopilot_semantic(
     app: &AppHandle,
     store: &DocumentStore,
@@ -375,18 +493,7 @@ pub(crate) async fn score_autopilot_semantic(
     job_id: &str,
     job_text: String,
 ) -> Value {
-    let resume = DocumentRecord {
-        id: autopilot_resume_id(resume_text),
-        title: String::new(),
-        name: String::new(),
-        locale: Some(detect_locale_tag(resume_text).to_string()),
-        text: resume_text.to_string(),
-        pages: None,
-        created_at: 0,
-        indexed: false,
-        is_default: false,
-        keywords_json: None,
-    };
+    let resume = autopilot_resume_record(resume_text);
     score_one(
         app,
         store,
@@ -395,8 +502,8 @@ pub(crate) async fn score_autopilot_semantic(
         active,
         job_id,
         Some(job_text),
-        1,     // semantic_enabled: this entry point exists only for the semantic re-rank
-        false, // translate: never, in an unattended scheduled run — see the doc above
+        1, // semantic_enabled: this entry point exists only for the semantic re-rank
+        MatchSurface::Autopilot,
     )
     .await
 }
@@ -443,7 +550,7 @@ pub async fn match_resume(app: AppHandle, req: MatchResumeRequest) -> Value {
         &req.job_id,
         job_text,
         semantic_enabled,
-        true, // in-app path: translation stays on, exactly as before this refactor
+        MatchSurface::JobsPage,
     )
     .await
 }
@@ -603,636 +710,4 @@ pub async fn resume_trim_suggestions(req: ResumeTrimSuggestionsRequest) -> Value
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    // Keyword-extraction and the coverage/gap math (stopwords, synonyms, short
-    // terms, `keyword_coverage`, `coverage_score`) are owned and tested by
-    // `crate::documents::keywords`. These cover the match-command wiring that
-    // still lives here: the corrupt-keywords fallback and readable gaps.
-
-    // The stemmed gaps from `keyword_coverage` must be mapped back to readable,
-    // unstemmed forms before surfacing — "kubernetes"/"developer", not the
-    // Snowball stems "kubernet"/"develop". Mirrors `score_one`'s gap pipeline.
-    #[test]
-    fn gaps_are_surfaced_in_readable_unstemmed_form() {
-        use crate::documents::keywords::{display_forms, make_stemmer, readable_gaps};
-
-        let job_text = "kubernetes developer building scalable services";
-        let stemmer = make_stemmer(job_text);
-        let job_kw = keywords(job_text, &stemmer);
-        // An empty résumé → every job keyword is a gap.
-        let (_ats, gap_stems) =
-            keyword_coverage(&job_kw, &HashSet::new()).expect("non-empty job must return Some");
-
-        // The raw stems are mangled.
-        assert!(
-            gap_stems.iter().any(|g| g == "kubernet" || g == "develop"),
-            "precondition: stems should be mangled; got {gap_stems:?}"
-        );
-
-        let readable = readable_gaps(&gap_stems, &display_forms(job_text, &stemmer));
-        assert!(
-            readable.iter().any(|g| g == "kubernetes"),
-            "readable gaps must contain 'kubernetes', not the stem; got {readable:?}"
-        );
-        assert!(
-            readable.iter().any(|g| g == "developer"),
-            "readable gaps must contain 'developer', not 'develop'; got {readable:?}"
-        );
-        assert!(
-            !readable.iter().any(|g| g == "kubernet" || g == "develop"),
-            "no mangled stems may leak into the readable gaps; got {readable:?}"
-        );
-    }
-
-    // Corrupt keywords_json must not silently produce an empty resume word-set.
-    // Verifies that the match-branch falls back to live extraction so ATS
-    // score is computed from the resume text rather than an empty HashSet.
-    #[test]
-    fn corrupt_keywords_json_falls_back_to_live_extraction() {
-        use crate::documents::keywords::make_stemmer;
-
-        let resume_text = "experienced rust and typescript developer";
-        let stemmer = make_stemmer(resume_text);
-
-        // Simulate the deserialization branch directly: malformed JSON that
-        // would previously silent-default to Vec::new() / empty HashSet.
-        let corrupt_json = "not valid json [[[";
-        let resume_words: HashSet<String> = match serde_json::from_str::<Vec<String>>(corrupt_json)
-        {
-            Ok(tokens) => apply_stemmer(tokens.into_iter().collect(), &stemmer),
-            Err(_) => keywords(resume_text, &stemmer),
-        };
-
-        // The fallback must not be empty — the resume text has real content.
-        assert!(
-            !resume_words.is_empty(),
-            "corrupt keywords_json must fall back to live extraction, not an empty set"
-        );
-
-        // A job keyword present in the resume text must be covered.
-        let job = keywords("rust developer typescript", &stemmer);
-        let (cov, _gaps) =
-            keyword_coverage(&job, &resume_words).expect("non-empty job must return Some");
-        assert!(
-            cov > 0.0,
-            "ATS coverage must be > 0 when resume text contains matching terms"
-        );
-    }
-
-    // Pins the production `semantic_enabled_bit` helper (used by both the cache
-    // key and the skip-branch): only `Some(true)` → 1 (enabled); `Some(false)`
-    // AND `None` → 0 (keyword-only) so an omitted flag defaults OFF, matching the
-    // app-wide default. Tests the real fn, not an inline re-implementation.
-    #[test]
-    fn semantic_enabled_bit_maps_flag_to_key_column() {
-        assert_eq!(semantic_enabled_bit(Some(false)), 0, "explicit disable → 0");
-        assert_eq!(semantic_enabled_bit(Some(true)), 1, "explicit enable → 1");
-        assert_eq!(
-            semantic_enabled_bit(None),
-            0,
-            "default (unset) → keyword-only (semantic OFF)"
-        );
-    }
-
-    // A bump to MATCH_FORMULA_VERSION must change the cache key, so a score
-    // cached under the current version is a miss under the next one. Exercises
-    // self-invalidation end-to-end against a real store.
-    #[test]
-    fn formula_version_bump_invalidates_cached_score() {
-        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-
-        let hash = sha256_hex("job text");
-        let key = |fv: i64| MatchScoreKey {
-            resume_id: "r",
-            job_id: "j",
-            provider: "ollama",
-            model: "nomic-embed-text",
-            semantic_enabled: 1,
-            formula_version: fv,
-            vector_version: EMBEDDING_VECTOR_VERSION,
-            job_text_hash: &hash,
-        };
-
-        // Cache a score under the current formula version → hit.
-        store
-            .upsert_match_score(&key(MATCH_FORMULA_VERSION), "{\"combined\":50}")
-            .unwrap();
-        assert!(store.get_match_score(&key(MATCH_FORMULA_VERSION)).is_some());
-
-        // The next formula version is a different key → miss (stale on bump).
-        assert!(store
-            .get_match_score(&key(MATCH_FORMULA_VERSION + 1))
-            .is_none());
-    }
-
-    // The defect this pins: a semantic score is derived from embedding vectors,
-    // so a vector-FORMAT bump (`EMBEDDING_VECTOR_VERSION`) changes what a cached
-    // score means even when `formula_version` and the job text are unchanged.
-    // Before `vector_version` joined the key, this bump only self-invalidated
-    // by accident (a coincidental MATCH_FORMULA_VERSION bump, e.g. #933) — a
-    // future vector-format bump with no coincidental formula bump would have
-    // silently served a stale semantic score forever. Two otherwise-identical
-    // keys differing ONLY in `vector_version` must not collide.
-    #[test]
-    fn vector_version_bump_invalidates_cached_score() {
-        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-
-        let hash = sha256_hex("job text");
-        let key = |vv: i64| MatchScoreKey {
-            resume_id: "r",
-            job_id: "j",
-            provider: "ollama",
-            model: "nomic-embed-text",
-            semantic_enabled: 1,
-            formula_version: MATCH_FORMULA_VERSION,
-            vector_version: vv,
-            job_text_hash: &hash,
-        };
-
-        // Cache a score under the current vector version → hit.
-        store
-            .upsert_match_score(&key(EMBEDDING_VECTOR_VERSION), "{\"combined\":50}")
-            .unwrap();
-        assert!(store
-            .get_match_score(&key(EMBEDDING_VECTOR_VERSION))
-            .is_some());
-
-        // The next vector version is a different key → miss (stale on bump),
-        // with formula_version and every other field held identical — proves
-        // vector_version alone, not some other field, drives the invalidation.
-        assert!(store
-            .get_match_score(&key(EMBEDDING_VECTOR_VERSION + 1))
-            .is_none());
-    }
-
-    // MATCH_FORMULA_VERSION guard: if a maintainer bumps the constant they MUST
-    // also bump the expected value here and invalidate any affected caches.
-    // Failing here is intentional — it's the reminder that a bump is breaking.
-    #[test]
-    fn formula_version_constant_is_pinned() {
-        assert_eq!(
-            MATCH_FORMULA_VERSION, 2,
-            "MATCH_FORMULA_VERSION changed — update this assert AND invalidate \
-             cached match scores (clear match_scores table or bump the stored version)"
-        );
-    }
-
-    // A6 — Combined-score formula: combined = round(0.6 * semantic + 0.4 * ats).
-    // Tests the arithmetic kernel in isolation, covering the branch in `score_one`
-    // where `job_vec.is_some()` is true. The formula is not `0.6*s + 0.4*a` before
-    // rounding — we pin the specific rounded values to catch weight drift.
-    #[test]
-    fn combined_formula_is_weighted_60_semantic_40_ats_rounded() {
-        // Simulate the production formula: both vectors present → combined branch.
-        let semantic = 80.0_f64;
-        let ats = 60.0_f64;
-        let combined = (0.6 * semantic + 0.4 * ats).round();
-        // 0.6 * 80 + 0.4 * 60 = 48 + 24 = 72 → rounded = 72
-        assert_eq!(
-            combined, 72.0,
-            "combined must be round(0.6*80 + 0.4*60) = 72"
-        );
-
-        // Verify a different pair to guard against accidental integer short-circuit.
-        let semantic2 = 75.0_f64;
-        let ats2 = 50.0_f64;
-        let combined2 = (0.6 * semantic2 + 0.4 * ats2).round();
-        // 0.6 * 75 + 0.4 * 50 = 45 + 20 = 65 → rounded = 65
-        assert_eq!(
-            combined2, 65.0,
-            "combined must be round(0.6*75 + 0.4*50) = 65"
-        );
-
-        // When semantic and ats differ, combined must differ from BOTH so we can
-        // distinguish it from an accidental identity (combined == ats).
-        assert_ne!(
-            combined, ats,
-            "combined must differ from ats (weights are 0.6/0.4)"
-        );
-        assert_ne!(
-            combined, semantic,
-            "combined must differ from semantic (weights are 0.6/0.4)"
-        );
-    }
-
-    // A6 — Degrade path: when the semantic vector is unavailable (`job_vec.is_none()`),
-    // the production branch in `score_one` yields `combined = ats` (no semantic
-    // weighting). This test pins that degrade-path logic is `!= 0.6*semantic +
-    // 0.4*ats`; combined equals ATS score when semantic is absent.
-    //
-    // The branch in score_one is: `let combined = if job_vec.is_some() {
-    //     (0.6 * semantic + 0.4 * ats).round() } else { ats };`
-    // We verify that the ELSE arm produces exactly `ats`, not 0.6*0 + 0.4*ats.
-    #[test]
-    fn degrade_path_combined_equals_ats_when_no_semantic_vector() {
-        // Simulate: job_vec is None → semantic stays 0.0 (no computation),
-        // combined = ats (the else branch).
-        let ats = 65.0_f64;
-        let job_vec_present = false;
-        let semantic = 0.0_f64; // unused in degrade branch
-
-        let combined = if job_vec_present {
-            (0.6 * semantic + 0.4 * ats).round()
-        } else {
-            ats // degrade: keyword-only
-        };
-
-        assert_eq!(
-            combined, ats,
-            "degrade path (no job vector) must yield combined == ats ({ats}); got {combined}"
-        );
-
-        // The degrade combined must NOT equal the weighted formula applied to
-        // ats alone (0.6*0 + 0.4*65 = 26 ≠ 65), proving the else-branch is
-        // `ats` not `0.6*semantic + 0.4*ats`.
-        let weighted_ats_only = (0.6 * 0.0 + 0.4 * ats).round();
-        assert_ne!(
-            combined, weighted_ats_only,
-            "degrade combined ({combined}) must not be the weighted-formula partial ({weighted_ats_only})"
-        );
-    }
-
-    // A6 — Degrade explanation: when semantic is disabled the explanation must
-    // say "(semantic scoring disabled)" and NOT mention "Semantic similarity".
-    // When semantic is available the explanation includes "Semantic similarity".
-    // Both explanations must carry the guidance framing ("guidance estimate").
-    // Mirrors the `explanation` construction in `score_one` (pure string logic,
-    // tested without AppHandle).
-    #[test]
-    fn explanation_reflects_semantic_enabled_state() {
-        let job_kw_count = 10_usize;
-        let ats = 70.0_f64;
-        let semantic = 85.0_f64;
-        const GUIDANCE: &str =
-            "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
-
-        // Degrade (skip_semantic = true):
-        let degrade_explanation = format!(
-            "Keyword coverage {ats:.0}% across {job_kw_count} job keywords (semantic scoring disabled). {GUIDANCE}"
-        );
-        assert!(
-            degrade_explanation.contains("semantic scoring disabled"),
-            "degrade explanation must say 'semantic scoring disabled'; got: {degrade_explanation}"
-        );
-        assert!(
-            !degrade_explanation.contains("Semantic similarity"),
-            "degrade explanation must NOT mention 'Semantic similarity'; got: {degrade_explanation}"
-        );
-        assert!(
-            degrade_explanation.contains("guidance estimate"),
-            "degrade explanation must carry guidance framing; got: {degrade_explanation}"
-        );
-
-        // Normal (skip_semantic = false):
-        let normal_explanation = format!(
-            "Semantic similarity {semantic:.0}%, keyword coverage {ats:.0}% across {job_kw_count} job keywords. {GUIDANCE}"
-        );
-        assert!(
-            normal_explanation.contains("Semantic similarity"),
-            "normal explanation must mention 'Semantic similarity'; got: {normal_explanation}"
-        );
-        assert!(
-            !normal_explanation.contains("disabled"),
-            "normal explanation must NOT mention 'disabled'; got: {normal_explanation}"
-        );
-        assert!(
-            normal_explanation.contains("guidance estimate"),
-            "normal explanation must carry guidance framing; got: {normal_explanation}"
-        );
-    }
-
-    // Empty JD keywords → explanation flags unavailable score, not misleading 0%.
-    // Mirrors the `no_jd_keywords` branch in `score_one`.
-    #[test]
-    fn empty_jd_keywords_explanation_flags_unavailable() {
-        const GUIDANCE: &str =
-            "This score is a guidance estimate — not the employer's decision or any ATS system's score.";
-        let explanation = format!(
-            "No extractable keywords found in this job posting — coverage score is unavailable. {GUIDANCE}"
-        );
-        assert!(
-            explanation.contains("No extractable keywords"),
-            "empty-JD explanation must flag unavailability; got: {explanation}"
-        );
-        assert!(
-            explanation.contains("guidance estimate"),
-            "empty-JD explanation must carry guidance framing; got: {explanation}"
-        );
-        // Must NOT claim 0% — that would be indistinguishable from a real mismatch.
-        assert!(
-            !explanation.contains("0%"),
-            "empty-JD explanation must not claim 0%; got: {explanation}"
-        );
-    }
-
-    // Stemmer-language guard: when JD language matches the résumé locale,
-    // apply_stemmer runs; when they diverge, the normalized (unstemmed) set is
-    // used directly. This pins the guard logic (pure boolean, no AppHandle).
-    #[test]
-    fn stemmer_language_guard_skips_stemming_on_mismatch() {
-        use crate::documents::keywords::{apply_stemmer, keywords_normalized, make_stemmer};
-
-        // German JD, English résumé (locale "en") — languages diverge.
-        let jd_text = "Wir suchen einen erfahrenen Softwareentwickler mit Rust-Kenntnissen";
-        let stemmer = make_stemmer(jd_text); // German stemmer
-        let resume_tokens = keywords_normalized("experienced rust developer");
-
-        // Guard logic mirrors score_one: German JD, English locale → no match.
-        let jd_matches_en = false; // German JD vs "en" locale
-        let resume_words_diverge: HashSet<String> = if jd_matches_en {
-            apply_stemmer(resume_tokens.clone(), &stemmer)
-        } else {
-            resume_tokens.clone() // unstemmed
-        };
-
-        // When languages match (English JD, English résumé) → stemmer applied.
-        let en_jd = "experienced rust developer";
-        let en_stemmer = make_stemmer(en_jd);
-        let en_tokens = keywords_normalized("experienced rust developer");
-        let resume_words_match = apply_stemmer(en_tokens.clone(), &en_stemmer);
-
-        // The stemmed set must differ from the unstemmed one for ordinary words.
-        // ("developer" → "develop" under English Snowball).
-        assert!(
-            resume_words_match.contains("develop"),
-            "English stemmer must reduce 'developer' to 'develop'; got {:?}",
-            resume_words_match
-        );
-        assert!(
-            resume_words_diverge.contains("developer"),
-            "Without stemming, 'developer' must survive unstemmed; got {:?}",
-            resume_words_diverge
-        );
-        assert!(
-            !resume_words_diverge.contains("develop"),
-            "Without stemming, stemmed form 'develop' must be absent; got {:?}",
-            resume_words_diverge
-        );
-    }
-
-    // Round-trip parity: a 7-field MatchScore JSON blob survives
-    // upsert_match_score → get_match_score with every field name and type intact.
-    // Guards against a future rename/drop of any result-cache field.
-    #[test]
-    fn match_score_round_trip_preserves_all_seven_fields() {
-        use crate::documents::{sha256_hex, DocumentStore, MatchScoreKey};
-        use tempfile::TempDir;
-
-        let temp_dir = TempDir::new().unwrap();
-        let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
-
-        let hash = sha256_hex("round trip job text");
-        let key = MatchScoreKey {
-            resume_id: "resume-rt",
-            job_id: "job-rt",
-            provider: "ollama",
-            model: "nomic-embed-text",
-            semantic_enabled: 1,
-            formula_version: MATCH_FORMULA_VERSION,
-            vector_version: EMBEDDING_VECTOR_VERSION,
-            job_text_hash: &hash,
-        };
-
-        // Build a known 7-field score JSON that mirrors the shape score_one produces.
-        let score_json = serde_json::json!({
-            "resumeId":       "resume-rt",
-            "jobId":          "job-rt",
-            "ats":            60.0_f64,
-            "semantic":       75.0_f64,
-            "combined":       70.0_f64,
-            "gaps":           ["kubernetes", "terraform"],
-            "recommendations": ["Consider adding evidence of: kubernetes, terraform."]
-        });
-        store
-            .upsert_match_score(&key, &serde_json::to_string(&score_json).unwrap())
-            .unwrap();
-
-        let got = store
-            .get_match_score(&key)
-            .expect("score must be present after upsert");
-
-        assert_eq!(
-            got["resumeId"], "resume-rt",
-            "resumeId field must survive round-trip"
-        );
-        assert_eq!(
-            got["jobId"], "job-rt",
-            "jobId field must survive round-trip"
-        );
-        assert_eq!(
-            got["ats"], 60.0_f64,
-            "ats field must survive round-trip as a number"
-        );
-        assert_eq!(
-            got["semantic"], 75.0_f64,
-            "semantic field must survive round-trip as a number"
-        );
-        assert_eq!(
-            got["combined"], 70.0_f64,
-            "combined field must survive round-trip as a number"
-        );
-        assert!(
-            got["gaps"].is_array(),
-            "gaps must survive round-trip as an array"
-        );
-        assert_eq!(
-            got["gaps"].as_array().unwrap().len(),
-            2,
-            "gaps array length must be preserved"
-        );
-        assert!(
-            got["recommendations"].is_array(),
-            "recommendations must survive round-trip as an array"
-        );
-        // Distinct values: ats != semantic != combined — guards against field swap.
-        assert_ne!(
-            got["ats"], got["combined"],
-            "ats and combined must be distinct"
-        );
-        assert_ne!(
-            got["semantic"], got["combined"],
-            "semantic and combined must be distinct"
-        );
-    }
-
-    // Integration test for HIGH stemmer-asymmetry regression fix.
-    //
-    // A German-language JD and an English-locale résumé share the language-neutral
-    // token `docker`. With the OLD asymmetric code (JD stemmed with German stemmer,
-    // résumé unstemmed), the German Snowball stemmer mutates `docker` on the JD side
-    // while the résumé keeps the raw form — neither set contains the same token after
-    // asymmetric processing, so coverage is 0%.
-    //
-    // The symmetric fix leaves BOTH sides unstemmed (normalized-only) when languages
-    // diverge, so `docker` survives on both sides and the coverage is > 0%.
-    //
-    // This test FAILS against the pre-fix asymmetric code and PASSES after the fix.
-    #[test]
-    fn divergent_language_pair_shared_tech_token_matches_symmetrically() {
-        use crate::documents::keywords::{
-            apply_stemmer, keyword_coverage, keywords, keywords_normalized, make_stemmer,
-        };
-
-        // German JD with shared tech token `docker` embedded in German prose.
-        let german_jd =
-            "Wir suchen einen erfahrenen Softwareentwickler mit docker und kubernetes Kenntnissen";
-        let english_resume =
-            "experienced engineer shipping docker containers and kubernetes clusters";
-
-        // Build the German stemmer (what score_one uses for this JD).
-        let german_stemmer = make_stemmer(german_jd);
-
-        // --- OLD asymmetric behavior ---
-        // Old code: JD side stemmed with German stemmer; résumé side unstemmed.
-        let jd_stemmed = keywords(german_jd, &german_stemmer);
-        let resume_unstemmed = keywords_normalized(english_resume);
-        let (old_cov, _) =
-            keyword_coverage(&jd_stemmed, &resume_unstemmed).unwrap_or((0.0, vec![]));
-
-        // --- NEW symmetric behavior preserves the shared token ---
-        // New code: BOTH sides normalized-only (unstemmed) when languages diverge.
-        let jd_normalized = keywords_normalized(german_jd);
-        let resume_normalized = keywords_normalized(english_resume);
-        let (new_cov, _) =
-            keyword_coverage(&jd_normalized, &resume_normalized).unwrap_or((0.0, vec![]));
-
-        // Softened from assert_eq!(old_cov, 0.0): the exact value depends on the
-        // German Snowball stemmer's behaviour for `docker`/`kubernetes`, which may
-        // change with a stemmer-version bump.  The invariant that actually matters
-        // is that symmetric normalization yields STRICTLY more coverage than the
-        // old asymmetric pairing — not that the old value is exactly 0.
-        assert!(
-            old_cov < new_cov,
-            "symmetric normalization must yield strictly more coverage than asymmetric stemming; \
-             old (asymmetric) = {old_cov}%, new (symmetric) = {new_cov}%"
-        );
-        assert!(
-            new_cov > 0.0,
-            "symmetric normalization (both unstemmed) must yield > 0% coverage \
-             — 'docker' and 'kubernetes' appear on both sides; got {new_cov}%"
-        );
-
-        // Also verify that the symmetric STEMMED path (same language) is not broken:
-        // English JD + English résumé sharing `docker` must still match when both are stemmed.
-        let en_jd = "looking for a developer with docker and kubernetes experience";
-        let en_resume = "shipped docker containers and kubernetes clusters";
-        let en_stemmer = make_stemmer(en_jd);
-        let jd_en_stemmed = keywords(en_jd, &en_stemmer);
-        let resume_en_stemmed = apply_stemmer(keywords_normalized(en_resume), &en_stemmer);
-        let (en_cov, _) =
-            keyword_coverage(&jd_en_stemmed, &resume_en_stemmed).unwrap_or((0.0, vec![]));
-        assert!(
-            en_cov > 0.0,
-            "matching-language path (both English, both stemmed) must still yield > 0% coverage; \
-             got {en_cov}%"
-        );
-    }
-
-    // ── trim suggestions (ranking itself lives in documents::evidence) ───────
-
-    /// The `match:trimSuggestions` payload must stay wire-identical after the
-    /// scorer moved into `documents::evidence`: three camelCase fields, `score`
-    /// as a JSON INTEGER (not `1.0`), and the same weakest-first ordering.
-    /// Compares the serialized shim output against the `EvidenceBullet` the
-    /// shared scorer produced, so a field rename or a widened numeric type on
-    /// either side fails here.
-    #[test]
-    fn trim_candidate_wire_shape_is_unchanged() {
-        let resume = "EXPERIENCE\n\n\
-                      - Built and shipped Docker containers onto a Kubernetes cluster\n\
-                      - Organised the team offsite and the summer party for forty people\n";
-        let job = "Backend engineer with strong Docker and Kubernetes experience.";
-
-        let ranked = rank_bullets(resume, job);
-        assert_eq!(ranked.len(), 2, "both bullets are candidates");
-
-        let lines: Vec<TrimCandidate> = ranked
-            .iter()
-            .cloned()
-            .map(TrimCandidate::from)
-            .collect::<Vec<_>>();
-        let wire = serde_json::to_value(&lines).expect("TrimCandidate must serialize");
-        let first = &wire[0];
-
-        // Exactly the three historical fields — no `id` leaking onto the wire.
-        // `serde_json::Value` stores its map sorted, so compare against the
-        // sorted field set rather than declaration order.
-        let keys: Vec<&str> = first
-            .as_object()
-            .expect("each line is an object")
-            .keys()
-            .map(String::as_str)
-            .collect();
-        assert_eq!(
-            keys,
-            vec!["hits", "score", "text"],
-            "the trim payload's field set must not change; got {keys:?}"
-        );
-        assert!(
-            first["score"].is_u64(),
-            "score must serialize as an integer, not a float; got {}",
-            first["score"]
-        );
-
-        // Ordering and values still come straight from the shared scorer.
-        assert_eq!(first["text"], ranked[0].text);
-        assert_eq!(first["score"].as_u64().unwrap() as f64, ranked[0].score);
-        assert!(
-            first["text"].as_str().unwrap().contains("offsite"),
-            "weakest-first ordering must survive the shim; got {first}"
-        );
-    }
-
-    /// The request schema's `.max(200_000)` is zod — renderer-side only. serde
-    /// enforces nothing, so the command must cap its own inputs or an IPC caller
-    /// that isn't our UI hands language detection + stemming unbounded work.
-    /// Clamped on a char boundary, so the text stays valid UTF-8.
-    #[tokio::test]
-    async fn oversized_input_is_clamped_rather_than_processed_whole() {
-        // Multi-byte char straddling the cap — a naive byte truncate would split
-        // it and produce invalid UTF-8.
-        let huge = "a".repeat(MAX_JOB_DESCRIPTION_BYTES - 1) + "\u{1F600}" + &"b".repeat(5_000);
-        assert!(huge.len() > MAX_JOB_DESCRIPTION_BYTES);
-
-        let clamped = clamp_to_bytes(huge.clone(), MAX_JOB_DESCRIPTION_BYTES);
-        assert_eq!(clamped.len(), MAX_JOB_DESCRIPTION_BYTES - 1);
-        assert!(!clamped.contains('\u{1F600}'), "must cut before the emoji");
-
-        // And the command itself survives the oversized pair.
-        let out = resume_trim_suggestions(ResumeTrimSuggestionsRequest {
-            resume_text: huge.clone(),
-            job_text: huge,
-            locale: Some("us".into()),
-        })
-        .await;
-        assert_eq!(out["maxPages"], 2);
-        assert!(out["lines"].is_array());
-    }
-
-    /// The renderer skips the trim query entirely for documents of 2 pages or
-    /// fewer (`SHORTEST_OVERFLOW` in `features/ai-generate/components/TrimPanel`),
-    /// which is only sound while no market's target is below 2. Adding a
-    /// 1-page market means revisiting that guard — this test is the tripwire.
-    #[test]
-    fn no_market_targets_fewer_than_two_pages() {
-        for profile in LocaleProfile::all() {
-            assert!(
-                profile.max_pages >= 2,
-                "market {} targets {} pages; the renderer's SHORTEST_OVERFLOW guard \
-                 assumes no market goes below 2",
-                profile.id,
-                profile.max_pages
-            );
-        }
-    }
-}
+mod test;

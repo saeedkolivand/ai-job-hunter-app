@@ -71,6 +71,7 @@ const STEP_ICON: Record<string, string> = {
   scrape_start: '⟳',
   scrape_done: '✓',
   scrape_diag: '⚠',
+  rerank_start: '◇',
   rank_done: '★',
   cancelled: '⊘',
   complete: '✓',

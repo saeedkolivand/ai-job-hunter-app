@@ -57,6 +57,73 @@ fn upsert_vector_persists_an_older_space_version_instead_of_force_advancing_it()
     );
 }
 
+/// `vectors` is the DOCUMENT index: the Embeddings panel counts every row in it
+/// (`count_vectors_in_space`, no join to `documents`) and derives `stale` as
+/// `total_docs - indexed`, and NOTHING deletes a row whose document does not
+/// exist (delete/re-embed iterate real documents; `prune_caches` only touches
+/// `posting_vectors`/`match_scores`). So one synthetic scoring id written here
+/// — an Autopilot run's résumé snapshot, say — would permanently inflate
+/// "indexed", clamp `stale` to 0 through the `saturating_sub`, and report
+/// "N/N indexed" over a genuinely stale index. The write refuses it.
+#[test]
+fn the_document_vector_index_refuses_a_synthetic_scoring_id() {
+    let temp_dir = TempDir::new().unwrap();
+    let store = DocumentStore::open(&temp_dir.path().to_path_buf()).unwrap();
+
+    // One real, UNINDEXED document — the "genuinely stale index" baseline.
+    store
+        .insert(&DocumentRecord {
+            id: "doc-real".into(),
+            title: "CV".into(),
+            name: "CV".into(),
+            locale: None,
+            text: "rust engineer".into(),
+            pages: None,
+            created_at: 0,
+            indexed: false,
+            is_default: false,
+            keywords_json: None,
+        })
+        .unwrap();
+    let indexed_before = store.count_vectors_in_space("ollama", "nomic-embed-text");
+    assert_eq!(indexed_before, 0);
+
+    // What an Autopilot semantic run would have written under its
+    // content-addressed résumé id.
+    let synthetic = crate::commands::match_resume::autopilot_resume_id("an autopilot résumé");
+    assert!(store
+        .upsert_vector(&synthetic, &ev(vec![0.1, 0.2]))
+        .is_err());
+    assert!(store.get_vector(&synthetic).is_none());
+    // The extension bridge's ad-hoc namespace is refused on the same rule.
+    assert!(store
+        .upsert_vector("adhoc:abc123", &ev(vec![0.1, 0.2]))
+        .is_err());
+
+    let indexed_after = store.count_vectors_in_space("ollama", "nomic-embed-text");
+    assert_eq!(
+        indexed_after, indexed_before,
+        "an autopilot semantic run must leave the document index untouched: count before == after"
+    );
+    // The Embeddings panel's arithmetic (`total.saturating_sub(indexed)`) is
+    // therefore still honest about the one unindexed document.
+    assert_eq!(
+        store.list().len().saturating_sub(indexed_after),
+        1,
+        "stale must still be 1 — an orphan row is exactly what would clamp it to 0"
+    );
+
+    // The guard is narrow: a real document id still indexes normally.
+    store
+        .upsert_vector("doc-real", &ev(vec![0.1, 0.2]))
+        .unwrap();
+    assert_eq!(
+        store.count_vectors_in_space("ollama", "nomic-embed-text"),
+        1
+    );
+    assert_eq!(store.list().len().saturating_sub(1), 0);
+}
+
 #[test]
 fn test_open_store() {
     let temp_dir = TempDir::new().unwrap();

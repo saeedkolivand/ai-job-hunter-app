@@ -312,7 +312,15 @@ export function EmbeddingsSettings() {
             checked={semanticScoring}
             onChange={(e) => {
               setSemanticScoring(e.target.checked);
-              syncSemanticScoring.mutate(e.target.checked);
+              // A failed mirror write is not cosmetic: the in-app scoring
+              // follows the Zustand value that just changed, while the headless
+              // Autopilot scheduler keeps reading the old one — the two would
+              // silently disagree until the next successful write. Surfaced
+              // with the same `notify.error` this panel uses everywhere else.
+              syncSemanticScoring.mutate(e.target.checked, {
+                onError: () =>
+                  notify.error({ message: t('settings.embeddings.semanticScoringSyncFailed') }),
+              });
             }}
             className="h-4 w-4 shrink-0 accent-[var(--color-brand)] cursor-pointer"
             aria-label={t('settings.embeddings.semanticScoring')}

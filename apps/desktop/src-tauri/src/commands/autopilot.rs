@@ -291,12 +291,14 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         &format!("Scraped {raw}; {total_found} passed your keyword filter"),
     );
 
-    // Snapshot each posting, scored 0–100 against the resume when one is set, then
-    // sorted highest-first. The score is the keyword-coverage match % — the SAME
-    // embedding-free kernel as the Jobs page's ATS sub-score (NOT the Jobs
-    // *combined* %), so the headless scheduler never makes an embedding/API call.
-    // Autopilot is a discovery agent: a run only finds, ranks by keyword coverage,
-    // and saves results — the user applies with the tailoring assistant.
+    // Phase 1: snapshot each posting, scored 0–100 against the resume when one is
+    // set, then sorted highest-first. The score is the keyword-coverage match % —
+    // the SAME embedding-free kernel as the Jobs page's ATS sub-score (NOT the
+    // Jobs *combined* %) — and this phase makes no embedding/API call whatsoever.
+    // With semantic scoring off (the default) that is the whole ranking pipeline;
+    // with it on, phase 2 below re-scores the head through the combined kernel.
+    // Autopilot is a discovery agent either way: a run only finds, ranks and saves
+    // results — the user applies with the tailoring assistant.
     let resume = autopilot.resume_text.as_deref().unwrap_or("");
     let found_at = now_ms();
     let mut found_jobs: Vec<FoundJob> = postings
@@ -305,12 +307,7 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
         .collect();
 
     // Highest keyword-coverage match first; unscored postings sort to the end.
-    found_jobs.sort_by(|a, b| {
-        b.score
-            .unwrap_or(-1.0)
-            .partial_cmp(&a.score.unwrap_or(-1.0))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    found_jobs.sort_by(by_rank);
 
     let scored_count = found_jobs.iter().filter(|f| f.score.is_some()).count();
 
@@ -325,7 +322,9 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // chip + salary data). A fully-unscored cluster keeps today's keep-unscored
     // behavior. Until PR E `minMatchScore` was per-row; it is now per-cluster.
     let threshold = filter.min_match_score;
-    found_jobs = cluster_aware_retain(found_jobs, threshold, &tombstones, &extra_agency);
+    let clusters;
+    (found_jobs, clusters) =
+        cluster_aware_retain(found_jobs, threshold, &tombstones, &extra_agency);
     let kept = found_jobs.len();
     let dropped = total_found - kept;
 
@@ -343,63 +342,67 @@ pub async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value {
     // autopilots), and only jobs that survived dedup can cost an embed.
     //
     // A résumé-less autopilot short-circuits with the flag: phase 1 produced no
-    // scores at all for it, so there is nothing to re-rank.
+    // scores at all for it, so there is nothing to re-rank. The gate itself is
+    // `should_semantic_rerank`, applied inside `semantic_rerank_phase` — which
+    // is also what keeps the `setup` closure below (the state resolve + the blob
+    // map) from running at all on a keyword-only run.
     let semantic_on = app
         .try_state::<crate::job_preferences::JobPreferencesStore>()
         .is_some_and(|s| s.semantic_scoring());
-    let rerank = if !semantic_on || resume.is_empty() {
-        None
-    } else {
-        // `try_state` (not `state`) for both stores: a run must never fail
-        // because of scoring, and `state` PANICS on an unmanaged type. A
-        // startup failure that left either store unregistered degrades this run
-        // to keyword-only instead of unwinding a scheduled tick.
-        match app
-            .try_state::<crate::documents::DocumentStore>()
-            .zip(app.try_state::<Arc<crate::limits::Limiter>>())
-        {
-            Some((doc_store, limiter)) => {
-                // Reuse phase 1's EXACT scoring blob per posting — `FoundJob` drops
-                // `requirements`, so re-deriving it here would score different text
-                // than the keyword phase did on the boards that populate that field.
-                let blobs: std::collections::HashMap<String, String> = postings
-                    .iter()
-                    .filter_map(|p| {
-                        crate::documents::keywords::posting_text_blob(
-                            &p.title,
-                            p.description.as_deref(),
-                            p.requirements.as_deref(),
-                        )
-                        .map(|blob| (p.url.clone(), blob))
-                    })
-                    .collect();
-                let env = LiveRerankEnv {
+    let rerank = semantic_rerank_phase(
+        semantic_on,
+        resume,
+        &mut found_jobs,
+        &clusters,
+        &cancel_token,
+        || {
+            // `try_state` (not `state`) for both stores: a run must never fail
+            // because of scoring, and `state` PANICS on an unmanaged type. A
+            // startup failure that left either store unregistered degrades this
+            // run to keyword-only instead of unwinding a scheduled tick.
+            let (doc_store, limiter) = app
+                .try_state::<crate::documents::DocumentStore>()
+                .zip(app.try_state::<Arc<crate::limits::Limiter>>())?;
+            // The user is entitled to know a scheduled run entered a phase that
+            // can take minutes and spend budget — the neighbouring notes step
+            // sets the same expectation.
+            emit_step(
+                &app,
+                &job_id,
+                "rerank_start",
+                &format!("Semantic re-rank of the top {SEMANTIC_RERANK_MAX} matches"),
+            );
+            // Reuse phase 1's EXACT scoring blob per posting — `FoundJob` drops
+            // `requirements`, so re-deriving it here would score different text
+            // than the keyword phase did on the boards that populate that field.
+            let blobs: std::collections::HashMap<String, String> = postings
+                .iter()
+                .filter_map(|p| {
+                    crate::documents::keywords::posting_text_blob(
+                        &p.title,
+                        p.description.as_deref(),
+                        p.requirements.as_deref(),
+                    )
+                    .map(|blob| (p.url.clone(), blob))
+                })
+                .collect();
+            Some((
+                LiveRerankEnv {
                     app: &app,
                     store: doc_store.inner(),
                     resume,
                     active: doc_store.embedding_config(),
                     limiter: limiter.inner().clone(),
-                };
-                let summary = semantic_rerank(&env, &mut found_jobs, &blobs, &cancel_token).await;
-                // Re-sort: phase 2 replaced the head's scores, so the keyword
-                // ordering no longer holds. Same comparator as phase 1 (unscored
-                // sorts last).
-                found_jobs.sort_by(|a, b| {
-                    b.score
-                        .unwrap_or(-1.0)
-                        .partial_cmp(&a.score.unwrap_or(-1.0))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                Some(summary)
-            }
-            None => {
-                log::warn!(
-                    "[autopilot] semantic re-rank skipped: document/limiter state unavailable; ranking stays keyword-only"
-                );
-                None
-            }
-        }
-    };
+                },
+                blobs,
+            ))
+        },
+    )
+    .await;
+    // Re-sort: phase 2 replaced the head's scores, so the keyword ordering no
+    // longer holds. `by_rank` keeps the two scales in separate blocks — see its
+    // doc. A no-op when nothing was re-ranked.
+    found_jobs.sort_by(by_rank);
 
     let rerank_detail = match &rerank {
         Some(s) => format!(
@@ -664,6 +667,49 @@ pub(crate) fn build_found_job(p: &JobPosting, resume: &str, found_at: u64) -> Fo
 
 // ── Phase 2: optional semantic re-rank (ADR-020 addendum) ─────────────────────
 
+/// THE production gate for phase 2 — the single place that decides whether a
+/// run re-ranks at all.
+///
+/// `semantic_scoring` is the user's app-wide preference (read from its
+/// backend-readable mirror); a résumé-less autopilot has nothing to re-rank
+/// because phase 1 produced no scores for it. Extracted as a named function
+/// with exactly one production call site so the load-bearing "semantic OFF
+/// makes zero embed calls" regression can be pinned against the REAL decision
+/// — a test that re-types the condition (`let semantic_on = false`) pins
+/// nothing.
+pub(crate) fn should_semantic_rerank(semantic_scoring: bool, resume: &str) -> bool {
+    semantic_scoring && !resume.trim().is_empty()
+}
+
+/// The list's ranking comparator — **two blocks, not one axis**.
+///
+/// After phase 2 the list holds two different scales: a re-ranked head carrying
+/// the combined semantic+ATS number and a tail still on keyword coverage. Those
+/// are not comparable — a never-re-ranked keyword 62 is not "better" than a
+/// re-ranked combined 58 — so re-ranked jobs form the head (ordered by
+/// combined) and the keyword tail follows (ordered by coverage). This is not
+/// cosmetic: `generate_assistant_notes` takes its ≤3 AI-note recipients
+/// straight off this order, so a single mixed axis would spend a provider
+/// completion on a job the re-rank had already demoted.
+///
+/// Before phase 2 every job is `Keyword`, so this degenerates to the original
+/// score-descending sort (unscored last) — one comparator for both call sites,
+/// nothing to drift.
+fn by_rank(a: &FoundJob, b: &FoundJob) -> std::cmp::Ordering {
+    fn block(j: &FoundJob) -> u8 {
+        match j.score_source {
+            ScoreSource::Combined => 0,
+            ScoreSource::Keyword => 1,
+        }
+    }
+    block(a).cmp(&block(b)).then_with(|| {
+        b.score
+            .unwrap_or(-1.0)
+            .partial_cmp(&a.score.unwrap_or(-1.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
 /// How many of a run's top keyword-ranked jobs get the semantic re-rank.
 ///
 /// Evidence for the number: a run's raw harvest is bounded per board (the
@@ -689,6 +735,14 @@ const SEMANTIC_RERANK_MAX: usize = 20;
 /// params hits the row it already paid for instead of re-embedding. Prefixed so
 /// it can never collide with a real `PostingsCache` posting id (mirrors
 /// `extension_bridge::match_live::adhoc_job_id`).
+///
+/// NOTE — the prefix is load-bearing and the resulting double embed is
+/// deliberate. A posting the user later opens on the Jobs page is embedded
+/// again under its REAL `PostingsCache` id: Autopilot postings never enter that
+/// cache, so there is no real id to share, and the two ids are keyed on
+/// different things (a stable cross-run job identity vs. a cache-lifetime
+/// posting row). "Unifying" them by dropping the prefix would collide the two
+/// key spaces instead of deduping them.
 fn autopilot_job_id(job: &FoundJob) -> String {
     let key =
         crate::scraping::boards::common::canonical_job_key(&job.url, &job.title, &job.company);
@@ -708,26 +762,40 @@ pub(crate) struct RerankSummary {
     pub(crate) degraded: usize,
 }
 
-/// The re-rank's I/O seam — mirrors `autopilot_helpers`'s `NoteEnv`: the two
-/// external effects (one combined-kernel score, which may embed, and the shared
-/// daily-budget charge) sit behind a trait so the loop's control flow (top-N
-/// ceiling, cancellation, daily-ceiling short-circuit, per-job degrade) is
-/// unit-testable with a fake — there is no way to fake a live embedding
-/// provider in-process. Prod wiring is [`LiveRerankEnv`].
+/// What one job's re-rank attempt produced.
+#[derive(Debug, PartialEq)]
+pub(crate) enum RerankOutcome {
+    /// A real combined semantic+ATS score from the shared kernel.
+    Scored(f64),
+    /// No semantic score for this job — an embed that failed, a provider that
+    /// is offline, or an error object from the kernel. The job keeps its
+    /// keyword score and the loop continues: a run NEVER fails because of
+    /// scoring.
+    Degraded,
+    /// The shared per-provider daily ceiling refused the call, so no provider
+    /// work happened. Every remaining job stays on its keyword score.
+    BudgetExhausted,
+}
+
+/// The re-rank's I/O seam — mirrors `autopilot_helpers`'s `NoteEnv`: the one
+/// external effect (a combined-kernel score, which may reach the embedding
+/// provider, and the daily-budget charge that goes with an actual round-trip)
+/// sits behind a trait so the loop's control flow (top-N ceiling, cancellation,
+/// daily-ceiling short-circuit, per-job degrade) is unit-testable with a fake —
+/// there is no way to fake a live embedding provider in-process. Prod wiring is
+/// [`LiveRerankEnv`].
 #[async_trait::async_trait]
 trait RerankEnv: Send + Sync {
-    /// Score one posting through the SHARED combined kernel.
+    /// Score one posting through the SHARED combined kernel, charging the
+    /// shared per-provider daily ceiling for an ACTUAL provider round-trip —
+    /// never for a job the ADR-017 caches already answer.
     ///
-    /// `None` means "no semantic score for this job" — an embed that failed, a
-    /// provider that is offline, or an error object from the kernel. The caller
-    /// must then keep the job's keyword score: a run NEVER fails because of
-    /// scoring.
-    async fn score(&self, job_id: &str, job_text: String) -> Option<f64>;
-    /// Charge one embedding call against the SAME per-provider daily ceiling as
-    /// interactive AI — no parallel budget architecture (the `NoteEnv::charge_daily`
-    /// precedent). Acceptable because a run charges at most
-    /// [`SEMANTIC_RERANK_MAX`] against it.
-    fn charge_daily(&self) -> crate::error::AppResult<()>;
+    /// The charge lives inside the implementation (the `answer_assist`
+    /// precedent: charge immediately before the work that reaches the provider,
+    /// and not at all when a cached/local path short-circuits) rather than in
+    /// the loop, which cannot see a cache hit. A steady-state repeat run
+    /// therefore costs ZERO budget instead of one charge per considered job.
+    async fn score(&self, job_id: &str, job_text: String) -> RerankOutcome;
 }
 
 /// Extract a usable SEMANTIC score from a `score_one` result — the degrade
@@ -758,9 +826,51 @@ struct LiveRerankEnv<'a> {
     limiter: Arc<crate::limits::Limiter>,
 }
 
+/// Whether scoring this posting will reach the embedding provider — i.e.
+/// whether it should be charged.
+///
+/// The posting embed IS the round-trip on this path, and its cache decision is
+/// not re-derived here: [`crate::documents::posting_vector_is_fresh`] is the
+/// kernel's OWN single-source cache predicate, the same one
+/// `posting_vector_or_embed` consults moments later. A cached posting vector →
+/// no call → no charge, which is what makes a steady-state repeat run free.
+///
+/// Known imprecision, in the conservative direction: a job whose `match_scores`
+/// row is still valid but whose posting vector has been TTL-pruned is charged
+/// for an embed the cached score means it never makes. That over-counts by at
+/// most one per such job, never under-counts. Free function (not a method) so
+/// it is testable against a real `DocumentStore` without an `AppHandle`.
+fn will_reach_provider(
+    store: &crate::documents::DocumentStore,
+    active: &crate::documents::EmbeddingConfig,
+    job_id: &str,
+    job_text: &str,
+) -> bool {
+    let hash = crate::documents::sha256_hex(job_text);
+    let cached = store.get_posting_vector(job_id);
+    !crate::documents::posting_vector_is_fresh(active, &hash, cached.as_ref())
+}
+
+impl LiveRerankEnv<'_> {
+    /// Charge one embedding round-trip against the SAME per-provider daily
+    /// ceiling as interactive AI — no parallel budget architecture (the
+    /// `NoteEnv::charge_daily` precedent). Keyed on the EMBEDDING provider (not
+    /// the generation provider the AI-notes step charges).
+    fn charge_daily(&self) -> crate::error::AppResult<()> {
+        self.limiter
+            .charge_provider_daily(&self.active.provider, crate::limits::PROVIDER_DAILY_MAX)
+    }
+}
+
 #[async_trait::async_trait]
 impl RerankEnv for LiveRerankEnv<'_> {
-    async fn score(&self, job_id: &str, job_text: String) -> Option<f64> {
+    async fn score(&self, job_id: &str, job_text: String) -> RerankOutcome {
+        if will_reach_provider(self.store, &self.active, job_id, &job_text) {
+            if let Err(e) = self.charge_daily() {
+                log::info!("[autopilot] semantic re-rank stopped at daily ceiling: {e}");
+                return RerankOutcome::BudgetExhausted;
+            }
+        }
         let result = crate::commands::match_resume::score_autopilot_semantic(
             self.app,
             self.store,
@@ -770,21 +880,88 @@ impl RerankEnv for LiveRerankEnv<'_> {
             job_text,
         )
         .await;
-        rerank_score_from(&result)
-    }
-
-    fn charge_daily(&self) -> crate::error::AppResult<()> {
-        // The EMBEDDING provider is the one being billed here (not the
-        // generation provider the AI-notes step charges), so the counter is
-        // keyed on it.
-        self.limiter
-            .charge_provider_daily(&self.active.provider, crate::limits::PROVIDER_DAILY_MAX)
+        match rerank_score_from(&result) {
+            Some(combined) => RerankOutcome::Scored(combined),
+            None => RerankOutcome::Degraded,
+        }
     }
 }
 
-/// Phase 2 of the two-phase rank: re-score the top [`SEMANTIC_RERANK_MAX`] jobs
+/// Wall-clock ceiling for the WHOLE phase-2 pass, independent of `cancel` —
+/// the same discipline (and the same reason) as the AI-notes step's
+/// `NOTES_STEP_TIMEOUT`: phase 2 runs BEFORE `record_run`/`on_new_jobs`, and
+/// cancellation is only checked BETWEEN jobs, so without this a run of
+/// sequential cloud embeds (each with its own multi-minute provider timeout)
+/// could delay the user-facing "new jobs" notification for as long as it liked.
+///
+/// Derived from [`SEMANTIC_RERANK_MAX`] × a generous per-job allowance so
+/// raising the top-N cannot silently make the bound too tight. A hard backstop
+/// against a hung provider, not a tuning knob: hitting it degrades the
+/// not-yet-visited tail to keyword-only and the run continues normally.
+const RERANK_STEP_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(SEMANTIC_RERANK_MAX as u64 * 15);
+
+/// Phase 2 of the two-phase rank, exactly as the command runs it: the GATE,
+/// then the wall-clock-bounded re-rank.
+///
+/// `setup` resolves the I/O seam and builds the phase-1 blob map, and is called
+/// **only after the gate passes** — that is what makes "semantic OFF does no
+/// work at all" a property of this function (testable with a counting fake and
+/// a setup that records whether it ran) instead of a property of an untestable
+/// call site. Returns `None` when the gate is off, when setup finds the
+/// required state missing, or when the wall clock ran out.
+async fn semantic_rerank_phase<E, F>(
+    semantic_scoring: bool,
+    resume: &str,
+    found_jobs: &mut [FoundJob],
+    clusters: &[crate::scraping::cluster::ClusterAssignment],
+    cancel: &CancellationToken,
+    setup: F,
+) -> Option<RerankSummary>
+where
+    E: RerankEnv,
+    F: FnOnce() -> Option<(E, std::collections::HashMap<String, String>)>,
+{
+    if !should_semantic_rerank(semantic_scoring, resume) {
+        return None;
+    }
+    let Some((env, blobs)) = setup() else {
+        log::warn!(
+            "[autopilot] semantic re-rank skipped: document/limiter state unavailable; ranking stays keyword-only"
+        );
+        return None;
+    };
+    match tokio::time::timeout(
+        RERANK_STEP_TIMEOUT,
+        semantic_rerank(&env, found_jobs, clusters, &blobs, cancel),
+    )
+    .await
+    {
+        Ok(summary) => Some(summary),
+        // Whatever the loop already wrote onto `found_jobs` is KEPT (it mutates
+        // in place before each next await, so a dropped future loses no applied
+        // mutation); the unvisited tail is still on its keyword score, which is
+        // the ordinary degrade. Only the summary is lost.
+        Err(_) => {
+            log::warn!("[autopilot] semantic re-rank exceeded {RERANK_STEP_TIMEOUT:?}; the remaining jobs stay keyword-only");
+            None
+        }
+    }
+}
+
+/// Phase 2's loop: re-score the top [`SEMANTIC_RERANK_MAX`] CLUSTER CANONICALS
 /// of the (already keyword-ranked, filtered and deduped) list through the shared
 /// combined kernel, in place.
+///
+/// `clusters` is `cluster_aware_retain`'s verdict per surviving job, in the same
+/// order, and only a cluster's CANONICAL member is re-ranked. That is one
+/// decision doing two jobs: the canonical is the row the UI displays for the
+/// cluster (scoring a hidden member would spend an embed on a number nobody
+/// sees), and since a cluster has exactly one canonical, the same job surfaced
+/// on three boards — three different `canonical_job_key`s, hence three
+/// different cache ids — takes ONE top-N slot and one embed instead of three.
+/// An empty `clusters` (no verdicts available) degrades to per-job identity,
+/// which is the pre-cluster behaviour.
 ///
 /// `blobs` maps a job url to the EXACT scoring blob phase 1 used, so the two
 /// phases can never score different text for the same posting (`FoundJob` drops
@@ -794,8 +971,8 @@ impl RerankEnv for LiveRerankEnv<'_> {
 /// Degrade contract — a run never fails because of scoring:
 /// - a job with no keyword score (no résumé / no scorable text) is skipped
 ///   entirely: there is nothing to re-rank and no reason to spend an embed;
-/// - a job whose scoring returns `None` keeps its keyword score AND its
-///   `Keyword` label, and the loop moves on to the next job;
+/// - a job whose scoring degrades keeps its keyword score AND its `Keyword`
+///   label, and the loop moves on to the next job;
 /// - the daily ceiling and cancellation stop the loop, leaving every
 ///   not-yet-visited job on its keyword score.
 ///
@@ -804,18 +981,21 @@ impl RerankEnv for LiveRerankEnv<'_> {
 async fn semantic_rerank(
     env: &dyn RerankEnv,
     found_jobs: &mut [FoundJob],
+    clusters: &[crate::scraping::cluster::ClusterAssignment],
     blobs: &std::collections::HashMap<String, String>,
     cancel: &CancellationToken,
 ) -> RerankSummary {
     let mut summary = RerankSummary::default();
     // Cache identities already re-ranked THIS run. A single run can surface the
-    // same job under two URL variants (the cluster/merge pass that collapses
-    // them runs later, in `record_run`), and both derive the SAME
-    // `autopilot_job_id` — so the second would burn a top-N slot to recompute a
-    // score the first already produced. Same guard, same reason, as
-    // `run_notes_loop`'s `seen_this_run`.
+    // same job under two URL variants (the merge that collapses them runs
+    // later, in `record_run`), and both derive the SAME `autopilot_job_id` — so
+    // the second would burn a top-N slot to recompute a score the first already
+    // produced. Same guard, same reason, as `run_notes_loop`'s `seen_this_run`.
+    // Cross-BOARD duplicates (different urls, different keys, one cluster) are
+    // collapsed by the canonical check below instead; this set is what still
+    // holds when no clustering verdicts are available.
     let mut seen_this_run: HashSet<String> = HashSet::new();
-    for job in found_jobs.iter_mut() {
+    for (i, job) in found_jobs.iter_mut().enumerate() {
         if summary.considered >= SEMANTIC_RERANK_MAX {
             break; // top-N ceiling — the hard cost bound
         }
@@ -825,13 +1005,20 @@ async fn semantic_rerank(
         if job.score.is_none() {
             continue;
         }
+        let cluster = clusters.get(i);
+        if cluster.is_some_and(|c| !c.canonical) {
+            // A cross-board duplicate. Its cluster's canonical is the row the
+            // UI shows (and the one that gets re-ranked); paying for this copy
+            // would buy a score that is never displayed.
+            continue;
+        }
         let Some(job_text) = blobs.get(&job.url).cloned() else {
             continue; // same reasoning: no phase-1 blob means nothing to score
         };
         let cache_id = autopilot_job_id(job);
         if !seen_this_run.insert(cache_id.clone()) {
             // A different URL variant of this same job already ran this pass.
-            // Checked BEFORE `charge_daily` so the duplicate also can't burn the
+            // Checked BEFORE `env.score` so the duplicate also can't burn the
             // shared per-provider ceiling.
             continue;
         }
@@ -840,20 +1027,19 @@ async fn semantic_rerank(
             summary.degraded += 1;
             break; // stopped by the user — the keyword score stands
         }
-        if let Err(e) = env.charge_daily() {
-            log::info!("[autopilot] semantic re-rank stopped at daily ceiling: {e}");
-            summary.degraded += 1;
-            break;
-        }
         match env.score(&cache_id, job_text).await {
-            Some(combined) => {
+            RerankOutcome::Scored(combined) => {
                 job.score = Some(combined);
                 job.score_source = ScoreSource::Combined;
                 summary.rescored += 1;
             }
             // Per-job degrade: keep the keyword score and the `Keyword` label,
             // keep going. One offline embed must not cost the whole run.
-            None => summary.degraded += 1,
+            RerankOutcome::Degraded => summary.degraded += 1,
+            RerankOutcome::BudgetExhausted => {
+                summary.degraded += 1;
+                break;
+            }
         }
     }
     log::info!(
@@ -947,14 +1133,23 @@ fn is_better_representative(a: &FoundJob, b: &FoundJob) -> bool {
 /// keep-unscored behavior. So a below-bar copy survives when a cluster-mate
 /// scores well (it still carries a source chip + salary), and a weak member can
 /// now "hide" behind a strong one — a deliberate loosening.
+///
+/// Returns the retained jobs together with THEIR clustering verdicts, in the
+/// same order. The verdicts are computed here anyway, and phase 2 needs them to
+/// spend one embed per cluster (on the member the UI will display) rather than
+/// one per board copy — the alternative, clustering a second time downstream,
+/// could disagree with this pass.
 fn cluster_aware_retain(
     found_jobs: Vec<FoundJob>,
     threshold: f64,
     tombstones: &HashSet<(String, String)>,
     extra_agency: &[String],
-) -> Vec<FoundJob> {
+) -> (
+    Vec<FoundJob>,
+    Vec<crate::scraping::cluster::ClusterAssignment>,
+) {
     if found_jobs.is_empty() {
-        return found_jobs;
+        return (found_jobs, Vec::new());
     }
     let inputs = crate::autopilot::found_job_cluster_inputs(&found_jobs);
     let assignments = crate::scraping::cluster::assign_clusters(inputs, tombstones, extra_agency);
@@ -972,22 +1167,20 @@ fn cluster_aware_retain(
         }
     }
 
-    // A cluster passes iff its representative passes the per-member gate.
-    let passing: HashSet<&str> = rep_by_cluster
+    // A cluster passes iff its representative passes the per-member gate. Owned
+    // ids: `assignments` is consumed by the zip below (its verdicts travel out
+    // with the retained rows), so this set must not borrow from it.
+    let passing: HashSet<String> = rep_by_cluster
         .iter()
         .filter(|(_, &idx)| passes_min_score(&found_jobs[idx], threshold))
-        .map(|(&cid, _)| cid)
+        .map(|(&cid, _)| cid.to_string())
         .collect();
 
     found_jobs
         .into_iter()
-        .zip(assignments.iter())
-        .filter_map(|(job, assignment)| {
-            passing
-                .contains(assignment.cluster_id.as_str())
-                .then_some(job)
-        })
-        .collect()
+        .zip(assignments)
+        .filter(|(_, assignment)| passing.contains(&assignment.cluster_id))
+        .unzip()
 }
 
 /// Recompute + persist cluster annotations for one autopilot record after a

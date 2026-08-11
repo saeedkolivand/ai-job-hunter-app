@@ -323,6 +323,10 @@ const R2_ALLOW: &[&str] = &[
     "reminder_scheduler.rs",
     "cover_letter/research/mod.rs",
     "documents/mod.rs",
+    // Same store, split only to stay under R8's LOC cap: the connection-bound
+    // SQL of the hot match path, including the `spawn_blocking` offload its
+    // async wrappers share. Inherits `documents/mod.rs`'s entry above.
+    "documents/sql.rs",
     "pipeline/mod.rs",
     "platform/config.rs", // sole owner: resolves the data dir from the AppHandle at bootstrap
     "platform/accent_watcher.rs", // Windows live-accent watcher: holds the AppHandle + emits SYSTEM_ACCENT_CHANGED from the WinRT ColorValuesChanged callback (bootstrap shell-reach, like platform/config.rs). TODO(arch): inject an emitter port.
@@ -386,6 +390,10 @@ const R3_ALLOW: &[&str] = &[
     // `repair_pre_pdf_text_string_mojibake` migration body. Persistence
     // still lives entirely inside the `documents` domain store.
     "documents/mojibake_repair.rs",
+    // Same store, same reason: the connection-bound SQL of the hot match path,
+    // split out so `documents/mod.rs` stays under R8's LOC cap. Every query it
+    // holds was moved verbatim from that file.
+    "documents/sql.rs",
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
