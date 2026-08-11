@@ -2,7 +2,7 @@
 
 import { truncateResume } from '../../context-manager/index.js';
 import { marketLanguageFit } from '../../locale/index.js';
-import { type PromptTarget, resolveProfile } from '../../provider/index.js';
+import { type PromptDepth, type PromptTarget, resolveProfile } from '../../provider/index.js';
 import {
   type ApplicantPreferences,
   buildApplicantDetailsBlock,
@@ -72,11 +72,14 @@ Write the letter in ${targetLanguage}, but follow ${c.country} cover-letter etiq
  * shared across every depth so the letter always reads like a person wrote it.
  * Takes the target output language so the anti-AI-tell ruleset is the curated
  * one for that language (see {@link antiAiTellProse}), not an English list
- * silently injected into every locale.
+ * silently injected into every locale, and the resolved `depth` so the `brief`
+ * path carries the checked-ban core instead of the full construction catalog
+ * (25.0% of the brief letter prompt as shipped on `main`, and 47.8% had the
+ * expanded catalog landed undifferentiated; it is 20.9% now).
  */
-function buildLetterVoice(language?: string): string {
+function buildLetterVoice(language?: string, depth: PromptDepth = 'full'): string {
   return `VOICE: write like a real person, not a keyword optimizer.
-${antiAiTellProse(language)}
+${antiAiTellProse(language, depth)}
 ${HUMANIZE_PROSE}
 - First person, warm but professional: the candidate talking, not a brochure or a requirements list.
 - Connection over coverage: 2 to 3 things said well beat ten requirements name-dropped. If a sentence reads like a spec sheet, rewrite it.`;
@@ -210,7 +213,7 @@ export function buildCoverLetterSystemPrompt(
 ): string {
   const { depth } = resolveProfile(target);
   const register = `${letterRegister(mode)}\n${toneDirective(tone)}`;
-  const voice = buildLetterVoice(language);
+  const voice = buildLetterVoice(language, depth);
   if (depth === 'task') return buildCoverLetterSystemTaskBrief(mode, register, voice, hasBrief);
   if (depth !== 'brief') {
     return buildCoverLetterSystemFull(mode, register, voice, language, hasStyleReference, hasBrief);

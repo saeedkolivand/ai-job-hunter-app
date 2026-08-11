@@ -41,17 +41,39 @@
  * 10. FORCED SPECIFICS     — the cover-letter system prompt requires concrete
  *                            resume/job-ad-grounded specifics and a non-generic
  *                            opening hook.
+ * 14. CATALOG SHAPE        — every lexicon array is unique, lowercase, trimmed,
+ *                            dash-free and apostrophe-free (the matcher is a
+ *                            literal comparison, so a curly-apostrophe document
+ *                            would silently miss an ASCII-apostrophe entry).
+ * 15. NO-AI-SLOP TIERING   — the `no-ai-slop` catalog's résumé-plausible words
+ *                            and construction rules reach the PROMPT and stay
+ *                            OUT of the validated arrays; the high-precision
+ *                            fixed phrases are in both; German gained no
+ *                            translated English tell.
+ * 16. DEPTH-AWARE TIER     — `brief` carries exactly the bans a deterministic
+ *                            validator check verifies; the judgement/
+ *                            construction rules are `full`/`task` only. Every
+ *                            validated lexicon entry is still spelled out at
+ *                            BRIEF depth (or the checker would be stricter
+ *                            than the instruction it verifies).
  */
 
 import { describe, expect, it } from 'vitest';
 
+import type { PromptTarget } from '../../provider/index.js';
+import { buildApplicationEmailPrompt } from '../application-email/index.js';
 import {
   buildApplicationAnswerPrompt,
   buildApplicationAnswerSystemPrompt,
 } from '../application-questions/index.js';
 import { buildCoverLetterPrompt, buildCoverLetterSystemPrompt } from '../cover-letter/index.js';
+import {
+  buildLikelyQuestionsSystemPrompt,
+  buildStarFeedbackSystemPrompt,
+} from '../interview-practice/index.js';
+import { buildInterviewQuestionsSystemPrompt } from '../interview-questions/index.js';
 import type { GenerationMeta } from '../modes/index.js';
-import { buildReferralPrompt } from '../referral/index.js';
+import { buildReferralImprovePrompt, buildReferralPrompt } from '../referral/index.js';
 import { buildResumeSystemPrompt } from '../resume/index.js';
 import { buildRewritePrompt } from '../rewrite/index.js';
 import {
@@ -64,6 +86,7 @@ import {
   HUMANIZE_LEXICAL,
   HUMANIZE_PROSE,
   TEMPLATE_OPENERS_DE,
+  TEMPLATE_OPENERS_EN,
   toneDirective,
 } from './natural-voice.js';
 
@@ -921,6 +944,10 @@ describe('construction-dependent prose rules: kept in the prompt, absent from th
   it('every surviving EN entry is a phrase the prompt bans wherever it appears', () => {
     expect(AI_TELL_PROSE_WORDS_EN).toEqual([
       'it is important to note',
+      "it's important to note",
+      'it is worth noting',
+      "it's worth noting",
+      "in today's world",
       'generally speaking',
       'with that in mind',
       'building on this',
@@ -959,5 +986,812 @@ describe('construction-dependent prose rules: kept in the prompt, absent from th
     ]) {
       expect(LETTER_DE_PROMPT).toContain(rule);
     }
+  });
+});
+
+// ─── 14. CATALOG SHAPE ────────────────────────────────────────────────────────
+// Every array here is generated verbatim into `lexicon.rs` and compared against
+// `flattened_lower` text (lowercased, whitespace-collapsed, punctuation
+// UNTOUCHED) with a word boundary at both ends. Each rule below is a way an
+// entry can be silently DEAD rather than wrong, which is the failure mode a
+// list like this actually has (the German inflection bug, PR #963 R4-F5).
+
+describe('lexicon arrays — shape rules that keep an entry from being silently dead', () => {
+  const ARRAYS = {
+    AI_TELL_LEXICAL_WORDS_EN,
+    AI_TELL_LEXICAL_WORDS_DE,
+    AI_TELL_PROSE_WORDS_EN,
+    AI_TELL_PROSE_WORDS_DE,
+    TEMPLATE_OPENERS_EN,
+    TEMPLATE_OPENERS_DE,
+  } as const;
+
+  for (const [name, entries] of Object.entries(ARRAYS)) {
+    describe(name, () => {
+      it('has no duplicate entry', () => {
+        expect([...new Set(entries)]).toEqual([...entries]);
+      });
+
+      it('is lowercase and trimmed (the haystack is lowercased before matching)', () => {
+        for (const entry of entries) {
+          expect(entry).toBe(entry.toLowerCase());
+          expect(entry).toBe(entry.trim());
+          expect(entry.length).toBeGreaterThan(0);
+        }
+      });
+
+      it('contains no em- or en-dash (self-consistency with the dash ban)', () => {
+        for (const entry of entries) expect(entry).not.toMatch(/[—–]/);
+      });
+
+      // A model writes the typographic apostrophe (U+2019) about as often as
+      // the ASCII one. `voice.rs::ai_tell_issues` folds U+2019 onto U+0027
+      // before matching, so an ASCII-apostrophe entry now catches BOTH
+      // spellings — but a U+2019 entry catches NEITHER (the haystack no longer
+      // contains that character at all). The ban is therefore on the curly
+      // form only, and it is a hard one: such an entry is silently dead.
+      it('carries no typographic apostrophe (U+2019) — the matcher folds it away', () => {
+        for (const entry of entries) expect(entry).not.toMatch(/’/);
+      });
+
+      // `flattened_lower` collapses every whitespace run to a single space, so
+      // a two-space entry can never match anything.
+      it('has no double internal space (the haystack collapses whitespace runs)', () => {
+        for (const entry of entries) expect(entry).not.toMatch(/ {2}/);
+      });
+
+      // Matching requires a non-word character (or string edge) on both sides.
+      // An entry that STARTS with punctuation therefore demands a non-word char
+      // before that punctuation, which real text almost never provides.
+      it('starts with a word character (a leading punctuation char cannot match)', () => {
+        for (const entry of entries) expect(entry).toMatch(/^[\p{L}\p{N}]/u);
+      });
+    });
+  }
+
+  it('no phrase is listed in both the lexical and the prose tier of one language', () => {
+    for (const [lexical, prose] of [
+      [AI_TELL_LEXICAL_WORDS_EN, AI_TELL_PROSE_WORDS_EN],
+      [AI_TELL_LEXICAL_WORDS_DE, AI_TELL_PROSE_WORDS_DE],
+    ] as const) {
+      expect(prose.filter((entry) => (lexical as readonly string[]).includes(entry))).toEqual([]);
+    }
+  });
+});
+
+// ─── 15. NO-AI-SLOP TIERING ──────────────────────────────────────────────────
+// The `no-ai-slop` pattern catalog was curated into three dispositions, and the
+// disposition IS the decision worth pinning: a later "this word is obviously an
+// AI tell, add it to the array" has to argue with the reason instead of with an
+// absence. See `AI_TELL_LEXICAL_WORDS_EN`'s doc for the four-part test.
+
+describe('no-ai-slop catalog — validated tier (fixed form, zero factual content)', () => {
+  const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  it.each(['multifaceted', 'ever-evolving', 'paradigm shift', 'meticulous', 'widely regarded as'])(
+    '%j is checked by the validator AND spelled out in the résumé prompt',
+    (entry) => {
+      expect(AI_TELL_LEXICAL_WORDS_EN).toContain(entry);
+      expect(RESUME_EN.toLowerCase()).toContain(entry);
+    }
+  );
+
+  it('"it is worth noting" is a PROSE-tier entry: letters only, never a résumé bullet', () => {
+    expect(AI_TELL_PROSE_WORDS_EN).toContain('it is worth noting');
+    expect(AI_TELL_LEXICAL_WORDS_EN).not.toContain('it is worth noting');
+    expect(LETTER_EN.toLowerCase()).toContain('it is worth noting');
+    expect(RESUME_EN.toLowerCase()).not.toContain('it is worth noting');
+  });
+
+  // The contraction spellings used to be excluded for a MECHANICAL reason: the
+  // matcher normalized case and whitespace but not punctuation, so an ASCII
+  // apostrophe missed every U+2019 document. `voice.rs::ai_tell_issues` now
+  // folds U+2019 onto U+0027 before matching, which makes an apostrophe entry
+  // whole instead of half-dead — so the twins are checked rather than skipped.
+  it.each(["it's worth noting", "it's important to note"])(
+    'contraction twin %j is checked now that the matcher folds apostrophes',
+    (entry) => {
+      expect(AI_TELL_PROSE_WORDS_EN).toContain(entry);
+      // Its expanded twin is checked too: a model writes both.
+      expect(AI_TELL_PROSE_WORDS_EN).toContain(entry.replace("it's", 'it is'));
+    }
+  );
+
+  // Same promotion, same reason: the phrase is a fixed form with zero factual
+  // content and the prompt bans it outright, and it is now MATCHABLE. It is
+  // prose tier, not lexical, because its ban lives in the letter-register
+  // filler line (an ATS bullet cannot contain it).
+  it('"in today\'s world" is a checked PROSE-tier entry, banned in the letter prompt only', () => {
+    expect(AI_TELL_PROSE_WORDS_EN).toContain("in today's world");
+    expect(AI_TELL_LEXICAL_WORDS_EN).not.toContain("in today's world");
+    expect(LETTER_EN.toLowerCase()).toContain("in today's world");
+    expect(RESUME_EN.toLowerCase()).not.toContain("in today's world");
+  });
+
+  // The DE twin was already validated (German spells it without an
+  // apostrophe), so this closes the asymmetry the first pass recorded.
+  it('the German twin of "in today\'s world" stays validated and untranslated', () => {
+    expect(AI_TELL_LEXICAL_WORDS_DE).toContain('in der heutigen zeit');
+    expect(AI_TELL_LEXICAL_WORDS_DE).toContain('in der heutigen welt');
+    expect(AI_TELL_PROSE_WORDS_DE).not.toContain("in today's world");
+  });
+
+  it('"meticulous" joins the promotional family "detail-oriented" already belongs to', () => {
+    // Banning one synonym and not the other is an incoherent catalog, which is
+    // the whole argument for this entry.
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain('detail-oriented');
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain('meticulous');
+  });
+});
+
+describe('no-ai-slop catalog — prompt-guidance tier (instructed, never validated)', () => {
+  const RESUME_EN = buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en');
+  const LETTER_EN = buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en');
+
+  const isValidated = (word: string) =>
+    AI_TELL_LEXICAL_WORDS_EN.includes(word) || AI_TELL_PROSE_WORDS_EN.includes(word);
+
+  // Words that name something a real candidate really DID. Flagging one tells a
+  // truthful user their own work reads as machine-written, so the model is told
+  // to prefer the plain verb and the checker never sees them.
+  it.each(['utilize', 'facilitate', 'supercharge', 'embark'])(
+    'résumé-plausible verb %j is prompt-only',
+    (word) => {
+      expect(isValidated(word)).toBe(false);
+      expect(RESUME_EN.toLowerCase()).toContain(word);
+    }
+  );
+
+  // "beacon" is the domain-collision case: a BLE/iBeacon fleet is real
+  // infrastructure a real engineer really shipped.
+  it('"beacon" is prompt-only because it has a real technical meaning', () => {
+    expect(isValidated('beacon')).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain('beacon');
+  });
+
+  // Same rule-4 failure, found on the second pass: "transformative learning"
+  // (Mezirow, the standard L&D curriculum term) and "transformative justice"
+  // (social work) are NAMED FIELDS, not decoration. A candidate who ran either
+  // programme cannot write their own job title without tripping the checker.
+  it('"transformative" is prompt-only: it names real fields in L&D and social work', () => {
+    expect(isValidated('transformative')).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain('transformative');
+  });
+
+  // Rule 4 again, third pass, and the variant that motivated naming PROPER
+  // NOUNS in the rule: Paramount Global / Pictures / Network are real
+  // employers, and `ai_tell_issues`' per-phrase exemption reads only the source
+  // RÉSUMÉ — never the job ad — so a letter addressed to Paramount was told the
+  // employer's own name is an AI tell. Same exit "transformative" took.
+  it('"paramount" is prompt-only: it is a real employer name the exemption cannot see', () => {
+    expect(isValidated('paramount')).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain('paramount');
+  });
+
+  // Fillers a truthful human writes constantly. Zero factual content, but a
+  // Warning reading "this is an AI tell" on one of them is the trust cost.
+  // These two are lexical-tier register, so they reach the résumé prompt too.
+  it.each(['game changer', 'many argue'])('conversational filler %j is prompt-only', (phrase) => {
+    expect(isValidated(phrase)).toBe(false);
+    expect(RESUME_EN.toLowerCase()).toContain(phrase);
+  });
+
+  // Letter register, and PROSE-tier since the guidance-tier split: none of
+  // these can occur in an ATS bullet, so banning them in the résumé prompt was
+  // ~120 characters of dead instruction per generation.
+  it.each([
+    'at the end of the day',
+    'when it comes to',
+    'at its core',
+    'in terms of',
+    'with regard to',
+    'going forward',
+    'in conclusion',
+    'as you can see',
+    'the key point is',
+    'in other words',
+  ])('letter-register filler %j is prompt-only and letter-only', (phrase) => {
+    expect(isValidated(phrase)).toBe(false);
+    expect(LETTER_EN.toLowerCase()).toContain(phrase);
+    expect(RESUME_EN.toLowerCase()).not.toContain(phrase);
+  });
+
+  // Redundant rather than rejected: the single word already fires, so adding
+  // the phrase would report ONE span twice.
+  it.each([
+    ['stands as a testament', 'testament'],
+    ['marks a pivotal moment', 'pivotal'],
+    ['plays a vital role', 'vital'],
+  ])('puffery phrase %j is prompt-only because %j already fires on it', (phrase, word) => {
+    expect(isValidated(phrase)).toBe(false);
+    expect(AI_TELL_LEXICAL_WORDS_EN).toContain(word);
+    expect(RESUME_EN.toLowerCase()).toContain(phrase);
+  });
+
+  it.each([
+    ['binary contrast', "the question isn't X, it's Y"],
+    ['negative listing', 'Not a X. Not a Y. A Z.'],
+    ['throat-clearing opener', "Here's the thing"],
+    ['faux-insight setup', 'What most people get wrong'],
+    ['rhetorical setup', 'What if I told you'],
+    ['self-answered question', 'a question you immediately answer yourself'],
+    ['colon reveal', 'The best part: it learns'],
+    ['dramatic fragmentation', "That's it. That's the whole thing."],
+    ['synonym cycling', 'synonym cycling'],
+    ['fake-profound kicker', 'fake-profound kicker'],
+    ['summary-recap ending', 'In conclusion'],
+    ['formatting slop', 'Formatting follows the content'],
+  ])('the %s construction reaches the cover-letter prompt as prose (%j)', (_name, anchor) => {
+    expect(LETTER_EN).toContain(anchor);
+  });
+
+  it.each([
+    ['portability test', 'PORTABILITY TEST'],
+    ['show-do-not-tell', 'SHOW, DO NOT TELL'],
+    ['plain verbs', 'Plain verbs beat bloated ones'],
+    ['empty adverbs', 'Cut empty adverbs'],
+    ['importance puffery', 'No importance puffery'],
+  ])('the %s rule reaches the résumé prompt too (%j)', (_name, anchor) => {
+    expect(RESUME_EN).toContain(anchor);
+  });
+
+  // Constraint from the module doc: the English catalog grew, German did not.
+  // A translated English tell in the German list bans phrasing no German writer
+  // produces and misses the real KI-Floskeln.
+  it('the German arrays gained no translated English tell', () => {
+    for (const english of [
+      'paramount',
+      'multifaceted',
+      'ever-evolving',
+      'paradigm shift',
+      'meticulous',
+      'widely regarded as',
+      'it is worth noting',
+    ]) {
+      expect(AI_TELL_LEXICAL_WORDS_DE).not.toContain(english);
+      expect(AI_TELL_PROSE_WORDS_DE).not.toContain(english);
+    }
+    // "robust" is in BOTH curated lists, and legitimately so: it is a tell a
+    // German-language model really produces, arrived at on German evidence
+    // rather than carried across. That is the distinction this test draws.
+    expect(AI_TELL_LEXICAL_WORDS_DE).toContain('robust');
+    // The DE prose tier is still empty for its own documented reason.
+    expect(AI_TELL_PROSE_WORDS_DE).toEqual([]);
+  });
+});
+
+// ─── 16. DEPTH-AWARE GUIDANCE TIER ───────────────────────────────────────────
+// The whole anti-AI-tell ruleset used to be appended undifferentiated at every
+// depth. Measured against `main`, the block was 25.0% of the BRIEF cover-letter
+// prompt and 22.3% of the BRIEF résumé prompt; the expanded catalog would have
+// taken those to 47.8% and ~42% had it shipped undifferentiated. Either way it
+// is style rules on the one path whose model has the least room to apply them.
+// The split is by VERIFIABILITY, which is also the honesty rule: `brief` keeps
+// every line a deterministic check will verify (so the validator is never
+// stricter than the instruction it exists to verify, at any depth) and drops
+// the judgement calls a small model cannot act on anyway.
+
+describe('depth-aware anti-AI-tell tier (brief vs full/task)', () => {
+  /** Lines that back a `voice.*` check — must survive at EVERY depth. */
+  const CHECKED_LEXICAL = [
+    'Drop AI-vocabulary',
+    'No promotional / inflated self-adjectives',
+    'No vague attributions / weasel words',
+    'Cut filler phrases',
+  ];
+  /** Judgement calls — `full`/`task` only. */
+  const GUIDANCE_LEXICAL = [
+    'Drop these too, unless the word is genuinely the subject',
+    'More weasel attribution',
+    'No importance puffery',
+    'Plain verbs beat bloated ones',
+    'Cut empty adverbs',
+    'PORTABILITY TEST',
+    'SHOW, DO NOT TELL',
+  ];
+  const CHECKED_PROSE = [
+    'EM-DASH HARD BAN', // voice.em_dash_overuse
+    'No rule-of-three', // voice.rule_of_three_density
+    // The prose array, reported under voice.ai_tell_lexical like the lexical
+    // one ("in today's world", "it is worth noting"). There is no prose CODE.
+    'Delete these outright',
+  ];
+  /** Constructions a substring check cannot judge — `full`/`task` only. */
+  const GUIDANCE_PROSE = [
+    'Cut the stock connectives',
+    'Never tell the reader what to notice',
+    'Vary sentence length and rhythm',
+    'No negative parallelisms',
+    'No superficial "-ing" openers or tails',
+    'No throat-clearing, faux-insight, or rhetorical setups',
+    'No colon reveals',
+    'No stacked punchy fragments',
+    'No fake-profound kicker',
+    'Formatting follows the content',
+    'No passive voice where active is natural',
+    'Concrete over abstract',
+  ];
+
+  describe('full / task / default are the same complete text', () => {
+    it.each(['full', 'task'] as const)('antiAiTellLexical("en", %j) is the full block', (depth) => {
+      expect(antiAiTellLexical('en', depth)).toBe(antiAiTellLexical('en'));
+    });
+
+    it.each(['full', 'task'] as const)('antiAiTellProse("en", %j) is the full block', (depth) => {
+      expect(antiAiTellProse('en', depth)).toBe(antiAiTellProse('en'));
+    });
+  });
+
+  describe('brief keeps the checked bans and drops the judgement rules', () => {
+    const briefLexical = antiAiTellLexical('en', 'brief');
+    const fullLexical = antiAiTellLexical('en');
+    const briefProse = antiAiTellProse('en', 'brief');
+    const fullProse = antiAiTellProse('en');
+
+    it.each(CHECKED_LEXICAL)('brief lexical keeps %j (a validated ban)', (anchor) => {
+      expect(briefLexical).toContain(anchor);
+    });
+
+    it.each(GUIDANCE_LEXICAL)('brief lexical drops %j (a judgement call)', (anchor) => {
+      expect(fullLexical).toContain(anchor);
+      expect(briefLexical).not.toContain(anchor);
+    });
+
+    it.each(CHECKED_PROSE)('brief prose keeps %j (it backs a voice.* check)', (anchor) => {
+      expect(briefProse).toContain(anchor);
+    });
+
+    it.each(GUIDANCE_PROSE)('brief prose drops %j (a construction rule)', (anchor) => {
+      expect(fullProse).toContain(anchor);
+      expect(briefProse).not.toContain(anchor);
+    });
+
+    it('brief is a strict SUBSET of full: no wording invented for the small path', () => {
+      for (const line of briefLexical.split('\n')) expect(fullLexical).toContain(line);
+      for (const line of briefProse.split('\n')) expect(fullProse).toContain(line);
+    });
+
+    it('brief composes prose on top of the SAME brief lexical core', () => {
+      expect(briefProse).toContain(briefLexical);
+      expect(briefProse.length).toBeGreaterThan(briefLexical.length);
+    });
+
+    it('brief is materially smaller than full (the point of the split)', () => {
+      expect(briefLexical.length).toBeLessThan(fullLexical.length * 0.6);
+      expect(briefProse.length).toBeLessThan(fullProse.length * 0.5);
+    });
+
+    it('brief stays dash-free like every other block', () => {
+      expect(briefLexical).not.toMatch(/[—–]/);
+      expect(briefProse).not.toMatch(/[—–]/);
+    });
+  });
+
+  describe('per-surface budget: the guidance tier stops dominating the small path', () => {
+    // Bounds, not exact sizes, so ordinary rewording does not churn the test —
+    // but ratcheted to just above the measured value so a regression that
+    // re-adds a tier's worth of text fails. Measured: 20.9% (letter, 25.0% on
+    // `main`) and 22.8% (résumé, 22.3% on `main`).
+    it('the anti-tell block is a quarter of the BRIEF cover-letter prompt at most', () => {
+      const prompt = buildCoverLetterSystemPrompt('recruiter', BRIEF_TARGET, undefined, 'en');
+      const block = antiAiTellProse('en', 'brief');
+      expect(prompt).toContain(block);
+      expect(block.length / prompt.length).toBeLessThan(0.25);
+    });
+
+    it('the anti-tell block is a quarter of the BRIEF résumé prompt at most', () => {
+      const prompt = buildResumeSystemPrompt('ats', BRIEF_TARGET, undefined, 'en');
+      const block = antiAiTellLexical('en', 'brief');
+      expect(prompt).toContain(block);
+      expect(block.length / prompt.length).toBeLessThan(0.25);
+    });
+
+    it('the FULL prompts still carry the complete block (depth is wired, not hardcoded)', () => {
+      expect(buildCoverLetterSystemPrompt('recruiter', FULL_TARGET, undefined, 'en')).toContain(
+        antiAiTellProse('en')
+      );
+      expect(buildResumeSystemPrompt('ats', FULL_TARGET, undefined, 'en')).toContain(
+        antiAiTellLexical('en')
+      );
+      expect(buildCoverLetterSystemPrompt('recruiter', TASK_TARGET, undefined, 'en')).toContain(
+        antiAiTellProse('en')
+      );
+      expect(buildResumeSystemPrompt('ats', TASK_TARGET, undefined, 'en')).toContain(
+        antiAiTellLexical('en')
+      );
+    });
+  });
+
+  // The reason the split is by verifiability and not by "what looks least
+  // important": the Rust validator runs on the OUTPUT, and knows nothing about
+  // which depth produced it. A ban that survives in the lexicon but not in the
+  // brief prompt is a Warning the model was never told about on that path.
+  describe('every validated entry is still spelled out at BRIEF depth', () => {
+    const RESUME_BRIEF = buildResumeSystemPrompt('ats', BRIEF_TARGET, undefined, 'en');
+    const LETTER_BRIEF = buildCoverLetterSystemPrompt('recruiter', BRIEF_TARGET, undefined, 'en');
+    /**
+     * The same two folds the checker applies, so a mismatch here can only ever
+     * mean "the prompt does not ban this entry" and never "the two spell the
+     * apostrophe differently":
+     *
+     * 1. U+2019 -> U+0027, exactly what `voice.rs::ai_tell_issues` (and
+     *    `template_opener_issues`) do before matching. Without it an entry like
+     *    "in today's world" fails the moment a prompt line is written with a
+     *    typographic apostrophe — a spelling failure wearing a missing-ban
+     *    failure's clothes.
+     * 2. The its/it-is class: the arrays deliberately carry BOTH spellings
+     *    ("it's worth noting" is its own entry because a full-phrase match
+     *    cannot cross the contraction), while the prompt spells the pair out
+     *    once, expanded.
+     */
+    const normalize = (s: string) => s.toLowerCase().replace(/’/g, "'").replace(/it's/g, 'it is');
+    const bannedBy = (prompt: string, entry: string) =>
+      normalize(prompt).includes(normalize(entry));
+
+    // Mutation-visible on its own: drop either fold and one direction breaks.
+    // The curly renderings stand in for a future prompt (or lexicon) line typed
+    // with the apostrophe a word processor inserts.
+    const curly = (s: string) => s.replace(/'/g, '’');
+
+    it.each(AI_TELL_PROSE_WORDS_EN.filter((entry) => entry.includes("'")))(
+      'apostrophe-bearing entry %j matches whichever apostrophe either side spells',
+      (entry) => {
+        expect(bannedBy(LETTER_BRIEF, entry)).toBe(true);
+        expect(bannedBy(curly(LETTER_BRIEF), entry)).toBe(true);
+        expect(bannedBy(LETTER_BRIEF, curly(entry))).toBe(true);
+        expect(bannedBy(curly(LETTER_BRIEF), curly(entry))).toBe(true);
+      }
+    );
+
+    it.each(AI_TELL_LEXICAL_WORDS_EN)(
+      'lexical entry %j is banned by the BRIEF résumé prompt',
+      (entry) => {
+        expect(bannedBy(RESUME_BRIEF, entry)).toBe(true);
+      }
+    );
+
+    it.each(AI_TELL_LEXICAL_WORDS_EN)(
+      'lexical entry %j is banned by the BRIEF cover-letter prompt',
+      (entry) => {
+        expect(bannedBy(LETTER_BRIEF, entry)).toBe(true);
+      }
+    );
+
+    it.each(AI_TELL_PROSE_WORDS_EN)(
+      'prose entry %j is banned by the BRIEF cover-letter prompt',
+      (entry) => {
+        expect(bannedBy(LETTER_BRIEF, entry)).toBe(true);
+      }
+    );
+  });
+
+  // The REVERSE direction of the honesty invariant above, and the half that was
+  // missing: "every validated entry is spelled out at brief" says nothing about
+  // phrases the CHECKED tier ships that NO check will ever verify. Ten of the
+  // twelve phrases the two CHECKED prose lines quoted were never validated (and
+  // this file's own section-15 cases classify nine of them as prompt-guidance),
+  // so the small path was paying for judgement calls a 3B model cannot act on
+  // while the tier's stated rule said otherwise.
+  //
+  // These read the SHIPPED brief block rather than the private constants, so
+  // they measure what a small model actually receives.
+  describe('nothing in the BRIEF tier is a phrase no check will ever verify', () => {
+    const briefLexical = antiAiTellLexical('en', 'brief');
+    const briefProse = antiAiTellProse('en', 'brief');
+    const VALIDATED = new Set<string>([...AI_TELL_LEXICAL_WORDS_EN, ...AI_TELL_PROSE_WORDS_EN]);
+
+    /**
+     * Every double-quoted phrase in a block, minus the REPLACEMENTS a
+     * `"in order to" -> "to"` pair also quotes (those are the plain word to
+     * reach for, not a ban). Split on the quote character rather than matched
+     * with a regex: odd-indexed segments are the quoted ones, and the segment
+     * before each says whether an arrow introduced it.
+     *
+     * That "odd-indexed" rule is only true while every line closes the quotes
+     * it opens, so the parity of the split is checked before it is trusted. One
+     * missing quote silently swaps the two halves of the line from there on:
+     * the prose between two bans becomes a "ban" (and fails against the lexicon
+     * for the wrong reason) while the real bans become prose and go unchecked.
+     * A parser that guesses is worse than one that stops.
+     */
+    const quotedBans = (block: string): string[] => {
+      const bans: string[] = [];
+      for (const line of block.split('\n')) {
+        const parts = line.split('"');
+        if (parts.length % 2 === 0) {
+          throw new Error(
+            `unbalanced double quotes (${parts.length - 1}, expected an even count) in the ` +
+              `BRIEF block line ${JSON.stringify(line)} — every quoted ban after it would be ` +
+              `parsed as prose and silently stop being checked. Fix the quoting, not this test.`
+          );
+        }
+        for (let i = 1; i < parts.length; i += 2) {
+          if ((parts[i - 1] ?? '').trimEnd().endsWith('->')) continue;
+          bans.push((parts[i] ?? '').toLowerCase());
+        }
+      }
+      return bans;
+    };
+
+    it('the quoted-ban parser refuses an unbalanced line instead of mis-parsing it', () => {
+      const unbalanced = '- Delete these outright: "in today\'s world, "it is worth noting".';
+      expect(() => quotedBans(unbalanced)).toThrow(/unbalanced double quotes \(3,/);
+      // The balanced form of the same line parses, so the guard rejects the
+      // defect and not the shape.
+      expect(
+        quotedBans('- Delete these outright: "in today\'s world", "it is worth noting".')
+      ).toEqual(["in today's world", 'it is worth noting']);
+    });
+
+    /** The comma-separated word list a `- <label>: a, b, c.` line bans. */
+    const listedBans = (block: string, label: string): string[] => {
+      const line = block.split('\n').find((l) => l.startsWith(label));
+      if (!line) throw new Error(`no BRIEF line starts with ${JSON.stringify(label)}`);
+      return (line.slice(label.length).split('. ')[0] ?? '')
+        .replace(/\.$/, '')
+        .split(',')
+        .map((w) => w.trim().toLowerCase())
+        .filter(Boolean);
+    };
+
+    it('every phrase the BRIEF block QUOTES as a ban is a validated lexicon entry', () => {
+      // briefProse composes briefLexical, so dedupe before reporting.
+      const quoted = [...new Set([...quotedBans(briefLexical), ...quotedBans(briefProse)])];
+      expect(quoted.length).toBeGreaterThan(4); // the parser found something
+      expect(quoted.filter((phrase) => !VALIDATED.has(phrase))).toEqual([]);
+    });
+
+    it.each(['- Drop AI-vocabulary: ', '- No promotional / inflated self-adjectives: '])(
+      'every word the BRIEF line %j LISTS is a validated lexicon entry',
+      (label) => {
+        const listed = listedBans(briefLexical, label);
+        expect(listed.length).toBeGreaterThan(3);
+        expect(listed.filter((word) => !VALIDATED.has(word))).toEqual([]);
+      }
+    );
+
+    // The behavioural half: the exact phrases section 15 pins as prompt-only
+    // must not reach the small path at all. Belt and braces with the two
+    // mechanical rules above — a future CHECKED line in a shape neither parser
+    // recognises still fails here.
+    const GUIDANCE_CLASSIFIED = [
+      'utilize',
+      'facilitate',
+      'supercharge',
+      'embark',
+      'beacon',
+      'transformative',
+      'paramount',
+      'game changer',
+      'many argue',
+      'at the end of the day',
+      'when it comes to',
+      'at its core',
+      'in terms of',
+      'with regard to',
+      'going forward',
+      'in conclusion',
+      'as you can see',
+      'the key point is',
+      'this distinction matters',
+      'in other words',
+      'stands as a testament',
+      'marks a pivotal moment',
+      'plays a vital role',
+    ];
+
+    it.each(GUIDANCE_CLASSIFIED)(
+      'guidance-classified phrase %j never reaches the BRIEF block',
+      (phrase) => {
+        expect(briefLexical.toLowerCase()).not.toContain(phrase);
+        expect(briefProse.toLowerCase()).not.toContain(phrase);
+      }
+    );
+
+    it.each(GUIDANCE_CLASSIFIED)(
+      'guidance-classified phrase %j is still instructed at FULL depth',
+      (phrase) => {
+        const full = `${antiAiTellProse('en')}\n${antiAiTellLexical('en')}`.toLowerCase();
+        expect(full).toContain(phrase);
+      }
+    );
+  });
+
+  // German is curated on German evidence, and which German lines a small model
+  // can apply is a question only German evidence answers (see the module doc's
+  // follow-up). Until that evidence exists, DE and the generic directive are
+  // depth-invariant rather than guessed at.
+  describe('non-English rulesets are depth-invariant', () => {
+    it.each(['brief', 'task', 'full'] as const)('de is unchanged at %j depth', (depth) => {
+      expect(antiAiTellLexical('de', depth)).toBe(antiAiTellLexical('de'));
+      expect(antiAiTellProse('de', depth)).toBe(antiAiTellProse('de'));
+    });
+
+    it('a generic locale is unchanged at brief depth', () => {
+      expect(antiAiTellLexical('fr', 'brief')).toBe(antiAiTellLexical('fr'));
+      expect(antiAiTellProse('fr', 'brief')).toBe(antiAiTellProse('fr'));
+    });
+  });
+});
+
+// ─── 17. BOLD-BAN SCOPE ──────────────────────────────────────────────────────
+// The shared prose block's formatting rule used to read "no bold sprinkled
+// mid-sentence for emphasis" — an UNQUALIFIED ban, landing above four letter
+// instructions that require bolding 3 to 4 job-ad keywords. That bolding is a
+// real downstream feature (the exporter/parser consumes the `**`), so the two
+// rules have to coexist: the ban is scoped to DECORATIVE bold, and the
+// requirement survives at every depth.
+
+describe('bold: the decorative ban and the job-ad-keyword requirement coexist', () => {
+  const DEPTHS = [
+    ['brief (small)', BRIEF_TARGET],
+    ['task (cli)', TASK_TARGET],
+    ['full (large)', FULL_TARGET],
+  ] as const;
+  /** The unqualified wording that contradicted the output rules. */
+  const UNQUALIFIED_BOLD_BAN = 'no bold sprinkled mid-sentence';
+  /** The scoped replacement — a ban that names its own exception. */
+  const SCOPED_BOLD_BAN = 'no decorative bold';
+
+  it.each(DEPTHS)('the letter prompt still requires job-ad-keyword bolding at %s', (_l, target) => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', target, undefined, 'en');
+    expect(prompt).toMatch(/3 to 4 job-ad keywords/);
+    expect(prompt).toMatch(/\*\*/);
+  });
+
+  it.each(DEPTHS)('the letter prompt carries no unqualified bold ban at %s', (_l, target) => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', target, undefined, 'en');
+    expect(prompt).not.toContain(UNQUALIFIED_BOLD_BAN);
+  });
+
+  // Only `task`/`full` carry a bold ban at all (the guidance tier is where the
+  // formatting rule lives), so those are the only depths where "the ban names
+  // its exception" is a claim with content. The earlier version of this ran
+  // over all three depths behind an `if (!/\bbold\b/)` guard that could never
+  // fire — the letter's own "Bold only 3 to 4 job-ad keywords" rule contains
+  // the word — and then did nothing at `brief`, where `scoped` is false.
+  const BAN_BEARING_DEPTHS = [
+    ['task (cli)', TASK_TARGET],
+    ['full (large)', FULL_TARGET],
+  ] as const;
+
+  it.each(BAN_BEARING_DEPTHS)(
+    'at %s the bold ban and the bolding requirement are both present and compatible',
+    (_l, target) => {
+      const prompt = buildCoverLetterSystemPrompt('recruiter', target, undefined, 'en');
+      expect(prompt).toContain(SCOPED_BOLD_BAN);
+      expect(prompt).toMatch(/no decorative bold beyond the .*job-ad keywords/);
+      expect(prompt).toMatch(/3 to 4 job-ad keywords/);
+    }
+  );
+
+  it('the BRIEF letter prompt carries no bold BAN at all, only the bolding rule', () => {
+    const prompt = buildCoverLetterSystemPrompt('recruiter', BRIEF_TARGET, undefined, 'en');
+    expect(prompt).not.toContain(SCOPED_BOLD_BAN);
+    expect(prompt).not.toContain(UNQUALIFIED_BOLD_BAN);
+    expect(prompt).toMatch(/3 to 4 job-ad keywords/);
+  });
+
+  it('the résumé prompt keeps its own keyword-emphasis rule unopposed', () => {
+    for (const target of [BRIEF_TARGET, TASK_TARGET, FULL_TARGET]) {
+      const prompt = buildResumeSystemPrompt('ats', target, undefined, 'en');
+      expect(prompt).not.toContain(UNQUALIFIED_BOLD_BAN);
+      expect(prompt).toMatch(/\*\*double asterisks\*\*|\*\*bold\*\*/);
+    }
+  });
+
+  // Every OTHER prose surface composes the same block, and none of them asks
+  // for bold — the scoped wording has to stay true there too (it does: those
+  // prompts require no bold, so "beyond what the output rules ask for" is zero).
+  it('the shared prose block never states the ban unqualified', () => {
+    expect(antiAiTellProse('en')).not.toContain(UNQUALIFIED_BOLD_BAN);
+    expect(antiAiTellProse('en')).toContain(SCOPED_BOLD_BAN);
+  });
+});
+
+// ─── 18. THE DEPTH TIER REACHES EVERY SURFACE ────────────────────────────────
+// Section 16 proves the BLOCK is depth-aware. That is only half the wiring: a
+// surface that calls `antiAiTellProse()` with no depth silently gets `full`,
+// so the guidance tier reached five prose surfaces at EVERY depth even after
+// the split (referral generate + improve, application answers, interview
+// questions, likely questions, STAR feedback, inline rewrite). A brief referral
+// connection note carried a 4200-character style block for a 3-sentence output.
+//
+// One case per surface, both directions asserted, so dropping any single
+// surface's threading fails that surface's own pin rather than a shared one.
+
+describe('depth reaches every surface that composes the anti-AI-tell block', () => {
+  /** Judgement lines the `full`/`task` tier adds — absent at `brief`. */
+  const PROSE_GUIDANCE_ANCHOR = 'No colon reveals';
+  const LEXICAL_GUIDANCE_ANCHOR = 'PORTABILITY TEST';
+
+  const REFERRAL_PARAMS = {
+    personName: 'Alex Kim',
+    companyName: 'Acme',
+    jobTitle: 'Senior Engineer',
+    resume: STUB_RESUME,
+    format: 'connection_note' as const,
+  };
+  const IMPROVE_PARAMS = {
+    ...REFERRAL_PARAMS,
+    draft: 'Hi Alex, I saw the Senior Engineer role at Acme and wondered if you might refer me.',
+    instruction: 'make it warmer',
+  };
+  const REWRITE_PARAMS = {
+    selection: 'I built the settlement ledger.',
+    instruction: 'tighten it',
+    before: 'At Acme I worked on payments. ',
+    after: ' It still runs nightly.',
+  };
+
+  const EMAIL_PARAMS = {
+    resume: STUB_RESUME,
+    jobAd: 'Acme is hiring a Senior Engineer to scale the settlement platform.',
+    meta: {
+      resumeLanguage: 'en',
+      jobAdLanguage: 'en',
+      mismatch: false,
+      candidateName: 'Jane Dev',
+      jobTitle: 'Senior Engineer',
+      companyName: 'Acme',
+      targetLanguage: 'en',
+      topRequirements: ['Rust', 'payments'],
+    } satisfies GenerationMeta,
+  };
+
+  /** Every prose surface, as a builder taking only the provider target. */
+  const PROSE_SURFACES: ReadonlyArray<readonly [string, (target: PromptTarget) => string]> = [
+    ['referral (generate)', (t) => buildReferralPrompt(REFERRAL_PARAMS, t).system],
+    ['referral (improve)', (t) => buildReferralImprovePrompt(IMPROVE_PARAMS, t).system],
+    ['application answers', (t) => buildApplicationAnswerSystemPrompt(undefined, 'en', t)],
+    // Absent from this list until round 4: the block was composed in the `full`
+    // branch only, so threading `depth` had nothing to tier on the other two.
+    ['application email', (t) => buildApplicationEmailPrompt(EMAIL_PARAMS, t).system],
+    ['interview questions', (t) => buildInterviewQuestionsSystemPrompt('en', t)],
+    ['likely interview questions', (t) => buildLikelyQuestionsSystemPrompt(t)],
+    ['STAR feedback', (t) => buildStarFeedbackSystemPrompt(t)],
+    [
+      'inline rewrite (cover-letter span)',
+      (t) => buildRewritePrompt({ ...REWRITE_PARAMS, docType: 'cover-letter' }, t).system,
+    ],
+    [
+      'inline rewrite (application-answer span)',
+      (t) => buildRewritePrompt({ ...REWRITE_PARAMS, docType: 'application-answer' }, t).system,
+    ],
+    [
+      'inline rewrite (email span)',
+      (t) => buildRewritePrompt({ ...REWRITE_PARAMS, docType: 'email' }, t).system,
+    ],
+  ];
+
+  it.each(PROSE_SURFACES)('%s keeps the checked core at BRIEF depth', (_name, build) => {
+    expect(build(BRIEF_TARGET)).toContain(PROSE_EMDASH_BAN);
+    expect(build(BRIEF_TARGET)).toContain(LEXICAL_ANCHOR);
+  });
+
+  it.each(PROSE_SURFACES)('%s drops the construction guidance at BRIEF depth', (_name, build) => {
+    expect(build(FULL_TARGET)).toContain(PROSE_GUIDANCE_ANCHOR);
+    expect(build(BRIEF_TARGET)).not.toContain(PROSE_GUIDANCE_ANCHOR);
+  });
+
+  it.each(PROSE_SURFACES)('%s composes the brief block verbatim at BRIEF depth', (_name, build) => {
+    expect(build(BRIEF_TARGET)).toContain(antiAiTellProse('en', 'brief'));
+    expect(build(FULL_TARGET)).toContain(antiAiTellProse('en'));
+  });
+
+  // The résumé-tier rewrite span takes the LEXICAL block, so it has its own
+  // anchor — same wiring, different tier.
+  it('the inline rewrite of a RÉSUMÉ span is depth-aware on the lexical tier', () => {
+    const build = (t: PromptTarget) =>
+      buildRewritePrompt({ ...REWRITE_PARAMS, docType: 'resume' }, t).system;
+    expect(build(FULL_TARGET)).toContain(LEXICAL_GUIDANCE_ANCHOR);
+    expect(build(BRIEF_TARGET)).not.toContain(LEXICAL_GUIDANCE_ANCHOR);
+    expect(build(BRIEF_TARGET)).toContain(antiAiTellLexical('en', 'brief'));
+    expect(build(FULL_TARGET)).toContain(antiAiTellLexical('en'));
+  });
+
+  it.each(PROSE_SURFACES)('%s is materially smaller at BRIEF than at FULL', (_name, build) => {
+    expect(build(BRIEF_TARGET).length).toBeLessThan(build(FULL_TARGET).length);
   });
 });
