@@ -69,7 +69,6 @@ export TURBO_FORCE=1
 # diff against the merge-base with origin/main. Any failure → FULL gate.
 ZERO=0000000000000000000000000000000000000000
 CHANGED=""
-RANGES=""
 HAVE_RANGE=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   if [ -z "${local_sha:-}" ] || [ "$local_sha" = "$ZERO" ]; then
@@ -87,7 +86,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     range="$remote_sha..$local_sha"
   fi
   files=$(git diff --name-only "$range" 2>/dev/null || true)
-  RANGES="$RANGES $range"
   CHANGED="$CHANGED
 $files"
   HAVE_RANGE=1
@@ -124,7 +122,7 @@ if [ -z "${PREPUSH_FULL:-}" ] && [ "$HAVE_RANGE" -eq 1 ]; then
     && ! printf '%s\n' "$own_files" | grep -qvE "$DOCS_ALLOW" \
     && ! printf '%s\n' "$own_files" | grep -qE "$DOCS_DENY"; then
     n=$(printf '%s\n' "$own_files" | grep -c .)
-    echo "▶ Path filter: DOCS/META fast path (${n} files — branch is docs/meta only; skipping build/typecheck/test + rust + AI review). PREPUSH_FULL=1 forces the full gate."
+    echo "▶ Path filter: DOCS/META fast path (${n} files — branch is docs/meta only; skipping build/typecheck/test + rust). PREPUSH_FULL=1 forces the full gate."
     if printf '%s\n' "$own_files" | grep -qE '^\.claude/|^CLAUDE\.md$'; then
       echo "▶ Checking agent-system drift..."
       node scripts/check-agent-system.mjs
@@ -295,17 +293,9 @@ if [ -n "$RUST" ]; then
   cd "$GIT_ROOT"
 fi
 
-# ── AI review of the push range (ADR-0008) ─────────────────────────────────────
-# Deterministic findings (ast-grep) block from day one; LLM findings are in
-# RATCHET warn mode (REVIEW_MODE=block to enforce). REVIEW_SKIP=1 skips but is
-# AUDITED in .claude/.review-metrics.jsonl — prefer it over --no-verify, which
-# silently skips this whole gate.
-if [ -n "${REVIEW_SKIP:-}" ]; then
-  echo "⚠ REVIEW_SKIP=1 — AI pre-push review skipped (audited)."
-  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs --log-skip || true
-else
-  echo "▶ AI review of push range..."
-  PREPUSH_RANGES="$RANGES" node scripts/pre-push-review.mjs
-fi
+# AI review of the push range was removed 2026-08-11 (owner decision): it was
+# the slowest step (~3 min LLM round-trip) and the internal pre-PR review chain
+# + CodeRabbit + CI cover the same ground. scripts/pre-push-review.mjs remains
+# for the Stop-gate cache tooling it shares via .claude/hooks/review-lib.mjs.
 
 echo "✓ Pre-push gate complete"
