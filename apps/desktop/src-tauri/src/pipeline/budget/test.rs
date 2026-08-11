@@ -94,36 +94,11 @@ fn every_shipped_budget_is_internally_consistent() {
     }
 }
 
-// `AGENT_PREP` must still fit the prep flow's fixed sequence, and
-// `RESUME_QUALITY` must still fit a full section list. Both relations are
-// between compile-time constants, so they are asserted at COMPILE time — a
-// budget shrunk past what its flow needs fails the BUILD rather than waiting
-// for the test binary. (A runtime `assert!` on two consts is also what clippy's
-// `assertions_on_constants` correctly objects to.) The prompt-side half of the
-// agent arithmetic lives in `agent::flows`; this is the budget-side half.
-
-/// 8 fixed tool turns + 1 rationed optional quality call + 1 `validate_resume`
-/// re-check after a fix.
-const PREP_WORST_CASE_TOOL_CALLS: usize = 10;
-/// ...plus a planning turn and a closing-summary turn.
-const PREP_WORST_CASE_TURNS: usize = PREP_WORST_CASE_TOOL_CALLS + 2;
-
-const _: () = assert!(
-    Budget::AGENT_PREP.max_steps > PREP_WORST_CASE_TURNS,
-    "AGENT_PREP.max_steps must leave slack above the 12-turn prep worst case"
-);
-const _: () = assert!(
-    Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
-    "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
-);
-const _: () = assert!(
-    Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
-    "a run that exhausts its tool calls must still have turns left to summarize"
-);
-const _: () = assert!(
-    Budget::RESUME_QUALITY.max_steps > DEFAULT_MAX_SECTIONS,
-    "RESUME_QUALITY.max_steps must fit one step per section plus the framing stages"
-);
+// The budget-arithmetic relations (`max_steps` above the prep worst case,
+// `max_tool_calls` below `max_steps`, `RESUME_QUALITY.max_steps` above the
+// section count) are `const _: () = assert!(…)` items in `budget.rs` itself, NOT
+// tests here: `#[cfg(test)]` code is not compiled by `cargo build --release`, so
+// an assert placed in this file could never have failed a build.
 
 /// The résumé pipeline runs no tools; zero is the deliberate bound, so a stage
 /// that starts calling tools has to justify raising it rather than inheriting

@@ -159,6 +159,42 @@ impl Budget {
     };
 }
 
+// ── Compile-time budget relations ────────────────────────────────────────────
+//
+// `AGENT_PREP` must still fit the prep flow's fixed sequence, and
+// `RESUME_QUALITY` must still fit a full section list. Both relations are
+// between compile-time constants, so they are asserted at COMPILE time: a budget
+// shrunk past what its flow needs fails `cargo build`, not merely `cargo test`.
+// They live HERE rather than in the `test` child for exactly that reason —
+// `#[cfg(test)]` code is never compiled by a release build, so the same asserts
+// under `mod test` would have made the "fails the build" claim false. (A runtime
+// `assert!` on two consts is also what clippy's `assertions_on_constants`
+// correctly objects to.) The prompt-side half of the agent arithmetic lives in
+// `agent::flows`; this is the budget-side half.
+
+/// 8 fixed tool turns + 1 rationed optional quality call + 1 `validate_resume`
+/// re-check after a fix.
+const PREP_WORST_CASE_TOOL_CALLS: usize = 10;
+/// ...plus a planning turn and a closing-summary turn.
+const PREP_WORST_CASE_TURNS: usize = PREP_WORST_CASE_TOOL_CALLS + 2;
+
+const _: () = assert!(
+    Budget::AGENT_PREP.max_steps > PREP_WORST_CASE_TURNS,
+    "AGENT_PREP.max_steps must leave slack above the 12-turn prep worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
+    "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
+);
+const _: () = assert!(
+    Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
+    "a run that exhausts its tool calls must still have turns left to summarize"
+);
+const _: () = assert!(
+    Budget::RESUME_QUALITY.max_steps > DEFAULT_MAX_SECTIONS,
+    "RESUME_QUALITY.max_steps must fit one step per section plus the framing stages"
+);
+
 /// Sections one document run may produce.
 ///
 /// A résumé has a conventional shape — summary, experience, education, skills,

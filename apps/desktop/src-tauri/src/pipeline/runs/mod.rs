@@ -4,9 +4,14 @@
 //! [`crate::db::open`], so WAL + busy_timeout per ADR-022):
 //!
 //! * `pipeline_runs` — one row per run: identity, what it was run against, how
-//!   it ended, and a free-form `metrics_json` blob.
+//!   it ended, and a free-form but CLAMPED `metrics_json` blob (see
+//!   [`METRICS_CAP_BYTES`]).
 //! * `pipeline_run_events` — the ordered per-stage trail of one run, each event
 //!   carrying a CLAMPED `artifact_json` (see [`ARTIFACT_CAP_BYTES`]).
+//!
+//! **Both free-form JSON columns are capped on BOTH paths** — at the write site
+//! and again on import — so neither a runaway stage nor a hand-edited backup can
+//! persist a multi-megabyte row.
 //!
 //! **`kind` is the discriminator, not the table name.** This store is also the
 //! future home of agent runs: an agent run and a résumé-pipeline run have the
@@ -14,7 +19,8 @@
 //! share the tables and differ by `kind`. A second near-identical store is the
 //! drift this codebase keeps re-discovering.
 //!
-//! **Retention is newest-N-per-job**, not a global cap — see [`Self::prune`].
+//! **Retention is newest-N per `(job_url, kind)`**, not a global cap — see
+//! [`PipelineRunStore::prune`].
 //!
 //! Wired like every other durable store: [`crate::data_store::DataStore`] for
 //! backup/restore, `Resettable` for the factory reset (registered in
@@ -32,7 +38,7 @@ use crate::data_store::DataStore;
 use crate::db::{run_migrations, ts_from_db, ts_to_db, Migration};
 use crate::error::{AppError, AppResult};
 
-/// Byte cap on ONE event's `artifact_json`.
+/// Byte cap on ONE event's `artifact_json`, MARKER INCLUDED.
 ///
 /// An artifact is a stage SUMMARY — counts, section keys, a stopped reason —
 /// never the generated document, so 16 KiB is roughly two orders of magnitude
@@ -41,20 +47,42 @@ use crate::error::{AppError, AppResult};
 /// otherwise write a multi-megabyte row per stage, for every stage, forever.
 /// Oversized values are TRUNCATED (never dropped) so the trail still shows the
 /// stage ran — see [`clamp_artifact`], which cuts on a UTF-8 boundary and
-/// appends [`ARTIFACT_TRUNCATION_MARKER`] so a reader can tell.
+/// appends [`TRUNCATION_MARKER`] so a reader can tell.
+///
+/// The marker is charged AGAINST the cap, not added on top of it: a cap that a
+/// clamped value can exceed is not a cap.
 pub const ARTIFACT_CAP_BYTES: usize = 16 * 1024;
 
-/// Appended to a clamped artifact so truncation is visible rather than silent.
-/// Deliberately not valid JSON: a truncated artifact is NOT a parseable
-/// artifact, and a reader that tries must fail rather than read half an object
-/// as a whole one.
-pub const ARTIFACT_TRUNCATION_MARKER: &str = "…[truncated]";
+/// Byte cap on ONE run's `metrics_json`, MARKER INCLUDED — the run-level twin
+/// of [`ARTIFACT_CAP_BYTES`].
+///
+/// Smaller because the payload is smaller: run metrics are counts and durations
+/// (token totals, per-stage milliseconds), never text. 4 KiB fits hundreds of
+/// numeric fields while still bounding a caller that hands the recorder
+/// something it should not have — and, on the import path, a hand-edited backup
+/// that would otherwise restore a multi-megabyte row permanently.
+pub const METRICS_CAP_BYTES: usize = 4 * 1024;
 
-/// Runs kept per `job_url`. Three is "the current one plus the two you might
-/// want to compare it against": run history is a debugging aid, and the fourth
-/// attempt at the same posting has never been the interesting one. Pruning is
-/// per-job rather than global so a user who runs one job repeatedly cannot
-/// evict every other job's history.
+/// Appended to a clamped JSON column so truncation is visible rather than
+/// silent. Deliberately not valid JSON: a truncated value is NOT a parseable
+/// value, and a reader that tries must fail rather than read half an object as a
+/// whole one.
+pub const TRUNCATION_MARKER: &str = "…[truncated]";
+
+// A cap smaller than the marker it reserves room for would underflow the clamp's
+// body budget. Compile-time, so shrinking a cap past its marker fails the BUILD.
+const _: () = assert!(ARTIFACT_CAP_BYTES > TRUNCATION_MARKER.len());
+const _: () = assert!(METRICS_CAP_BYTES > TRUNCATION_MARKER.len());
+
+/// Runs kept per `(job_url, kind)`. Three is "the current one plus the two you
+/// might want to compare it against": run history is a debugging aid, and the
+/// fourth attempt at the same posting has never been the interesting one.
+///
+/// The partition is per posting AND per [`RunRow::kind`], not global: a user who
+/// runs one job repeatedly cannot evict every other job's history, and — since
+/// these tables host every staged run — three résumé runs cannot evict the same
+/// posting's agent-run trail. `kind` is this module's first-class discriminator,
+/// so it discriminates retention too.
 pub const RETENTION_RUNS_PER_JOB: usize = 3;
 
 /// One recorded run.
@@ -62,8 +90,8 @@ pub const RETENTION_RUNS_PER_JOB: usize = 3;
 #[serde(rename_all = "camelCase")]
 pub struct RunRow {
     pub id: String,
-    /// The posting this run was for — also the retention key (see
-    /// [`PipelineRunStore::prune`]).
+    /// The posting this run was for — half of the retention key, the other half
+    /// being [`Self::kind`] (see [`PipelineRunStore::prune`]).
     pub job_url: String,
     /// Which kind of run this is (`"resume"`, `"agent"`, …). The discriminator
     /// that lets one pair of tables host every staged run.
@@ -80,7 +108,8 @@ pub struct RunRow {
     /// three) needs no migration and an older bundle still restores.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_reason: Option<String>,
-    /// Free-form run metrics as a JSON object string (token counts, durations).
+    /// Free-form run metrics as a JSON object string (token counts, durations),
+    /// clamped to [`METRICS_CAP_BYTES`] at every write.
     #[serde(default = "empty_json_object")]
     pub metrics_json: String,
 }
@@ -105,23 +134,37 @@ fn empty_json_object() -> String {
     "{}".to_string()
 }
 
-/// Clamp an artifact to [`ARTIFACT_CAP_BYTES`], cutting on a UTF-8 character
-/// boundary and marking the cut.
+/// Clamp one free-form JSON column to `cap` BYTES INCLUSIVE of the truncation
+/// marker, cutting on a UTF-8 character boundary and marking the cut.
 ///
 /// Byte-based (not char-based) because the cap protects the DB file, and a
 /// char-based cap on multi-byte text bounds nothing useful — a 16k-char CJK
 /// artifact is 48 KB. Pure, so the boundary arithmetic is directly testable.
-pub fn clamp_artifact(artifact: &str) -> String {
-    if artifact.len() <= ARTIFACT_CAP_BYTES {
-        return artifact.to_string();
+///
+/// The marker's own length is RESERVED out of the cap, so the returned string is
+/// never longer than `cap`. Both call sites pass a cap larger than the marker
+/// (asserted at compile time above), so the subtraction cannot underflow.
+fn clamp_json(value: &str, cap: usize) -> String {
+    if value.len() <= cap {
+        return value.to_string();
     }
-    // Walk back to the last char boundary at or below the cap so the result is
-    // always valid UTF-8 (`String` cannot hold anything else).
-    let mut end = ARTIFACT_CAP_BYTES;
-    while end > 0 && !artifact.is_char_boundary(end) {
+    // Walk back to the last char boundary at or below the body budget so the
+    // result is always valid UTF-8 (`String` cannot hold anything else).
+    let mut end = cap - TRUNCATION_MARKER.len();
+    while end > 0 && !value.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}{ARTIFACT_TRUNCATION_MARKER}", &artifact[..end])
+    format!("{}{TRUNCATION_MARKER}", &value[..end])
+}
+
+/// Clamp one event's `artifact_json` to [`ARTIFACT_CAP_BYTES`].
+pub fn clamp_artifact(artifact: &str) -> String {
+    clamp_json(artifact, ARTIFACT_CAP_BYTES)
+}
+
+/// Clamp one run's `metrics_json` to [`METRICS_CAP_BYTES`].
+pub fn clamp_metrics(metrics: &str) -> String {
+    clamp_json(metrics, METRICS_CAP_BYTES)
 }
 
 pub struct PipelineRunStore {
@@ -137,8 +180,14 @@ impl PipelineRunStore {
         name: "create_pipeline_runs",
         up: |conn| {
             conn.execute_batch(
+                // `id TEXT PRIMARY KEY` alone is NOT enough: SQLite permits NULL
+                // in a TEXT PRIMARY KEY (the historical INTEGER-PRIMARY-KEY
+                // exemption, kept for backwards compatibility), and ONE null-id
+                // row turns any `NOT IN (SELECT id FROM pipeline_runs)` sweep
+                // into a permanent silent no-op. `NOT NULL` closes that hole at
+                // the schema; `Self::prune`'s NOT EXISTS closes it again in SQL.
                 "CREATE TABLE IF NOT EXISTS pipeline_runs (
-                    id             TEXT PRIMARY KEY,
+                    id             TEXT PRIMARY KEY NOT NULL,
                     job_url        TEXT NOT NULL,
                     kind           TEXT NOT NULL,
                     depth          TEXT NOT NULL,
@@ -176,6 +225,10 @@ impl PipelineRunStore {
     /// Insert (or replace) a run row. Replace semantics so a terminal update is
     /// the same call as the initial insert — one code path, and a crash between
     /// the two leaves a `running` row rather than nothing.
+    ///
+    /// `metrics_json` is clamped HERE — at the single write site — exactly as
+    /// [`append_event`](Self::append_event) clamps `artifact_json`, so no caller
+    /// can bypass [`METRICS_CAP_BYTES`] by forgetting to.
     pub fn upsert_run(&self, run: &RunRow) -> AppResult<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -192,7 +245,7 @@ impl PipelineRunStore {
                 ts_to_db(run.started_at),
                 run.finished_at.map(ts_to_db),
                 run.stopped_reason,
-                run.metrics_json,
+                clamp_metrics(&run.metrics_json),
             ],
         )
         .map_err(|e| AppError::Storage(e.to_string()))?;
@@ -256,8 +309,8 @@ impl PipelineRunStore {
         )
     }
 
-    /// Keep only the newest [`RETENTION_RUNS_PER_JOB`] runs per `job_url`,
-    /// deleting the evicted runs' events with them.
+    /// Keep only the newest [`RETENTION_RUNS_PER_JOB`] runs per
+    /// `(job_url, kind)`, deleting the evicted runs' events with them.
     ///
     /// Called from the ADR-019 performance-tier hook
     /// (`commands::system::system_set_performance_mode`) alongside the cache
@@ -265,10 +318,14 @@ impl PipelineRunStore {
     /// deliberately ignores the tier's `cacheTtlSecs`/`cacheMaxRows` knobs: a
     /// run trail is USER HISTORY, not a cache, so the low-memory tier must not
     /// be able to silently delete the run a user is still looking at. The bound
-    /// is the fixed per-job count instead.
+    /// is the fixed per-`(job_url, kind)` count instead.
     ///
-    /// Best-effort and transactional: a failure logs and leaves the table
-    /// exactly as it was, never half-pruned.
+    /// Best-effort and transactional: the statements are SEQUENCED and the first
+    /// failure returns WITHOUT committing, so the `Transaction`'s drop rolls the
+    /// whole thing back and the tables are left exactly as they were, never
+    /// half-pruned. (Evaluating all three results before matching on them would
+    /// commit the partial work — the arm claiming "leaving history intact" would
+    /// have run after the commit that did not.)
     ///
     /// Reports through [`crate::observability::Span`], not a bare `log::info!`.
     /// That is not style: `log::info!`'s implicit target is the module it is
@@ -288,37 +345,54 @@ impl PipelineRunStore {
                 return;
             }
         };
-        // Rank each run within its own job_url newest-first and delete past N.
-        // One statement, so a job with thousands of runs is still one pass.
-        let evicted = tx.execute(
+        // Rank each run within its own (job_url, kind) newest-first and delete
+        // past N. One statement, so a job with thousands of runs is still one
+        // pass. `kind` is in the partition because these tables host every
+        // staged run: without it, three résumé runs would evict the same
+        // posting's agent-run history.
+        let evicted = match tx.execute(
             "DELETE FROM pipeline_runs WHERE id IN (
                  SELECT id FROM (
                      SELECT id, ROW_NUMBER() OVER (
-                         PARTITION BY job_url ORDER BY started_at DESC, id DESC
+                         PARTITION BY job_url, kind ORDER BY started_at DESC, id DESC
                      ) AS rn
                      FROM pipeline_runs
                  ) WHERE rn > ?1
              )",
             params![RETENTION_RUNS_PER_JOB as i64],
-        );
+        ) {
+            Ok(runs) => runs,
+            Err(e) => {
+                // Return WITHOUT committing: dropping `tx` rolls back.
+                log::warn!("[pipeline] run-store prune failed, leaving history intact: {e}");
+                span.end(false);
+                return;
+            }
+        };
         // Events are keyed by run_id with no FK (SQLite leaves those off by
         // default), so the orphan sweep is explicit. Written as "no matching
         // run" rather than "the ids we just deleted" so it also collects rows
-        // orphaned by any earlier partial delete.
-        let orphans = tx.execute(
+        // orphaned by any earlier partial delete. NOT EXISTS rather than
+        // `NOT IN`: `NOT IN` against a subquery containing a NULL is never TRUE
+        // for any row, so a single null-id run would silently disable the sweep
+        // forever (the schema's `NOT NULL` is the first line of that defense).
+        let orphans = match tx.execute(
             "DELETE FROM pipeline_run_events
-             WHERE run_id NOT IN (SELECT id FROM pipeline_runs)",
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM pipeline_runs r WHERE r.id = pipeline_run_events.run_id
+             )",
             [],
-        );
-        match (evicted, orphans, tx.commit()) {
-            (Ok(runs), Ok(events), Ok(())) => {
-                span.end_with(&format!("runs={runs} events={events}"), true);
-            }
-            (Err(e), _, _) | (_, Err(e), _) => {
-                log::warn!("[pipeline] run-store prune failed, leaving history intact: {e}");
+        ) {
+            Ok(events) => events,
+            Err(e) => {
+                log::warn!("[pipeline] run-store orphan sweep failed, leaving history intact: {e}");
                 span.end(false);
+                return;
             }
-            (_, _, Err(e)) => {
+        };
+        match tx.commit() {
+            Ok(()) => span.end_with(&format!("runs={evicted} events={orphans}"), true),
+            Err(e) => {
                 log::warn!("[pipeline] run-store prune could not commit: {e}");
                 span.end(false);
             }
@@ -406,7 +480,10 @@ impl DataStore for PipelineRunStore {
                     ts_to_db(run.started_at),
                     run.finished_at.map(ts_to_db),
                     run.stopped_reason,
-                    run.metrics_json,
+                    // Re-clamp on import, exactly like `artifact_json` below: a
+                    // hand-edited bundle must not be able to restore a row the
+                    // live write path could never have produced.
+                    clamp_metrics(&run.metrics_json),
                 ],
             )?;
         }

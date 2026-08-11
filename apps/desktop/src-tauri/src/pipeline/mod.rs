@@ -26,7 +26,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::ai_provider::{
     record_usage, resolve, AgentTurn, AiGenerateRequest, AiGenerateRequestMessage, AiProvider,
-    ChatMsg, ModelCapabilities, ProviderId, ToolSpec,
+    ChatMsg, ModelCapabilities, ProviderId, ToolSpec, Usage,
 };
 use crate::error::{AppError, AppResult};
 
@@ -420,11 +420,20 @@ impl Completer {
     /// exists to prevent (a `T` whose fields are all `Option`/`#[serde(default)]`
     /// deserializes from a half-response and reads as a clean result).
     ///
-    /// **Spend contract:** this method records usage for EVERY provider call it
-    /// makes, including the re-ask — mirroring [`complete`](Self::complete),
-    /// which is the equivalent chokepoint for non-streaming text. A re-ask is a
-    /// full second request; not charging it would under-report AI spend by
-    /// exactly the calls the user did not ask for.
+    /// **Spend contract:** EVERY provider round-trip this method makes — the
+    /// re-ask included — is first CHARGED against the shared per-provider daily
+    /// ceiling ([`crate::limits::Limiter::charge_provider_daily`], the same
+    /// chokepoint the agent's turns, the agent's tools, and `pipeline_generate`
+    /// go through) and then RECORDED against today's spend
+    /// ([`record_usage`], mirroring [`complete`](Self::complete)). The charge
+    /// happens BEFORE the request, so a call the ceiling rejects never reaches a
+    /// provider; the recording happens after, because only the response carries
+    /// the real token counts. A re-ask is a full second request: not charging it
+    /// would leave a loop the user did not ask for outside the day's cap, and
+    /// not recording it would under-report spend by exactly those calls.
+    ///
+    /// Because the charge lives HERE, a Phase-3 stage calling this must not
+    /// charge again for the same round-trip.
     pub async fn complete_json<T: DeserializeOwned>(
         &self,
         system: &str,
@@ -432,11 +441,47 @@ impl Completer {
         schema_hint: &str,
         schema: Option<&Value>,
     ) -> AppResult<T> {
-        complete_json_with(|reask| self.structured_call(system, user, schema_hint, schema, reask))
-            .await
+        complete_json_with(
+            || self.charge_daily(),
+            |reask| self.structured_call(system, user, schema_hint, schema, reask),
+            |usage| self.record_spend(usage),
+        )
+        .await
     }
 
-    /// ONE charged structured provider call for [`complete_json`](Self::complete_json).
+    /// Charge ONE provider round-trip against the shared per-provider daily
+    /// ceiling — the coarse runaway-cost backstop every other fan-out
+    /// chokepoint charges (`agent::controller`'s `LiveAgentEnv::turn`,
+    /// `agent::tools::complete_trusted`, `commands::pipeline`). Fail-closed: the
+    /// `Err` must abort the caller BEFORE the request is built.
+    ///
+    /// Resolves the managed `Arc<Limiter>` the same way
+    /// `agent::tools::complete_trusted` does; the limiter is managed
+    /// unconditionally in `lib.rs::setup`, before any command can run.
+    fn charge_daily(&self) -> AppResult<()> {
+        self.app
+            .state::<std::sync::Arc<crate::limits::Limiter>>()
+            .inner()
+            .charge_provider_daily(
+                self.provider.id().as_str(),
+                crate::limits::PROVIDER_DAILY_MAX,
+            )
+    }
+
+    /// Record ONE completed round-trip's REAL reported usage against today's
+    /// spend. Post-call by necessity: the token counts come from the response.
+    fn record_spend(&self, usage: Usage) {
+        record_usage(
+            &self.app,
+            self.provider.id().as_str(),
+            &self.model,
+            usage.input_tokens,
+            usage.output_tokens,
+            self.base_url.as_deref(),
+        );
+    }
+
+    /// ONE structured provider call for [`complete_json`](Self::complete_json).
     ///
     /// `reask` (when present) is appended to the USER slot, never the system
     /// slot: it embeds a fenced fragment of the model's own previous output,
@@ -444,6 +489,12 @@ impl Completer {
     /// parameter — the structured path resolves it from the provider's own
     /// sampling profile (`ai_provider::structured::structured_temperature`), so
     /// a JSON call never inherits a creative-writing default.
+    ///
+    /// Returns the raw text WITH the provider's reported [`Usage`] rather than
+    /// recording it here: the charge and the recording belong on the testable
+    /// side of the [`complete_json_with`] seam, since this method is exactly
+    /// what a test replaces. Spend accounting hidden inside the replaced closure
+    /// is spend accounting no test can prove happened.
     async fn structured_call(
         &self,
         system: &str,
@@ -451,7 +502,7 @@ impl Completer {
         schema_hint: &str,
         schema: Option<&Value>,
         reask: Option<String>,
-    ) -> AppResult<String> {
+    ) -> AppResult<(String, Usage)> {
         let user = match reask {
             Some(reask) => format!("{user}\n\n{reask}"),
             None => user.to_string(),
@@ -479,41 +530,52 @@ impl Completer {
             effort: None,
             intent: None,
         };
-        let (text, usage) = self
-            .provider
+        self.provider
             .complete_structured(&self.app, &req, schema_hint, schema)
-            .await?;
-        record_usage(
-            &self.app,
-            self.provider.id().as_str(),
-            &self.model,
-            usage.input_tokens,
-            usage.output_tokens,
-            self.base_url.as_deref(),
-        );
-        Ok(text)
+            .await
     }
 }
 
 /// The `AppHandle`-free core of [`Completer::complete_json`]: parse, one re-ask,
-/// hard error. `ask` performs (and charges for) ONE provider call, taking the
-/// re-ask suffix to append to the user slot — `None` on the first attempt.
+/// hard error — with the SPEND SEAM injected rather than hidden inside `ask`.
 ///
-/// Extracted so the charge counts, the single-re-ask rule, and the fenced
-/// re-ask text are unit-testable with a scripted `ask` instead of a Tauri
-/// harness this crate does not have (same seam shape as
-/// [`Completer::from_config`] and `agent::controller::run_agent`).
-pub(crate) async fn complete_json_with<T, F, Fut>(mut ask: F) -> AppResult<T>
+/// * `charge` runs BEFORE every round-trip and may refuse it (`Err` aborts
+///   without calling `ask`, so a call the daily ceiling rejects never reaches a
+///   provider).
+/// * `ask` performs ONE provider call, taking the re-ask suffix to append to the
+///   user slot (`None` on the first attempt) and returning the raw text plus the
+///   provider's reported usage.
+/// * `record` runs AFTER every completed round-trip with that usage.
+///
+/// The three are parameters, not inlined into `ask`, because `ask` is precisely
+/// what a test replaces: charging and recording done inside it would be provable
+/// only by reading the code. Here, "N round-trips ⇒ exactly N charges and N
+/// records, the re-ask included" is a unit test with no Tauri harness (the same
+/// seam shape as [`Completer::from_config`] and `agent::controller::run_agent`).
+pub(crate) async fn complete_json_with<T, C, F, Fut, R>(
+    mut charge: C,
+    mut ask: F,
+    mut record: R,
+) -> AppResult<T>
 where
     T: DeserializeOwned,
+    C: FnMut() -> AppResult<()>,
     F: FnMut(Option<String>) -> Fut,
-    Fut: std::future::Future<Output = AppResult<String>>,
+    Fut: std::future::Future<Output = AppResult<(String, Usage)>>,
+    R: FnMut(Usage),
 {
-    let first_error = match json::parse::<T>(&ask(None).await?) {
+    charge()?;
+    let (raw, usage) = ask(None).await?;
+    record(usage);
+    let first_error = match json::parse::<T>(&raw) {
         Ok(value) => return Ok(value),
         Err(e) => e,
     };
-    let raw = ask(Some(reask_prompt(&first_error))).await?;
+
+    // The re-ask is a full second request — charged and recorded like the first.
+    charge()?;
+    let (raw, usage) = ask(Some(reask_prompt(&first_error))).await?;
+    record(usage);
     json::parse::<T>(&raw).map_err(|second_error| {
         // Content-free both times (see `JsonParseError`'s Display): the reasons
         // name WHAT broke, never a fragment of the response.

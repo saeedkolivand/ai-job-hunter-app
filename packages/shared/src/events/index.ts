@@ -32,7 +32,14 @@ import { EXTENSION_BRIDGE_EVENTS } from './extensionBridge.js';
 import { JOBS_EVENTS } from './jobs.js';
 import { MENU_EVENTS } from './menu.js';
 import { NOTIFICATIONS_EVENTS } from './notifications.js';
-import { PIPELINE_EVENTS, type PipelineStageEvent, type PipelineStagePhase } from './pipeline.js';
+import {
+  isPipelineSectionKey,
+  PIPELINE_EVENTS,
+  type PipelineSectionKey,
+  type PipelineStageEvent,
+  type PipelineStagePhase,
+  SECTION_KEY_MAX_LENGTH,
+} from './pipeline.js';
 import { SCRAPE_EVENTS, type ScrapeItemEvent, type ScrapeProgressEvent } from './scrape.js';
 import { SYSTEM_EVENTS } from './system.js';
 import { UPDATER_EVENTS } from './updater.js';
@@ -91,15 +98,18 @@ export {
   BOARDS_EVENTS,
   type BoardsLoginStatusEvent,
   EXTENSION_BRIDGE_EVENTS,
+  isPipelineSectionKey,
   JOBS_EVENTS,
   MENU_EVENTS,
   NOTIFICATIONS_EVENTS,
   PIPELINE_EVENTS,
+  type PipelineSectionKey,
   type PipelineStageEvent,
   type PipelineStagePhase,
   SCRAPE_EVENTS,
   type ScrapeItemEvent,
   type ScrapeProgressEvent,
+  SECTION_KEY_MAX_LENGTH,
   SYSTEM_EVENTS,
   UPDATER_EVENTS,
 };

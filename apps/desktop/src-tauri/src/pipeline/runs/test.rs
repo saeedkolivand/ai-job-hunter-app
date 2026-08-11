@@ -6,8 +6,8 @@ use tempfile::TempDir;
 use crate::data_store::DataStore;
 
 use super::{
-    clamp_artifact, PipelineRunStore, RunEventRow, RunRow, ARTIFACT_CAP_BYTES,
-    ARTIFACT_TRUNCATION_MARKER, RETENTION_RUNS_PER_JOB,
+    clamp_artifact, clamp_metrics, PipelineRunStore, RunEventRow, RunRow, ARTIFACT_CAP_BYTES,
+    METRICS_CAP_BYTES, RETENTION_RUNS_PER_JOB, TRUNCATION_MARKER,
 };
 
 fn store() -> (TempDir, PipelineRunStore) {
@@ -130,13 +130,16 @@ fn an_artifact_at_or_below_the_cap_is_untouched() {
     assert_eq!(clamp_artifact("{}"), "{}");
 }
 
+/// The cap is INCLUSIVE of the marker: a clamped value must never be longer
+/// than the cap it was clamped to, or the cap does not mean what it says.
 #[test]
 fn an_oversized_artifact_is_truncated_and_marked() {
     let clamped = clamp_artifact(&"x".repeat(ARTIFACT_CAP_BYTES + 5_000));
-    assert!(clamped.ends_with(ARTIFACT_TRUNCATION_MARKER));
+    assert!(clamped.ends_with(TRUNCATION_MARKER));
     assert_eq!(
         clamped.len(),
-        ARTIFACT_CAP_BYTES + ARTIFACT_TRUNCATION_MARKER.len()
+        ARTIFACT_CAP_BYTES,
+        "the marker is reserved inside the cap, never added on top of it"
     );
 }
 
@@ -148,11 +151,11 @@ fn an_oversized_artifact_is_truncated_and_marked() {
 fn the_cap_cuts_on_a_utf8_boundary() {
     let multibyte = "€".repeat(ARTIFACT_CAP_BYTES); // 3× the cap in bytes
     let clamped = clamp_artifact(&multibyte);
-    assert!(clamped.ends_with(ARTIFACT_TRUNCATION_MARKER));
-    let body = clamped.trim_end_matches(ARTIFACT_TRUNCATION_MARKER);
+    assert!(clamped.ends_with(TRUNCATION_MARKER));
+    let body = clamped.trim_end_matches(TRUNCATION_MARKER);
     assert!(
-        body.len() <= ARTIFACT_CAP_BYTES,
-        "the body must not exceed the byte cap"
+        clamped.len() <= ARTIFACT_CAP_BYTES,
+        "the clamped value, marker included, must not exceed the byte cap"
     );
     assert!(
         body.chars().all(|c| c == '€'),
@@ -170,10 +173,66 @@ fn append_event_clamps_at_the_write_site() {
         .unwrap();
 
     let stored = &store.events_for_run("run-1")[0].artifact_json;
-    assert!(stored.ends_with(ARTIFACT_TRUNCATION_MARKER));
-    assert_eq!(
-        stored.len(),
-        ARTIFACT_CAP_BYTES + ARTIFACT_TRUNCATION_MARKER.len()
+    assert!(stored.ends_with(TRUNCATION_MARKER));
+    assert_eq!(stored.len(), ARTIFACT_CAP_BYTES);
+}
+
+// ── The metrics byte cap (the run-level twin of the artifact cap) ────────────
+
+#[test]
+fn metrics_at_or_below_the_cap_are_untouched() {
+    let exact = "x".repeat(METRICS_CAP_BYTES);
+    assert_eq!(clamp_metrics(&exact), exact);
+    assert_eq!(clamp_metrics(r#"{"tokens":12}"#), r#"{"tokens":12}"#);
+}
+
+/// `metrics_json` is the OTHER free-form JSON column, and it is capped at its
+/// own write site — a stage that hands the recorder its whole model output must
+/// not be able to write a multi-megabyte run row.
+#[test]
+fn upsert_run_clamps_metrics_at_the_write_site() {
+    let (_dir, store) = store();
+    let mut r = run("run-1", "job-a", 10);
+    r.metrics_json = "m".repeat(METRICS_CAP_BYTES * 4);
+    store.upsert_run(&r).unwrap();
+
+    let stored = store.run("run-1").unwrap().metrics_json;
+    assert!(stored.ends_with(TRUNCATION_MARKER));
+    assert_eq!(stored.len(), METRICS_CAP_BYTES);
+}
+
+/// The import twin of `import_re_clamps_an_oversized_artifact`: a hand-edited
+/// backup must not be able to restore a metrics blob past the cap the live path
+/// enforces — otherwise the oversized row is permanent.
+#[test]
+fn import_re_clamps_oversized_metrics() {
+    let (_dir, store) = store();
+    let bundle = serde_json::json!({
+        "runs": [{
+            "id": "r", "jobUrl": "j", "kind": "resume", "depth": "full",
+            "status": "done", "startedAt": 1,
+            "metricsJson": "m".repeat(METRICS_CAP_BYTES * 4)
+        }],
+        "events": []
+    });
+    store.import(&bundle).unwrap();
+
+    let stored = store.run("r").unwrap().metrics_json;
+    assert!(stored.ends_with(TRUNCATION_MARKER));
+    assert_eq!(stored.len(), METRICS_CAP_BYTES);
+}
+
+/// The truncation marker is deliberately NOT valid JSON: a truncated value must
+/// FAIL a reader, never half-parse into a value that reads as complete.
+#[test]
+fn a_truncated_value_cannot_be_parsed_as_json() {
+    let clamped = clamp_metrics(&format!(
+        r#"{{"tokens":{}}}"#,
+        "9".repeat(METRICS_CAP_BYTES)
+    ));
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&clamped).is_err(),
+        "a truncated metrics blob must not parse"
     );
 }
 
@@ -229,6 +288,43 @@ fn prune_is_scoped_per_job_url() {
     );
 }
 
+/// Retention is per `(job_url, kind)`, not per `job_url` alone: `kind` is the
+/// discriminator that lets these tables host every staged run, so three résumé
+/// runs must not evict the same posting's agent-run history.
+#[test]
+fn prune_is_scoped_per_kind_within_a_job() {
+    let (_dir, store) = store();
+    for i in 0..(RETENTION_RUNS_PER_JOB as u64 + 2) {
+        store
+            .upsert_run(&run(&format!("resume-{i}"), "job-a", 1_000 + i))
+            .unwrap();
+    }
+    for i in 0..2u64 {
+        let mut agent = run(&format!("agent-{i}"), "job-a", 10 + i);
+        agent.kind = "agent".to_string();
+        store.upsert_run(&agent).unwrap();
+    }
+    store.prune();
+
+    let surviving = |kind: &str| -> usize {
+        store
+            .runs_for_job("job-a")
+            .into_iter()
+            .filter(|r| r.kind == kind)
+            .count()
+    };
+    assert_eq!(
+        surviving("resume"),
+        RETENTION_RUNS_PER_JOB,
+        "the noisy kind is still capped at its own retention"
+    );
+    assert_eq!(
+        surviving("agent"),
+        2,
+        "the other kind's history must survive a noisy neighbour of a different kind"
+    );
+}
+
 /// Idempotent and safe on an empty/already-pruned store.
 #[test]
 fn prune_is_idempotent() {
@@ -249,6 +345,87 @@ fn prune_collects_pre_existing_orphan_events() {
     assert_eq!(store.events_for_run("ghost-run").len(), 1);
     store.prune();
     assert!(store.events_for_run("ghost-run").is_empty());
+}
+
+/// The transaction is real: if the orphan sweep fails AFTER the eviction
+/// succeeded, prune must return without committing so the drop rolls both back.
+/// Injection is a dropped `pipeline_run_events` table — the cheapest way to make
+/// the SECOND statement fail while the first still succeeds.
+#[test]
+fn a_failed_sweep_rolls_back_the_eviction() {
+    let (_dir, store) = store();
+    let total = RETENTION_RUNS_PER_JOB as u64 + 2;
+    for i in 0..total {
+        store
+            .upsert_run(&run(&format!("run-{i}"), "job-a", 1_000 + i))
+            .unwrap();
+    }
+    store
+        .conn
+        .lock()
+        .execute_batch("DROP TABLE pipeline_run_events")
+        .unwrap();
+
+    store.prune();
+
+    assert_eq!(
+        store.runs_for_job("job-a").len(),
+        total as usize,
+        "a failed sweep must leave history intact — the eviction is rolled back, not committed"
+    );
+}
+
+/// The FIRST error arm: when the eviction itself fails, prune must stop there —
+/// not run the sweep and not commit. Injection is a `BEFORE DELETE` trigger that
+/// aborts, with an orphan event present that the sweep WOULD have collected: if
+/// the sweep still ran and the commit still happened, that orphan disappears
+/// while the log claims history was left intact.
+#[test]
+fn a_failed_eviction_runs_no_sweep_and_commits_nothing() {
+    let (_dir, store) = store();
+    for i in 0..(RETENTION_RUNS_PER_JOB as u64 + 2) {
+        store
+            .upsert_run(&run(&format!("run-{i}"), "job-a", 1_000 + i))
+            .unwrap();
+    }
+    store.append_event(&event("ghost", 0, "{}")).unwrap();
+    store
+        .conn
+        .lock()
+        .execute_batch(
+            "CREATE TRIGGER no_run_deletes BEFORE DELETE ON pipeline_runs
+             BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+        )
+        .unwrap();
+
+    store.prune();
+
+    assert_eq!(
+        store.events_for_run("ghost").len(),
+        1,
+        "the sweep must not run after a failed eviction, and nothing may commit"
+    );
+}
+
+/// SQLite permits NULL in a TEXT PRIMARY KEY, and one null-id run would disable
+/// the orphan sweep forever. The schema forbids it outright.
+#[test]
+fn a_null_run_id_is_rejected_by_the_schema() {
+    let (_dir, store) = store();
+    let err = store
+        .conn
+        .lock()
+        .execute(
+            "INSERT INTO pipeline_runs
+                (id, job_url, kind, depth, status, started_at, metrics_json)
+             VALUES (NULL, 'j', 'resume', 'full', 'done', 1, '{}')",
+            [],
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().to_uppercase().contains("NOT NULL"),
+        "a NULL id must violate the schema, got: {err}"
+    );
 }
 
 // ── Backup bundle (DataStore) ────────────────────────────────────────────────
@@ -342,7 +519,7 @@ fn import_re_clamps_an_oversized_artifact() {
     store.import(&bundle).unwrap();
     assert_eq!(
         store.events_for_run("r")[0].artifact_json.len(),
-        ARTIFACT_CAP_BYTES + ARTIFACT_TRUNCATION_MARKER.len()
+        ARTIFACT_CAP_BYTES
     );
 }
 

@@ -8,6 +8,7 @@ use super::cache::KvCache;
 use super::json::{JsonParseError, RawDetail};
 use super::{complete_json_with, Completer, Pipeline, Stage, StageHooks, StageInfo, StageOutcome};
 use crate::ai_config::ActiveAiConfig;
+use crate::commands::ai_provider::Usage;
 use crate::error::{AppError, AppResult};
 
 // ── Pipeline ordering / abort ───────────────────────────────────────────────────
@@ -223,13 +224,27 @@ struct Answer {
     score: u8,
 }
 
-/// A scripted `ask`: returns each canned response in order and records how many
-/// times it was CALLED (one call == one charged provider round-trip; the real
-/// `ask` records usage on every one) plus the re-ask text it was handed.
+/// A scripted spend seam: returns each canned response in order and counts the
+/// three things `complete_json_with` is contractually required to do per
+/// round-trip — CHARGE the daily ceiling, CALL the provider, RECORD the usage —
+/// plus the re-ask text it was handed. `reject_charge_at` refuses the Nth
+/// (0-based) charge, standing in for a real `AppError::RateLimited`.
 struct ScriptedAsk {
     responses: Mutex<Vec<AppResult<String>>>,
     calls: AtomicUsize,
+    charges: AtomicUsize,
+    records: Mutex<Vec<Usage>>,
+    reject_charge_at: Option<usize>,
     reasks: Mutex<Vec<Option<String>>>,
+}
+
+/// Distinct per-call usage, so `records` proves WHICH round-trip was recorded
+/// rather than merely that something was.
+fn usage(n: u32) -> Usage {
+    Usage {
+        input_tokens: n * 10,
+        output_tokens: n,
+    }
 }
 
 impl ScriptedAsk {
@@ -237,29 +252,63 @@ impl ScriptedAsk {
         Self {
             responses: Mutex::new(responses.into_iter().rev().collect()),
             calls: AtomicUsize::new(0),
+            charges: AtomicUsize::new(0),
+            records: Mutex::new(Vec::new()),
+            reject_charge_at: None,
             reasks: Mutex::new(Vec::new()),
         }
     }
-    async fn ask(&self, reask: Option<String>) -> AppResult<String> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+    fn rejecting_charge_at(mut self, index: usize) -> Self {
+        self.reject_charge_at = Some(index);
+        self
+    }
+    fn charge(&self) -> AppResult<()> {
+        let index = self.charges.fetch_add(1, Ordering::SeqCst);
+        if self.reject_charge_at == Some(index) {
+            return Err(AppError::RateLimited("daily limit reached".into()));
+        }
+        Ok(())
+    }
+    async fn ask(&self, reask: Option<String>) -> AppResult<(String, Usage)> {
+        let index = self.calls.fetch_add(1, Ordering::SeqCst);
         self.reasks.lock().push(reask);
-        self.responses
+        let text = self
+            .responses
             .lock()
             .pop()
-            .unwrap_or_else(|| Err(AppError::Message("no scripted response left".into())))
+            .unwrap_or_else(|| Err(AppError::Message("no scripted response left".into())))?;
+        Ok((text, usage(index as u32 + 1)))
     }
-    fn charges(&self) -> usize {
+    fn record(&self, u: Usage) {
+        self.records.lock().push(u);
+    }
+    /// Provider round-trips actually made.
+    fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
+    }
+    /// Charges levied against the daily ceiling.
+    fn charges(&self) -> usize {
+        self.charges.load(Ordering::SeqCst)
+    }
+    fn records(&self) -> Vec<Usage> {
+        self.records.lock().clone()
     }
 }
 
+/// Run `complete_json_with` against a script with the full three-hook seam.
+async fn run_script<T: serde::de::DeserializeOwned>(script: &ScriptedAsk) -> AppResult<T> {
+    complete_json_with(|| script.charge(), |r| script.ask(r), |u| script.record(u)).await
+}
+
 #[test]
-fn a_parseable_first_answer_charges_exactly_one_call() {
+fn a_parseable_first_answer_charges_and_records_exactly_one_call() {
     tauri::async_runtime::block_on(async {
         let script = ScriptedAsk::new(vec![Ok(r#"{"score":7}"#.to_string())]);
-        let out: Answer = complete_json_with(|r| script.ask(r)).await.unwrap();
+        let out: Answer = run_script(&script).await.unwrap();
         assert_eq!(out, Answer { score: 7 });
-        assert_eq!(script.charges(), 1, "no re-ask on the happy path");
+        assert_eq!(script.calls(), 1, "no re-ask on the happy path");
+        assert_eq!(script.charges(), 1, "one round-trip, one charge");
+        assert_eq!(script.records(), vec![usage(1)], "the usage was recorded");
         assert_eq!(script.reasks.lock().as_slice(), &[None]);
     });
 }
@@ -271,12 +320,18 @@ fn an_unparseable_answer_re_asks_once_and_succeeds() {
             Ok("Sure! Here is the score: seven.".to_string()),
             Ok(r#"{"score":7}"#.to_string()),
         ]);
-        let out: Answer = complete_json_with(|r| script.ask(r)).await.unwrap();
+        let out: Answer = run_script(&script).await.unwrap();
         assert_eq!(out, Answer { score: 7 });
+        assert_eq!(script.calls(), 2);
         assert_eq!(
             script.charges(),
             2,
             "the re-ask is a full second request and must be charged"
+        );
+        assert_eq!(
+            script.records(),
+            vec![usage(1), usage(2)],
+            "BOTH round-trips' usage is recorded, the re-ask included"
         );
         let reasks = script.reasks.lock();
         assert!(reasks[0].is_none());
@@ -296,23 +351,63 @@ fn a_second_failure_is_a_hard_error_with_no_partial_value() {
             Ok(r#"{"score":"#.to_string()), // truncated
             Ok(r#"{"score":"#.to_string()), // still truncated
         ]);
-        let out = complete_json_with::<Answer, _, _>(|r| script.ask(r)).await;
-        let err = out.unwrap_err();
-        assert_eq!(script.charges(), 2, "exactly ONE re-ask, never a third try");
+        let err = run_script::<Answer>(&script).await.unwrap_err();
+        assert_eq!(script.calls(), 2, "exactly ONE re-ask, never a third try");
+        assert_eq!(script.charges(), 2);
         let msg = err.to_string();
         assert!(msg.contains("cut off"), "both reasons are reported: {msg}");
     });
 }
 
 /// A provider/transport error is NOT a parse failure: it propagates on the
-/// first call rather than burning a re-ask on an endpoint that is down.
+/// first call rather than burning a re-ask on an endpoint that is down. The
+/// charge still happened (the request WAS made); there is no usage to record.
 #[test]
 fn a_provider_error_propagates_without_a_re_ask() {
     tauri::async_runtime::block_on(async {
         let script = ScriptedAsk::new(vec![Err(AppError::Message("endpoint down".into()))]);
-        let out = complete_json_with::<Answer, _, _>(|r| script.ask(r)).await;
-        assert!(out.is_err());
+        assert!(run_script::<Answer>(&script).await.is_err());
+        assert_eq!(script.calls(), 1);
         assert_eq!(script.charges(), 1);
+        assert!(script.records().is_empty(), "a failed call has no usage");
+    });
+}
+
+/// A call the daily ceiling REFUSES must never reach the provider — the charge
+/// is a gate, not a counter. (Mutation check: moving the charge after the call,
+/// or dropping it, makes `calls` 1 instead of 0.)
+#[test]
+fn a_rejected_charge_never_reaches_the_provider() {
+    tauri::async_runtime::block_on(async {
+        let script =
+            ScriptedAsk::new(vec![Ok(r#"{"score":7}"#.to_string())]).rejecting_charge_at(0);
+        let err = run_script::<Answer>(&script).await.unwrap_err();
+        assert!(matches!(err, AppError::RateLimited(_)), "got {err:?}");
+        assert_eq!(script.calls(), 0, "the provider must not be called");
+        assert!(script.records().is_empty());
+    });
+}
+
+/// The RE-ASK is gated too, not just the first call: a run that exhausts the
+/// ceiling mid-repair stops there. (Mutation check: delete the second
+/// `charge()?` and this test sees 2 calls instead of 1.)
+#[test]
+fn a_ceiling_reached_between_the_two_calls_stops_the_re_ask() {
+    tauri::async_runtime::block_on(async {
+        let script = ScriptedAsk::new(vec![
+            Ok("not json at all".to_string()),
+            Ok(r#"{"score":7}"#.to_string()),
+        ])
+        .rejecting_charge_at(1);
+        let err = run_script::<Answer>(&script).await.unwrap_err();
+        assert!(matches!(err, AppError::RateLimited(_)), "got {err:?}");
+        assert_eq!(script.calls(), 1, "the re-ask must not reach the provider");
+        assert_eq!(
+            script.charges(),
+            2,
+            "the refused charge was still attempted"
+        );
+        assert_eq!(script.records(), vec![usage(1)]);
     });
 }
 
