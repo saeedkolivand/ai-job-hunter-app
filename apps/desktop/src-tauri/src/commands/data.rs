@@ -480,12 +480,16 @@ mod tests {
     /// `data_import` — a key that is validated but never imported is a section
     /// that looks supported and restores nothing.
     ///
-    /// The scan matches the two ROUTING FORMS `data_import` actually uses, not a
-    /// bare quoted key: every `DataStore` goes through the
-    /// `import_into("<key>", …)` closure, and `interactions` — whose store is not
-    /// a `DataStore` — is read straight off the bundle with
-    /// `stores.get("interactions")`. A bare-key scan would be satisfied by a
+    /// The scan matches the ROUTING FORM each section actually uses, not a bare
+    /// quoted key: every `DataStore` section must go through the
+    /// `import_into("<key>", …)` closure, and `interactions` — the ONE section
+    /// whose store is not a `DataStore` — must be read straight off the bundle
+    /// with `stores.get("interactions")`. A bare-key scan would be satisfied by a
     /// comment, a log line, or an error message naming a section nothing routes.
+    /// The form is required PER SECTION rather than as an either/or, because
+    /// accepting the bundle-read form for a `DataStore` section would let a lone
+    /// `stores.get("<key>")` — a read that inspects the section and imports
+    /// nothing — stand in for the missing `import`.
     /// (There are no `match` arms on the key; if routing ever becomes a `match`,
     /// this pin must learn that form too rather than being loosened back.)
     ///
@@ -501,11 +505,15 @@ mod tests {
         let via_closure = format!("{}_into(", "import");
         let via_bundle = format!("stores.{}(", "get");
         for key in ARRAY_SECTIONS.iter().chain(OBJECT_SECTIONS) {
+            let needle = if *key == "interactions" {
+                format!("{via_bundle}\"{key}\")")
+            } else {
+                format!("{via_closure}\"{key}\",")
+            };
             assert!(
-                importer.contains(&format!("{via_closure}\"{key}\","))
-                    || importer.contains(&format!("{via_bundle}\"{key}\")")),
+                importer.contains(&needle),
                 "section '{key}' is validated but never routed in data_import — \
-                 no `import_into(\"{key}\", …)` call and no `stores.get(\"{key}\")`"
+                 expected the `{needle}` routing form"
             );
         }
     }

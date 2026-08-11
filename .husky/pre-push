@@ -73,7 +73,10 @@ CHANGED=""
 HAVE_RANGE=0
 # `git push origin some-other-branch` pushes a ref that is NOT HEAD. The docs
 # fast path below classifies HEAD's own diff, so remember when anything other
-# than HEAD is being pushed and make that case take the full gate instead.
+# than HEAD is being pushed and make that case take the FULL gate. Skipping only
+# the fast path is not enough: the flow would fall through to the group regexes
+# and a docs-only non-HEAD push would land on "No gated paths changed" — LESS
+# checking (no prettier, no drift checks) than the very fast path we distrusted.
 HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || true)
 PUSHED_NON_HEAD=0
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -162,7 +165,7 @@ NODE=""
 LANDING=""
 EXTENSION=""
 WORKFLOWS=""
-if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
+if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ] || [ "$PUSHED_NON_HEAD" -eq 1 ]; then
   RUST=1
   NODE=1
   LANDING=1
@@ -170,8 +173,10 @@ if [ -n "${PREPUSH_FULL:-}" ] || [ "$HAVE_RANGE" -eq 0 ]; then
   WORKFLOWS=1
   if [ -n "${PREPUSH_FULL:-}" ]; then
     echo "▶ Path filter: FULL gate (PREPUSH_FULL set)"
-  else
+  elif [ "$HAVE_RANGE" -eq 0 ]; then
     echo "▶ Path filter: FULL gate (push range undetermined)"
+  else
+    echo "▶ Path filter: FULL gate (pushed ref is not HEAD)"
   fi
 else
   # Only the CI gate definition itself (ci-pipeline.yml) and the composite

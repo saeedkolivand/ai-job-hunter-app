@@ -7,8 +7,8 @@
 //! against (the TS twins are covered by `packages/shared/src/events/events.test.ts`).
 
 use super::events::{
-    PIPELINE_SECTION_EXPERIENCE_PREFIX, PIPELINE_SECTION_KEYS_FIXED, PIPELINE_STAGE_PHASES,
-    SECTION_KEY_MAX_LENGTH,
+    is_pipeline_section_key, PIPELINE_SECTION_EXPERIENCE_PREFIX, PIPELINE_SECTION_KEYS_FIXED,
+    PIPELINE_STAGE_PHASES, SECTION_KEY_MAX_LENGTH,
 };
 
 /// The longest key the grammar can produce is `experience:255`. If the bound
@@ -57,6 +57,78 @@ fn the_two_halves_of_the_grammar_are_disjoint_and_non_empty() {
         assert!(
             !key.starts_with(PIPELINE_SECTION_EXPERIENCE_PREFIX),
             "fixed key '{key}' also matches the indexed form"
+        );
+    }
+}
+
+/// The generated guard must accept exactly what the TS `isPipelineSectionKey`
+/// accepts — the cases mirror `packages/shared/src/events/events.test.ts`.
+#[test]
+fn the_guard_admits_the_grammar_and_nothing_else() {
+    for key in [
+        "summary",
+        "skills",
+        "projects",
+        "education",
+        "experience:0",
+        "experience:7",
+        "experience:255",
+    ] {
+        assert!(
+            is_pipeline_section_key(key),
+            "'{key}' is legal grammar but the guard rejected it"
+        );
+    }
+    for key in [
+        "Work History",
+        "experience",     // the index is not optional
+        "experience:",    // ...nor empty
+        "experience:256", // ...nor wider than a u8
+        "experience:1.5",
+        "experience:-1",
+        "experience:0; DROP TABLE runs",
+        "SUMMARY", // the grammar is lower-case
+        "",
+    ] {
+        assert!(
+            !is_pipeline_section_key(key),
+            "'{key}' is not the grammar but the guard accepted it"
+        );
+    }
+    // Length is checked FIRST, so a value far past the bound is rejected without
+    // the guard doing any further work on it.
+    let hostile = format!("{PIPELINE_SECTION_EXPERIENCE_PREFIX}{}", "9".repeat(10_000));
+    assert!(!is_pipeline_section_key(&hostile));
+}
+
+/// THE canonical-decimal pin. `str::parse::<u8>` is LOOSER than the TS regex
+/// `^(0|[1-9][0-9]{0,2})$`: it accepts a `+` sign and leading zeros, so an
+/// emitter that only parsed would put `experience:01` — a second spelling of
+/// `experience:1` — on a wire whose vocabulary is supposed to be closed. Each
+/// case asserts BOTH halves: that a bare parse would have let it through, and
+/// that the guard does not. Loosening the generated guard back to a plain parse
+/// fails here.
+#[test]
+fn the_indexed_half_admits_only_canonical_decimals() {
+    for index in ["01", "007", "+1", "0255"] {
+        assert!(
+            index.parse::<u8>().is_ok(),
+            "'{index}' no longer parses as a u8 — this pin has lost its point"
+        );
+        let key = format!("{PIPELINE_SECTION_EXPERIENCE_PREFIX}{index}");
+        assert!(
+            !is_pipeline_section_key(&key),
+            "'{key}' is not canonical decimal but the guard accepted it — the \
+             guard is parsing before validating"
+        );
+    }
+    // Whitespace and the other non-canonical spellings a parse also rejects,
+    // pinned so the guard can never start trimming its input.
+    for index in [" 1", "1 ", "1_0", "٣"] {
+        let key = format!("{PIPELINE_SECTION_EXPERIENCE_PREFIX}{index}");
+        assert!(
+            !is_pipeline_section_key(&key),
+            "'{key}' is not canonical decimal but the guard accepted it"
         );
     }
 }

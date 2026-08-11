@@ -466,8 +466,14 @@ function genEvents(): string {
   // vocabulary: it is part of the SAME `pipeline:stage` contract, it is
   // documented as NORMATIVE for the Phase-3 Rust emitter, and the only way a
   // normative bound stays normative is if the Rust side reads it from here
-  // instead of re-typing it. Consts only — the validator itself is Phase-3 Rust
-  // written against these, not generated code.
+  // instead of re-typing it.
+  //
+  // The consts alone were NOT enough: the emitted doc told the Phase-3 emitter to
+  // `parse` the index as a `u8`, and Rust's `str::parse::<u8>` is LOOSER than the
+  // TS grammar — it accepts `+1` and `007`, so `experience:01` would have reached
+  // a wire whose vocabulary is supposed to be closed. The guard is therefore
+  // generated too (`is_pipeline_section_key`), next to the consts it enforces, so
+  // the two sides can't disagree about what "a decimal u8" means.
   const sectionKeysDecl = constSliceDecl(
     'PIPELINE_SECTION_KEYS_FIXED',
     '&[&str]',
@@ -501,13 +507,48 @@ function genEvents(): string {
     '/// packages/shared/src/events/pipeline.ts.',
     sectionKeysDecl,
     '',
-    '/// Prefix of the indexed half: `experience:` followed by a decimal u8 with no',
-    '/// leading zeros. The index grammar itself is not codegen (a TS regex is not a',
-    '/// Rust one) — the Phase-3 emitter parses the remainder as a `u8`, which is the',
-    '/// same closed set.',
+    '/// Prefix of the indexed half: `experience:` followed by the CANONICAL decimal',
+    '/// form of a `u8` — ASCII digits only, no sign, no whitespace, and no leading',
+    '/// zeros (`0` itself is legal). Source of truth:',
+    '/// `PIPELINE_SECTION_EXPERIENCE_PREFIX` in packages/shared/src/events/pipeline.ts.',
     `pub const PIPELINE_SECTION_EXPERIENCE_PREFIX: &str = ${JSON.stringify(
       PIPELINE_SECTION_EXPERIENCE_PREFIX
     )};`,
+    '',
+    '/// Runtime guard for a `pipeline:stage` `sectionKey` — the Rust twin of the TS',
+    '/// `isPipelineSectionKey`, checked in the same order: length first (so a hostile',
+    '/// value is rejected before any further work), then the fixed half, then the',
+    '/// indexed half.',
+    '///',
+    '/// NORMATIVE: a `sectionKey` that fails this must never reach the wire.',
+    '///',
+    '/// The index is validated as canonical ASCII decimal BEFORE it is parsed,',
+    '/// because `str::parse::<u8>` is LOOSER than the grammar: it accepts `+1` and',
+    '/// `007`, which the TS regex `^(0|[1-9][0-9]{0,2})$` rejects. A bare parse would',
+    '/// let `experience:01` — a second spelling of `experience:1` — onto a wire whose',
+    '/// vocabulary is supposed to be closed.',
+    'pub fn is_pipeline_section_key(value: &str) -> bool {',
+    '    // Bytes, not UTF-16 units: every LEGAL key is ASCII so the two agree on',
+    '    // anything that could pass, and a byte count is only ever stricter.',
+    '    if value.len() > SECTION_KEY_MAX_LENGTH {',
+    '        return false;',
+    '    }',
+    '    if PIPELINE_SECTION_KEYS_FIXED.contains(&value) {',
+    '        return true;',
+    '    }',
+    '    let Some(index) = value.strip_prefix(PIPELINE_SECTION_EXPERIENCE_PREFIX) else {',
+    '        return false;',
+    '    };',
+    '    if index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit()) {',
+    '        return false;',
+    '    }',
+    "    if index.len() > 1 && index.starts_with('0') {",
+    '        return false;',
+    '    }',
+    '    // Only now is a parse safe to trust: it contributes the `<= 255` bound the',
+    '    // TS guard applies with `Number(index) <= 255`.',
+    '    index.parse::<u8>().is_ok()',
+    '}',
     '',
   ].join('\n');
 }
