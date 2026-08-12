@@ -73,6 +73,21 @@ multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
 
+# `failspot` is a FAULT-INJECTION crate. It rides in transitively under the
+# crash reporter (minidump-writer -> minidumper -> minidumper-child ->
+# sentry-rust-minidump -> tauri-plugin-sentry) and is inert as locked: its
+# `enabled` feature is the only thing it has, it gates `dep:flagset`, and
+# failspot's Cargo.lock entry lists no dependencies at all — proof the feature
+# is off. (`flagset` IS in the lock, but via `dom_smoothie`, not this.)
+#
+# Turning it on would let a caller make the minidump writer fail on purpose, in
+# the one component whose entire job is to still work when everything else has
+# crashed. Nothing here should ever want that, so it is denied mechanically
+# rather than left to whoever reads the next dependabot diff.
+[[bans.features]]
+crate = "failspot"
+deny = ["enabled"]
+
 [sources]
 # Only crates.io by default; any git/registry source must be explicitly allowed.
 unknown-registry = "deny"
