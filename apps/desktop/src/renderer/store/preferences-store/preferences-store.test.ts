@@ -132,14 +132,18 @@ describe('usePreferencesStore', () => {
     expect(recent).not.toContain('London'); // oldest dropped past the cap
   });
 
-  // A stored depth this build cannot RUN (`max` — hand-edited, or written by a
-  // newer build and then downgraded) must not reach a generate surface. It
-  // falls back to `fast`, never to `quality`: silently upgrading someone into
-  // four provider calls plus repair rounds is the one wrong answer.
+  // A stored depth this build cannot RUN (a value hand-edited into the
+  // persisted state, or written by a NEWER build and then downgraded) must not
+  // reach a generate surface. It falls back to `fast`, never upward: silently
+  // buying someone a staged run — four provider calls at quality, a per-section
+  // fan-out at max — is the one wrong answer. Every depth this build knows is
+  // runnable as of Phase 4, which is why the unrunnable case needs a value from
+  // outside the vocabulary to stay reachable at all.
   describe('useGenerationDepth', () => {
     it.each([
       ['a runnable stored depth', 'quality', 'quality'],
-      ['an unrunnable stored depth', 'max', 'fast'],
+      ['max, runnable since Phase 4', 'max', 'max'],
+      ['a depth from a newer build', 'ludicrous', 'fast'],
       ['a pre-field persisted state', undefined, 'fast'],
     ])('resolves %s to %s', (_label, stored, expected) => {
       usePreferencesStore.setState({ generationDepth: stored as never });

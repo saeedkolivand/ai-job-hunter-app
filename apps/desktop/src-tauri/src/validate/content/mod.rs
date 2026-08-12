@@ -60,6 +60,19 @@ mod letter;
 pub mod lexicon;
 mod voice;
 
+/// The projects-format primitives the MAX-depth generator has to share with the
+/// checks that grade its output.
+///
+/// The generator SEEDS a project's name, links and stack out of the same source
+/// section `factual.altered_project_link` and `consistency.project_structure`
+/// then compare its output against. A second answer to "where does an entry
+/// begin", "is this span a link", or "how many description lines may an entry
+/// carry" would make the generator and the grader disagree about a truthful
+/// document — the duplicated-heuristic defect this codebase has paid for
+/// before. One definition, re-exported, rather than two that drift.
+pub use self::consistency::{project_entry_starts, MAX_PROJECT_DESCRIPTION_LINES};
+pub use self::factual::{canonical_link, names_a_resource, urls_in};
+
 #[cfg(test)]
 mod test;
 
@@ -100,6 +113,29 @@ pub const VOICE_GENERIC_LETTER: &str = "voice.generic_letter";
 /// code (i18n key + severity) rather than special-cased.
 pub const REPORT_TRUNCATED: &str = "report.truncated";
 
+// The `judge.*` family — the ONLY codes in this table that come from a model
+// rather than from a deterministic check, emitted by the max-depth
+// `pipeline::resume::stages::judge` stage.
+//
+// They are registered here so the vocabulary stays in one place (this module's
+// own rule: "every code lives in CONTENT_ISSUE_CODES"), and every one of them
+// is a Warning — but the judge does NOT read that severity back out of this
+// table. It writes `Severity::Warning` at its construction site, because "a
+// model may never emit a Critical" has to hold even if someone edits a row
+// here. The table entry is what the renderer enumerates for i18n; the
+// construction site is the guarantee.
+/// A sentence the reader has to re-read; a bullet saying two things at once.
+pub const JUDGE_CLARITY: &str = "judge.clarity";
+/// A claim that reads as unsupported — vague ownership, no result, a skill
+/// asserted but never demonstrated.
+pub const JUDGE_EVIDENCE: &str = "judge.evidence";
+/// Something the posting asks for that the document buries, or space spent on
+/// something it does not ask for.
+pub const JUDGE_TAILORING: &str = "judge.tailoring";
+/// A remark whose `kind` is outside the closed set above. Kept rather than
+/// dropped: the model's taxonomy is the least useful part of its remark.
+pub const JUDGE_NOTE: &str = "judge.note";
+
 /// Every code this module can emit, with its severity. The single table the
 /// renderer enumerates for i18n keys and the constructor reads for severity.
 ///
@@ -131,6 +167,10 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (VOICE_EM_DASH_OVERUSE, Severity::Warning),
     (VOICE_GENERIC_LETTER, Severity::Warning),
     (REPORT_TRUNCATED, Severity::Warning),
+    (JUDGE_CLARITY, Severity::Warning),
+    (JUDGE_EVIDENCE, Severity::Warning),
+    (JUDGE_TAILORING, Severity::Warning),
+    (JUDGE_NOTE, Severity::Warning),
 ];
 
 /// The severity registered for `code`.
@@ -1082,32 +1122,71 @@ pub fn validate_content(input: &ContentInput) -> ContentReport {
         true,
     );
 
-    // M-3 fix: cap the issue list at MAX_CONTENT_ISSUES (see its doc) so the
-    // serialized report can't blow the save path's byte clamp. Criticals sort
-    // first so a pathological warning flood can never push a real Critical
-    // out of the visible list — only warnings are ever silently cut, and the
-    // trailing REPORT_TRUNCATED marker says so instead of a silent drop.
-    if issues.len() > MAX_CONTENT_ISSUES {
-        let dropped = issues.len() - MAX_CONTENT_ISSUES;
-        issues.sort_by_key(|i| i.severity != Severity::Critical);
-        issues.truncate(MAX_CONTENT_ISSUES);
-        issues.push(issue(
-            REPORT_TRUNCATED,
-            None,
-            format!(
-                "{dropped} more issue{} found but not shown here — this document has an \
-                 unusually large number of findings.",
-                if dropped == 1 { "" } else { "s" }
-            ),
-            Some(dropped.to_string()),
-        ));
-    }
+    cap_issues(&mut issues);
 
     ContentReport {
         ok: criticals == 0,
         issues,
         metrics,
     }
+}
+
+/// Cap an issue list at [`MAX_CONTENT_ISSUES`], criticals first, with ONE
+/// visible truncation marker.
+///
+/// M-3: without this, a pathological/hostile "generated" document (thousands of
+/// forged roles, duplicate bullets) grows the serialized report past the save
+/// path's `QUALITY_REPORT_MAX_BYTES` clamp, which truncates mid-JSON and makes
+/// `merge_quality_report` silently keep the OLD stored report. Criticals sort
+/// first (a stable sort, so their relative order survives) so a warning flood
+/// can never push a real Critical out of the visible list — only Warnings are
+/// ever cut, and the trailing `REPORT_TRUNCATED` marker says so instead of a
+/// silent drop.
+///
+/// **A FUNCTION, and re-runnable, because the report is written twice.**
+/// `validate_content` caps what it found; `stages::judge` then merges up to
+/// [`MAX_JUDGE_ITEMS`](crate::pipeline::resume::stages::MAX_JUDGE_ITEMS) more
+/// into the SAME list at max depth, which put the list back over the bound the
+/// `QUALITY_REPORT_MAX_BYTES` derivation rests on — and did it by appending
+/// Warnings, exactly the class the criticals-first sort exists to cut first. An
+/// existing marker is ABSORBED (its own dropped count carried into the new one)
+/// rather than left beside a second one, so calling this again is safe and the
+/// count stays truthful.
+pub(crate) fn cap_issues(issues: &mut Vec<ContentIssue>) {
+    let mut dropped = 0usize;
+    issues.retain(|candidate| {
+        if candidate.code != REPORT_TRUNCATED {
+            return true;
+        }
+        // `unwrap_or(1)`, not `0`: a marker whose count cannot be read still
+        // means "issues were dropped", and defaulting to zero would ABSORB the
+        // marker and then decline to re-emit it — turning an unreadable count
+        // into a report that silently claims nothing was truncated.
+        dropped += candidate
+            .evidence
+            .as_deref()
+            .and_then(|count| count.parse::<usize>().ok())
+            .unwrap_or(1);
+        false
+    });
+    if issues.len() > MAX_CONTENT_ISSUES {
+        dropped += issues.len() - MAX_CONTENT_ISSUES;
+        issues.sort_by_key(|i| i.severity != Severity::Critical);
+        issues.truncate(MAX_CONTENT_ISSUES);
+    }
+    if dropped == 0 {
+        return;
+    }
+    issues.push(issue(
+        REPORT_TRUNCATED,
+        None,
+        format!(
+            "{dropped} more issue{} found but not shown here — this document has an \
+             unusually large number of findings.",
+            if dropped == 1 { "" } else { "s" }
+        ),
+        Some(dropped.to_string()),
+    ));
 }
 
 /// `content.language_mismatch` — the output is not in the language it was asked

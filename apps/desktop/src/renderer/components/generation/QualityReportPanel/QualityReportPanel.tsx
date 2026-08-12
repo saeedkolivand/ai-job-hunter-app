@@ -1,9 +1,17 @@
-import { AlertOctagon, AlertTriangle, CheckCircle2, History, RefreshCw, X } from 'lucide-react';
+import {
+  AlertOctagon,
+  AlertTriangle,
+  CheckCircle2,
+  History,
+  RefreshCw,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { PipelineSectionKey } from '@ajh/shared';
 import type { ContentReportPayload } from '@ajh/shared/ipc';
-import { useTranslation } from '@ajh/translations';
+import { type TFunction, useTranslation } from '@ajh/translations';
 import { Button, EmptyState, ModalShell } from '@ajh/ui';
 
 import type { Fabrication, SectionVerdict } from '@/lib/generate';
@@ -98,6 +106,31 @@ function groupBySection(issues: ContentIssue[]): [SectionKey, ContentIssue[]][] 
 }
 
 /**
+ * The max-depth judge's namespace. Everything under it is MODEL-authored prose
+ * about THIS document, which drives two rules below: the message is rendered as
+ * written (never replaced by a catalog string), and the issue carries a
+ * provenance badge so it reads as a suggestion rather than as a validator's
+ * finding.
+ */
+const JUDGE_CODE_PREFIX = 'judge.';
+
+/** Is this issue the max-depth judge's, rather than a deterministic check's? */
+function isJudgeCode(code: string): boolean {
+  return code.startsWith(JUDGE_CODE_PREFIX);
+}
+
+/**
+ * ` · Clarity` for `judge.clarity`, and nothing at all for a judge kind this
+ * build doesn't know — the badge still says who wrote the remark, which is the
+ * part that matters, and an untranslated kind is not worth a raw key on screen.
+ */
+function judgeKindLabel(code: string, t: TFunction): string {
+  const kind = code.slice(JUDGE_CODE_PREFIX.length);
+  const label = t(`quality.panel.judge.kind.${kind}`, { defaultValue: '' });
+  return label ? ` · ${label}` : '';
+}
+
+/**
  * Codes whose Rust-authored `message` carries an interpolated NUMBER (a count,
  * percentage, or threshold `validate::content` computed) that is NOT also
  * repeated in the issue's separate `evidence` field — so translating them to
@@ -107,6 +140,10 @@ function groupBySection(issues: ContentIssue[]): [SectionKey, ContentIssue[]][] 
  * list either has no computed number in its message, or `evidence` already
  * carries it (e.g. `alignment.low_coverage`'s two percentages are duplicated
  * into `evidence`, so its translation stays preferred).
+ *
+ * The judge's codes are NOT listed here — see {@link JUDGE_CODE_PREFIX}: they
+ * are excluded by namespace rather than one by one, because the vocabulary is
+ * the Rust side's to extend.
  */
 const CODES_WITH_LOSSY_NUMBERS = new Set<string>([
   // "<term>" appears N times in TOTAL content words — evidence is only "term ×N", missing TOTAL.
@@ -128,11 +165,12 @@ const CODES_WITH_LOSSY_NUMBERS = new Set<string>([
  * advises on the document (job-match-standards framing), matching the Rust
  * validator's own posture (`validate::content`).
  *
- * A code in [`CODES_WITH_LOSSY_NUMBERS`] renders its own Rust-authored
- * `message` instead of the translation, so the number it computed survives.
- * Otherwise: a code with no matching `quality.issue.<code>` translation (a
- * future Rust check this build predates) falls back to the issue's own
- * Rust-authored `message` when present, and only to the generic
+ * A code in [`CODES_WITH_LOSSY_NUMBERS`] — or any [`JUDGE_CODE_PREFIX`] code —
+ * renders its own `message` instead of the translation, so the number the
+ * validator computed (or the remark the judge wrote about THIS document)
+ * survives. Otherwise: a code with no matching `quality.issue.<code>`
+ * translation (a future Rust check this build predates) falls back to the
+ * issue's own Rust-authored `message` when present, and only to the generic
  * `quality.fallback` when that's also empty — never a raw i18n key.
  */
 export function QualityReportPanel({
@@ -151,8 +189,18 @@ export function QualityReportPanel({
   const groups = useMemo(() => groupBySection(report?.issues ?? []), [report]);
   const metrics = report?.metrics;
 
+  /**
+   * **A `judge.*` message is the payload, not a label for one.** Every other
+   * code names a fixed check whose Rust `message` a translation can restate;
+   * the judge's is the model's own remark about this document, already written
+   * in the run's target language. Preferring the catalog for it would replace
+   * the whole finding with a canned sentence — so the prefix short-circuits
+   * BEFORE `i18n.exists`, structurally, rather than by leaving the key out of
+   * the catalog and hoping nobody adds it.
+   */
   const messageFor = (code: string, message: string) => {
-    if (CODES_WITH_LOSSY_NUMBERS.has(code) && message) return message;
+    const prefersOwnMessage = CODES_WITH_LOSSY_NUMBERS.has(code) || isJudgeCode(code);
+    if (prefersOwnMessage && message) return message;
     const key = `quality.issue.${code}`;
     if (i18n.exists(key)) return t(key);
     return message || t('quality.fallback');
@@ -234,6 +282,25 @@ export function QualityReportPanel({
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
                         <AlertTriangle size={10} /> {t('quality.panel.warning')}
+                      </span>
+                    )}
+                    {/*
+                      Provenance, and it is load-bearing rather than decorative:
+                      the text below a judge code is free prose a MODEL wrote
+                      after reading a job ad this app did not author. Saying so
+                      out loud is what keeps it from reading as a deterministic
+                      finding. (It is also why it stays a plain text node — no
+                      markdown, no linkification, nothing that would let an
+                      injected posting render as UI.)
+                    */}
+                    {isJudgeCode(issue.code) && (
+                      <span
+                        className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand-soft"
+                        title={t('quality.panel.judge.hint')}
+                      >
+                        <Sparkles size={10} aria-hidden="true" />
+                        {t('quality.panel.judge.provenance')}
+                        {judgeKindLabel(issue.code, t)}
                       </span>
                     )}
                     <p className="mt-1.5 text-xs text-foreground/70">

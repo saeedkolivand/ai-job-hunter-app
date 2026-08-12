@@ -9,7 +9,9 @@
 mod analyze;
 mod draft;
 mod evidence;
+mod judge;
 mod repair;
+pub mod section_gen;
 pub mod sections;
 mod strategy;
 mod validate;
@@ -18,7 +20,9 @@ pub mod verbatim;
 pub use self::analyze::AnalyzeJob;
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
+pub use self::judge::Judge;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
+pub use self::section_gen::Sections;
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};
 pub use self::validate::{validate_documents, Validate};
 
@@ -29,6 +33,8 @@ pub use self::validate::{validate_documents, Validate};
 // time, in a second place.
 #[cfg(test)]
 pub(crate) use self::evidence::ground;
+#[cfg(test)]
+pub(crate) use self::judge::{issue_from, issues_from, MAX_JUDGE_ITEMS};
 #[cfg(test)]
 pub(crate) use self::repair::{criticals_by_section, repair_loop, round_is_worse};
 #[cfg(test)]

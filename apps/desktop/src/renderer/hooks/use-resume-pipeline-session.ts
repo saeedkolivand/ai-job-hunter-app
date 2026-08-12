@@ -7,6 +7,8 @@ import type { ResumePipelineRunRequest } from '@ajh/shared/schemas';
 import { useMachine } from '@/hooks/use-machine';
 import { errorDetail } from '@/lib/error-class';
 import {
+  foldSectionStates,
+  type PipelineSectionStates,
   type PipelineStageProgress,
   resumePipelineMachine,
   type ResumePipelineState,
@@ -33,8 +35,22 @@ export interface ResumePipelineSession {
   jobId: string | null;
   stage: PipelineStageProgress | null;
   /**
+   * Per-section progress for a MAX-depth run, folded from the stage stream.
+   *
+   * Empty at quality depth (no section events exist) and empty for a
+   * RECONNECTED run: `PipelineRunEvent` carries no `sectionKey`, so the
+   * persisted trail cannot say which section each row belonged to and rebuilding
+   * the map from it would mean guessing. A reconnected run shows its stage
+   * counter and, when it finishes, the report's own section verdicts.
+   */
+  sectionStates: PipelineSectionStates;
+  /**
    * The draft stage's streamed text, for DISPLAY ONLY. Not the run's result —
    * `detail.resumeText` is, and it can differ by up to two repair rounds.
+   *
+   * At MAX depth the same channel carries the progressive assembly: each
+   * finished section's text is appended as its stage produces it, so this builds
+   * up section by section instead of token by token. Display-only either way.
    */
   draft: string;
   /** The run record: the authority on status, report, metrics and document. */
@@ -78,6 +94,7 @@ export function useResumePipelineSession(
   const [runId, setRunId] = useState<string | null>(initialRunId ?? null);
   const [jobId, setJobId] = useState<string | null>(initialJobId ?? null);
   const [stage, setStage] = useState<PipelineStageProgress | null>(null);
+  const [sectionStates, setSectionStates] = useState<PipelineSectionStates>({});
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +127,11 @@ export function useResumePipelineSession(
         ...(event.issueCount != null ? { issueCount: event.issueCount } : {}),
         ...(event.criticalCount != null ? { criticalCount: event.criticalCount } : {}),
       });
+      // Per-section progress rides the SAME events (`sectionKey` + phase), so
+      // it folds here rather than through a second subscription. The fold
+      // returns its input unchanged when nothing moved, so a quality-depth run
+      // — which has no section events at all — never re-renders for this.
+      setSectionStates((current) => foldSectionStates(current, event));
       const next = stageToEvent(event.stage, event.phase);
       if (next) send(next);
     },
@@ -127,7 +149,7 @@ export function useResumePipelineSession(
    * `pipeline_runs` row inside the spawned task — AFTER admission and after it
    * resolves the depth, the provider, the résumé and the cached posting. Each of
    * those five can fail (a full queue, no configured provider, a deleted résumé,
-   * a posting that is not in the live cache, `depth: "max"`) and lands on
+   * a posting that is not in the live cache, an unknown depth string) and lands on
    * `job_fail` with NO row ever written; `get(runId)` then answers `null` — a
    * real answer, so the poll correctly stops — and `detail.status`, the only
    * completion signal this hook has, never exists. The same hole exists at the
@@ -231,6 +253,7 @@ export function useResumePipelineSession(
     async (req: ResumePipelineRunRequest) => {
       setError(null);
       setStage(null);
+      setSectionStates({});
       setDraft('');
       replayed.current = null;
       send('START');
@@ -266,6 +289,7 @@ export function useResumePipelineSession(
     setRunId(null);
     setJobId(null);
     setStage(null);
+    setSectionStates({});
     setDraft('');
     setError(null);
     replayed.current = null;
@@ -277,6 +301,7 @@ export function useResumePipelineSession(
     runId,
     jobId,
     stage,
+    sectionStates,
     draft,
     detail,
     error,

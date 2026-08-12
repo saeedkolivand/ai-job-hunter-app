@@ -206,3 +206,100 @@ export const QUALITY_RUN_CLIENT_MARGIN_SECS = 960;
 export function qualityRunClientTimeoutMs(effort?: string): number {
   return (qualityRunDeadlineSecs(effort) + QUALITY_RUN_CLIENT_MARGIN_SECS) * 1000;
 }
+
+/**
+ * The EFFORT-INVARIANT half of one MAX-depth run's deadline, in seconds.
+ *
+ * 24 calls at the flat `timeouts::OLLAMA_COMPLETION` (300 s) bound: 3 JSON
+ * stages (analyze, evidence, strategy) + `Budget::RESUME_MAX.max_sections` (12)
+ * section calls + the `llm_judge` stage's single call + `max_repair_attempts`
+ * (2) × `MAX_SECTIONS_PER_ROUND` (4) repair rewrites. Unlike
+ * {@link QUALITY_RUN_FIXED_SECS} this covers the WHOLE planned run rather than
+ * only its effort-invariant part, because **max depth streams nothing** — every
+ * one of its calls goes through `Completer`, whose timeouts are flat constants.
+ *
+ * **The judge is the 24th call and it is counted HERE**, not left to the scaled
+ * term. An earlier version of this constant (6 900 s) counted 23 and let the
+ * baseline tier's scaled 300 s cover the judge, which made the bottom tier
+ * exactly equal to its own fan-out — no slack at all, and a deadline that binds
+ * before the last call can return is the failure this whole derivation exists
+ * to prevent.
+ *
+ * The one allowed re-ask per JSON call is deliberately NOT counted, on both
+ * sides — the same departure from the quality derivation the Rust twin records:
+ * a re-ask is a parse-failure path guarded by the same clock, and a max run
+ * stopped mid-fan-out KEEPS the sections it already assembled, so buying the
+ * worst case would only make the deadline unreachable.
+ *
+ * **Hand-mirrored from Rust, not generated.** `timeouts::MAX_RUN_FIXED_SECS`
+ * is a Rust constant that `pnpm gen:ipc` does not emit (its doc says so: the
+ * renderer had no max deadline when it was written). The per-tier table below
+ * is pinned as literals on this side and the Rust side pins the same
+ * relationships, so the pair cannot drift silently — but the next change to
+ * either constant should move it into `gen-ipc-rust.ts` alongside its quality
+ * sibling and delete this copy.
+ */
+export const MAX_RUN_FIXED_SECS = 7_200;
+
+/**
+ * Effort-SCALED whole-document passes one max run may make: one.
+ *
+ * The fan-out writes the document once and streams nothing, but the run's real
+ * duration still scales with the reasoning budget — this term is what keeps a
+ * high-effort run from being stopped by a deadline sized for a fast one. It
+ * buys no particular call: {@link MAX_RUN_FIXED_SECS} already covers all 24 of
+ * them, so this is headroom on top, which is what makes the bottom tier's
+ * deadline exceed its fan-out rather than merely equal it.
+ */
+export const MAX_RUN_GENERATION_PASSES = 1;
+
+/**
+ * Deadline (seconds) for ONE WHOLE max-depth run — the renderer's mirror of the
+ * backend's `timeouts::max_run_deadline`, and what makes
+ * `StoppedReason::RunTimeout` reachable at this depth.
+ *
+ * | effort           | m   | fixed  | scaled | deadline         |
+ * | ---------------- | --- | ------ | ------ | ---------------- |
+ * | none/minimal/low | 1.0 | 7200 s | 300 s  | 7500 s (125 min) |
+ * | medium           | 1.5 | 7200 s | 450 s  | 7650 s (128 min) |
+ * | high             | 2.0 | 7200 s | 600 s  | 7800 s (130 min) |
+ * | xhigh            | 2.5 | 7200 s | 750 s  | 7950 s (133 min) |
+ * | max              | 3.0 | 7200 s | 900 s  | 8100 s (135 min) |
+ *
+ * The bottom tier equals `Budget::RESUME_MAX.run_timeout` (125 min) on purpose:
+ * `resume::run_deadline` takes the LARGER of the budget floor and this, so a
+ * disagreement would mean one of the two stops describing what runs.
+ *
+ * Never shorter than {@link qualityRunDeadlineSecs} at the same tier — max
+ * depth is strictly more work — which is a lock test, not a coincidence.
+ */
+export function maxRunDeadlineSecs(effort?: string): number {
+  return (
+    MAX_RUN_FIXED_SECS +
+    Math.round(STREAM_BASELINE_SECS * MAX_RUN_GENERATION_PASSES * effortMultiplier(effort))
+  );
+}
+
+/**
+ * The renderer's outer bound (ms) for one max-depth run — strictly greater than
+ * {@link maxRunDeadlineSecs} at every tier, for the reason
+ * {@link QUALITY_RUN_CLIENT_MARGIN_SECS} exists: the backend must give up FIRST,
+ * because it is the side that knows WHY.
+ *
+ * Shares the quality margin rather than sizing a second one, and is safe doing
+ * so: the margin has to cover the longest call that can still be IN FLIGHT when
+ * the deadline expires (the backend checks it BETWEEN calls), and max depth's
+ * longest is the 300 s flat `OLLAMA_COMPLETION` — it streams nothing at all,
+ * where quality's draft can be in flight for 900 s at the top tier. A margin
+ * that clears the harder case clears this one, and over-waiting is the safe
+ * direction for a bound the client can only trip early.
+ *
+ * **RESERVED, exactly like its quality sibling** — `resumePipeline.run` returns
+ * on admission and completion arrives through the record poll, so there is no
+ * long-lived request to bound. It exists so a future caller does not invent its
+ * own margin, which is precisely how the renderer once ended up giving up
+ * before the backend did.
+ */
+export function maxRunClientTimeoutMs(effort?: string): number {
+  return (maxRunDeadlineSecs(effort) + QUALITY_RUN_CLIENT_MARGIN_SECS) * 1000;
+}

@@ -12,6 +12,21 @@ use rusqlite::Connection;
 
 use crate::error::{AppError, AppResult};
 
+/// Values one `IN (?, ?, …)` list may carry.
+///
+/// SQLite refuses to PREPARE a statement with more host parameters than
+/// `SQLITE_MAX_VARIABLE_NUMBER` — 32 766 on the bundled build, but 999 on
+/// anything older. A bulk delete driven by a user's on-screen selection passes
+/// that selection straight into an `IN` list, and the failure is silent in the
+/// direction that matters: a read returns no rows (so a cascade simply does not
+/// happen) and a write returns an error nobody surfaces. 500 is under every
+/// limit and still one statement per 500 rows.
+///
+/// Lives HERE, in L0, because both `ai_generations` (L1) and `pipeline::runs`
+/// (L2) chunk against it and a lower layer may not reach up to a higher one
+/// (R7). It is a property of SQLite, which is what this module is about.
+pub const MAX_SQL_PARAMS: usize = 500;
+
 pub struct Migration {
     pub name: &'static str,
     pub up: fn(&Connection) -> rusqlite::Result<()>,

@@ -42,6 +42,16 @@ use crate::error::{AppError, AppResult};
 /// see `sanitize_quality_report_keeps_a_two_sub_report_wrapper_at_escaped_worst_case_size`
 /// in `test.rs` for the corrected, measured version).
 ///
+/// **`MAX_CONTENT_ISSUES + 1` is the assumption, and it is enforced by the
+/// one capper.** The `+ 1` is `report.truncated`, and there is exactly one of
+/// it however many times a report is capped. That matters because a report is
+/// not written once: at max depth `pipeline::resume::stages::judge` merges up
+/// to `MAX_JUDGE_ITEMS` (6) advisory Warnings into an already-capped list
+/// AFTER `validate` produced it, which put this derivation's own bound out by
+/// six on every max run until the merge started re-applying
+/// `validate::content::cap_issues`. Any future stage that appends to
+/// `ContentReport::issues` owes the same call.
+///
 /// Dropping per-slot instead of the whole wrapper (persist whichever
 /// sub-report fits, drop only the other) was considered and rejected: it's
 /// real machinery (partial-parse, partial-merge, a partial-drop log) for a
@@ -705,6 +715,57 @@ impl AiGenerationStore {
         Ok(())
     }
 
+    /// The distinct, non-empty posting urls a set of generations belongs to.
+    ///
+    /// **Read BEFORE the delete, because the delete is what makes it
+    /// unanswerable.** Deleting a generated résumé has to cascade into
+    /// `pipeline_runs` — a max-depth run persists the full strategy (the whole
+    /// employment history) and the full evidence map (verbatim résumé quotes)
+    /// in its event trail, and the aggregate row is the only thing that ever
+    /// pointed at them. The join is by `job_url` because the aggregate is one
+    /// row per posting, which makes the mapping exact rather than heuristic.
+    ///
+    /// An empty url is skipped: an unlinked generation has no posting, and
+    /// `PipelineRunStore::delete_for_job` would refuse it anyway (matching every
+    /// empty-url run would delete other postings' history).
+    ///
+    /// **A failed READ degrades to "no urls", which is the accepted orphan
+    /// case.** A transient `SQLITE_BUSY` here is indistinguishable from a
+    /// generation that had no posting, so the cascade silently skips and the
+    /// trail outlives its owner — the same window the caller's own doc records
+    /// for a crash between the delete and the purge, reached a different way.
+    /// Returning an error instead would mean failing the DELETE the user asked
+    /// for because a bookkeeping read lost a race, which is the worse trade.
+    pub fn job_urls_for(&self, ids: &[String]) -> Vec<String> {
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let conn = self.conn.lock();
+        let mut urls: Vec<String> = Vec::new();
+        // CHUNKED: the selection is the user's, and an unbounded `IN (?, …)`
+        // fails to prepare past SQLite's host-parameter limit — which for THIS
+        // read means "no urls", i.e. a cascade that silently does not happen.
+        for chunk in ids.chunks(crate::db::MAX_SQL_PARAMS) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT DISTINCT job_url FROM ai_generations \
+                 WHERE id IN ({placeholders}) AND job_url != ''"
+            );
+            let Ok(mut stmt) = conn.prepare(&sql) else {
+                continue;
+            };
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                row.get::<_, String>(0)
+            });
+            if let Ok(rows) = rows {
+                urls.extend(rows.filter_map(Result::ok));
+            }
+        }
+        urls.sort();
+        urls.dedup();
+        urls
+    }
+
     /// Delete all generations whose id is in `ids` in a single transaction.
     /// Returns the number of rows actually deleted.
     /// Empty input is a no-op that returns `Ok(0)` without touching the DB.
@@ -712,11 +773,18 @@ impl AiGenerationStore {
         if ids.is_empty() {
             return Ok(0);
         }
-        // Build "?,?,…" placeholders — never interpolate user-supplied ids.
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
-        let conn = self.conn.lock();
-        let deleted = conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
+        // Build "?,?,…" placeholders — never interpolate user-supplied ids —
+        // and CHUNK them: an unbounded selection blows SQLite's host-parameter
+        // limit and the whole delete fails to prepare.
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let mut deleted = 0usize;
+        for chunk in ids.chunks(crate::db::MAX_SQL_PARAMS) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
+            deleted += tx.execute(&sql, rusqlite::params_from_iter(chunk.iter()))?;
+        }
+        tx.commit()?;
         Ok(deleted)
     }
 
