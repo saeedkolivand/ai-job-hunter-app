@@ -254,6 +254,19 @@ Embedding vectors live in the `vectors` table of `documents.db` and cosine simil
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
 delete the `*.db` files in that directory and restart the app.
 
+To compare résumé-pipeline depths (`fast` / `quality` / `max`) over runs you have already
+made, dump `pipeline_runs.db`'s per-run `metrics_json` as a per-depth table:
+
+```bash
+node scripts/dump-run-metrics.mjs --help   # options + the default path for your OS
+node scripts/dump-run-metrics.mjs          # the app-data DB, aggregated per depth
+```
+
+Read-only and content-free — counts, codes and durations, never document text or a
+posting URL (ADR-027). It needs Node ≥ 22.5 for the built-in `node:sqlite`. The
+deterministic half of the same question, validator precision/recall on labelled defect
+fixtures, is `cargo test --test eval -- --nocapture` in `apps/desktop/src-tauri`.
+
 ### Migrations and stale dev DBs
 
 Each store owns its own migration list and tracks progress with `PRAGMA user_version`
