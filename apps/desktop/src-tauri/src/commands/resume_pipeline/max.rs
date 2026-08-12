@@ -55,6 +55,27 @@ pub(super) fn pipeline_for<'a>(depth: GenerationDepth) -> Pipeline<QualityCtx<'a
     }
 }
 
+/// The stages of one depth that can actually SPEND a provider call — the only
+/// ones a per-stage model override can apply to.
+///
+/// Read off the pipeline that runs (`free_stage_names`), not off a transcribed
+/// list, for the same reason `stage_names` is: a stage that stops paying is
+/// then a test failure rather than a resolution nobody needed. The store also
+/// refuses to STORE an override on a free stage
+/// (`ai_config::stage_overrides::is_overridable_stage`); this is the second
+/// belt, and the one that matters for a hand-edited database — resolving an
+/// override propagates its error, so a bad row on a stage that never calls a
+/// provider would otherwise abort the whole run before it started.
+pub(super) fn paying_stages(depth: GenerationDepth) -> Vec<&'static str> {
+    let pipeline = pipeline_for(depth);
+    let free = pipeline.free_stage_names();
+    pipeline
+        .stage_names()
+        .into_iter()
+        .filter(|stage| !free.contains(stage))
+        .collect()
+}
+
 /// The compile-time ceilings one depth runs under. Never renderer-supplied:
 /// the wire request has no budget field to bind (pinned by
 /// `the_run_request_carries_no_budget_field`).

@@ -5,7 +5,7 @@
 
 use tempfile::TempDir;
 
-use super::{is_pipeline_stage, StageOverride, MAX_STAGE_OVERRIDES};
+use super::{is_overridable_stage, is_pipeline_stage, StageOverride, MAX_STAGE_OVERRIDES};
 use crate::ai_config::{AiConfigSnapshot, AiConfigStore};
 use crate::data_store::DataStore;
 use crate::ipc_contracts::events::PIPELINE_STAGES;
@@ -200,7 +200,12 @@ fn overrides_survive_an_export_import_round_trip() {
     let (_dir, source) = new_store();
     source.set_active_provider("ollama").unwrap();
     source
-        .set_provider_settings("ollama", Some("small".to_string()), None, Some(8_192))
+        .set_provider_settings(crate::ai_config::ProviderSettingsPatch {
+            provider: "ollama".to_string(),
+            model: Some(Some("small".to_string())),
+            base_url: None,
+            context_window: Some(Some(8_192)),
+        })
         .unwrap();
     source
         .set_stage_override(
@@ -281,6 +286,8 @@ fn import_never_persists_more_rows_than_the_vocabulary_has_stages() {
             serde_json::json!({ "provider": "ollama", "model": "m" }),
         );
     }
+    // Every real stage, free ones included — the free ones must be dropped and
+    // must not count toward the cap.
     for stage in PIPELINE_STAGES {
         overrides.insert(
             (*stage).to_string(),
@@ -297,6 +304,10 @@ fn import_never_persists_more_rows_than_the_vocabulary_has_stages() {
         .unwrap();
     assert_eq!(persisted as usize, MAX_STAGE_OVERRIDES);
     assert_eq!(written, MAX_STAGE_OVERRIDES, "import reports what it wrote");
+    assert!(
+        MAX_STAGE_OVERRIDES < PIPELINE_STAGES.len(),
+        "the free stages are not overridable, so the cap is below the vocabulary",
+    );
     // The bundle really was over-stuffed relative to the cap being asserted.
     const _: () = assert!(MAX_STAGE_OVERRIDES < 500);
 }
@@ -341,6 +352,79 @@ fn the_stage_guard_accepts_exactly_the_generated_vocabulary() {
     for other in ["", " ", "DRAFT", "draft2", "header", "fast"] {
         assert!(!is_pipeline_stage(other));
     }
+}
+
+/// A stage that makes no provider call has no model to choose — and, before
+/// this, a malformed row on one could still abort a whole run at resolve time
+/// (`Completer::for_stages` propagates every override's error).
+///
+/// Mutation check (executed): delete the `is_overridable_stage` arm from
+/// `validate_stage_override` and both writes succeed.
+#[test]
+fn a_stage_that_makes_no_ai_call_cannot_be_overridden() {
+    use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
+
+    let (_dir, store) = new_store();
+    for stage in PIPELINE_STAGES_FREE {
+        let err = store
+            .set_stage_override(stage, over("ollama", "small"))
+            .expect_err("{stage} makes no AI call");
+        assert!(format!("{err}").contains("no AI call"), "got {err}");
+        assert!(!is_overridable_stage(stage));
+        // …and it is still a REAL stage — the two checks answer different
+        // questions, and conflating them would reject a live stage name.
+        assert!(is_pipeline_stage(stage));
+    }
+    assert!(store.stage_overrides().is_empty());
+}
+
+/// The same refusal on the import path, where the row arrives from an untrusted
+/// bundle rather than from the Settings writer.
+///
+/// Mutation check (executed): change the `is_overridable_stage` filter in
+/// `apply_stage_overrides_conn` back to `is_pipeline_stage` and the row lands.
+#[test]
+fn import_drops_an_override_on_a_free_stage() {
+    let (_dir, store) = new_store();
+    let bundle = serde_json::json!({
+        "providers": {},
+        "stageOverrides": {
+            "validate": { "provider": "ollama", "model": "inert" },
+            "draft": { "provider": "ollama", "model": "good" },
+        },
+    });
+    store.import(&bundle).unwrap();
+    assert_eq!(
+        store.stage_overrides().keys().collect::<Vec<_>>(),
+        vec!["draft"]
+    );
+}
+
+/// An out-of-range window is scrubbed as a FIELD on the IMPORT path — the row
+/// keeps its provider and model, because a window is a tuning knob rather than
+/// part of the override's identity. The interactive writer still errors (a
+/// human typed it and can be told); a restore has nobody to tell.
+///
+/// Mutation check (executed): remove the `validate_context_window` scrub from
+/// `apply_stage_overrides_conn` and the whole row is dropped instead.
+#[test]
+fn import_scrubs_an_out_of_range_window_but_keeps_the_row() {
+    let (_dir, store) = new_store();
+    let bundle = serde_json::json!({
+        "providers": {},
+        "stageOverrides": {
+            "draft": { "provider": "ollama", "model": "keep-me", "contextWindow": 9_999_999 },
+        },
+    });
+    store.import(&bundle).unwrap();
+
+    let stored = store.stage_override("draft").expect("the row survives");
+    assert_eq!(stored.model, "keep-me");
+    assert_eq!(stored.context_window, None, "only the bad field is dropped");
+    // …and the interactive writer still refuses the same value outright.
+    let mut bad = over("ollama", "keep-me");
+    bad.context_window = Some(9_999_999);
+    assert!(store.set_stage_override("draft", bad).is_err());
 }
 
 /// The seed path shares the snapshot applier, so a first-run seed can carry

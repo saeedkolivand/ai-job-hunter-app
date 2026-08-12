@@ -23,6 +23,15 @@
 //! The read side is not paranoia theatre: `DataStore::import` accepts an
 //! untrusted bundle.
 //!
+//! ## Only stages that spend a call
+//!
+//! `assemble` and `validate` are live stages that make no provider call, so an
+//! override on either would be a control the user can set and never observe.
+//! Both are refused ([`is_overridable_stage`]) — which also closes a sharper
+//! edge: `Completer::for_stages` resolves every stored override BEFORE the run
+//! starts and propagates a failure, so one malformed row on a stage that never
+//! calls a provider used to be enough to abort the whole run.
+//!
 //! ## Why the stage vocabulary is checked in code, not in SQL
 //!
 //! `stage` must be one of `ipc_contracts::events::PIPELINE_STAGES` (generated
@@ -38,17 +47,18 @@ use std::collections::BTreeMap;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use super::AiConfigStore;
+use super::{validate_context_window, AiConfigStore};
 use crate::commands::ai_provider::ProviderId;
 use crate::db::{now_ms, ts_to_db};
 use crate::error::AppResult;
-use crate::ipc_contracts::events::PIPELINE_STAGES;
+use crate::ipc_contracts::events::{PIPELINE_STAGES, PIPELINE_STAGES_FREE};
 
 /// The most override rows that can exist, ever: `stage` is the PRIMARY KEY and
-/// must be one of the generated names, so the vocabulary IS the cap. Named so
-/// the import path can state the bound it enforces instead of trusting the
-/// filter above it to have been applied.
-pub const MAX_STAGE_OVERRIDES: usize = PIPELINE_STAGES.len();
+/// must be one of the generated names that also spends a provider call, so the
+/// OVERRIDABLE vocabulary IS the cap. Named so the import path can state the
+/// bound it enforces instead of trusting the filter above it to have been
+/// applied.
+pub const MAX_STAGE_OVERRIDES: usize = PIPELINE_STAGES.len() - PIPELINE_STAGES_FREE.len();
 
 /// One stage's explicitly-chosen routing.
 ///
@@ -80,6 +90,17 @@ pub fn is_pipeline_stage(stage: &str) -> bool {
     PIPELINE_STAGES.contains(&stage)
 }
 
+/// Whether `stage` can carry a model override at all: a live stage name that
+/// also SPENDS a provider call.
+///
+/// `assemble` and `validate` are live stages that ask no model anything
+/// ([`PIPELINE_STAGES_FREE`]), so an override on either is a control with no
+/// effect — and, before this refused them, a malformed row on one could still
+/// fail a whole run when `Completer::for_stages` resolved it up front.
+pub fn is_overridable_stage(stage: &str) -> bool {
+    is_pipeline_stage(stage) && !PIPELINE_STAGES_FREE.contains(&stage)
+}
+
 impl AiConfigStore {
     // ── Reads ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +119,7 @@ impl AiConfigStore {
     /// One stage's override, or `None` when the user set none — the read
     /// `Completer::from_active_for_stage` makes per stage.
     pub fn stage_override(&self, stage: &str) -> Option<StageOverride> {
-        if !is_pipeline_stage(stage) {
+        if !is_overridable_stage(stage) {
             return None;
         }
         let conn = self.conn.lock();
@@ -159,7 +180,7 @@ impl AiConfigStore {
         });
         if let Ok(rows) = rows {
             for (stage, over) in rows.flatten() {
-                if is_pipeline_stage(&stage) {
+                if is_overridable_stage(&stage) {
                     out.insert(stage, over);
                 }
             }
@@ -195,13 +216,24 @@ impl AiConfigStore {
     /// Apply a snapshot's overrides (seed + backup restore). Returns how many
     /// rows were written.
     ///
-    /// LENIENT per row, like the provider half: a row naming an unknown stage,
-    /// an unknown provider, a cross-family model or a bad `base_url` is
-    /// DROPPED, not an error — a restore must not fail wholesale on one bad
-    /// entry, and a tampered `base_url` must never land as a live egress
-    /// endpoint. Bounded by [`MAX_STAGE_OVERRIDES`]: the vocabulary filter
-    /// already makes more rows impossible, and the explicit `take` is what
-    /// keeps that true if the filter is ever loosened.
+    /// Lenient per ROW, where the provider half is lenient per FIELD — because
+    /// a partial provider row is legal (a provider may legitimately have a
+    /// model and no base URL) and a partial override is not (an override IS
+    /// "run this stage on this model"; drop the model and nothing remains). So
+    /// a row naming an unknown stage, a free stage, an unknown provider, a
+    /// cross-family model or a bad `base_url` is DROPPED whole, not an error —
+    /// a restore must not fail wholesale on one bad entry, and a tampered
+    /// `base_url` must never land as a live egress endpoint.
+    ///
+    /// The ONE exception is `context_window`, scrubbed per field like the
+    /// provider half: it is a tuning knob rather than part of the row's
+    /// identity, so an out-of-range value costs the row its window, not its
+    /// existence. Import only — the interactive writer still errors, because
+    /// there a human typed it and can be told.
+    ///
+    /// Bounded by [`MAX_STAGE_OVERRIDES`]: the vocabulary filter already makes
+    /// more rows impossible, and the explicit `take` is what keeps that true if
+    /// the filter is ever loosened.
     pub(super) fn apply_stage_overrides_conn(
         conn: &Connection,
         overrides: &BTreeMap<String, StageOverride>,
@@ -209,10 +241,14 @@ impl AiConfigStore {
         let mut written = 0;
         for (stage, over) in overrides
             .iter()
-            .filter(|(stage, _)| is_pipeline_stage(stage))
+            .filter(|(stage, _)| is_overridable_stage(stage))
             .take(MAX_STAGE_OVERRIDES)
         {
-            let Ok((stage, over)) = validate_stage_override(stage, over.clone()) else {
+            let mut over = over.clone();
+            // Scrubbed to `None` rather than failing the row — see the
+            // per-field exception in this method's doc.
+            over.context_window = validate_context_window(over.context_window).ok().flatten();
+            let Ok((stage, over)) = validate_stage_override(stage, over) else {
                 continue;
             };
             Self::upsert_stage_override_conn(conn, &stage, &over)?;
@@ -237,6 +273,9 @@ fn validate_stage_override(stage: &str, over: StageOverride) -> AppResult<(Strin
             "{stage:?} is not a stage this pipeline runs, so it cannot have a model override."
         )
         .into());
+    }
+    if !is_overridable_stage(stage) {
+        return Err(format!("{stage:?} makes no AI call — it has no model to choose.").into());
     }
     let provider_id = ProviderId::parse(&over.provider)?;
     // The same function `set_provider_settings` calls — one chain, not a second

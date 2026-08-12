@@ -51,6 +51,30 @@ export const PIPELINE_STAGES = [
 /** The closed stage vocabulary — see {@link PIPELINE_STAGES}. */
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
+/**
+ * The stages that make NO provider call in any depth that runs them: `assemble`
+ * renders already-paid-for sections into the document body, `validate` is a
+ * deterministic comparison against the source résumé.
+ *
+ * Derived from the Rust `Pipeline::free_stage_names()` of BOTH depths and pinned
+ * against them (`pipeline::resume::test`). "In any depth that runs them" is the
+ * careful part: `free_stage_names` is per-depth, and a stage that is free in one
+ * pipeline but pays in another would not belong here.
+ *
+ * NORMATIVE: a model override on one of these is refused at write AND at import.
+ * There is no model to choose — the stage never asks one anything — so the
+ * control would be inert, and (before the refusal existed) a malformed row on a
+ * free stage could still fail a whole run at resolve time. Filter these out of
+ * any per-stage model UI.
+ */
+export const PIPELINE_STAGES_FREE = ['assemble', 'validate'] as const;
+
+/** Whether a stage can actually spend a provider call — the set a per-stage
+ *  model picker should offer. */
+export function isPayingPipelineStage(value: unknown): value is PipelineStage {
+  return isPipelineStage(value) && !(PIPELINE_STAGES_FREE as readonly string[]).includes(value);
+}
+
 /** Runtime guard for {@link PipelineStage} — the checkable form of the closed
  *  set above, so a renderer that reads a stage name off the wire (or off a
  *  stored override row) can reject an unknown one instead of rendering it. */
