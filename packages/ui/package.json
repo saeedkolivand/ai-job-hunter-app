@@ -23,11 +23,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@tiptap/pm": "^3.29.1",
-    "@tiptap/react": "^3.29.1",
-    "@tiptap/starter-kit": "^3.29.1",
+    "@tiptap/pm": "^3.29.2",
+    "@tiptap/react": "^3.29.2",
+    "@tiptap/starter-kit": "^3.29.2",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.27.0",
+    "lucide-react": "^1.31.0",
     "motion": "^12.42.2",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
@@ -36,28 +36,28 @@
   "peerDependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-hook-form": "^7.83.0"
+    "react-hook-form": "^7.85.0"
   },
   "devDependencies": {
-    "@storybook/addon-vitest": "^10.5.5",
-    "@storybook/react": "^10.5.5",
-    "@storybook/react-vite": "^10.5.5",
+    "@storybook/addon-vitest": "^10.5.7",
+    "@storybook/react": "^10.5.7",
+    "@storybook/react-vite": "^10.5.7",
     "@tailwindcss/vite": "^4.3.3",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@testing-library/user-event": "^14.6.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "@vitest/browser-playwright": "^4.1.10",
-    "jsdom": "^30.0.0",
-    "playwright": "^1.62.0",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-hook-form": "^7.83.0",
-    "storybook": "^10.5.5",
+    "react-hook-form": "^7.85.0",
+    "storybook": "^10.5.7",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.2.1"
   }
 }
