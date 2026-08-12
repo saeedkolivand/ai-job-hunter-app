@@ -933,6 +933,61 @@
       "empty": "No custom agencies yet."
     },
     "ai": {
+      "advisor": {
+        "open": "Model advisor",
+        "title": "Model advisor",
+        "back": "Back",
+        "next": "Next",
+        "done": "Done",
+        "models": {
+          "title": "1 of 4 — Installed models",
+          "intro": "What Ollama reports for each installed model. Size and context window come from the model file itself, not from a list we maintain.",
+          "window": "{{tokens}} token window",
+          "active": "Active",
+          "notMeasured": "Not measured",
+          "emptyTitle": "No local models found",
+          "emptyDescription": "Ollama reported no installed models. Start Ollama and download a model, then reopen the advisor."
+        },
+        "fit": {
+          "title": "2 of 4 — Does it fit?",
+          "intro": "The biggest single prompt is the draft step: up to {{chars}} characters (about {{tokens}} tokens) of your résumé, the posting, and the plan from the earlier steps. The window also has to hold the answer.",
+          "usable": "{{usable}} tokens for the prompt, out of a {{window}} window",
+          "unknownHint": "Ollama did not report a context window for this model. That means it was not measured — not that the window is small.",
+          "overflow": "In the worst case these steps would be cut: {{stages}}",
+          "truncationNote": "Anything that does not fit is cut silently — there is no marker, so the model reads the fragment as the whole input.",
+          "verdict": {
+            "fits": "Fits every step",
+            "tight": "Tight",
+            "too-small": "Too small",
+            "unknown": "Not measured"
+          }
+        },
+        "recommend": {
+          "title": "3 of 4 — What to change",
+          "stagesHeading": "In this app",
+          "stagesBody": "Models per step are the setting this app owns. Anything you accept here is saved as a normal override you can undo in Settings.",
+          "appHeading": "Already handled per request",
+          "appBody": "The app sends the context window (num_ctx) you configured with every staged request, and keeps the model loaded between steps (keep_alive) so it is not re-read from disk each time. Nothing to do here.",
+          "serverHeading": "On your Ollama server — run these yourself",
+          "serverBody": "These live in your Ollama service configuration, so the app will not set them. A quantized KV cache roughly halves what a large context window costs in memory, which is often the difference between a model fitting in VRAM and spilling into RAM.",
+          "serverDisclaimer": "Advice only. Set them where you start Ollama, then restart the server. If a model still spills out of VRAM, a smaller context window costs less quality than a model that swaps."
+        },
+        "risk": {
+          "title": "4 of 4 — Known-bad combinations",
+          "intro": "Some models spend far more effort thinking than answering. On a long document that turns minutes into tens of minutes, and at high effort some of them stop finishing at all.",
+          "badCombo": "This model reasons heavily and effort is set to {{effort}} — the combination that has been observed looping. Lower the effort, or use a non-reasoning model for the writing steps.",
+          "measured": "Measured {{ratio}}× more thinking than answer over {{calls}} calls, as reported by the provider.",
+          "reasoningHeavy": "A reasoning-heavy model. Fine at lower effort, but expect longer runs than a comparable non-reasoning model.",
+          "unmeasured": "Not measured. Local models never report a separate thinking count, so this is silence — not a clean bill of health.",
+          "level": {
+            "known-bad-combo": "Known-bad combination",
+            "measured-heavy": "Measured: thinks far more than it answers",
+            "reasoning-heavy": "Reasoning-heavy",
+            "unmeasured": "Not measured"
+          },
+          "coverageNote": "Only OpenAI and Gemini report thinking tokens separately. Anthropic counts them inside its output and Ollama folds them into its own count — so a local model can never appear as measured here."
+        }
+      },
       "stages": {
         "suggest": {
           "title": "A smaller model can handle the reading steps",

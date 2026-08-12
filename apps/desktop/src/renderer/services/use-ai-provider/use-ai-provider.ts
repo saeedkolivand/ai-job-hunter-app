@@ -1,12 +1,14 @@
 import {
   useMutation,
   type UseMutationResult,
+  useQueries,
   useQuery,
   useQueryClient,
   type UseQueryResult,
 } from '@tanstack/react-query';
 
 import type { ActiveAiConfig, ProviderModelInfo } from '@ajh/shared';
+import type { ModelInspectResult } from '@ajh/shared/schemas';
 
 import { readModelListCache, writeModelListCache } from '@/lib/ai-providers/model-list-cache';
 import type { AppClient } from '@/lib/app-client';
@@ -201,6 +203,39 @@ export const useInspectModel = () => {
   const api = useAppClient();
   return useMutation({
     mutationFn: ({ model }: { model: string }) => api.ai.inspectModel({ model }),
+  });
+};
+
+/**
+ * Inspect SEVERAL local models at once — the advisor's "what is installed and
+ * how big is its window" pass.
+ *
+ * A query rather than the on-demand mutation above: the advisor reads every
+ * installed model, `/api/show` is idempotent and its answer is a property of
+ * the model file (so it caches for a long time), and `useQueries` is the
+ * Rules-of-Hooks-safe way to fan out over a list whose length changes.
+ * `null` for a model Ollama can't describe — absent means NOT MEASURED.
+ */
+export const useModelInspections = (
+  models: string[] = []
+): { byModel: Record<string, ModelInspectResult | null>; isPending: boolean } => {
+  const api = useAppClient();
+  // Same guard as `useBoardStatuses`: the service smoke harness calls every
+  // exported hook with a single noop argument.
+  const safeModels = Array.isArray(models) ? models : [];
+  return useQueries({
+    queries: safeModels.map((model) => ({
+      queryKey: [...keys.ai.models, 'inspect', model],
+      queryFn: () => api.ai.inspectModel({ model }),
+      staleTime: QUERY_TIMES.VERY_LONG,
+      // An unreachable Ollama fails the same way for every model in the list;
+      // retrying each one just multiplies the same timeout.
+      retry: false,
+    })),
+    combine: (results) => ({
+      byModel: Object.fromEntries(safeModels.map((model, i) => [model, results[i]?.data ?? null])),
+      isPending: results.some((r) => r.isPending),
+    }),
   });
 };
 

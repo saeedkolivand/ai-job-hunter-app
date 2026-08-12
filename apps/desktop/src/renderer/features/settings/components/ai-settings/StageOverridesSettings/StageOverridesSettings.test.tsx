@@ -48,6 +48,12 @@ vi.mock('@/services', () => ({
   useListProviderModels: () => ({ data: { models: [], cached: false } }),
 }));
 
+// The advisor has its own suite (and its own service surface); here only the
+// entry point matters — that the button actually opens it.
+vi.mock('../ModelAdvisor', () => ({
+  ModelAdvisor: ({ open }: { open: boolean }) => (open ? <div>advisor-open</div> : null),
+}));
+
 import { StageOverridesSettings } from './index';
 import { OVERRIDABLE_PIPELINE_STAGES } from './stage-routing';
 
@@ -87,6 +93,18 @@ describe('StageOverridesSettings — a stage with no override', () => {
     expect(screen.getAllByText(/^settings\.ai\.stages\.names\./)).toHaveLength(
       OVERRIDABLE_PIPELINE_STAGES.length
     );
+  });
+});
+
+describe('StageOverridesSettings — advisor entry point', () => {
+  it('opens the advisor from the section header', async () => {
+    overridesState.data = {};
+    const user = userEvent.setup();
+    render(<StageOverridesSettings {...baseProps} />);
+
+    await user.click(screen.getByText('settings.ai.advisor.open'));
+
+    expect(screen.getByText('advisor-open')).toBeVisible();
   });
 });
 

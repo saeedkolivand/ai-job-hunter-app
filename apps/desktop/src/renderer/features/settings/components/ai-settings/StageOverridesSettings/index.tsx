@@ -10,6 +10,7 @@ import { useClearStageOverride, useStageOverrides } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
+import { ModelAdvisor } from '../ModelAdvisor';
 import { resolveStageRouting, type StageRouting } from './stage-routing';
 import { StageOverrideEditor } from './StageOverrideEditor';
 import { StageSuggestionBanner } from './StageSuggestionBanner';
@@ -23,9 +24,6 @@ interface Props {
    *  source of truth for "is this provider reachable", never a second probe). */
   isConfigured: (provider: string) => boolean;
   configuredBaseUrl?: string;
-  /** Rendered under the intro — the suggested-defaults banner and the advisor
-   *  entry point, kept out of this component's own concern. */
-  children?: React.ReactNode;
 }
 
 const providerLabel = (provider?: string) =>
@@ -46,13 +44,13 @@ export function StageOverridesSettings({
   ollamaModels,
   isConfigured,
   configuredBaseUrl,
-  children,
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
   const { data: overrides = {} } = useStageOverrides();
   const clearStageOverride = useClearStageOverride();
   const [editing, setEditing] = useState<PipelineStage | null>(null);
+  const [advisorOpen, setAdvisorOpen] = useState(false);
 
   const rows = resolveStageRouting({
     overrides,
@@ -75,11 +73,22 @@ export function StageOverridesSettings({
 
   return (
     <SettingsSection icon={Layers} label={t('settings.ai.stages.title')}>
-      <p className="mb-3 text-xs leading-relaxed text-foreground/50">
-        {t('settings.ai.stages.description')}
-      </p>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-xs leading-relaxed text-foreground/50">
+          {t('settings.ai.stages.description')}
+        </p>
+        <Button variant="ghost" className="shrink-0" onClick={() => setAdvisorOpen(true)}>
+          {t('settings.ai.advisor.open')}
+        </Button>
+      </div>
 
-      {children}
+      <ModelAdvisor
+        open={advisorOpen}
+        onClose={() => setAdvisorOpen(false)}
+        activeProvider={activeProvider}
+        activeModel={activeModel}
+        installedModels={ollamaModels.map((m) => m.name)}
+      />
 
       {/* Suggestion only — accepting it is a click, never a silent switch. */}
       <StageSuggestionBanner
