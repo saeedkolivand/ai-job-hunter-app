@@ -292,7 +292,10 @@ fn parse_openai_usage(data: &Value) -> Option<Usage> {
             .get("completion_tokens_details")
             .and_then(|d| d.get("reasoning_tokens"))
             .and_then(|v| v.as_u64())
-            .map(|v| v as u32),
+            // `try_from`, not `as`: `as` WRAPS, so an absurd or hostile count
+            // would land as a small plausible number in the spend ledger. An
+            // unrepresentable count is no measurement at all.
+            .and_then(|v| u32::try_from(v).ok()),
     })
 }
 

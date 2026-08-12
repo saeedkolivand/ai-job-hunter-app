@@ -201,7 +201,9 @@ fn parse_gemini_usage(data: &Value) -> Option<Usage> {
         thinking_tokens: um
             .get("thoughtsTokenCount")
             .and_then(|v| v.as_u64())
-            .map(|v| v as u32),
+            // `try_from`, not `as` — see the openai adapter: a wrapping cast
+            // turns an absurd count into a plausible one.
+            .and_then(|v| u32::try_from(v).ok()),
     })
 }
 
