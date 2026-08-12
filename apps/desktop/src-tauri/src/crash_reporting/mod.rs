@@ -41,20 +41,34 @@
 //! is not a choice, and the gap between a consent UI and what the code actually
 //! does is where privacy claims break.
 //!
-//! ## Redaction
+//! ## Redaction, and where it is actually enforced
 //!
 //! Crash payloads are the richest source of accidental PII in the app: panic
 //! messages interpolate paths, and every backtrace frame carries an absolute
-//! source path containing the OS username. Everything leaving this module goes
-//! through [`redact_event`], which reuses the same token redactor the
-//! diagnostics bundle uses (ADR-027) rather than inventing a second, weaker one.
+//! source path containing the OS username.
+//!
+//! Two mechanisms, at two different depths, because one of them is not enough:
+//!
+//! * [`redact_event`] runs as `before_send` and rewrites events on the
+//!   **capture path**, reusing the same token redactor the diagnostics bundle
+//!   uses (ADR-027) rather than inventing a second, weaker one. It is an
+//!   event-shaping hook — it only sees what `capture_event` prepared.
+//! * [`transport`] is the **wire gate**, and it is what the privacy claim
+//!   actually rests on. `before_send` is not the last hop: an envelope handed
+//!   straight to `Client::send_envelope` never reaches it, and
+//!   `tauri-plugin-sentry` 0.6 does exactly that for renderer envelopes it
+//!   cannot parse. The transport re-checks consent and drops anything opaque,
+//!   for every path, on every envelope. See that module for the full chain.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
 use crate::commands::support::redact_lines;
+
+mod transport;
 
 /// Consent + "has the user been asked" state, persisted next to the app data.
 const FILE_NAME: &str = "crash-reporting.json";
@@ -118,21 +132,40 @@ impl Settings {
     }
 }
 
+/// The consent answer as the **wire gate** sees it, mirrored out of the file so
+/// the transport can re-check it per envelope without touching the disk.
+///
+/// Starts `false` so it fails closed: a transport that somehow ran before
+/// [`init`] transmits nothing. Every place that changes the persisted answer
+/// ([`init`], [`save`], [`clear`], [`disable_current`]) updates this too — that
+/// is the whole contract, and it is small enough to keep honest by inspection.
+static TRANSMITS: AtomicBool = AtomicBool::new(false);
+
+/// Read the wire gate. A single relaxed atomic load: no lock, no allocation, no
+/// syscall, so it is safe to call on the transport's sender thread per envelope.
+pub(crate) fn transmits_now() -> bool {
+    TRANSMITS.load(Ordering::Relaxed)
+}
+
 /// Read the persisted settings from the resolved [`state_dir`].
 pub fn load() -> Settings {
     load_from(state_dir())
 }
 
-/// Persist settings to the resolved [`state_dir`].
+/// Persist settings to the resolved [`state_dir`] and move the wire gate with
+/// them, so an opt-out takes effect on the next envelope rather than the next
+/// launch.
 pub fn save(settings: Settings) {
     save_to(state_dir(), settings);
+    TRANSMITS.store(settings.transmits(), Ordering::Relaxed);
 }
 
 /// Remove the persisted flag from the resolved [`state_dir`] (factory reset).
 /// Back to default: enabled, not yet consented — so the wizard asks again
-/// before anything is sent.
+/// before anything is sent, and the wire gate closes immediately.
 pub fn clear() {
     let _ = std::fs::remove_file(state_dir().join(FILE_NAME));
+    TRANSMITS.store(Settings::default().transmits(), Ordering::Relaxed);
 }
 
 /// Read the persisted settings. Any failure — missing file, unreadable file,
@@ -207,55 +240,86 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
     // First call to `state_dir()` in the real app — this is what pins the
     // directory that the privacy commands will later read and write.
     let settings = load();
+    // Open the wire gate here and nowhere else at startup: the transport is
+    // built inside `sentry::init` below, and it must never observe the
+    // fail-closed default while the client it belongs to is live.
+    TRANSMITS.store(settings.transmits(), Ordering::Relaxed);
     if !settings.transmits() {
         return None;
     }
     let dsn = DSN?;
 
-    // Builder rather than a struct literal: `ClientOptions` is `#[non_exhaustive]`
-    // as of sentry 0.49, so `..Default::default()` no longer compiles from a
-    // downstream crate. Every setter below is still one field, set explicitly —
-    // including the two the SDK now happens to default the same way, because a
-    // privacy-relevant value should be readable here, not inferred from an
-    // upstream default that can change under us.
-    Some(sentry::init((
-        dsn,
-        sentry::ClientOptions::new()
-            .release(env!("CARGO_PKG_VERSION"))
-            .environment(if cfg!(debug_assertions) {
-                "development"
-            } else {
-                "production"
-            })
-            // Release health: crash-free rate and version adoption. This is the
-            // "usage" half of the feature — active installs per version — and it
-            // needs no separate analytics vendor.
-            .auto_session_tracking(true)
-            .session_mode(sentry::SessionMode::Application)
-            // Never attach the request/user identity the SDK can infer.
-            .send_default_pii(false)
-            // The SDK defaults this to the machine hostname, which on a personal
-            // device is frequently the user's real name.
-            .server_name("redacted")
-            .before_send(redact_event)
-            .before_breadcrumb(|mut breadcrumb| {
-                breadcrumb.message = breadcrumb.message.map(|m| redact_lines(&m));
-                Some(breadcrumb)
-            }),
-    )))
+    Some(sentry::init((dsn, client_options())))
 }
 
-/// Stop capturing in the current process, immediately.
+/// The client configuration, split out from [`init`] so the privacy-relevant
+/// answers in it are assertable without a DSN or a live client.
 ///
-/// Unbinding the client from the hub drops every subsequent event on the floor
-/// without waiting for a restart — someone who has just switched reporting off
-/// should not keep being reported for the rest of the session.
+/// Builder rather than a struct literal: `ClientOptions` is `#[non_exhaustive]`
+/// as of sentry 0.49, so `..Default::default()` no longer compiles from a
+/// downstream crate. Every setter below is still one field, set explicitly —
+/// including the ones the SDK now happens to default the same way, because a
+/// privacy-relevant value should be readable here, not inferred from an
+/// upstream default that can change under us.
+fn client_options() -> sentry::ClientOptions {
+    sentry::ClientOptions::new()
+        .release(env!("CARGO_PKG_VERSION"))
+        .environment(if cfg!(debug_assertions) {
+            "development"
+        } else {
+            "production"
+        })
+        // Release health: crash-free rate and version adoption. This is the
+        // "usage" half of the feature — active installs per version — and it
+        // needs no separate analytics vendor.
+        .auto_session_tracking(true)
+        .session_mode(sentry::SessionMode::Application)
+        // Never attach the request/user identity the SDK can infer.
+        .send_default_pii(false)
+        // The SDK defaults this to the machine hostname, which on a personal
+        // device is frequently the user's real name.
+        .server_name("redacted")
+        // Structured logs and metrics: two egress pipelines 0.49 turned ON
+        // by default (0.42 defaulted both off). The `logs`/`metrics` cargo
+        // features are off, so today the consumers are cfg'd out — but any
+        // future crate that enables `sentry/logs` would unify the feature
+        // into our build and silently open the pipe. These setters compile
+        // with the features off, so pinning the answer here costs nothing
+        // and stops that from ever being a silent change.
+        .enable_logs(false)
+        .enable_metrics(false)
+        .before_send(redact_event)
+        .before_breadcrumb(|mut breadcrumb| {
+            breadcrumb.message = breadcrumb.message.map(|m| redact_lines(&m));
+            Some(breadcrumb)
+        })
+        // The wire gate. Everything above shapes events; this decides what
+        // is allowed to leave the process at all. See `transport`.
+        .transport(transport::GuardedTransportFactory)
+}
+
+/// Stop transmitting in the current process, immediately.
 ///
-/// This cannot recall the minidump supervisor: it is a separate process forked
-/// before the WebView existed, so a hard native crash before the next restart
-/// may still be delivered. That limitation is stated in the settings copy rather
+/// Closing [`TRANSMITS`] is what actually stops it: the wire gate in
+/// [`transport`] re-reads that flag for every envelope, so the next one is
+/// dropped no matter which path produced it.
+///
+/// The hub unbind is the second, weaker half and is kept only because it also
+/// stops events being *built*. On its own it would not be enough, and the
+/// earlier version of this doc — which claimed unbinding "drops every
+/// subsequent event on the floor" — was simply false on two counts:
+///   * `Hub::current()` is **thread-local**, so this unbinds one thread. Work
+///     on any other thread keeps its own hub, and its own client.
+///   * `tauri-plugin-sentry` hands its own `Client` clone to Tauri state and
+///     calls `send_envelope` on it directly, never consulting a hub at all.
+///
+/// Neither can recall the minidump supervisor: it is a separate process forked
+/// before the WebView existed, holding its own client and its own copy of the
+/// gate's startup value, so a hard native crash before the next restart may
+/// still be delivered. That limitation is stated in the settings copy rather
 /// than papered over.
 pub fn disable_current() {
+    TRANSMITS.store(false, Ordering::Relaxed);
     sentry::Hub::current().bind_client(None);
 }
 
@@ -363,6 +427,31 @@ mod tests {
             "save() must be observable through load() — they resolved to different dirs otherwise"
         );
         assert!(!after.transmits(), "an explicit opt-out must not transmit");
+        // The wire gate must move with the file. If `save` ever stops mirroring
+        // into `TRANSMITS`, an opt-out would persist to disk while the transport
+        // kept sending for the rest of the session.
+        assert!(
+            !transmits_now(),
+            "save(opt-out) must close the wire gate, not just write the file"
+        );
+
+        // Same for the consent-granted direction, so the guard cannot pass by
+        // being stuck closed.
+        save(Settings {
+            enabled: true,
+            consent_shown: true,
+        });
+        assert!(
+            transmits_now(),
+            "save(consent granted) must open the wire gate"
+        );
+
+        // ...and the factory-reset path must close it again.
+        clear();
+        assert!(
+            !transmits_now(),
+            "clear() restores the never-asked default, which must not transmit"
+        );
 
         // Restore whatever the environment had, so this test leaves no trace.
         if before == Settings::default() {
@@ -370,6 +459,48 @@ mod tests {
         } else {
             save(before);
         }
+    }
+
+    /// The privacy-relevant half of the client configuration, pinned.
+    ///
+    /// Every assertion here is a switch whose wrong value leaks something and
+    /// whose absence is invisible at runtime — `enable_logs`/`enable_metrics`
+    /// default to TRUE in sentry 0.49, `server_name` defaults to the machine
+    /// hostname, and dropping the `.transport(...)` call would silently remove
+    /// the entire wire gate while everything still compiled and shipped.
+    #[test]
+    fn client_options_pin_every_privacy_switch() {
+        let options = client_options();
+
+        assert!(
+            options.transport.is_some(),
+            "the wire gate must be installed — without it raw envelopes egress unredacted"
+        );
+        assert!(
+            options.before_send.is_some(),
+            "capture-path events must still be redacted"
+        );
+        assert!(
+            options.before_breadcrumb.is_some(),
+            "breadcrumb messages must still be redacted"
+        );
+        assert!(
+            !options.enable_logs,
+            "0.49 defaults structured logs ON; that is egress we never consented to"
+        );
+        assert!(
+            !options.enable_metrics,
+            "0.49 defaults metrics ON; that is egress we never consented to"
+        );
+        assert!(
+            !options.send_default_pii,
+            "the SDK must never attach inferred user identity"
+        );
+        assert_eq!(
+            options.server_name.as_deref(),
+            Some("redacted"),
+            "server_name defaults to the hostname, which is often the user's real name"
+        );
     }
 
     /// The gate that protects the privacy claim: nothing identifying may survive

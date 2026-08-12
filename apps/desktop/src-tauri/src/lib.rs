@@ -458,8 +458,14 @@ pub fn run() {
         // `invoke`. The WebView never talks to the network itself, so the CSP
         // `connect-src` allowlist in tauri.conf.json is deliberately untouched
         // (widening it is rated HIGH/CRITICAL — docs/knowledge/security-rules.md).
-        // It also means renderer events inherit the same `before_send` redaction
-        // as Rust events instead of needing a second, parallel scrubber.
+        //
+        // Renderer events do NOT all inherit `before_send`, which this comment
+        // used to claim. The plugin only routes a renderer envelope through
+        // `capture_event` (and therefore through our redaction) when it parses
+        // AND contains an event item; everything else it hands to
+        // `Client::send_envelope`, which reaches the transport directly. That is
+        // why the privacy guarantee is enforced one level lower, in
+        // `crash_reporting::transport` — see that module.
         builder = builder.plugin(tauri_plugin_sentry::init(client));
     }
 
