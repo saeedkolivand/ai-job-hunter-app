@@ -101,6 +101,53 @@ fn the_max_deadline_is_longer_than_the_quality_one_and_scales_with_effort() {
     );
 }
 
+/// **A run stopped by its own clock keeps what it already paid for.** That
+/// claim is what sized `Budget::RESUME_MAX`'s deadline at the reachable 7 200 s
+/// instead of the 12 000 s worst case, and it was false: `sections` breaks out
+/// of its fan-out on the deadline and returns its finished sections `Ok`, and
+/// the boundary check then refused `assemble` — so a run with eleven paid
+/// answers in hand persisted nothing and reported `failed`.
+///
+/// The two stages between the fan-out and a saved document make no provider
+/// call, which is exactly why the boundary may let them through. Read off the
+/// pipelines that actually run, so marking a paid stage free (or a free stage
+/// paid) fails here rather than in production.
+///
+/// Mutation check: delete `Assemble::costs_a_provider_call` and the max list
+/// loses `assemble`; add the override to `Sections`, `Repair` or `Judge` and
+/// the "everything else costs money" assertion fails.
+#[test]
+fn only_the_zero_call_stages_may_run_after_the_deadline() {
+    assert_eq!(
+        pipeline_for(GenerationDepth::Max).free_stage_names(),
+        vec!["assemble", "validate"],
+        "the render + the check are the two stages that turn paid answers into a saved document"
+    );
+    assert_eq!(
+        pipeline_for(GenerationDepth::Quality).free_stage_names(),
+        vec!["validate"]
+    );
+    // Every OTHER stage of both pipelines costs a call, so none of them can be
+    // reached past the deadline.
+    for depth in [GenerationDepth::Max, GenerationDepth::Quality] {
+        let pipeline = pipeline_for(depth);
+        let free = pipeline.free_stage_names();
+        let paid: Vec<&str> = pipeline
+            .stage_names()
+            .into_iter()
+            .filter(|stage| !free.contains(stage))
+            .collect();
+        assert!(
+            paid.contains(&"repair") && paid.contains(&"strategy"),
+            "{depth:?}: a stage that fans out to a provider must never be free: {paid:?}"
+        );
+        assert!(
+            !free.contains(&"sections") && !free.contains(&"llm_judge") && !free.contains(&"draft"),
+            "{depth:?}: {free:?}"
+        );
+    }
+}
+
 // ── The per-entry regenerate's identity join ─────────────────────────────────
 
 fn plan(company: &str, condensed: bool) -> CompanyPlan {

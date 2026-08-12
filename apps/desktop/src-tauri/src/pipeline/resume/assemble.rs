@@ -262,6 +262,13 @@ impl<'a> Stage<QualityCtx<'a>> for Assemble {
         NAME
     }
 
+    /// Pure — the module title's "ZERO provider calls", as something the run
+    /// can act on. It is what lets a fan-out stopped by the clock still become
+    /// a document instead of eleven paid answers nobody ever sees.
+    fn costs_a_provider_call(&self) -> bool {
+        false
+    }
+
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let document = assemble(&ctx.sections, &ctx.strategy.section_order);
         // Length and section count only — never the document (ADR-027). The

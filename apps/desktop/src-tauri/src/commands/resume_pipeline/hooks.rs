@@ -79,12 +79,34 @@ pub(crate) fn emitted_phases() -> [&'static str; 3] {
 /// **Cancellation outranks the deadline.** A user who pressed Cancel on a run
 /// that also happens to be out of time asked for a cancel; answering "it timed
 /// out" describes the same event less usefully, and the command maps the two to
-/// different terminal job states.
+/// different terminal job states. It also outranks `costs_a_call` below: a
+/// cancel stops every stage, free or not.
+///
+/// **An expired deadline stops the next PAID stage, not the next stage.** The
+/// boundary check exists because a stage boundary is where stopping is free —
+/// nothing is in flight and the next provider call has not been paid for. That
+/// reasoning says nothing about a stage that makes no call, and reading it as
+/// "stop at the next boundary" cost a max run everything it had: `sections`
+/// breaks out of its fan-out on the same clock, returns its finished sections
+/// `Ok`, and the very next boundary (`assemble`, which is pure, followed by
+/// `validate`, which is deterministic) aborted the run — empty draft, no
+/// report, nothing persisted, `status=failed`, up to eleven paid answers
+/// discarded. It also contradicted the reasoning that sized
+/// `Budget::RESUME_MAX`'s deadline at the reachable 7 200 s rather than the
+/// worst case: that a section-wise run KEEPS what it assembled when the clock
+/// stops.
+///
+/// The reason is still recorded on the free path, so the run reports
+/// `run_timeout` and [`terminal_state`] resolves it to `needsReview`/
+/// `completed` exactly as the in-loop check already does — the run is stopped,
+/// and it is also honest about what it produced. `repair` and the judge still
+/// cost calls, so they are still refused.
 pub(crate) fn apply_stop(
     ledger: &RunLedger,
     cancelled: bool,
     elapsed: Duration,
     deadline: Duration,
+    costs_a_call: bool,
 ) -> AppResult<()> {
     if cancelled {
         ledger.stop(StoppedReason::Cancelled);
@@ -92,10 +114,12 @@ pub(crate) fn apply_stop(
     }
     if elapsed >= deadline {
         ledger.stop(StoppedReason::RunTimeout);
-        // The same text `pipeline::resume::guard_deadline` reports from inside a
-        // stage: which enforcement point saw the clock first is an
-        // implementation detail, not something to tell the user two ways.
-        return Err(crate::pipeline::resume::run_timeout_error(deadline));
+        if costs_a_call {
+            // The same text `pipeline::resume::guard_deadline` reports from
+            // inside a stage: which enforcement point saw the clock first is an
+            // implementation detail, not something to tell the user two ways.
+            return Err(crate::pipeline::resume::run_timeout_error(deadline));
+        }
     }
     Ok(())
 }
@@ -467,6 +491,7 @@ impl StageHooks for RunHooks {
             self.cancel.is_cancelled(),
             self.deadline.elapsed(),
             self.deadline.limit(),
+            stage.costs_a_call,
         )?;
         // Recorded BEFORE the stage body runs, because the section-wise
         // generator reports from inside it.

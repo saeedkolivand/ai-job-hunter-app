@@ -87,6 +87,14 @@ impl<'a> Stage<QualityCtx<'a>> for Validate {
         "validate"
     }
 
+    /// Deterministic — the module title's "ZERO provider calls", as something
+    /// the run can act on. A document nothing checked is a document nothing may
+    /// present as reviewed, so this has to survive the same deadline `assemble`
+    /// does.
+    fn costs_a_provider_call(&self) -> bool {
+        false
+    }
+
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let (report, letter) = validate_documents(
             ctx.draft.clone(),

@@ -673,8 +673,23 @@ fn a_cancelled_run_stops_at_the_next_stage_boundary() {
         true,
         Duration::from_secs(1),
         Duration::from_secs(600),
+        true,
     );
     assert!(outcome.is_err(), "a cancelled run must not enter the stage");
+    assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
+
+    // A cancel stops a FREE stage too: the deadline's exemption is about not
+    // throwing away paid work, and a user who pressed Cancel asked for the run
+    // to stop rendering as well as to stop spending.
+    let ledger = RunLedger::new();
+    assert!(apply_stop(
+        &ledger,
+        true,
+        Duration::from_secs(1),
+        Duration::from_secs(600),
+        false
+    )
+    .is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
@@ -689,6 +704,7 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         false,
         Duration::from_secs(2_701),
         Duration::from_secs(2_700),
+        true,
     );
     assert!(outcome.is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::RunTimeout));
@@ -699,10 +715,49 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         &ok,
         false,
         Duration::from_secs(1),
-        Duration::from_secs(2_700)
+        Duration::from_secs(2_700),
+        true
     )
     .is_ok());
     assert_eq!(ok.stopped(), None);
+}
+
+/// **An expired deadline stops the next PAID stage, not the next stage.**
+///
+/// The boundary check's whole justification is that a stage boundary is where
+/// stopping is free — nothing is in flight, and the next provider call has not
+/// been paid for. Applied to a stage that makes NO call, that reasoning inverts
+/// into its opposite: a max run whose clock ran out mid-fan-out had `assemble`
+/// (pure) and `validate` (deterministic) refused, so eleven paid section
+/// answers became an empty draft, no report, nothing persisted and
+/// `status=failed`.
+///
+/// The run is still STOPPED — the reason is recorded on this path too, which is
+/// what makes `terminal_state` resolve it to `needsReview`/`completed` +
+/// `run_timeout` rather than to a clean finish.
+///
+/// Mutation check: return the error unconditionally (drop the `costs_a_call`
+/// guard) and the free-stage assertion fails; skip `ledger.stop` on the free
+/// path and the reason assertion does.
+#[test]
+fn a_zero_call_stage_still_runs_after_the_deadline_and_the_run_still_says_so() {
+    let ledger = RunLedger::new();
+    let outcome = apply_stop(
+        &ledger,
+        false,
+        Duration::from_secs(2_701),
+        Duration::from_secs(2_700),
+        false,
+    );
+    assert!(
+        outcome.is_ok(),
+        "a stage that costs nothing must be allowed to turn paid work into a document"
+    );
+    assert_eq!(
+        ledger.stopped(),
+        Some(StoppedReason::RunTimeout),
+        "the run is still deadline-stopped — running the free stages does not hide that"
+    );
 }
 
 /// Cancellation wins over the deadline when both hold: the user asked for a
@@ -711,7 +766,13 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
 #[test]
 fn cancellation_outranks_the_deadline() {
     let ledger = RunLedger::new();
-    let _ = apply_stop(&ledger, true, Duration::from_secs(9_999), Duration::ZERO);
+    let _ = apply_stop(
+        &ledger,
+        true,
+        Duration::from_secs(9_999),
+        Duration::ZERO,
+        true,
+    );
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
