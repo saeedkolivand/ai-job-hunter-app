@@ -81,7 +81,7 @@ use crate::ipc_contracts::resume_pipeline::{
 };
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::resume::stages::{regenerate_one_section, section_gen, SectionOutcome};
+use crate::pipeline::resume::stages::{self, regenerate_one_section, section_gen, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
 use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
@@ -243,9 +243,10 @@ async fn execute(
     // ONE resolution per overridden stage, BEFORE the run starts: an override
     // edited mid-run must not take effect halfway through the document, and the
     // stage cache keys are derived from these same completers. Scoped to the
-    // stages THIS depth runs — a `draft` override costs nothing on a max run,
-    // which has no draft stage.
-    let stage_completers = Completer::for_stages(app, &max::pipeline_for(depth).stage_names())?;
+    // stages THIS depth runs AND CAN PAY FOR — a `draft` override costs nothing
+    // on a max run, which has no draft stage, and a stage that makes no call
+    // has no routing to resolve (see `max::paying_stages`).
+    let stage_completers = Completer::for_stages(app, &max::paying_stages(depth))?;
     let resume = app
         .state::<DocumentStore>()
         .get(&req.resume_id)
@@ -937,34 +938,50 @@ pub async fn resume_pipeline_regenerate_section(
         "pipeline:resume",
         format!("op=regenerate_section key={}", key.to_wire()),
     );
-    // Resolved through the SAME per-stage path a run takes: a per-section
-    // regenerate IS the `sections` stage, one section wide, so a user who
-    // pointed that stage at another model gets that model here too. Without
-    // this, the button would quietly disagree with the run that produced the
-    // document it is editing.
-    let completer = Completer::from_active_for_stage(&app, section_gen::NAME)?;
     let source = source_resume_for(&app, &row, &record);
-    let outcome =
-        match regenerate_max_entry(&store, &row, &record, &completer, &source, key, &req).await {
-            Some(outcome) => outcome?,
-            // Not a max run, not an employment entry, or the run's artifacts are
-            // gone/unparseable — the whole-section rewrite that has always been
-            // here. A degraded click is a worse click; a failed one is a bug.
-            None => {
-                regenerate_one_section(
-                    &completer,
-                    &source,
-                    &record.target_language,
-                    &record.resume_text,
-                    key,
-                    // No validator issues on this path: the user, not a report,
-                    // asked for the change. The note carries the "why", fenced.
-                    &[],
-                    req.note.as_deref(),
-                )
-                .await?
-            }
-        };
+    // Routed through the SAME per-stage path a run takes — and through the
+    // stage whose PROMPT each sub-path actually uses, resolved lazily so a
+    // click only ever resolves the one it takes:
+    //
+    // * the max artifact-rebuild path re-runs `sections`' own generator over
+    //   the run's stored analysis/strategy, so it follows the `sections`
+    //   override — the stage that produced the text being replaced;
+    // * the fallback is a whole-section REWRITE using `repair`'s prompt and
+    //   grounding, and `repair` is the stage that exists at BOTH depths (a
+    //   quality run has no `sections` stage at all), so it follows `repair`.
+    //
+    // Routing both through one override would make the button disagree with
+    // whichever stage the user actually configured.
+    let outcome = match regenerate_max_entry(
+        &store,
+        &row,
+        &record,
+        &Completer::from_active_for_stage(&app, section_gen::NAME)?,
+        &source,
+        key,
+        &req,
+    )
+    .await
+    {
+        Some(outcome) => outcome?,
+        // Not a max run, not an employment entry, or the run's artifacts are
+        // gone/unparseable — the whole-section rewrite that has always been
+        // here. A degraded click is a worse click; a failed one is a bug.
+        None => {
+            regenerate_one_section(
+                &Completer::from_active_for_stage(&app, stages::REPAIR_STAGE)?,
+                &source,
+                &record.target_language,
+                &record.resume_text,
+                key,
+                // No validator issues on this path: the user, not a report,
+                // asked for the change. The note carries the "why", fenced.
+                &[],
+                req.note.as_deref(),
+            )
+            .await?
+        }
+    };
     let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {

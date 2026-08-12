@@ -281,10 +281,13 @@ fn parse_openai_usage(data: &Value) -> Option<Usage> {
             .get("completion_tokens")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
-        // `usage.completion_tokens_details.reasoning_tokens` — reported by the
-        // reasoning models and simply absent for the rest, which is why this
-        // reads defensively and yields `None` rather than 0. It is a SUBSET of
-        // `completion_tokens`, so it must not be added to anything.
+        // `usage.completion_tokens_details.reasoning_tokens`. Current models
+        // send the details object even when they did no reasoning, with a `0`
+        // here — so a non-reasoning model records a measured zero, and `None`
+        // means the field was genuinely absent (an older model, or an
+        // openai-compatible gateway that omits it). Both are honest; neither is
+        // invented. It is a SUBSET of `completion_tokens`, so it must not be
+        // added to anything.
         thinking_tokens: usage
             .get("completion_tokens_details")
             .and_then(|d| d.get("reasoning_tokens"))

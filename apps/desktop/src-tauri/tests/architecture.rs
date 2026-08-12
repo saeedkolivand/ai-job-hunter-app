@@ -396,10 +396,12 @@ const R3_ALLOW: &[&str] = &[
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
-    // Same store, split out to keep the per-stage override table's SQL,
-    // validation and vocabulary check in one focused module instead of growing
-    // `ai_config/mod.rs`. Persistence still lives entirely inside the
-    // `ai_config` domain store, on the SAME connection.
+    // Same store, split for COHESION rather than for the LOC cap (unlike the
+    // `documents`/`applications` splits above — `ai_config/mod.rs` has ample
+    // room): the per-stage override table's SQL, its validation and its stage
+    // vocabulary are one subject, and interleaving them with the active-provider
+    // config would make neither readable. Persistence still lives entirely
+    // inside the `ai_config` domain store, on the SAME connection.
     "ai_config/stage_overrides.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",

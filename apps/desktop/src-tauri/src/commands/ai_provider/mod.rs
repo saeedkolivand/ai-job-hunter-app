@@ -538,8 +538,12 @@ pub struct Usage {
     ///
     /// Who reports what, as of the adapters in this module:
     ///
-    /// * OpenAI — `usage.completion_tokens_details.reasoning_tokens`, present
-    ///   for the o-series/reasoning models and absent otherwise.
+    /// * OpenAI — `usage.completion_tokens_details.reasoning_tokens`. Current
+    ///   Chat Completions models send the details object with a **`0`** here
+    ///   when they did no reasoning, rather than omitting it, so a
+    ///   non-reasoning OpenAI model records `Some(0)` — a measured zero, which
+    ///   is a fact and not a fabrication. `None` is reserved for "the field was
+    ///   not there at all" (an older/compatible gateway).
     /// * Gemini — `usageMetadata.thoughtsTokenCount`, which this app already
     ///   opts into by sending `thinkingConfig.includeThoughts`.
     /// * Anthropic — NOT reported separately; thinking tokens are counted

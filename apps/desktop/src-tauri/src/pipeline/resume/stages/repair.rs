@@ -55,7 +55,10 @@ use super::validate::{counts, validate_documents};
 
 pub struct Repair;
 
-const NAME: &str = "repair";
+/// This stage's name — also the override a per-section REGENERATE click routes
+/// through when it takes the text-rewrite path, which is this stage's own
+/// prompt and grounding. See `commands::resume_pipeline::resume_pipeline_regenerate_section`.
+pub const NAME: &str = "repair";
 
 /// Sections one round may regenerate.
 ///
