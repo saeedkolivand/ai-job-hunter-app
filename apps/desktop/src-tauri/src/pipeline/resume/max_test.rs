@@ -355,8 +355,7 @@ fn the_section_plan_follows_the_roster_and_the_source() {
     // condensed, never dropped.
     let last_experience = slots
         .iter()
-        .filter(|slot| matches!(slot.seed, SectionSeed::Experience(_)))
-        .next_back()
+        .rfind(|slot| matches!(slot.seed, SectionSeed::Experience(_)))
         .expect("a roster entry");
     match &last_experience.seed {
         SectionSeed::Experience(plan) => {

@@ -65,7 +65,10 @@ fn each_depth_runs_under_its_own_backend_owned_budget() {
     assert_eq!(budget_for(GenerationDepth::Max), Budget::RESUME_MAX);
     assert_eq!(budget_for(GenerationDepth::Quality), Budget::RESUME_QUALITY);
     assert_ne!(Budget::RESUME_MAX, Budget::RESUME_QUALITY);
-    assert!(
+    // A const block, because both operands are compile-time constants and
+    // clippy is right that a runtime `assert!` on two of them proves nothing at
+    // test time that it would not prove at build time.
+    const _: () = assert!(
         Budget::RESUME_MAX.max_steps > Budget::RESUME_QUALITY.max_steps,
         "max depth takes one step per section on top of the framing stages"
     );
