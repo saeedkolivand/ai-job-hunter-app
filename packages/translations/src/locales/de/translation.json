@@ -1485,7 +1485,7 @@
       "max": {
         "label": "Maximal",
         "tooltip": "Acht Schritte: analysieren, Belege zuordnen, planen, jeden Abschnitt einzeln schreiben, zusammensetzen, prüfen, automatisch nachbessern, abschließend ein KI-Review.",
-        "summary": "Jeder Abschnitt wird einzeln geschrieben und geprüft — du siehst den Lebenslauf entstehen. Mit Abstand die langsamste Stufe: in der Cloud Minuten, nach etwa zwei Stunden bricht der Lauf selbst ab."
+        "summary": "Jeder Abschnitt wird einzeln geschrieben — du siehst den Lebenslauf entstehen — danach wird das fertige Dokument als Ganzes geprüft und nachgebessert. Mit Abstand die langsamste Stufe: in der Cloud Minuten, nach etwa zwei Stunden bricht der Lauf selbst ab."
       },
       "unavailable": "In dieser Version noch nicht verfügbar."
     },

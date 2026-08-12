@@ -1481,7 +1481,7 @@
       "max": {
         "label": "Max",
         "tooltip": "Eight stages: analyse, match your evidence, plan, write each section on its own, assemble, check, auto-repair, then one AI review pass.",
-        "summary": "Each section written and checked on its own — you watch the résumé build. By far the slowest depth: minutes on a cloud provider, and the run stops itself after about two hours."
+        "summary": "Each section is written on its own — you watch the résumé build — then the finished document is checked and repaired as a whole. By far the slowest depth: minutes on a cloud provider, and the run stops itself after about two hours."
       },
       "unavailable": "Not available in this build yet."
     },

@@ -152,7 +152,7 @@ describe('SectionTimeline', () => {
     });
   });
 
-  it('renders every state in the ladder without falling back to a raw key', () => {
+  it('renders every state in the ladder with its resolved label', () => {
     const states: PipelineSectionStates = {
       summary: 'queued',
       skills: 'generating',
@@ -163,7 +163,24 @@ describe('SectionTimeline', () => {
     };
     render(<SectionTimeline states={states} />);
     expect(rows()).toHaveLength(6);
-    // A missing translation would leak `pipeline.section.state.<x>` as text.
+
+    // The RESOLVED text, not just the absence of a raw key: asserting only
+    // `queryByText(/pipeline\.section\./) === null` also passes when the label
+    // is never rendered at all, which is exactly the regression worth catching.
+    for (const label of [
+      'Waiting',
+      'Writing',
+      'Written',
+      'Checking',
+      'Repaired',
+      'No changes needed',
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // …and the remaining rung still resolves, on a row of its own.
+    render(<SectionTimeline states={{ summary: 'needsChanges' }} />);
+    expect(screen.getByText('Needs changes')).toBeInTheDocument();
+
     expect(screen.queryByText(/pipeline\.section\./)).toBeNull();
   });
 });
