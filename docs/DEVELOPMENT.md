@@ -254,6 +254,17 @@ Embedding vectors live in the `vectors` table of `documents.db` and cosine simil
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
 delete the `*.db` files in that directory and restart the app.
 
+Two offline evaluation entry points, one per half of "is a deeper pipeline worth it":
+
+```bash
+node scripts/dump-run-metrics.mjs --help   # depth A/B over your own recorded runs
+cargo test --test eval -- --nocapture      # validator precision/recall on fixtures
+```
+
+Both print their own contract — requirements, defaults, caveats and privacy posture live
+in the file headers (`scripts/dump-run-metrics.mjs`, `apps/desktop/src-tauri/tests/eval.rs`)
+and in `--help`, which is where they stay current.
+
 ### Migrations and stale dev DBs
 
 Each store owns its own migration list and tracks progress with `PRAGMA user_version`
