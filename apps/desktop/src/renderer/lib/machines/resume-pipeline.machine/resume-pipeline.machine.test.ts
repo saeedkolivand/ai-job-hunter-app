@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { transition } from '@/lib/machine';
 
 import {
+  foldSectionStates,
+  type PipelineSectionStates,
   resumePipelineMachine,
   type ResumePipelineState,
   stageToEvent,
@@ -158,6 +160,100 @@ describe('resumePipelineMachine', () => {
   it('accepts a cancel from any busy state (a boundary stop can land anywhere)', () => {
     for (const state of resumePipelineMachine.busyStates ?? []) {
       expect(transition(resumePipelineMachine, state, 'CANCEL')).toBe('cancelled');
+    }
+  });
+});
+
+// ── The per-section fold ────────────────────────────────────────────────────
+//
+// Everything here is a claim about what the WIRE proves. The temptation this
+// suite exists to resist is filling the ladder in from plausible inference —
+// a `needsChanges` on the section that "probably" caused the issue count, a
+// `queued` row for a section the run may never generate.
+describe('foldSectionStates', () => {
+  const event = (
+    stage: string,
+    phase: 'start' | 'finish' | 'error',
+    extra: { sectionKey?: string; issueCount?: number } = {}
+  ) => ({ stage, phase, ...extra }) as Parameters<typeof foldSectionStates>[1];
+
+  it('walks one section from generating to done', () => {
+    let states: PipelineSectionStates = {};
+    states = foldSectionStates(states, event('sections', 'start', { sectionKey: 'summary' }));
+    expect(states).toEqual({ summary: 'generating' });
+    states = foldSectionStates(states, event('sections', 'finish', { sectionKey: 'summary' }));
+    expect(states).toEqual({ summary: 'done' });
+  });
+
+  it('tracks each experience entry separately', () => {
+    let states: PipelineSectionStates = {};
+    states = foldSectionStates(states, event('sections', 'finish', { sectionKey: 'experience:0' }));
+    states = foldSectionStates(states, event('sections', 'start', { sectionKey: 'experience:1' }));
+    expect(states).toEqual({ 'experience:0': 'done', 'experience:1': 'generating' });
+  });
+
+  // Drop the `event.sectionKey` read (fold on the stage name alone) and this
+  // fails: every section would collapse onto one key.
+  it('needs the sectionKey — a bare `sections` stage event moves nothing', () => {
+    const states = { summary: 'done' } as PipelineSectionStates;
+    expect(foldSectionStates(states, event('sections', 'start'))).toBe(states);
+    expect(foldSectionStates(states, event('sections', 'finish'))).toBe(states);
+  });
+
+  it('moves finished sections to checking when validate starts', () => {
+    const states: PipelineSectionStates = { summary: 'done', skills: 'generating' };
+    expect(foldSectionStates(states, event('validate', 'start'))).toEqual({
+      summary: 'checking',
+      // Still generating: `validate` cannot have checked a section that had not
+      // finished when it started.
+      skills: 'generating',
+    });
+  });
+
+  it('calls a section clean only when the WHOLE document came back clean', () => {
+    const checking: PipelineSectionStates = { summary: 'checking', skills: 'checking' };
+    expect(foldSectionStates(checking, event('validate', 'finish', { issueCount: 0 }))).toEqual({
+      summary: 'clean',
+      skills: 'clean',
+    });
+  });
+
+  // The honesty guard. `validate`'s counts are run-level: the artifact is
+  // `{issues, criticals, codes}` with no section attribution, and `repair`'s is
+  // `{rounds, reverted, …}`. Attributing either to a section would be a guess.
+  it('leaves sections alone when the run-level counts cannot name one', () => {
+    const checking: PipelineSectionStates = { summary: 'checking' };
+    expect(foldSectionStates(checking, event('validate', 'finish', { issueCount: 3 }))).toBe(
+      checking
+    );
+    // No count at all proves nothing either — not "clean".
+    expect(foldSectionStates(checking, event('validate', 'finish'))).toBe(checking);
+    for (const stage of ['repair', 'llm_judge', 'assemble']) {
+      expect(foldSectionStates(checking, event(stage, 'start'))).toBe(checking);
+      expect(foldSectionStates(checking, event(stage, 'finish', { issueCount: 0 }))).toBe(checking);
+    }
+  });
+
+  it('never invents a queued section — the wire cannot say what is coming', () => {
+    // The live event's index/total belong to the STAGE, and the section counts
+    // ride only in the persisted artifact, so the roster is unknowable in
+    // advance. Every state the fold produces is one an event proved.
+    let states: PipelineSectionStates = {};
+    for (const key of ['summary', 'skills']) {
+      states = foldSectionStates(states, event('sections', 'start', { sectionKey: key }));
+      states = foldSectionStates(states, event('sections', 'finish', { sectionKey: key }));
+    }
+    expect(Object.keys(states)).toEqual(['summary', 'skills']);
+    expect(Object.values(states)).not.toContain('queued');
+  });
+
+  it('returns the same object when nothing moved, so a quality run never re-renders', () => {
+    const states: PipelineSectionStates = {};
+    // The whole quality-depth stage list carries no sectionKey.
+    for (const stage of STAGES) {
+      for (const phase of ['start', 'finish'] as const) {
+        expect(foldSectionStates(states, event(stage, phase))).toBe(states);
+      }
     }
   });
 });
