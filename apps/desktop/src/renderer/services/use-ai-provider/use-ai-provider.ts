@@ -6,7 +6,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 
-import type { ProviderModelInfo } from '@ajh/shared';
+import type { ActiveAiConfig, ProviderModelInfo } from '@ajh/shared';
 
 import { readModelListCache, writeModelListCache } from '@/lib/ai-providers/model-list-cache';
 import type { AppClient } from '@/lib/app-client';
@@ -15,6 +15,7 @@ import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
 import { keys, QUERY_TIMES } from '../query-client';
+import { type ProviderSettingsWriteInput, resolveProviderSettingsWrite } from './provider-settings';
 
 /** A cloud provider's model catalogue, plus whether it was served from the
  *  last-good local cache (a live fetch failed) rather than a fresh fetch. */
@@ -292,21 +293,62 @@ export const useSetActiveProvider = () => {
   });
 };
 
-/** Edit a provider's model/base_url WITHOUT flipping the active provider (the
- *  backend-owned "edit" half). Same `{ error }`-union narrowing as
+/** Edit a provider's model/base_url/context window WITHOUT flipping the active
+ *  provider (the backend-owned "edit" half). Same `{ error }`-union narrowing as
  *  `useSetActiveProvider` — a server-side rejection (e.g. base_url provenance)
- *  must reject the mutation, not silently resolve. */
+ *  must reject the mutation, not silently resolve.
+ *
+ *  RAW: every field is REPLACED, so a caller that omits one NULLs it. UI call
+ *  sites want {@link useSaveProviderSettings}, which fills the fields it isn't
+ *  changing; this stays exported for the flows that genuinely own all four. */
 export const useSetProviderSettings = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: { provider: string; model?: string; baseUrl?: string }) => {
+    mutationFn: async (req: {
+      provider: string;
+      model?: string;
+      baseUrl?: string;
+      contextWindow?: number;
+    }) => {
       const result = await api.ai.setProviderSettings(req);
       if ('error' in result) throw new Error(result.error);
       return result;
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.ai.activeConfig }),
   });
+};
+
+/**
+ * The REPLACE-safe way to save one provider field.
+ *
+ * `save({ provider, model })` keeps that provider's stored base URL and the
+ * window held for the model; `save({ provider, baseUrl })` keeps its model.
+ * Pass `baseUrl: null` to clear a base URL on purpose. Field resolution is the
+ * pure {@link resolveProviderSettingsWrite} — the rule lives there, tested,
+ * rather than being re-derived at each call site (three of which used to omit
+ * enough fields to erase one).
+ */
+export const useSaveProviderSettings = () => {
+  const mutation = useSetProviderSettings();
+  const { data: activeConfig } = useActiveConfig();
+  const zustand = useAiProviderConfig();
+  const localWindows = zustand?.providers?.ollama?.modelLimits;
+
+  const save = (
+    input: Omit<ProviderSettingsWriteInput, 'stored' | 'localWindows'>,
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) =>
+    mutation.mutate(
+      resolveProviderSettingsWrite({
+        ...input,
+        stored: activeConfig?.providers?.[input.provider],
+        localWindows,
+      }),
+      options
+    );
+
+  return { save, isPending: mutation.isPending };
 };
 
 /** Set a provider's model (+ optional base_url) AND make it active in one step —
@@ -317,6 +359,8 @@ export const useSetProviderSettings = () => {
 export const useConfigureActiveProvider = () => {
   const api = useAppClient();
   const qc = useQueryClient();
+  const zustand = useAiProviderConfig();
+  const localWindows = zustand?.providers?.ollama?.modelLimits;
   return useMutation({
     mutationFn: async ({
       provider,
@@ -327,7 +371,18 @@ export const useConfigureActiveProvider = () => {
       model?: string;
       baseUrl?: string;
     }) => {
-      const settingsResult = await api.ai.setProviderSettings({ provider, model, baseUrl });
+      // Same REPLACE rule as `useSaveProviderSettings`: this flow names the
+      // model, so the window it saves is the one held FOR THAT MODEL — never
+      // the previous model's, and never silently NULL when one exists.
+      const settingsResult = await api.ai.setProviderSettings(
+        resolveProviderSettingsWrite({
+          provider,
+          model,
+          baseUrl,
+          stored: qc.getQueryData<ActiveAiConfig>(keys.ai.activeConfig)?.providers?.[provider],
+          localWindows,
+        })
+      );
       if ('error' in settingsResult) throw new Error(settingsResult.error);
       const activeResult = await api.ai.setActiveProvider({ provider });
       if ('error' in activeResult) throw new Error(activeResult.error);

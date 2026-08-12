@@ -10,10 +10,11 @@
  *    accidental removal of the label in future refactors.
  *  - base URL save: a rejected `setProviderSettings` write (the `{error}`-union
  *    narrowing added for review #16) surfaces an error notification instead of
- *    silently swallowing the failure.
+ *    silently swallowing the failure, and an emptied input clears the URL
+ *    explicitly (`baseUrl: null`) rather than reading as "unchanged".
  *
  * No QueryClient / AppClientProvider needed — the component's only hooks are
- * useTranslation (stubbed), useNotification (stubbed), and useSetProviderSettings
+ * useTranslation (stubbed), useNotification (stubbed), and useSaveProviderSettings
  * (stubbed).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,19 +50,19 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 // `mutate` invokes the caller's `onError` synchronously so tests can simulate a
 // rejected `{error}`-union write without a real QueryClient/mutation lifecycle.
 
-const mockSetProviderSettingsMutate = vi.fn((_req: unknown, opts?: { onError?: () => void }) =>
+const mockSaveProviderSettings = vi.fn((_req: unknown, opts?: { onError?: () => void }) =>
   opts?.onError?.()
 );
 
 // EffortPicker's capability probe — controllable per-test via this mutable
 // state object (avoids a real QueryClient/AppClientProvider in these focused
-// tests, mirroring the useSetProviderSettings stub above).
+// tests, mirroring the useSaveProviderSettings stub above).
 const modelCapsState: { data: { effortLevels: string[] } | undefined } = {
   data: undefined,
 };
 
 vi.mock('@/services', () => ({
-  useSetProviderSettings: () => ({ mutate: mockSetProviderSettingsMutate }),
+  useSaveProviderSettings: () => ({ save: mockSaveProviderSettings, isPending: false }),
   useModelCapabilities: () => modelCapsState,
 }));
 
@@ -193,10 +194,24 @@ describe('CloudProviderConfig — base URL save surfaces a rejected write', () =
 
     await user.click(screen.getByText('settings.aiProvider.saveUrl'));
 
-    expect(mockSetProviderSettingsMutate).toHaveBeenCalledOnce();
+    expect(mockSaveProviderSettings).toHaveBeenCalledOnce();
     expect(mockNotify.error).toHaveBeenCalledWith({
       message: 'settings.aiProvider.saveUrlFailed',
     });
+  });
+
+  it('saves an EMPTIED base URL as an explicit clear, not as "unchanged"', async () => {
+    const user = userEvent.setup();
+    render(<CloudProviderConfig {...baseProps} provider="openai-compatible" baseUrlInput="" />);
+
+    await user.click(screen.getByText('settings.aiProvider.saveUrl'));
+
+    // `null` is the writer's "clear this field"; `undefined` would mean "keep
+    // whatever is stored", which would make the URL impossible to remove.
+    expect(mockSaveProviderSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai-compatible', baseUrl: null }),
+      expect.anything()
+    );
   });
 });
 

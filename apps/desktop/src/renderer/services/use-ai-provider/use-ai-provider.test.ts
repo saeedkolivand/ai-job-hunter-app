@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 
 import type { AppClient } from '@/lib/app-client';
+import { usePreferencesStore } from '@/store/preferences-store';
 import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
 
 import * as mod from './use-ai-provider';
@@ -180,5 +181,129 @@ describe('useConfigureActiveProvider — stops before setActiveProvider on a rej
       'invalid provider'
     );
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it('sends the window stored for the model it activates', async () => {
+    usePreferencesStore.getState().setLocalModelLimits('qwen3:8b', { contextWindow: 12_288 });
+    const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+    const client = createMockClient({
+      'ai.setProviderSettings': setProviderSettings,
+      'ai.setActiveProvider': vi.fn().mockResolvedValue({ providers: {} }),
+    });
+    const { result } = renderHookWithClient(() => mod.useConfigureActiveProvider(), { client });
+
+    await act(async () => {
+      await result.current.mutateAsync({ provider: 'ollama', model: 'qwen3:8b' });
+    });
+
+    expect(setProviderSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'ollama', model: 'qwen3:8b', contextWindow: 12_288 })
+    );
+  });
+});
+
+/**
+ * The REPLACE round-trip (the wiring defect this hook exists for): the backend
+ * writes all four fields on every save, so a UI save that changes ONE field
+ * must still carry the other three. Asserted on the payload that reaches the
+ * client, which is the thing the backend sees.
+ */
+describe('useSaveProviderSettings — REPLACE round-trip', () => {
+  afterEach(() => {
+    // `resetPreferences` spreads the defaults, which have no `aiProviderConfig`
+    // key at all — so it cannot clear one. Drop it explicitly or the local
+    // limits set by one case leak into the next.
+    usePreferencesStore.setState({ aiProviderConfig: undefined });
+  });
+
+  /** The writer merges against the LOADED active config, so every case has to
+   *  wait for that query rather than for the mere fact that it was called. */
+  const renderSaver = (client: AppClient) =>
+    renderHookWithClient(
+      () => ({ config: mod.useActiveConfig(), saver: mod.useSaveProviderSettings() }),
+      { client }
+    );
+
+  it('keeps the window (and model) when an unrelated field is saved', async () => {
+    // 1. The user sets a window for the model — LocalModelLimits' slider write.
+    usePreferencesStore.getState().setLocalModelLimits('local-model', { contextWindow: 16_384 });
+
+    const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+    const client = createMockClient({
+      'ai.setProviderSettings': setProviderSettings,
+      // The backend row has NO window yet — the state every existing install is
+      // in, since the slider only ever wrote renderer preferences.
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { ollama: { model: 'local-model' } },
+      }),
+    });
+    const { result } = renderSaver(client);
+    // The stored row has to have loaded before a save can preserve it.
+    await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
+
+    // 2. Save something else entirely for the same provider row.
+    await act(async () => {
+      result.current.saver.save({ provider: 'ollama', model: 'local-model' });
+      await Promise.resolve();
+    });
+
+    // 3. The window survived.
+    await waitFor(() =>
+      expect(setProviderSettings).toHaveBeenCalledWith({
+        provider: 'ollama',
+        model: 'local-model',
+        baseUrl: undefined,
+        contextWindow: 16_384,
+      })
+    );
+  });
+
+  it('keeps the stored model when only the base URL is saved', async () => {
+    const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+    const client = createMockClient({
+      'ai.setProviderSettings': setProviderSettings,
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'openai-compatible',
+        providers: { 'openai-compatible': { model: 'mistral-7b', baseUrl: 'http://old' } },
+      }),
+    });
+    const { result } = renderSaver(client);
+    await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
+
+    await act(async () => {
+      result.current.saver.save({ provider: 'openai-compatible', baseUrl: 'http://new:1234/v1' });
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(setProviderSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'mistral-7b', baseUrl: 'http://new:1234/v1' })
+      )
+    );
+  });
+
+  it('re-sends a window the backend already holds when the renderer has no local limit', async () => {
+    const setProviderSettings = vi.fn().mockResolvedValue({ providers: {} });
+    const client = createMockClient({
+      'ai.setProviderSettings': setProviderSettings,
+      'ai.activeConfig': vi.fn().mockResolvedValue({
+        activeProvider: 'ollama',
+        providers: { ollama: { model: 'local-model', contextWindow: 20_480 } },
+      }),
+    });
+    const { result } = renderSaver(client);
+    await waitFor(() => expect(result.current.config.isSuccess).toBe(true));
+
+    await act(async () => {
+      result.current.saver.save({ provider: 'ollama' });
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(setProviderSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'local-model', contextWindow: 20_480 })
+      )
+    );
   });
 });

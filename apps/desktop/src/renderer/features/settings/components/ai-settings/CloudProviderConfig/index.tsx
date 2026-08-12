@@ -8,7 +8,7 @@ import { Button, Dropdown, EmptyState, ErrorState, Input, useNotification } from
 import { EffortPicker } from '@/components/ui/EffortPicker';
 import { sortModelsNewestFirst } from '@/lib/ai-providers/model-sort';
 import { isProviderConfigured } from '@/lib/ai-providers/provider-meta';
-import { useSetProviderSettings } from '@/services';
+import { useSaveProviderSettings } from '@/services';
 import type { AiProvider } from '@/store/preferences-schema';
 
 interface ProviderMeta {
@@ -81,7 +81,7 @@ export function CloudProviderConfig({
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
-  const setProviderSettings = useSetProviderSettings();
+  const { save: saveProviderSettings } = useSaveProviderSettings();
   const [changing, setChanging] = useState(false);
 
   // `openai-compatible` is keyless-capable (LM Studio / vLLM) — it can list
@@ -260,10 +260,13 @@ export function CloudProviderConfig({
               variant="ghost"
               className="shrink-0"
               onClick={() =>
-                setProviderSettings.mutate(
+                // `null` = clear on purpose (an emptied input); the stored model
+                // and its window ride along untouched — the command REPLACES
+                // every field it is handed.
+                saveProviderSettings(
                   {
                     provider: 'openai-compatible',
-                    baseUrl: baseUrlInput || undefined,
+                    baseUrl: baseUrlInput || null,
                   },
                   {
                     onError: () =>

@@ -1,7 +1,7 @@
 import { useTranslation } from '@ajh/translations';
 import { Button, Switch } from '@ajh/ui';
 
-import { useInspectModel, useSystemResources } from '@/services';
+import { useInspectModel, useSaveProviderSettings, useSystemResources } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
 
 import { suggestLocalLimits } from './suggest-local-limits';
@@ -53,6 +53,7 @@ export function LocalModelLimits({ selectedModel }: Props) {
   const inspect = useInspectModel();
   const { resources } = useSystemResources(selectedModel);
   const setLocalModelLimits = usePreferencesStore((s) => s.setLocalModelLimits);
+  const { save: saveProviderSettings } = useSaveProviderSettings();
   const limits = usePreferencesStore((s) =>
     selectedModel ? s.aiProviderConfig?.providers?.ollama?.modelLimits?.[selectedModel] : undefined
   );
@@ -80,6 +81,18 @@ export function LocalModelLimits({ selectedModel }: Props) {
 
   // Mirror onboarding: warn when the chosen context exceeds what memory comfortably fits.
   const mightLag = contextWindow > suggestion.contextWindow;
+
+  /**
+   * Push the window to the BACKEND row for this model.
+   *
+   * The slider only ever wrote renderer preferences, which the fast path reads
+   * and a staged run cannot — so at quality/max depth it silently did nothing
+   * (`context_window: None` at all three request sites). Committed on release
+   * rather than on every `onChange` tick, so a drag is one write, not eighty;
+   * `onKeyUp` covers the arrow-key path so keyboard users commit too.
+   */
+  const commitWindow = (value: number) =>
+    saveProviderSettings({ provider: 'ollama', model: selectedModel, contextWindow: value });
 
   return (
     <div className="mt-2 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-3">
@@ -128,6 +141,8 @@ export function LocalModelLimits({ selectedModel }: Props) {
           onChange={(e) =>
             setLocalModelLimits(selectedModel, { contextWindow: Number(e.target.value) })
           }
+          onPointerUp={(e) => commitWindow(Number(e.currentTarget.value))}
+          onKeyUp={(e) => commitWindow(Number(e.currentTarget.value))}
           className={SLIDER_CLASS}
         />
       </div>
@@ -152,7 +167,13 @@ export function LocalModelLimits({ selectedModel }: Props) {
       </div>
 
       <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={() => setLocalModelLimits(selectedModel, suggestion)}>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setLocalModelLimits(selectedModel, suggestion);
+            commitWindow(suggestion.contextWindow);
+          }}
+        >
           {t('settings.ai.localLimits.useSuggested')}
         </Button>
         <span className="text-xs text-foreground/35">

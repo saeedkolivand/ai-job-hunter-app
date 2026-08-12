@@ -13,9 +13,9 @@ import {
   useOpenExternal,
   usePullModel,
   useRemoveProviderKey,
+  useSaveProviderSettings,
   useSetActiveProvider,
   useSetProviderKey,
-  useSetProviderSettings,
   useSystemHealth,
   useTestProviderKey,
 } from '@/services';
@@ -33,10 +33,13 @@ export function useProviderKeys() {
   // via the switch/edit setters.
   const { data: providerConfig } = useActiveConfig();
   const setActiveProviderMut = useSetActiveProvider();
-  const setProviderSettingsMut = useSetProviderSettings();
+  // REPLACE-safe writer: picking a model must not blank the provider's base URL
+  // or the window stored for that model (`ai_set_provider_settings` writes every
+  // field it is handed, NULL included).
+  const { save: saveProviderSettings } = useSaveProviderSettings();
   const setActiveProvider = (provider: AiProvider) => setActiveProviderMut.mutate(provider);
   const setProviderSettings = (provider: AiProvider, model: string) =>
-    setProviderSettingsMut.mutate({ provider, model });
+    saveProviderSettings({ provider, model });
 
   const activeProvider: AiProvider = (providerConfig?.activeProvider ?? 'ollama') as AiProvider;
 
