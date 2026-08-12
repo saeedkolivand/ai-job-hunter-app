@@ -459,6 +459,98 @@ fn deleting_a_job_removes_its_runs_and_their_artifacts() {
     assert_eq!(store.runs_for_job("").len(), 1);
 }
 
+/// **What the list shows and what the delete removes are the SAME set.**
+///
+/// They were not. `execute` wrote the postings cache's RAW url while
+/// `delete_for_job` normalized before comparing, so a delete correctly took the
+/// trail of a posting whose link carried a `utm_*` param — and `runs_for_job`,
+/// called with the application's own normalized key, could not find that run to
+/// list it. A store whose delete and list disagree about which rows belong to a
+/// posting reports one thing and does another.
+///
+/// The seam is `normalized_job_url`, applied where a url ENTERS (the write) and
+/// where one arrives (the by-url readers), so every spelling of a posting
+/// resolves to one set of rows.
+///
+/// Mutation check: store `run.job_url` raw in `upsert_run` and the
+/// normalized-lookup assertion fails; drop the normalization in `runs_for_job`
+/// and the RAW-lookup one does (that is the arm the review's "keep readers
+/// exact-match" prescription would have broken — the renderer passes
+/// `posting.url`, not the normalized key).
+#[test]
+fn every_spelling_of_a_posting_resolves_to_the_same_runs() {
+    let (_dir, store) = store();
+    const RAW: &str = "https://www.Boards.example/jobs/42?utm_source=newsletter#apply";
+    const NORMALIZED: &str = "https://boards.example/jobs/42";
+
+    store.upsert_run(&run("run-1", RAW, 1_000)).unwrap();
+    store.append_event(&event("run-1", 0, "{}")).unwrap();
+
+    // The row is STORED in one spelling…
+    assert_eq!(
+        store.run("run-1").expect("the run").job_url,
+        NORMALIZED,
+        "the write site is the seam"
+    );
+    // …and every spelling finds it, including the raw one the renderer holds.
+    for spelling in [RAW, NORMALIZED, "https://Boards.example/jobs/42/"] {
+        assert_eq!(
+            store.runs_for_job(spelling).len(),
+            1,
+            "runs_for_job({spelling}) must resolve"
+        );
+    }
+    // The list and the delete agree: what one showed, the other removes.
+    assert_eq!(store.runs_for_job(NORMALIZED).len(), 1);
+    assert_eq!(store.delete_for_job(RAW), 1);
+    assert!(store.runs_for_job(NORMALIZED).is_empty());
+    assert!(store.events_for_run("run-1").is_empty());
+}
+
+/// A row written by a BUILD THAT PREDATES the normalization is repaired once, at
+/// open — otherwise it stays invisible to every reader that now normalizes, and
+/// its artifacts stay undeleteable.
+///
+/// Written straight through `rusqlite` rather than through `upsert_run`,
+/// because `upsert_run` is exactly the thing that would normalize it and there
+/// would be nothing to repair.
+///
+/// Mutation check: delete the `normalize_existing_job_urls` call from `open`
+/// and the legacy row is unreachable after the reopen.
+#[test]
+fn a_legacy_row_written_before_the_normalization_is_repaired_at_open() {
+    let dir = TempDir::new().unwrap();
+    const RAW: &str = "https://www.Boards.example/jobs/7?utm_campaign=x";
+    const NORMALIZED: &str = "https://boards.example/jobs/7";
+    {
+        let store = PipelineRunStore::open(dir.path()).unwrap();
+        store
+            .upsert_run(&run("legacy", "placeholder", 1_000))
+            .unwrap();
+        store.append_event(&event("legacy", 0, "{}")).unwrap();
+        // Put the row back the way an older build wrote it.
+        store
+            .conn
+            .lock()
+            .execute(
+                "UPDATE pipeline_runs SET job_url = ?1 WHERE id = ?2",
+                rusqlite::params![RAW, "legacy"],
+            )
+            .unwrap();
+        assert_eq!(store.run("legacy").expect("the run").job_url, RAW);
+    }
+
+    let store = PipelineRunStore::open(dir.path()).unwrap();
+    assert_eq!(
+        store.run("legacy").expect("the run").job_url,
+        NORMALIZED,
+        "the sweep rewrites a stale spelling once, at open"
+    );
+    assert_eq!(store.runs_for_job(NORMALIZED).len(), 1);
+    assert_eq!(store.delete_for_job(NORMALIZED), 1);
+    assert!(store.events_for_run("legacy").is_empty());
+}
+
 /// The BATCH cascade behind `ai_generations_remove_bulk` — the Documents page's
 /// multi-select delete.
 ///

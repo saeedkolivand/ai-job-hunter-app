@@ -347,6 +347,74 @@ const CREATE_PIPELINE_RUNS_SQL: &str =
         PRIMARY KEY (run_id, seq)
      );";
 
+/// The ONE spelling of a posting url this table stores.
+///
+/// **Normalized at the WRITE site, matched exactly by every reader.** The two
+/// halves used to disagree: `commands::resume_pipeline::execute` wrote the
+/// postings cache's RAW url while `delete_for_job` normalized before comparing,
+/// so a delete correctly removed the trail of a posting whose link carried a
+/// `utm_*` param or a fragment — and `runs_for_job`, called with the
+/// application's own (normalized) url, could not find that same run to list it.
+/// A store where the delete and the list disagree about which rows belong to a
+/// posting is a store that reports one thing and does another.
+///
+/// Normalizing at the write site is the same choice [`clamp_metrics`] and
+/// [`clamp_artifact`] make, for the same reason: a rule enforced where the
+/// value enters cannot be forgotten by a future caller. An empty url stays
+/// empty — an unlinked run is a real state.
+///
+/// **The by-url READERS normalize their argument too, and that is not a second
+/// seam — it is this one, applied at every boundary a url crosses.** The review
+/// that found the split-brain prescribed "normalize on write, keep readers
+/// exact-match", on the assumption that callers hold the application's
+/// normalized key. They do not: `usePipelineRunsForJob(posting.url)` passes the
+/// postings cache's RAW link, so exact-match readers would have moved the bug
+/// rather than fixed it — the runs panel would go empty for every posting whose
+/// link carries a `utm_*` param or a fragment. Normalizing both sides is what
+/// actually makes "what the list shows" and "what the delete removes" the same
+/// set.
+fn normalized_job_url(job_url: &str) -> String {
+    crate::applications::normalize_job_url(job_url)
+}
+
+/// Rewrite any pre-existing row whose `job_url` is not in its normalized
+/// spelling — a ONE-TIME sweep at open.
+///
+/// Not a migration: `MIGRATIONS` is position-indexed and append-only, and this
+/// is idempotent data repair rather than a schema change, so running it every
+/// open is both cheaper to reason about and self-healing if a future writer
+/// regresses. The table is bounded by retention (three runs per
+/// `(job_url, kind)`), so the scan is small; the UPDATE only touches rows that
+/// actually differ, so a normalized store does no writes at all.
+///
+/// Best-effort: a failure here leaves the legacy rows readable exactly as they
+/// were, which is the same state the app shipped with.
+fn normalize_existing_job_urls(conn: &Connection) {
+    let Ok(mut stmt) = conn.prepare("SELECT id, job_url FROM pipeline_runs") else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) else {
+        return;
+    };
+    let stale: Vec<(String, String)> = rows
+        .filter_map(Result::ok)
+        .filter_map(|(id, raw)| {
+            let normalized = normalized_job_url(&raw);
+            (normalized != raw).then_some((id, normalized))
+        })
+        .collect();
+    for (id, normalized) in stale {
+        if let Err(e) = conn.execute(
+            "UPDATE pipeline_runs SET job_url = ?1 WHERE id = ?2",
+            params![normalized, id],
+        ) {
+            log::warn!("[pipeline] could not normalize a legacy run's job_url: {e}");
+        }
+    }
+}
+
 pub struct PipelineRunStore {
     conn: Mutex<Connection>,
 }
@@ -366,6 +434,7 @@ impl PipelineRunStore {
         let path = data_dir.join("pipeline_runs.db");
         let mut conn = crate::db::open(&path)?;
         run_migrations(&mut conn, Self::MIGRATIONS)?;
+        normalize_existing_job_urls(&conn);
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -387,7 +456,9 @@ impl PipelineRunStore {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 run.id,
-                run.job_url,
+                // NORMALIZED at the single write site, exactly like
+                // `clamp_metrics` below — see `normalized_job_url`.
+                normalized_job_url(&run.job_url),
                 run.kind,
                 run.depth,
                 run.status,
@@ -436,6 +507,12 @@ impl PipelineRunStore {
     }
 
     /// Runs for one posting, newest first.
+    ///
+    /// Takes the url in ANY spelling: it goes through [`normalized_job_url`],
+    /// the same seam the write site uses, so a caller holding the postings
+    /// cache's raw link and a caller holding the application's normalized key
+    /// resolve to the same rows — and to the same rows
+    /// [`delete_for_job`](Self::delete_for_job) would remove.
     pub fn runs_for_job(&self, job_url: &str) -> Vec<RunRow> {
         let conn = self.conn.lock();
         query_runs(
@@ -443,7 +520,7 @@ impl PipelineRunStore {
             "SELECT id, job_url, kind, depth, status, started_at, finished_at,
                     stopped_reason, metrics_json
              FROM pipeline_runs WHERE job_url = ?1 ORDER BY started_at DESC, id DESC",
-            params![job_url],
+            params![normalized_job_url(job_url)],
         )
     }
 
@@ -574,8 +651,8 @@ impl PipelineRunStore {
     /// Delete every run of ONE posting, and its events with it. Returns how
     /// many RUNS went.
     ///
-    /// **Deleting an application has to reach this table.** A max-depth run
-    /// persists its FULL `strategy` (the whole employment history) and its full
+    /// **Deleting a posting has to reach this table.** A max-depth run persists
+    /// its FULL `strategy` (the whole employment history) and its full
     /// `match_evidence` map (verbatim quotes out of the candidate's résumé) into
     /// `pipeline_run_events.artifact_json` — that is a deliberate DB decision
     /// (see `RunLedger::record_detail`: ADR-027 governs the LOG), and it is the
@@ -583,46 +660,28 @@ impl PipelineRunStore {
     /// ever removes those rows for a posting the user deleted:
     /// [`prune`](Self::prune) partitions by `(job_url, kind)` and only evicts
     /// the FOURTH run of a posting that is still being run, and
-    /// [`clear_all`](Self::clear_all) is the factory reset. So "delete this
-    /// application and its documents" left employment history and résumé quotes
-    /// on disk indefinitely — and [`export`](Self::export) ships every event row
-    /// into the user's backups.
+    /// [`clear_all`](Self::clear_all) is the factory reset. So "delete this"
+    /// left employment history and résumé quotes on disk indefinitely — and
+    /// [`export`](Self::export) ships every event row into the user's backups.
     ///
-    /// **Matched on the NORMALIZED url, on both sides.** An `Application` is
-    /// keyed by `normalize_job_url` while a run row stores the postings cache's
-    /// raw url, so a plain `WHERE job_url = ?` would quietly match nothing for
-    /// any posting whose link carried a `utm_*` param or a fragment — the silent
-    /// half of exactly the bug this exists to fix. The scan is over a table
-    /// bounded at [`RETENTION_RUNS_PER_JOB`] rows per posting, and a deletion is
-    /// rare.
+    /// An INDEXED delete over the normalized key, because
+    /// [`normalized_job_url`] runs at the write site: both sides of the
+    /// comparison are already in the same spelling, so this is
+    /// `idx_pipeline_runs_job` rather than the full-scan-and-normalize-in-Rust
+    /// it had to be while writers stored the raw url.
     ///
     /// Best-effort and transactional, like [`prune`](Self::prune): the first
     /// failure returns without committing, so the trail is never half-deleted.
     pub fn delete_for_job(&self, job_url: &str) -> usize {
-        let wanted = crate::applications::normalize_job_url(job_url);
+        let wanted = normalized_job_url(job_url);
         if wanted.is_empty() {
-            // An unlinked application (a manual entry with no posting url) has
-            // no run trail to find, and matching every empty-url run to it would
-            // delete other postings' history.
+            // An unlinked run (a manual entry with no posting url) has no trail
+            // to find, and matching every empty-url run to it would delete
+            // other postings' history.
             return 0;
         }
         let span = crate::observability::Span::begin("pipeline:runs", "op=delete_for_job");
         let mut guard = self.conn.lock();
-        let doomed: Vec<String> = query_runs(
-            &guard,
-            "SELECT id, job_url, kind, depth, status, started_at, finished_at,
-                    stopped_reason, metrics_json
-             FROM pipeline_runs",
-            params![],
-        )
-        .into_iter()
-        .filter(|row| crate::applications::normalize_job_url(&row.job_url) == wanted)
-        .map(|row| row.id)
-        .collect();
-        if doomed.is_empty() {
-            span.end_with("runs=0", true);
-            return 0;
-        }
         let tx = match guard.transaction() {
             Ok(tx) => tx,
             Err(e) => {
@@ -631,28 +690,29 @@ impl PipelineRunStore {
                 return 0;
             }
         };
-        let mut removed = 0usize;
-        for id in &doomed {
-            // Events first: an interrupted delete that took the run row and left
-            // its events would leave rows the orphan sweep only reaches on the
-            // next `prune`.
-            if let Err(e) = tx.execute(
-                "DELETE FROM pipeline_run_events WHERE run_id = ?1",
-                params![id],
-            ) {
-                log::warn!("[pipeline] could not delete a run's events: {e}");
-                span.end(false);
-                return 0; // dropping `tx` rolls the whole thing back
-            }
-            match tx.execute("DELETE FROM pipeline_runs WHERE id = ?1", params![id]) {
-                Ok(n) => removed += n,
-                Err(e) => {
-                    log::warn!("[pipeline] could not delete a run row: {e}");
-                    span.end(false);
-                    return 0;
-                }
-            }
+        // Events first: an interrupted delete that took the run row and left its
+        // events would leave rows the orphan sweep only reaches on the next
+        // `prune`.
+        if let Err(e) = tx.execute(
+            "DELETE FROM pipeline_run_events WHERE run_id IN
+                 (SELECT id FROM pipeline_runs WHERE job_url = ?1)",
+            params![wanted],
+        ) {
+            log::warn!("[pipeline] could not delete a job's run events: {e}");
+            span.end(false);
+            return 0; // dropping `tx` rolls the whole thing back
         }
+        let removed = match tx.execute(
+            "DELETE FROM pipeline_runs WHERE job_url = ?1",
+            params![wanted],
+        ) {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!("[pipeline] could not delete a job's run rows: {e}");
+                span.end(false);
+                return 0;
+            }
+        };
         match tx.commit() {
             Ok(()) => {
                 span.end_with(&format!("runs={removed}"), true);
