@@ -12,6 +12,7 @@ import type { Model } from '@/types';
 
 import { resolveStageRouting, type StageRouting } from './stage-routing';
 import { StageOverrideEditor } from './StageOverrideEditor';
+import { StageSuggestionBanner } from './StageSuggestionBanner';
 
 interface Props {
   /** Active provider/model — what an un-overridden stage runs on. */
@@ -79,6 +80,14 @@ export function StageOverridesSettings({
       </p>
 
       {children}
+
+      {/* Suggestion only — accepting it is a click, never a silent switch. */}
+      <StageSuggestionBanner
+        activeProvider={activeProvider}
+        activeModel={activeModel}
+        installedModels={ollamaModels.map((m) => m.name)}
+        overrides={overrides}
+      />
 
       <div className="space-y-2">
         {rows.map((row) => (

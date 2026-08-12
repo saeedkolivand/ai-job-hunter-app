@@ -934,6 +934,13 @@
     },
     "ai": {
       "stages": {
+        "suggest": {
+          "title": "Ein kleineres Modell genügt für die auswertenden Schritte",
+          "body": "{{model}} ist installiert und kleiner als {{active}}. Die auswertenden Schritte lesen nur die Anzeige und deinen Lebenslauf und antworten in JSON — das kann ein kleineres Modell genauso gut, und zwar deutlich schneller. Geschrieben wird weiterhin mit {{active}}.",
+          "appliesTo": "Gilt für: {{stages}}",
+          "apply": "Vorschlag übernehmen",
+          "applied": "{{count}} Schritte nutzen jetzt {{model}}."
+        },
         "title": "Modelle pro Schritt",
         "description": "Ein gründlicher Durchlauf besteht aus mehreren Schritten. Jeder kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleines lokales Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell.",
         "defaultModel": "Standard — {{model}}",

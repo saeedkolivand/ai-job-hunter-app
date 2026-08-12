@@ -934,6 +934,13 @@
     },
     "ai": {
       "stages": {
+        "suggest": {
+          "title": "A smaller model can handle the reading steps",
+          "body": "{{model}} is installed and smaller than {{active}}. The reading steps only pull facts out of the posting and your résumé and answer in JSON — a smaller model does that just as well, and it is much faster. Writing keeps using {{active}}.",
+          "appliesTo": "Applies to: {{stages}}",
+          "apply": "Use suggested",
+          "applied": "{{count}} steps now use {{model}}."
+        },
         "title": "Per-stage models",
         "description": "A thorough run works in stages. Each one can use a different model — a small local model is enough for the extraction steps, while writing benefits from your best one. A stage you leave alone runs on the active model.",
         "defaultModel": "Default — {{model}}",
