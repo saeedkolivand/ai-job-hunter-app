@@ -940,8 +940,11 @@ pub async fn resume_pipeline_regenerate_section(
     );
     let source = source_resume_for(&app, &row, &record);
     // Routed through the SAME per-stage path a run takes — and through the
-    // stage whose PROMPT each sub-path actually uses, resolved lazily so a
-    // click only ever resolves the one it takes:
+    // stage whose PROMPT each sub-path actually uses. Each is resolved INSIDE
+    // the branch that uses it, so a click only ever resolves the routing it
+    // actually takes: resolving propagates its error, so an eagerly-resolved
+    // `sections` override would fail a quality-run click over a stage that run
+    // does not even have.
     //
     // * the max artifact-rebuild path re-runs `sections`' own generator over
     //   the run's stored analysis/strategy, so it follows the `sections`
@@ -952,16 +955,7 @@ pub async fn resume_pipeline_regenerate_section(
     //
     // Routing both through one override would make the button disagree with
     // whichever stage the user actually configured.
-    let outcome = match regenerate_max_entry(
-        &store,
-        &row,
-        &record,
-        &Completer::from_active_for_stage(&app, section_gen::NAME)?,
-        &source,
-        key,
-        &req,
-    )
-    .await
+    let outcome = match regenerate_max_entry(&app, &store, &row, &record, &source, key, &req).await
     {
         Some(outcome) => outcome?,
         // Not a max run, not an employment entry, or the run's artifacts are
@@ -1071,10 +1065,10 @@ pub async fn resume_pipeline_regenerate_section(
 /// error: a click must not fail because an optimization was unavailable.
 #[allow(clippy::too_many_arguments)]
 async fn regenerate_max_entry(
+    app: &AppHandle,
     store: &PipelineRunStore,
     row: &RunRow,
     record: &AiGenerationRecord,
-    completer: &Completer,
     source: &str,
     key: SectionKey,
     req: &ResumePipelineRegenerateSectionRequest,
@@ -1086,8 +1080,16 @@ async fn regenerate_max_entry(
         return None;
     };
     let artifacts = max::artifacts_for(store, &row.id)?;
+    // Resolved here, past every early return: this is the first point at which
+    // the max path is certain to run, so a `sections` override is only ever
+    // resolved by a click that will actually use its prompt. See the routing
+    // note at the call site.
+    let completer = match Completer::from_active_for_stage(app, section_gen::NAME) {
+        Ok(completer) => completer,
+        Err(e) => return Some(Err(e)),
+    };
     let outcome = max::regenerate_entry(
-        completer,
+        &completer,
         &artifacts,
         source,
         // The aggregate's own copy of the posting, which is often EMPTY on this
