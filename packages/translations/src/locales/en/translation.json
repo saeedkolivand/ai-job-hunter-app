@@ -1517,6 +1517,23 @@
       "repair": "Fixing what the check found",
       "llm_judge": "Reading the finished résumé once more"
     },
+    "section": {
+      "title": "Sections",
+      "summary": "Summary",
+      "skills": "Skills",
+      "experienceEntry": "Experience {{index}}",
+      "projects": "Projects",
+      "education": "Education",
+      "state": {
+        "queued": "Waiting",
+        "generating": "Writing",
+        "done": "Written",
+        "checking": "Checking",
+        "needsChanges": "Needs changes",
+        "repaired": "Repaired",
+        "clean": "No changes needed"
+      }
+    },
     "phase": {
       "start": "started",
       "finish": "finished",

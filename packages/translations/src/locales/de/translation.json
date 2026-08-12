@@ -1521,6 +1521,23 @@
       "repair": "Gefundene Probleme werden behoben",
       "llm_judge": "Fertiger Lebenslauf wird noch einmal gelesen"
     },
+    "section": {
+      "title": "Abschnitte",
+      "summary": "Kurzprofil",
+      "skills": "Kenntnisse",
+      "experienceEntry": "Berufserfahrung {{index}}",
+      "projects": "Projekte",
+      "education": "Ausbildung",
+      "state": {
+        "queued": "Wartet",
+        "generating": "Wird geschrieben",
+        "done": "Geschrieben",
+        "checking": "Wird geprüft",
+        "needsChanges": "Änderungen nötig",
+        "repaired": "Nachgebessert",
+        "clean": "Keine Änderungen nötig"
+      }
+    },
     "phase": {
       "start": "gestartet",
       "finish": "abgeschlossen",

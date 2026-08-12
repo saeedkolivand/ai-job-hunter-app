@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::apply_stop;
+use super::hooks::{apply_stop, with_detail};
 use super::notify::run_notification;
 use super::report;
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
@@ -1027,9 +1027,15 @@ fn oversized_run_request_free_text_is_clamped_server_side() {
 /// with nothing but a `warn!` to show for it. It also pins that the emitter's
 /// `kind` is what `listForJob` filters on.
 ///
+/// The artifact goes through `with_detail`, which is what `RunHooks::after`
+/// does — so BOTH halves of that wrapper are pinned here at the row level: a
+/// detail-less stage's counts reach the row (`validate`'s `criticals`), and a
+/// stage that left a detail carries it nested beside them (`strategy`).
+///
 /// Mutation check: emit a phase outside the CHECK's vocabulary and the event
 /// count drops to zero; change `RUN_KIND` on one side only and the filtered
-/// list is empty.
+/// list is empty; make `with_detail` drop the artifact when there is no detail
+/// and the `criticals` assertion fails.
 #[test]
 fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -1037,6 +1043,8 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
 
     let ledger = RunLedger::new();
     ledger.record("analyze_job", json!({ "cached": false, "mustHave": 4 }));
+    ledger.record("strategy", json!({ "cached": false, "companies": 3 }));
+    ledger.record_detail("strategy", json!({ "perCompany": [{ "company": "Acme" }] }));
     ledger.record("validate", json!({ "issues": 3, "criticals": 1 }));
     ledger.count_call(false);
     ledger.count_call(true);
@@ -1067,8 +1075,11 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
                     ts: 1_700_000_000_000 + u64::from(seq),
                     stage: (*stage).to_string(),
                     phase: phase.to_string(),
-                    artifact_json: ledger
-                        .artifact(stage)
+                    // Through `with_detail`, exactly as `RunHooks::after`
+                    // builds it — not `ledger.artifact` directly, which is what
+                    // let the wrapper delete every detail-less stage's counts
+                    // while this end-to-end test still read them.
+                    artifact_json: with_detail(ledger.artifact(stage), ledger.detail(stage))
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "{}".to_string()),
                 })
@@ -1110,6 +1121,20 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let artifact: serde_json::Value =
         serde_json::from_str(&validate.artifact_json).expect("the artifact is JSON");
     assert_eq!(artifact["criticals"], json!(1));
+
+    // The other half of the wrapper: a stage that left a FULL artifact carries
+    // it nested under the counts, not instead of them.
+    let strategy = events
+        .iter()
+        .find(|event| event.stage == "strategy" && event.phase == "finish")
+        .expect("the strategy stage's finish event");
+    let artifact: serde_json::Value =
+        serde_json::from_str(&strategy.artifact_json).expect("the artifact is JSON");
+    assert_eq!(artifact["companies"], json!(3));
+    assert_eq!(
+        artifact[super::hooks::DETAIL_KEY]["perCompany"][0]["company"],
+        json!("Acme")
+    );
 
     // `listForJob` filters on this flow's kind; a run of another kind against
     // the same posting must not appear in the résumé runs list.

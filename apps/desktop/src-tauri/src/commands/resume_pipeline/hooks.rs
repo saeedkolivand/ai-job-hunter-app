@@ -188,8 +188,18 @@ pub(crate) const DETAIL_KEY: &str = "full";
 /// (`issue_count`/`critical_count`), so the detail never reaches the wire — and
 /// a stage with no detail (every stage at quality depth) produces a row
 /// byte-identical to the one it produced before this existed.
+///
+/// **The detail-less case returns the ARTIFACT, not `None`.** Written the other
+/// way round once (`let detail = detail?;`) it deleted the counts of every stage
+/// that had no detail — which is all six at quality depth and five of eight at
+/// max — so the persisted row became `"{}"` and `issueCount`/`criticalCount`
+/// came out null on every `pipeline:stage` event the app has ever emitted at
+/// these depths. Pinned by
+/// `a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did`.
 pub(crate) fn with_detail(artifact: Option<Value>, detail: Option<Value>) -> Option<Value> {
-    let detail = detail?;
+    let Some(detail) = detail else {
+        return artifact;
+    };
     let mut artifact = artifact.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
     match artifact.as_object_mut() {
         Some(object) => {

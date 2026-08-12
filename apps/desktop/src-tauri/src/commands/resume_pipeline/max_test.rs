@@ -120,16 +120,27 @@ fn the_full_artifact_rides_inside_the_counts_not_instead_of_them() {
 }
 
 /// A stage with NO detail — every stage at quality depth, and most of them at
-/// max — produces the row it always produced. The detail is additive or it is
-/// a behaviour change to a shipped trail.
+/// max — produces the row it always produced: its COUNTS, unchanged and
+/// untouched. The detail is additive or it is a behaviour change to a shipped
+/// trail.
 ///
-/// Mutation check: make `with_detail` return `Some(artifact)` unconditionally
-/// (dropping the `detail?`) and the `None` case gains an empty object where
-/// the row previously had one shape.
+/// This is the assertion that used to read `== None`, which pinned a defect
+/// rather than a behaviour: `with_detail` opened with `let detail = detail?;`,
+/// so every detail-less stage (all six at quality depth, five of eight at max)
+/// had its counts DELETED on the way to `pipeline_run_events.artifact_json` —
+/// the row became `"{}"` and the `pipeline:stage` event's
+/// `issueCount`/`criticalCount` became null for every run at both depths.
+///
+/// Mutation check: restore `let detail = detail?;` as the first line of
+/// `with_detail` and the counts assertion fails.
 #[test]
 fn a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did() {
     let counts = json!({ "issues": 2, "criticals": 0 });
-    assert_eq!(with_detail(Some(counts.clone()), None), None);
+    assert_eq!(
+        with_detail(Some(counts.clone()), None),
+        Some(counts),
+        "a detail-less stage keeps its counts — they are what the runs panel reads"
+    );
     assert_eq!(with_detail(None, None), None);
     // …and with a detail but no counts, the row still carries the detail rather
     // than dropping it on the floor.

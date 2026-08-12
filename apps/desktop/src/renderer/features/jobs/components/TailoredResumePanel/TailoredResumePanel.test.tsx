@@ -25,7 +25,7 @@
  * because those are the seams this component is wiring together.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload, PipelineRunDetail, PipelineRunSummary } from '@ajh/shared/ipc';
@@ -126,6 +126,7 @@ function makeSession(overrides: Partial<ResumePipelineSession> = {}): ResumePipe
     runId: null,
     jobId: null,
     stage: null,
+    sectionStates: {},
     draft: '',
     detail: null,
     error: null,
@@ -349,6 +350,29 @@ describe('TailoredResumePanel — a live run', () => {
     await userEvent.click(stop);
     expect(CANCEL).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /stopping/i })).toBeDisabled();
+  });
+
+  // ── The max-depth section timeline ────────────────────────────────────────
+  it('shows the per-section checklist while a max run is writing', async () => {
+    bus.depth = 'max';
+    bus.session = makeSession({
+      ...running(),
+      stage: { stage: 'sections', phase: 'start', index: 3, total: 8, attempt: 1 },
+      sectionStates: { summary: 'done', 'experience:0': 'generating' },
+    });
+    await openPanel();
+    expect(screen.getByText('Writing the résumé section by section')).toBeInTheDocument();
+    const timeline = screen.getByTestId('section-timeline');
+    expect(within(timeline).getByText('Summary')).toBeInTheDocument();
+    expect(within(timeline).getByText('Experience 1')).toBeInTheDocument();
+  });
+
+  // Quality depth reports no sections at all, so the checklist must not leave
+  // an empty captioned box behind on the surface that hosts it unconditionally.
+  it('shows no checklist for a quality run', async () => {
+    bus.session = running();
+    await openPanel();
+    expect(screen.queryByTestId('section-timeline')).toBeNull();
   });
 });
 

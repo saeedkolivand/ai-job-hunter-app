@@ -9,6 +9,7 @@ import { Button, ModalShell, Skeleton, StepDots, Tag } from '@ajh/ui';
 import { DepthSelector, useSmallModelWarning } from '@/components/generation/DepthSelector';
 import { PipelineRunsList } from '@/components/generation/PipelineRunsList';
 import { QualityReportPanel } from '@/components/generation/QualityReportPanel';
+import { SectionTimeline } from '@/components/generation/SectionTimeline';
 import { usePostingActions } from '@/features/jobs/hooks/usePostingActions';
 import type { Posting } from '@/features/jobs/types';
 import { useResumePipelineSession } from '@/hooks/use-resume-pipeline-session';
@@ -373,6 +374,11 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
                   </p>
                 )}
               </div>
+
+              {/* Max depth only — empty (and self-hiding) at quality depth and
+                  for a reconnected run, so it needs no depth check of its own:
+                  what it renders is what the run actually reported. */}
+              <SectionTimeline states={session.sectionStates} />
 
               <p className="text-[10px] leading-relaxed text-foreground/40">
                 {t('jobs.tailored.draftNote')}
