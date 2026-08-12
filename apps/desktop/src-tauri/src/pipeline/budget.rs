@@ -249,14 +249,26 @@ impl Budget {
     /// MAX depth: the same pipeline with the whole-body draft replaced by one
     /// structured call per section.
     ///
-    /// **`max_steps` = 24.** One step per section
-    /// ([`DEFAULT_MAX_SECTIONS`] = 12) plus the six framing stages around the
-    /// fan-out (analyze, evidence, strategy, assemble, validate, repair) is 18;
-    /// 24 leaves room for the judge and for a stage split without stranding a
-    /// run at [`StoppedReason::MaxSteps`] with a half-written document. The
-    /// relation is asserted at COMPILE time against
-    /// `pipeline::resume::MAX_STAGES` itself, so adding a stage without raising
-    /// this fails the build rather than a run.
+    /// **`max_steps` = 24, and it is UNENFORCED in this flow.** One step per
+    /// section ([`DEFAULT_MAX_SECTIONS`] = 12) plus the six framing stages
+    /// around the fan-out (analyze, evidence, strategy, assemble, validate,
+    /// repair) is 18; 24 leaves room for the judge and for a stage split. But
+    /// `Pipeline::run_hooked` counts no steps and [`StoppedReason::MaxSteps`] is
+    /// unreachable from here — it is the AGENT loop's stop reason. The number is
+    /// a documented ceiling that the compile-time assertion against
+    /// `pipeline::resume::MAX_STAGES` keeps HONEST (adding a stage without
+    /// raising it fails the build), not a bound anything checks at run time; the
+    /// live bounds are the run deadline, `step_timeout`'s per-call cousins, and
+    /// the per-provider daily ceiling. Said plainly rather than left to be
+    /// inferred, because "a budget field exists" reads as "a budget field is
+    /// enforced".
+    ///
+    /// **`step_timeout` = 360 s, also unenforced as a STAGE bound.** No stage
+    /// here is wrapped in it; what actually bounds a call is
+    /// `timeouts::OLLAMA_COMPLETION`/`COMPLETION` inside the provider layer. Its
+    /// one real use in this flow is the per-entry REGENERATE
+    /// (`commands::resume_pipeline::max::regenerate_entry`), which has no run
+    /// clock to share and takes this as the click's own deadline.
     ///
     /// **`max_tool_calls` = 0**, for the reason [`Self::RESUME_QUALITY`] gives:
     /// this is stages, not an agentic loop.

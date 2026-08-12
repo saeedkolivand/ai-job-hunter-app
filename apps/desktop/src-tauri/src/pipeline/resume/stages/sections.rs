@@ -102,6 +102,14 @@ pub fn find(sections: &[RawSection], key: SectionKey) -> Option<&RawSection> {
 /// The returned range never includes the section HEADING (it starts at the
 /// entry line), so splicing it in cannot duplicate or delete one.
 ///
+/// It also never includes the trailing BLANK line(s) below the entry. The blank
+/// between two entries is a SEPARATOR that belongs to neither of them, and the
+/// replacement a caller splices in (`assemble::chunk`) carries none — so a range
+/// that ran to the next entry's first line deleted one blank per regenerate,
+/// permanently and invisibly, until the section read as a wall of text. Same at
+/// the tail: the last entry's range would otherwise run to the next section's
+/// HEADING and eat the blank above it.
+///
 /// **Positional, and therefore not a WRITE address on its own.** A caller that
 /// is about to splice must go through [`named_entry_range`] instead: the index
 /// alone says nothing about whether the entry at that position is still the one
@@ -119,10 +127,18 @@ pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
         })
         .collect();
     let start = *starts.get(index as usize)?;
-    let end = starts
+    let mut end = starts
         .get(index as usize + 1)
         .copied()
         .unwrap_or(section.end);
+    let lines: Vec<&str> = document.lines().collect();
+    while end > start + 1
+        && lines
+            .get(end - 1)
+            .is_some_and(|line| line.trim().is_empty())
+    {
+        end -= 1;
+    }
     Some(RawSection {
         heading: None,
         kind: SectionKind::Experience,

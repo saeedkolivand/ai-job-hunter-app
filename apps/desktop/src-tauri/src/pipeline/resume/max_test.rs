@@ -34,8 +34,8 @@ use crate::export::types::LineKind;
 use crate::pipeline::budget::DEFAULT_MAX_SECTIONS;
 use crate::validate::content::{
     validate_content, ContentInput, DocKind, CONSISTENCY_PROJECT_STRUCTURE, CONTENT_ISSUE_CODES,
-    FACTUAL_ALTERED_PROJECT_LINK, ISSUE_MESSAGE_MAX_BYTES, ISSUE_SECTION_MAX_BYTES, JUDGE_NOTE,
-    MAX_CONTENT_ISSUES, REPORT_TRUNCATED,
+    FACTUAL_ALTERED_PROJECT_LINK, FACTUAL_DROPPED_ROLE, ISSUE_MESSAGE_MAX_BYTES,
+    ISSUE_SECTION_MAX_BYTES, JUDGE_NOTE, MAX_CONTENT_ISSUES, REPORT_TRUNCATED,
 };
 use crate::validate::Severity;
 
@@ -1338,6 +1338,53 @@ fn a_per_entry_range_replaces_one_role_and_leaves_its_neighbours_alone() {
     assert!(sections::entry_range("no sections here", 0).is_none());
 }
 
+/// **The blank line between two entries is a SEPARATOR, not part of the entry
+/// above it.**
+///
+/// `entry_range` runs from one `JobEntry` line to the next, which swallows the
+/// blank between them — and the replacement `assemble::chunk` renders carries
+/// no trailing blank, so every per-entry regenerate deleted one. Two clicks on
+/// different roles and the experience section is a wall of text; the loss is
+/// permanent (the splice is what gets saved) and nothing else ever puts the
+/// line back.
+///
+/// Mutation check: stop trimming the trailing blank off the range in
+/// `entry_range` and the separator assertion fails; trim NON-blank lines too
+/// and the "the entry's own last bullet survives" assertion does.
+#[test]
+fn splicing_one_entry_keeps_the_blank_line_that_separates_it_from_the_next() {
+    let document = assemble(&assembled_sections(), &[]);
+    let first = sections::entry_range(&document, 0).expect("the first entry");
+    let lines: Vec<&str> = document.lines().collect();
+    assert!(
+        !lines[first.end - 1].trim().is_empty(),
+        "the range must end on CONTENT, not on the separator below it: {:?}",
+        lines[first.end - 1]
+    );
+
+    let spliced = sections::splice(
+        &document,
+        &first,
+        "Staff Engineer, Acme Payments  2021 - Present\n- Rewrote the settlement service",
+    );
+    assert!(
+        spliced.contains("- Rewrote the settlement service\n\nBackend Engineer, Globex Logistics"),
+        "the separator between the spliced entry and the next one must survive:\n{spliced}"
+    );
+    // …and the LAST entry keeps the blank line before the next section heading,
+    // whose range ends at the section boundary rather than at another entry.
+    let last = sections::entry_range(&document, 1).expect("the second entry");
+    let spliced = sections::splice(
+        &document,
+        &last,
+        "Backend Engineer, Globex Logistics  2018 - 2021\n- Built the routing service",
+    );
+    assert!(
+        spliced.contains("- Built the routing service\n\nProjects"),
+        "the blank before the next section heading must survive too:\n{spliced}"
+    );
+}
+
 /// Three employment entries assembled from `plans`, with the sections at
 /// `dropped` never generated — the shape a run leaves behind when one section
 /// call failed, came back empty, or was refused by the day's ceiling.
@@ -1639,6 +1686,213 @@ fn a_judge_merge_leaves_the_report_inside_the_cap_its_byte_budget_assumes() {
         merged.last().and_then(|issue| issue.evidence.as_deref()),
         Some("56"),
         "50 dropped by validate plus the 6 the judge pushed out"
+    );
+}
+
+// ── The repair loop over an ASSEMBLED document ───────────────────────────────
+
+/// The real validator against [`SOURCE`], as the repair loop's `revalidate`
+/// seam — the same choice the quality-depth loop tests make, and for the same
+/// reason: the loop's decisions are arithmetic over validator output, and a
+/// stubbed validator would let them pass against numbers no validator produces.
+async fn max_revalidate(
+    candidate: String,
+) -> crate::error::AppResult<(
+    crate::validate::content::ContentReport,
+    Option<crate::validate::content::ContentReport>,
+)> {
+    Ok((report_over(&candidate), None))
+}
+
+/// One seeded identity line per roster entry, exactly as `assemble` renders it.
+const ACME_LINE: &str = "Senior Backend Engineer, Acme Payments  2021 - Present";
+const GLOBEX_LINE: &str = "Backend Engineer, Globex Logistics  2018 - 2021";
+
+/// A max-assembled document with ONE invented metric in the first employment
+/// entry — a document the repair loop will genuinely try to fix.
+fn assembled_with_a_fabricated_metric() -> String {
+    let mut sections = assembled_sections();
+    let entry = sections
+        .iter_mut()
+        .find(|section| matches!(section.key, SectionKey::Experience(0)))
+        .expect("the first employment entry");
+    if let SectionBody::Entry { bullets, .. } = &mut entry.body {
+        bullets.push("Cut settlement latency by 73% across 210 services".to_string());
+    }
+    assemble(&sections, &[])
+}
+
+/// The lossy "correction" a free-text whole-section rewrite really produces: it
+/// removes the invented figures and, tightening the prose, loses the second
+/// employer entirely.
+fn lossy_rewrite() -> String {
+    format!(
+        "Work Experience\n\n{ACME_LINE}\n- Owned the settlement service through a \
+         payment-provider migration"
+    )
+}
+
+/// **A repair rewrite that loses an employer IS caught by the source
+/// comparison** — that much holds, and it is the mechanism the whole "repair
+/// may rewrite the Experience section as free text" design leans on.
+///
+/// The generator's core guarantee (company, title and dates come off the roster
+/// and the model has no field for them) is a property of the `sections` stage.
+/// `repair` is a different shape: `sections::find` deliberately collapses
+/// `Experience(n)` onto the ONE experience section, so a repair round hands the
+/// model every seeded entry as free text and splices the answer back. Nothing
+/// structural stops that answer from dropping an employer, so what has to be
+/// true is that the validator notices.
+///
+/// Mutation check: keep both identity lines in the rewrite and the
+/// `dropped_role` assertion fails.
+#[test]
+fn a_repair_rewrite_that_drops_a_seeded_employer_raises_a_dropped_role_critical() {
+    let document = assembled_with_a_fabricated_metric();
+    assert!(
+        document.contains(ACME_LINE) && document.contains(GLOBEX_LINE),
+        "the premise: both seeded identity lines are in the assembled document"
+    );
+    let before = report_over(&document);
+    assert_eq!(
+        before
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == Severity::Critical)
+            .count(),
+        2,
+        "the premise: the invented metric is TWO Criticals (the figure and the count)"
+    );
+
+    let split = sections::split(&document);
+    let section = sections::find(&split, SectionKey::Experience(0)).expect("the section");
+    let after = report_over(&sections::splice(&document, section, &lossy_rewrite()));
+    assert!(
+        after
+            .issues
+            .iter()
+            .any(|issue| issue.code == FACTUAL_DROPPED_ROLE),
+        "a lost employer must be a Critical against the SOURCE"
+    );
+}
+
+/// …and a faithful correction is ACCEPTED, with every seeded identity line
+/// still verbatim. Without this arm the guard above would also pass against a
+/// loop that refuses every round.
+///
+/// Mutation check: drop the identity lines from the rewrite and the surviving-
+/// line assertion fails; make `repair_loop` revert unconditionally and the
+/// `!stats.reverted` one does.
+#[tokio::test]
+async fn a_faithful_repair_round_keeps_every_seeded_identity_line() {
+    let document = assembled_with_a_fabricated_metric();
+    let report = report_over(&document);
+    let faithful = format!(
+        "Work Experience\n\n{ACME_LINE}\n- Owned the settlement service through a \
+         payment-provider migration\n\n{GLOBEX_LINE}\n- Built the routing service in Go"
+    );
+
+    let (repaired, report, _letter, stats) = super::stages::repair_loop(
+        document,
+        report,
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the experience section");
+            let spliced = sections::splice(&document, section, &faithful);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        max_revalidate,
+    )
+    .await
+    .expect("the loop only errors when re-validation cannot run");
+
+    assert!(!stats.reverted, "a faithful correction is kept");
+    assert!(
+        !repaired.contains("73%"),
+        "the invented metric is gone:\n{repaired}"
+    );
+    assert!(
+        repaired.contains(ACME_LINE) && repaired.contains(GLOBEX_LINE),
+        "…and both seeded identity lines are still verbatim:\n{repaired}"
+    );
+    assert_eq!(
+        report
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == Severity::Critical)
+            .count(),
+        0,
+        "the report the loop returns is the one it validated"
+    );
+}
+
+/// **ESCALATED — this test FAILS today, and it IS the escalation.** Run it with
+/// `cargo test -- --ignored`. It is `#[ignore]`d rather than deleted or
+/// weakened because what it asserts is what the pipeline promises and does not
+/// deliver; pinning what the code does instead would make the defect read as
+/// intended — the exact mistake
+/// `a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did` was
+/// making one module over.
+///
+/// **The hole, executed rather than argued.** `repair_loop` accepts or reverts
+/// a round on `round_is_worse(before, after)`, which is `after > before` over
+/// the CRITICAL COUNT. The two guards above establish both halves of the trap:
+/// the assembled document carries TWO `factual.unsourced_metric` Criticals, and
+/// a rewrite that loses Globex Logistics carries ONE `factual.dropped_role`.
+/// 1 < 2, so the round is an improvement by the only measure the loop has — it
+/// is KEPT, the document is saved, and an employer the candidate actually
+/// worked for is gone from the résumé.
+///
+/// Three things make that worse than an ordinary count-versus-kind bug:
+///
+/// * the review panel cannot undo it — `factual.dropped_role` names an ABSENCE,
+///   so it is deliberately not a reviewable finding (see
+///   `commands::resume_pipeline::resume_pipeline_resolve_fabrication`'s doc);
+///   the user is told the run needs review and shown nothing to act on;
+/// * `repair` is the last content stage at quality depth and the last but one
+///   at max, so the lossy document is the one `persist_document` writes;
+/// * max depth makes it far more reachable than quality depth ever was: the
+///   collapsed Experience section now holds up to nine SEEDED entries, so one
+///   free-text rewrite is one model answer away from dropping any of them.
+///
+/// The fix is out of this round's scope — it changes a shipped rule shared with
+/// quality depth: `round_is_worse` has to stop being a pure count, because a
+/// round that INTRODUCES a `factual.dropped_role` is worse whatever the totals
+/// say.
+#[tokio::test]
+#[ignore = "ESCALATED: repair_loop keeps a round that traded 2 fabrications for 1 dropped role"]
+async fn a_repair_round_that_loses_a_seeded_identity_line_is_reverted() {
+    let document = assembled_with_a_fabricated_metric();
+    let report = report_over(&document);
+    let lossy = lossy_rewrite();
+
+    let (repaired, _report, _letter, stats) = super::stages::repair_loop(
+        document,
+        report,
+        None,
+        2,
+        live_deadline(),
+        |key, document, _issues| {
+            let split = sections::split(&document);
+            let section = sections::find(&split, key).expect("the experience section");
+            let spliced = sections::splice(&document, section, &lossy);
+            async move { Ok(super::stages::SectionOutcome::Replaced(spliced)) }
+        },
+        max_revalidate,
+    )
+    .await
+    .expect("the loop only errors when re-validation cannot run");
+
+    assert!(
+        stats.reverted,
+        "losing an employer makes the round WORSE, whatever the critical COUNT says"
+    );
+    assert!(
+        repaired.contains(ACME_LINE) && repaired.contains(GLOBEX_LINE),
+        "every seeded identity line must survive the round verbatim:\n{repaired}"
     );
 }
 

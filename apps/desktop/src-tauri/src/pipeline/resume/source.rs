@@ -95,15 +95,6 @@ pub fn section(source: &str, kind: SectionKind) -> Option<SourceSection> {
     current
 }
 
-/// Whether the source has a section of `kind` with anything under it.
-///
-/// A heading with no content is not a section the generator should reproduce:
-/// asking a model to write a Projects section for a document that only has the
-/// word "Projects" in it is asking it to invent projects.
-pub fn has_section(source: &str, kind: SectionKind) -> bool {
-    section(source, kind).is_some_and(|section| !section.text_lines().is_empty())
-}
-
 /// The source's education entries, verbatim.
 ///
 /// A degree, an institution and a year are facts; the max-depth education
@@ -112,14 +103,6 @@ pub fn has_section(source: &str, kind: SectionKind) -> bool {
 pub fn education_lines(source: &str) -> Vec<String> {
     section(source, SectionKind::Education)
         .map(|section| section.text_lines())
-        .unwrap_or_default()
-}
-
-/// The source's summary section as one block of text — what the summary prompt
-/// grounds on when the candidate already wrote one.
-pub fn summary_text(source: &str) -> String {
-    section(source, SectionKind::Summary)
-        .map(|section| section.text_lines().join("\n"))
         .unwrap_or_default()
 }
 

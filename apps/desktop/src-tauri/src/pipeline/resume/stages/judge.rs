@@ -182,6 +182,14 @@ impl<'a> Stage<QualityCtx<'a>> for Judge {
                 return Ok(());
             }
         };
+        // Counted HERE, at the call, not after the usability filter below. The
+        // round-trip happened and `complete_json` already charged
+        // `charge_provider_daily` for it, so a judge whose every remark failed
+        // the verbatim-quote rule is a call the user paid for — counting it only
+        // when it produced something made the run's `metrics.calls` disagree
+        // with the day's ceiling, and disagree in the direction that hides
+        // spend.
+        ctx.ledger.count_call(false);
 
         let issues = issues_from(&answer, &ctx.draft);
         if issues.is_empty() {
@@ -189,7 +197,6 @@ impl<'a> Stage<QualityCtx<'a>> for Judge {
             return Ok(());
         }
 
-        ctx.ledger.count_call(false);
         // Counts and codes only (ADR-027): `dropped` is how many remarks failed
         // the verbatim-quote rule, which is the one number that says whether the
         // model is quoting the document or paraphrasing it.

@@ -389,16 +389,15 @@ impl RunHooks {
                 phase,
                 index: info.index,
                 total: info.total,
-                // Quality depth runs each stage once; the repair loop's own
-                // rounds are reported inside the `repair` stage's artifact
-                // rather than as repeated stage events. Phase 4's section-wise
-                // generator is what makes per-attempt events real.
+                // Every STAGE runs once, at both depths: the repair loop's
+                // rounds are reported inside the `repair` artifact and the
+                // section fan-out's per-section events come through
+                // [`Self::report_section`], which carries its own `attempt`.
                 attempt: 1,
-                // No stage at this depth is section-scoped, so nothing here can
-                // put a model-derived value on the wire. The field stays in the
-                // payload because the contract is frozen and Phase 4 fills it —
-                // and when it does, it must go through
-                // `ipc_contracts::events::is_pipeline_section_key` first.
+                // A per-STAGE event is never section-scoped — the fan-out's
+                // per-section events are [`Self::report_section`]'s, and that is
+                // where the model-derived key goes through the generated
+                // `is_pipeline_section_key` grammar before reaching the wire.
                 section_key: None,
                 ms,
                 issue_count,
