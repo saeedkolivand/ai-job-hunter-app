@@ -43,13 +43,23 @@ export interface AiContract {
    *  Returns the fresh active config, or `{ error }` on an invalid id. */
   setActiveProvider(req: { provider: string }): Promise<ActiveAiConfig | { error: string }>;
 
-  /** Edit a (possibly non-active) provider's model/base_url without flipping the
-   *  active provider (the "edit" half). Returns the fresh active config, or
-   *  `{ error }` when server-side validation rejects the model/base_url. */
+  /** Edit a (possibly non-active) provider's model/base_url/context window
+   *  without flipping the active provider (the "edit" half). Returns the fresh
+   *  active config, or `{ error }` when server-side validation rejects any of
+   *  them.
+   *
+   *  REPLACE semantics on every field, not patch. `contextWindow` is the window
+   *  for the MODEL being saved — the caller's own
+   *  `modelLimits[model].contextWindow` — so it moves with the model and is
+   *  omitted when the model has none (the provider then uses its own default).
+   *  Omitting it while keeping the same model CLEARS a previously-saved
+   *  window. */
   setProviderSettings(req: {
     provider: string;
     model?: string;
     baseUrl?: string;
+    /** 512–131072, validated server-side. Only Ollama acts on it (`num_ctx`). */
+    contextWindow?: number;
   }): Promise<ActiveAiConfig | { error: string }>;
 
   /** One-time first-run seed from the renderer's migrated Zustand config.
@@ -257,6 +267,15 @@ export interface EmbeddingConfig {
 export interface AiProviderRouting {
   model?: string;
   baseUrl?: string;
+  /**
+   * The context window (`num_ctx`) `model` is configured to run with, when the
+   * user set one. Belongs to the model in this entry, not to the provider.
+   *
+   * This is what a STAGED run reads: the backend builds its own requests, so
+   * the renderer's per-model limits map cannot reach it. Absent means the
+   * provider's own default — never a guessed size.
+   */
+  contextWindow?: number;
 }
 
 /** The persisted snapshot the renderer seeds the backend store from — 1:1 with
@@ -274,6 +293,8 @@ export interface ActiveAiConfig {
   activeProvider?: string;
   model?: string;
   baseUrl?: string;
+  /** The active provider entry's own {@link AiProviderRouting.contextWindow}. */
+  contextWindow?: number;
   providers: Record<string, AiProviderRouting>;
 }
 

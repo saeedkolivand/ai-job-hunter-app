@@ -43,6 +43,7 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
+        let completer = ctx.completer_for(NAME);
         // Deliberately NOT cached: a cache hit emits no `ai:stream` deltas, so
         // the user would watch an empty pane while an already-known answer was
         // "generated". See `pipeline::resume::cache`'s module doc.
@@ -68,15 +69,16 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             presence_penalty: None,
             repeat_penalty: None,
             max_tokens: None,
-            context_window: None,
+            // The user's configured window for the model this stage resolved
+            // to. The longest prompt the pipeline builds (see `prompts`:
+            // RESUME_CAP + JOB_CAP ≈ 32k chars), so it is the call that most
+            // needs the setting to arrive.
+            context_window: completer.context_window(),
             effort: ctx.input.effort.map(str::to_string),
             intent: Some(DRAFT_INTENT.to_string()),
         };
 
-        let text = ctx
-            .completer_for(NAME)
-            .stream_captured(ctx.input.job_id, req)
-            .await?;
+        let text = completer.stream_captured(ctx.input.job_id, req).await?;
         ctx.ledger.count_call(false);
         // Length only — never the draft itself (ADR-027).
         ctx.ledger.record(

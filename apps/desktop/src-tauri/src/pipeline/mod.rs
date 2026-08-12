@@ -46,6 +46,15 @@ pub struct Completer {
     /// [`record_usage`]'s free/paid cost gate; `None` for every other
     /// provider, which the gate ignores it for.
     base_url: Option<String>,
+    /// The context window the user configured for THIS resolved model, sent as
+    /// `options.num_ctx` on every request this completer builds.
+    ///
+    /// `None` means "the provider's own default" and is sent as nothing at all
+    /// — never a guessed size. A model's real trained window is knowable only
+    /// by asking the server (`ai_inspect_model` → `/api/show`), which is a
+    /// network call this resolution path must not make, so the honest source is
+    /// the value the user picked in Settings.
+    context_window: Option<u32>,
 }
 
 impl Completer {
@@ -92,12 +101,14 @@ impl Completer {
         let cfg = app
             .state::<crate::ai_config::AiConfigStore>()
             .active_config();
+        let context_window = cfg.context_window;
         let (provider, model, base_url) = Self::from_config(cfg)?;
         Ok(Self {
             app: app.clone(),
             provider,
             model,
             base_url,
+            context_window,
         })
     }
 
@@ -123,12 +134,17 @@ impl Completer {
         let Some(over) = over else {
             return Self::from_active(app);
         };
+        // The override's OWN window, never the active provider's: the override
+        // names a different model, and a window sized for the default model is
+        // a wrong number rather than a missing one.
+        let context_window = over.context_window;
         let (provider, model, base_url) = Self::from_override(over)?;
         Ok(Self {
             app: app.clone(),
             provider,
             model,
             base_url,
+            context_window,
         })
     }
 
@@ -353,6 +369,15 @@ impl Completer {
         &self.model
     }
 
+    /// The configured context window for the resolved model, for a caller that
+    /// builds its own [`AiGenerateRequest`] rather than going through
+    /// [`stream_complete`](Self::stream_complete) / `complete_json` — today the
+    /// résumé pipeline's `draft` stage, which streams. `None` leaves the
+    /// provider on its own default.
+    pub fn context_window(&self) -> Option<u32> {
+        self.context_window
+    }
+
     /// Non-streaming completion through the active provider — the single-shot text
     /// analogue used by agentic text-generating tools (cover letter, interview
     /// questions) that need the whole response before returning. Reuses the same
@@ -414,32 +439,17 @@ impl Completer {
         temperature: Option<f64>,
         max_tokens: Option<u32>,
     ) -> AppResult<()> {
-        let req = AiGenerateRequest {
-            model: self.model.clone(),
-            messages: vec![
-                AiGenerateRequestMessage {
-                    role: "system".to_string(),
-                    content: system.to_string(),
-                },
-                AiGenerateRequestMessage {
-                    role: "user".to_string(),
-                    content: user.to_string(),
-                },
-            ],
-            locale: String::new(),
+        // No declared intent — this caller (agentic tool loop / extension
+        // bridge answer.assist) already passes its own explicit `temperature`,
+        // which wins over any adapter default regardless.
+        let req = text_request(
+            &self.model,
+            system,
+            user,
             temperature,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
             max_tokens,
-            context_window: None,
-            effort: None,
-            // No declared intent — this caller (agentic tool loop / extension
-            // bridge answer.assist) already passes its own explicit
-            // `temperature`, which wins over any adapter default regardless.
-            intent: None,
-        };
+            self.context_window,
+        );
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 
@@ -667,32 +677,55 @@ impl Completer {
             Some(reask) => format!("{user}\n\n{reask}"),
             None => user.to_string(),
         };
-        let req = AiGenerateRequest {
-            model: self.model.clone(),
-            messages: vec![
-                AiGenerateRequestMessage {
-                    role: "system".to_string(),
-                    content: system.to_string(),
-                },
-                AiGenerateRequestMessage {
-                    role: "user".to_string(),
-                    content: user,
-                },
-            ],
-            locale: String::new(),
-            temperature: None,
-            top_p: None,
-            frequency_penalty: None,
-            presence_penalty: None,
-            repeat_penalty: None,
-            max_tokens: None,
-            context_window: None,
-            effort: None,
-            intent: None,
-        };
+        // Temperature/max_tokens are deliberately absent (see above); the
+        // configured context window is not — a structured call reads the same
+        // oversized artifacts every other stage does.
+        let req = text_request(&self.model, system, &user, None, None, self.context_window);
         self.provider
             .complete_structured(&self.app, &req, schema_hint, schema)
             .await
+    }
+}
+
+/// The plain system+user [`AiGenerateRequest`] both non-`chat_stream` entry
+/// points build — [`Completer::stream_complete`] and
+/// [`Completer::structured_call`], which differed only in `temperature`/
+/// `max_tokens`.
+///
+/// Extracted so `context_window` has ONE place to be forwarded from. It was
+/// hard-coded `None` in both literals, which is how the user's configured
+/// window silently never reached a staged run while the renderer's own fast
+/// path honored it — a second literal is how that comes back.
+pub(crate) fn text_request(
+    model: &str,
+    system: &str,
+    user: &str,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    context_window: Option<u32>,
+) -> AiGenerateRequest {
+    AiGenerateRequest {
+        model: model.to_string(),
+        messages: vec![
+            AiGenerateRequestMessage {
+                role: "system".to_string(),
+                content: system.to_string(),
+            },
+            AiGenerateRequestMessage {
+                role: "user".to_string(),
+                content: user.to_string(),
+            },
+        ],
+        locale: String::new(),
+        temperature,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens,
+        context_window,
+        effort: None,
+        intent: None,
     }
 }
 

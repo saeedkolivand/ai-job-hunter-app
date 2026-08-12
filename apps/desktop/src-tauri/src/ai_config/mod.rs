@@ -16,6 +16,29 @@
 //! Shape maps 1:1 to the renderer's old Zustand slice:
 //! `{ activeProvider, providers: { [id]: { model, baseUrl } } }`.
 //!
+//! ## Why the context window lives here
+//!
+//! `options.num_ctx` had exactly one source: the renderer's Zustand
+//! `modelLimits[model].contextWindow`, read by `provider-context.ts` and put on
+//! the request by the FAST path. A staged run is started by the backend and
+//! builds its own requests, so it sent `context_window: None` on every call —
+//! the Settings slider silently did nothing at quality/max depth.
+//!
+//! The honest fix is a column here rather than a second store: this is already
+//! the backend-owned answer to "what does generation route to", and `num_ctx`
+//! is part of that answer. Two deliberate consequences:
+//!
+//! * The renderer's map is keyed by MODEL, this column by PROVIDER ROW — so it
+//!   means "the window for the model in this row", written together with that
+//!   model and replaced with it (see [`ProviderConfig::context_window`]).
+//! * `ai_stage_overrides` carries its own column, because an override names a
+//!   different model and the active provider's window would be a wrong number
+//!   rather than a missing one.
+//!
+//! Nothing GUESSES a window. Absent stays absent all the way to the adapter,
+//! where the provider's own default applies. Embeddings are untouched: that
+//! path deliberately ignores `num_ctx` (`documents::embed`).
+//!
 //! Persistence: a single-row `active_provider` scalar (`id = 1`) plus one row per
 //! configured provider in `ai_provider_config`. **Unseeded = no active provider**,
 //! so generation errors "No AI provider selected" rather than silently falling

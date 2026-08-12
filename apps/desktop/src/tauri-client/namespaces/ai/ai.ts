@@ -17,15 +17,19 @@ export const ai = {
   activeConfig: () => invoke('ai_active_config'),
   setActiveProvider: ({ provider }: { provider: string }) =>
     invoke('ai_set_active_provider', { provider }),
+  // `contextWindow` is REPLACE-semantics like model/baseUrl — send the window
+  // held for the model being saved, or the backend stores none.
   setProviderSettings: ({
     provider,
     model,
     baseUrl,
+    contextWindow,
   }: {
     provider: string;
     model?: string;
     baseUrl?: string;
-  }) => invoke('ai_set_provider_settings', { provider, model, baseUrl }),
+    contextWindow?: number;
+  }) => invoke('ai_set_provider_settings', { provider, model, baseUrl, contextWindow }),
   seedActiveConfig: ({
     config,
   }: {

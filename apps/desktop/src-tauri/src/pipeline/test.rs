@@ -573,6 +573,82 @@ fn active_cfg(
     }
 }
 
+/// The configured context window reaches the request the completer builds.
+///
+/// This is the whole of the fix: both call sites hard-coded `context_window:
+/// None`, so `modelLimits.contextWindow` reached the renderer's fast path and
+/// nothing else. The window is `num_ctx` on the Ollama body
+/// (`build_chat_stream_body`, separately tested), so "the request carries it"
+/// is the missing link, not the adapter.
+///
+/// Mutation check (executed): change `context_window` back to `None` in
+/// `text_request` and this fails; the `None` case fails if the builder ever
+/// invents a default.
+#[test]
+fn the_request_builder_forwards_the_configured_context_window() {
+    use crate::pipeline::text_request;
+
+    let req = text_request("m", "sys", "usr", Some(0.4), Some(256), Some(8_192));
+    assert_eq!(req.context_window, Some(8_192));
+    assert_eq!(req.max_tokens, Some(256));
+    assert_eq!(req.temperature, Some(0.4));
+    assert_eq!(req.model, "m");
+    assert_eq!(req.messages.len(), 2);
+    assert_eq!(req.messages[0].content, "sys");
+    assert_eq!(req.messages[1].content, "usr");
+
+    // Unconfigured stays unconfigured — the provider's own default, never a
+    // number this layer made up.
+    assert_eq!(
+        text_request("m", "s", "u", None, None, None).context_window,
+        None
+    );
+}
+
+/// The stage override's resolve seam takes the SAME two steps as the active
+/// config's, in the same order — a per-stage row must not be able to reach an
+/// endpoint the active config would have refused.
+///
+/// Mutation check (executed): drop the `validate_provider_base_url` call from
+/// `from_override` and the first case resolves.
+#[test]
+fn a_stage_override_is_validated_exactly_like_the_active_config() {
+    use crate::ai_config::StageOverride;
+
+    let over = |provider: &str, model: &str, base_url: Option<&str>| StageOverride {
+        provider: provider.to_string(),
+        model: model.to_string(),
+        base_url: base_url.map(str::to_string),
+        context_window: None,
+    };
+
+    let err = Completer::from_override(over(
+        "openai-compatible",
+        "m",
+        Some("http://169.254.169.254/latest/meta-data/"),
+    ))
+    .map(|_| ())
+    .unwrap_err();
+    assert!(
+        format!("{err}").to_lowercase().contains("metadata"),
+        "got {err}"
+    );
+
+    let err = Completer::from_override(over("anthropic", "", None))
+        .map(|_| ())
+        .unwrap_err();
+    assert!(format!("{err}").contains("No model selected"), "got {err}");
+
+    let (_provider, model, base_url) = Completer::from_override(over(
+        "openai-compatible",
+        "local-model",
+        Some("http://127.0.0.1:1234/v1"),
+    ))
+    .expect("a good override resolves");
+    assert_eq!(model, "local-model");
+    assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+}
+
 #[test]
 fn rejects_tampered_cloud_metadata_base_url() {
     // A metadata-endpoint base_url could only land here via a store row written
