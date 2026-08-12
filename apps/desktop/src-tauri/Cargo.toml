@@ -140,7 +140,15 @@ serde_json = "1"
 
 # HTTP client used by all in-process scrapers and the AI/cover-letter pipeline.
 # rustls-tls is added for the cover_letter pipeline (API calls use rustls client).
-reqwest = { version = "0.13", features = ["json", "native-tls", "rustls", "rustls-native-certs", "cookies", "query", "http2"], default-features = false }
+#
+# No `rustls-native-certs`: in reqwest 0.13.1 that name was only the *implicit*
+# feature of an optional dependency reqwest never references in its own source,
+# so switching it on changed nothing. OS trust roots reach us either way — the
+# `rustls` feature pulls `rustls-platform-verifier` (which depends on
+# rustls-native-certs itself), and `native-tls` uses the system stack. reqwest
+# 0.13.2 dropped the optional dependency outright, so keeping it listed is now a
+# hard resolve error.
+reqwest = { version = "0.13", features = ["json", "native-tls", "rustls", "cookies", "query", "http2"], default-features = false }
 
 log = "0.4"
 tracing = { version = "0.1", features = ["log"] }
