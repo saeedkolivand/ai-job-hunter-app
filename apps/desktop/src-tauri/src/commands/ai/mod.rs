@@ -681,6 +681,64 @@ pub fn ai_seed_active_config(app: AppHandle, config: crate::ai_config::AiConfigS
     }
 }
 
+// ── Per-stage model overrides ────────────────────────────────────────────────
+
+/// Read every explicitly-set per-stage model override, keyed by stage name.
+///
+/// ABSENT means "this stage runs on the active provider" — the read model has
+/// no entry for an unconfigured stage, and the UI must render that as the
+/// default rather than as an override equal to the default. Rows naming a stage
+/// the current build no longer runs are filtered out server-side, so every key
+/// returned is a live stage.
+#[tauri::command]
+pub fn ai_stage_overrides(app: AppHandle) -> Value {
+    serde_json::to_value(
+        app.state::<crate::ai_config::AiConfigStore>()
+            .stage_overrides(),
+    )
+    .unwrap_or_else(|_| json!({}))
+}
+
+/// Point ONE pipeline stage at a specific provider + model.
+///
+/// Strict server-side validation — unknown stage, unknown provider,
+/// cross-family model, bad `base_url` provenance, out-of-range context window
+/// are all `{ error }`, never a silently scrubbed row: an override the user
+/// cannot see the effect of is worse than a refused one. Returns the fresh
+/// override map so the caller re-renders from the server's answer.
+#[tauri::command]
+pub fn ai_set_stage_override(
+    app: AppHandle,
+    stage: String,
+    provider: String,
+    model: Option<String>,
+    base_url: Option<String>,
+    context_window: Option<u32>,
+) -> Value {
+    let store = app.state::<crate::ai_config::AiConfigStore>();
+    let over = crate::ai_config::StageOverride {
+        provider,
+        model: model.unwrap_or_default(),
+        base_url,
+        context_window,
+    };
+    match store.set_stage_override(&stage, over) {
+        Ok(()) => serde_json::to_value(store.stage_overrides()).unwrap_or_else(|_| json!({})),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// Return ONE stage to the active provider. A no-op (not an error) for a stage
+/// that has no override, so the UI can clear without reading first.
+#[tauri::command]
+pub fn ai_clear_stage_override(app: AppHandle, stage: String) -> Value {
+    let store = app.state::<crate::ai_config::AiConfigStore>();
+    match store.clear_stage_override(&stage) {
+        Ok(()) => serde_json::to_value(store.stage_overrides()).unwrap_or_else(|_| json!({})),
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
 // ── Embeddings configuration & re-indexing ──────────────────────────────────────
 
 /// The active embedding space, the vector counts per space, and how many

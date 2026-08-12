@@ -35,9 +35,31 @@ export const ai = {
   }: {
     config: {
       activeProvider?: string;
-      providers: Record<string, { model?: string; baseUrl?: string }>;
+      providers: Record<string, { model?: string; baseUrl?: string; contextWindow?: number }>;
+      stageOverrides?: Record<
+        string,
+        { provider: string; model: string; baseUrl?: string; contextWindow?: number }
+      >;
     };
   }) => invoke('ai_seed_active_config', { config }),
+  // Per-stage model overrides. An absent key means "the active provider" —
+  // never write one back just to mirror the default.
+  stageOverrides: () => invoke('ai_stage_overrides'),
+  setStageOverride: ({
+    stage,
+    provider,
+    model,
+    baseUrl,
+    contextWindow,
+  }: {
+    stage: string;
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+    contextWindow?: number;
+  }) => invoke('ai_set_stage_override', { stage, provider, model, baseUrl, contextWindow }),
+  clearStageOverride: ({ stage }: { stage: string }) =>
+    invoke('ai_clear_stage_override', { stage }),
   // `effort` on both research calls: the backend's deadline around
   // search + synthesis scales with it, the same way the generation stream
   // deadline does. Omitting it leaves the unscaled baseline.

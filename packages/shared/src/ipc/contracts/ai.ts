@@ -69,6 +69,41 @@ export interface AiContract {
   }): Promise<{ seeded: boolean } | { error: string }>;
 
   /**
+   * Every explicitly-set per-stage model override, keyed by pipeline stage
+   * name (the `PIPELINE_STAGES` vocabulary from `@ajh/shared`).
+   *
+   * **Absent means the active provider.** A stage with no entry is not
+   * "overridden to the default" — it was never configured, and the backend
+   * resolves it through the normal active-config path. Render the difference:
+   * a suggested value must be shown as a suggestion until the user applies it,
+   * because nothing here is applied on the user's behalf.
+   */
+  stageOverrides(): Promise<Record<string, AiStageOverride>>;
+
+  /**
+   * Point ONE stage at a provider + model. Returns the fresh override map, or
+   * `{ error }` when server-side validation rejects the stage name, the
+   * provider, the model (cross-family check), the base URL (provenance +
+   * cloud-metadata block) or the context window (512–131072).
+   *
+   * `model` may be empty ONLY for a CLI-agent provider, which runs on its own
+   * configured default.
+   */
+  setStageOverride(req: {
+    stage: string;
+    provider: string;
+    model?: string;
+    baseUrl?: string;
+    contextWindow?: number;
+  }): Promise<Record<string, AiStageOverride> | { error: string }>;
+
+  /** Return ONE stage to the active provider. A no-op for a stage that has no
+   *  override. Returns the fresh override map. */
+  clearStageOverride(req: {
+    stage: string;
+  }): Promise<Record<string, AiStageOverride> | { error: string }>;
+
+  /**
    * Stream a generation through the backend orchestration pipeline. Same wire
    * shape as `generate`, but the work runs as a composable `Pipeline` (so feature
    * generators share one lifecycle). Used by resume/cover-letter generation.
@@ -278,11 +313,31 @@ export interface AiProviderRouting {
   contextWindow?: number;
 }
 
+/**
+ * One pipeline stage's explicitly-chosen routing. Mirrors the Rust
+ * `StageOverride`.
+ *
+ * Provider AND model, not a bare model id: moving the judge to a cloud model
+ * while drafting locally is a change of provider, and a model-only shape would
+ * have to guess which provider it belonged to. `baseUrl` is only meaningful for
+ * `openai-compatible` (it is dropped server-side for anything else);
+ * `contextWindow` belongs to the model this entry names.
+ */
+export interface AiStageOverride {
+  provider: string;
+  /** Empty only for a CLI-agent provider. */
+  model: string;
+  baseUrl?: string;
+  contextWindow?: number;
+}
+
 /** The persisted snapshot the renderer seeds the backend store from — 1:1 with
  *  the old Zustand `aiProviderConfig` (`{ activeProvider, providers }`). */
 export interface AiConfigSnapshot {
   activeProvider?: string;
   providers: Record<string, AiProviderRouting>;
+  /** Per-stage overrides. Optional so a pre-override bundle still validates. */
+  stageOverrides?: Record<string, AiStageOverride>;
 }
 
 /** Backend-owned active generation config (task #16). The active provider's own
