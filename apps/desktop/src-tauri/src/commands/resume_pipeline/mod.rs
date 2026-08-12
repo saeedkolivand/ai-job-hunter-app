@@ -330,6 +330,14 @@ async fn execute(
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
     let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
+    // A REFUSED save is not a successful run. `is_persistable` rejects a
+    // document that lost the source's whole work history, and `terminal_state`
+    // would otherwise read `outcome == Ok` and report `completed` — a run the
+    // user is told succeeded, over a document that never changed, with nothing
+    // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
+    // empty-draft case, which is benign and already reported by its own path.
+    let refused =
+        save_verdict(ctx.input.source_resume, &ctx.draft, &job_url) == SaveVerdict::Refused;
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -343,7 +351,7 @@ async fn execute(
     // `persist_document` has saved its document.
     let (status, stopped_reason) = hooks::terminal_state(
         &ledger,
-        outcome.is_ok(),
+        outcome.is_ok() && !refused,
         cancel.is_cancelled(),
         needs_review,
         quality_report.is_some(),
@@ -399,6 +407,15 @@ async fn execute(
     );
 
     match outcome {
+        // The pipeline finished, and the document it produced was refused. The
+        // row already says `failed`; the JOB has to agree, and the user needs
+        // the reason — the alternative is a green run over an unchanged
+        // document. `execute`'s caller turns this into `job_fail`.
+        Ok(()) if refused => Err(AppError::Message(
+            "The generated résumé came back without any of your work history, so your saved \
+             document was left unchanged. Try again, or use quality depth."
+                .to_string(),
+        )),
         Ok(()) => {
             crate::commands::jobs::job_complete(
                 app,
@@ -478,10 +495,7 @@ fn persist_document(
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
-        return None;
-    }
-    if !is_persistable(ctx.input.source_resume, &ctx.draft) {
+    if save_verdict(ctx.input.source_resume, &ctx.draft, job_url) != SaveVerdict::Save {
         return None;
     }
     let wrapper = report::build(
@@ -517,6 +531,36 @@ fn persist_document(
             log::warn!("[pipeline] could not persist the generated résumé (non-fatal): {e}");
             None
         }
+    }
+}
+
+/// What [`persist_document`] will do with this run's document, decided from the
+/// two documents and the posting url alone.
+///
+/// Three outcomes rather than a bool, because two of them mean opposite things
+/// to the RUN: `Nothing` is benign (an unlinked run is session-only by design,
+/// an empty draft is a run that failed before it wrote anything and is already
+/// reported as such), while `Refused` means the run produced a document and it
+/// was rejected — which must not come out as a successful completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SaveVerdict {
+    Save,
+    /// There was nothing to save, or nowhere to save it.
+    Nothing,
+    /// There WAS a document, and [`is_persistable`] rejected it.
+    Refused,
+}
+
+/// One definition of "will this save", shared by `persist_document` (which
+/// acts on it) and `execute` (which has to report it).
+pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> SaveVerdict {
+    if draft.trim().is_empty() || job_url.trim().is_empty() {
+        return SaveVerdict::Nothing;
+    }
+    if is_persistable(source_resume, draft) {
+        SaveVerdict::Save
+    } else {
+        SaveVerdict::Refused
     }
 }
 

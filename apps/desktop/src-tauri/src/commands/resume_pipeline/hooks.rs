@@ -330,11 +330,25 @@ impl RunHooks {
             return; // no stage is running: nothing to attribute this to
         };
         let wire = key.to_wire();
-        let section_key = is_pipeline_section_key(&wire).then_some(wire);
         debug_assert!(
-            section_key.is_some(),
+            is_pipeline_section_key(&wire),
             "SectionKey::to_wire must round-trip through the generated grammar"
         );
+        if !is_pipeline_section_key(&wire) {
+            // A keyless per-section event is shaped EXACTLY like a per-stage one
+            // — same stage name, same phase — so it would arrive as "the
+            // `sections` stage finished". No consumer is fooled today
+            // (`foldSectionStates` requires a truthy `sectionKey`, and the
+            // machine maps `sections` to a non-terminal busy state whatever the
+            // phase), and the key is unrepresentable only if `to_wire` and the
+            // generated grammar disagree — which a test pins. But
+            // `debug_assert!` is a release no-op, so the release build's answer
+            // to that disagreement would be to ship the ambiguous event. The
+            // durable row still records what happened.
+            self.append(stage, phase, Some(artifact));
+            return;
+        }
+        let section_key = Some(wire);
         emit_event(
             &self.app,
             PIPELINE_STAGE,

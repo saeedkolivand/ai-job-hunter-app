@@ -437,3 +437,51 @@ fn a_document_that_lost_the_sources_whole_work_history_may_not_overwrite_it() {
     assert!(super::is_persistable(UNDATED, UNDATED));
     assert!(!super::is_persistable(UNDATED, NO_WORK));
 }
+
+/// **A REFUSED save is not a successful run.**
+///
+/// `is_persistable` rejects a document that lost the source's whole work
+/// history, and `terminal_state` would otherwise read the pipeline's `Ok` and
+/// report `completed`: a green run, an unchanged saved document, and nothing
+/// anywhere saying why. The three verdicts are distinguished because two of
+/// them mean opposite things to the run — `Nothing` is the unlinked or
+/// empty-draft case, which is benign and reported by its own path.
+///
+/// Mutation check: collapse `Refused` into `Nothing` and the refused case stops
+/// failing the run; return `Refused` for an empty draft and an ordinary failed
+/// run gains a second, contradictory explanation.
+#[test]
+fn a_refused_save_is_distinguishable_from_having_nothing_to_save() {
+    use super::SaveVerdict;
+
+    const SOURCE_WITH_WORK: &str = "Work Experience\n\nStaff Engineer, Acme  2021 - Present\n\
+                                    - Owned the settlement service\n";
+    const NO_WORK: &str = "Professional Summary\n\nA payments engineer.\n";
+    const URL: &str = "https://boards.example/jobs/1";
+
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, SOURCE_WITH_WORK, URL),
+        SaveVerdict::Save
+    );
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, URL),
+        SaveVerdict::Refused,
+        "a document that lost the source's work history is REFUSED, not skipped"
+    );
+
+    // Benign non-saves stay benign: an unlinked run is session-only by design,
+    // and an empty draft is a run that already failed on its own terms.
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, NO_WORK, ""),
+        SaveVerdict::Nothing
+    );
+    assert_eq!(
+        super::save_verdict(SOURCE_WITH_WORK, "   ", URL),
+        SaveVerdict::Nothing
+    );
+    // …and a source with no work history of its own is never refused.
+    assert_eq!(
+        super::save_verdict(NO_WORK, NO_WORK, URL),
+        SaveVerdict::Save
+    );
+}
