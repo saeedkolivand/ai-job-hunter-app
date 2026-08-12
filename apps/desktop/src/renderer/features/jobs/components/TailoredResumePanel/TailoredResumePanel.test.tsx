@@ -352,19 +352,29 @@ describe('TailoredResumePanel — a live run', () => {
     expect(screen.getByRole('button', { name: /stopping/i })).toBeDisabled();
   });
 
-  // ── The max-depth section timeline ────────────────────────────────────────
-  it('shows the per-section checklist while a max run is writing', async () => {
+  // ── The max-depth section timeline + progressive assembly ─────────────────
+  it('shows the per-section checklist and the progressively assembled text', async () => {
     bus.depth = 'max';
     bus.session = makeSession({
       ...running(),
       stage: { stage: 'sections', phase: 'start', index: 3, total: 8, attempt: 1 },
       sectionStates: { summary: 'done', 'experience:0': 'generating' },
+      // At max depth the same display-only stream carries whole SECTIONS as
+      // `assemble` renders them, rather than draft tokens. The pane needs no
+      // branch for that — which is what this asserts.
+      draft: 'Summary\nBuilt the deployment pipeline.\n\nExperience\nAcme — Senior Engineer',
+      detail: detail({ status: 'running', stoppedReason: null, finishedAt: undefined }),
     });
     await openPanel();
     expect(screen.getByText('Writing the résumé section by section')).toBeInTheDocument();
+    expect(screen.getByText('Step 4 of 8')).toBeInTheDocument();
     const timeline = screen.getByTestId('section-timeline');
     expect(within(timeline).getByText('Summary')).toBeInTheDocument();
     expect(within(timeline).getByText('Experience 1')).toBeInTheDocument();
+    expect(screen.getByText(/Acme — Senior Engineer/)).toBeInTheDocument();
+    // Still display-only: the assembled text is not the finished résumé.
+    expect(screen.getByText(/display only/i)).toBeInTheDocument();
+    expect(screen.queryByText('Finished résumé')).not.toBeInTheDocument();
   });
 
   // Quality depth reports no sections at all, so the checklist must not leave
