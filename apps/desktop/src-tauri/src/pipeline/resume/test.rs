@@ -21,7 +21,7 @@ use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
     ResumeStrategy, SectionKey, SkillGroup,
 };
-use super::{RunLedger, MAX_STAGES, QUALITY_STAGES};
+use super::{pick, RunLedger, MAX_STAGES, QUALITY_STAGES};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::validate::content::{validate_content, ContentInput, DocKind};
 
@@ -679,6 +679,102 @@ fn the_generated_stage_vocabulary_covers_exactly_the_two_depth_lists() {
              an override on it would be a setting with no effect",
         );
     }
+}
+
+// ── Per-stage model routing ─────────────────────────────────────────────────
+//
+// Tested over `String` "completers" rather than real ones: a `Completer` needs
+// an `AppHandle`, and the RULES here — which stage gets which routing, and what
+// that does to a cache key — are `pick` and `StageCacheKey::rebound`, both pure.
+// Production goes through the same two functions (`QualityCtx::completer_for`
+// is `pick`; `QualityCtx::stage_cache_key` is `pick` then `rebound`), so this is
+// the real decision, not a restatement of it.
+
+/// The never-silent-switch rule, in one assertion per branch.
+///
+/// Mutation check (executed): make `pick` return `map.values().next()` when the
+/// stage is absent and the "every other stage" arm fails; make it ignore the
+/// map entirely and the first arm fails.
+#[test]
+fn a_stage_uses_its_override_and_every_other_stage_uses_the_default() {
+    let default = "default-model".to_string();
+    let mut overrides = std::collections::HashMap::new();
+    overrides.insert("strategy".to_string(), "big-model".to_string());
+
+    assert_eq!(pick(Some(&overrides), &default, "strategy"), "big-model");
+    for stage in MAX_STAGES.iter().filter(|s| **s != "strategy") {
+        assert_eq!(
+            pick(Some(&overrides), &default, stage),
+            "default-model",
+            "{stage} was never overridden and must not be switched",
+        );
+    }
+    // No map at all — every test and every override-free run — is the same
+    // thing as an empty one: nothing changes.
+    assert_eq!(pick(None, &default, "strategy"), "default-model");
+    assert_eq!(
+        pick(
+            Some(&std::collections::HashMap::new()),
+            &default,
+            "strategy"
+        ),
+        "default-model"
+    );
+}
+
+/// A stage's cached artifact is filed under the model that PRODUCED it.
+///
+/// The coupling this exists for: `StageCacheKey` used to be seeded once from
+/// the run's single completer, so an overridden stage would have read and
+/// written the DEFAULT model's cache entry — serving one model's analysis to a
+/// run that asked for another's, invisibly (a cache hit looks like a fast run).
+///
+/// Mutation check (executed): make `rebound` ignore its `model` argument and
+/// the differing-stage assertion fails; make it also reset `chain` and the
+/// identical-stage assertion fails.
+#[test]
+fn overriding_one_stage_moves_only_that_stages_cache_key() {
+    let base = StageCacheKey::new("ollama", "default-model", "seed");
+    let default = "default-model".to_string();
+    // Two configs differing in exactly one stage's override.
+    let plain: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut overridden = std::collections::HashMap::new();
+    overridden.insert("strategy".to_string(), "big-model".to_string());
+
+    for stage in MAX_STAGES {
+        let key_of = |map: &std::collections::HashMap<String, String>| {
+            base.rebound("ollama", pick(Some(map), &default, stage))
+                .key()
+        };
+        if *stage == "strategy" {
+            assert_ne!(
+                key_of(&plain),
+                key_of(&overridden),
+                "the overridden stage must not reuse the default model's entry",
+            );
+        } else {
+            assert_eq!(
+                key_of(&plain),
+                key_of(&overridden),
+                "{stage} did not change model, so its cached artifact is still valid",
+            );
+        }
+    }
+}
+
+/// The provider half of the identity counts too — the same model name served by
+/// a different provider is a different function.
+///
+/// Mutation check: drop `provider` from `rebound`'s output and this fails.
+#[test]
+fn rebinding_the_provider_changes_the_key_and_rebinding_to_itself_does_not() {
+    let base = StageCacheKey::new("ollama", "m", "seed");
+    assert_ne!(base.rebound("openai", "m").key(), base.key());
+    assert_eq!(
+        base.rebound("ollama", "m").key(),
+        base.key(),
+        "an override-free run must hit exactly the entries it always did",
+    );
 }
 
 // ── Prompt composition (ADR-010) ────────────────────────────────────────────

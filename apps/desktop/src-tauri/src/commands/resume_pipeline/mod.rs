@@ -81,7 +81,7 @@ use crate::ipc_contracts::resume_pipeline::{
 };
 use crate::jobs::cancel::CancelRegistry;
 use crate::pipeline::cache::KvCache;
-use crate::pipeline::resume::stages::{regenerate_one_section, SectionOutcome};
+use crate::pipeline::resume::stages::{regenerate_one_section, section_gen, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
 use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
@@ -240,6 +240,12 @@ async fn execute(
 
     let clamped = clamp_request(req);
     let completer = Completer::from_active(app)?;
+    // ONE resolution per overridden stage, BEFORE the run starts: an override
+    // edited mid-run must not take effect halfway through the document, and the
+    // stage cache keys are derived from these same completers. Scoped to the
+    // stages THIS depth runs — a `draft` override costs nothing on a max run,
+    // which has no draft stage.
+    let stage_completers = Completer::for_stages(app, &max::pipeline_for(depth).stage_names())?;
     let resume = app
         .state::<DocumentStore>()
         .get(&req.resume_id)
@@ -314,7 +320,8 @@ async fn execute(
         cache.as_deref(),
         deadline,
         Arc::clone(&ledger),
-    );
+    )
+    .with_stage_completers(&stage_completers);
     if depth == GenerationDepth::Max {
         // The hook is ALSO the section-wise observer: per-section events and
         // the progressive document stream are emits, so they belong to the one
@@ -930,7 +937,12 @@ pub async fn resume_pipeline_regenerate_section(
         "pipeline:resume",
         format!("op=regenerate_section key={}", key.to_wire()),
     );
-    let completer = Completer::from_active(&app)?;
+    // Resolved through the SAME per-stage path a run takes: a per-section
+    // regenerate IS the `sections` stage, one section wide, so a user who
+    // pointed that stage at another model gets that model here too. Without
+    // this, the button would quietly disagree with the run that produced the
+    // document it is editing.
+    let completer = Completer::from_active_for_stage(&app, section_gen::NAME)?;
     let source = source_resume_for(&app, &row, &record);
     let outcome =
         match regenerate_max_entry(&store, &row, &record, &completer, &source, key, &req).await {

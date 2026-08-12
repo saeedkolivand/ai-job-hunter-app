@@ -188,7 +188,7 @@ impl<'a> Stage<QualityCtx<'a>> for Judge {
         // opinion of a document that no longer exists is the same stale-verdict
         // failure `validate` refuses caching for.
         let answer: JudgeOut = match ctx
-            .completer
+            .completer_for(NAME)
             .complete_json(
                 ctx.deadline_guard(),
                 &judge_system(ctx.input.target_language),

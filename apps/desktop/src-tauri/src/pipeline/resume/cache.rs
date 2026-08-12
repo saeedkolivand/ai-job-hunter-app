@@ -89,6 +89,28 @@ impl StageCacheKey {
         }
     }
 
+    /// This chain, re-bound to a different provider + model — the key for a
+    /// stage running on its OWN override rather than the run's default.
+    ///
+    /// The provider/model half of the key is per-STAGE, not per-run, for
+    /// exactly the reason the seed carries it at all: "the same prompt is a
+    /// different function on a different model". Once one stage can run
+    /// somewhere else, a single run-wide identity would file that stage's
+    /// answer under the default model's key — and serve it back on the next run
+    /// even after the override is removed. The `chain` is untouched: what came
+    /// before this stage is the same regardless of who answers it.
+    ///
+    /// Returns a new key rather than mutating, so the rolling chain in
+    /// `QualityCtx::cache_key` stays the run's shared identity and each stage
+    /// derives its own view of it.
+    pub fn rebound(&self, provider: &str, model: &str) -> Self {
+        Self {
+            provider: provider.to_string(),
+            model: model.to_string(),
+            chain: self.chain.clone(),
+        }
+    }
+
     /// The cache key for the stage about to run.
     pub fn key(&self) -> String {
         sha256_hex(&format!(

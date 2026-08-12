@@ -222,7 +222,8 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
         let roster = seed_company_roster(ctx.input.source_resume, ctx.input.job_ad);
 
-        let cached: Option<ResumeStrategy> = cache::get(ctx.cache, NAME, &ctx.cache_key);
+        let key = ctx.stage_cache_key(NAME);
+        let cached: Option<ResumeStrategy> = cache::get(ctx.cache, NAME, &key);
         let from_cache = cached.is_some();
         let mut strategy = match cached {
             Some(strategy) => strategy,
@@ -232,7 +233,7 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                     strategy_user(ctx.input.source_resume, &ctx.analysis, &ctx.evidence),
                     company_roster_block(&roster)
                 );
-                ctx.completer
+                ctx.completer_for(NAME)
                     .complete_json(
                         // The re-ask is a second full provider call; a run
                         // already out of time must not pay for it.
@@ -254,7 +255,7 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
 
         let json = serde_json::to_string(&strategy).unwrap_or_default();
         if !from_cache {
-            cache::put(ctx.cache, NAME, &ctx.cache_key, &json);
+            cache::put(ctx.cache, NAME, &key, &json);
         }
         ctx.cache_key.extend(&json);
         ctx.ledger.count_call(from_cache);

@@ -25,6 +25,8 @@ use crate::pipeline::Stage;
 
 pub struct Draft;
 
+const NAME: &str = "draft";
+
 /// The intent this stage declares.
 ///
 /// `prose_grounded`, not `prose`: the output makes factual claims about the
@@ -37,7 +39,7 @@ const DRAFT_INTENT: &str = "prose_grounded";
 #[async_trait]
 impl<'a> Stage<QualityCtx<'a>> for Draft {
     fn name(&self) -> &'static str {
-        "draft"
+        NAME
     }
 
     async fn run(&self, ctx: &mut QualityCtx<'a>) -> AppResult<()> {
@@ -71,7 +73,10 @@ impl<'a> Stage<QualityCtx<'a>> for Draft {
             intent: Some(DRAFT_INTENT.to_string()),
         };
 
-        let text = ctx.completer.stream_captured(ctx.input.job_id, req).await?;
+        let text = ctx
+            .completer_for(NAME)
+            .stream_captured(ctx.input.job_id, req)
+            .await?;
         ctx.ledger.count_call(false);
         // Length only — never the draft itself (ADR-027).
         ctx.ledger.record(

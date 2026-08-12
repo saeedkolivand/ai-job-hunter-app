@@ -101,6 +101,86 @@ impl Completer {
         })
     }
 
+    /// Resolve a `Completer` for ONE pipeline stage.
+    ///
+    /// An explicitly-set override for `stage` ([`crate::ai_config::StageOverride`])
+    /// wins; ANY other outcome — no row, or a stage nobody configured — falls
+    /// through to [`from_active`](Self::from_active) unchanged. There is no
+    /// third behaviour: a stage is never switched to a model the user did not
+    /// name, which is what lets a Settings UI *suggest* per-stage defaults
+    /// without applying them.
+    ///
+    /// The override takes the SAME chain as the active config — `base_url`
+    /// re-validated against `net::ssrf` on the egress path, then
+    /// [`resolve_parts`](Self::resolve_parts) — because a store row can also
+    /// come from a restored backup rather than from the settings writer. A row
+    /// that fails is an `Err`, never a quiet fallback to the active provider:
+    /// the run the user asked for is not the run they would get.
+    pub fn from_active_for_stage(app: &AppHandle, stage: &str) -> AppResult<Self> {
+        let over = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .stage_override(stage);
+        let Some(over) = over else {
+            return Self::from_active(app);
+        };
+        let (provider, model, base_url) = Self::from_override(over)?;
+        Ok(Self {
+            app: app.clone(),
+            provider,
+            model,
+            base_url,
+        })
+    }
+
+    /// The completers one RUN needs, resolved once up front: an entry for every
+    /// stage in `stages` that carries an override, and nothing else.
+    ///
+    /// Once, not per call, for two reasons. Resolving inside a stage would read
+    /// the store mid-run, so an override edited while a 40-minute run is in
+    /// flight would take effect halfway through it — a document written by two
+    /// different models with nothing recording which wrote what. And the map is
+    /// what the stage CACHE keys off (`QualityCtx::stage_cache_key`), so a
+    /// changing answer would mean a changing key.
+    ///
+    /// Stages with no override are ABSENT from the map rather than mapped to a
+    /// clone of the active completer — "absent means the default" is the
+    /// property every reader below depends on.
+    pub fn for_stages(
+        app: &AppHandle,
+        stages: &[&str],
+    ) -> AppResult<std::collections::HashMap<String, Self>> {
+        let overrides = app
+            .state::<crate::ai_config::AiConfigStore>()
+            .stage_overrides();
+        let mut out = std::collections::HashMap::new();
+        for stage in stages.iter().filter(|s| overrides.contains_key(**s)) {
+            out.insert(
+                (*stage).to_string(),
+                Self::from_active_for_stage(app, stage)?,
+            );
+        }
+        Ok(out)
+    }
+
+    /// The `AppHandle`-free resolve seam for one stage override — the sibling of
+    /// [`from_config`](Self::from_config), doing the same two steps in the same
+    /// order so a stage's routing cannot be validated more loosely than the
+    /// active provider's.
+    fn from_override(
+        over: crate::ai_config::StageOverride,
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
+        let crate::ai_config::StageOverride {
+            provider,
+            model,
+            base_url,
+            ..
+        } = over;
+        if let Some(url) = base_url.as_deref() {
+            crate::net::ssrf::validate_provider_base_url(url)?;
+        }
+        Self::resolve_parts(Some(&provider), Some(&model), base_url)
+    }
+
     /// The `AppHandle`-free validated-resolve seam behind
     /// [`from_active`](Self::from_active): the defensive re-validate of the
     /// stored `base_url` on the egress path (the writer/seed/import all validate
@@ -527,6 +607,17 @@ impl Completer {
     /// which records spend but does not charge): every provider call a
     /// multi-stage run makes has to hit this ceiling, or the run is the one
     /// fan-out shape that escapes the day's cap.
+    ///
+    /// **Per-stage models spread the charge across buckets.** The ceiling is
+    /// PER PROVIDER, and each call charges the provider THIS completer
+    /// resolved — so a run whose `strategy` stage is overridden to a cloud
+    /// provider charges that provider's bucket for the strategy call and the
+    /// active provider's for everything else. That is the intended reading of
+    /// a per-provider cap (an Ollama stage costs nothing and should not consume
+    /// an OpenAI allowance), but it does mean the number of calls a single run
+    /// may make grows with the number of DISTINCT providers it routes to. The
+    /// per-run ceilings that bound a run's total work are `Budget::max_steps`
+    /// and the `RunDeadline`, not this.
     pub(crate) fn charge_daily(&self) -> AppResult<()> {
         self.app
             .state::<std::sync::Arc<crate::limits::Limiter>>()
