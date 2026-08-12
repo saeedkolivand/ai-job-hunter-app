@@ -34,6 +34,8 @@
 pub mod cache;
 pub mod prompt_blocks;
 pub mod prompts;
+pub mod section_prompts;
+pub mod source;
 pub mod stages;
 pub mod types;
 pub mod types_max;
@@ -57,7 +59,8 @@ use crate::pipeline::{Completer, Pipeline};
 use crate::validate::content::ContentReport;
 
 use self::cache::StageCacheKey;
-use self::types::{EvidenceMap, JobAnalysis, ResumeStrategy};
+use self::types::{EvidenceMap, GenerationDepth, JobAnalysis, ResumeStrategy};
+use self::types_max::SectionResult;
 
 /// Everything one run is run AGAINST — all of it resolved server-side before
 /// the pipeline starts. Borrowed: a run reads these repeatedly and copying a
@@ -163,7 +166,38 @@ impl RunLedger {
     }
 }
 
+/// What a section-wise run tells the shell WHILE it is running.
+///
+/// Declared here (L2) and implemented only by the L3 shell, exactly like
+/// [`StageHooks`](crate::pipeline::StageHooks) and for the same reason: the
+/// `sections` stage has to report twelve times inside ONE stage, which the
+/// per-stage hook cannot express, and it must do so without holding an
+/// `AppHandle`, an event channel, or any Tauri type. A test implements this
+/// with an in-memory recorder.
+///
+/// `index`/`total` are the SECTION's position in the fan-out, not the stage's;
+/// the L3 implementor pairs them with the stage index it already tracks.
+pub trait SectionProgress: Send + Sync {
+    /// A section's generation is about to start.
+    fn section_started(&self, key: types::SectionKey, index: usize, total: usize);
+
+    /// It finished. `produced` is false for a section that errored, was refused
+    /// by the day's ceiling, or came back with nothing to render — the three
+    /// cases a timeline must show as "no changes" rather than as done.
+    fn section_finished(&self, key: types::SectionKey, index: usize, total: usize, produced: bool);
+
+    /// One finished section's rendered TEXT, for the progressive assembly the
+    /// output pane shows. Display-only: the run's completion signal is still
+    /// its terminal `pipeline:stage` event, never this.
+    fn section_text(&self, text: &str);
+}
+
 /// The mutable context one run threads through its stages.
+///
+/// Shared by BOTH staged depths. Quality fills [`Self::draft`] in one streamed
+/// call; max fills [`Self::sections`] one call at a time and `assemble` renders
+/// them into the same `draft` field — which is what keeps `validate`, `repair`,
+/// the report and every downstream reader identical across depths.
 pub struct QualityCtx<'a> {
     pub input: QualityInput<'a>,
     /// The resolved provider — routing is backend-owned, so a stage never
@@ -182,10 +216,25 @@ pub struct QualityCtx<'a> {
     /// produced, so a later stage's key depends on everything upstream.
     pub cache_key: StageCacheKey,
 
+    /// Which depth is running. Read by the stages that behave differently at
+    /// max — the artifact detail the run persists, and the judge's own
+    /// admission check — rather than by a second context type: `analyze_job`,
+    /// `match_evidence`, `strategy`, `validate` and `repair` are the SAME
+    /// stages at both depths, and a second context would mean a second copy of
+    /// each.
+    pub depth: GenerationDepth,
+    /// The L3 observer a section-wise run reports to. `None` for quality depth
+    /// and for every test that does not care.
+    pub progress: Option<&'a dyn SectionProgress>,
+    /// The finished sections, in render order — max depth only. `assemble`
+    /// turns these into [`Self::draft`].
+    pub sections: Vec<SectionResult>,
+
     pub analysis: JobAnalysis,
     pub evidence: EvidenceMap,
     pub strategy: ResumeStrategy,
-    /// The résumé body. Written by `draft`, spliced by `repair`.
+    /// The résumé body. Written by `draft` (quality) or `assemble` (max),
+    /// spliced by `repair`.
     pub draft: String,
     pub report: Option<ContentReport>,
     /// The letter's own report — present only when a letter was in scope.
@@ -218,6 +267,9 @@ impl<'a> QualityCtx<'a> {
             deadline,
             ledger,
             cache_key,
+            depth: GenerationDepth::Quality,
+            progress: None,
+            sections: Vec::new(),
             analysis: JobAnalysis::default(),
             evidence: EvidenceMap::default(),
             strategy: ResumeStrategy::default(),

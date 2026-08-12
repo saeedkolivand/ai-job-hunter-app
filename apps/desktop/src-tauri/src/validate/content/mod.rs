@@ -60,6 +60,19 @@ mod letter;
 pub mod lexicon;
 mod voice;
 
+/// The projects-format primitives the MAX-depth generator has to share with the
+/// checks that grade its output.
+///
+/// The generator SEEDS a project's name, links and stack out of the same source
+/// section `factual.altered_project_link` and `consistency.project_structure`
+/// then compare its output against. A second answer to "where does an entry
+/// begin", "is this span a link", or "how many description lines may an entry
+/// carry" would make the generator and the grader disagree about a truthful
+/// document — the duplicated-heuristic defect this codebase has paid for
+/// before. One definition, re-exported, rather than two that drift.
+pub use self::consistency::{project_entry_starts, MAX_PROJECT_DESCRIPTION_LINES};
+pub use self::factual::{canonical_link, names_a_resource, urls_in};
+
 #[cfg(test)]
 mod test;
 

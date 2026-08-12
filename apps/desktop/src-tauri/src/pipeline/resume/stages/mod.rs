@@ -10,6 +10,7 @@ mod analyze;
 mod draft;
 mod evidence;
 mod repair;
+pub mod section_gen;
 pub mod sections;
 mod strategy;
 mod validate;
@@ -19,6 +20,7 @@ pub use self::analyze::AnalyzeJob;
 pub use self::draft::Draft;
 pub use self::evidence::MatchEvidence;
 pub use self::repair::{regenerate_one_section, Repair, SectionOutcome, MAX_SECTIONS_PER_ROUND};
+pub use self::section_gen::Sections;
 pub use self::strategy::{seed_company_roster, Strategy, MAX_COMPANY_PLANS};
 pub use self::validate::{validate_documents, Validate};
 
