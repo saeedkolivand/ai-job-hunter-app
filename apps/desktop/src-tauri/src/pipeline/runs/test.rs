@@ -459,6 +459,49 @@ fn deleting_a_job_removes_its_runs_and_their_artifacts() {
     assert_eq!(store.runs_for_job("").len(), 1);
 }
 
+/// The BATCH cascade behind `ai_generations_remove_bulk` — the Documents page's
+/// multi-select delete.
+///
+/// One posting's trail going is [`PipelineRunStore::delete_for_job`]'s job;
+/// this pins that several go together and that a posting nobody deleted keeps
+/// its history, which is the property a loop written at three call sites would
+/// eventually get wrong at one of them.
+///
+/// Mutation check: sum nothing (return 0) and the count assertion fails; delete
+/// every run regardless of url and the survivor assertion does.
+#[test]
+fn deleting_several_jobs_purges_exactly_those_trails() {
+    let (_dir, store) = store();
+    for (id, url) in [
+        ("run-a", "https://boards.example/jobs/1"),
+        ("run-b", "https://boards.example/jobs/2"),
+        ("run-keep", "https://boards.example/jobs/3"),
+    ] {
+        store.upsert_run(&run(id, url, 1_000)).unwrap();
+        store
+            .append_event(&event(id, 0, r#"{"full":{"perCompany":[]}}"#))
+            .unwrap();
+    }
+
+    let removed = store.delete_for_jobs(&[
+        "https://boards.example/jobs/1".to_string(),
+        "https://boards.example/jobs/2".to_string(),
+    ]);
+
+    assert_eq!(removed, 2);
+    assert!(store.events_for_run("run-a").is_empty());
+    assert!(store.events_for_run("run-b").is_empty());
+    assert_eq!(
+        store.runs_for_job("https://boards.example/jobs/3").len(),
+        1,
+        "a posting nobody deleted keeps its history"
+    );
+    assert_eq!(store.events_for_run("run-keep").len(), 1);
+    // Nothing to delete is not an error, and deletes nothing.
+    assert_eq!(store.delete_for_jobs(&[]), 0);
+    assert_eq!(store.events_for_run("run-keep").len(), 1);
+}
+
 /// Retention is PER JOB: hammering one posting must not evict another's history.
 #[test]
 fn prune_is_scoped_per_job_url() {

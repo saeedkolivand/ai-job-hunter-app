@@ -715,6 +715,41 @@ impl AiGenerationStore {
         Ok(())
     }
 
+    /// The distinct, non-empty posting urls a set of generations belongs to.
+    ///
+    /// **Read BEFORE the delete, because the delete is what makes it
+    /// unanswerable.** Deleting a generated résumé has to cascade into
+    /// `pipeline_runs` — a max-depth run persists the full strategy (the whole
+    /// employment history) and the full evidence map (verbatim résumé quotes)
+    /// in its event trail, and the aggregate row is the only thing that ever
+    /// pointed at them. The join is by `job_url` because the aggregate is one
+    /// row per posting, which makes the mapping exact rather than heuristic.
+    ///
+    /// An empty url is skipped: an unlinked generation has no posting, and
+    /// `PipelineRunStore::delete_for_job` would refuse it anyway (matching every
+    /// empty-url run would delete other postings' history).
+    pub fn job_urls_for(&self, ids: &[String]) -> Vec<String> {
+        if ids.is_empty() {
+            return Vec::new();
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT DISTINCT job_url FROM ai_generations \
+             WHERE id IN ({placeholders}) AND job_url != ''"
+        );
+        let conn = self.conn.lock();
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return Vec::new();
+        };
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+            row.get::<_, String>(0)
+        });
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// Delete all generations whose id is in `ids` in a single transaction.
     /// Returns the number of rows actually deleted.
     /// Empty input is a no-op that returns `Ok(0)` without touching the DB.

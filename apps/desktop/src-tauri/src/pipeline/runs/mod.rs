@@ -666,6 +666,17 @@ impl PipelineRunStore {
         }
     }
 
+    /// [`delete_for_job`](Self::delete_for_job) for several postings. Returns
+    /// how many RUNS went in total.
+    ///
+    /// Exists so the two callers that delete a BATCH — `ai_generations_remove_bulk`
+    /// and the Documents page behind it — express the cascade once instead of
+    /// each writing the loop, and so the batch case is a test rather than a
+    /// claim about a loop.
+    pub fn delete_for_jobs(&self, job_urls: &[String]) -> usize {
+        job_urls.iter().map(|url| self.delete_for_job(url)).sum()
+    }
+
     /// Every run, oldest first — a deterministic order for export.
     fn all_runs(&self) -> Vec<RunRow> {
         let conn = self.conn.lock();

@@ -1806,3 +1806,50 @@ fn merge_quality_report_oversized_union_falls_back_to_incoming() {
         "an oversized merged union must fall back to the fresh incoming report verbatim, not a truncated blob"
     );
 }
+
+/// **Deleting a generated résumé has to reach the pipeline run trail, and this
+/// is the read that makes that possible.**
+///
+/// The Documents page's delete is the PRIMARY one — `applications_delete` is
+/// the secondary path — and it removed the aggregate row while leaving a
+/// max-depth run's full strategy (the whole employment history) and full
+/// evidence map (verbatim résumé quotes) in `pipeline_run_events` with no
+/// owner, no UI, no eviction, and a one-way ticket into every backup. The
+/// cascade joins on `job_url`, so the url has to be read BEFORE the delete —
+/// afterwards nothing can answer which posting the row belonged to.
+///
+/// Mutation check: drop the `job_url != ''` filter and the unlinked generation
+/// contributes an empty url (which would ask the run store to match every
+/// empty-url run); return the ids instead of the urls and the assertion fails.
+#[test]
+fn job_urls_for_reads_the_postings_a_delete_must_cascade_into() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    store
+        .insert(&record("g1", "https://acme.test/job/1"))
+        .unwrap();
+    store
+        .insert(&record("g2", "https://acme.test/job/2"))
+        .unwrap();
+    store.insert(&record("g3", "")).unwrap();
+
+    let mut urls = store.job_urls_for(&["g1".to_string(), "g2".to_string()]);
+    urls.sort();
+    assert_eq!(
+        urls,
+        vec![
+            "https://acme.test/job/1".to_string(),
+            "https://acme.test/job/2".to_string()
+        ]
+    );
+
+    // An UNLINKED generation contributes nothing: it has no posting, and an
+    // empty url handed to `delete_for_job` would be a request to match every
+    // empty-url run in the store.
+    assert!(store.job_urls_for(&["g3".to_string()]).is_empty());
+    assert!(store.job_urls_for(&[]).is_empty());
+    // An id that is not there is not an error.
+    assert!(store.job_urls_for(&["nope".to_string()]).is_empty());
+    // …and the read does not itself delete anything.
+    assert_eq!(store.list().len(), 3);
+}
