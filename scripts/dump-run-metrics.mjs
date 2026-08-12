@@ -7,12 +7,18 @@
 // this: aggregate the `metrics_json` blob every finished run already writes, per
 // depth, over the runs a developer produced on their own machine.
 //
-// Read-only, and CONTENT-FREE by construction (ADR-027): it reads exactly six
-// columns plus `metrics_json` (counts, durations, codes) and prints counts, codes
-// and milliseconds. It never reads — and cannot print — a résumé, a job ad, an
+// CONTENT-FREE by construction (ADR-027): it reads exactly six columns plus
+// `metrics_json` (counts, durations, codes) and prints counts, codes and
+// milliseconds. It never reads — and cannot print — a résumé, a job ad, an
 // evidence span, or a posting URL. `pipeline_run_events.artifact_json` is where a
 // max run persists its strategy and evidence detail, and this script does not open
 // that table at all.
+//
+// It opens the database `readOnly`, so no row can change and the main DB file
+// stays byte-identical — but "read-only" is not "touches nothing on disk": these
+// stores are WAL (ADR-022), and a WAL reader materializes the `-shm`/`-wal`
+// sidecars beside the file. See the open site below for why `immutable=1` is the
+// wrong trade here.
 //
 // Source of truth for the shape: apps/desktop/src-tauri/src/pipeline/runs/mod.rs
 // (the table) and apps/desktop/src-tauri/src/commands/resume_pipeline/mod.rs
@@ -20,7 +26,7 @@
 //
 // Usage:  node scripts/dump-run-metrics.mjs --help
 //
-// Requires Node >= 22.5 for the built-in `node:sqlite` (zero new dependencies —
+// Requires Node >= 22.13 for the built-in `node:sqlite` (zero new dependencies —
 // the repo carries no JS SQLite driver, and a dev dump script is not worth one).
 
 import { existsSync } from 'node:fs';
@@ -62,30 +68,39 @@ Options
                     Linux    ~/.local/share/${IDENTIFIER}/${DB_FILE}
                   \`AJH_DATA_DIR\` overrides the directory, exactly as it does for
                   the app itself.
-                  Resolved for this machine right now:
-                    ${join(defaultDataDir(), DB_FILE)}
   --kind <kind>   Run kind to include (default: resume). \`kind\` is the store's
                   discriminator — these tables also host agent runs.
   --json          Emit the aggregates as JSON instead of a table.
   --help, -h      This text.
 
-Output is counts, codes and durations only — never document text (ADR-027).
-Requires Node >= 22.5 (built-in node:sqlite).`;
+Output is counts, codes and durations only — never document text (ADR-027); the
+template paths above are printed unexpanded for the same reason.
+Requires Node >= 22.13 (built-in node:sqlite, unflagged).`;
 
+/**
+ * Parse argv into options.
+ *
+ * A value that begins with `-` is REFUSED rather than consumed: `--kind --json`
+ * is a typo, and silently taking `--json` as the kind name would have queried
+ * for runs of kind "--json" (zero rows) and dropped the flag — a wrong answer
+ * reported confidently.
+ */
 function parseArgs(argv) {
   const opts = { db: null, kind: 'resume', json: false, help: false };
+  const value = (flag, raw) => {
+    if (raw === undefined) throw new Error(`${flag} needs a value`);
+    if (raw.startsWith('-')) throw new Error(`${flag} needs a value, got the flag ${raw}`);
+    return raw;
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg === '--json') opts.json = true;
-    else if (arg === '--db') opts.db = argv[(i += 1)];
-    else if (arg === '--kind') opts.kind = argv[(i += 1)];
+    else if (arg === '--db') opts.db = value('--db', argv[(i += 1)]);
+    else if (arg === '--kind') opts.kind = value('--kind', argv[(i += 1)]);
     else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
     else if (opts.db === null) opts.db = arg;
     else throw new Error(`unexpected extra argument: ${arg}`);
-  }
-  if (opts.db === undefined || opts.kind === undefined) {
-    throw new Error('--db and --kind each take a value');
   }
   return opts;
 }
@@ -146,8 +161,14 @@ function aggregate(depth, rows) {
   const repairs = [];
   const calls = [];
   const cached = [];
+  const warnings = [];
   let unparsedMetrics = 0;
   let reverted = 0;
+  // How many rows actually REPORTED a `reverted` flag. Without this, a row whose
+  // metrics parse but carry none of the expected keys made the column print a
+  // confident `0` ("no run reverted") while every neighbouring cell printed `—`
+  // ("nobody measured"). Zero and unmeasured are different answers.
+  let revertedKnown = 0;
   const postings = new Set();
 
   for (const row of rows) {
@@ -158,6 +179,9 @@ function aggregate(depth, rows) {
     // column here that is user data.
     postings.add(row.job_url ?? '');
 
+    // ONE parse per row: the warnings pass used to re-parse every row a second
+    // time, which is two chances for the two passes to disagree about what a
+    // row said.
     let metrics = null;
     try {
       metrics = JSON.parse(row.metrics_json ?? '{}');
@@ -171,7 +195,16 @@ function aggregate(depth, rows) {
       if (typeof metrics.repairRounds === 'number') repairs.push(metrics.repairRounds);
       if (typeof metrics.calls === 'number') calls.push(metrics.calls);
       if (typeof metrics.cached === 'number') cached.push(metrics.cached);
-      if (metrics.reverted === true) reverted += 1;
+      if (typeof metrics.reverted === 'boolean') {
+        revertedKnown += 1;
+        if (metrics.reverted) reverted += 1;
+      }
+      // Warnings = issues − criticals, from the SAME run: subtracting two
+      // independently-averaged columns would report a warning count for runs
+      // that never reported one.
+      if (typeof metrics.issueCount === 'number' && typeof metrics.criticalCount === 'number') {
+        warnings.push(metrics.issueCount - metrics.criticalCount);
+      }
     }
     // `ms` is written only at the terminal update, so a crashed/still-running
     // row has none. The columns still bound it — but only when it FINISHED;
@@ -182,21 +215,6 @@ function aggregate(depth, rows) {
       typeof row.started_at === 'number'
     ) {
       durations.push(row.finished_at - row.started_at);
-    }
-  }
-
-  // Warnings = issues − criticals, and ONLY where both halves came from the same
-  // run: subtracting two independently-averaged columns would report a warning
-  // count for runs that never reported one.
-  const warnings = [];
-  for (const row of rows) {
-    try {
-      const m = JSON.parse(row.metrics_json ?? '{}');
-      if (typeof m.issueCount === 'number' && typeof m.criticalCount === 'number') {
-        warnings.push(m.issueCount - m.criticalCount);
-      }
-    } catch {
-      /* already counted in unparsedMetrics */
     }
   }
 
@@ -212,7 +230,8 @@ function aggregate(depth, rows) {
     criticalsMean: mean(criticals),
     warningsMean: mean(warnings),
     repairRoundsMean: mean(repairs),
-    revertedRuns: reverted,
+    // `null` when no row reported the flag at all — see `revertedKnown`.
+    revertedRuns: revertedKnown > 0 ? reverted : null,
     callsMean: mean(calls),
     cachedMean: mean(cached),
     unparsedMetrics,
@@ -251,7 +270,7 @@ function printTable(aggregates, kind) {
         num(a.criticalsMean).padStart(6),
         num(a.warningsMean).padStart(6),
         num(a.repairRoundsMean).padStart(8),
-        String(a.revertedRuns).padStart(7),
+        num(a.revertedRuns).padStart(7),
         num(a.callsMean).padStart(6),
         num(a.cachedMean).padStart(7),
       ].join(' ')
@@ -288,10 +307,15 @@ async function main() {
     return;
   }
 
+  // An EXPLICIT path is echoed back (the user typed it); a DEFAULTED one is
+  // named by its template rather than expanded, because the resolved form
+  // contains the OS account name and these messages get pasted into issues.
+  const defaulted = opts.db === null;
   const dbPath = opts.db ?? join(defaultDataDir(), DB_FILE);
+  const shownPath = defaulted ? `<app data dir>/${DB_FILE}` : dbPath;
   if (!existsSync(dbPath)) {
     console.error(
-      `no database at ${dbPath}\n\nRun the résumé pipeline at least once, or pass the path ` +
+      `no database at ${shownPath}\n\nRun the résumé pipeline at least once, or pass the path ` +
         `explicitly. \`node scripts/dump-run-metrics.mjs --help\` lists the defaults.`
     );
     process.exit(1);
@@ -302,13 +326,21 @@ async function main() {
     ({ DatabaseSync } = await import('node:sqlite'));
   } catch {
     console.error(
-      `node:sqlite is unavailable on ${process.version} — this dev script needs Node >= 22.5.`
+      `node:sqlite is unavailable on ${process.version} — this dev script needs Node >= 22.13.`
     );
     process.exit(1);
   }
 
-  // Read-only: this may be the LIVE app database, and a dump must never write to
-  // it (nor leave a -wal/-shm behind next to it).
+  // `readOnly` because this may be the LIVE app database: no statement here can
+  // change a row, and the main DB file's bytes are untouched.
+  //
+  // It does NOT mean "leaves the directory alone". Every store opens WAL
+  // (`db::open`, ADR-022), and a WAL READER still maps the shared-memory index
+  // and the log — so `-shm` (and `-wal`, if none exists yet) appear beside the
+  // database and the directory must be writable. That is normal SQLite
+  // behaviour, pinned by `a WAL dump leaves the main database byte-identical` in
+  // the sibling test; `immutable=1` would avoid the sidecars but is a promise
+  // this cannot keep, because the app may be writing while the dump reads.
   const db = new DatabaseSync(dbPath, { readOnly: true });
   let rows;
   try {
@@ -321,14 +353,18 @@ async function main() {
       )
       .all(opts.kind);
   } catch (e) {
-    console.error(`cannot read pipeline_runs from ${dbPath}: ${e.message}`);
+    // The only schema-drift alarm in the script: a renamed table or column
+    // reaches here, and reporting "no runs" for it would read as "you have not
+    // run the pipeline yet" — the one wrong answer that stops the reader
+    // looking.
+    console.error(`cannot read pipeline_runs from ${shownPath}: ${e.message}`);
     process.exit(1);
   } finally {
     db.close();
   }
 
   if (rows.length === 0) {
-    console.error(`no runs with kind=${opts.kind} in ${dbPath}`);
+    console.error(`no runs with kind=${opts.kind} in ${shownPath}`);
     process.exit(1);
   }
 

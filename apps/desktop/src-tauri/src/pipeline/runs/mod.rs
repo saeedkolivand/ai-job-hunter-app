@@ -41,6 +41,14 @@
 //! `commands::privacy`), and position-indexed APPEND-ONLY migrations. Tauri-free
 //! (L2, same posture as [`crate::pipeline::cache`]) — the shell resolves it from
 //! managed state and calls in.
+//!
+//! **One reader lives outside this crate.** `scripts/dump-run-metrics.mjs` opens
+//! `pipeline_runs.db` read-only and aggregates `metrics_json` per `depth` for
+//! offline depth A/B (it never touches `pipeline_run_events`, whose
+//! `artifact_json` carries the strategy/evidence detail). It hard-codes this
+//! table's column names and the metrics keys written by
+//! `commands::resume_pipeline::execute`, so renaming either is a change to it as
+//! well — its own tests will fail, but only if `scripts/**` is in the PR.
 
 use std::path::Path;
 
