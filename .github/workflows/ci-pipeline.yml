@@ -107,6 +107,11 @@ jobs:
               - 'apps/desktop/*.{json,ts,html}'
               - 'apps/landing/**'
               - 'packages/**'
+              # The repo's build/release/dev scripts and their `*.test.mjs`
+              # siblings are a vitest PROJECT (scripts/vitest.config.ts) in the
+              # root suite — a scripts-only change must run it, or those tests
+              # only ever execute on a PR that happens to touch something else.
+              - 'scripts/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'tsconfig*.json'

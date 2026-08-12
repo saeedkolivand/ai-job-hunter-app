@@ -3,9 +3,12 @@
 //! Derived from the June 2026 architecture discovery analysis (in git history) and codified in
 //! `docs/architecture-rules.md` (the layer model + rule IDs R1–R8). This is a
 //! **standalone integration test**: it uses only `std` and scans the source tree
-//! under `CARGO_MANIFEST_DIR/src` as text — it does not link the crate's internals
-//! (same pattern as `tests/eval.rs`). The crate is a thin binary (`main.rs`) over a
-//! library (`lib.rs`, which holds the app + the Tauri builder); both are L3 shell.
+//! under `CARGO_MANIFEST_DIR/src` as TEXT, deliberately without linking the crate —
+//! a rule about which module may import which cannot be checked from inside a
+//! build that has already resolved those imports. (`tests/eval.rs` does the
+//! opposite and links `ajh_tauri`, because it runs the validators.) The crate is a
+//! thin binary (`main.rs`) over a library (`lib.rs`, which holds the app + the
+//! Tauri builder); both are L3 shell.
 //!
 //! Each rule has an explicit allowlist of *current* exceptions so the suite is green
 //! today while blocking **new** violations (drift prevention). Allowlists are debt,
