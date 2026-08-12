@@ -627,7 +627,7 @@ describe('TailoredResumePanel — run history', () => {
   it('lists the posting’s retained runs', async () => {
     bus.runs = [summary(), summary({ runId: 'run-0', status: 'cancelled', stoppedReason: null })];
     await openPanel();
-    expect(screen.getByText(/quality runs for this job/i)).toBeInTheDocument();
+    expect(screen.getByText(/staged runs for this job/i)).toBeInTheDocument();
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
   });
 });

@@ -1511,8 +1511,11 @@
       "match_evidence": "Matching your evidence",
       "strategy": "Planning the résumé",
       "draft": "Writing the résumé",
+      "sections": "Writing the résumé section by section",
+      "assemble": "Putting the sections together",
       "validate": "Checking the result",
-      "repair": "Fixing what the check found"
+      "repair": "Fixing what the check found",
+      "llm_judge": "Reading the finished résumé once more"
     },
     "phase": {
       "start": "started",
@@ -1547,7 +1550,7 @@
       "stopped": "Stopped"
     },
     "runs": {
-      "title": "Quality runs for this job",
+      "title": "Staged runs for this job",
       "empty": "No staged runs yet for this posting.",
       "retentionNote": "The three most recent runs are kept.",
       "open": "Open report",

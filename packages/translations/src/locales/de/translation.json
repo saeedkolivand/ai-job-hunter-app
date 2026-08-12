@@ -1515,8 +1515,11 @@
       "match_evidence": "Belege werden zugeordnet",
       "strategy": "Lebenslauf wird geplant",
       "draft": "Lebenslauf wird geschrieben",
+      "sections": "Lebenslauf wird Abschnitt für Abschnitt geschrieben",
+      "assemble": "Abschnitte werden zusammengesetzt",
       "validate": "Ergebnis wird geprüft",
-      "repair": "Gefundene Probleme werden behoben"
+      "repair": "Gefundene Probleme werden behoben",
+      "llm_judge": "Fertiger Lebenslauf wird noch einmal gelesen"
     },
     "phase": {
       "start": "gestartet",
@@ -1551,7 +1554,7 @@
       "stopped": "Gestoppt"
     },
     "runs": {
-      "title": "Gründliche Läufe für diese Stelle",
+      "title": "Gestufte Läufe für diese Stelle",
       "empty": "Für diese Anzeige gibt es noch keine gestuften Läufe.",
       "retentionNote": "Die drei neuesten Läufe bleiben erhalten.",
       "open": "Bericht öffnen",
