@@ -280,7 +280,7 @@ mail-parser = "0.11.5"
 # `commands::notifications::show_os_notification`. Already in the tree
 # transitively (notify-rust -> here); pinned to the locked 0.7.2 so no duplicate
 # version / lockfile churn.
-tauri-winrt-notification = "0.7.2"
+tauri-winrt-notification = "0.8.1"
 wmi = "0.18"
 windows-native-keyring-store = "1"
 # DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
