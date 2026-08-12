@@ -586,6 +586,36 @@ fn summary(row: &RunRow) -> Value {
     })
 }
 
+/// ONE persisted stage artifact, as the WIRE carries it: the counts, never the
+/// detail.
+///
+/// The server keeps the full `strategy`/`match_evidence` artifacts a max-depth
+/// per-entry regenerate needs (`RunLedger::record_detail`), and it keeps them
+/// SERVER-SIDE. `record_detail`'s doc says "nowhere else"; without this it was
+/// wrong — the trail is handed to the renderer verbatim, so every `get` of a max
+/// run shipped up to 2 × 16 KiB of employment history and verbatim résumé quotes
+/// over IPC to a reader that has never had a consumer for it (the contract types
+/// `artifact` as `unknown`; the only renderer reference is a `{}` test fixture).
+///
+/// **An unparseable artifact becomes a content-free MARKER, not the raw
+/// string.** Returning the raw bytes was the right answer while artifacts were
+/// counts-only — a reader must not see a silent `{}` claiming the stage
+/// reported nothing. But the only artifact large enough for the store's clamp
+/// to truncate is a detail-bearing one, so the raw-string arm WAS the leak,
+/// with the truncation marker on the end. The marker keeps the one thing the
+/// reader needed (this artifact did not survive intact) and carries nothing
+/// else.
+fn wire_artifact(artifact_json: &str) -> Value {
+    match serde_json::from_str::<Value>(artifact_json) {
+        Ok(Value::Object(mut object)) => {
+            object.remove(hooks::DETAIL_KEY);
+            Value::Object(object)
+        }
+        Ok(other) => other,
+        Err(_) => json!({ "truncated": true }),
+    }
+}
+
 /// The full run: its summary, its stage trail, and the posting's CURRENT
 /// document + report (joined from `ai_generations` — see the module doc; the
 /// join is by `job_url`, so what comes back is the aggregate's state now, not a
@@ -601,12 +631,7 @@ fn detail(app: &AppHandle, row: &RunRow) -> Value {
                 "ts": event.ts,
                 "stage": event.stage,
                 "phase": event.phase,
-                // A CLAMPED artifact is not parseable JSON by design (the
-                // truncation marker is not), so a reader must see the raw
-                // string rather than a silent `{}` that claims the stage
-                // reported nothing.
-                "artifact": serde_json::from_str::<Value>(&event.artifact_json)
-                    .unwrap_or_else(|_| Value::String(event.artifact_json.clone())),
+                "artifact": wire_artifact(&event.artifact_json),
             })
         })
         .collect();

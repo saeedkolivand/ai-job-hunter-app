@@ -231,6 +231,44 @@ fn a_regenerate_refuses_a_source_role_that_is_no_longer_the_plans_employer() {
 
 // ── The persisted artifact detail ────────────────────────────────────────────
 
+/// **The detail is server-side, and the wire proves it.** `record_detail`'s doc
+/// says the full artifact rides in the persisted row "and nowhere else"; the
+/// run-detail response handed the trail to the renderer verbatim, so every
+/// `get` of a max run shipped up to 2 × 16 KiB of employment history and
+/// verbatim résumé quotes to a reader with no consumer for either.
+///
+/// Mutation check: return the parsed value unchanged from `wire_artifact` and
+/// the first assertion fails; return `Value::String(raw)` for the unparseable
+/// case and the truncated-artifact assertion does.
+#[test]
+fn the_wire_carries_a_stage_artifacts_counts_but_never_its_detail() {
+    let row = with_detail(
+        Some(json!({ "cached": false, "companies": 3 })),
+        Some(json!({ "perCompany": [{ "company": "Acme Payments" }] })),
+    )
+    .expect("a row artifact")
+    .to_string();
+
+    let wire = super::wire_artifact(&row);
+    assert_eq!(wire.get("companies"), Some(&json!(3)));
+    assert_eq!(
+        wire.get(DETAIL_KEY),
+        None,
+        "the detail is what a per-entry regenerate reads on the SERVER"
+    );
+
+    // A clamped artifact is unparseable BY DESIGN, and it is the only artifact
+    // large enough to be clamped — so the old "ship the raw string" arm was the
+    // same leak with a truncation marker on the end.
+    let clamped = crate::pipeline::runs::clamp_artifact(&row.repeat(2_000));
+    let wire = super::wire_artifact(&clamped);
+    assert_eq!(wire, json!({ "truncated": true }));
+    assert!(
+        !wire.to_string().contains("Acme Payments"),
+        "a truncated artifact must not carry its content to the renderer either"
+    );
+}
+
 /// The DB row carries BOTH halves: the counts the runs panel and the event
 /// trail already read, and — at max depth only — the full artifact a later
 /// per-entry regenerate needs. Nesting rather than replacing is what keeps a

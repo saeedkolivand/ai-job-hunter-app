@@ -217,12 +217,38 @@ fn render_project(project: &ProjectOut) -> String {
     entry
 }
 
-/// Sort the finished sections into the strategy's order, stably.
+/// Sort the finished sections into the strategy's order.
 ///
 /// A section the order does not name keeps its PLANNED position rather than
 /// being pushed to either end: the planned order is already the conventional
 /// one, and a model that names three of five sections has expressed an opinion
 /// about three of them.
+///
+/// **A sort says the opposite of that sentence, whatever key you give it.**
+/// Ranking an unnamed kind at `usize::MAX` sorts it to the END, so a
+/// `section_order` of just `["experience"]` — an ordinary partial answer, and
+/// exactly what a model returns when it only cares about one thing — rendered
+/// Experience FIRST and pushed Summary, Skills, Projects and Education behind
+/// it. Ranking it at `0` inverts the same bug. Carrying an unnamed section
+/// along with the last named one before it in the plan (tried, and rejected by
+/// its own test) wedges every unnamed section between two named ones the model
+/// asked to put together: `["skills", "summary"]` then rendered Skills,
+/// Experience, Projects, Education, Summary.
+///
+/// So this is not a sort. It is a PERMUTATION OF THE NAMED SECTIONS' OWN SLOTS:
+/// the positions the named sections already occupy are the only positions a
+/// reorder may write to, and the named sections are dealt back into them in the
+/// model's order. A section the order does not name therefore keeps its planned
+/// index literally — it cannot move, because nothing writes to its slot.
+///
+/// `["skills", "summary"]` over the planned `[Summary, Skills, Experience…]`
+/// then swaps exactly those two and leaves the rest alone, which is what the
+/// model asked for; `["experience"]` over the same plan is a no-op, which is
+/// the honest reading of an opinion about one section and nothing else.
+///
+/// The tie-break inside a rank is the PLANNED index, so two employment entries
+/// (same kind, same rank) keep the roster's order — the one ordering the model
+/// may not touch — without relying on the sort being stable.
 fn order<'a>(sections: &'a [SectionResult], section_order: &[String]) -> Vec<&'a SectionResult> {
     let wanted: Vec<SectionKind> = section_order
         .iter()
@@ -233,16 +259,23 @@ fn order<'a>(sections: &'a [SectionResult], section_order: &[String]) -> Vec<&'a
     if wanted.is_empty() {
         return ordered;
     }
-    let rank = |section: &SectionResult| {
-        let kind = kind_of(section.key);
-        wanted
-            .iter()
-            .position(|candidate| *candidate == kind)
-            .unwrap_or(usize::MAX)
-    };
-    // Stable: two employment entries rank equally, and their relative order is
-    // the roster's — which is the one ordering the model may not touch.
-    ordered.sort_by_key(|section| rank(section));
+    let mut named: Vec<(usize, usize)> = sections
+        .iter()
+        .enumerate()
+        .filter_map(|(index, section)| {
+            wanted
+                .iter()
+                .position(|candidate| *candidate == kind_of(section.key))
+                .map(|rank| (rank, index))
+        })
+        .collect();
+    // Ascending by construction (`enumerate`), which is what makes "deal the
+    // named sections back into their own slots" well defined.
+    let slots: Vec<usize> = named.iter().map(|(_, index)| *index).collect();
+    named.sort_by_key(|(rank, index)| (*rank, *index));
+    for (slot, (_, from)) in slots.into_iter().zip(named) {
+        ordered[slot] = &sections[from];
+    }
     ordered
 }
 

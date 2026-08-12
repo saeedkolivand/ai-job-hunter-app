@@ -1131,6 +1131,73 @@ fn assemble_follows_the_strategys_section_order() {
     );
 }
 
+/// **A PARTIAL `section_order` moves only what it names.**
+///
+/// Ranking an unnamed kind at `usize::MAX` sorted it to the END, so
+/// `["experience"]` — an ordinary answer from a model that only cares about one
+/// thing — rendered Experience first and relocated the four sections it said
+/// nothing about. The doc above `assemble::order` claimed the opposite, which
+/// is what made it worth checking.
+///
+/// Both halves of the settled rule are here, and the second is the one that
+/// disproved the first attempted fix (carry an unnamed section along with the
+/// last named one before it): under THAT rule the two-name case below rendered
+/// Skills, Experience, Projects, Education, Summary — the model asked for
+/// Skills-then-Summary and got the whole document wedged between them.
+///
+/// Mutation check: rank an unnamed kind at `usize::MAX` (or at `0`) and the
+/// no-op assertion fails; deal the named sections back into their slots in
+/// PLANNED order instead of the model's and the swap assertion fails; drop the
+/// planned index from the tie-break and the two employment entries can swap.
+#[test]
+fn a_partial_section_order_leaves_the_sections_it_does_not_name_where_they_were() {
+    let sections = assembled_sections();
+    let planned = assemble(&sections, &[]);
+    assert_eq!(
+        assemble(&sections, &["Work Experience".to_string()]),
+        planned,
+        "an opinion about ONE section, relative to nothing, reorders nothing"
+    );
+
+    // Two names ARE a relation, and it is honoured — in the slots those two
+    // sections already occupied, so nothing else shifts.
+    let sections = {
+        let mut with_skills = assembled_sections();
+        with_skills.insert(
+            1,
+            SectionResult {
+                key: SectionKey::Skills,
+                heading: "Skills".to_string(),
+                body: SectionBody::Skills(vec![SkillGroup {
+                    label: "Languages".to_string(),
+                    skills: vec!["Go".to_string(), "Rust".to_string()],
+                }]),
+                used_evidence: Vec::new(),
+                dropped_citations: 0,
+                dropped_content: 0,
+                from_cache: false,
+            },
+        );
+        with_skills
+    };
+    let swapped = assemble(
+        &sections,
+        &["Skills".to_string(), "Professional Summary".to_string()],
+    );
+    let at = |needle: &str| swapped.find(needle).unwrap_or_else(|| panic!("{needle}"));
+    assert!(at("Skills") < at("Professional Summary"), "\n{swapped}");
+    assert!(
+        at("Professional Summary") < at("Work Experience"),
+        "the three sections the model said nothing about keep their planned sequence:\n{swapped}"
+    );
+    assert!(at("Work Experience") < at("Projects"));
+    assert!(at("Projects") < at("Education"));
+    assert!(
+        at("Acme Payments") < at("Globex Logistics"),
+        "the roster's own order survives a reorder"
+    );
+}
+
 /// An empty section renders NOTHING — not a bare heading. A heading with no
 /// body under it reads as a damaged document, and `assemble` is the last place
 /// that can tell.
