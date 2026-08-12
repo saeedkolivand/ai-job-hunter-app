@@ -10,11 +10,12 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use serde_json::Value;
 
+use super::assemble::assemble;
 use super::section_prompts::{section_system, section_user, MAX_FENCE_TAGS};
 use super::stages::section_gen::{
     generate_sections, ground_citations, merge, plan_sections, SectionAnswer, MAX_BULLETS_PER_ENTRY,
 };
-use super::stages::MAX_COMPANY_PLANS;
+use super::stages::{sections, seed_company_roster, MAX_COMPANY_PLANS};
 use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, JobAnalysis, ResumeStrategy,
     SectionKey, SkillGroup,
@@ -24,8 +25,16 @@ use super::types_max::{
     SectionBody, SectionResult, SectionSeed, SectionSlot, SkillsOut, SummaryOut, USED_EVIDENCE_KEY,
 };
 use super::{source, RunDeadline, SectionProgress};
+use crate::documents::evidence::split_entry;
 use crate::error::AppError;
+use crate::export::parser::parse_resume;
+use crate::export::types::LineKind;
 use crate::pipeline::budget::DEFAULT_MAX_SECTIONS;
+use crate::validate::content::{
+    validate_content, ContentInput, DocKind, CONSISTENCY_PROJECT_STRUCTURE,
+    FACTUAL_ALTERED_PROJECT_LINK,
+};
+use crate::validate::Severity;
 
 /// Deserialize a section EXAMPLE into its own type, or fail loudly with the
 /// parse error — an example that no longer matches its struct is the drift this
@@ -668,11 +677,16 @@ fn the_merge_re_seeds_identity_and_drops_what_the_source_cannot_back() {
         &evidence,
     );
     match &experience.body {
-        SectionBody::Bullets(bullets) => {
+        SectionBody::Entry { plan, bullets } => {
             assert_eq!(bullets.len(), MAX_BULLETS_PER_ENTRY);
             assert!(
                 bullets.iter().all(|b| !b.starts_with('-')),
                 "assemble renders the marker; a doubled one is what happens otherwise"
+            );
+            assert_eq!(
+                **plan,
+                CompanyPlan::default(),
+                "the identity travels from the SEED, not from the answer"
             );
         }
         other => panic!("expected bullets, got {other:?}"),
@@ -840,6 +854,361 @@ async fn an_empty_answer_is_not_rendered_as_a_section() {
         .events
         .lock()
         .contains(&"finish summary 0/1 false".to_string()));
+}
+
+// ── Assemble ─────────────────────────────────────────────────────────────────
+
+/// The finished sections of a run over [`SOURCE`], with every bullet copied
+/// verbatim out of the source so the assembled document is factually identical
+/// to the candidate's own — which is what lets the validator tests below
+/// attribute any Critical to the RENDERING rather than to the content.
+fn assembled_sections() -> Vec<SectionResult> {
+    let roster = seed_company_roster(SOURCE, "Go Kubernetes payments");
+    let mut out = vec![SectionResult {
+        key: SectionKey::Summary,
+        heading: "Professional Summary".to_string(),
+        body: SectionBody::Summary(
+            "Backend engineer with eight years on payment platforms, most recently on the \
+             settlement service at Acme Payments."
+                .to_string(),
+        ),
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    }];
+    let bullets: [&[&str]; 2] = [
+        &[
+            "Migrated 40 services to Kubernetes, cutting deploy time from 25 to 4 minutes",
+            "Owned the settlement service through a payment-provider migration",
+        ],
+        &["Built the routing service in Go"],
+    ];
+    for (index, plan) in roster.iter().enumerate() {
+        out.push(SectionResult {
+            key: SectionKey::Experience(index as u8),
+            heading: "Work Experience".to_string(),
+            body: SectionBody::Entry {
+                plan: Box::new(plan.clone()),
+                bullets: bullets
+                    .get(index)
+                    .map(|lines| lines.iter().map(|l| (*l).to_string()).collect())
+                    .unwrap_or_default(),
+            },
+            used_evidence: Vec::new(),
+            dropped_citations: 0,
+            dropped_content: 0,
+            from_cache: false,
+        });
+    }
+    out.push(SectionResult {
+        key: SectionKey::Projects,
+        heading: "Projects".to_string(),
+        body: SectionBody::Projects(source::seed_projects(SOURCE)),
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    });
+    out.push(SectionResult {
+        key: SectionKey::Education,
+        heading: "Education".to_string(),
+        body: SectionBody::Lines(source::education_lines(SOURCE)),
+        used_evidence: Vec::new(),
+        dropped_citations: 0,
+        dropped_content: 0,
+        from_cache: false,
+    });
+    out
+}
+
+fn report_over(generated: &str) -> crate::validate::content::ContentReport {
+    validate_content(&ContentInput {
+        generated,
+        source_resume: SOURCE,
+        job_ad: "We need Go, Kubernetes and payments-domain experience.",
+        top_requirements: &["Kubernetes".to_string()],
+        target_language: "en",
+        doc_kind: DocKind::Resume,
+    })
+}
+
+/// **The body starts at the first section heading** — ADR-0021 as a property of
+/// the renderer, not of a prompt. There is no name, no email and no link
+/// anywhere in a `SectionResult`, so this is a pin on the one thing that could
+/// still go wrong: a leading band before the first heading.
+///
+/// Mutation check: prepend anything to `assemble`'s output (a name line, even a
+/// blank one followed by contact text) and the first-line assertion fails.
+#[test]
+fn the_assembled_body_starts_at_the_first_section_heading() {
+    let document = assemble(&assembled_sections(), &[]);
+    let parsed = parse_resume(&document);
+    let first = parsed
+        .lines
+        .iter()
+        .find(|line| !line.text.trim().is_empty())
+        .expect("a non-empty document");
+    assert!(
+        matches!(first.kind, LineKind::SectionHeader),
+        "the body must open with a section heading, got {:?}: {:?}",
+        first.kind,
+        first.text
+    );
+    // No NAME line anywhere. `LineKind::Contact` is deliberately not asserted
+    // against: a project's own title line (`**Ledger CLI** · url · url`) is
+    // contact-SHAPED to the parser, in the generated document exactly as it is
+    // in the candidate's source. The check that actually guards ADR-0021 is
+    // `ats.header_in_body`, which looks for a contact CLUSTER and is covered by
+    // the no-Criticals test below.
+    assert!(
+        !parsed
+            .lines
+            .iter()
+            .any(|line| matches!(line.kind, LineKind::Name)),
+        "the editor owns the contact header at export time; the body must carry none"
+    );
+}
+
+/// An assembled employment entry must parse back into the identity it was
+/// SEEDED with. This is the load-bearing shape in the whole renderer: the
+/// two-space date column is what makes a line an entry, and `split_entry` reads
+/// the company out of the last comma segment before it.
+///
+/// Mutation check: change `DATE_COLUMN_GAP` to a single space and every entry
+/// stops being an entry — the `LineKind::JobEntry` assertion fails, and the
+/// document then reads as having dropped every employer.
+#[test]
+fn an_assembled_entry_parses_back_as_the_role_it_was_seeded_from() {
+    let document = assemble(&assembled_sections(), &[]);
+    // Scoped to the EXPERIENCE section: an education line
+    // ("MSc Computer Science, TU Berlin  2014 - 2016") is entry-shaped to the
+    // parser too — in the candidate's own source exactly as here — so counting
+    // entries document-wide would count those as well.
+    let split = sections::split(&document);
+    let lines: Vec<&str> = document.lines().collect();
+    let experience = sections::find(&split, SectionKey::Experience(0))
+        .expect("the assembled document has an experience section")
+        .text(&lines);
+    let parsed = parse_resume(&experience);
+    let entries: Vec<&crate::export::types::ParsedLine> = parsed
+        .lines
+        .iter()
+        .filter(|line| matches!(line.kind, LineKind::JobEntry))
+        .collect();
+    assert_eq!(entries.len(), 2, "one parsed entry per seeded role");
+
+    let (company, title, dates) = split_entry(entries[0]);
+    assert_eq!(company, "Acme Payments");
+    assert_eq!(title, "Senior Backend Engineer");
+    assert_eq!(dates, "2021 - Present");
+
+    let (company, _, dates) = split_entry(entries[1]);
+    assert_eq!(company, "Globex Logistics");
+    assert_eq!(dates, "2018 - 2021");
+}
+
+/// A max-depth document assembled from the candidate's OWN content must carry
+/// no Critical. Anything that fires here is the renderer's fault, not the
+/// model's: every bullet in the fixture is a verbatim source line.
+///
+/// This is the strongest guard in the file — it runs the real validators rather
+/// than asserting on strings, so it catches a rendering change that breaks the
+/// `factual.dropped_role` comparison, the project-link comparison or the
+/// header-in-body check at once.
+///
+/// Mutation check: drop the identity line from `SectionBody::Entry`'s rendering
+/// and two `factual.dropped_role` Criticals appear; render tier-1 project links
+/// on the stack line instead of the title line and
+/// `factual.altered_project_link` fires.
+#[test]
+fn a_document_assembled_from_the_candidates_own_content_has_no_criticals() {
+    let document = assemble(&assembled_sections(), &[]);
+    let report = report_over(&document);
+    let criticals: Vec<&str> = report
+        .issues
+        .iter()
+        .filter(|issue| issue.severity == Severity::Critical)
+        .map(|issue| issue.code)
+        .collect();
+    assert!(
+        criticals.is_empty(),
+        "assembling the candidate's own content produced Criticals: {criticals:?}"
+    );
+}
+
+/// All three tiers of the owner's projects ladder render into shapes
+/// `consistency.project_structure` accepts, and the links survive verbatim.
+///
+/// Mutation check: drop the `• ` marker from the compact tier and the entry
+/// stops opening an entry — it folds into the previous project as a description
+/// line, and both the structure warning and a link Critical fire.
+#[test]
+fn the_projects_ladder_renders_all_three_accepted_shapes() {
+    let document = assemble(&assembled_sections(), &[]);
+    let report = report_over(&document);
+
+    let offenders: Vec<&str> = report
+        .issues
+        .iter()
+        .filter(|issue| {
+            issue.code == CONSISTENCY_PROJECT_STRUCTURE
+                || issue.code == FACTUAL_ALTERED_PROJECT_LINK
+        })
+        .filter_map(|issue| issue.evidence.as_deref())
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "the rendered ladder is not a shape the checks accept: {offenders:?}"
+    );
+
+    // …and the three tiers really are three different shapes, not one repeated.
+    assert!(
+        document.contains("**Ledger CLI** · https://ledger.example.dev · https://github.com/janedoe/ledger\nRust · SQLite · Clap\nA double-entry"),
+        "tier 1 renders name+links, stack line, description:\n{document}"
+    );
+    assert!(
+        document.contains("**CrossKit** · https://crosskit.example.dev\nTypeScript · Vite\n"),
+        "tier 2 renders name+links and a stack line, and NO description:\n{document}"
+    );
+    assert!(
+        document.contains("• Dotfiles · https://github.com/janedoe/dotfiles"),
+        "tier 3 renders the compact link line:\n{document}"
+    );
+}
+
+/// Consecutive employment entries share ONE heading — a résumé has one "Work
+/// Experience" heading holding several entries, and one per entry would produce
+/// a document with nine of them.
+///
+/// Mutation check: always pass `true` for `with_heading` in `assemble` and the
+/// count becomes one per entry.
+#[test]
+fn consecutive_entries_share_one_experience_heading() {
+    let document = assemble(&assembled_sections(), &[]);
+    assert_eq!(
+        document.matches("Work Experience").count(),
+        1,
+        "one heading for the whole experience section:\n{document}"
+    );
+}
+
+/// The strategy may reorder sections (Skills before Experience reads better for
+/// a career changer) — and a section it does not name keeps its planned
+/// position rather than being flung to either end.
+///
+/// Mutation check: ignore `section_order` in `assemble` and the reordered
+/// assertion fails; sort unstably and the two employment entries can swap,
+/// which the roster order forbids.
+#[test]
+fn assemble_follows_the_strategys_section_order() {
+    let sections = assembled_sections();
+    let reordered = assemble(
+        &sections,
+        &[
+            "Projects".to_string(),
+            "Professional Summary".to_string(),
+            "Work Experience".to_string(),
+        ],
+    );
+    let projects_at = reordered.find("Projects").expect("a projects section");
+    let summary_at = reordered
+        .find("Professional Summary")
+        .expect("a summary section");
+    let experience_at = reordered
+        .find("Work Experience")
+        .expect("an experience section");
+    assert!(
+        projects_at < summary_at && summary_at < experience_at,
+        "the strategy's order must win:\n{reordered}"
+    );
+    assert!(
+        reordered.find("Acme Payments").expect("the first role")
+            < reordered.find("Globex Logistics").expect("the second role"),
+        "the roster's own order is not the strategy's to change"
+    );
+}
+
+/// An empty section renders NOTHING — not a bare heading. A heading with no
+/// body under it reads as a damaged document, and `assemble` is the last place
+/// that can tell.
+///
+/// Mutation check: drop the `section.is_empty()` guard and the heading appears
+/// with nothing under it.
+#[test]
+fn an_empty_section_is_not_rendered_at_all() {
+    let sections = vec![
+        SectionResult {
+            key: SectionKey::Summary,
+            heading: "Professional Summary".to_string(),
+            body: SectionBody::Summary(String::new()),
+            used_evidence: Vec::new(),
+            dropped_citations: 0,
+            dropped_content: 0,
+            from_cache: false,
+        },
+        SectionResult {
+            key: SectionKey::Education,
+            heading: "Education".to_string(),
+            body: SectionBody::Lines(vec!["MSc Computer Science, TU Berlin  2014 - 2016".into()]),
+            used_evidence: Vec::new(),
+            dropped_citations: 0,
+            dropped_content: 0,
+            from_cache: false,
+        },
+    ];
+    let document = assemble(&sections, &[]);
+    assert!(!document.contains("Professional Summary"));
+    assert!(document.starts_with("Education"));
+}
+
+/// The progressive stream and the finished document must agree byte for byte:
+/// the user watches the résumé build, and a preview that differs from what gets
+/// saved is worse than no preview.
+///
+/// Mutation check: render the streamed chunk without its heading (always pass
+/// `false`) and the concatenation stops matching.
+#[tokio::test]
+async fn the_progressive_stream_concatenates_into_the_assembled_document() {
+    let sections = assembled_sections();
+    let slots: Vec<SectionSlot> = sections
+        .iter()
+        .map(|section| SectionSlot {
+            key: section.key,
+            heading: section.heading.clone(),
+            seed: SectionSeed::Summary,
+        })
+        .collect();
+    let recorder = StreamRecorder::default();
+    let mut queue = sections.clone().into_iter();
+
+    let (produced, _) = generate_sections(&slots, live_deadline(), Some(&recorder), |_, _| {
+        let next = queue.next().expect("one canned section per slot");
+        async move { Ok(next) }
+    })
+    .await;
+
+    let streamed = recorder.text.lock().concat();
+    assert_eq!(
+        streamed,
+        assemble(&produced, &[]).trim_end().to_string(),
+        "what the user watched must be what the run assembled"
+    );
+}
+
+/// Records only the streamed TEXT — the progressive-assembly half of
+/// [`SectionProgress`].
+#[derive(Default)]
+struct StreamRecorder {
+    text: Mutex<Vec<String>>,
+}
+
+impl SectionProgress for StreamRecorder {
+    fn section_started(&self, _key: SectionKey, _index: usize, _total: usize) {}
+    fn section_finished(&self, _key: SectionKey, _index: usize, _total: usize, _produced: bool) {}
+    fn section_text(&self, text: &str) {
+        self.text.lock().push(text.to_string());
+    }
 }
 
 // ── ADR-010 ──────────────────────────────────────────────────────────────────

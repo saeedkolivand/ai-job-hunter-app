@@ -57,7 +57,7 @@ use crate::pipeline::resume::types_max::{
     SectionResult, SectionSeed, SectionSlot, SkillsOut, SummaryOut,
 };
 use crate::pipeline::resume::{
-    cache, guard_deadline, source, QualityCtx, RunDeadline, RunLedger, SectionProgress,
+    assemble, cache, guard_deadline, source, QualityCtx, RunDeadline, RunLedger, SectionProgress,
 };
 use crate::pipeline::{Completer, Stage};
 
@@ -351,7 +351,7 @@ pub fn merge(
     evidence: &EvidenceMap,
 ) -> SectionResult {
     let (body, citations, dropped_content) = match (&slot.seed, answer) {
-        (_, SectionAnswer::Summary(out)) => {
+        (SectionSeed::Summary, SectionAnswer::Summary(out)) => {
             let text = clamp_chars(
                 strip_heading(&out.summary, &slot.heading),
                 MAX_SUMMARY_CHARS,
@@ -368,7 +368,7 @@ pub fn merge(
                 before.saturating_sub(after) as u32,
             )
         }
-        (_, SectionAnswer::Experience(out)) => {
+        (SectionSeed::Experience(plan), SectionAnswer::Experience(out)) => {
             let bullets: Vec<String> = out
                 .bullets
                 .iter()
@@ -376,7 +376,16 @@ pub fn merge(
                 .filter(|bullet| !bullet.is_empty())
                 .take(MAX_BULLETS_PER_ENTRY)
                 .collect();
-            (SectionBody::Bullets(bullets), out.used_evidence, 0)
+            (
+                SectionBody::Entry {
+                    // The identity travels with the bullets, straight off the
+                    // seeded roster — the model's answer has no field for it.
+                    plan: plan.clone(),
+                    bullets,
+                },
+                out.used_evidence,
+                0,
+            )
         }
         (SectionSeed::Projects(seeds), SectionAnswer::Projects(out)) => {
             let (projects, dropped) = reseed_projects(seeds, &out.projects);
@@ -409,7 +418,10 @@ fn empty_body(seed: &SectionSeed) -> SectionBody {
     match seed {
         SectionSeed::Summary => SectionBody::Summary(String::new()),
         SectionSeed::Skills(_) => SectionBody::Skills(Vec::new()),
-        SectionSeed::Experience(_) => SectionBody::Bullets(Vec::new()),
+        SectionSeed::Experience(plan) => SectionBody::Entry {
+            plan: plan.clone(),
+            bullets: Vec::new(),
+        },
         SectionSeed::Projects(_) => SectionBody::Projects(Vec::new()),
         SectionSeed::Education(_) => SectionBody::Lines(Vec::new()),
     }
@@ -577,6 +589,9 @@ where
         ..SectionsStats::default()
     };
     let mut out: Vec<SectionResult> = Vec::new();
+    // The heading the last KEPT section carried — consecutive employment
+    // entries share one, so only the first of them streams it.
+    let mut last_heading: Option<String> = None;
 
     for (index, slot) in slots.iter().enumerate() {
         // BETWEEN calls, not only before the stage: twelve calls at up to
@@ -605,6 +620,21 @@ where
                     false
                 } else {
                     stats.kept += 1;
+                    // Progressive assembly: the finished section's TEXT, in the
+                    // exact bytes the document will carry, so the output pane
+                    // builds section by section instead of waiting for the run.
+                    // Display-only — a later reorder (the strategy's own
+                    // `section_order`) or a repair round can still move it, and
+                    // the authoritative document is the one the run persists.
+                    if let Some(progress) = progress {
+                        let repeat = last_heading.as_deref() != Some(result.heading.as_str());
+                        let mut text = assemble::chunk(&result, repeat);
+                        if !out.is_empty() {
+                            text.insert_str(0, "\n\n");
+                        }
+                        progress.section_text(&text);
+                    }
+                    last_heading = Some(result.heading.clone());
                     out.push(result);
                     true
                 }

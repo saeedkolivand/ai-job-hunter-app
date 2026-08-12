@@ -348,9 +348,15 @@ pub struct SectionSlot {
 pub enum SectionBody {
     Summary(String),
     Skills(Vec<SkillGroup>),
-    /// One employment entry's bullets. The identity line comes from the slot's
-    /// [`SectionSeed::Experience`] plan, never from here.
-    Bullets(Vec<String>),
+    /// ONE employment entry: the SEEDED plan and the model's bullets, carried
+    /// together so `assemble` renders the identity line from the plan rather
+    /// than from anything the model returned. The two halves travel as one
+    /// value because separating them is precisely how an entry ends up with
+    /// someone else's company name on it.
+    Entry {
+        plan: Box<CompanyPlan>,
+        bullets: Vec<String>,
+    },
     Projects(Vec<ProjectOut>),
     /// Education entries, each a verbatim source line.
     Lines(Vec<String>),
@@ -382,7 +388,7 @@ impl SectionResult {
         match &self.body {
             SectionBody::Summary(text) => text.trim().is_empty(),
             SectionBody::Skills(groups) => groups.iter().all(|g| g.skills.is_empty()),
-            SectionBody::Bullets(bullets) => bullets.is_empty(),
+            SectionBody::Entry { bullets, .. } => bullets.is_empty(),
             SectionBody::Projects(projects) => projects.is_empty(),
             SectionBody::Lines(lines) => lines.is_empty(),
         }

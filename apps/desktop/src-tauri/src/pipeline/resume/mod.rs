@@ -31,6 +31,7 @@
 //! implementation and therefore every `pipeline:stage` emit. What the stages
 //! need to tell that hook travels through the shared [`RunLedger`].
 
+pub mod assemble;
 pub mod cache;
 pub mod prompt_blocks;
 pub mod prompts;
