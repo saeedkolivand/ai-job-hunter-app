@@ -1,12 +1,26 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-08-10
+Last updated: 2026-08-12
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
+## Generation pipeline & depths
+
+**GenerationDepth** = `'fast' | 'quality' | 'max'`.
+
+- **Fast (shipped)** — today's one-shot TS path (generateResume); streams delta-shaped output. Runs deterministic validators after generation (factual, alignment, consistency, voice, ats). No repair loop. Auto-report (zero cost, deterministic). Core-rule enforcement: prompt discipline only (pre-Phase 3).
+- **Quality (Phase 3, shipped)** — 4-call Rust pipeline (analyze_job, match_evidence, strategy, draft) + deterministic validators + ≤2 repair rounds (Criticals only, failing sections only). Each call fences prior-stage artifacts as untrusted (ADR-010). Evidence grounding: Rust drops non-verbatim quotes + overwrites status from keywords kernel. Company roster locked: model seeded from source, never re-dates/drops roles. Validation: 0 provider calls; every Critical is a deterministic comparison against source (model never emits Critical). Terminal fabrications → per-bullet review panel (user keep/remove decides; nothing silently removed). Core-rule enforcement: mechanical, structural (ADR-032).
+- **Max (Phase 4, planned)** — quality + section-wise stages (summary, skills, experience per company, projects, education, condensed earlier-roles). ≤9 calls, sequential JSON. Per-section regenerate enabled via persisted artifacts. Section timeline UI (live per-section states + progressive assembly).
+
+Settings + per-run override; UI self-describes (tooltips per option + info popover explaining cost/time/what-runs).
+
+**Quality report** — deterministic content validators (factual, alignment, consistency, voice, ats, letter checks); persisted to `ai_generations.quality_report` (JSON wrapper: per-document ContentReport + per-bullet verdicts). Staleness detected via source-text-hash. Verdicts round-trip across user edits; resolved = intent matches document (keep → settled; remove → settled when evidence absent). Merged on re-check while preserving previous verdicts and fabrications (renderer's `mergeRecheckedReport` carries extra keys across merge).
+
+**Run store** (`pipeline_runs.db`) — immutable history per run (status, stopped reason, metrics, stage trail). Separate from `ai_generations` (which holds live aggregate document + report). Per-job retention: newest 3 runs. Lifecycle: queued → running → completed|needsReview|failed|cancelled. IPC contracts: run/get/listForJob/regenerateSection/resolveFabrication.
+
 ## Résumé structure
 
-`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. **Header contact line is editor-owned at export time** ([ADR 0021](../adr/0021-editor-owns-resume-header.md)) — two distinct moments, don't conflate them; read source for the exact rules, this is a pointer not a spec. **Generation** (`generateResume` AND `synthesizeResume` → `seedHeaderFromProfile` in `apps/desktop/src/renderer/lib/generate/generation/generation.ts`) seeds the profile's name + contact line into the model-written text, so re-generating a document discards header edits by design; the function's own doc comments carry the replace-vs-insert invariants (never delete a line). **Export** (`ContactProfile::apply_to_header` in `apps/desktop/src-tauri/src/contact_profile/mod.rs`, `meta.candidate_name` in `export/pdf/mod.rs` / `export/model_docx.rs`) fills from the profile only when the parsed header is blank — whatever the text says wins for PDF/DOCX/TXT. Export validation (`validate/mod.rs`'s `pdf_render_issues`) gates on which side is the header's source of truth; a job-board/ATS host in the header band always warns, independent of whether a profile is present.
+`DocumentModel` (`model/document.rs`): sections → blocks → rich text. Section ordering, relationships, content hierarchy, and customization are the resume architecture. **Header contact line is editor-owned at export time** ([ADR 0021](../decision-records/adr-021-windows-installer-currentuser-scope.md)) — two distinct moments, don't conflate them; read source for the exact rules, this is a pointer not a spec. **Generation** (`generateResume` AND `synthesizeResume` → `seedHeaderFromProfile` in `apps/desktop/src/renderer/lib/generate/generation/generation.ts`) seeds the profile's name + contact line into the model-written text, so re-generating a document discards header edits by design; the function's own doc comments carry the replace-vs-insert invariants (never delete a line). **Export** (`ContactProfile::apply_to_header` in `apps/desktop/src-tauri/src/contact_profile/mod.rs`, `meta.candidate_name` in `export/pdf/mod.rs` / `export/model_docx.rs`) fills from the profile only when the parsed header is blank — whatever the text says wins for PDF/DOCX/TXT. Export validation (`validate/mod.rs`'s `pdf_render_issues`) gates on which side is the header's source of truth; a job-board/ATS host in the header band always warns, independent of whether a profile is present.
 
 ## Page target (≠ page size)
 
