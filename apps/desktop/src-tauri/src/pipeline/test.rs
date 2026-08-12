@@ -622,6 +622,12 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
         base_url: base_url.map(str::to_string),
         context_window: None,
     };
+    let with_window = |context_window: Option<u32>| StageOverride {
+        provider: "ollama".to_string(),
+        model: "m".to_string(),
+        base_url: None,
+        context_window,
+    };
 
     let err = Completer::from_override(over(
         "openai-compatible",
@@ -640,7 +646,20 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
         .unwrap_err();
     assert!(format!("{err}").contains("No model selected"), "got {err}");
 
-    let (_provider, model, base_url) = Completer::from_override(over(
+    // A stored context window is re-validated on the way OUT too — the same
+    // hand-edited-store threat model as the base_url above, and the one stored
+    // number whose absurd value is an OOM rather than a wrong answer.
+    //
+    // Mutation check (executed): drop the `validate_context_window` call from
+    // `from_override` and both of these resolve.
+    assert!(Completer::from_override(with_window(Some(9_999_999)))
+        .map(|_| ())
+        .is_err());
+    assert!(Completer::from_override(with_window(Some(1)))
+        .map(|_| ())
+        .is_err());
+
+    let (_provider, model, base_url, context_window) = Completer::from_override(over(
         "openai-compatible",
         "local-model",
         Some("http://127.0.0.1:1234/v1"),
@@ -648,6 +667,11 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
     .expect("a good override resolves");
     assert_eq!(model, "local-model");
     assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+    assert_eq!(context_window, None);
+
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_override(with_window(Some(8_192))).expect("an in-range window resolves");
+    assert_eq!(context_window, Some(8_192));
 }
 
 #[test]

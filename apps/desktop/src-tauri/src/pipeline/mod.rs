@@ -101,7 +101,12 @@ impl Completer {
         let cfg = app
             .state::<crate::ai_config::AiConfigStore>()
             .active_config();
-        let context_window = cfg.context_window;
+        // Re-validated on the egress path for the same reason the `base_url`
+        // is (see `from_config`): the writer/seed/import all check it, so this
+        // only ever fires on a tampered store — and `num_ctx` is the one stored
+        // number whose absurd value is an out-of-memory kill rather than a
+        // wrong answer. Fail closed; never silently substitute a default.
+        let context_window = crate::ai_config::validate_context_window(cfg.context_window)?;
         let (provider, model, base_url) = Self::from_config(cfg)?;
         Ok(Self {
             app: app.clone(),
@@ -134,11 +139,7 @@ impl Completer {
         let Some(over) = over else {
             return Self::from_active(app);
         };
-        // The override's OWN window, never the active provider's: the override
-        // names a different model, and a window sized for the default model is
-        // a wrong number rather than a missing one.
-        let context_window = over.context_window;
-        let (provider, model, base_url) = Self::from_override(over)?;
+        let (provider, model, base_url, context_window) = Self::from_override(over)?;
         Ok(Self {
             app: app.clone(),
             provider,
@@ -182,19 +183,29 @@ impl Completer {
     /// [`from_config`](Self::from_config), doing the same two steps in the same
     /// order so a stage's routing cannot be validated more loosely than the
     /// active provider's.
+    #[allow(clippy::type_complexity)]
     fn from_override(
         over: crate::ai_config::StageOverride,
-    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>)> {
+    ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>, Option<u32>)> {
         let crate::ai_config::StageOverride {
             provider,
             model,
             base_url,
-            ..
+            context_window,
         } = over;
         if let Some(url) = base_url.as_deref() {
             crate::net::ssrf::validate_provider_base_url(url)?;
         }
-        Self::resolve_parts(Some(&provider), Some(&model), base_url)
+        // Every stored value this row carries goes through the same gate on the
+        // way OUT, not just the one that can reach a network: a hand-edited
+        // window is the same threat model as a hand-edited base_url, and the
+        // module doc promises both. The override's OWN window is used, never
+        // the active provider's — the override names a different model, so the
+        // default's window would be a wrong number rather than a missing one.
+        let context_window = crate::ai_config::validate_context_window(context_window)?;
+        let (provider, model, base_url) =
+            Self::resolve_parts(Some(&provider), Some(&model), base_url)?;
+        Ok((provider, model, base_url, context_window))
     }
 
     /// The `AppHandle`-free validated-resolve seam behind
