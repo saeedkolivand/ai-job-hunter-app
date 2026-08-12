@@ -496,6 +496,82 @@ fn a_junk_url_lists_no_runs_rather_than_every_unlinked_one() {
     assert_eq!(store.runs_for_job("https://boards.example/jobs/1").len(), 1);
 }
 
+/// **A selection larger than SQLite's host-parameter limit still cascades.**
+///
+/// `delete_for_jobs` builds one `IN (?, ?, …)` per posting. SQLite refuses to
+/// prepare past `SQLITE_MAX_VARIABLE_NUMBER` (32 766 bundled, 999 on older
+/// builds), and the failure is silent in the direction that matters: the delete
+/// returns 0, the run-trail purge does not happen, and the artifacts it was
+/// meant to remove stay on disk. The user's Documents-page selection is
+/// unbounded, so the statement has to be chunked.
+///
+/// **What this test can and cannot reach, measured rather than assumed.** The
+/// batch below crosses four chunk boundaries, so it pins that chunking deletes
+/// everything and stays atomic — but it does NOT reach SQLite's own limit, and
+/// running the unchunked mutation against it PASSES. Seeding 32 766+ postings
+/// to make that mutation fail costs minutes of suite time for a bound the
+/// assertion below states directly and for free.
+///
+/// Mutation check: raise `MAX_SQL_PARAMS` above the connection's reported
+/// `SQLITE_LIMIT_VARIABLE_NUMBER` and the first assertion fails; drop the
+/// chunking and the count/atomicity assertions still hold at this size (which
+/// is why the limit assertion is here at all).
+#[test]
+fn a_selection_past_the_sql_parameter_limit_still_purges_every_trail() {
+    let (_dir, store) = store();
+    // Comfortably past both the 999 and the 32 766 limits' chunk boundary, and
+    // past MAX_SQL_PARAMS several times over.
+    let count = crate::db::MAX_SQL_PARAMS * 4 + 7;
+    let urls: Vec<String> = (0..count)
+        .map(|i| format!("https://boards.example/jobs/{i}"))
+        .collect();
+    for (i, url) in urls.iter().enumerate() {
+        let id = format!("run-{i}");
+        store.upsert_run(&run(&id, url, 1_000 + i as u64)).unwrap();
+        store
+            .append_event(&event(&id, 0, r#"{"full":{"perCompany":[]}}"#))
+            .unwrap();
+    }
+    // …plus one posting nobody selected.
+    store
+        .upsert_run(&run("keep", "https://boards.example/keep", 9_000))
+        .unwrap();
+    store.append_event(&event("keep", 0, "{}")).unwrap();
+
+    // The bound the chunking exists for. SQLite refuses to PREPARE a statement
+    // with more host parameters than `SQLITE_MAX_VARIABLE_NUMBER` — 32 766 on
+    // the bundled build, but 999 on anything older, and rusqlite's runtime
+    // accessor for it sits behind a feature this crate does not enable. The
+    // conservative floor is the one worth pinning: a chunk size safe there is
+    // safe everywhere, and this fails the moment someone raises the constant
+    // past it.
+    const SQLITE_OLDEST_VARIABLE_LIMIT: usize = 999;
+    // A const block: both operands are compile-time constants, and clippy is
+    // right that a runtime `assert!` on two of them proves nothing at test time
+    // that it would not prove at build time.
+    const _: () = assert!(
+        crate::db::MAX_SQL_PARAMS < SQLITE_OLDEST_VARIABLE_LIMIT,
+        "MAX_SQL_PARAMS must stay under the oldest SQLite host-parameter limit"
+    );
+    assert!(
+        urls.len() > SQLITE_OLDEST_VARIABLE_LIMIT,
+        "the premise: this selection would blow that limit as one statement"
+    );
+
+    let removed = store.delete_for_jobs(&urls);
+
+    assert_eq!(
+        removed, count,
+        "every selected posting's runs go in one call"
+    );
+    assert!(
+        (0..count).all(|i| store.events_for_run(&format!("run-{i}")).is_empty()),
+        "no event row may survive — they are the artifacts the purge exists for"
+    );
+    assert_eq!(store.runs_for_job("https://boards.example/keep").len(), 1);
+    assert_eq!(store.events_for_run("keep").len(), 1);
+}
+
 /// **What the list shows and what the delete removes are the SAME set.**
 ///
 /// They were not. `execute` wrote the postings cache's RAW url while

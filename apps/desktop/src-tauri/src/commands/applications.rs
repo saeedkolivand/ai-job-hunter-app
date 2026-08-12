@@ -387,7 +387,22 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
                 job_url,
                 app.try_state::<crate::pipeline::runs::PipelineRunStore>(),
             ) {
-                runs.delete_for_job(&job_url);
+                // …unless a GENERATION still owns that posting. `ai_generations`
+                // has a unique partial index on `job_url`, so at most one row
+                // can, and `remove_for_application` above only deleted the rows
+                // still LINKED to this application — a generation detached by
+                // an earlier `keep_documents` delete survives on purpose and
+                // keeps the same url. Purging then takes the trail of a
+                // document the user explicitly chose to keep: its runs panel
+                // empties and per-entry regenerate loses the artifacts
+                // `artifacts_for` reads.
+                let still_owned = app
+                    .try_state::<crate::ai_generations::AiGenerationStore>()
+                    .and_then(|gens| gens.find_for_job(&job_url))
+                    .is_some();
+                if !still_owned {
+                    runs.delete_for_job(&job_url);
+                }
             }
             span.end(true);
             json!({ "success": true })

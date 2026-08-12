@@ -740,22 +740,30 @@ impl AiGenerationStore {
         if ids.is_empty() {
             return Vec::new();
         }
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT DISTINCT job_url FROM ai_generations \
-             WHERE id IN ({placeholders}) AND job_url != ''"
-        );
         let conn = self.conn.lock();
-        let Ok(mut stmt) = conn.prepare(&sql) else {
-            return Vec::new();
-        };
-        let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |row| {
-            row.get::<_, String>(0)
-        });
-        match rows {
-            Ok(rows) => rows.filter_map(Result::ok).collect(),
-            Err(_) => Vec::new(),
+        let mut urls: Vec<String> = Vec::new();
+        // CHUNKED: the selection is the user's, and an unbounded `IN (?, …)`
+        // fails to prepare past SQLite's host-parameter limit — which for THIS
+        // read means "no urls", i.e. a cascade that silently does not happen.
+        for chunk in ids.chunks(crate::db::MAX_SQL_PARAMS) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT DISTINCT job_url FROM ai_generations \
+                 WHERE id IN ({placeholders}) AND job_url != ''"
+            );
+            let Ok(mut stmt) = conn.prepare(&sql) else {
+                continue;
+            };
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                row.get::<_, String>(0)
+            });
+            if let Ok(rows) = rows {
+                urls.extend(rows.filter_map(Result::ok));
+            }
         }
+        urls.sort();
+        urls.dedup();
+        urls
     }
 
     /// Delete all generations whose id is in `ids` in a single transaction.
@@ -765,11 +773,18 @@ impl AiGenerationStore {
         if ids.is_empty() {
             return Ok(0);
         }
-        // Build "?,?,…" placeholders — never interpolate user-supplied ids.
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
-        let conn = self.conn.lock();
-        let deleted = conn.execute(&sql, rusqlite::params_from_iter(ids.iter()))?;
+        // Build "?,?,…" placeholders — never interpolate user-supplied ids —
+        // and CHUNK them: an unbounded selection blows SQLite's host-parameter
+        // limit and the whole delete fails to prepare.
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let mut deleted = 0usize;
+        for chunk in ids.chunks(crate::db::MAX_SQL_PARAMS) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!("DELETE FROM ai_generations WHERE id IN ({placeholders})");
+            deleted += tx.execute(&sql, rusqlite::params_from_iter(chunk.iter()))?;
+        }
+        tx.commit()?;
         Ok(deleted)
     }
 

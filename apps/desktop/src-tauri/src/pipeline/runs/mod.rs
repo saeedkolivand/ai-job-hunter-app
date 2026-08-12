@@ -693,7 +693,7 @@ impl PipelineRunStore {
     /// Best-effort and transactional, like [`prune`](Self::prune): a failure
     /// returns without committing, so the trail is never half-deleted.
     pub fn delete_for_job(&self, job_url: &str) -> usize {
-        self.delete_for_jobs(std::slice::from_ref(&job_url.to_string()))
+        self.delete_for_jobs(&[job_url.to_string()])
     }
 
     /// [`delete_for_job`](Self::delete_for_job) for several postings, in ONE
@@ -727,32 +727,39 @@ impl PipelineRunStore {
                 return 0;
             }
         };
-        let placeholders = wanted.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        // Events first: an interrupted delete that took the run rows and left
-        // their events would leave rows the orphan sweep only reaches on the
-        // next `prune`.
-        if let Err(e) = tx.execute(
-            &format!(
-                "DELETE FROM pipeline_run_events WHERE run_id IN
-                     (SELECT id FROM pipeline_runs WHERE job_url IN ({placeholders}))"
-            ),
-            rusqlite::params_from_iter(wanted.iter()),
-        ) {
-            log::warn!("[pipeline] could not delete a job's run events: {e}");
-            span.end(false);
-            return 0; // dropping `tx` rolls the whole thing back
-        }
-        let removed = match tx.execute(
-            &format!("DELETE FROM pipeline_runs WHERE job_url IN ({placeholders})"),
-            rusqlite::params_from_iter(wanted.iter()),
-        ) {
-            Ok(rows) => rows,
-            Err(e) => {
-                log::warn!("[pipeline] could not delete a job's run rows: {e}");
+        // CHUNKED, inside the one transaction: the selection is the user's and
+        // an unbounded `IN (?, …)` fails to prepare past
+        // [`MAX_SQL_PARAMS`]. Batching keeps the delete atomic — every chunk
+        // commits together or none does.
+        let mut removed = 0usize;
+        for chunk in wanted.chunks(crate::db::MAX_SQL_PARAMS) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            // Events first: an interrupted delete that took the run rows and
+            // left their events would leave rows the orphan sweep only reaches
+            // on the next `prune`.
+            if let Err(e) = tx.execute(
+                &format!(
+                    "DELETE FROM pipeline_run_events WHERE run_id IN
+                         (SELECT id FROM pipeline_runs WHERE job_url IN ({placeholders}))"
+                ),
+                rusqlite::params_from_iter(chunk.iter()),
+            ) {
+                log::warn!("[pipeline] could not delete a job's run events: {e}");
                 span.end(false);
-                return 0;
+                return 0; // dropping `tx` rolls the whole thing back
             }
-        };
+            match tx.execute(
+                &format!("DELETE FROM pipeline_runs WHERE job_url IN ({placeholders})"),
+                rusqlite::params_from_iter(chunk.iter()),
+            ) {
+                Ok(rows) => removed += rows,
+                Err(e) => {
+                    log::warn!("[pipeline] could not delete a job's run rows: {e}");
+                    span.end(false);
+                    return 0;
+                }
+            }
+        }
         match tx.commit() {
             Ok(()) => {
                 span.end_with(&format!("jobs={} runs={removed}", wanted.len()), true);
