@@ -17,21 +17,33 @@
 //!
 //! ## The key
 //!
-//! `sha256(version ∥ provider ∥ model ∥ chain)`, where `chain` is a rolling
-//! hash of every artifact upstream of this stage. Each term closes a way the
-//! same nominal input can mean something different:
+//! `sha256(version ∥ provider ∥ model ∥ context_window ∥ chain)`, where `chain`
+//! is a rolling hash of every artifact upstream of this stage. Each term closes
+//! a way the same nominal input can mean something different:
 //!
 //! * [`PIPELINE_PROMPT_VERSION`] — the prompts themselves are an input. Editing
 //!   a stage body without bumping it would serve answers to the OLD question.
 //! * provider + model — the same prompt is a different function on a different
 //!   model, and the whole point of the cache is to skip a provider call.
+//! * context_window — `num_ctx` changes what the model can actually SEE of the
+//!   prompt, so the same prompt at 4 096 and at 32 768 is two different
+//!   questions with two different answers. It reaches the request only because
+//!   the staged pipeline now sends it; the key had to move with it, or a run
+//!   that raised the window is served the answer the truncated one gave.
 //! * the chained artifact hashes — `strategy` reads the analysis AND the
 //!   evidence, so a changed analysis has to miss the strategy cache too. A key
 //!   built only from the stage's own literal inputs would serve a strategy
 //!   planned against an analysis nobody produced.
+//!
+//! **The rule for adding a term:** anything that reaches the provider and can
+//! change the answer belongs here. `temperature` and `effort` deliberately do
+//! NOT, because the cached stages never send them — `pipeline::text_request`
+//! hard-codes both to `None`, and the structured path resolves its temperature
+//! inside the adapter from provider + model, which are already terms.
 
 use crate::documents::sha256_hex;
 use crate::pipeline::cache::KvCache;
+use crate::pipeline::Completer;
 
 /// Bump this whenever ANY stage prompt in [`super::prompts`], any artifact
 /// shape in [`super::types`], or the composition between them changes in a way
@@ -69,7 +81,34 @@ fn namespace(stage: &str) -> String {
 pub struct StageCacheKey {
     provider: String,
     model: String,
+    context_window: Option<u32>,
     chain: String,
+}
+
+/// Everything about WHO answers a stage that can change the answer — the
+/// routing half of a [`StageCacheKey`], and exactly what a resolved
+/// [`Completer`] carries.
+///
+/// A type rather than three loose arguments so "the key binds what the call
+/// sends" stays one thing to keep true: a new routed value that changes the
+/// answer means a new field here, and every key derivation picks it up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageIdentity<'a> {
+    pub provider: &'a str,
+    pub model: &'a str,
+    pub context_window: Option<u32>,
+}
+
+impl<'a> StageIdentity<'a> {
+    /// The identity a resolved completer carries — the ONE place a `Completer`
+    /// becomes cache-key terms.
+    pub fn of(completer: &'a Completer) -> Self {
+        Self {
+            provider: completer.provider_id().as_str(),
+            model: completer.model(),
+            context_window: completer.context_window(),
+        }
+    }
 }
 
 /// Field separator inside the pre-hash string. A control character, not a
@@ -80,21 +119,22 @@ const FIELD_SEPARATOR: char = '\u{1f}';
 
 impl StageCacheKey {
     /// Seed the chain with the run's own inputs (source résumé + posting +
-    /// target language), under the resolved provider and model.
-    pub fn new(provider: &str, model: &str, seed: &str) -> Self {
+    /// target language), under the run's DEFAULT routing identity.
+    pub fn new(identity: StageIdentity<'_>, seed: &str) -> Self {
         Self {
-            provider: provider.to_string(),
-            model: model.to_string(),
+            provider: identity.provider.to_string(),
+            model: identity.model.to_string(),
+            context_window: identity.context_window,
             chain: sha256_hex(seed),
         }
     }
 
-    /// This chain, re-bound to a different provider + model — the key for a
+    /// This chain, re-bound to a different routing identity — the key for a
     /// stage running on its OWN override rather than the run's default.
     ///
-    /// The provider/model half of the key is per-STAGE, not per-run, for
-    /// exactly the reason the seed carries it at all: "the same prompt is a
-    /// different function on a different model". Once one stage can run
+    /// The identity half of the key is per-STAGE, not per-run, for exactly the
+    /// reason the seed carries it at all: "the same prompt is a different
+    /// function on a different model". Once one stage can run
     /// somewhere else, a single run-wide identity would file that stage's
     /// answer under the default model's key — and serve it back on the next run
     /// even after the override is removed. The `chain` is untouched: what came
@@ -103,20 +143,33 @@ impl StageCacheKey {
     /// Returns a new key rather than mutating, so the rolling chain in
     /// `QualityCtx::cache_key` stays the run's shared identity and each stage
     /// derives its own view of it.
-    pub fn rebound(&self, provider: &str, model: &str) -> Self {
+    pub fn rebound(&self, identity: StageIdentity<'_>) -> Self {
         Self {
-            provider: provider.to_string(),
-            model: model.to_string(),
+            provider: identity.provider.to_string(),
+            model: identity.model.to_string(),
+            context_window: identity.context_window,
             chain: self.chain.clone(),
         }
     }
 
     /// The cache key for the stage about to run.
+    ///
+    /// An unconfigured window hashes as an EMPTY field rather than being
+    /// omitted, so the term stays positional and no `Some(n)` key can collide
+    /// with a `None` one. Adding the term changed the pre-hash shape, which
+    /// invalidates every entry written before it — a one-time miss on a 7-day
+    /// TTL, and the safe direction: a changed key can only cost a call, never
+    /// serve a wrong answer.
     pub fn key(&self) -> String {
-        sha256_hex(&format!(
-            "v{PIPELINE_PROMPT_VERSION}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}",
+        let window = self
+            .context_window
+            .map(|c| c.to_string())
+            .unwrap_or_default();
+        let pre_hash = format!(
+            "v{PIPELINE_PROMPT_VERSION}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{}{FIELD_SEPARATOR}{window}{FIELD_SEPARATOR}{}",
             self.provider, self.model, self.chain
-        ))
+        );
+        sha256_hex(&pre_hash)
     }
 
     /// Fold a completed stage's artifact into the chain, so every LATER stage's

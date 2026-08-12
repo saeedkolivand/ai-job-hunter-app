@@ -7,7 +7,7 @@
 
 use serde_json::json;
 
-use super::cache::{StageCacheKey, PIPELINE_PROMPT_VERSION};
+use super::cache::{StageCacheKey, StageIdentity, PIPELINE_PROMPT_VERSION};
 use super::prompts::{
     company_roster_block, draft_system, draft_user, match_evidence_system, match_evidence_user,
     repair_user, strategy_system, strategy_user, ANALYZE_JOB_SYSTEM,
@@ -21,7 +21,7 @@ use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
     ResumeStrategy, SectionKey, SkillGroup,
 };
-use super::{pick, RunLedger, MAX_STAGES, QUALITY_STAGES};
+use super::{pick, stage_cache_key_for, RunLedger, MAX_STAGES, QUALITY_STAGES};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::validate::content::{validate_content, ContentInput, DocKind};
 
@@ -45,16 +45,26 @@ fn prompt_version_is_pinned() {
     );
 }
 
-/// The key must MISS when the version, the provider or the model changes —
-/// each for its own reason (a different question, a different endpoint, a
-/// different function). Mutation check: drop any one term from
-/// `StageCacheKey::key`'s format string and the matching assertion fails.
+/// A routing identity, for the key tests below.
+fn id<'a>(provider: &'a str, model: &'a str, context_window: Option<u32>) -> StageIdentity<'a> {
+    StageIdentity {
+        provider,
+        model,
+        context_window,
+    }
+}
+
+/// The key must MISS when the version, the provider, the model or the CONTEXT
+/// WINDOW changes — each for its own reason (a different question, a different
+/// endpoint, a different function, a different amount of the prompt the model
+/// can see). Mutation check: drop any one term from `StageCacheKey::key`'s
+/// format string and the matching assertion fails.
 #[test]
-fn cache_key_discipline_misses_on_version_provider_and_model() {
-    let base = StageCacheKey::new("ollama", "llama3.1:8b", "seed");
-    let other_provider = StageCacheKey::new("openai", "llama3.1:8b", "seed");
-    let other_model = StageCacheKey::new("ollama", "qwen3:14b", "seed");
-    let other_seed = StageCacheKey::new("ollama", "llama3.1:8b", "different résumé");
+fn cache_key_discipline_misses_on_version_provider_model_and_window() {
+    let base = StageCacheKey::new(id("ollama", "llama3.1:8b", None), "seed");
+    let other_provider = StageCacheKey::new(id("openai", "llama3.1:8b", None), "seed");
+    let other_model = StageCacheKey::new(id("ollama", "qwen3:14b", None), "seed");
+    let other_seed = StageCacheKey::new(id("ollama", "llama3.1:8b", None), "different résumé");
 
     assert_ne!(
         base.key(),
@@ -69,7 +79,41 @@ fn cache_key_discipline_misses_on_version_provider_and_model() {
     );
     assert_eq!(
         base.key(),
-        StageCacheKey::new("ollama", "llama3.1:8b", "seed").key()
+        StageCacheKey::new(id("ollama", "llama3.1:8b", None), "seed").key()
+    );
+}
+
+/// The context window is an OUTPUT-AFFECTING input: it becomes `num_ctx`, which
+/// decides how much of the prompt the model actually sees, so an answer given
+/// at 4 096 must not be served to a run that asked for 32 768.
+///
+/// This regressed the moment the staged pipeline started sending the window —
+/// before that, every term the cached stages could vary was already in the key.
+///
+/// Mutation check (executed): remove `{window}` from `key`'s pre-hash and the
+/// first two assertions fail; make `rebound`/`new` drop `context_window` and
+/// they fail the same way.
+#[test]
+fn the_context_window_is_part_of_the_cache_key() {
+    let unset = StageCacheKey::new(id("ollama", "m", None), "seed");
+    let small = StageCacheKey::new(id("ollama", "m", Some(4_096)), "seed");
+    let large = StageCacheKey::new(id("ollama", "m", Some(32_768)), "seed");
+
+    assert_ne!(
+        unset.key(),
+        small.key(),
+        "configuring a window changes what the model sees"
+    );
+    assert_ne!(small.key(), large.key(), "so does changing it");
+    assert_eq!(
+        small.key(),
+        StageCacheKey::new(id("ollama", "m", Some(4_096)), "seed").key()
+    );
+    // …and the window travels through `rebound` too, which is the path an
+    // OVERRIDDEN stage takes.
+    assert_ne!(
+        unset.rebound(id("ollama", "m", Some(4_096))).key(),
+        unset.rebound(id("ollama", "m", None)).key()
     );
 }
 
@@ -80,8 +124,8 @@ fn cache_key_discipline_misses_on_version_provider_and_model() {
 /// Mutation check: make `extend` a no-op and this fails.
 #[test]
 fn cache_key_chains_upstream_artifacts() {
-    let mut a = StageCacheKey::new("ollama", "m", "seed");
-    let mut b = StageCacheKey::new("ollama", "m", "seed");
+    let mut a = StageCacheKey::new(id("ollama", "m", None), "seed");
+    let mut b = StageCacheKey::new(id("ollama", "m", None), "seed");
     let before = a.key();
     a.extend(r#"{"roleTitle":"Engineer"}"#);
     b.extend(r#"{"roleTitle":"Manager"}"#);
@@ -94,8 +138,8 @@ fn cache_key_chains_upstream_artifacts() {
 #[test]
 fn cache_key_field_boundaries_are_unambiguous() {
     assert_ne!(
-        StageCacheKey::new("ab", "c", "s").key(),
-        StageCacheKey::new("a", "bc", "s").key()
+        StageCacheKey::new(id("ab", "c", None), "s").key(),
+        StageCacheKey::new(id("a", "bc", None), "s").key()
     );
 }
 
@@ -681,14 +725,77 @@ fn the_generated_stage_vocabulary_covers_exactly_the_two_depth_lists() {
     }
 }
 
+/// The generated FREE-stage set must be exactly the stages that make no
+/// provider call in every depth that runs them.
+///
+/// Derived here from the pipelines themselves rather than transcribed: a stage
+/// that starts or stops paying fails this instead of silently gaining or losing
+/// an override the user cannot observe. "In every depth that runs it" is the
+/// careful part — `free_stage_names` is per-depth, and a stage free in one
+/// pipeline but paid in another must NOT be in the set.
+///
+/// Mutation check (executed): add `"repair"` to the TS `PIPELINE_STAGES_FREE`
+/// and regenerate — the second loop fails; remove `"assemble"` — the first
+/// loop fails.
+#[test]
+fn the_generated_free_stage_set_is_exactly_the_zero_call_stages() {
+    use crate::ipc_contracts::events::PIPELINE_STAGES_FREE;
+
+    let depths = [super::quality_pipeline(), super::max_pipeline()];
+    // A stage is free-everywhere when every pipeline that CONTAINS it lists it
+    // as free.
+    let free_everywhere: Vec<&str> = crate::ipc_contracts::events::PIPELINE_STAGES
+        .iter()
+        .copied()
+        .filter(|stage| {
+            let containing: Vec<_> = depths
+                .iter()
+                .filter(|p| p.stage_names().contains(stage))
+                .collect();
+            !containing.is_empty()
+                && containing
+                    .iter()
+                    .all(|p| p.free_stage_names().contains(stage))
+        })
+        .collect();
+
+    for stage in &free_everywhere {
+        assert!(
+            PIPELINE_STAGES_FREE.contains(stage),
+            "{stage} makes no provider call but is not in the generated free set —              an override on it would be a control with no effect",
+        );
+    }
+    for stage in PIPELINE_STAGES_FREE {
+        assert!(
+            free_everywhere.contains(stage),
+            "{stage} is listed free but pays for a call in at least one depth",
+        );
+    }
+    // The set is non-empty and does not swallow the whole pipeline — a mutation
+    // that made everything "free" would otherwise pass both loops vacuously.
+    assert!(!PIPELINE_STAGES_FREE.is_empty());
+    assert!(PIPELINE_STAGES_FREE.len() < QUALITY_STAGES.len());
+}
+
 // ── Per-stage model routing ─────────────────────────────────────────────────
 //
-// Tested over `String` "completers" rather than real ones: a `Completer` needs
-// an `AppHandle`, and the RULES here — which stage gets which routing, and what
-// that does to a cache key — are `pick` and `StageCacheKey::rebound`, both pure.
-// Production goes through the same two functions (`QualityCtx::completer_for`
-// is `pick`; `QualityCtx::stage_cache_key` is `pick` then `rebound`), so this is
-// the real decision, not a restatement of it.
+// Tested over `StageIdentity` values rather than real completers: a `Completer`
+// needs an `AppHandle`, while the routing identity it carries is a plain value.
+// Production runs the SAME functions — `QualityCtx::completer_for` IS `pick`,
+// and `QualityCtx::stage_cache_key` IS `stage_cache_key_for` instantiated at
+// `Completer`/`StageIdentity::of` — so these exercise the real decision.
+//
+// What stays unpinned, precisely — every one of these needs a `Completer`, so
+// it needs an `AppHandle`, so nothing in this crate's unit tests can reach it:
+//
+//  1. `QualityCtx::completer_for` and `QualityCtx::stage_cache_key` passing
+//     `self.stage_completers` / `self.default_completer` into `pick` /
+//     `stage_cache_key_for` (pipeline/resume/mod.rs). A wrong field there is
+//     invisible below.
+//  2. `StageIdentity::of` reading provider/model/context_window off the
+//     completer (pipeline/resume/cache.rs). VERIFIED unpinned: making it return
+//     `context_window: None` leaves every test in this module green.
+//  3. `commands::resume_pipeline::execute`'s call to `Completer::for_stages`.
 
 /// The never-silent-switch rule, in one assertion per branch.
 ///
@@ -722,29 +829,32 @@ fn a_stage_uses_its_override_and_every_other_stage_uses_the_default() {
     );
 }
 
-/// A stage's cached artifact is filed under the model that PRODUCED it.
+/// The BINDING, not just its two halves: the key a stage gets is derived from
+/// the routing THAT stage resolved to.
 ///
 /// The coupling this exists for: `StageCacheKey` used to be seeded once from
 /// the run's single completer, so an overridden stage would have read and
 /// written the DEFAULT model's cache entry — serving one model's analysis to a
 /// run that asked for another's, invisibly (a cache hit looks like a fast run).
+/// Two configs differing in exactly one stage's override must therefore differ
+/// in exactly that stage's key.
 ///
-/// Mutation check (executed): make `rebound` ignore its `model` argument and
-/// the differing-stage assertion fails; make it also reset `chain` and the
-/// identical-stage assertion fails.
+/// Mutation check (executed): change `stage_cache_key_for` to
+/// `base.rebound(identity(default))` — i.e. the default instead of the picked
+/// routing, the exact mutation that used to stay green — and the
+/// overridden-stage assertion fails.
 #[test]
-fn overriding_one_stage_moves_only_that_stages_cache_key() {
-    let base = StageCacheKey::new("ollama", "default-model", "seed");
-    let default = "default-model".to_string();
-    // Two configs differing in exactly one stage's override.
-    let plain: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+fn the_stage_cache_key_binding_follows_the_override() {
+    let default = id("ollama", "default-model", None);
+    let base = StageCacheKey::new(default, "seed");
+    let plain: std::collections::HashMap<String, StageIdentity<'static>> =
+        std::collections::HashMap::new();
     let mut overridden = std::collections::HashMap::new();
-    overridden.insert("strategy".to_string(), "big-model".to_string());
+    overridden.insert("strategy".to_string(), id("ollama", "big-model", None));
 
     for stage in MAX_STAGES {
-        let key_of = |map: &std::collections::HashMap<String, String>| {
-            base.rebound("ollama", pick(Some(map), &default, stage))
-                .key()
+        let key_of = |map: &std::collections::HashMap<String, StageIdentity<'static>>| {
+            stage_cache_key_for(&base, Some(map), &default, stage, |i| *i).key()
         };
         if *stage == "strategy" {
             assert_ne!(
@@ -756,10 +866,30 @@ fn overriding_one_stage_moves_only_that_stages_cache_key() {
             assert_eq!(
                 key_of(&plain),
                 key_of(&overridden),
-                "{stage} did not change model, so its cached artifact is still valid",
+                "{stage} did not change routing, so its cached artifact is still valid",
             );
         }
     }
+}
+
+/// The same binding over the CONTEXT-WINDOW axis: an override that changes only
+/// the window still has to move only its own stage's key.
+///
+/// Mutation check (executed): remove `{window}` from `key`'s pre-hash, or make
+/// `stage_cache_key_for` use the default instead of the picked routing, and
+/// this fails. NOT covered (see the residue list above): `StageIdentity::of`
+/// itself returning the wrong window — that read needs a `Completer`.
+#[test]
+fn a_window_only_override_moves_only_that_stages_cache_key() {
+    let default = id("ollama", "m", Some(4_096));
+    let base = StageCacheKey::new(default, "seed");
+    let mut overridden = std::collections::HashMap::new();
+    overridden.insert("draft".to_string(), id("ollama", "m", Some(32_768)));
+
+    let key_of =
+        |stage: &str| stage_cache_key_for(&base, Some(&overridden), &default, stage, |i| *i).key();
+    assert_ne!(key_of("draft"), key_of("strategy"));
+    assert_eq!(key_of("strategy"), base.rebound(default).key());
 }
 
 /// The provider half of the identity counts too — the same model name served by
@@ -768,10 +898,10 @@ fn overriding_one_stage_moves_only_that_stages_cache_key() {
 /// Mutation check: drop `provider` from `rebound`'s output and this fails.
 #[test]
 fn rebinding_the_provider_changes_the_key_and_rebinding_to_itself_does_not() {
-    let base = StageCacheKey::new("ollama", "m", "seed");
-    assert_ne!(base.rebound("openai", "m").key(), base.key());
+    let base = StageCacheKey::new(id("ollama", "m", None), "seed");
+    assert_ne!(base.rebound(id("openai", "m", None)).key(), base.key());
     assert_eq!(
-        base.rebound("ollama", "m").key(),
+        base.rebound(id("ollama", "m", None)).key(),
         base.key(),
         "an override-free run must hit exactly the entries it always did",
     );

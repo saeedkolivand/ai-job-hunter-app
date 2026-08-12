@@ -66,7 +66,7 @@ use crate::pipeline::cache::KvCache;
 use crate::pipeline::{Completer, Pipeline};
 use crate::validate::content::ContentReport;
 
-use self::cache::StageCacheKey;
+use self::cache::{StageCacheKey, StageIdentity};
 use self::types::{EvidenceMap, GenerationDepth, JobAnalysis, ResumeStrategy};
 use self::types_max::SectionResult;
 
@@ -90,6 +90,32 @@ pub(crate) fn pick<'m, T>(
     stage: &str,
 ) -> &'m T {
     per_stage.and_then(|map| map.get(stage)).unwrap_or(default)
+}
+
+/// The BINDING: pick the routing for `stage`, then derive that stage's cache
+/// key from the routing that was picked.
+///
+/// Generic over the routed value, and taking `identity` as a parameter, purely
+/// so the binding is reachable from a test — a `Completer` needs an
+/// `AppHandle`, a [`StageIdentity`] does not.
+/// [`QualityCtx::stage_cache_key`] instantiates it at `Completer` with
+/// `StageIdentity::of`; `the_stage_cache_key_binding_follows_the_override`
+/// instantiates it at `StageIdentity` with the identity function. Both run THIS
+/// body, so "the key is derived from the completer the stage will actually
+/// call" is a test rather than a claim.
+///
+/// **What this does NOT pin** (needs a `Completer`, so needs an `AppHandle`):
+/// the two field arguments `QualityCtx::stage_cache_key` passes in —
+/// `self.stage_completers` and `self.default_completer`. Swapping either for a
+/// wrong value there is invisible to every test in this crate.
+pub(crate) fn stage_cache_key_for<'m, T>(
+    base: &StageCacheKey,
+    per_stage: Option<&'m HashMap<String, T>>,
+    default: &'m T,
+    stage: &str,
+    identity: impl Fn(&'m T) -> StageIdentity<'m>,
+) -> StageCacheKey {
+    base.rebound(identity(pick(per_stage, default, stage)))
 }
 
 /// Everything one run is run AGAINST — all of it resolved server-side before
@@ -338,8 +364,7 @@ impl<'a> QualityCtx<'a> {
             "{}\u{1f}{}\u{1f}{}",
             input.source_resume, input.job_ad, input.target_language
         );
-        let cache_key =
-            StageCacheKey::new(completer.provider_id().as_str(), completer.model(), &seed);
+        let cache_key = StageCacheKey::new(StageIdentity::of(completer), &seed);
         Self {
             input,
             default_completer: completer,
@@ -395,19 +420,23 @@ impl<'a> QualityCtx<'a> {
         pick(self.stage_completers, self.default_completer, stage)
     }
 
-    /// The cache key for `stage`, bound to the provider + model THAT stage will
-    /// actually call.
+    /// The cache key for `stage`, bound to the routing THAT stage will actually
+    /// call — provider, model AND context window.
     ///
-    /// Goes through the same [`pick`] as [`completer_for`](Self::completer_for)
-    /// — one lookup, so the model a stage's answer is FILED under and the model
-    /// that PRODUCED it cannot disagree. A single run-wide key would let an
-    /// overridden stage's artifact be served back to a run using the default
-    /// model (and vice versa), which is the one failure a cache key exists to
-    /// prevent.
+    /// Goes through the same [`pick`] as [`completer_for`](Self::completer_for),
+    /// inside the shared [`stage_cache_key_for`] binding, so the routing a
+    /// stage's answer is FILED under and the routing that PRODUCED it cannot
+    /// disagree. A single run-wide key would let an overridden stage's artifact
+    /// be served back to a run using the default model (and vice versa), which
+    /// is the one failure a cache key exists to prevent.
     pub fn stage_cache_key(&self, stage: &str) -> StageCacheKey {
-        let completer = self.completer_for(stage);
-        self.cache_key
-            .rebound(completer.provider_id().as_str(), completer.model())
+        stage_cache_key_for(
+            &self.cache_key,
+            self.stage_completers,
+            self.default_completer,
+            stage,
+            StageIdentity::of,
+        )
     }
 
     /// The run's deadline guard, ready to hand to
