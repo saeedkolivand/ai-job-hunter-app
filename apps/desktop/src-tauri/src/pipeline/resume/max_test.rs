@@ -1270,6 +1270,118 @@ fn a_per_entry_range_replaces_one_role_and_leaves_its_neighbours_alone() {
     assert!(sections::entry_range("no sections here", 0).is_none());
 }
 
+/// Three employment entries assembled from `plans`, with the sections at
+/// `dropped` never generated — the shape a run leaves behind when one section
+/// call failed, came back empty, or was refused by the day's ceiling.
+fn experience_document(plans: &[CompanyPlan], dropped: &[usize]) -> String {
+    let sections: Vec<SectionResult> = plans
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !dropped.contains(index))
+        .map(|(index, plan)| SectionResult {
+            key: SectionKey::Experience(index as u8),
+            heading: "Work Experience".to_string(),
+            body: SectionBody::Entry {
+                plan: Box::new(plan.clone()),
+                bullets: vec![format!("Shipped the {} platform", plan.company)],
+            },
+            used_evidence: Vec::new(),
+            dropped_citations: 0,
+            dropped_content: 0,
+            from_cache: false,
+        })
+        .collect();
+    assemble(&sections, &[])
+}
+
+fn three_roles() -> Vec<CompanyPlan> {
+    strategy_for(&[
+        (
+            "Acme Payments",
+            "Senior Backend Engineer",
+            "2021 - 2024",
+            false,
+        ),
+        ("Globex Logistics", "Backend Engineer", "2018 - 2021", false),
+        ("Initech", "Platform Engineer", "2015 - 2018", false),
+    ])
+    .per_company
+}
+
+/// **A roster ordinal is only valid inside the transaction that produced it.**
+///
+/// The max-depth per-entry regenerate carries an index assigned by a run that
+/// finished hours ago, and joins THREE things on it: the roster plan, the
+/// document's n-th employment entry, and the source's n-th role. Two reachable
+/// states break that alignment, and both used to end in a splice that DELETED
+/// an employer — role B rebuilt over role C's lines, in one atomic write.
+///
+/// Mutation check: drop the `split_entry` comparison from `named_entry_range`
+/// (return `entry_range` straight through) and every assertion below that
+/// expects `None` fails; drop the empty-company guard and the unattributed case
+/// starts matching whatever the document's first entry happens to be.
+#[test]
+fn a_regenerate_refuses_an_entry_whose_identity_no_longer_matches_its_roster_slot() {
+    let plans = three_roles();
+
+    // (a) the run's FIRST section never produced anything, so the document
+    //     holds Globex and Initech — and ordinal 1 is Initech's block.
+    let document = experience_document(&plans, &[0]);
+    let by_position = sections::entry_range(&document, 1).expect("the document has two entries");
+    let lines: Vec<&str> = document.lines().collect();
+    assert!(
+        by_position.text(&lines).contains("Initech"),
+        "the premise: position 1 is the THIRD roster entry's block\n{}",
+        by_position.text(&lines)
+    );
+    assert!(
+        sections::named_entry_range(&document, 1, &plans[1].company).is_none(),
+        "rebuilding Globex over Initech's lines would delete Initech from the résumé"
+    );
+    // …and the entry that IS still where the roster says resolves normally.
+    assert!(
+        sections::named_entry_range(&document, 0, &plans[1].company).is_some(),
+        "Globex is the document's first entry now, and that range is its own"
+    );
+
+    // (b) a roster entry with no dates renders without a date column, so it is
+    //     not a `JobEntry` for any reader and every later index shifts.
+    let mut undated = three_roles();
+    undated[1].dates = String::new();
+    let document = experience_document(&undated, &[]);
+    assert_eq!(
+        parse_resume(&document)
+            .lines
+            .iter()
+            .filter(|line| matches!(line.kind, LineKind::JobEntry))
+            .count(),
+        2,
+        "the premise: the undated entry is not a JobEntry"
+    );
+    assert!(
+        sections::named_entry_range(&document, 1, &undated[1].company).is_none(),
+        "index 1 is Initech's block here, not Globex's"
+    );
+
+    // (c) an unattributed roster entry has no identity to join on, so it is a
+    //     miss rather than a match against whatever sits at that ordinal.
+    let mut unattributed = three_roles();
+    unattributed[0].company = String::new();
+    let document = experience_document(&plans, &[]);
+    assert!(
+        sections::named_entry_range(&document, 0, &unattributed[0].company).is_none(),
+        "an empty company can match nothing — unattributed beats invented"
+    );
+
+    // The happy path is untouched: an unedited document joins on every index.
+    for (index, plan) in plans.iter().enumerate() {
+        assert!(
+            sections::named_entry_range(&document, index as u8, &plan.company).is_some(),
+            "the document the run assembled must still resolve every roster slot"
+        );
+    }
+}
+
 // ── The judge ────────────────────────────────────────────────────────────────
 
 fn remark(kind: &str, quote: &str) -> JudgeItem {

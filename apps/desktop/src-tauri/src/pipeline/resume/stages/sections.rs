@@ -10,7 +10,7 @@
 //! document the repair was not asked to change, which is the one thing a
 //! "section-scoped" fix must not do.
 
-use crate::documents::evidence::{classify_section, SectionKind};
+use crate::documents::evidence::{classify_section, split_entry, SectionKind};
 use crate::export::parser::parse_resume;
 use crate::export::types::LineKind;
 
@@ -101,6 +101,11 @@ pub fn find(sections: &[RawSection], key: SectionKey) -> Option<&RawSection> {
 ///
 /// The returned range never includes the section HEADING (it starts at the
 /// entry line), so splicing it in cannot duplicate or delete one.
+///
+/// **Positional, and therefore not a WRITE address on its own.** A caller that
+/// is about to splice must go through [`named_entry_range`] instead: the index
+/// alone says nothing about whether the entry at that position is still the one
+/// the caller means. See that function for the three ways they diverge.
 pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
     let split = split(document);
     let section = find(&split, SectionKey::Experience(index))?;
@@ -124,6 +129,46 @@ pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
         start,
         end,
     })
+}
+
+/// The employment entry at `index`, but ONLY when the document's own identity
+/// line at that position names `company`.
+///
+/// **An ordinal is only valid inside the transaction that produced it.**
+/// [`entry_range`] counts `LineKind::JobEntry` lines, and the roster index a
+/// max-depth regenerate carries was assigned HOURS earlier, by a run whose
+/// document may not be this one. Three reachable ways the two diverge, none of
+/// them exotic:
+///
+/// * a section that failed or came back empty during the run — `assemble` skips
+///   it, so the document has one fewer entry than the roster and every index
+///   past the gap points at the NEXT employer;
+/// * a roster entry with no dates — `assemble::identity_line` emits no date
+///   column for it, so the line is not a `JobEntry` at all and the same shift
+///   happens;
+/// * a hand edit between the run and the click, which `ensure_latest_run`
+///   deliberately permits.
+///
+/// Joining on position alone therefore spliced role B's rebuilt entry over role
+/// C's lines: C deleted from the saved résumé, B duplicated, in one atomic
+/// write the user only learns about from a post-hoc `factual.dropped_role`
+/// Critical. A write path re-joining data across a time gap joins on IDENTITY —
+/// so the company is read back out of the document with the same
+/// [`split_entry`] that `assemble` renders the line for, and a mismatch is a
+/// soft `None` the caller degrades on.
+///
+/// An empty `company` (an unattributed roster entry) can match nothing, so it
+/// is a miss too: unattributed beats invented, the same call
+/// `split_two_space_label` makes.
+pub fn named_entry_range(document: &str, index: u8, company: &str) -> Option<RawSection> {
+    let company = company.trim();
+    if company.is_empty() {
+        return None;
+    }
+    let entry = entry_range(document, index)?;
+    let parsed = parse_resume(document);
+    let (found, _title, _dates) = split_entry(parsed.lines.get(entry.start)?);
+    found.trim().eq_ignore_ascii_case(company).then_some(entry)
 }
 
 /// The [`SectionKey`] for a section KIND, or `None` for a kind this grammar has

@@ -8,9 +8,10 @@
 use serde_json::json;
 
 use super::hooks::{with_detail, DETAIL_KEY};
-use super::max::{budget_for, deadline_for, is_staged, pipeline_for};
+use super::max::{budget_for, deadline_for, is_staged, pipeline_for, role_matches_plan};
+use crate::documents::evidence::EvidenceRole;
 use crate::pipeline::budget::Budget;
-use crate::pipeline::resume::types::GenerationDepth;
+use crate::pipeline::resume::types::{CompanyPlan, GenerationDepth};
 use crate::pipeline::resume::{MAX_STAGES, QUALITY_STAGES};
 
 /// **The fast path stays byte-for-byte.** `fast` is the untouched single-shot
@@ -97,6 +98,87 @@ fn the_max_deadline_is_longer_than_the_quality_one_and_scales_with_effort() {
     assert_eq!(
         deadline_for(GenerationDepth::Max, None),
         Budget::RESUME_MAX.run_timeout
+    );
+}
+
+// ── The per-entry regenerate's identity join ─────────────────────────────────
+
+fn plan(company: &str, condensed: bool) -> CompanyPlan {
+    CompanyPlan {
+        company: company.to_string(),
+        title: "Backend Engineer".to_string(),
+        dates: "2018 - 2021".to_string(),
+        condensed,
+        ..CompanyPlan::default()
+    }
+}
+
+fn role(company: &str) -> EvidenceRole {
+    EvidenceRole {
+        company: company.to_string(),
+        title: "Backend Engineer".to_string(),
+        dates: "2018 - 2021".to_string(),
+        bullets: Vec::new(),
+    }
+}
+
+/// The SOURCE half of the identity join. `section_gen::source_slice` reads the
+/// facts for an employment entry out of `roles[index]`, so a source résumé
+/// re-imported or re-ordered between the run and the click would hand the
+/// prompt ANOTHER employer's bullets under this plan's seeded identity line —
+/// and the seeded-identity rule cannot catch that, because the identity is
+/// precisely the part that stays right.
+///
+/// Mutation check: delete the `role_matches_plan` call from `regenerate_entry`
+/// (or make this function return `true` unconditionally) and the shifted-source
+/// assertion below fails.
+#[test]
+fn a_regenerate_refuses_a_source_role_that_is_no_longer_the_plans_employer() {
+    let roles = [role("Acme Payments"), role("Globex Logistics")];
+
+    assert!(role_matches_plan(
+        &plan("Globex Logistics", false),
+        1,
+        &roles
+    ));
+    // Case-insensitively, because the roster and the reader both derive their
+    // string from the same line but not necessarily from the same run.
+    assert!(role_matches_plan(
+        &plan("globex logistics", false),
+        1,
+        &roles
+    ));
+
+    // A role prepended to the source since the run: index 1 is now Globex, and
+    // rebuilding Acme from Globex's bullets is a fabrication with a truthful
+    // identity line on top of it.
+    let shifted = [
+        role("Initech"),
+        role("Acme Payments"),
+        role("Globex Logistics"),
+    ];
+    assert!(!role_matches_plan(
+        &plan("Globex Logistics", false),
+        1,
+        &shifted
+    ));
+
+    // Past the end of a shortened source.
+    assert!(!role_matches_plan(
+        &plan("Globex Logistics", false),
+        5,
+        &roles
+    ));
+    // Unattributed: nothing to join on, so it degrades rather than guessing.
+    assert!(!role_matches_plan(&plan("", false), 0, &roles));
+
+    // The condensed group is exempt BY CONSTRUCTION: it stands for every role
+    // past the cap, its slice is `roles[index..]`, and "Earlier roles" is a
+    // label rather than an employer — so it can never match one.
+    assert!(role_matches_plan(&plan("Earlier roles", true), 1, &roles));
+    assert!(
+        !role_matches_plan(&plan("Earlier roles", false), 1, &roles),
+        "the exemption must come from the condensed FLAG, not from the label"
     );
 }
 

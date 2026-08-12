@@ -18,12 +18,12 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::commands::ai_provider::timeouts;
-use crate::documents::evidence::extract_evidence;
+use crate::documents::evidence::{extract_evidence, EvidenceRole};
 use crate::error::AppResult;
 use crate::pipeline::budget::Budget;
 use crate::pipeline::resume::stages::{section_gen, sections, SectionOutcome};
 use crate::pipeline::resume::types::{
-    EvidenceMap, GenerationDepth, JobAnalysis, ResumeStrategy, SectionKey,
+    CompanyPlan, EvidenceMap, GenerationDepth, JobAnalysis, ResumeStrategy, SectionKey,
 };
 use crate::pipeline::resume::types_max::{SectionSeed, SectionSlot};
 use crate::pipeline::resume::{
@@ -145,6 +145,17 @@ pub(super) fn artifacts_for(store: &PipelineRunStore, run_id: &str) -> Option<Ru
 /// [`SectionOutcome::Missing`] when the document has no such entry (a document
 /// edited since the run, or a roster that no longer matches it) — the caller
 /// then falls back to the whole-section path rather than failing the click.
+///
+/// **Three things are joined here, and NONE of them on position alone.** The
+/// roster index the click carries was assigned by a run that finished hours
+/// ago; the document and the source résumé have both been free to move since
+/// (`ensure_latest_run` permits an edited-but-latest run by design, and a
+/// section that failed during the run left the document one entry short of the
+/// roster). So the plan's own company has to still name the document's entry at
+/// that range ([`sections::named_entry_range`]) AND the source role the rebuild
+/// would read its facts from ([`role_matches_plan`]). Either mismatch is a
+/// `Missing`, i.e. the whole-section rewrite — the same degrade every other
+/// "this optimization is unavailable" case takes.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn regenerate_entry(
     completer: &Completer,
@@ -159,9 +170,13 @@ pub(super) async fn regenerate_entry(
     let Some(plan) = artifacts.strategy.per_company.get(index as usize) else {
         return Ok(SectionOutcome::Missing);
     };
-    let Some(entry) = sections::entry_range(document, index) else {
+    let Some(entry) = sections::named_entry_range(document, index, &plan.company) else {
         return Ok(SectionOutcome::Missing);
     };
+    let roles = extract_evidence(source_resume, job_ad).roles;
+    if !role_matches_plan(plan, index, &roles) {
+        return Ok(SectionOutcome::Missing);
+    }
     let slot = SectionSlot {
         key: SectionKey::Experience(index),
         // The heading is not re-rendered — the splice replaces the ENTRY's line
@@ -169,7 +184,6 @@ pub(super) async fn regenerate_entry(
         heading: String::new(),
         seed: SectionSeed::Experience(Box::new(plan.clone())),
     };
-    let roles = extract_evidence(source_resume, job_ad).roles;
     // A click is not a run: it has no ledger to stop and no run clock to share.
     // The bound it gets is one step's worth of wall time, which is what
     // `guard_deadline` needs to refuse the re-ask of a call that already hung.
@@ -199,4 +213,33 @@ pub(super) async fn regenerate_entry(
     Ok(SectionOutcome::Replaced(sections::splice(
         document, &entry, &rendered,
     )))
+}
+
+/// Whether the SOURCE role a rebuild would read its facts from is still this
+/// plan's own employer.
+///
+/// The other half of the identity join. `section_gen::source_slice` slices the
+/// source by the SAME ordinal (`roles[index]`), so a source résumé that has
+/// been re-imported, re-ordered or edited since the run hands the prompt
+/// another employer's bullets under this plan's seeded identity line — a
+/// fabrication the seeded-identity rule cannot catch, because the identity is
+/// exactly the part that stays right.
+///
+/// The CONDENSED group is exempt and cannot be checked: it stands for every
+/// role past the per-company cap, its slice is deliberately `roles[index..]`,
+/// and its `company` is the `"Earlier roles"` label rather than an employer. A
+/// shifted source costs it source lines, never another employer's identity.
+///
+/// An empty company is a miss for the same reason it is one in
+/// [`sections::named_entry_range`]: an unattributed roster entry has nothing to
+/// join on, and guessing is what this function exists to stop.
+pub(super) fn role_matches_plan(plan: &CompanyPlan, index: u8, roles: &[EvidenceRole]) -> bool {
+    if plan.condensed {
+        return true;
+    }
+    let company = plan.company.trim();
+    !company.is_empty()
+        && roles
+            .get(index as usize)
+            .is_some_and(|role| role.company.trim().eq_ignore_ascii_case(company))
 }
