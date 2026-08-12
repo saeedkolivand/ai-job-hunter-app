@@ -25,8 +25,9 @@
 //! 1. every planted code is reported, whatever its severity;
 //! 2. every planted code's severity is the one this file's label CLAIMS;
 //! 3. every truthful fixture (`Negative` and `Tolerated`) reports zero
-//!    Criticals;
-//! 4. the Warning-tier false-positive count stays inside
+//!    Criticals, and a planted fixture raises no Critical BEYOND the one
+//!    planted in it;
+//! 4. the number of Warning findings on truthful fixtures stays inside
 //!    [`WARNING_FP_BUDGET`].
 //!
 //! **(1) and (2) deliberately overlap `validate::content::test`** — the same
@@ -53,7 +54,9 @@
 //!
 //! **Read today's `0` for what it is.** Two of the five negatives
 //! (`*_generated_clean.txt`) are already pinned to a COMPLETELY empty report by
-//! `clean_resume_produces_no_issues_at_all`, so their contribution to the
+//! `clean_resume_produces_no_issues_at_all` and
+//! `clean_german_resume_produces_no_issues_at_all` (one test each — the German
+//! fixture is not covered by the English one), so their contribution to the
 //! false-positive count is zero by construction; the paraphrased pair and the
 //! grounded letter are the only ones free to move. The rate becomes an
 //! informative measurement as truthful fixtures are ADDED — that, not this
@@ -316,14 +319,19 @@ const CASES: &[Case] = &[
     ),
 ];
 
-/// How many Warning-tier findings the truthful fixtures may produce in total.
+/// How many Warning FINDINGS the truthful fixtures may produce in total.
+///
+/// Findings, not codes: one unit here is one line a user is shown about a
+/// document that is fine. The per-code table counts each code once per fixture
+/// — right for "which check over-fires", wrong for a budget, since one code can
+/// fire a dozen times in one document (the AI-tells letter carries 16 warnings
+/// from 2 codes).
 ///
 /// Zero today, and that is a measurement rather than an aspiration: the whole
 /// truthful set comes back completely clean. It is a BUDGET rather than a
 /// per-code assertion so that loosening it is one visible edit with a reason,
 /// and it is asserted so the headline number in the printed table is a guard
-/// instead of a comment. Raising it is a real decision: every unit of it is a
-/// warning shown to a user about a document that is fine.
+/// instead of a comment.
 const WARNING_FP_BUDGET: usize = 0;
 
 /// The posting requirements each language's job ad is analysed into — the same
@@ -383,6 +391,11 @@ struct Outcome {
     warnings: usize,
     /// Every code the report carried, deduplicated, in stable order.
     fired: BTreeSet<&'static str>,
+    /// Just the Critical-severity codes. Kept separately because "did this
+    /// document raise a Critical nobody planted" cannot be answered from
+    /// [`Self::fired`] (which has no severities) or from [`Self::criticals`]
+    /// (which has no codes).
+    critical_codes: BTreeSet<&'static str>,
 }
 
 /// Per-code tallies across the whole corpus.
@@ -456,6 +469,12 @@ fn validator_metrics_over_labelled_fixtures() {
                     .filter(|i| i.severity == Severity::Warning)
                     .count(),
                 fired: report.issues.iter().map(|i| i.code).collect(),
+                critical_codes: report
+                    .issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::Critical)
+                    .map(|i| i.code)
+                    .collect(),
             }
         })
         .collect();
@@ -590,21 +609,26 @@ fn validator_metrics_over_labelled_fixtures() {
         );
     }
 
-    let warning_fps: usize = stats
+    // FINDINGS, not codes. The per-code table above counts each code once per
+    // fixture, which is the right shape for "which check over-fires" and the
+    // WRONG shape for a budget: the letter fixture alone carries 16 warnings from
+    // 2 codes, so a code-based sum understates by 8× exactly where it matters.
+    // What a user is shown is one line per finding, so that is what is budgeted.
+    let warning_fps: usize = outcomes
         .iter()
-        .filter(|(code, _)| severity_for(code) == Severity::Warning)
-        .map(|(_, s)| s.fp_negatives)
+        .filter(|o| o.label == Label::Negative)
+        .map(|o| o.warnings)
         .sum();
     let pinned_empty = outcomes
         .iter()
         .filter(|o| o.label == Label::Negative && o.file.contains("_generated_clean"))
         .count();
     println!(
-        "\nWarning-tier false positives on truthful documents: {warning_fps} \
-         (budget {WARNING_FP_BUDGET}) across {negatives} fixtures — the number that gates any \
-         W→C escalation.\nCaveat: {pinned_empty} of those {negatives} are already pinned to a \
-         completely empty report by `clean_resume_produces_no_issues_at_all`, so only {} can \
-         move.\n",
+        "\nWarning findings on truthful documents: {warning_fps} (budget {WARNING_FP_BUDGET}) \
+         across {negatives} fixtures — the number that gates any W→C escalation.\nCaveat: \
+         {pinned_empty} of those {negatives} are already pinned to a completely empty report by \
+         `clean_resume_produces_no_issues_at_all` / \
+         `clean_german_resume_produces_no_issues_at_all`, so only {} can move.\n",
         negatives - pinned_empty
     );
 
@@ -633,6 +657,23 @@ fn validator_metrics_over_labelled_fixtures() {
                     outcome.fired
                 );
             }
+            // A defect fixture is one planted edit away from its clean sibling,
+            // so any OTHER Critical on it is a false accusation against a
+            // document that is truthful in every respect but the planted one —
+            // and nothing else gates that: the zero-Critical rule covers only
+            // the truthful labels, and the off-target column is print-only.
+            let unplanted: Vec<&str> = outcome
+                .critical_codes
+                .iter()
+                .filter(|c| !codes.iter().any(|(planted, _)| planted == *c))
+                .copied()
+                .collect();
+            assert!(
+                unplanted.is_empty(),
+                "{}: raised Critical(s) nobody planted: {unplanted:?}. Everything in this fixture \
+                 except the planted edit is true, so an extra Critical is a false accusation.",
+                outcome.file
+            );
         }
         // Both truthful kinds. A `Tolerated` fixture is a legal degradation, not
         // a defective document: a Critical on one is a regression, and nothing
@@ -658,9 +699,9 @@ fn validator_metrics_over_labelled_fixtures() {
     let within_budget = warning_fps <= WARNING_FP_BUDGET;
     assert!(
         within_budget,
-        "Warning-tier false positives on truthful documents rose to {warning_fps}, over the \
-         budget of {WARNING_FP_BUDGET}. Either the validator over-fires, or the budget moves \
-         WITH a reason — see the table above for which codes fired."
+        "Warning findings on truthful documents rose to {warning_fps}, over the budget of \
+         {WARNING_FP_BUDGET}. Either the validator over-fires, or the budget moves WITH a \
+         reason — see the table above for which codes fired."
     );
 }
 
