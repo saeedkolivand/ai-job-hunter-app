@@ -62,11 +62,22 @@ pub const MAX_STAGE_OVERRIDES: usize = PIPELINE_STAGES.len() - PIPELINE_STAGES_F
 
 /// One stage's explicitly-chosen routing.
 ///
-/// Provider + model + `base_url` rather than a bare model id: a user who wants
-/// the judge on a cloud model while drafting locally is changing the PROVIDER,
-/// and a shape that only carried a model would have to guess which provider it
-/// belonged to. `context_window` rides along because it is a property of the
-/// model this row names, not of the run.
+/// Provider + model rather than a bare model id: a user who wants the judge on
+/// a cloud model while drafting locally is changing the PROVIDER, and a shape
+/// that only carried a model would have to guess which provider it belonged
+/// to. `context_window` rides along because it is a property of the model this
+/// row names, not of the run.
+///
+/// **No `base_url`, by construction.** The endpoint is a property of the
+/// PROVIDER, and that provider's own settings row already holds it — read at
+/// resolve time by [`Completer::from_active_for_stage`](crate::pipeline::Completer::from_active_for_stage).
+/// A per-stage copy would be a second egress endpoint for the same provider
+/// that no screen displays: the override editor forwards the provider's
+/// configured URL and the stage list renders provider + model only, so a
+/// planted value would be invisible in Settings while still receiving every
+/// prompt that stage generates. `net::ssrf`'s threat model assumes the renderer
+/// never controls this value; the wire shape now makes that true instead of
+/// merely validated.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StageOverride {
@@ -75,10 +86,8 @@ pub struct StageOverride {
     /// the same rule `Completer::resolve_parts` applies to the active config.
     #[serde(default)]
     pub model: String,
-    /// Only meaningful for `openai-compatible`; dropped to `None` for every
-    /// other provider, exactly as in the active config.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
+    // No `base_url`: see the type doc. The endpoint comes from the named
+    // provider's own stored row, at resolve time.
     /// `options.num_ctx` for THIS stage's calls, when the user set one. Absent
     /// means the provider's own default — never a guessed size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -162,19 +171,31 @@ impl AiConfigStore {
 
     pub(super) fn stage_overrides_conn(conn: &Connection) -> BTreeMap<String, StageOverride> {
         let mut out = BTreeMap::new();
-        let Ok(mut stmt) = conn.prepare(
-            "SELECT stage, provider, model, base_url, context_window FROM ai_stage_overrides",
-        ) else {
+        let Ok(mut stmt) =
+            conn.prepare("SELECT stage, provider, model, context_window FROM ai_stage_overrides")
+        else {
             return out;
         };
         let rows = stmt.query_map([], |row| {
+            // Read as i64 and narrow HERE rather than letting rusqlite reject
+            // the column: `get::<Option<u32>>` fails the whole ROW on a
+            // negative or oversized integer, and `rows.flatten()` below would
+            // swallow that as a missing override — the stage would quietly run
+            // on the active provider instead, which is exactly the silent
+            // fallback `from_active_for_stage` promises never to do. Losing the
+            // out-of-range WINDOW (the field the user cannot have set through
+            // any UI) while keeping the routing they can see is the smaller
+            // lie; `Completer::from_override` re-validates what survives.
+            let context_window = row
+                .get::<_, Option<i64>>(3)?
+                .and_then(|v| u32::try_from(v).ok())
+                .filter(|v| validate_context_window(Some(*v)).is_ok());
             Ok((
                 row.get::<_, String>(0)?,
                 StageOverride {
                     provider: row.get::<_, String>(1)?,
                     model: row.get::<_, String>(2)?,
-                    base_url: row.get::<_, Option<String>>(3)?,
-                    context_window: row.get::<_, Option<u32>>(4)?,
+                    context_window,
                 },
             ))
         });
@@ -195,17 +216,16 @@ impl AiConfigStore {
     ) -> AppResult<()> {
         conn.execute(
             "INSERT INTO ai_stage_overrides
-                (stage, provider, model, base_url, context_window, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                (stage, provider, model, context_window, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(stage) DO UPDATE SET
                 provider = excluded.provider, model = excluded.model,
-                base_url = excluded.base_url, context_window = excluded.context_window,
+                context_window = excluded.context_window,
                 updated_at = excluded.updated_at",
             params![
                 stage,
                 over.provider,
                 over.model,
-                over.base_url,
                 over.context_window,
                 ts_to_db(now_ms()),
             ],
@@ -281,12 +301,12 @@ fn validate_stage_override(stage: &str, over: StageOverride) -> AppResult<(Strin
     // The same function `set_provider_settings` calls — one chain, not a second
     // copy of it: cross-family model check, `base_url` dropped for every
     // provider but `openai-compatible`, and SSRF provenance on what survives.
-    let (model, base_url, context_window) = AiConfigStore::validate_settings(
-        provider_id,
-        Some(over.model),
-        over.base_url,
-        over.context_window,
-    )?;
+    // `None` for the base URL, always: the wire carries none and the row
+    // stores none. `validate_settings` is still the one chain used here (cross-
+    // family model check + window bound), so a stage override cannot be
+    // validated more loosely than the provider settings it shadows.
+    let (model, _base_url, context_window) =
+        AiConfigStore::validate_settings(provider_id, Some(over.model), None, over.context_window)?;
     let model = match model {
         Some(model) => model,
         None if provider_id.is_cli_agent() => String::new(),
@@ -303,7 +323,6 @@ fn validate_stage_override(stage: &str, over: StageOverride) -> AppResult<(Strin
         StageOverride {
             provider: provider_id.as_str().to_string(),
             model,
-            base_url,
             context_window,
         },
     ))

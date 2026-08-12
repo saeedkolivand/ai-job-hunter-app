@@ -57,6 +57,24 @@ pub struct Completer {
     context_window: Option<u32>,
 }
 
+/// Bound-check the renderer-supplied fields of a wire [`AiGenerateRequest`]
+/// before it reaches a provider.
+///
+/// `context_window` is the one such field that survives into a provider call as
+/// a resource request rather than as text: Ollama passes it straight to
+/// `options.num_ctx`, where an absurd value is an out-of-memory kill of the
+/// user's machine. Every STORED path bounds it (the settings writer, the
+/// import scrub, both resolve seams), but the fast path carries the renderer's
+/// own number, which no store ever saw — so it is bounded here, at the single
+/// point every request funnels through on its way out.
+///
+/// Fail closed rather than clamp: a silently shrunk window is a truncated
+/// prompt, which reads as the model ignoring half its instructions.
+fn vet_wire_request(req: &mut AiGenerateRequest) -> AppResult<()> {
+    req.context_window = crate::ai_config::validate_context_window(req.context_window)?;
+    Ok(())
+}
+
 impl Completer {
     /// The `AppHandle`-free core of the store-driven [`from_config`](Self::from_config):
     /// provider present → parse → model rule → `validate_model` → construct the
@@ -127,13 +145,15 @@ impl Completer {
     /// that fails is an `Err`, never a quiet fallback to the active provider:
     /// the run the user asked for is not the run they would get.
     pub fn from_active_for_stage(app: &AppHandle, stage: &str) -> AppResult<Self> {
-        let over = app
-            .state::<crate::ai_config::AiConfigStore>()
-            .stage_override(stage);
-        let Some(over) = over else {
+        let store = app.state::<crate::ai_config::AiConfigStore>();
+        let Some(over) = store.stage_override(stage) else {
             return Self::from_active(app);
         };
-        let (provider, model, base_url, context_window) = Self::from_override(over)?;
+        // The endpoint FOLLOWS the named provider's own stored row, read here
+        // at resolve time rather than snapshotted into the override — see
+        // `from_override`.
+        let base_url = store.provider_base_url(&over.provider);
+        let (provider, model, base_url, context_window) = Self::from_override(over, base_url)?;
         Ok(Self {
             app: app.clone(),
             provider,
@@ -174,17 +194,24 @@ impl Completer {
     }
 
     /// The `AppHandle`-free resolve seam for one stage override — the sibling of
-    /// [`from_config`](Self::from_config), doing the same two steps in the same
+    /// [`from_config`](Self::from_config), doing the same steps in the same
     /// order so a stage's routing cannot be validated more loosely than the
     /// active provider's.
+    ///
+    /// `base_url` is NOT part of the override: it is the named provider's own
+    /// stored endpoint, passed in by the caller that could read it. So it
+    /// FOLLOWS that provider's settings rather than snapshotting them — there
+    /// is exactly one base URL per provider, the one Settings shows. A
+    /// snapshot would let an override keep pointing at an endpoint the user had
+    /// since changed, with no screen showing the difference.
     #[allow(clippy::type_complexity)]
     fn from_override(
         over: crate::ai_config::StageOverride,
+        base_url: Option<String>,
     ) -> AppResult<(Box<dyn AiProvider>, String, Option<String>, Option<u32>)> {
         let crate::ai_config::StageOverride {
             provider,
             model,
-            base_url,
             context_window,
         } = over;
         if let Some(url) = base_url.as_deref() {
@@ -244,6 +271,7 @@ impl Completer {
     /// knobs, effort, intent) is preserved.
     pub async fn stream(&self, job_id: &str, mut req: AiGenerateRequest) -> AppResult<()> {
         req.model = self.model.clone();
+        vet_wire_request(&mut req)?;
         self.provider.chat_stream(&self.app, job_id, &req).await
     }
 

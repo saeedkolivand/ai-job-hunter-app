@@ -699,24 +699,27 @@ pub fn ai_stage_overrides(app: AppHandle) -> Value {
 /// Point ONE pipeline stage at a specific provider + model.
 ///
 /// Strict server-side validation — unknown stage, unknown provider,
-/// cross-family model, bad `base_url` provenance, out-of-range context window
-/// are all `{ error }`, never a silently scrubbed row: an override the user
-/// cannot see the effect of is worse than a refused one. Returns the fresh
-/// override map so the caller re-renders from the server's answer.
+/// cross-family model, out-of-range context window are all `{ error }`, never
+/// a silently scrubbed row: an override the user cannot see the effect of is
+/// worse than a refused one. Returns the fresh override map so the caller
+/// re-renders from the server's answer.
+///
+/// Takes NO base URL, deliberately. The endpoint for the named provider is the
+/// one already stored in that provider's own settings row, which Settings
+/// displays; accepting a per-stage one here would let a caller plant an egress
+/// endpoint that no screen shows. See [`crate::ai_config::StageOverride`].
 #[tauri::command]
 pub fn ai_set_stage_override(
     app: AppHandle,
     stage: String,
     provider: String,
     model: Option<String>,
-    base_url: Option<String>,
     context_window: Option<u32>,
 ) -> Value {
     let store = app.state::<crate::ai_config::AiConfigStore>();
     let over = crate::ai_config::StageOverride {
         provider,
         model: model.unwrap_or_default(),
-        base_url,
         context_window,
     };
     match store.set_stage_override(&stage, over) {

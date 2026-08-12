@@ -37,7 +37,6 @@ export const useSetStageOverride = () => {
       stage: string;
       provider: string;
       model?: string;
-      baseUrl?: string;
       contextWindow?: number;
     }) => {
       const result = await api.ai.setStageOverride(req);

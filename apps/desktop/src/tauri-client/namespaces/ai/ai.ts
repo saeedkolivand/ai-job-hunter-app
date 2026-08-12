@@ -47,15 +47,13 @@ export const ai = {
     stage,
     provider,
     model,
-    baseUrl,
     contextWindow,
   }: {
     stage: string;
     provider: string;
     model?: string;
-    baseUrl?: string;
     contextWindow?: number;
-  }) => invoke('ai_set_stage_override', { stage, provider, model, baseUrl, contextWindow }),
+  }) => invoke('ai_set_stage_override', { stage, provider, model, contextWindow }),
   clearStageOverride: ({ stage }: { stage: string }) =>
     invoke('ai_clear_stage_override', { stage }),
   // `effort` on both research calls: the backend's deadline around

@@ -62,6 +62,9 @@ export function StageOverrideEditor({
 
   const kind = PROVIDERS[provider as AiProvider]?.kind;
   const configured = isConfigured(provider);
+  // For LISTING models only. It is deliberately not sent when saving: the
+  // backend reads the endpoint from the provider's own settings row, so an
+  // override always uses the URL Settings displays.
   const baseUrl = provider === 'openai-compatible' ? configuredBaseUrl : undefined;
 
   // Cloud + CLI agents list through the same IPC path; Ollama has its own local
@@ -91,7 +94,6 @@ export function StageOverrideEditor({
         stage,
         provider,
         model: model || undefined,
-        baseUrl,
         contextWindow: windowOn ? contextWindow : undefined,
       },
       {

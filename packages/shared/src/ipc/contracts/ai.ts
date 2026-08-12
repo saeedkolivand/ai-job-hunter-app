@@ -91,17 +91,20 @@ export interface AiContract {
   /**
    * Point ONE stage at a provider + model. Returns the fresh override map, or
    * `{ error }` when server-side validation rejects the stage name, the
-   * provider, the model (cross-family check), the base URL (provenance +
-   * cloud-metadata block) or the context window (512–131072).
+   * provider, the model (cross-family check) or the context window
+   * (512–131072).
    *
    * `model` may be empty ONLY for a CLI-agent provider, which runs on its own
    * configured default.
+   *
+   * No base URL: the stage uses the one stored for `provider` — see
+   * {@link AiStageOverride}. Change it in that provider's settings and every
+   * override on it follows.
    */
   setStageOverride(req: {
     stage: string;
     provider: string;
     model?: string;
-    baseUrl?: string;
     contextWindow?: number;
   }): Promise<Record<string, AiStageOverride> | { error: string }>;
 
@@ -327,15 +330,18 @@ export interface AiProviderRouting {
  *
  * Provider AND model, not a bare model id: moving the judge to a cloud model
  * while drafting locally is a change of provider, and a model-only shape would
- * have to guess which provider it belonged to. `baseUrl` is only meaningful for
- * `openai-compatible` (it is dropped server-side for anything else);
- * `contextWindow` belongs to the model this entry names.
+ * have to guess which provider it belonged to. `contextWindow` belongs to the
+ * model this entry names.
+ *
+ * There is deliberately NO `baseUrl`. The endpoint belongs to the PROVIDER, and
+ * the backend reads it from that provider's own settings row when the stage
+ * resolves — so an override always uses the URL Settings displays, and one
+ * cannot be pointed at an endpoint no screen shows.
  */
 export interface AiStageOverride {
   provider: string;
   /** Empty only for a CLI-agent provider. */
   model: string;
-  baseUrl?: string;
   contextWindow?: number;
 }
 

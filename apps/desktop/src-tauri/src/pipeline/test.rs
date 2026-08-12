@@ -606,9 +606,14 @@ fn the_request_builder_forwards_the_configured_context_window() {
     );
 }
 
-/// The stage override's resolve seam takes the SAME two steps as the active
-/// config's, in the same order — a per-stage row must not be able to reach an
-/// endpoint the active config would have refused.
+/// The stage override's resolve seam takes the SAME steps as the active
+/// config's, in the same order — a per-stage row must not reach an endpoint the
+/// active config would have refused.
+///
+/// The URL is no longer carried BY the override (it is the provider's own
+/// stored one, passed in), but it is still store-supplied, so it still takes
+/// the egress check: a tampered `ai_provider_config` row is the same threat
+/// model as a tampered override row was.
 ///
 /// Mutation check (executed): drop the `validate_provider_base_url` call from
 /// `from_override` and the first case resolves.
@@ -616,24 +621,21 @@ fn the_request_builder_forwards_the_configured_context_window() {
 fn a_stage_override_is_validated_exactly_like_the_active_config() {
     use crate::ai_config::StageOverride;
 
-    let over = |provider: &str, model: &str, base_url: Option<&str>| StageOverride {
+    let over = |provider: &str, model: &str| StageOverride {
         provider: provider.to_string(),
         model: model.to_string(),
-        base_url: base_url.map(str::to_string),
         context_window: None,
     };
     let with_window = |context_window: Option<u32>| StageOverride {
         provider: "ollama".to_string(),
         model: "m".to_string(),
-        base_url: None,
         context_window,
     };
 
-    let err = Completer::from_override(over(
-        "openai-compatible",
-        "m",
-        Some("http://169.254.169.254/latest/meta-data/"),
-    ))
+    let err = Completer::from_override(
+        over("openai-compatible", "m"),
+        Some("http://169.254.169.254/latest/meta-data/".to_string()),
+    )
     .map(|_| ())
     .unwrap_err();
     assert!(
@@ -641,7 +643,7 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
         "got {err}"
     );
 
-    let err = Completer::from_override(over("anthropic", "", None))
+    let err = Completer::from_override(over("anthropic", ""), None)
         .map(|_| ())
         .unwrap_err();
     assert!(format!("{err}").contains("No model selected"), "got {err}");
@@ -652,25 +654,27 @@ fn a_stage_override_is_validated_exactly_like_the_active_config() {
     //
     // Mutation check (executed): drop the `validate_context_window` call from
     // `from_override` and both of these resolve.
-    assert!(Completer::from_override(with_window(Some(9_999_999)))
+    assert!(Completer::from_override(with_window(Some(9_999_999)), None)
         .map(|_| ())
         .is_err());
-    assert!(Completer::from_override(with_window(Some(1)))
+    assert!(Completer::from_override(with_window(Some(1)), None)
         .map(|_| ())
         .is_err());
 
-    let (_provider, model, base_url, context_window) = Completer::from_override(over(
-        "openai-compatible",
-        "local-model",
-        Some("http://127.0.0.1:1234/v1"),
-    ))
+    // The endpoint the caller read off the PROVIDER's row is what the resolved
+    // completer routes to — the override contributes provider + model only.
+    let (_provider, model, base_url, context_window) = Completer::from_override(
+        over("openai-compatible", "local-model"),
+        Some("http://127.0.0.1:1234/v1".to_string()),
+    )
     .expect("a good override resolves");
     assert_eq!(model, "local-model");
     assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
     assert_eq!(context_window, None);
 
     let (_provider, _model, _base_url, context_window) =
-        Completer::from_override(with_window(Some(8_192))).expect("an in-range window resolves");
+        Completer::from_override(with_window(Some(8_192)), None)
+            .expect("an in-range window resolves");
     assert_eq!(context_window, Some(8_192));
 }
 
@@ -785,4 +789,55 @@ fn a_good_native_provider_resolves_and_ignores_base_url() {
     let (_provider, model, _base_url, _window) =
         Completer::from_config(cfg).expect("should resolve");
     assert_eq!(model, "claude-3-5-sonnet");
+}
+
+// ── The wire request's own bounds ───────────────────────────────────────────
+
+/// The FAST path carries the renderer's own `contextWindow`, which no store
+/// ever validated — `ai_generate` and `generate_pipeline` both hand their wire
+/// request to `Completer::stream`, which vets it here before it can reach
+/// `options.num_ctx`.
+///
+/// Mutation check (executed): make `vet_wire_request` return `Ok(())` without
+/// validating and every rejection below resolves.
+#[test]
+fn a_wire_request_context_window_is_bounded_like_a_stored_one() {
+    use crate::ipc_contracts::ai::{AiGenerateRequest, AiGenerateRequestMessage};
+
+    let with = |context_window: Option<u32>| AiGenerateRequest {
+        model: "llama3.1:8b".to_string(),
+        messages: vec![AiGenerateRequestMessage {
+            role: "user".to_string(),
+            content: "hi".to_string(),
+        }],
+        locale: "en".to_string(),
+        temperature: None,
+        top_p: None,
+        frequency_penalty: None,
+        presence_penalty: None,
+        repeat_penalty: None,
+        max_tokens: None,
+        context_window,
+        effort: None,
+        intent: None,
+    };
+
+    // The same bounds the stored paths enforce — an OOM-sized window and one
+    // too small to hold a prompt are both refused, not clamped.
+    for bad in [1_u32, 511, 131_073, u32::MAX] {
+        let mut req = with(Some(bad));
+        assert!(
+            super::vet_wire_request(&mut req).is_err(),
+            "{bad} must not reach a provider"
+        );
+    }
+
+    // In-range and absent both pass, unchanged — absent means the provider's
+    // own default, never a substituted one.
+    let mut req = with(Some(32_768));
+    assert!(super::vet_wire_request(&mut req).is_ok());
+    assert_eq!(req.context_window, Some(32_768));
+    let mut req = with(None);
+    assert!(super::vet_wire_request(&mut req).is_ok());
+    assert_eq!(req.context_window, None);
 }

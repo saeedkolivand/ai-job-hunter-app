@@ -20,7 +20,6 @@ fn over(provider: &str, model: &str) -> StageOverride {
     StageOverride {
         provider: provider.to_string(),
         model: model.to_string(),
-        base_url: None,
         context_window: None,
     }
 }
@@ -38,7 +37,6 @@ fn a_set_override_round_trips_with_every_field() {
             StageOverride {
                 provider: "openai-compatible".to_string(),
                 model: "big-model".to_string(),
-                base_url: Some("http://localhost:1234/v1".to_string()),
                 context_window: Some(32_768),
             },
         )
@@ -47,7 +45,6 @@ fn a_set_override_round_trips_with_every_field() {
     let stored = store.stage_override("strategy").expect("row present");
     assert_eq!(stored.provider, "openai-compatible");
     assert_eq!(stored.model, "big-model");
-    assert_eq!(stored.base_url.as_deref(), Some("http://localhost:1234/v1"));
     assert_eq!(stored.context_window, Some(32_768));
     assert_eq!(store.stage_overrides().len(), 1);
 }
@@ -132,39 +129,89 @@ fn an_empty_model_is_rejected_except_for_cli_agents() {
     assert_eq!(store.stage_override("draft").unwrap().model, "");
 }
 
-/// The base_url provenance check is the active config's, reached through the
-/// SAME `validate_settings` — not a second copy that could drift.
+/// A per-stage base URL is not merely validated — it is UNREPRESENTABLE, on
+/// the wire and in the table. The endpoint follows the named provider's own
+/// stored row, so an override can never point at an endpoint Settings does not
+/// display.
 ///
-/// Mutation check: call `validate_settings` with `None` for `base_url` and the
-/// metadata endpoint is accepted.
+/// The import path is the interesting one: a bundle is untrusted input, and it
+/// is the only way a `baseUrl` key can still arrive. Serde drops the unknown
+/// field, so the row lands with routing that resolves through the provider's
+/// configured URL — a smuggled endpoint has nowhere to be stored.
+///
+/// Mutation check (executed): re-add a `base_url` field to `StageOverride` and
+/// the import assertion below stops proving anything, because the smuggled URL
+/// deserializes into it.
 #[test]
-fn a_base_url_goes_through_the_ssrf_chain() {
+fn an_import_bundle_cannot_smuggle_a_per_stage_base_url() {
     let (_dir, store) = new_store();
-    assert!(store
-        .set_stage_override(
-            "draft",
-            StageOverride {
+    let bundle = serde_json::json!({
+        "providers": {},
+        "stageOverrides": {
+            "draft": {
+                "provider": "openai-compatible",
+                "model": "m",
+                "baseUrl": "http://169.254.169.254/latest",
+            },
+        },
+    });
+    store.import(&bundle).unwrap();
+
+    // The row is accepted on its provider+model, and carries no endpoint of its
+    // own — the smuggled cloud-metadata URL is simply not part of the shape.
+    let stored = store.stage_override("draft").expect("row present");
+    assert_eq!(stored.provider, "openai-compatible");
+    let json = serde_json::to_value(&stored).unwrap();
+    assert!(
+        json.get("baseUrl").is_none(),
+        "an override must not carry an endpoint: {json}"
+    );
+
+    // And what it WILL resolve through is the provider's own row, which the
+    // bundle left unset — not the smuggled value.
+    assert_eq!(store.provider_base_url("openai-compatible"), None);
+}
+
+/// The endpoint FOLLOWS the provider's settings rather than snapshotting them
+/// at write time: there is exactly one base URL per provider, so Settings can
+/// never show one endpoint while a stage quietly uses another.
+///
+/// Mutation check (executed): make `provider_base_url` read a cached/copied
+/// value instead of the live row and the post-change assertion fails.
+#[test]
+fn a_stage_override_follows_the_providers_current_base_url() {
+    let (_dir, store) = new_store();
+    let point_at = |url: &str| {
+        store
+            .set_provider_settings(crate::ai_config::ProviderSettingsPatch {
                 provider: "openai-compatible".to_string(),
-                model: "m".to_string(),
-                base_url: Some("http://169.254.169.254/latest".to_string()),
+                model: Some(Some("m".to_string())),
+                base_url: Some(Some(url.to_string())),
                 context_window: None,
-            },
-        )
-        .is_err());
-    // …and it is INERT for any other provider, so it is dropped rather than
-    // stored as dead routing data.
+            })
+            .expect("provider settings");
+    };
+
+    point_at("http://127.0.0.1:1234/v1");
     store
-        .set_stage_override(
-            "draft",
-            StageOverride {
-                provider: "ollama".to_string(),
-                model: "m".to_string(),
-                base_url: Some("http://example.com".to_string()),
-                context_window: None,
-            },
-        )
-        .unwrap();
-    assert!(store.stage_override("draft").unwrap().base_url.is_none());
+        .set_stage_override("draft", over("openai-compatible", "m"))
+        .expect("set override");
+    assert_eq!(
+        store.provider_base_url("openai-compatible").as_deref(),
+        Some("http://127.0.0.1:1234/v1")
+    );
+
+    // The user moves their local server. The override was never touched…
+    point_at("http://127.0.0.1:9999/v1");
+    assert_eq!(
+        store.provider_base_url("openai-compatible").as_deref(),
+        Some("http://127.0.0.1:9999/v1"),
+        "the override must follow the provider, not a snapshot"
+    );
+    assert_eq!(
+        store.stage_override("draft").unwrap().provider,
+        "openai-compatible"
+    );
 }
 
 /// `num_ctx` reaches a local inference server, where an absurd value is an
@@ -213,7 +260,6 @@ fn overrides_survive_an_export_import_round_trip() {
             StageOverride {
                 provider: "ollama".to_string(),
                 model: "big".to_string(),
-                base_url: None,
                 context_window: Some(16_384),
             },
         )
@@ -405,8 +451,8 @@ fn a_free_stage_row_already_in_the_table_is_not_read_back() {
         .lock()
         .execute(
             "INSERT INTO ai_stage_overrides
-                 (stage, provider, model, base_url, context_window, updated_at)
-             VALUES ('validate', 'ollama', 'inert', NULL, NULL, 0)",
+                 (stage, provider, model, context_window, updated_at)
+             VALUES ('validate', 'ollama', 'inert', NULL, 0)",
             [],
         )
         .unwrap();
@@ -503,4 +549,41 @@ fn seed_carries_overrides_and_stays_gated() {
         .insert("draft".to_string(), over("ollama", "clobber"));
     assert!(!store.seed_if_empty(&second).unwrap(), "seed is one-shot");
     assert_eq!(store.stage_override("draft").unwrap().model, "seeded");
+}
+
+/// A hand-edited out-of-range window must not take the whole ROW with it.
+///
+/// `get::<Option<u32>>` fails the row on a negative/oversized INTEGER, and the
+/// `rows.flatten()` in `stage_overrides_conn` would swallow that as "no
+/// override" — the stage would then run on the active provider, the silent
+/// fallback `from_active_for_stage` promises never to make. The routing the
+/// user chose survives; only the window they could not have set is dropped.
+///
+/// Mutation check (executed): read column 3 as `Option<u32>` again and both
+/// rows vanish from the map.
+#[test]
+fn an_out_of_range_stored_window_drops_the_field_not_the_row() {
+    let (_dir, store) = new_store();
+    for (stage, raw) in [("draft", -1_i64), ("strategy", 999_999_999_i64)] {
+        store
+            .conn
+            .lock()
+            .execute(
+                "INSERT INTO ai_stage_overrides
+                     (stage, provider, model, context_window, updated_at)
+                 VALUES (?1, 'ollama', 'chosen-model', ?2, 0)",
+                rusqlite::params![stage, raw],
+            )
+            .unwrap();
+    }
+
+    let all = store.stage_overrides();
+    for stage in ["draft", "strategy"] {
+        let over = all
+            .get(stage)
+            .unwrap_or_else(|| panic!("{stage} must survive its bad window"));
+        assert_eq!(over.provider, "ollama");
+        assert_eq!(over.model, "chosen-model");
+        assert_eq!(over.context_window, None, "the bad window is what drops");
+    }
 }

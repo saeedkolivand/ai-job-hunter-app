@@ -206,7 +206,13 @@ impl AiConfigStore {
             up: |conn| {
                 // `stage` is the PRIMARY KEY, so one stage can have at most one
                 // override and the table can never hold more rows than the
-                // vocabulary has names. The vocabulary itself is checked in
+                // vocabulary has names. There is deliberately NO `base_url`
+                // column: a stage override names a PROVIDER, and that
+                // provider's row already holds the one base URL it uses, which
+                // Settings displays. A per-stage copy would be a second egress
+                // endpoint that no screen shows — see `StageOverride`.
+                //
+                // The vocabulary itself is checked in
                 // CODE, not in a SQL `CHECK`: the list is generated
                 // (`ipc_contracts::events::PIPELINE_STAGES`) and a CHECK
                 // constraint would freeze a copy of it into every existing
@@ -217,7 +223,6 @@ impl AiConfigStore {
                         stage          TEXT PRIMARY KEY,
                         provider       TEXT NOT NULL,
                         model          TEXT NOT NULL,
-                        base_url       TEXT,
                         context_window INTEGER,
                         updated_at     INTEGER NOT NULL
                     );",
@@ -273,6 +278,21 @@ impl AiConfigStore {
             context_window,
             providers,
         }
+    }
+
+    /// The stored base URL for ONE provider — the single endpoint that provider
+    /// uses, wherever it is routed from.
+    ///
+    /// The read behind a stage override's egress URL: an override names a
+    /// provider, and this is that provider's own configured endpoint, so the
+    /// two can never disagree. Only `openai-compatible` ever has one stored
+    /// (`validate_settings` nulls it for the rest), which is also the only
+    /// provider `resolve()` honors it for.
+    pub fn provider_base_url(&self, provider: &str) -> Option<String> {
+        let conn = self.conn.lock();
+        Self::providers_conn(&conn)
+            .get(provider)
+            .and_then(|c| c.base_url.clone())
     }
 
     /// The export/import/seed snapshot.
