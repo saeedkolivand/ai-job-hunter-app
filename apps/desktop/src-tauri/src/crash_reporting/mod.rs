@@ -463,11 +463,18 @@ mod tests {
 
     /// The privacy-relevant half of the client configuration, pinned.
     ///
-    /// Every assertion here is a switch whose wrong value leaks something and
-    /// whose absence is invisible at runtime — `enable_logs`/`enable_metrics`
-    /// default to TRUE in sentry 0.49, `server_name` defaults to the machine
-    /// hostname, and dropping the `.transport(...)` call would silently remove
-    /// the entire wire gate while everything still compiled and shipped.
+    /// These are switches whose wrong value leaks something and whose *absence*
+    /// is invisible at runtime: `enable_logs`/`enable_metrics` default to TRUE
+    /// in sentry 0.49, `server_name` defaults to the machine hostname, and
+    /// deleting the `.transport(...)` call would remove the entire wire gate
+    /// while everything still compiled and shipped. Each of those was checked by
+    /// deleting the builder call and watching this test go red.
+    ///
+    /// One exception, stated rather than glossed: `send_default_pii` is `false`
+    /// in `ClientOptions::default()` too, so that assertion catches someone
+    /// setting it TRUE but not someone deleting our explicit `false`. There is
+    /// nothing observable that would distinguish the two, so it is a value pin,
+    /// not a guard — and this comment is the honest version of that.
     #[test]
     fn client_options_pin_every_privacy_switch() {
         let options = client_options();
