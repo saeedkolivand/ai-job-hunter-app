@@ -1,4 +1,5 @@
 import { AlertTriangle, Check, CheckCircle2, Circle, Loader2, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { PIPELINE_SECTION_EXPERIENCE_PREFIX, type PipelineSectionKey } from '@ajh/shared';
 import { type TFunction, useTranslation } from '@ajh/translations';
@@ -31,17 +32,40 @@ const STATE_STYLE: Record<
 };
 
 /**
+ * States in which a section's text EXISTS — everything past `generating`.
+ *
+ * What the header counts, and deliberately not "finished": a checked or
+ * repaired section is still written, and a section the run later flags has not
+ * un-written itself.
+ */
+const WRITTEN_STATES: ReadonlySet<PipelineSectionState> = new Set<PipelineSectionState>([
+  'done',
+  'checking',
+  'needsChanges',
+  'repaired',
+  'clean',
+]);
+
+/**
  * A section key rendered for a human.
  *
  * `experience:<i>` indexes the strategy's company roster in generation order,
  * and the renderer has no roster to name — the wire is content-free by design,
  * so the company NAME is not on it. The entry is numbered from 1 rather than
  * labelled with a guess.
+ *
+ * The index is guarded rather than trusted: the runtime grammar
+ * (`isPipelineSectionKey`) is enforced at the emitter, but this type is a
+ * template literal — `experience:${number}` also accepts `NaN` and `Infinity`
+ * from TypeScript's point of view, and "Experience NaN" is a worse answer than
+ * an unnumbered entry.
  */
 export function sectionLabel(key: PipelineSectionKey, t: TFunction): string {
   if (key.startsWith(PIPELINE_SECTION_EXPERIENCE_PREFIX)) {
     const index = Number(key.slice(PIPELINE_SECTION_EXPERIENCE_PREFIX.length));
-    return t('pipeline.section.experienceEntry', { index: index + 1 });
+    return t('pipeline.section.experienceEntry', {
+      index: Number.isFinite(index) ? index + 1 : '?',
+    });
   }
   return t(`pipeline.section.${key}`, { defaultValue: key });
 }
@@ -64,21 +88,77 @@ export function sectionLabel(key: PipelineSectionKey, t: TFunction): string {
 export function SectionTimeline({ states, className }: SectionTimelineProps) {
   const { t } = useTranslation();
   const rows = Object.entries(states) as [PipelineSectionKey, PipelineSectionState][];
+  const written = rows.filter(([, state]) => WRITTEN_STATES.has(state)).length;
+
+  /**
+   * Milestone announcer, the `PrepApplicationPanel` pattern (its
+   * `prevStatusRef` + sr-only `role="status"` span).
+   *
+   * The host's stage caption CANNOT do this job, which an earlier version of
+   * this comment claimed it did: a section event carries the STAGE's
+   * `index`/`total`, identical for every section, so the caption's text is
+   * frozen for the whole `sections` stage — the run's longest phase — and an
+   * unchanged live region announces nothing. Without this a screen-reader user
+   * hears one utterance and then silence for up to two hours.
+   *
+   * Fires on a TRANSITION only (the ref guard), and announces the LAST changed
+   * section when several move at once — `validate`'s start moves every written
+   * section to `checking` in one go, and eight utterances for one stage
+   * boundary is the noise this pattern exists to avoid.
+   */
+  const previous = useRef<PipelineSectionStates>({});
+  const [announcement, setAnnouncement] = useState('');
+  useEffect(() => {
+    let latest: [PipelineSectionKey, PipelineSectionState] | null = null;
+    for (const [key, state] of Object.entries(states) as [
+      PipelineSectionKey,
+      PipelineSectionState,
+    ][]) {
+      if (previous.current[key] === state) continue;
+      latest = [key, state];
+    }
+    previous.current = states;
+    if (!latest) return;
+    setAnnouncement(
+      t('pipeline.section.announce', {
+        section: sectionLabel(latest[0], t),
+        state: t(`pipeline.section.state.${latest[1]}`),
+      })
+    );
+  }, [states, t]);
+
   if (rows.length === 0) return null;
 
   return (
     <div className={className}>
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
-        {t('pipeline.section.title')}
-      </h3>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/45">
+          {t('pipeline.section.title')}
+        </h3>
+        {/*
+          The visible liveness cue. The stage counter above cannot move during
+          the sections stage (it counts STAGES), so without a number that
+          changes per section a max run reads as stalled for its longest phase.
+          Counted against the sections SEEN, never against a total: the roster
+          is not on the wire, and "3 of 9" would be a number this build made up.
+        */}
+        <span className="text-[10px] tabular-nums text-foreground/40">
+          {t('pipeline.section.progress', { written, count: rows.length })}
+        </span>
+      </div>
+
+      {/* One utterance per section transition; the rows themselves are not a
+          live region, so nothing is re-read when a later section moves. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
+
       {/*
-        A `group`, not a live region: the list changes on every section event
-        and an `aria-live` list would re-announce every row each time. The
-        host's stage caption is the run's single announcer, exactly as the prep
-        checklist does it.
+        A real list: AT announces "list, N items" and offers list navigation.
+        (It was `role="group"` to avoid live-region noise — a rationale that
+        role never controlled; the announcer above is what handles that.)
       */}
       <ul
-        role="group"
         aria-label={t('pipeline.section.title')}
         className="space-y-1"
         data-testid="section-timeline"

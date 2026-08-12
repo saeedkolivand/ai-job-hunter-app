@@ -1198,7 +1198,7 @@
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
     "thinking": "Denkt nach…",
     "reasoningComplete": "Schlussfolgerung abgeschlossen",
-    "depthUnavailable": "Gründlich braucht einen gespeicherten Lebenslauf und eine Stelle aus deiner Jobliste. Diese Seite arbeitet mit eingefügtem Text und läuft deshalb schnell — deine Auswahl bleibt für die Oberflächen gemerkt, die sie nutzen können.",
+    "depthUnavailable": "Die gestuften Verfahren brauchen einen gespeicherten Lebenslauf und eine Stelle aus deiner Jobliste. Diese Seite arbeitet mit eingefügtem Text und läuft hier deshalb immer schnell — deine Auswahl bleibt für die Oberflächen gemerkt, die sie nutzen können.",
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
@@ -1485,7 +1485,7 @@
       "max": {
         "label": "Maximal",
         "tooltip": "Acht Schritte: analysieren, Belege zuordnen, planen, jeden Abschnitt einzeln schreiben, zusammensetzen, prüfen, automatisch nachbessern, abschließend ein KI-Review.",
-        "summary": "Jeder Abschnitt wird einzeln geschrieben und geprüft — du siehst den Lebenslauf entstehen. Mit Abstand die langsamste Stufe."
+        "summary": "Jeder Abschnitt wird einzeln geschrieben und geprüft — du siehst den Lebenslauf entstehen. Mit Abstand die langsamste Stufe: in der Cloud Minuten, nach etwa zwei Stunden bricht der Lauf selbst ab."
       },
       "unavailable": "In dieser Version noch nicht verfügbar."
     },
@@ -1526,6 +1526,9 @@
       "summary": "Kurzprofil",
       "skills": "Kenntnisse",
       "experienceEntry": "Berufserfahrung {{index}}",
+      "announce": "{{section}} — {{state}}",
+      "progress_one": "{{written}} von {{count}} Abschnitt geschrieben",
+      "progress_other": "{{written}} von {{count}} Abschnitten geschrieben",
       "projects": "Projekte",
       "education": "Ausbildung",
       "state": {
@@ -1753,7 +1756,7 @@
       "infoLabel": "Board-Ergebnisse"
     },
     "apply": {
-      "depthUnavailable": "Gründlich braucht einen gespeicherten Lebenslauf und eine Anzeige aus deiner Jobliste. Dieser Ablauf arbeitet mit dem Text im Assistenten, deshalb läuft dieser Durchgang schnell — deine Auswahl bleibt gemerkt.",
+      "depthUnavailable": "Die gestuften Verfahren brauchen einen gespeicherten Lebenslauf und eine Anzeige aus deiner Jobliste. Dieser Ablauf arbeitet mit dem Text im Assistenten, deshalb läuft dieser Durchgang schnell — deine Auswahl bleibt gemerkt.",
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",

@@ -48,6 +48,14 @@ describe('SectionTimeline', () => {
     expect(screen.getByText('Experience 3')).toBeInTheDocument();
   });
 
+  it('renders an unparseable entry index as "?" rather than NaN', () => {
+    // The runtime grammar is enforced at the emitter, but the TYPE is a
+    // template literal that accepts `experience:NaN`. Drop the
+    // `Number.isFinite` guard and this renders "Experience NaN".
+    render(<SectionTimeline states={{ 'experience:NaN': 'done' } as PipelineSectionStates} />);
+    expect(screen.getByText('Experience ?')).toBeInTheDocument();
+  });
+
   it('never invents a row for a section that has not reported', () => {
     // The roster is unknowable in advance (it depends on the company plan), so
     // an un-reported section has no row — not a "queued" placeholder.
@@ -71,12 +79,77 @@ describe('SectionTimeline', () => {
     }
   });
 
-  it('gives the list an accessible name and marks its icons decorative', () => {
+  it('stays a real list, so AT can say "list, N items" and navigate it', () => {
+    // It was `role="group"`, which silently dropped list semantics for a
+    // rationale (live-region noise) that role never controlled. Put the
+    // `role="group"` back and this fails.
+    render(<SectionTimeline states={{ summary: 'generating', skills: 'queued' }} />);
+    const list = screen.getByRole('list', { name: /sections/i });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('marks its icons decorative', () => {
     render(<SectionTimeline states={{ summary: 'generating' }} />);
-    expect(screen.getByRole('group', { name: /sections/i })).toBeInTheDocument();
     // The icon repeats the Tag's text; announcing it twice is noise.
     const [row] = rows();
     expect(row?.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  // ── Liveness ──────────────────────────────────────────────────────────────
+  //
+  // The host's stage caption is FROZEN for the whole sections stage: a section
+  // event carries the stage's index/total, so "Step 4 of 8" and the stage name
+  // are identical for every section. Both the announcer and the counter below
+  // exist because of that — without them the run's longest phase is silent for
+  // a screen-reader user and looks stalled for everyone else.
+  describe('liveness during the sections stage', () => {
+    const announcer = () => screen.getByRole('status');
+
+    it('announces the section that changed, once per transition', () => {
+      const { rerender } = render(<SectionTimeline states={{ summary: 'generating' }} />);
+      expect(announcer()).toHaveTextContent('Summary — Writing');
+
+      rerender(<SectionTimeline states={{ summary: 'done', skills: 'generating' }} />);
+      expect(announcer()).toHaveTextContent('Skills — Writing');
+    });
+
+    // Drop the `previous.current[key] === state` guard (announce off the whole
+    // map on every render) and this fails: `skills` is the LAST entry but
+    // `summary` is what moved, so the utterance would name the wrong section
+    // and would repeat on a render that changed nothing.
+    it('names the section that MOVED, not the last one in the map', () => {
+      const before = { summary: 'generating', skills: 'generating' } as PipelineSectionStates;
+      const { rerender } = render(<SectionTimeline states={before} />);
+      rerender(<SectionTimeline states={{ ...before, summary: 'done' }} />);
+      expect(announcer()).toHaveTextContent('Summary — Written');
+      expect(announcer()).not.toHaveTextContent('Skills');
+    });
+
+    // `validate`'s start moves every written section at once. Eight utterances
+    // for one stage boundary is the noise the milestone pattern exists to
+    // avoid, so the batch collapses to its last member.
+    it('collapses a batch transition into one utterance', () => {
+      const before = { summary: 'done', skills: 'done' } as PipelineSectionStates;
+      const { rerender } = render(<SectionTimeline states={before} />);
+      rerender(<SectionTimeline states={{ summary: 'checking', skills: 'checking' }} />);
+      expect(announcer()).toHaveTextContent('Skills — Checking');
+    });
+
+    it('counts written sections against what it has SEEN, never against a total', () => {
+      // "3 of 9" would be a number this build made up — the roster is not on
+      // the wire. Remove the counter and this fails.
+      render(
+        <SectionTimeline
+          states={{ summary: 'clean', skills: 'done', 'experience:0': 'generating' }}
+        />
+      );
+      expect(screen.getByText('2 of 3 sections written so far')).toBeInTheDocument();
+    });
+
+    it('does not count a section that is still being written', () => {
+      render(<SectionTimeline states={{ summary: 'generating' }} />);
+      expect(screen.getByText('0 of 1 section written so far')).toBeInTheDocument();
+    });
   });
 
   it('renders every state in the ladder without falling back to a raw key', () => {

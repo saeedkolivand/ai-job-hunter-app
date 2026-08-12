@@ -1194,7 +1194,7 @@
     "subtitle": "Upload your resume and target job ad to generate tailored, ATS-optimized documents.",
     "thinking": "Thinking…",
     "reasoningComplete": "Reasoning complete",
-    "depthUnavailable": "Quality depth needs a saved résumé and a job from your job list. This page generates from pasted text, so it will run Fast — your choice is remembered for the surfaces that can use it.",
+    "depthUnavailable": "The staged depths need a saved résumé and a job from your job list. This page generates from pasted text, so it always runs Fast here — your choice is remembered for the surfaces that can use it.",
     "research": {
       "label": "Research the company",
       "hint": "Adds a short web brief to the cover letter, using your AI provider's own web search. Best-effort.",
@@ -1481,7 +1481,7 @@
       "max": {
         "label": "Max",
         "tooltip": "Eight stages: analyse, match your evidence, plan, write each section on its own, assemble, check, auto-repair, then one AI review pass.",
-        "summary": "Each section written and checked on its own — you watch the résumé build. By far the slowest depth."
+        "summary": "Each section written and checked on its own — you watch the résumé build. By far the slowest depth: minutes on a cloud provider, and the run stops itself after about two hours."
       },
       "unavailable": "Not available in this build yet."
     },
@@ -1522,6 +1522,9 @@
       "summary": "Summary",
       "skills": "Skills",
       "experienceEntry": "Experience {{index}}",
+      "announce": "{{section}} — {{state}}",
+      "progress_one": "{{written}} of {{count}} section written so far",
+      "progress_other": "{{written}} of {{count}} sections written so far",
       "projects": "Projects",
       "education": "Education",
       "state": {
@@ -1749,7 +1752,7 @@
       "infoLabel": "Board results"
     },
     "apply": {
-      "depthUnavailable": "Quality depth needs a saved résumé and a posting from your job list. This flow tailors the text in the wizard, so this run stays Fast — your choice is remembered.",
+      "depthUnavailable": "The staged depths need a saved résumé and a posting from your job list. This flow tailors the text in the wizard, so this run stays Fast — your choice is remembered.",
       "back": "Back to autopilot",
       "match": "match",
       "jobDescription": "Job description",
