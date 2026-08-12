@@ -35,12 +35,12 @@ const KIND: &str = "resume.pipeline_run";
 /// Where the bell row and the OS banner navigate.
 ///
 /// The SURFACE, not the run: there is no per-run route (the report panel and the
-/// runs list are sections of the generation surface), and the renderer's
-/// `resolveNotificationRoute` falls back to `/` for anything outside the
-/// router's static union — so an invented deep link would silently land the user
-/// on the dashboard instead. When a host finally wires the run (renderer gap 1),
-/// a search param can be added here without changing anything else.
-const ROUTE: &str = "/ai-generate";
+/// runs list live in the job detail pane's TailoredResumePanel on the jobs
+/// page), and the renderer's `resolveNotificationRoute` falls back to `/` for
+/// anything outside the router's static union — so an invented deep link would
+/// silently land the user on the dashboard instead. A job-scoped search param
+/// can be added here later without changing anything else.
+const ROUTE: &str = "/jobs";
 
 const TITLE_COMPLETED: &str = "Résumé ready";
 /// `needsReview` is NOT a failure and must not read like one — the document

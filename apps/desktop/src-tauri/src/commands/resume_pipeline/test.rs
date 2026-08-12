@@ -1072,7 +1072,7 @@ fn the_terminal_notification_reports_the_state_the_run_ended_in() {
     assert!(completed
         .route
         .as_ref()
-        .is_some_and(|route| route.to == "/ai-generate"));
+        .is_some_and(|route| route.to == "/jobs"));
 
     let review = run_notification(super::STATUS_NEEDS_REVIEW, 2, "Senior Engineer", "Acme")
         .expect("needsReview is terminal");
