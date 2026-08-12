@@ -253,6 +253,18 @@ fn stale_flag(slot: &Value, current_text: &str) -> Value {
 /// `undecided` COUNT is deliberately NOT shrunk: it is the number the model
 /// acts on, and counting only the entries that survived the budget would tell
 /// it the review is finished when it is not.
+///
+/// **A field WHITELIST, not a copy of the entry** — which is what keeps the
+/// budget arithmetic above valid as the persisted shape grows. A stored entry
+/// also carries `line`, the whole document line the finding sits on (up to
+/// 1 000 chars — see `commands::resume_pipeline::report::containing_line`);
+/// listing it here would multiply the per-entry worst case by ~6 and collapse
+/// the review list to a handful of entries on an ordinary report, for a field
+/// the model cannot act on: the anchor exists so the RENDERER can apply a
+/// Remove, and no tool in this registry can record a verdict. Widening this
+/// list means re-doing that arithmetic AND re-running the fence battery —
+/// `every_pipeline_payload_neutralizes_a_forged_boundary_in_untrusted_text`
+/// plants a forgery in `line` for exactly that reason.
 fn compact_fabrications(slot: &Value, kept: usize) -> (Vec<Value>, usize, usize) {
     let Some(entries) = slot.get("fabrications").and_then(Value::as_array) else {
         return (Vec::new(), 0, 0);
@@ -333,9 +345,21 @@ fn compact_quality_report(record: Option<&AiGenerationRecord>) -> Value {
                 .and_then(Value::as_str)
                 .map(clamp_evidence)),
         );
+        // COERCED to a number, never copied through: this is the one field of
+        // the payload no `kept` step can shrink, so a wrapper whose
+        // `generatedAt` is a megabyte-long string (a corrupt or hand-edited
+        // blob — the column is opaque JSON the store never validates) exhausts
+        // the shrink loop at `kept == 0` and hands the still-oversized body to
+        // `neutralized_summary`'s hard `take(cap)`, which cuts it mid-JSON and
+        // costs the model the whole answer. Anything non-numeric is `null`: an
+        // unreadable timestamp is unknown, and the alternative is a clamped
+        // string that reads like a date.
         out.insert(
             "generatedAt".to_string(),
-            wrapper.get("generatedAt").cloned().unwrap_or(Value::Null),
+            wrapper
+                .get("generatedAt")
+                .and_then(Value::as_u64)
+                .map_or(Value::Null, |at| json!(at)),
         );
         for (key, slot, text) in &present {
             out.insert((*key).to_string(), compact_slot(slot, text, kept));

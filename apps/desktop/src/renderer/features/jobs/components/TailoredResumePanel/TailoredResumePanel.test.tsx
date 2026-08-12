@@ -512,6 +512,89 @@ describe('TailoredResumePanel — the report', () => {
     expect(screen.queryByRole('button', { name: /fix this section/i })).not.toBeInTheDocument();
   });
 
+  /**
+   * The race the read-only gate loses if it trusts the list alone.
+   *
+   * `resume_pipeline_run` returns its ids as soon as the run is ADMITTED; the
+   * `pipeline_runs` row is written inside the spawned task, after admission and
+   * after five resolutions. `start`'s invalidation therefore routinely refetches
+   * a list whose newest entry is still the PREVIOUS run. Reading `runs[0]` alone
+   * then declares the run the user is looking at "not the newest", withholds Fix
+   * and Resolve, and strands it at `needsReview` with no way to clear it — while
+   * telling the user, falsely, that they are looking at an older run.
+   *
+   * Mutation check: drop the `ownRun` term from `writable` and this fails three
+   * times (no Remove, no Fix, and the older-run note appears).
+   */
+  it('keeps this session’s own run writable while the list still ends at the previous one', async () => {
+    const mine = detail({
+      runId: 'run-2',
+      status: 'needsReview',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 1,
+        resume: {
+          sourceTextHash: 1,
+          report: {
+            ok: false,
+            issues: [
+              {
+                code: 'ats.long_bullet',
+                severity: 'warning',
+                section: 'summary',
+                message: 'This bullet is 340 characters.',
+                evidence: 'Built the deployment pipeline.',
+              },
+            ],
+            metrics: METRICS,
+          },
+          fabrications: [{ issueKey: 'factual.unsourced_metric#0', code: 'f', evidence: 'Built' }],
+        },
+      },
+    });
+    bus.session = makeSession({ state: 'needsReview', runId: 'run-2', detail: mine });
+    // The stale list: the row for `run-2` has not landed yet.
+    bus.runs = [summary({ runId: 'run-1' })];
+
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /open integrity report/i }));
+
+    expect(screen.getByRole('button', { name: /^remove$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /fix this section/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/not the newest run for this posting/i)).not.toBeInTheDocument();
+  });
+
+  // The other side of the same gate: an older run really is read-only, and the
+  // session's own id must not launder it into a writable one.
+  it('still refuses a genuinely older run, even from the same session', async () => {
+    const older = detail({
+      runId: 'run-0',
+      status: 'needsReview',
+      report: {
+        schemaVersion: 2,
+        pipeline: 'quality',
+        generatedAt: 1,
+        resume: {
+          sourceTextHash: 1,
+          report: { ok: false, issues: [], metrics: METRICS },
+          fabrications: [{ issueKey: 'factual.unsourced_metric#0', code: 'f', evidence: 'Built' }],
+        },
+      },
+    });
+    bus.session = makeSession({ state: 'needsReview', runId: 'run-2', detail: detail() });
+    bus.runs = [summary({ runId: 'run-2' }), summary({ runId: 'run-0' })];
+    bus.details = { 'run-0': older };
+
+    await openPanel();
+    const [, olderOpen = null] = screen.getAllByRole('button', { name: /^open report$/i });
+    if (!olderOpen) throw new Error('expected an open-report action on the older run');
+    await userEvent.click(olderOpen);
+
+    expect(screen.getByText(/not the newest run for this posting/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^remove$/i })).not.toBeInTheDocument();
+  });
+
   // A refusal the backend DID return is never swallowed or auto-retried.
   it('surfaces a regenerate refusal verbatim instead of retrying it', async () => {
     bus.session = makeSession({ state: 'done', runId: 'run-1', detail: detail() });

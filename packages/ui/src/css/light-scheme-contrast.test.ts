@@ -65,6 +65,18 @@ function lightRules(cls: string): string[] {
 }
 
 /**
+ * The declaration block of the first rule whose SELECTOR LIST contains
+ * `selector`, or `null` when no rule does — so an assertion about a selector
+ * that was renamed away fails loudly instead of quietly matching a comment.
+ */
+function ruleContaining(selector: string): string | null {
+  for (const [, selectors = '', body = ''] of CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (selectors.includes(selector)) return body.replace(/\s+/g, ' ').trim();
+  }
+  return null;
+}
+
+/**
  * Every status TEXT class the light scheme remaps — including the two that
  * still carry a literal (emerald/blue), which the token-indirection assertions
  * below deliberately skip.
@@ -121,15 +133,34 @@ describe('utilities.css — light-scheme status text remaps', () => {
 
   /**
    * Not a contrast rule, but the same class of defect: a sitewide CSS selector
-   * list nothing else can see. ARIA widgets are `div`s, so they get the arrow
-   * cursor unless their role is named here — and a disabled one must keep it.
+   * list nothing else can see.
+   *
+   * Selector AND declaration are asserted together. The previous version
+   * checked only that a selector string occurred somewhere in the file, which a
+   * rule setting the wrong cursor — or no cursor at all — passes just as
+   * happily. It also "guarded" a `[role='radio']` entry that could never fire:
+   * every radio in this app is a `<button>` (SegmentedControl, AppearanceCard,
+   * AccentPicker, LetterLayoutPicker), so `button:not(:disabled)` had already
+   * matched it, and the entry's own comment claimed the opposite.
    */
-  it.each(['button', 'tab', 'radio'])(
-    'gives [role=%s] the pointer cursor, disabled ones excepted',
-    (role) => {
-      expect(CSS).toContain(`[role='${role}']:not([aria-disabled='true'])`);
-    }
-  );
+  describe('the pointer-cursor rule', () => {
+    it.each([
+      ["[role='button']:not([aria-disabled='true'])", 'cursor: pointer'],
+      ["[role='tab']:not([aria-disabled='true'])", 'cursor: pointer'],
+      // THE fix: `aria-disabled` is not `:disabled`, so `button:not(:disabled)`
+      // still matches an aria-disabled button and hands it the pointer — and
+      // the component's own Tailwind `cursor-not-allowed` is layered, which
+      // cannot out-rank an unlayered rule at any specificity. The arrow comes
+      // back from here or not at all.
+      ["button[aria-disabled='true']", 'cursor: not-allowed'],
+    ])('%s declares %s', (selector, declaration) => {
+      expect(ruleContaining(selector)).toContain(declaration);
+    });
+
+    it('drops the inert [role=radio] entry rather than leaving it to be trusted', () => {
+      expect(CSS).not.toContain("[role='radio']");
+    });
+  });
 
   it('scopes every remap to the light scheme only (dark is untouched)', () => {
     for (const { cls } of LIGHT_REMAPS) {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type Fabrication,
   isFabricationResolved,
   parseFabrications,
   presentFabrication,
@@ -8,7 +9,7 @@ import {
   unresolvedCount,
 } from './fabrications';
 
-const VALID = {
+const VALID: Fabrication = {
   issueKey: 'factual.unsourced_metric#0',
   code: 'factual.unsourced_metric',
   evidence: 'Cut latency by 40%',
@@ -51,6 +52,27 @@ describe('parseFabrications', () => {
     const parsed = parseFabrications([VALID, { ...VALID, evidence: 'different text' }]);
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.evidence).toBe(VALID.evidence);
+  });
+
+  // `line` is what a removal is anchored to — see `removeEvidenceLines`.
+  describe('the line anchor', () => {
+    it('carries the containing line through', () => {
+      const line = '- Cut latency by 40% across the fleet.';
+      expect(parseFabrications([{ ...VALID, line }])[0]?.line).toBe(line);
+    });
+
+    // Absence is a first-class state: every report written before the field
+    // existed has none. Dropping those entries would strand the run at
+    // `needsReview` with nothing left to decide — far worse than losing the
+    // automatic apply, which refuses honestly on its own.
+    it.each([
+      ['a legacy entry with no line', VALID],
+      ['a non-string line', { ...VALID, line: 42 }],
+    ])('keeps %s, reading the anchor as absent', (_label, entry) => {
+      const parsed = parseFabrications([entry]);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]?.line).toBeUndefined();
+    });
   });
 });
 
@@ -131,52 +153,99 @@ describe('unresolvedCount', () => {
 });
 
 describe('removeEvidenceLines', () => {
-  const document = ['Summary', 'Cut latency by 40% across the fleet.', 'Shipped the rewrite.'].join(
-    '\n'
-  );
+  const BULLET = '- Cut latency by 40% across the fleet.';
+  const document = ['Summary', BULLET, 'Shipped the rewrite.'].join('\n');
+  /** The shape the report writes now: the span AND the line it sat on. */
+  const anchored: Fabrication = { ...VALID, line: BULLET };
 
-  it('deletes the whole line the evidence sits on, not just the span', () => {
-    // Excising the span alone would leave "across the fleet." dangling — a
+  it('deletes the whole line the entry was flagged on, not just the span', () => {
+    // Excising the span alone would leave "- … across the fleet." dangling — a
     // worse document than either verdict.
-    expect(removeEvidenceLines(document, 'Cut latency by 40%')).toBe(
-      'Summary\nShipped the rewrite.'
-    );
+    expect(removeEvidenceLines(document, anchored)).toBe('Summary\nShipped the rewrite.');
   });
 
-  // The span rarely starts the line — a real bullet begins "- " or "• ". A cut
-  // anchored on the SPAN (rather than the line) leaves the orphaned marker
-  // glued to the next bullet; only a mid-line fixture can catch that.
-  it('takes the bullet marker with it when the evidence starts mid-line', () => {
-    const bulleted = ['Summary', '- Cut latency by 40% across the fleet.', '- Shipped it.'].join(
-      '\n'
-    );
-    expect(removeEvidenceLines(bulleted, 'Cut latency by 40%')).toBe('Summary\n- Shipped it.');
-  });
-
-  it('removes EVERY occurrence, so the entry can actually reach resolved', () => {
-    const twice = ['Cut latency by 40%.', 'Summary', 'Cut latency by 40% again.'].join('\n');
-    const next = removeEvidenceLines(twice, 'Cut latency by 40%');
+  it('removes EVERY copy of that line, so the entry can actually reach resolved', () => {
+    const twice = [BULLET, 'Summary', BULLET].join('\n');
+    const next = removeEvidenceLines(twice, anchored);
     expect(next).toBe('Summary');
-    expect(next?.includes('Cut latency by 40%')).toBe(false);
   });
 
-  it('spans multiple lines when the evidence does', () => {
-    const wrapped = 'Summary\nCut latency\nby 40%\nShipped the rewrite.';
-    expect(removeEvidenceLines(wrapped, 'Cut latency\nby 40%')).toBe(
+  it('matches across leading/trailing whitespace drift', () => {
+    // Re-indentation is not a different line. Anything beyond that is.
+    expect(removeEvidenceLines(`Summary\n   ${BULLET}  \nShipped the rewrite.`, anchored)).toBe(
       'Summary\nShipped the rewrite.'
     );
   });
 
   it('drops the last line without leaving a trailing blank', () => {
-    expect(removeEvidenceLines('Summary\nCut latency by 40%', 'Cut latency by 40%')).toBe(
-      'Summary'
-    );
+    expect(removeEvidenceLines(`Summary\n${BULLET}`, anchored)).toBe('Summary');
   });
 
-  it.each([
-    ['evidence that is not in the document', 'Grew revenue 3x'],
-    ['blank evidence', '   '],
-  ])('returns null for %s rather than mangling the text', (_label, evidence) => {
-    expect(removeEvidenceLines(document, evidence)).toBeNull();
+  // ── THE finding ───────────────────────────────────────────────────────────
+  //
+  // Validator evidence is routinely a bare token, and the old implementation
+  // located the line by searching the document for it: every line CONTAINING
+  // those characters was deleted. Executed against a real document, evidence
+  // "250" took out the contact header (the phone number contains the digits),
+  // "kubernetes" took out the whole skills line, and "a" took out half the file.
+  //
+  // Mutation check: relax the anchor back to `documentText.includes(evidence)`
+  // (or match a line by `line.includes(anchor)` instead of equality) and the
+  // first case below deletes the header and fails.
+  describe('never deletes a line that merely CONTAINS the evidence', () => {
+    const resume = [
+      'ADA LOVELACE',
+      '+1 (555) 250-8817 · ada@example.test',
+      '',
+      'EXPERIENCE',
+      '- Cut cloud spend by 250k in one quarter.',
+      '- Ran the kubernetes migration.',
+      'Skills: kubernetes, terraform, go',
+    ].join('\n');
+
+    it('keeps the contact header when the evidence is a bare number it contains', () => {
+      const entry: Fabrication = {
+        issueKey: 'factual.unsourced_metric#0',
+        code: 'factual.unsourced_metric',
+        evidence: '250',
+        line: '- Cut cloud spend by 250k in one quarter.',
+      };
+      const next = removeEvidenceLines(resume, entry);
+      expect(next).toContain('+1 (555) 250-8817 · ada@example.test');
+      expect(next).not.toContain('Cut cloud spend');
+      // …and nothing else moved.
+      expect(next?.split('\n')).toHaveLength(resume.split('\n').length - 1);
+    });
+
+    it('keeps the skills line when the evidence is a term it also lists', () => {
+      const entry: Fabrication = {
+        issueKey: 'factual.unsourced_term#1',
+        code: 'factual.unsourced_term',
+        evidence: 'kubernetes',
+        line: '- Ran the kubernetes migration.',
+      };
+      const next = removeEvidenceLines(resume, entry);
+      expect(next).toContain('Skills: kubernetes, terraform, go');
+      expect(next).not.toContain('Ran the kubernetes migration');
+    });
+  });
+
+  // Refusal is the honest outcome, and the caller already renders it: the
+  // verdict is recorded and the row says "still in the document — edit it out".
+  // Guessing a line from the span is the alternative, and it is the bug.
+  it.each<[string, Fabrication]>([
+    // A report persisted before `line` existed, or one a Re-check preserved.
+    ['a legacy entry carrying no line at all', VALID],
+    ['a blank line anchor', { ...VALID, line: '   ' }],
+    [
+      'a line the document no longer has (hand-edited since)',
+      { ...VALID, line: '- Grew revenue 3x year over year.' },
+    ],
+    [
+      'a line the user has since edited rather than deleted',
+      { ...VALID, line: '- Cut latency by 40% across the whole fleet.' },
+    ],
+  ])('REFUSES (null) for %s rather than guessing from the evidence', (_label, entry) => {
+    expect(removeEvidenceLines(document, entry)).toBeNull();
   });
 });

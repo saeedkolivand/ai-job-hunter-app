@@ -192,6 +192,16 @@ export const QUALITY_RUN_CLIENT_MARGIN_SECS = 960;
  * than the backend's own deadline at every effort tier, which is what
  * `ai-timeouts.test.ts` pins. Lives here rather than in the renderer so the two
  * halves of that invariant cannot be edited independently.
+ *
+ * **RESERVED — no production consumer yet, deliberately.** The staged run is
+ * started by `resumePipeline.run`, which returns as soon as the run is ADMITTED
+ * and reports completion through the record poll, so there is no long-lived
+ * request for a transport timeout to bound. Kept (and kept tested) because the
+ * value that WOULD be needed is the one thing a future caller must not
+ * re-derive: it has to stay above `qualityRunDeadlineSecs` at every tier, and a
+ * caller inventing its own margin is exactly how the renderer ended up giving
+ * up before the backend did. Wire it only alongside a call that can actually
+ * hang.
  */
 export function qualityRunClientTimeoutMs(effort?: string): number {
   return (qualityRunDeadlineSecs(effort) + QUALITY_RUN_CLIENT_MARGIN_SECS) * 1000;

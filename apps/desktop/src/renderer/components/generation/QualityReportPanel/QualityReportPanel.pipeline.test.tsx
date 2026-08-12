@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { ContentReportPayload } from '@ajh/shared/ipc';
 
-import { buildSectionVerdicts, type Fabrication } from '@/lib/generate';
+import { buildSectionVerdicts, type Fabrication, removeEvidenceLines } from '@/lib/generate';
 
 import { QualityBadge } from './QualityBadge';
 import { type QualityPipelineReview, QualityReportPanel } from './QualityReportPanel';
@@ -20,14 +21,15 @@ const METRICS: ContentReportPayload['metrics'] = {
 
 const CLEAN_REPORT: ContentReportPayload = { ok: true, issues: [], metrics: METRICS };
 
-const DOCUMENT = ['Summary', 'Cut latency by 40% across the fleet.', '', 'Experience', 'Acme'].join(
-  '\n'
-);
+const FLAGGED_LINE = 'Cut latency by 40% across the fleet.';
+const DOCUMENT = ['Summary', FLAGGED_LINE, '', 'Experience', 'Acme'].join('\n');
 
 const PENDING: Fabrication = {
   issueKey: 'factual.unsourced_metric#0',
   code: 'factual.unsourced_metric',
   evidence: 'Cut latency by 40%',
+  // The line the span sat on — the ONLY thing a removal may be anchored to.
+  line: FLAGGED_LINE,
 };
 
 function pipeline(overrides: Partial<QualityPipelineReview> = {}): QualityPipelineReview {
@@ -118,7 +120,9 @@ describe('QualityReportPanel — staged run extras', () => {
 
       await userEvent.click(screen.getByRole('button', { name: /remove/i }));
       await waitFor(() => expect(onResolveFabrication).toHaveBeenCalled());
-      expect(onRemoveEvidence).toHaveBeenCalledWith(PENDING.evidence);
+      // The whole ENTRY, not its span: the apply anchors on `line`, and a bare
+      // span is not enough to identify a line with.
+      expect(onRemoveEvidence).toHaveBeenCalledWith(PENDING);
       // Order matters: recording first would briefly claim the entry is settled
       // while the line is still in the document.
       expect(order).toEqual(['apply', 'record']);
@@ -220,6 +224,79 @@ describe('QualityReportPanel — staged run extras', () => {
     it('does show the clean empty state once the run has no findings at all', () => {
       renderPanel(pipeline({ fabrications: [] }));
       expect(screen.getByText('No issues found')).toBeInTheDocument();
+    });
+
+    /**
+     * Two Removes clicked before the first write settles.
+     *
+     * A host's write is never instantaneous — the editor commits on a debounce,
+     * the save round-trips — so both handlers close over the SAME document, the
+     * second edit is computed from the pre-first text, and writing it puts the
+     * first line back. A flagged claim silently returning after the user removed
+     * it is worse than either verdict. The review locks every button while an
+     * apply is in flight, so the second click lands against the post-first text.
+     *
+     * Mutation check: drop the `applying` gate in `FabricationReview` and the
+     * first assertion finds "Cut cloud spend" back in the document.
+     */
+    it('does not let a second Remove resurrect the first one’s line', async () => {
+      const LINE_A = '- Cut cloud spend by 250k in one quarter.';
+      const LINE_B = '- Ran the kubernetes migration.';
+      const START = ['EXPERIENCE', LINE_A, LINE_B, 'Skills: kubernetes'].join('\n');
+      const entries: Fabrication[] = [
+        { issueKey: 'a#0', code: 'factual.unsourced_metric', evidence: '250', line: LINE_A },
+        { issueKey: 'b#1', code: 'factual.unsourced_term', evidence: 'kubernetes', line: LINE_B },
+      ];
+
+      function Host() {
+        const [text, setText] = useState(START);
+        const applyRemoval = async (entry: Fabrication) => {
+          const next = removeEvidenceLines(text, entry);
+          await Promise.resolve();
+          if (next !== null) setText(next);
+        };
+        return (
+          <>
+            <QualityReportPanel
+              open
+              onClose={vi.fn()}
+              report={CLEAN_REPORT}
+              docKind="resume"
+              pipeline={pipeline({
+                documentText: text,
+                fabrications: entries,
+                onResolveFabrication: vi.fn(),
+                onRemoveEvidence: applyRemoval,
+              })}
+            />
+            <pre data-testid="doc">{text}</pre>
+          </>
+        );
+      }
+
+      render(<Host />);
+      // Both clicks in ONE tick — a double-click, or an impatient user.
+      const [removeA, removeB] = screen.getAllByRole('button', { name: /^remove$/i });
+      if (!removeA || !removeB) throw new Error('expected a Remove per entry');
+      fireEvent.click(removeA);
+      fireEvent.click(removeB);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('doc').textContent).toBe(
+          ['EXPERIENCE', LINE_B, 'Skills: kubernetes'].join('\n')
+        )
+      );
+
+      // The second verdict, taken once the first has settled, is computed
+      // against the document as it now stands: B goes, A stays gone.
+      const [, second] = screen.getAllByRole('button', { name: /^remove$/i });
+      if (!second) throw new Error('expected the second entry to still be decidable');
+      await userEvent.click(second);
+      await waitFor(() =>
+        expect(screen.getByTestId('doc').textContent).toBe(
+          ['EXPERIENCE', 'Skills: kubernetes'].join('\n')
+        )
+      );
     });
   });
 });
@@ -350,6 +427,86 @@ describe('QualityBadge — a needsReview run is never green', () => {
         'Summary\n\nExperience\nAcme\nHand-typed note'
       )
     );
+  });
+
+  // ── The apply is anchored on the entry's LINE ──────────────────────────────
+  //
+  // Validator evidence is routinely a bare token, and locating the line by
+  // searching for it deletes whatever else happens to contain those characters.
+  // These two pin the wiring `removeEvidenceLines`' own unit tests cannot: that
+  // the badge hands the review the ENTRY, and refuses when it has no anchor.
+  describe('a removal never guesses which line it meant', () => {
+    const RESUME = [
+      'ADA LOVELACE',
+      '+1 (555) 250-8817 · ada@example.test',
+      '',
+      'EXPERIENCE',
+      '- Cut cloud spend by 250k in one quarter.',
+    ].join('\n');
+
+    const BARE_TOKEN: Fabrication = {
+      issueKey: 'factual.unsourced_metric#0',
+      code: 'factual.unsourced_metric',
+      evidence: '250',
+      line: '- Cut cloud spend by 250k in one quarter.',
+    };
+
+    it('keeps a contact header whose phone number contains the evidence', async () => {
+      const onDocumentTextChange = vi.fn();
+      render(
+        <QualityBadge
+          report={wrapperFor(RESUME)}
+          docKind="resume"
+          currentText={RESUME}
+          pipeline={pipeline({
+            documentText: RESUME,
+            fabrications: [BARE_TOKEN],
+            onResolveFabrication: vi.fn(),
+          })}
+          onDocumentTextChange={onDocumentTextChange}
+        />
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: /1 issue/i }));
+      await userEvent.click(screen.getByRole('button', { name: /^remove$/i }));
+
+      await waitFor(() =>
+        expect(onDocumentTextChange).toHaveBeenCalledWith(
+          'ADA LOVELACE\n+1 (555) 250-8817 · ada@example.test\n\nEXPERIENCE'
+        )
+      );
+    });
+
+    // A report persisted before `line` existed. The verdict is still recorded —
+    // it is the user's — but nothing is written, and the row says the line is
+    // still there rather than claiming a deletion that never happened.
+    it('refuses to write for a legacy entry with no line, and says so', async () => {
+      const onDocumentTextChange = vi.fn();
+      const onResolveFabrication = vi.fn();
+      const legacy: Fabrication = { issueKey: 'x#0', code: 'c', evidence: 'Cut latency by 40%' };
+      const badge = (fabrications: Fabrication[]) => (
+        <QualityBadge
+          report={wrapperFor(DOCUMENT)}
+          docKind="resume"
+          currentText={DOCUMENT}
+          pipeline={pipeline({ fabrications, onResolveFabrication })}
+          onDocumentTextChange={onDocumentTextChange}
+        />
+      );
+      const { rerender } = render(badge([legacy]));
+
+      await userEvent.click(screen.getByRole('button', { name: /1 issue/i }));
+      await userEvent.click(screen.getByRole('button', { name: /^remove$/i }));
+
+      await waitFor(() => expect(onResolveFabrication).toHaveBeenCalledWith('x#0', 'remove'));
+      expect(onDocumentTextChange).not.toHaveBeenCalled();
+
+      // …and once the recorded verdict comes back with the line still there,
+      // the row says exactly that rather than "Removed".
+      rerender(badge([{ ...legacy, decision: 'remove' }]));
+      expect(screen.getByText(/still in the document/i)).toBeInTheDocument();
+      expect(screen.getByText(/edit it out of the document to finish/i)).toBeInTheDocument();
+    });
   });
 
   it('records the verdict but writes nothing when the host has no writer', async () => {

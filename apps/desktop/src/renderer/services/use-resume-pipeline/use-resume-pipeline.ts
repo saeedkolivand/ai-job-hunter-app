@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { AiStreamChunk, PipelineStageEvent } from '@ajh/shared';
-import type { PipelineRunDetail, PipelineRunSummary } from '@ajh/shared/ipc';
+import type { PipelineRunDetail, PipelineRunStatus, PipelineRunSummary } from '@ajh/shared/ipc';
 import type {
   ResumePipelineRegenerateSectionRequest,
   ResumePipelineResolveFabricationRequest,
@@ -21,8 +21,13 @@ import { keys, QUERY_TIMES } from '../query-client';
  * emits no `pipeline:stage` event for the stage it refused to start —
  * `RunHooks::before` returns `Err` before its own `start` emit — so there is no
  * event that says "this run ended". The record's `status` is the only signal
- * that always exists. Stage events still drive the progress UI and invalidate
- * this query, so the poll is a floor on latency, not the main mechanism.
+ * that always exists.
+ *
+ * Stage events drive the progress UI ONLY — `usePipelineStageEvents` invalidates
+ * nothing (it hands the event to its subscriber and stops there), so this poll
+ * is the whole mechanism for the record, not a latency floor under an
+ * event-driven one. Widen the interval and the run's terminal state is noticed
+ * exactly that much later.
  */
 const LIVE_RUN_POLL_MS = 4_000;
 
@@ -82,7 +87,16 @@ export const usePipelineRun = (runId: string | null | undefined, live = false) =
   });
 };
 
-/** The retained runs for one posting, newest first (≤3 — the backend's own retention). */
+/**
+ * The retained runs for one posting, newest first (≤3 — the backend's own
+ * retention).
+ *
+ * Fetched once and NOT polled: the list has no `refetchInterval`, and the app's
+ * global `refetchOnWindowFocus`/`refetchOnMount` are off. Every transition it
+ * renders therefore has to be invalidated by whoever caused it — start,
+ * regenerate, resolve, and (the one a run makes on its own)
+ * {@link useRefreshRunsForJobOnTerminal}.
+ */
 export const usePipelineRunsForJob = (jobUrl: string | null | undefined) => {
   const api = useAppClient();
   return useQuery<PipelineRunSummary[]>({
@@ -90,6 +104,33 @@ export const usePipelineRunsForJob = (jobUrl: string | null | undefined) => {
     queryFn: () => api.resumePipeline.listForJob(jobUrl ?? ''),
     enabled: !!jobUrl,
   });
+};
+
+/**
+ * Refresh a posting's run list when the run being watched reaches a TERMINAL
+ * status — the one transition no mutation can invalidate on, because nobody
+ * clicked anything to cause it.
+ *
+ * The other three invalidators all hang off a user action (start, regenerate,
+ * resolve). A run ending does not: it is discovered by the record poll, several
+ * seconds after the fact and with no mutation in sight. Without this the list
+ * renders a finished run as "Running" until something unrelated happens to
+ * refetch it — which, with no interval and no focus/mount refetch, may be never.
+ *
+ * Keyed on `status`, so the second transition a staged run can make
+ * (`needsReview` → `completed`, once the last verdict lands) refreshes the chip
+ * too. Refreshing the LIST cannot re-trigger this: the status it watches comes
+ * from the run DETAIL query.
+ */
+export const useRefreshRunsForJobOnTerminal = (
+  jobUrl: string | null | undefined,
+  status: PipelineRunStatus | null | undefined
+) => {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!jobUrl || !status || status === 'running') return;
+    void qc.invalidateQueries({ queryKey: keys.pipeline.runsForJob(jobUrl) });
+  }, [qc, jobUrl, status]);
 };
 
 /**

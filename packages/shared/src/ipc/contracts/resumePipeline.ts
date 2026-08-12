@@ -12,11 +12,31 @@ import type { ContentReportPayload } from './resume.js';
  *
  * `run` starts the background run and returns its ids immediately; stage
  * progress streams as `pipeline:stage` events (subscribe via {@link
- * ResumePipelineContract.onStage}) and the run's own terminal signal is the
- * `pipeline:stage` event whose `phase` is `finish`/`error` for the LAST stage —
- * NOT the `jobs:event`, and not `awaitAiStream` resolving.
+ * ResumePipelineContract.onStage}).
  *
- * **Why the draft stream is not the completion signal.** The draft stage
+ * **How a run ends — the only two signals that are load-bearing.**
+ *
+ * 1. **`get(runId).status` is the authority.** The run row is written before
+ *    the first stage and rewritten once at the end, so its terminal
+ *    `completed`/`needsReview`/`failed`/`cancelled` is the fact everything else
+ *    describes. Poll or re-`get` on a stage event; do not derive the outcome.
+ * 2. **The umbrella job's `job.failed` covers the runs that never get a row.**
+ *    A rejected depth, a résumé or posting that cannot be resolved, no
+ *    configured provider, or a refused admission all fail BEFORE the run row is
+ *    inserted — `get(runId)` then returns `null` forever, and the failure
+ *    reaches the renderer only as the `jobs:event` failure for `jobId`. A
+ *    surface that consumes stage events alone shows such a run as still
+ *    starting.
+ *
+ * **Stage events are progress, not completion.** There is no guaranteed final
+ * `finish`/`error` event: the cancel + deadline check runs in the stage hook's
+ * `before`, ahead of that stage's `start` emit, so a run stopped at a stage
+ * boundary emits NOTHING for the stage it stopped at — the last event the
+ * renderer saw is the PREVIOUS stage's `finish`, which is indistinguishable
+ * from "the next stage is still running". Use them to drive the progress
+ * display only.
+ *
+ * **Why the draft stream is not the completion signal either.** The draft stage
  * streams under the run's own umbrella `jobId` so the user watches the résumé
  * appear, which means the shared stream machinery marks that job completed the
  * moment the draft finishes — while validation and up to two repair rounds are
@@ -122,7 +142,11 @@ export interface PipelineRunSummary {
   depth: GenerationDepth;
   status: PipelineRunStatus;
   startedAt: number;
-  finishedAt?: number;
+  /** When the run reached a terminal state. **`null` while it is still
+   *  running** — the backend serializes the row's `Option` as an explicit null,
+   *  it is not an absent key, so narrow with `!= null` (as `stoppedReason`
+   *  does) rather than `!== undefined`. */
+  finishedAt?: number | null;
   /**
    * The backend `StoppedReason` wire token (`done`, `run_timeout`,
    * `max_repairs`, `budgeted`, `cancelled`, …).
@@ -139,7 +163,14 @@ export interface PipelineRunSummary {
   metrics: PipelineRunMetrics;
 }
 
-/** Counts and durations only — never generated text (ADR-027). */
+/**
+ * Counts and durations only — never generated text (ADR-027).
+ *
+ * **Every field is absent while the run is going** — the row starts with an
+ * empty metrics blob and is written once, at the terminal state — so an absent
+ * field means "not known yet", never zero. The two that are additionally
+ * `null`-able say so.
+ */
 export interface PipelineRunMetrics {
   /** Provider round-trips this run actually made. */
   calls?: number;
@@ -151,7 +182,15 @@ export interface PipelineRunMetrics {
   /** Whether the last repair round was REVERTED because it produced strictly
    *  more criticals than the draft it was trying to fix. */
   reverted?: boolean;
-  issueCount?: number;
+  /** Findings in the terminal report. **`null` when the run never produced
+   *  one** (it failed before the validate stage): serialized as an explicit
+   *  null, so `!= null` — a `0` here means a clean report, and reading the null
+   *  as one would present an unvalidated run as clean. */
+  issueCount?: number | null;
+  /** Criticals in the terminal report — `0` for a run that produced none AND
+   *  for one that never validated, which is why {@link
+   *  PipelineRunMetrics.issueCount}, not this, distinguishes the two. Never
+   *  null. */
   criticalCount?: number;
   ms?: number;
 }
@@ -218,8 +257,28 @@ export interface PipelineFabrication {
   /** `<code>#<index>` — echo this back as `issueKey`. */
   issueKey: string;
   code: string;
-  /** The offending span, verbatim from the generated document. */
+  /**
+   * The offending span, verbatim from the generated document.
+   *
+   * **Not an edit anchor.** A validator span is routinely a bare token
+   * (`"250"`, a single keyword), so deleting "every line containing the
+   * evidence" deletes whatever else quotes it — anchor a Remove on
+   * {@link PipelineFabrication.line} instead and use this only to SHOW the
+   * user what was flagged.
+   */
   evidence: string;
+  /**
+   * The full, trimmed text of the first document line carrying `evidence`, as
+   * located by the backend against the exact text it validated — the anchor a
+   * "Remove" applies to (match a whole trimmed line, not a substring).
+   *
+   * **Absent when no honest anchor exists**: the span was not found in the
+   * document (an entry re-issued over already-edited text), the line is blank,
+   * or it is implausibly long (>1 000 chars — a paste artifact, not a bullet).
+   * Treat an absent `line` as "cannot apply automatically", never as a licence
+   * to fall back to substring deletion.
+   */
+  line?: string;
   /** `undefined` until the user decides — which is what keeps the run
    *  `needsReview`. */
   decision?: 'remove' | 'keep';

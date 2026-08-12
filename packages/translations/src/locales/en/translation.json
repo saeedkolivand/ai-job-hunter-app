@@ -426,7 +426,8 @@
       "scrapeUrl": "URL scrape",
       "persistJob": "Interaction saved",
       "matchResume": "Resume match",
-      "autopilotRun": "Autopilot run"
+      "autopilotRun": "Autopilot run",
+      "resumePipelineRun": "Quality résumé run"
     },
     "activity": {
       "queued": "queued",

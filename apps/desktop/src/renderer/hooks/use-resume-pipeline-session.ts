@@ -18,6 +18,7 @@ import {
   usePipelineDraftStream,
   usePipelineRun,
   usePipelineStageEvents,
+  useRefreshRunsForJobOnTerminal,
   useStartResumePipelineRun,
 } from '@/services/use-resume-pipeline';
 
@@ -170,6 +171,14 @@ export function useResumePipelineSession(
     const next = statusToEvent(status);
     if (next) send(next);
   }, [status, send]);
+
+  // …and the same discovery is the only thing that can tell the posting's run
+  // LIST its run just ended. Nothing was clicked, so none of the three
+  // action-driven invalidators fires, and the list has no poll of its own: left
+  // alone it renders this run as "Running" indefinitely. The run record is also
+  // the authority on which posting to refresh — `jobUrl` off the row, never a
+  // caller-supplied one that could disagree with it.
+  useRefreshRunsForJobOnTerminal(detail?.jobUrl, status);
 
   /**
    * The record read itself failed and NOTHING has been fetched yet.

@@ -18,7 +18,9 @@ use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow, RunRow};
-use crate::validate::content::{validate_content, ContentInput, ContentReport, DocKind};
+use crate::validate::content::{
+    validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
+};
 
 // ── Wire-contract locks ─────────────────────────────────────────────────────
 
@@ -189,6 +191,178 @@ fn the_wrapper_is_v2_shaped_and_keeps_fabrications_inside_the_slot() {
         flagged[0].get("decision").is_none(),
         "undecided until the user says"
     );
+}
+
+/// One synthetic reviewable finding, so the anchor cases below can state the
+/// exact span they are about instead of hoping the validator emits it.
+fn fabrication_report(evidence: &str) -> ContentReport {
+    ContentReport {
+        ok: false,
+        issues: vec![ContentIssue {
+            severity: crate::validate::Severity::Critical,
+            code: crate::validate::content::FACTUAL_UNSOURCED_METRIC,
+            section: None,
+            message: "the draft states a number the source résumé does not".to_string(),
+            evidence: Some(evidence.to_string()),
+        }],
+        metrics: ContentMetrics::default(),
+    }
+}
+
+fn only_fabrication(wrapper: &str) -> serde_json::Value {
+    let parsed: serde_json::Value = serde_json::from_str(wrapper).expect("valid JSON");
+    let entries = parsed["resume"]["fabrications"]
+        .as_array()
+        .expect("one reviewable finding")
+        .clone();
+    assert_eq!(entries.len(), 1, "fixture declares exactly one finding");
+    entries.into_iter().next().expect("the entry")
+}
+
+/// **Every entry carries the whole LINE its evidence sits on** — the anchor a
+/// "Remove" is applied against.
+///
+/// `evidence` is NOT that anchor and never was: the validator's span is
+/// routinely a bare token (`"47%"`, one keyword), so a renderer deleting "every
+/// line containing the evidence" deletes whatever else quotes it — which is how
+/// a Remove came to erase the contact header. The line is located HERE, at
+/// report-build time, because this is the last layer holding the exact text the
+/// report was produced over.
+///
+/// This is also the SERIALIZED-SHAPE pin the renderer's contract rests on:
+/// dropping the field (mutation: delete the `entry.insert("line", …)` branch)
+/// fails the `line` lookup below, applied and reverted.
+#[test]
+fn every_fabrication_entry_anchors_on_the_document_line_it_was_found_on() {
+    let report = report_for(FABRICATING_DRAFT, CLEAN_SOURCE);
+    let wrapper = report::build("quality", 1, Some((&report, FABRICATING_DRAFT)), None);
+    let parsed: serde_json::Value = serde_json::from_str(&wrapper).expect("valid JSON");
+    let flagged = parsed["resume"]["fabrications"]
+        .as_array()
+        .expect("the fabricated metric is listed for review");
+    assert!(!flagged.is_empty());
+
+    for entry in flagged {
+        let evidence = entry["evidence"].as_str().expect("a span");
+        let line = entry["line"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{evidence:?} was quoted from the draft, so it HAS a line"));
+        assert!(
+            line.contains(evidence.trim()),
+            "the anchor must contain the span it was located from: {line:?} vs {evidence:?}"
+        );
+        // Trimmed, and a REAL line of the document — the renderer matches a
+        // whole trimmed line, so a fragment or an untrimmed copy anchors on
+        // nothing.
+        assert_eq!(line, line.trim());
+        assert!(
+            FABRICATING_DRAFT.lines().any(|l| l.trim() == line),
+            "{line:?} is not a line of the validated document"
+        );
+    }
+    assert!(
+        flagged.iter().any(|entry| entry["line"]
+            == json!("A payments engineer who cut costs by 47% across 12 teams.")),
+        "the fabricated metric's own bullet is the anchor: {flagged:?}"
+    );
+}
+
+/// A span occurring on several lines resolves to the FIRST one, every time.
+///
+/// Determinism is the whole point: the wrapper is re-issued on every re-check,
+/// and an anchor that moved between two equally-valid lines would land a
+/// recorded verdict on a bullet the user never looked at.
+#[test]
+fn a_span_on_several_lines_anchors_on_the_first_one_deterministically() {
+    let text = "PROFESSIONAL SUMMARY\nCut costs by 250 hours a month.\n\nWORK EXPERIENCE\n- Saved 250 hours again.\n";
+    let report = fabrication_report("250");
+    let wrapper = report::build("quality", 1, Some((&report, text)), None);
+    assert_eq!(
+        only_fabrication(&wrapper)["line"],
+        json!("Cut costs by 250 hours a month.")
+    );
+    // Re-issued from the same report + text: byte-identical, not merely equal
+    // in spirit.
+    assert_eq!(
+        report::build("quality", 1, Some((&report, text)), None),
+        wrapper
+    );
+
+    // …and recording a verdict keeps the anchor: a stamp that rebuilt the entry
+    // would strand a "Remove" with nothing to apply it to.
+    let key = only_fabrication(&wrapper)["issueKey"]
+        .as_str()
+        .expect("a key")
+        .to_string();
+    let decided = report::record_decision(&wrapper, &key, "remove").expect("a known key");
+    assert_eq!(
+        only_fabrication(&decided)["line"],
+        json!("Cut costs by 250 hours a month.")
+    );
+}
+
+/// **No honest anchor → NO key**, rather than a guessed one.
+///
+/// Two cases, and both are real: a span the document no longer contains (the
+/// entry was re-issued over text the user already edited), and a line so long it
+/// is not a bullet anyone reviews. The entry itself survives in both — it still
+/// has to be decidable, or the run is stranded at `needsReview` forever — and
+/// the renderer is told "cannot apply automatically" by the field's absence.
+///
+/// Mutation check: fall back to `text` (or to the evidence) instead of `None`
+/// and the `is_none` assertions fail.
+#[test]
+fn an_entry_with_no_locatable_line_omits_the_anchor_but_stays_decidable() {
+    // (1) The span is not in the document at all.
+    let wrapper = report::build(
+        "quality",
+        1,
+        Some((
+            &fabrication_report("47%"),
+            "PROFESSIONAL SUMMARY\nA payments engineer.\n",
+        )),
+        None,
+    );
+    let entry = only_fabrication(&wrapper);
+    assert!(
+        entry.get("line").is_none(),
+        "an unlocatable span must carry no anchor: {entry}"
+    );
+    let key = entry["issueKey"].as_str().expect("a key");
+    assert!(
+        report::record_decision(&wrapper, key, "remove").is_some(),
+        "the finding is still decidable — otherwise the run never leaves review"
+    );
+
+    // (2) The containing line is past the cap.
+    let long_line = format!(
+        "{} 47% {}",
+        "x".repeat(report::MAX_LINE_CHARS),
+        "y".repeat(50)
+    );
+    let text = format!("PROFESSIONAL SUMMARY\n{long_line}\n");
+    let over_cap = report::build(
+        "quality",
+        1,
+        Some((&fabrication_report("47%"), &text)),
+        None,
+    );
+    assert!(
+        only_fabrication(&over_cap).get("line").is_none(),
+        "a line past MAX_LINE_CHARS is a paste artifact, not a reviewable bullet"
+    );
+
+    // …and one character under the cap still anchors, so the guard is a cap and
+    // not an off-switch.
+    let at_cap = "z".repeat(report::MAX_LINE_CHARS - 4) + " 47%";
+    let text = format!("PROFESSIONAL SUMMARY\n{at_cap}\n");
+    let within = report::build(
+        "quality",
+        1,
+        Some((&fabrication_report("47%"), &text)),
+        None,
+    );
+    assert_eq!(only_fabrication(&within)["line"], json!(at_cap));
 }
 
 /// A clean report carries NO `fabrications` key at all, rather than an empty
@@ -1127,6 +1301,63 @@ fn the_terminal_notification_reports_the_state_the_run_ended_in() {
         include_str!("mod.rs").contains("notify::notify_terminal("),
         "execute must push the terminal notification"
     );
+}
+
+/// **A crafted posting title cannot displace what the card is FOR.**
+///
+/// The label is scraped, attacker-influenceable text and it comes first in every
+/// body; the store clamps the whole body to `MAX_BODY_CHARS` and this string can
+/// leave the app as an OS banner. Unbudgeted, a 600-character title eats the
+/// entire clamp and the user is shown pure attacker text with no clause saying
+/// what happened — so the label is capped and the fixed half always survives.
+///
+/// Asserted against the store's OWN constant, not a second copy of 500: the
+/// relation being pinned is "label + clause fits the clamp", and a test carrying
+/// its own number stops testing the clamp the moment the store's changes.
+///
+/// Mutation check: remove the `LABEL_CAP` clamp from `posting_label` and every
+/// `survives` assertion below fails.
+#[test]
+fn a_crafted_posting_title_cannot_displace_the_notification_clause() {
+    const CLAMP: usize = crate::notifications::MAX_BODY_CHARS;
+    let hostile = "T".repeat(600);
+    let cases = [
+        (
+            super::STATUS_NEEDS_REVIEW,
+            3usize,
+            "Keep or Remove decision",
+        ),
+        (super::STATUS_NEEDS_REVIEW, 0, "cannot clear"),
+        (super::STATUS_FAILED, 0, "before it produced a résumé"),
+        (super::STATUS_CANCELLED, 0, "has stopped"),
+    ];
+    for (status, unresolved, clause) in cases {
+        let body = run_notification(status, unresolved, &hostile, &hostile)
+            .expect("a terminal status is announced")
+            .body;
+        assert!(
+            body.chars().count() <= CLAMP,
+            "{status}: the body must fit the store's clamp before it is cut ({} chars)",
+            body.chars().count()
+        );
+        // The clamp the store will actually apply, applied here: the clause has
+        // to survive it, not merely exist somewhere past it.
+        let survives: String = body.chars().take(CLAMP).collect();
+        assert!(
+            survives.contains(clause),
+            "{status}: {clause:?} was displaced by the scraped title — {survives}"
+        );
+        assert!(
+            survives.starts_with("TTT"),
+            "{status}: the posting still names itself"
+        );
+    }
+
+    // An ordinary title is untouched — the cap is a backstop, not a formatter.
+    let ordinary = run_notification(super::STATUS_COMPLETED, 0, "Senior Engineer", "Acme")
+        .expect("terminal")
+        .body;
+    assert_eq!(ordinary, "Senior Engineer · Acme");
 }
 
 /// The number in the notification is the number the review panel will show — one

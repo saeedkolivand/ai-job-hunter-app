@@ -36,8 +36,11 @@ export interface QualityPipelineReview {
    * {@link FabricationReview}'s `onRemoveEvidence`. Supplied automatically by
    * `QualityBadge` when the host gives it an `onDocumentTextChange` writer;
    * omit on a surface whose document cannot be edited.
+   *
+   * Takes the whole ENTRY, not its `evidence`: the deletion is anchored on the
+   * entry's recorded `line`, and a bare span is not enough to find a line with.
    */
-  onRemoveEvidence?: (evidence: string) => void | Promise<void>;
+  onRemoveEvidence?: (entry: Fabrication) => void | Promise<void>;
   resolvingIssueKey?: string | null;
   resolveError?: string | null;
   repairRounds?: number;

@@ -426,7 +426,8 @@
       "scrapeUrl": "URL-Scraping",
       "persistJob": "Interaktion gespeichert",
       "matchResume": "Lebenslauf-Match",
-      "autopilotRun": "Autopilot-Lauf"
+      "autopilotRun": "Autopilot-Lauf",
+      "resumePipelineRun": "Qualitätslauf Lebenslauf"
     },
     "activity": {
       "queued": "in Warteschlange",

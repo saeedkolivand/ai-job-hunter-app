@@ -108,9 +108,20 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
    * means the user is not offered a button that is going to be rejected, and the
    * note below says why. A refusal that still happens (a newer run appeared
    * while this report was open) surfaces through `fixError`/`resolveError`.
+   *
+   * **This session's OWN run is writable without consulting the list**, and has
+   * to be: `resume_pipeline_run` returns its ids before the `pipeline_runs` row
+   * exists (the row is written inside the spawned task, after admission and
+   * after five resolutions), so `start`'s invalidation routinely refetches a
+   * list that still ends at the PREVIOUS run. Reading `runs[0]` alone then calls
+   * the run the user is looking at "older than the newest", withholds Fix and
+   * Resolve, and strands it at `needsReview` with no way to clear it. A session
+   * that started a run cannot have been superseded without a newer run starting
+   * — which would be this same session's, and it would know.
    */
   const newestRunId = runs[0]?.runId ?? null;
-  const writable = !!shownRunId && (!newestRunId || newestRunId === shownRunId);
+  const ownRun = !!session.runId && shownRunId === session.runId;
+  const writable = !!shownRunId && (ownRun || !newestRunId || newestRunId === shownRunId);
 
   const busy = session.busy;
   const terminal = session.state !== 'idle' && !busy;

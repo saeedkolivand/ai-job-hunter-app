@@ -15,7 +15,9 @@
 //!   per-bullet verdict. They live INSIDE the document's slot for the same
 //!   reason `sourceTextHash` does: the merge overlays whole top-level keys, so
 //!   anything belonging to one document that sits beside it gets orphaned by
-//!   the other document's next save.
+//!   the other document's next save. Each entry carries the containing `line`
+//!   (see [`containing_line`]) so a "Remove" can anchor on a whole line rather
+//!   than substring-matching a bare token.
 
 use serde_json::{json, Map, Value};
 
@@ -55,8 +57,54 @@ pub fn hash_text(text: &str) -> u32 {
     hash as u32
 }
 
-/// One flagged span awaiting (or carrying) the user's verdict.
-fn fabrications(report: &ContentReport) -> Vec<Value> {
+/// Cap on the `line` an entry carries.
+///
+/// A flagged claim lives in a bullet, and a bullet is prose — a "line" past
+/// this length is a document with no newlines in it at all (a paste artifact),
+/// not something a user reviews line by line. The field is then OMITTED rather
+/// than truncated: a Remove anchors on an EXACT line match, so a prefix would
+/// match nothing anyway, and carrying the whole blob would multiply it by every
+/// entry in the list inside a column that is already persisted per posting.
+pub(super) const MAX_LINE_CHARS: usize = 1_000;
+
+/// The full (trimmed) text of the FIRST line of `text` that contains `span`.
+///
+/// This is the anchor a "Remove" verdict is applied against, and it exists
+/// because `evidence` alone is not one: a validator span is routinely a bare
+/// token (`"250"`, one keyword), so a renderer deleting "every line containing
+/// the evidence" deletes whatever else happens to quote it — the contact header
+/// among them, which is how a Remove came to erase a phone number. Located HERE
+/// rather than in the renderer because this is the only layer that still holds
+/// the exact text the report was produced over (`slot`'s `text`); by the time
+/// the panel reads the entry the document may already have moved.
+///
+/// `None` — the field is then absent — in the two cases where no honest anchor
+/// exists:
+///
+/// * the span is not in the document (an entry re-issued over text that was
+///   already edited, or a validator span assembled rather than quoted). A
+///   fabricated anchor would be applied to the wrong line;
+/// * the containing line is blank or longer than [`MAX_LINE_CHARS`].
+///
+/// FIRST occurrence when the span appears on several lines: this must be
+/// deterministic — the same report has to produce the same entry on every
+/// re-issue, or a verdict recorded against one anchor lands on another.
+fn containing_line(text: &str, span: &str) -> Option<String> {
+    let span = span.trim();
+    if span.is_empty() {
+        return None;
+    }
+    let at = text.find(span)?;
+    let start = text[..at].rfind('\n').map_or(0, |index| index + 1);
+    // A span that itself straddles a newline anchors on the line it STARTS on.
+    let end = text[at..].find('\n').map_or(text.len(), |index| at + index);
+    let line = text[start..end].trim();
+    (!line.is_empty() && line.chars().count() <= MAX_LINE_CHARS).then(|| line.to_string())
+}
+
+/// One flagged span awaiting (or carrying) the user's verdict, with the
+/// document line it sits on ([`containing_line`]).
+fn fabrications(report: &ContentReport, text: &str) -> Vec<Value> {
     report
         .issues
         .iter()
@@ -66,11 +114,18 @@ fn fabrications(report: &ContentReport) -> Vec<Value> {
             // No span, nothing to review. A finding the panel cannot show the
             // evidence for is one the user cannot make a decision about.
             let evidence = issue.evidence.clone()?;
-            Some(json!({
-                "issueKey": format!("{}#{index}", issue.code),
-                "code": issue.code,
-                "evidence": evidence,
-            }))
+            let line = containing_line(text, &evidence);
+            let mut entry = Map::new();
+            entry.insert(
+                "issueKey".to_string(),
+                json!(format!("{}#{index}", issue.code)),
+            );
+            entry.insert("code".to_string(), json!(issue.code));
+            entry.insert("evidence".to_string(), json!(evidence));
+            if let Some(line) = line {
+                entry.insert("line".to_string(), json!(line));
+            }
+            Some(Value::Object(entry))
         })
         .collect()
 }
@@ -83,7 +138,7 @@ fn slot(report: &ContentReport, text: &str) -> Value {
         serde_json::to_value(report).unwrap_or_else(|_| json!({})),
     );
     slot.insert("sourceTextHash".to_string(), json!(hash_text(text)));
-    let flagged = fabrications(report);
+    let flagged = fabrications(report, text);
     // A document with nothing flagged carries NO key, rather than an empty
     // array: the renderer's "does this run still need review?" test is the
     // presence of an undecided entry, and an empty array is a shape it would

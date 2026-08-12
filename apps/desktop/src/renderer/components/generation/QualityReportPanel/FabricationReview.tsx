@@ -1,4 +1,5 @@
 import { Check, FileQuestion, ShieldAlert, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
@@ -14,16 +15,20 @@ export interface FabricationReviewProps {
   /** Record one verdict. Omit to render the list read-only (an older run). */
   onResolve?: (issueKey: string, decision: 'remove' | 'keep') => void;
   /**
-   * APPLY a Remove verdict to the document: delete the flagged line(s) and put
+   * APPLY a Remove verdict to the document: delete the entry's own line and put
    * the result through the host's ordinary edit/save path. Called BEFORE
    * `onResolve`, so the recorded decision and the text agree by the time the
    * review re-renders.
+   *
+   * Receives the whole ENTRY because the deletion is anchored on its recorded
+   * `line` — `evidence` alone is a span, and searching for it is what deleted
+   * the contact header.
    *
    * Omit on a surface that cannot edit the document (a read-only history view).
    * Remove is still offered there — the verdict is worth recording — but the
    * entry then renders as `markedForRemoval`, never as finished.
    */
-  onRemoveEvidence?: (evidence: string) => void | Promise<void>;
+  onRemoveEvidence?: (entry: Fabrication) => void | Promise<void>;
   /** The entry whose verdict is in flight — its two buttons show as busy and
    *  every other row is locked (one write per run at a time). */
   resolvingIssueKey?: string | null;
@@ -57,31 +62,47 @@ export function FabricationReview({
   resolveError,
 }: FabricationReviewProps) {
   const { t } = useTranslation();
+  /**
+   * The entry whose apply is in flight — a local gate, because the host's
+   * `resolvingIssueKey` only turns on AFTER the apply has already run.
+   *
+   * Two Removes clicked before the first write settles both compute their edit
+   * from the SAME `documentText` prop, so the second write overwrites the first
+   * and one flagged line silently comes back. Every button is locked for the
+   * duration; the second click then computes against the post-first text.
+   */
+  const [applying, setApplying] = useState<string | null>(null);
   if (entries.length === 0) return null;
 
   const pending = unresolvedCount(entries, documentText);
-  const busy = !!resolvingIssueKey;
+  const busy = !!resolvingIssueKey || !!applying;
 
   /**
    * Apply first, record second — and record even when the apply fails.
    *
-   * The user's verdict is never thrown away: a failed (or impossible) edit
-   * leaves the span in the document, which is precisely what makes
+   * The user's verdict is never thrown away: a failed (or refused) edit leaves
+   * the span in the document, which is precisely what makes
    * `presentFabrication` return `markedForRemoval` and keeps the integrity chip
    * off green. There is no state to invent here; the document is the evidence.
    */
   const handleRemove = async (entry: Fabrication) => {
-    if (onRemoveEvidence) {
-      try {
-        await onRemoveEvidence(entry.evidence);
-      } catch (err) {
-        console.error('[FabricationReview] applying a Remove to the document failed', {
-          issueKey: entry.issueKey,
-          error: errorDetail(err),
-        });
+    if (applying) return;
+    setApplying(entry.issueKey);
+    try {
+      if (onRemoveEvidence) {
+        try {
+          await onRemoveEvidence(entry);
+        } catch (err) {
+          console.error('[FabricationReview] applying a Remove to the document failed', {
+            issueKey: entry.issueKey,
+            error: errorDetail(err),
+          });
+        }
       }
+      onResolve?.(entry.issueKey, 'remove');
+    } finally {
+      setApplying(null);
     }
-    onResolve?.(entry.issueKey, 'remove');
   };
 
   return (
@@ -109,7 +130,7 @@ export function FabricationReview({
       <ul className="space-y-2">
         {entries.map((entry) => {
           const presentation = presentFabrication(entry, documentText);
-          const resolving = resolvingIssueKey === entry.issueKey;
+          const resolving = resolvingIssueKey === entry.issueKey || applying === entry.issueKey;
           return (
             <li
               key={entry.issueKey}

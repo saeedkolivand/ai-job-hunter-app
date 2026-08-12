@@ -15,7 +15,12 @@ import type { PipelineRunDetail } from '@ajh/shared/ipc';
 import type { AppClient } from '@/lib/app-client';
 import { createMockClient, renderHookWithClient } from '@/test-support';
 
-import { usePipelineRun, useResolveFabrication } from './use-resume-pipeline';
+import {
+  usePipelineRun,
+  usePipelineRunsForJob,
+  useRefreshRunsForJobOnTerminal,
+  useResolveFabrication,
+} from './use-resume-pipeline';
 
 const RUN_ID = 'run-1';
 /** Must match `LIVE_RUN_POLL_MS`. */
@@ -150,6 +155,86 @@ describe('usePipelineRun — the live record poll', () => {
     await tick();
     await tick(POLL_MS * 2);
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The invalidation nobody clicks for.
+ *
+ * `runsForJob` has no `refetchInterval`, and the app's global
+ * `refetchOnWindowFocus`/`refetchOnMount` are off — so every transition it
+ * renders has to be invalidated by whoever caused it. Three invalidators exist
+ * and all three hang off a user action (start, regenerate, resolve). A run
+ * ENDING is not one: it is discovered by the record poll, seconds later, with
+ * no mutation in sight. Without this hook the list shows a finished run as
+ * "Running" until something unrelated happens to refetch it.
+ */
+describe('useRefreshRunsForJobOnTerminal', () => {
+  const JOB_URL = 'https://example.test/job';
+
+  /** The list query and the invalidator together, so the assertion is on a real
+   *  refetch rather than on a spy over the query client. */
+  function renderBoth(status: PipelineRunDetail['status'] | null) {
+    const listForJob = vi.fn().mockResolvedValue([]);
+    const view = renderHookWithClient(
+      ({ st }: { st: PipelineRunDetail['status'] | null }) => {
+        usePipelineRunsForJob(JOB_URL);
+        useRefreshRunsForJobOnTerminal(JOB_URL, st);
+      },
+      {
+        client: createMockClient({ 'resumePipeline.listForJob': listForJob }),
+        initialProps: { st: status },
+      }
+    );
+    return { ...view, listForJob };
+  }
+
+  it.each<PipelineRunDetail['status']>(['completed', 'needsReview', 'failed', 'cancelled'])(
+    'refetches the posting run list when the run reaches %s',
+    async (terminal) => {
+      const { rerender, listForJob } = renderBoth('running');
+      await tick();
+      expect(listForJob).toHaveBeenCalledTimes(1);
+
+      rerender({ st: terminal });
+      await tick();
+      expect(listForJob).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  // The list would otherwise be refetched on every poll tick of a long run —
+  // up to 75 minutes of them.
+  it('does NOT refetch while the run is still running', async () => {
+    const { rerender, listForJob } = renderBoth('running');
+    await tick();
+    expect(listForJob).toHaveBeenCalledTimes(1);
+
+    rerender({ st: 'running' });
+    await tick(POLL_MS * 3);
+    expect(listForJob).toHaveBeenCalledTimes(1);
+  });
+
+  // `needsReview` → `completed`, when the last verdict lands: a second terminal
+  // transition, and the list's chip is wrong until it is refetched too.
+  it('refreshes again on a terminal-to-terminal transition', async () => {
+    // Mounting AT a terminal status costs no extra fetch: the invalidation
+    // lands while the list's first request is still in flight.
+    const { rerender, listForJob } = renderBoth('needsReview');
+    await tick();
+    expect(listForJob).toHaveBeenCalledTimes(1);
+
+    rerender({ st: 'completed' });
+    await tick();
+    expect(listForJob).toHaveBeenCalledTimes(2);
+  });
+
+  it('does nothing without a posting url or a status', async () => {
+    const listForJob = vi.fn().mockResolvedValue([]);
+    renderHookWithClient(() => useRefreshRunsForJobOnTerminal(null, 'completed'), {
+      client: createMockClient({ 'resumePipeline.listForJob': listForJob }),
+    });
+    await tick();
+    expect(listForJob).not.toHaveBeenCalled();
   });
 });
 

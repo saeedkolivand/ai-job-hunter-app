@@ -8,7 +8,7 @@ Last updated: 2026-08-12
 
 Resume generation prior to Phase 3 was one-shot: a single LLM call produced the resume without fact-grounding or validation. The system's core rule — the LLM decides HOW to present verified candidate evidence, never WHAT the candidate has done — was aspirational and only enforced via prompt text. No structural barriers existed to prevent a model from inventing facts, dropping roles, altering dates, or fabricating technologies.
 
-The 2026 research consensus on AI-writing and collective false-consensus effects confirms that an LLM operating without re-grounding to source documents will progressively drift toward hallucination. Every stage that accepts a prior stage's output as fact (rather than suspect intermediate text) compounds the risk.
+LLM-driven multi-stage decomposition without re-grounding to source documents risks progressive hallucination. Every stage that accepts a prior stage's output as fact (rather than suspect intermediate text) compounds the risk (documented in the plan's research-deltas § "Decomposition").
 
 ## Decision
 
@@ -41,14 +41,14 @@ The quality-depth pipeline (Phases 2–4) enforces the core rule structurally an
 - **Repair loop boundary:** the loop takes the provider call and validation as closures; production passes real callables; tests drive it against mock models. No private loop logic; coverage is end-to-end.
 - **Artifact clamping:** strategy and evidence artifacts are JSON; both are clamped before persistence; truncated artifacts fail hard (never splice). Sizes are tripwired so growth is argued.
 - **Retention and cleanup:** runs persist newest 3 per `(job_url, kind)` pair; validation/repair artifacts never cache (verdicts age); the run row is immutable history; the aggregate document is live state (join on source-text-hash for staleness detection).
-- **Budget enforcement:** outer deadline checked between stage calls (not just at boundaries) and enforced in the repair loop. Per-call bounds hold the sequence even if one call times out; retry-after-timeout is impossible by structure.
+- **Budget enforcement:** outer deadline checked between stage calls (not just at boundaries) and enforced in the repair loop. Per-call bounds hold the sequence even if one call times out. Retry-after-timeout is eliminated for completion and stream entry points (sequence budget = per-call bound); embed sites deliberately preserve it via `send_embed_with_retry` (per-attempt bound + sequence-budget multiplier for cold-start recovery).
 - **Context isolation:** each stage receives only what it needs (prior artifact fenced, job ad fenced, user input fenced). The stage cannot access globals, priors beyond the one it consumes, or anything except its schema inputs.
 
 ## Related
 
 - `apps/desktop/src-tauri/src/pipeline/resume/` — stage orchestration + prompts + validation
 - `apps/desktop/src-tauri/src/validate/content/` — deterministic content validators (factual, alignment, consistency, voice, ATS, letter)
-- `apps/desktop/src-tauri/src/documents/evidence.rs` — evidence extraction and ranking
+- `apps/desktop/src-tauri/src/documents/evidence/mod.rs` — evidence extraction and ranking
 - `packages/prompts/scripts/gen-prompts-rust.ts` — prompt codegen (TS → Rust frozen blocks)
 - ADR-010 (untrusted-input fencing) — fence tag patterns, hostile-input boundaries
 - ADR-017 (persisted caches) — KvCache strategy for stages

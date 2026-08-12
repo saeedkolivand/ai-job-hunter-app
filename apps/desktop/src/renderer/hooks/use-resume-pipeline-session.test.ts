@@ -17,6 +17,7 @@ const startMock = vi.hoisted(() => ({
   isPending: false,
 }));
 const cancelJobMock = vi.hoisted(() => ({ mutate: vi.fn() }));
+const refreshRunsMock = vi.hoisted(() => vi.fn());
 const bus = vi.hoisted(() => ({
   stage: null as ((e: PipelineStageEvent) => void) | null,
   delta: null as ((d: string) => void) | null,
@@ -38,6 +39,7 @@ vi.mock('@/services/use-resume-pipeline', () => ({
   usePipelineDraftStream: (_jobId: string | null, handler?: (d: string) => void) => {
     bus.delta = handler ?? null;
   },
+  useRefreshRunsForJobOnTerminal: refreshRunsMock,
 }));
 
 vi.mock('@/services/use-jobs', () => ({
@@ -172,6 +174,26 @@ describe('useResumePipelineSession', () => {
       // `needsReview` is NOT success — the document exists but carries findings.
       expect(result.current.state).not.toBe('done');
       expect(result.current.detail?.resumeText).toBe('final document');
+    });
+
+    /**
+     * The same discovery is the only thing that can tell the posting's run LIST
+     * its run just ended — nothing was clicked, so none of the three
+     * action-driven invalidators fires, and `runsForJob` has no poll of its
+     * own. Left alone the list renders this run as "Running" indefinitely.
+     *
+     * The posting comes off the RECORD (`detail.jobUrl`), not from the caller:
+     * this hook is not given a posting url at all, and the row is the authority
+     * on which one the run belongs to.
+     */
+    it('tells the posting run list to refresh, keyed on the record’s own jobUrl', async () => {
+      const { result, rerender } = renderHook(() => useResumePipelineSession(RUN_ID, JOB_ID));
+      expect(refreshRunsMock).toHaveBeenLastCalledWith(undefined, undefined);
+
+      bus.detail = detail('needsReview');
+      rerender();
+      await waitFor(() => expect(result.current.state).toBe('needsReview'));
+      expect(refreshRunsMock).toHaveBeenLastCalledWith('https://example.test/job', 'needsReview');
     });
 
     it('notices a boundary stop that emitted no terminal stage event at all', async () => {

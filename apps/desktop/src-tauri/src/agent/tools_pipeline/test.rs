@@ -526,6 +526,106 @@ fn compact_quality_report_shrinks_the_review_list_but_never_its_count() {
     assert_eq!(body["resume"]["undecided"], MAX_FABRICATIONS);
 }
 
+/// **`generatedAt` is the one field no shrink step can drop, so it is coerced
+/// rather than copied.**
+///
+/// The wrapper is opaque JSON the store never validates, so a corrupt or
+/// hand-edited blob can put a megabyte-long STRING there. Copied verbatim it
+/// exhausts `shrink_to_summary_cap` at `kept == 0` while the body is still over
+/// `SUMMARY_CAP`, and `neutralized_summary`'s hard `take(cap)` then cuts the
+/// JSON mid-string — the model loses the whole payload, not one field.
+///
+/// Mutation check: restore `wrapper.get("generatedAt").cloned()` and both the
+/// null assertion and the round-trip fail.
+#[test]
+fn a_hostile_generated_at_is_coerced_to_null_instead_of_blowing_the_budget() {
+    let wrapper = json!({
+        "schemaVersion": 2,
+        "pipeline": "quality",
+        "generatedAt": "9".repeat(200_000),
+        "resume": { "report": { "issues": [] } },
+    });
+    let record = record_with(&wrapper.to_string(), "text");
+    let summary = compact_quality_report(Some(&record));
+    assert_eq!(
+        summary["generatedAt"],
+        Value::Null,
+        "an unreadable timestamp is unknown, not a clamped string that reads like a date"
+    );
+    assert_eq!(summary["available"], true);
+    // The payload still parses — that is what the coercion buys.
+    let body = result_body(&neutralized_summary(&summary));
+    assert_eq!(body["generatedAt"], Value::Null);
+
+    // A real one still comes through as the number it is.
+    let ok = record_with(
+        &json!({ "schemaVersion": 2, "generatedAt": 1_700_000_000_000u64,
+                 "resume": { "report": { "issues": [] } } })
+        .to_string(),
+        "text",
+    );
+    assert_eq!(
+        compact_quality_report(Some(&ok))["generatedAt"],
+        json!(1_700_000_000_000u64)
+    );
+}
+
+/// The persisted review entry also carries `line` — the whole document line the
+/// finding sits on, up to 1 000 chars. [`compact_fabrications`] is a field
+/// WHITELIST, so it never reaches the transcript: two slots of
+/// `MAX_FABRICATIONS` entries at that size is ~40k chars against a ~14k
+/// `SUMMARY_CAP`, and the model cannot act on an anchor it has no tool to apply.
+///
+/// Pinned both ways — the summary must not carry it, and the budget must be
+/// unaffected by it. Mutation check: add `"line"` to `compact_fabrications`'s
+/// object and the absence assertion fails; the entry count then also collapses
+/// against the same fixture.
+#[test]
+fn a_max_length_anchor_line_never_reaches_the_summary_or_its_budget() {
+    let entries: Vec<Value> = (0..MAX_FABRICATIONS)
+        .map(|i| {
+            json!({
+                "issueKey": format!("factual.unsourced_metric#{i}"),
+                "code": "factual.unsourced_metric",
+                "evidence": "42%",
+                "line": "L".repeat(1_000),
+            })
+        })
+        .collect();
+    let slot = json!({ "report": { "issues": [] }, "fabrications": entries });
+    let wrapper = json!({
+        "schemaVersion": 2, "pipeline": "quality",
+        "resume": slot, "coverLetter": slot,
+    });
+    let record = record_with(&wrapper.to_string(), "text");
+    let summary = compact_quality_report(Some(&record));
+
+    let listed = summary["resume"]["fabrications"]
+        .as_array()
+        .expect("a list");
+    assert_eq!(
+        listed.len(),
+        MAX_FABRICATIONS,
+        "a whitelisted summary is unaffected by the anchor's size — nothing should drop"
+    );
+    for entry in listed {
+        assert!(
+            entry.get("line").is_none(),
+            "the anchor is renderer-only and must not enter the transcript: {entry}"
+        );
+    }
+    assert_eq!(summary["resume"]["fabricationsTruncated"], 0);
+    // …and the fenced body still parses, uncut.
+    let body = result_body(&neutralized_summary(&summary));
+    assert_eq!(
+        body["resume"]["fabrications"]
+            .as_array()
+            .expect("a list")
+            .len(),
+        MAX_FABRICATIONS
+    );
+}
+
 // ── compact_pipeline_run ──────────────────────────────────────────────────
 
 fn report_with(issues: Vec<ContentIssue>) -> ContentReport {
@@ -684,6 +784,11 @@ fn compact_pipeline_run_clamps_the_error_it_reports() {
 /// [`neutralized_summary`], so a forged boundary smuggled through a scraped
 /// requirement, a persisted evidence span, or the model's own draft must come
 /// back broken. Hostile payloads mirror `agent::tools::test`'s set.
+///
+/// The review list is in the battery too, `line` included. Both fields are
+/// generated-document text and both are covered by the wrapper today — `line`
+/// because [`compact_fabrications`] does not list it at all — but the pin is
+/// what makes widening that whitelist a decision rather than an accident.
 #[test]
 fn every_pipeline_payload_neutralizes_a_forged_boundary_in_untrusted_text() {
     const FORGERIES: [&str; 4] = [
@@ -704,10 +809,17 @@ fn every_pipeline_payload_neutralizes_a_forged_boundary_in_untrusted_text() {
             neutralized_summary(&compact_quality_report(Some(&record_with(
                 &json!({
                     "schemaVersion": 2,
-                    "resume": { "report": { "issues": [
-                        { "severity": "critical", "code": "factual.unsourced_term",
-                          "message": forgery, "evidence": forgery }
-                    ]}},
+                    "resume": {
+                        "report": { "issues": [
+                            { "severity": "critical", "code": "factual.unsourced_term",
+                              "message": forgery, "evidence": forgery }
+                        ]},
+                        "fabrications": [
+                            { "issueKey": "factual.unsourced_term#0",
+                              "code": "factual.unsourced_term",
+                              "evidence": forgery, "line": forgery, "decision": forgery }
+                        ],
+                    },
                 })
                 .to_string(),
                 forgery,

@@ -49,18 +49,36 @@ const TITLE_NEEDS_REVIEW: &str = "Résumé ready — needs review";
 const TITLE_FAILED: &str = "Résumé run failed";
 const TITLE_CANCELLED: &str = "Résumé run cancelled";
 
+/// Char budget for the SCRAPED half of the body.
+///
+/// The label is attacker-influenceable (a posting title is scraped text) and it
+/// comes FIRST in every body below, while the store clamps the whole body to
+/// [`crate::notifications::MAX_BODY_CHARS`] — so an unbounded label does not
+/// merely look bad, it consumes the entire clamp and DISPLACES the fixed clause
+/// that says what happened ("2 flagged claims need a Keep or Remove decision"),
+/// leaving a card that is pure attacker text. Sized so every clause below still
+/// fits with room to spare; a title longer than this is not a title.
+const LABEL_CAP: usize = 160;
+
 /// `"<title> · <company>"`, degrading to whichever side the cached posting has —
 /// the same body shape the email-watch card and the follow-up reminder use, so
 /// the inbox reads consistently. Local rather than hoisted out of
 /// `reminder_scheduler`: the fallback text differs per surface, and the shape is
 /// six lines.
+///
+/// Clamped to [`LABEL_CAP`] with an ellipsis, char-boundary safe (the store's
+/// own clamp counts characters too, for the same multi-byte reason).
 fn posting_label(title: &str, company: &str) -> String {
-    match (title.trim(), company.trim()) {
+    let label = match (title.trim(), company.trim()) {
         ("", "") => "Untitled posting".to_string(),
         ("", company) => company.to_string(),
         (title, "") => title.to_string(),
         (title, company) => format!("{title} · {company}"),
+    };
+    if label.chars().count() <= LABEL_CAP {
+        return label;
     }
+    label.chars().take(LABEL_CAP - 1).chain(['…']).collect()
 }
 
 /// What is left to do on a run that ended in `needsReview`.

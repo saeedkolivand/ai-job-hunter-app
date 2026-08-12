@@ -4,7 +4,13 @@ import { useState } from 'react';
 import { useTranslation } from '@ajh/translations';
 import { Button } from '@ajh/ui';
 
-import { hashText, type QualityReport, removeEvidenceLines, unresolvedCount } from '@/lib/generate';
+import {
+  type Fabrication,
+  hashText,
+  type QualityReport,
+  removeEvidenceLines,
+  unresolvedCount,
+} from '@/lib/generate';
 
 import { type QualityPipelineReview, QualityReportPanel } from './QualityReportPanel';
 
@@ -111,10 +117,13 @@ export function QualityBadge({
     pipeline && !pipeline.onRemoveEvidence && onDocumentTextChange
       ? {
           ...pipeline,
-          onRemoveEvidence: (evidence: string) => {
-            const next = removeEvidenceLines(currentText, evidence);
-            // `null` = nothing to remove (the line is already gone); the
-            // recorded verdict alone settles the entry.
+          onRemoveEvidence: (entry: Fabrication) => {
+            const next = removeEvidenceLines(currentText, entry);
+            // `null` = REFUSED, and the two reasons are indistinguishable from
+            // here on purpose: the line is already gone (the verdict alone
+            // settles the entry), or the entry has no anchor to delete by (the
+            // verdict is recorded and the row says the line is still there).
+            // Writing anything in that case is how the wrong line gets deleted.
             if (next !== null) onDocumentTextChange(next);
           },
         }

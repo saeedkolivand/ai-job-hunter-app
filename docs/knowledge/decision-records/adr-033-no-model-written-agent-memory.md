@@ -22,7 +22,7 @@ Agent memory written by an LLM is not implemented. The agent system persists onl
 
 1. **Quality reports** (per-run, immutable) — deterministic content validators run after every generation (fast, quality, max depths alike). The report lives in the `quality_report` column on `ai_generations` and includes issue codes, severities, evidence spans, and per-bullet verdicts (keep/remove/undecided).
 2. **Run history** (per job) — newest 3 runs retained per `(job_url, kind)` pair; each carries status, metrics, stage timeline, artifacts (analysis, strategy, draft stage output). Immutable; new runs do not rewrite old ones.
-3. **Run identities + tools** — the `improve_resume` flow (Phase 7+) is a stateless agent that reads `get_quality_report(runId)`, `search_candidate_evidence(resumeId)`, `validate_resume(resumeText)`, `get_trim_suggestions(resumeId, jobText)` in a single pass and proposes fixes. No memory written after the flow concludes.
+3. **Run identities + tools** — the `improve_resume` flow (Phase 7+) is a stateless agent that works from six tools — five Read-only (`validate_resume`, `search_candidate_evidence`, `get_trim_suggestions`, `get_quality_report`, `run_quality_pipeline`) plus the gated write `save_resume` in a single pass and proposes fixes. **Tools take zero arguments** — the backend supplies context from the active session (all arguments are server-side resolved, making prompt injection across tool calls structurally impossible). No memory written after the flow concludes.
 
 ## Consequences
 

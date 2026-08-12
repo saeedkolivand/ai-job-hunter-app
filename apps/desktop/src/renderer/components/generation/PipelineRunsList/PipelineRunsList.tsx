@@ -6,7 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn } from '@ajh/ui';
 
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
-import { stoppedSuffix, UNKNOWN_STOPPED_SUFFIX } from '@/lib/stopped-reason';
+import { stoppedSuffix } from '@/lib/stopped-reason';
 
 /**
  * Status → the chip's colour family. `needsReview` gets its own (amber): it is
@@ -137,8 +137,11 @@ export function PipelineRunsList({
               </div>
 
               <p className="mt-1 text-[10px] text-foreground/40">
-                {/* An absent reason contributes NOTHING — never "Finished". */}
-                {suffix && `${t(`pipeline.stopped.${suffix ?? UNKNOWN_STOPPED_SUFFIX}`)} · `}
+                {/* An absent reason contributes NOTHING — never "Finished".
+                    `stoppedSuffix` already folds an unrecognized reason onto
+                    `UNKNOWN_STOPPED_SUFFIX`, so inside this guard `suffix` is a
+                    non-empty string and a second fallback here is unreachable. */}
+                {suffix && `${t(`pipeline.stopped.${suffix}`)} · `}
                 {t('pipeline.runs.metrics', {
                   calls: run.metrics.calls ?? 0,
                   repairs: run.metrics.repairRounds ?? 0,

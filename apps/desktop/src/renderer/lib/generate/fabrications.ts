@@ -18,6 +18,22 @@ export interface Fabrication {
   code: string;
   /** The offending span, verbatim from the generated document. */
   evidence: string;
+  /**
+   * The FULL line the evidence sat on when the report was built — the only
+   * thing a removal may be anchored to.
+   *
+   * `evidence` is routinely a bare token (`"250"`, `"kubernetes"`, a single
+   * letter), so locating a line by searching for it deletes whatever else
+   * happens to contain those characters: `"250"` matches the phone number in
+   * the contact header, `"kubernetes"` matches the whole skills line. The
+   * validator picks the span; only the report knows which line it came from.
+   *
+   * OPTIONAL, and permanently so: reports persisted before this field existed
+   * carry entries without it, and a re-checked report can preserve one. An
+   * entry with no `line` is still decidable — it just cannot be applied
+   * automatically (see {@link removeEvidenceLines}).
+   */
+  line?: string;
   /** `undefined` until the user decides — which is what keeps the run `needsReview`. */
   decision?: 'remove' | 'keep';
 }
@@ -58,14 +74,26 @@ function parseDecision(value: unknown): Fabrication['decision'] {
  * `resolveFabrication` — an entry without one has no way to be resolved and
  * would sit in the list forever) plus string `code`/`evidence`. An unrecognized
  * `decision` reads as undecided rather than as a verdict the user never gave.
+ *
+ * `line` is the one field whose ABSENCE is a supported state — every report
+ * persisted before it existed has none — so a missing or non-string one is read
+ * as absent instead of dropping the entry. Dropping it would strand the run at
+ * `needsReview` with nothing left to decide; reading it as absent only costs the
+ * automatic apply, which then refuses honestly.
  */
 function parseFabrication(value: unknown): Fabrication | null {
   if (!isRecord(value)) return null;
-  const { issueKey, code, evidence } = value;
+  const { issueKey, code, evidence, line } = value;
   if (typeof issueKey !== 'string' || issueKey.trim() === '') return null;
   if (typeof code !== 'string' || typeof evidence !== 'string') return null;
   const decision = parseDecision(value.decision);
-  return { issueKey, code, evidence, ...(decision ? { decision } : {}) };
+  return {
+    issueKey,
+    code,
+    evidence,
+    ...(typeof line === 'string' ? { line } : {}),
+    ...(decision ? { decision } : {}),
+  };
 }
 
 /**
@@ -142,34 +170,36 @@ export function unresolvedCount(entries: Fabrication[], documentText: string): n
 }
 
 /**
- * Delete the line(s) carrying `evidence` from `documentText` — the edit a
- * "Remove" verdict promises.
+ * Delete the entry's own line from `documentText` — the edit a "Remove" verdict
+ * promises, and the only deletion this module will perform.
  *
  * Line-granular rather than span-granular because the flagged unit IS a bullet:
  * excising the span alone would leave a mutilated half-sentence behind, which
- * is a worse document than either keeping or dropping the claim. EVERY
- * occurrence goes; leaving a second copy behind would strand the entry at
- * `markedForRemoval` with its buttons already spent.
+ * is a worse document than either keeping or dropping the claim. EVERY line
+ * equal to the anchor goes; leaving a second copy behind would strand the entry
+ * at `markedForRemoval` with its buttons already spent.
  *
- * Returns `null` when there is nothing to remove (blank evidence, or a span the
- * document no longer contains) so the caller can tell "already gone" from
- * "removed just now" without diffing strings.
+ * **Anchored on `entry.line`, by exact (whitespace-trimmed) line equality —
+ * never by searching for `evidence`.** Locating the line by substring is how
+ * this function deleted the wrong text: validator evidence is routinely a bare
+ * token, so `"250"` took out the contact header (the phone number contains those
+ * digits), `"kubernetes"` took out the whole skills line, and a one-letter span
+ * took out half the document. A relocation heuristic cannot distinguish the line
+ * the finding is about from a line that merely shares characters with it, so
+ * there is none: the report says which line it meant, or nothing is deleted.
+ *
+ * Returns `null` — REFUSE, do not guess — when the entry carries no `line` (a
+ * report persisted before the field existed) or when no line of the current text
+ * matches it (the user already edited it away, or edited it into something else).
+ * The caller's honest fallback is to record the verdict and let the entry render
+ * as `markedForRemoval`: "still in the document, edit it out to finish".
  */
-export function removeEvidenceLines(documentText: string, evidence: string): string | null {
-  const span = evidence.trim();
-  if (!span || !documentText.includes(span)) return null;
-  let text = documentText;
-  while (text.includes(span)) {
-    const at = text.indexOf(span);
-    // The span always lies inside the cut window, so each pass strictly
-    // shortens the text — the loop cannot spin.
-    const lineStart = text.lastIndexOf('\n', at) + 1;
-    const lineEnd = text.indexOf('\n', at + span.length);
-    // A last line with no trailing newline takes the newline BEFORE it instead,
-    // so removing it doesn't leave a dangling blank line at the end.
-    const cutFrom = lineEnd === -1 && lineStart > 0 ? lineStart - 1 : lineStart;
-    const cutTo = lineEnd === -1 ? text.length : lineEnd + 1;
-    text = text.slice(0, cutFrom) + text.slice(cutTo);
-  }
-  return text;
+export function removeEvidenceLines(documentText: string, entry: Fabrication): string | null {
+  const anchor = entry.line?.trim();
+  if (!anchor) return null;
+  const lines = documentText.split('\n');
+  const kept = lines.filter((line) => line.trim() !== anchor);
+  // Nothing matched: the anchor describes a line this text no longer has.
+  if (kept.length === lines.length) return null;
+  return kept.join('\n');
 }
