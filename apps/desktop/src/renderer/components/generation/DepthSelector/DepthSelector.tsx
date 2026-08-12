@@ -22,10 +22,15 @@ export interface DepthSelectorProps {
    */
   smallModel?: boolean;
   /**
-   * Why quality depth can't run from THIS surface, if it can't (e.g. the
+   * Why a STAGED depth can't run from THIS surface, if it can't (e.g. the
    * generation has no saved résumé or no cached posting to resolve server-side).
    * Rendered as an honest note; the option stays selectable so the preference
    * still records what the user wants.
+   *
+   * Shown for every non-`fast` value, not just `quality`: both staged depths go
+   * through the same `resume_pipeline_run` inputs, so a surface that cannot
+   * supply them cannot run EITHER of them — showing the note only at quality
+   * would leave a `max` selection silently claiming it was about to run.
    */
   unavailableReason?: string;
   /** Compact layout for a wizard step (no section label). */
@@ -41,16 +46,18 @@ export interface DepthSelectorProps {
 function optionTitle(depth: GenerationDepth, t: TFunction): string {
   return isDepthRunnable(depth)
     ? t(`generationDepth.option.${depth}.tooltip`)
-    : t('generationDepth.option.max.unavailable');
+    : t('generationDepth.option.unavailable');
 }
 
 /**
  * Depth picker + the "what do these mean" popover.
  *
- * Three depths are always SHOWN even though this build runs two: `max` is
- * rendered disabled with a reason rather than hidden, because a two-option
- * control silently claims there are two depths. `resume_pipeline_run` rejects
- * `depth: "max"` outright, so offering it as selectable would be the lie.
+ * Every depth in the shared vocabulary is SHOWN, and one this build cannot run
+ * is rendered disabled with a reason rather than hidden — a control that drops
+ * an option silently claims the vocabulary is smaller than it is. All three run
+ * as of Phase 4 (`max` routes to the section-wise pipeline), so the disabled
+ * arm is currently unreachable; it stays because the depth list is shared with
+ * Rust and a future tier can reach the wire before this build can run it.
  */
 export function DepthSelector({
   value,
@@ -130,7 +137,7 @@ export function DepthSelector({
         {t(`generationDepth.option.${value}.summary`)}
       </p>
 
-      {value === 'quality' && unavailableReason && (
+      {value !== 'fast' && unavailableReason && (
         <p role="status" className="mt-1.5 text-[10px] leading-relaxed text-amber-400">
           {unavailableReason}
         </p>

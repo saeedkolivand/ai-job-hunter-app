@@ -1480,9 +1480,10 @@
       },
       "max": {
         "label": "Max",
-        "summary": "Section-by-section generation. Not available in this build yet.",
-        "unavailable": "Not available yet — arrives with section-by-section generation."
-      }
+        "tooltip": "Eight stages: analyse, match your evidence, plan, write each section on its own, assemble, check, auto-repair, then one AI review pass.",
+        "summary": "Each section written and checked on its own — you watch the résumé build. By far the slowest depth."
+      },
+      "unavailable": "Not available in this build yet."
     },
     "info": {
       "open": "What do these depths do?",
@@ -1497,12 +1498,12 @@
         "cost": "4 model calls plus up to 2 repair rounds. Roughly +30–90 seconds on a cloud provider; several minutes on a local model, and up to ~10 minutes at high reasoning effort."
       },
       "max": {
-        "what": "Section by section, each grounded in its own evidence, plus an extra review pass.",
-        "cost": "7 calls plus up to 9 sequential section calls. Up to ~10 minutes locally at high reasoning effort."
+        "what": "Section by section: every section is written in its own call from the evidence quoted out of your résumé, then the whole document is assembled, checked and auto-repaired, and finally read once more by the model for clarity, evidence and tailoring. A live checklist shows each section's state while it runs, and the document builds in front of you.",
+        "cost": "3 planning calls, then one per section (up to 12), one review call and up to 2 repair rounds — around 12 calls for a typical résumé. Several minutes on a cloud provider and considerably longer on a local model; the run stops itself after about two hours."
       },
-      "report": "Every depth ends with the same deterministic integrity report — rules, not an AI score. Quality depth adds the automatic repair and a per-bullet review of anything it could not ground in your résumé."
+      "report": "Every depth ends with the same deterministic integrity report — rules, not an AI score. Quality and Max add the automatic repair and a per-bullet review of anything they could not ground in your résumé; Max also adds the model's own review, whose remarks are always advisory and never block."
     },
-    "smallModelWarning": "Quality depth asks the model for structured JSON at three stages, and small local models often get that shape wrong. The run re-asks once, then finishes and flags what it could not verify — it still works, but expect more to review."
+    "smallModelWarning": "The staged depths ask the model for structured JSON — at three stages, and at Max once per section on top of that — and small local models often get that shape wrong. The run re-asks once, then finishes and flags what it could not verify: it still works, but expect more to review."
   },
   "pipeline": {
     "stage": {
@@ -2061,22 +2062,22 @@
     "tailorError": "Couldn't start tailoring. Please try again.",
     "saveError": "Couldn't save to tracking. Please try again.",
     "tailored": {
-      "trigger": "Tailored résumé (Quality)",
-      "triggerHint": "Choose how much work the generation does. Quality depth analyses the ad, quotes evidence from your saved résumé, drafts, checks and auto-repairs.",
+      "trigger": "Tailored résumé (staged)",
+      "triggerHint": "Choose how much work the generation does. The staged depths analyse the ad, quote evidence from your saved résumé, write, check and auto-repair — Max writes each section on its own and adds a review pass.",
       "modalTitle": "Tailored résumé",
       "close": "Close",
       "fastRoutes": "Fast opens the one-shot tailoring flow you already use — Start takes you there instead of running anything here.",
       "usesResume": "Runs from your default saved résumé, “{{name}}”. Pick a different default in Documents.",
       "unnamedResume": "your default saved résumé",
       "savesTo": "The finished résumé is saved to this posting's application, where you can edit and export it.",
-      "needsResume": "Save a résumé first — quality depth reads it from your documents, not from this screen.",
+      "needsResume": "Save a résumé first — the staged depths read it from your documents, not from this screen.",
       "needsProvider": "Choose an AI provider in Settings → AI.",
       "start": "Start",
       "runAgain": "Run again",
       "cancel": "Stop run",
       "cancelHint": "Requests cancellation — stages stop at the next boundary, and whatever was written is kept.",
       "cancelling": "Stopping…",
-      "draftNote": "Live draft — display only. Checking and up to two repair rounds still follow, so this is not the final résumé.",
+      "draftNote": "Live output — display only. Checking and up to two repair rounds still follow, so this is not the final résumé.",
       "document": "Finished résumé",
       "openReport": "Open integrity report",
       "state": {

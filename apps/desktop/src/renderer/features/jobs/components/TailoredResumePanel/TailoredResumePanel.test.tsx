@@ -8,8 +8,9 @@
  *    the opposite. Break the routing either way and both halves fail.
  *  - **The run request carries identity + inputs and nothing else.** No provider,
  *    model, base URL or budget field may appear — those are backend-owned — and
- *    `depth` is the literal `quality`, so the disabled `max` option can never
- *    reach the wire.
+ *    `depth` is the SELECTED staged depth (Phase 4: `max` runs too), never a
+ *    hardcoded one that would silently run a different pipeline than the one the
+ *    control claims.
  *  - **Terminal state is the machine's, never the draft's.** A busy session with
  *    a full draft still renders as running with its display-only caption.
  *  - **`needsReview` is not a finish** — it gets its own count-carrying headline
@@ -247,6 +248,18 @@ describe('TailoredResumePanel — depth routing', () => {
     expect(bus.handleTailor).not.toHaveBeenCalled();
   });
 
+  // Phase 4. Hardcode the request's `depth` back to `'quality'` (what this
+  // surface used to send, because the backend rejected `max`) and this fails:
+  // the control would say Max while a quality run went to the wire.
+  it('sends the depth the user actually picked, so max runs the max pipeline', async () => {
+    bus.depth = 'max';
+    await openPanel();
+    await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
+    expect(START).toHaveBeenCalledTimes(1);
+    expect((START.mock.calls[0]?.[0] as Record<string, unknown>).depth).toBe('max');
+    expect(bus.handleTailor).not.toHaveBeenCalled();
+  });
+
   it('sends identity + inputs only — never routing, budget or document text', async () => {
     await openPanel();
     await userEvent.click(screen.getByRole('button', { name: /^start$/i }));
@@ -258,8 +271,8 @@ describe('TailoredResumePanel — depth routing', () => {
       resumeId: 'doc-1',
       jobId: 'posting-1',
       jobUrl: POSTING.url,
-      // The literal, not the control's value: `max` is rejected at the boundary
-      // and must never reach the wire even if the option became selectable.
+      // The control's value (the bus is at `quality` here) — see the max case
+      // above for the other half of that.
       depth: 'quality',
       targetLanguage: 'en',
       topRequirements: [],

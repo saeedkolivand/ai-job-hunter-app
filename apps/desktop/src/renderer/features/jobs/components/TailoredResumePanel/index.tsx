@@ -73,7 +73,8 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
   const resume = useDefaultResume();
   const { provider, model, effort } = useGenerateConfig();
   const providerReady = !!provider && !!model;
-  const canRunQuality = !!resume && providerReady;
+  /** Both staged depths need the same two server-resolved inputs. */
+  const canRunStaged = !!resume && providerReady;
 
   const session = useResumePipelineSession();
   const runs = usePipelineRunsForJob(posting.url).data ?? [];
@@ -142,25 +143,33 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
     return detected === 'unknown' ? 'en' : detected;
   }, [posting.description]);
 
-  const startQuality = useCallback(async () => {
-    if (!resume || !providerReady) return;
-    setStopRequested(false);
-    await session.start({
-      resumeId: resume.id,
-      jobId: posting.id,
-      jobUrl: posting.url,
-      // The literal, never the control's value: `fast` routed away above and
-      // `max` is rejected at the boundary, so `quality` is the only depth that
-      // can legitimately reach the pipeline from here.
-      depth: 'quality',
-      targetLanguage,
-      // Budget and routing are backend-owned; the JD analysis is a STAGE of the
-      // run, so there are no requirements to hand it and no letter in scope.
-      topRequirements: [],
-      coverLetterText: '',
-      ...(effort ? { effort } : {}),
-    });
-  }, [resume, providerReady, session, posting.id, posting.url, targetLanguage, effort]);
+  /**
+   * `fast` cannot reach here — it routes to the one-shot flow in
+   * {@link handleStart} — so the parameter is the two STAGED depths only. Taken
+   * as an argument rather than read off `depth` so the caller's early return is
+   * what proves `fast` was handled, instead of a second check that could drift
+   * from it.
+   */
+  const startStaged = useCallback(
+    async (stagedDepth: Exclude<GenerationDepth, 'fast'>) => {
+      if (!resume || !providerReady) return;
+      setStopRequested(false);
+      await session.start({
+        resumeId: resume.id,
+        jobId: posting.id,
+        jobUrl: posting.url,
+        depth: stagedDepth,
+        targetLanguage,
+        // Budget and routing are backend-owned; the JD analysis is a STAGE of
+        // the run, so there are no requirements to hand it and no letter in
+        // scope.
+        topRequirements: [],
+        coverLetterText: '',
+        ...(effort ? { effort } : {}),
+      });
+    },
+    [resume, providerReady, session, posting.id, posting.url, targetLanguage, effort]
+  );
 
   const handleStart = () => {
     if (depth === 'fast') {
@@ -170,7 +179,7 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
       void handleTailor();
       return;
     }
-    void startQuality();
+    void startStaged(depth);
   };
 
   const stop = () => {
@@ -204,9 +213,9 @@ export function TailoredResumePanel({ posting }: { posting: Posting }) {
 
   const titleId = 'tailored-resume-modal-title';
   const gateNoteId = 'tailored-resume-gate';
-  /** Quality is selected but cannot run — the note below says which half is
-   *  missing, and Start points at it rather than being silently dead. */
-  const gated = !busy && depth !== 'fast' && !canRunQuality;
+  /** A staged depth is selected but cannot run — the note below says which half
+   *  is missing, and Start points at it rather than being silently dead. */
+  const gated = !busy && depth !== 'fast' && !canRunStaged;
   const showRuns = runs.length > 0;
 
   return (
