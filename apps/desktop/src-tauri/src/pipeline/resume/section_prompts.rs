@@ -34,7 +34,7 @@ use crate::agent::tools::fenced;
 use super::prompt_blocks::{
     resume_conventions, ATS_PRECEDENCE, FACTUAL_GROUNDING_RULES, HUMANIZE_LEXICAL,
 };
-use super::prompts::{fenced_artifact, system_language, SECTION_CAP};
+use super::prompts::{fenced_artifact, system_language, NOTE_CAP, SECTION_CAP};
 use super::types::{CompanyPlan, EvidenceMap, JobAnalysis, ResumeStrategy};
 use super::types_max::{ProjectOut, SectionSeed, SectionSlot};
 
@@ -181,11 +181,6 @@ pub fn section_user(
     }
     out
 }
-
-/// Char cap on the free-text steer a user may attach to a section regenerate.
-/// Mirrors the wire schema's `.max(500)` and `prompts`' own copy, for the same
-/// reason: serde enforces nothing on this transport.
-const NOTE_CAP: usize = 500;
 
 /// The slice of the strategy ONE section is written against.
 ///

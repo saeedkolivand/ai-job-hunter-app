@@ -72,7 +72,11 @@ pub(super) const ARTIFACT_CAP: usize = 16_000;
 /// Char cap on the free-text steer a user may attach to a section regenerate.
 /// Mirrors the wire schema's `.max(500)`; serde enforces nothing, so the prompt
 /// builder caps its own copy.
-const NOTE_CAP: usize = 500;
+///
+/// `pub(super)` for `section_prompts`, which fences the same field for the same
+/// command — it had a second `= 500` of its own, and two literals both claiming
+/// to mirror one schema are two literals that can drift apart.
+pub(super) const NOTE_CAP: usize = 500;
 
 /// Char cap on ONE section's current text on the repair path.
 pub(super) const SECTION_CAP: usize = 4_000;

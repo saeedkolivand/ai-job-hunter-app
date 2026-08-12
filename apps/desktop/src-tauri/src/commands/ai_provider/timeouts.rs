@@ -214,9 +214,19 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
 }
 
-/// The max-depth deadline's two terms come from `packages/shared` through
-/// `pnpm gen:ipc`, exactly like their quality siblings:
-/// [`MAX_RUN_FIXED_SECS`] and [`MAX_RUN_GENERATION_PASSES`].
+/// Deadline for ONE WHOLE max-depth résumé run — the max-depth twin of
+/// [`quality_run_deadline`], and what makes `StoppedReason::RunTimeout`
+/// reachable at this depth.
+///
+/// Same `fixed + baseline × passes × multiplier` shape. Pinned by
+/// `max_run_deadline_clears_the_inner_per_call_bounds` (which recomputes the
+/// fixed half from the fan-out constants themselves), by
+/// `max_run_deadline_pins_the_derived_table`, and by
+/// `max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`.
+///
+/// Both terms come from `packages/shared` through `pnpm gen:ipc`, exactly like
+/// their quality siblings: [`MAX_RUN_FIXED_SECS`] and
+/// [`MAX_RUN_GENERATION_PASSES`].
 ///
 /// **They were two hand-typed literals in two files, and the doc on the TS side
 /// claimed they could not drift.** Nothing enforced it: the generator emitted
@@ -248,14 +258,6 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
 /// clock, and a max run stopped mid-fan-out keeps the sections it already
 /// assembled — so buying the worst case here would only make the deadline
 /// unreachable.
-/// Deadline for ONE WHOLE max-depth résumé run — the max-depth twin of
-/// [`quality_run_deadline`], and what makes `StoppedReason::RunTimeout`
-/// reachable at this depth.
-///
-/// Same `fixed + baseline × passes × multiplier` shape, with both terms
-/// documented above. Pinned by `max_run_deadline_clears_the_inner_per_call_bounds`
-/// (which recomputes the fixed half from the fan-out constants themselves) and
-/// by `max_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`.
 pub fn max_run_deadline(effort: Option<&str>) -> Duration {
     let generation =
         STREAM.as_secs_f64() * MAX_RUN_GENERATION_PASSES as f64 * effort_multiplier(effort);
