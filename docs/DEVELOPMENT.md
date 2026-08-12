@@ -269,8 +269,9 @@ for reading does materialize the usual `-shm`/`-wal` sidecars next to it. It nee
 
 The deterministic half of the same question, validator precision/recall on labelled
 defect fixtures, is `cargo test --test eval -- --nocapture` in `apps/desktop/src-tauri`.
-Read its false-positive line with the caveat it prints: two of the five truthful fixtures
-are already pinned to an empty report by the unit suite, so only three of them can move.
+Read its warning-findings line together with the `Caveat:` line printed directly under
+it — some of the truthful fixtures are already pinned to an empty report by the unit
+suite, and the caveat says how many, so the headline is weaker than it looks.
 
 ### Migrations and stale dev DBs
 

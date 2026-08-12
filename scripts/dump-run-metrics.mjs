@@ -80,10 +80,15 @@ Requires Node >= 22.13 (built-in node:sqlite, unflagged).`;
 /**
  * Parse argv into options.
  *
- * A value that begins with `-` is REFUSED rather than consumed: `--kind --json`
- * is a typo, and silently taking `--json` as the kind name would have queried
- * for runs of kind "--json" (zero rows) and dropped the flag — a wrong answer
- * reported confidently.
+ * Two ways to be wrong are refused rather than resolved:
+ *
+ * * a value that begins with `-` (`--kind --json` is a typo, and taking
+ *   `--json` as the kind name would query for runs of kind "--json" — zero rows
+ *   — AND drop the flag, a wrong answer reported confidently);
+ * * a second database path in EITHER order. `a.db --db b.db` silently read
+ *   b.db while `--db a.db b.db` threw about an "extra argument"; they are the
+ *   same mistake, and a dump that quietly picks one of two paths is the worst
+ *   available answer.
  */
 function parseArgs(argv) {
   const opts = { db: null, kind: 'resume', json: false, help: false };
@@ -92,15 +97,18 @@ function parseArgs(argv) {
     if (raw.startsWith('-')) throw new Error(`${flag} needs a value, got the flag ${raw}`);
     return raw;
   };
+  const once = (path, current) => {
+    if (current.db !== null) throw new Error('the database path was given twice');
+    return path;
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg === '--json') opts.json = true;
-    else if (arg === '--db') opts.db = value('--db', argv[(i += 1)]);
+    else if (arg === '--db') opts.db = once(value('--db', argv[(i += 1)]), opts);
     else if (arg === '--kind') opts.kind = value('--kind', argv[(i += 1)]);
     else if (arg.startsWith('-')) throw new Error(`unknown option: ${arg}`);
-    else if (opts.db === null) opts.db = arg;
-    else throw new Error(`unexpected extra argument: ${arg}`);
+    else opts.db = once(arg, opts);
   }
   return opts;
 }
@@ -341,8 +349,26 @@ async function main() {
   // behaviour, pinned by `a WAL dump leaves the main database byte-identical` in
   // the sibling test; `immutable=1` would avoid the sidecars but is a promise
   // this cannot keep, because the app may be writing while the dump reads.
-  const db = new DatabaseSync(dbPath, { readOnly: true });
-  let rows;
+  let db;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch (e) {
+    // A directory instead of a file, a corrupt header, or — the case the comment
+    // above predicts — a WAL database in a directory this process cannot write.
+    // All three arrive as a raw ERR_SQLITE_ERROR throw, and an unhandled stack
+    // trace is not a diagnosis.
+    console.error(
+      `cannot open ${shownPath}: ${e.message}\n\nIt must be a SQLite file, and a WAL database ` +
+        `needs a WRITABLE directory even to be read (see --help).`
+    );
+    process.exit(1);
+  }
+
+  // Read, then close, then decide. A `finally { db.close() }` around a catch that
+  // calls `process.exit` never runs — exit does not unwind — so the handle leaked
+  // on exactly the error path where the file matters most.
+  let rows = null;
+  let readError = null;
   try {
     rows = db
       .prepare(
@@ -353,14 +379,16 @@ async function main() {
       )
       .all(opts.kind);
   } catch (e) {
+    readError = e;
+  }
+  db.close();
+  if (readError) {
     // The only schema-drift alarm in the script: a renamed table or column
     // reaches here, and reporting "no runs" for it would read as "you have not
     // run the pipeline yet" — the one wrong answer that stops the reader
     // looking.
-    console.error(`cannot read pipeline_runs from ${shownPath}: ${e.message}`);
+    console.error(`cannot read pipeline_runs from ${shownPath}: ${readError.message}`);
     process.exit(1);
-  } finally {
-    db.close();
   }
 
   if (rows.length === 0) {
