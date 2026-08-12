@@ -262,10 +262,15 @@ node scripts/dump-run-metrics.mjs --help   # options + the default path for your
 node scripts/dump-run-metrics.mjs          # the app-data DB, aggregated per depth
 ```
 
-Read-only and content-free — counts, codes and durations, never document text or a
-posting URL (ADR-027). It needs Node ≥ 22.5 for the built-in `node:sqlite`. The
-deterministic half of the same question, validator precision/recall on labelled defect
-fixtures, is `cargo test --test eval -- --nocapture` in `apps/desktop/src-tauri`.
+Content-free — counts, codes and durations, never document text or a posting URL
+(ADR-027) — and it never writes to the database's CONTENT, though opening a WAL database
+for reading does materialize the usual `-shm`/`-wal` sidecars next to it. It needs Node
+≥ 22.13 for the built-in `node:sqlite`.
+
+The deterministic half of the same question, validator precision/recall on labelled
+defect fixtures, is `cargo test --test eval -- --nocapture` in `apps/desktop/src-tauri`.
+Read its false-positive line with the caveat it prints: two of the five truthful fixtures
+are already pinned to an empty report by the unit suite, so only three of them can move.
 
 ### Migrations and stale dev DBs
 

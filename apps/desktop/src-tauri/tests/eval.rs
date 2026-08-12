@@ -13,33 +13,48 @@
 //!   sibling by roughly one planted edit, so "did the suite report exactly the
 //!   planted code, and what else did it fire?" is a measurable question.
 //!
-//! ## Why this is metrics, not another pass/fail suite
+//! ## What this measures, and what it asserts
 //!
-//! `validate::content::test` already asserts, per defect, that the right code
-//! fires with the right evidence. Repeating that here would buy nothing. What
-//! nothing measured before is the **Warning-tier false-positive rate on
-//! truthful documents** — the number that has to be known before
+//! The MEASUREMENT is the point: a per-code table of recall (was the planted
+//! defect reported?) and of the **Warning-tier false-positive rate on truthful
+//! documents** — the number that has to be known before
 //! `factual.unsourced_term` (or any other Warning) can be escalated to
-//! Critical, and before an LLM judge is given more surface. So this harness
-//! prints a per-code table (`cargo test --test eval -- --nocapture`) and
-//! asserts only the two invariants that must never regress:
+//! Critical, and before an LLM judge is given more surface. Printing is not
+//! enough to keep a table honest, though, so four things are ASSERTED:
 //!
-//! 1. every planted **Critical** defect is reported, under its expected code;
-//! 2. the clean / paraphrased / grounded negatives report **zero Criticals**.
+//! 1. every planted code is reported, whatever its severity;
+//! 2. every planted code's severity is the one this file's label CLAIMS;
+//! 3. every truthful fixture (`Negative` and `Tolerated`) reports zero
+//!    Criticals;
+//! 4. the Warning-tier false-positive count stays inside
+//!    [`WARNING_FP_BUDGET`].
 //!
-//! Warnings on negatives are DATA, not failures — a harness that failed on them
-//! would be a duplicate of the unit suite and would have to be loosened the
-//! first time a threshold moved, which is exactly when the number matters.
+//! **(1) and (2) deliberately overlap `validate::content::test`** — the same
+//! codes on the same fixtures are asserted there (e.g.
+//! `fabricated_metric_is_critical_and_names_the_number`,
+//! `near_duplicate_bullets_warn_once_on_the_later_bullet`). The first cut of
+//! this harness avoided the duplication by gating only Criticals and treating
+//! planted-Warning recall as data, and that made three of seven labels
+//! DECORATION: relabelling the duplicate-bullets fixture to an unrelated
+//! registered code still passed, and demoting a code from Critical to Warning
+//! silently voided its only assertion here. A label nothing checks is a lie
+//! waiting to happen, and this file's labels are the input to an escalation
+//! decision. So the overlap is accepted on purpose: the unit suite proves the
+//! validator's behaviour, this one proves the LABELS still describe it.
 //!
-//! Planted-Warning recall is likewise reported rather than asserted: the unit
-//! suite pins those (`near_duplicate_bullets_warn_once_on_the_later_bullet`,
-//! `project_outside_the_three_tiers_warns`), and duplicating an assertion in two
-//! files means fixing it in two files.
+//! What stays unique to this harness: the corpus-coverage invariant
+//! ([`every_generated_fixture_is_labelled`]), the cross-fixture metrics table,
+//! and the false-positive budget.
 //!
-//! **Read today's `0%` for what it is.** Two of the five negatives
+//! Warnings on truthful documents are NOT asserted per code — they are summed
+//! against [`WARNING_FP_BUDGET`]. One budget moves in one place with a reason
+//! attached, where two dozen per-code assertions would each get loosened
+//! individually and quietly.
+//!
+//! **Read today's `0` for what it is.** Two of the five negatives
 //! (`*_generated_clean.txt`) are already pinned to a COMPLETELY empty report by
 //! `clean_resume_produces_no_issues_at_all`, so their contribution to the
-//! false-positive rate is zero by construction; the paraphrased pair and the
+//! false-positive count is zero by construction; the paraphrased pair and the
 //! grounded letter are the only ones free to move. The rate becomes an
 //! informative measurement as truthful fixtures are ADDED — that, not this
 //! run's number, is what gates the escalation decision.
@@ -47,6 +62,11 @@
 //! Generation itself needs a live model, so depth A/B over REAL runs is not
 //! here: it reads `pipeline_runs.metrics_json` via
 //! `scripts/dump-run-metrics.mjs`.
+//!
+//! The table is a LOCAL artifact: CI captures stdout for a passing test, so it
+//! is visible only under `cargo test --test eval -- --nocapture`. Nothing
+//! downstream parses it — every claim it makes that must hold is one of the
+//! four assertions above.
 //!
 //! This links the crate (`ajh_tauri`, the `[lib]` target) and calls the same
 //! `validate_content` entry point the product calls — never a stitched-together
@@ -144,26 +164,56 @@ const DE_JOB_AD: &str = include_str!("../src/validate/content/fixtures/de_job_ad
 /// three variants rather than one "expected codes" list with implicit rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Label {
-    /// A defect was planted; these codes must be reported. Criticals among them
-    /// are asserted, Warnings among them are measured (see the module docs).
-    Planted(&'static [&'static str]),
+    /// A defect was planted; every code here must be reported, AT the severity
+    /// paired with it.
+    ///
+    /// The severity is carried rather than looked up because it is the thing
+    /// being claimed: this harness exists to inform "should this Warning become
+    /// a Critical?", so a code silently changing tier must fail here and be
+    /// re-stated deliberately, not be absorbed by a `severity_for` call that
+    /// agrees with whatever the table currently says.
+    Planted(&'static [(&'static str, Severity)]),
     /// A truthful document. Zero Criticals is the invariant; every Warning is a
-    /// false positive and is counted as one.
+    /// false positive and counts against [`WARNING_FP_BUDGET`].
     Negative,
-    /// A legal degradation — the source simply carried less. No planted defect
-    /// and no clean-report claim, so it contributes data only. (The unit suite
-    /// owns the "this specific code must stay silent" assertion for these.)
+    /// A legal degradation — the source simply carried less. Also a truthful
+    /// document, so it carries the same zero-Critical invariant; what it does
+    /// NOT carry is a planted code or a clean-report claim, and its Warnings
+    /// are reported without counting against the budget (the unit suite owns
+    /// "this specific code must stay silent" for these).
     Tolerated,
 }
 
-/// One labelled fixture. `file` is the on-disk name so the coverage guard below
-/// can prove the whole corpus is graded, and so a failure names the file.
+/// One labelled fixture.
+///
+/// Built only through [`case!`], which derives `text` FROM `file` — the two
+/// cannot name different fixtures, so the table can never grade one document
+/// twice while reporting it as two.
 struct Case {
     file: &'static str,
     text: &'static str,
     lang: &'static str,
     kind: DocKind,
     label: Label,
+}
+
+/// Declare a [`Case`], reading the fixture named by `$file` and nothing else.
+///
+/// `file` is not decoration: it is what [`every_generated_fixture_is_labelled`]
+/// diffs against the directory and what a failure message names. Spelling the
+/// path a second time inside `include_str!` let the two disagree — a row could
+/// say `tier2` and grade `tier3`, passing every assertion while leaving one
+/// fixture ungraded and another graded twice. One spelling, one fixture.
+macro_rules! case {
+    ($file:literal, $lang:literal, $kind:expr, $label:expr) => {
+        Case {
+            file: $file,
+            text: include_str!(concat!("../src/validate/content/fixtures/", $file)),
+            lang: $lang,
+            kind: $kind,
+            label: $label,
+        }
+    };
 }
 
 /// Every labelled fixture, with the code its planted edit is expected to
@@ -173,114 +223,118 @@ struct Case {
 /// table is a second READER of those fixtures, never a second opinion about
 /// what is planted in them.
 const CASES: &[Case] = &[
-    // Truthful documents — the precision denominator.
-    Case {
-        file: "en_generated_clean.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_clean.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Negative,
-    },
-    Case {
-        file: "de_generated_clean.txt",
-        text: include_str!("../src/validate/content/fixtures/de_generated_clean.txt"),
-        lang: "de",
-        kind: DocKind::Resume,
-        label: Label::Negative,
-    },
-    Case {
-        file: "en_generated_paraphrased.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_paraphrased.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Negative,
-    },
-    Case {
-        file: "de_generated_paraphrased.txt",
-        text: include_str!("../src/validate/content/fixtures/de_generated_paraphrased.txt"),
-        lang: "de",
-        kind: DocKind::Resume,
-        label: Label::Negative,
-    },
-    Case {
-        file: "en_letter_grounded.txt",
-        text: include_str!("../src/validate/content/fixtures/en_letter_grounded.txt"),
-        lang: "en",
-        kind: DocKind::CoverLetter,
-        label: Label::Negative,
-    },
+    // Truthful documents — the false-positive denominator.
+    case!(
+        "en_generated_clean.txt",
+        "en",
+        DocKind::Resume,
+        Label::Negative
+    ),
+    case!(
+        "de_generated_clean.txt",
+        "de",
+        DocKind::Resume,
+        Label::Negative
+    ),
+    case!(
+        "en_generated_paraphrased.txt",
+        "en",
+        DocKind::Resume,
+        Label::Negative
+    ),
+    case!(
+        "de_generated_paraphrased.txt",
+        "de",
+        DocKind::Resume,
+        Label::Negative
+    ),
+    case!(
+        "en_letter_grounded.txt",
+        "en",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
     // Planted defects — the recall numerator.
-    Case {
-        file: "en_generated_fabricated_metric.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_fabricated_metric.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["factual.unsourced_metric"]),
-    },
-    Case {
-        file: "en_generated_dropped_role.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_dropped_role.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["factual.dropped_role"]),
-    },
-    Case {
-        file: "en_generated_altered_project_link.txt",
-        text: include_str!(
-            "../src/validate/content/fixtures/en_generated_altered_project_link.txt"
-        ),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["factual.altered_project_link"]),
-    },
-    Case {
-        file: "en_generated_wrong_language.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_wrong_language.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["content.language_mismatch"]),
-    },
-    Case {
-        file: "en_generated_duplicate_bullets.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_duplicate_bullets.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["duplicate.bullet"]),
-    },
-    Case {
-        file: "en_generated_projects_broken.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_projects_broken.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Planted(&["consistency.project_structure"]),
-    },
-    Case {
-        file: "en_letter_ai_tells.txt",
-        text: include_str!("../src/validate/content/fixtures/en_letter_ai_tells.txt"),
-        lang: "en",
-        kind: DocKind::CoverLetter,
-        label: Label::Planted(&["voice.ai_tell_lexical", "voice.template_opener"]),
-    },
-    // Accepted degradations.
-    Case {
-        file: "en_generated_projects_tier2.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_projects_tier2.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Tolerated,
-    },
-    Case {
-        file: "en_generated_projects_tier3.txt",
-        text: include_str!("../src/validate/content/fixtures/en_generated_projects_tier3.txt"),
-        lang: "en",
-        kind: DocKind::Resume,
-        label: Label::Tolerated,
-    },
+    case!(
+        "en_generated_fabricated_metric.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("factual.unsourced_metric", Severity::Critical)])
+    ),
+    case!(
+        "en_generated_dropped_role.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("factual.dropped_role", Severity::Critical)])
+    ),
+    case!(
+        "en_generated_altered_project_link.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("factual.altered_project_link", Severity::Critical)])
+    ),
+    case!(
+        "en_generated_wrong_language.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("content.language_mismatch", Severity::Critical)])
+    ),
+    case!(
+        "en_generated_duplicate_bullets.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("duplicate.bullet", Severity::Warning)])
+    ),
+    case!(
+        "en_generated_projects_broken.txt",
+        "en",
+        DocKind::Resume,
+        Label::Planted(&[("consistency.project_structure", Severity::Warning)])
+    ),
+    case!(
+        "en_letter_ai_tells.txt",
+        "en",
+        DocKind::CoverLetter,
+        Label::Planted(&[
+            ("voice.ai_tell_lexical", Severity::Warning),
+            ("voice.template_opener", Severity::Warning),
+        ])
+    ),
+    // Accepted degradations — truthful, but with less in the source to work
+    // from. No planted code; still no Critical.
+    case!(
+        "en_generated_projects_tier2.txt",
+        "en",
+        DocKind::Resume,
+        Label::Tolerated
+    ),
+    case!(
+        "en_generated_projects_tier3.txt",
+        "en",
+        DocKind::Resume,
+        Label::Tolerated
+    ),
 ];
+
+/// How many Warning-tier findings the truthful fixtures may produce in total.
+///
+/// Zero today, and that is a measurement rather than an aspiration: the whole
+/// truthful set comes back completely clean. It is a BUDGET rather than a
+/// per-code assertion so that loosening it is one visible edit with a reason,
+/// and it is asserted so the headline number in the printed table is a guard
+/// instead of a comment. Raising it is a real decision: every unit of it is a
+/// warning shown to a user about a document that is fine.
+const WARNING_FP_BUDGET: usize = 0;
 
 /// The posting requirements each language's job ad is analysed into — the same
 /// lists `validate::content::test` passes, so alignment findings here mean what
 /// they mean there.
+///
+/// KNOWN DUPLICATION: these strings are hand-copied from that file's
+/// `en_requirements()` and its German inline list, because they are private to
+/// it. If the two drift, the alignment family's numbers here stop being
+/// comparable with the unit suite's — which is why the lists are small, in one
+/// function, and named.
 fn requirements(lang: &str) -> Vec<String> {
     let raw: &[&str] = if lang == "de" {
         &["Docker und Kubernetes im Produktivbetrieb"]
@@ -296,7 +350,14 @@ fn requirements(lang: &str) -> Vec<String> {
 }
 
 fn run_case(case: &Case) -> ContentReport {
-    let reqs = requirements(case.lang);
+    // A letter never runs the alignment pass, and the unit suite's `en_letter`
+    // helper passes NO requirements — feeding four here would be a different
+    // input than the one this harness claims parity with.
+    let reqs = if case.kind == DocKind::CoverLetter {
+        Vec::new()
+    } else {
+        requirements(case.lang)
+    };
     let (source, job_ad) = if case.lang == "de" {
         (DE_SOURCE, DE_JOB_AD)
     } else {
@@ -331,9 +392,13 @@ struct CodeStats {
     planted: usize,
     /// …of which the suite actually reported it.
     recalled: usize,
-    /// Truthful (`Label::Negative`) fixtures that fired it — false positives.
+    /// Truthful (`Label::Negative`) fixtures that fired it — false positives,
+    /// and the only tally that counts against [`WARNING_FP_BUDGET`].
     fp_negatives: usize,
-    /// `Tolerated` fixtures that fired it — data, not a verdict.
+    /// `Tolerated` fixtures that fired it. Reported in its OWN column: a
+    /// degradation fixture firing a structure warning is a different event from
+    /// a defect fixture firing a code nobody planted, and summing the two hid
+    /// which had happened.
     fired_tolerated: usize,
     /// Planted fixtures that fired it while it was NOT the planted code.
     fired_offtarget: usize,
@@ -352,12 +417,20 @@ fn gradeable_fixture_files() -> BTreeSet<String> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(FIXTURES_SUBDIR);
     fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("read {dir:?}: {e}"))
-        .filter_map(|entry| {
-            let name = entry.ok()?.file_name().to_string_lossy().into_owned();
-            let gradeable = name.ends_with(".txt")
+        .map(|entry| {
+            // NOT `entry.ok()?`: an unreadable entry would silently SHRINK the
+            // corpus this guard compares against, which is the one failure it
+            // cannot be allowed to have.
+            entry
+                .unwrap_or_else(|e| panic!("read a fixture dir entry in {dir:?}: {e}"))
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|name| {
+            name.ends_with(".txt")
                 && !name.ends_with("_source_resume.txt")
-                && !name.ends_with("_job_ad.txt");
-            gradeable.then_some(name)
+                && !name.ends_with("_job_ad.txt")
         })
         .collect()
 }
@@ -394,11 +467,11 @@ fn validator_metrics_over_labelled_fixtures() {
 
     let mut stats: BTreeMap<&str, CodeStats> = BTreeMap::new();
     for outcome in &outcomes {
-        let planted: &[&str] = match outcome.label {
+        let planted: &[(&str, Severity)] = match outcome.label {
             Label::Planted(codes) => codes,
             _ => &[],
         };
-        for code in planted {
+        for (code, _) in planted {
             let entry = stats.entry(code).or_default();
             entry.planted += 1;
             if outcome.fired.contains(code) {
@@ -410,7 +483,9 @@ fn validator_metrics_over_labelled_fixtures() {
             match outcome.label {
                 Label::Negative => entry.fp_negatives += 1,
                 Label::Tolerated => entry.fired_tolerated += 1,
-                Label::Planted(_) if !planted.contains(code) => entry.fired_offtarget += 1,
+                Label::Planted(_) if !planted.iter().any(|(c, _)| c == code) => {
+                    entry.fired_offtarget += 1;
+                }
                 Label::Planted(_) => {}
             }
         }
@@ -440,7 +515,7 @@ fn validator_metrics_over_labelled_fixtures() {
             Label::Planted(codes) => {
                 let found: Vec<String> = codes
                     .iter()
-                    .map(|c| {
+                    .map(|(c, _)| {
                         format!(
                             "{c}→{}",
                             if outcome.fired.contains(c) {
@@ -454,7 +529,7 @@ fn validator_metrics_over_labelled_fixtures() {
                 let others: Vec<&str> = outcome
                     .fired
                     .iter()
-                    .filter(|c| !codes.contains(c))
+                    .filter(|c| !codes.iter().any(|(planted, _)| planted == *c))
                     .copied()
                     .collect();
                 (
@@ -484,8 +559,15 @@ fn validator_metrics_over_labelled_fixtures() {
     }
 
     println!(
-        "\n{:<36} {:<9} {:>7} {:>8} {:>9} {:>8} {:>9}",
-        "code", "severity", "planted", "recall", "fp/truthful", "fp-rate", "off-target"
+        "\n{:<36} {:<9} {:>7} {:>8} {:>9} {:>8} {:>10} {:>9}",
+        "code",
+        "severity",
+        "planted",
+        "recall",
+        "fp/truthful",
+        "fp-rate",
+        "off-target",
+        "tolerated"
     );
     for (code, s) in &stats {
         let recall = if s.planted == 0 {
@@ -499,11 +581,12 @@ fn validator_metrics_over_labelled_fixtures() {
             format!("{:.0}%", 100.0 * s.fp_negatives as f64 / negatives as f64)
         };
         println!(
-            "{code:<36} {:<9} {:>7} {recall:>8} {:>9} {fp_rate:>8} {:>9}",
+            "{code:<36} {:<9} {:>7} {recall:>8} {:>9} {fp_rate:>8} {:>10} {:>9}",
             severity_label(code),
             s.planted,
             format!("{}/{negatives}", s.fp_negatives),
-            s.fired_offtarget + s.fired_tolerated,
+            s.fired_offtarget,
+            s.fired_tolerated,
         );
     }
 
@@ -512,27 +595,49 @@ fn validator_metrics_over_labelled_fixtures() {
         .filter(|(code, _)| severity_for(code) == Severity::Warning)
         .map(|(_, s)| s.fp_negatives)
         .sum();
+    let pinned_empty = outcomes
+        .iter()
+        .filter(|o| o.label == Label::Negative && o.file.contains("_generated_clean"))
+        .count();
     println!(
-        "\nWarning-tier false positives on truthful documents: {warning_fps} across {negatives} \
-         fixtures — the number that gates any W→C escalation.\n"
+        "\nWarning-tier false positives on truthful documents: {warning_fps} \
+         (budget {WARNING_FP_BUDGET}) across {negatives} fixtures — the number that gates any \
+         W→C escalation.\nCaveat: {pinned_empty} of those {negatives} are already pinned to a \
+         completely empty report by `clean_resume_produces_no_issues_at_all`, so only {} can \
+         move.\n",
+        negatives - pinned_empty
     );
 
-    // ── Assert (only the invariants) ────────────────────────────────────────
+    // ── Assert ──────────────────────────────────────────────────────────────
     for outcome in &outcomes {
         if let Label::Planted(codes) = outcome.label {
-            for code in codes {
-                if severity_for(code) != Severity::Critical {
-                    continue; // Warning recall is measured above, not gated here.
-                }
+            for (code, expected) in codes {
+                // The severity this file CLAIMS, checked against the registry.
+                // A demotion (or promotion) is exactly the event this harness
+                // informs, so it must be re-stated here rather than absorbed.
+                assert_eq!(
+                    severity_for(code),
+                    *expected,
+                    "{}: {code} is registered as {:?} but this harness labels it {expected:?} — \
+                     re-state the label if the tier change was deliberate",
+                    outcome.file,
+                    severity_for(code),
+                );
+                // Recall, at EVERY severity: a planted label that nothing checks
+                // is decoration, and three of these were exactly that while only
+                // Criticals were gated.
                 assert!(
                     outcome.fired.contains(code),
-                    "{}: planted Critical {code} was NOT reported; the report carried {:?}",
+                    "{}: planted {expected:?} {code} was NOT reported; the report carried {:?}",
                     outcome.file,
                     outcome.fired
                 );
             }
         }
-        if outcome.label == Label::Negative {
+        // Both truthful kinds. A `Tolerated` fixture is a legal degradation, not
+        // a defective document: a Critical on one is a regression, and nothing
+        // else gates it.
+        if matches!(outcome.label, Label::Negative | Label::Tolerated) {
             assert_eq!(
                 outcome.criticals, 0,
                 "{}: a truthful document must never raise a Critical; it fired {:?}",
@@ -540,11 +645,33 @@ fn validator_metrics_over_labelled_fixtures() {
             );
         }
     }
+
+    // The headline number, as a guard rather than a remark.
+    //
+    // `<=` against a budget that happens to be 0 today is
+    // `absurd_extreme_comparisons`, and the lint is right about the arithmetic
+    // and wrong about the intent: the comparison is the CONTRACT ("at most the
+    // budget"), and rewriting it as `== 0` would have to be rewritten back the
+    // first time the budget moves off zero — exactly the edit most likely to be
+    // made carelessly.
+    #[allow(clippy::absurd_extreme_comparisons)]
+    let within_budget = warning_fps <= WARNING_FP_BUDGET;
+    assert!(
+        within_budget,
+        "Warning-tier false positives on truthful documents rose to {warning_fps}, over the \
+         budget of {WARNING_FP_BUDGET}. Either the validator over-fires, or the budget moves \
+         WITH a reason — see the table above for which codes fired."
+    );
 }
 
 /// Every gradeable fixture on disk carries a label, so a fixture added for a new
-/// defect cannot sit in the corpus unmeasured (and a deleted one cannot leave a
-/// row in `CASES` that grades nothing).
+/// defect cannot sit in the corpus unmeasured.
+///
+/// Only this direction needs a runtime check. The reverse — a `CASES` row naming
+/// a fixture that no longer exists — cannot compile: [`case!`] builds its
+/// `include_str!` path out of the same `file` literal, so a deleted fixture is a
+/// BUILD error, and a runtime assertion for it would be unreachable code
+/// pretending to be a guard.
 #[test]
 fn every_generated_fixture_is_labelled() {
     let on_disk = gradeable_fixture_files();
@@ -554,11 +681,6 @@ fn every_generated_fixture_is_labelled() {
     assert!(
         unlabelled.is_empty(),
         "these fixtures are graded by nothing — add them to `CASES`: {unlabelled:?}"
-    );
-    let missing: Vec<&String> = labelled.difference(&on_disk).collect();
-    assert!(
-        missing.is_empty(),
-        "`CASES` names fixtures that no longer exist: {missing:?}"
     );
 }
 
