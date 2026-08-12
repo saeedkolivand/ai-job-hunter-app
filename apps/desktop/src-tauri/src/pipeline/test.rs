@@ -712,9 +712,46 @@ fn resolves_openai_compatible_with_a_localhost_base_url() {
         Some("local-model"),
         Some("http://127.0.0.1:1234/v1"),
     );
-    let (_provider, model, base_url) = Completer::from_config(cfg).expect("should resolve");
+    let (_provider, model, base_url, _window) =
+        Completer::from_config(cfg).expect("should resolve");
     assert_eq!(model, "local-model");
     assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1234/v1"));
+}
+
+/// The stored context window is re-validated on the ACTIVE-CONFIG egress path,
+/// exactly as it is for a stage override — the same hand-edited-store threat
+/// model, and the same fail-closed answer. Without this the two paths could
+/// drift, which is how the override path came to be the only guarded one.
+///
+/// Mutation check (executed): replace the `validate_context_window` call in
+/// `from_config` with `cfg.context_window` and both rejections resolve.
+#[test]
+fn rejects_a_tampered_active_context_window() {
+    let with_window = |context_window: Option<u32>| ActiveAiConfig {
+        active_provider: Some("ollama".to_string()),
+        model: Some("m".to_string()),
+        base_url: None,
+        context_window,
+        providers: Default::default(),
+    };
+
+    // Absurdly large (the OOM case) and absurdly small (a window that cannot
+    // hold a prompt) are both refused rather than clamped.
+    assert!(Completer::from_config(with_window(Some(9_999_999)))
+        .map(|_| ())
+        .is_err());
+    assert!(Completer::from_config(with_window(Some(1)))
+        .map(|_| ())
+        .is_err());
+
+    // An in-range window survives the gate and is what the completer carries.
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_config(with_window(Some(8_192))).expect("an in-range window resolves");
+    assert_eq!(context_window, Some(8_192));
+    // No stored window stays None — the provider default, not a substituted one.
+    let (_provider, _model, _base_url, context_window) =
+        Completer::from_config(with_window(None)).expect("no window resolves");
+    assert_eq!(context_window, None);
 }
 
 #[test]
@@ -745,6 +782,7 @@ fn a_good_native_provider_resolves_and_ignores_base_url() {
         Some("claude-3-5-sonnet"),
         Some("https://example.com"),
     );
-    let (_provider, model, _base_url) = Completer::from_config(cfg).expect("should resolve");
+    let (_provider, model, _base_url, _window) =
+        Completer::from_config(cfg).expect("should resolve");
     assert_eq!(model, "claude-3-5-sonnet");
 }
