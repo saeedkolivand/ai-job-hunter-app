@@ -1385,6 +1385,142 @@ fn splicing_one_entry_keeps_the_blank_line_that_separates_it_from_the_next() {
     );
 }
 
+/// The six-section plan a real max run produces, with Skills between Summary
+/// and the two employers — the shape that makes the Experience BLOCK
+/// non-adjacent as soon as anything is dealt into the slot between its halves.
+fn six_section_plan() -> Vec<SectionResult> {
+    let mut sections = assembled_sections();
+    sections.insert(
+        1,
+        SectionResult {
+            key: SectionKey::Skills,
+            heading: "Skills".to_string(),
+            body: SectionBody::Skills(vec![SkillGroup {
+                label: "Languages".to_string(),
+                skills: vec!["Go".to_string(), "Rust".to_string()],
+            }]),
+            used_evidence: Vec::new(),
+            dropped_citations: 0,
+            dropped_content: 0,
+            from_cache: false,
+        },
+    );
+    sections
+}
+
+/// **Employment entries move as ONE BLOCK, because they SHARE one heading.**
+///
+/// `assemble` emits a heading only when it changes, so several `Experience`
+/// sections in a row render under a single "Work Experience". Reordering them
+/// individually dealt the group into non-adjacent slots — with
+/// `["Work Experience", "Professional Summary"]` over
+/// `[Summary, Skills, Exp0, Exp1, Projects, Education]` the result was
+/// `[Exp0, Skills, Exp1, Summary, …]`: TWO "Work Experience" headings, the
+/// second employer stranded under the second one.
+///
+/// Silent, and it compounds: no validator flags a duplicate heading, and
+/// `sections::find` returns the FIRST match — so a later whole-section repair
+/// rewrites only the first block, and `entry_range` stops resolving the entries
+/// past the split (the F2 class, re-opened by a reorder instead of by a failed
+/// section).
+///
+/// Mutation check: permute individual sections instead of blocks (drop the
+/// `blocks` grouping) and both the heading count and the adjacency assertion
+/// fail.
+#[test]
+fn employment_entries_are_reordered_as_one_block_under_one_heading() {
+    let document = assemble(
+        &six_section_plan(),
+        &[
+            "Work Experience".to_string(),
+            "Professional Summary".to_string(),
+        ],
+    );
+
+    assert_eq!(
+        document.matches("Work Experience").count(),
+        1,
+        "the shared heading must be emitted exactly once:\n{document}"
+    );
+    let at = |needle: &str| {
+        document
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle} missing from:\n{document}"))
+    };
+    // Nothing may sit between the two employers — that is what "one block"
+    // means, and it is what keeps the shared heading correct.
+    let between = &document[at("Acme Payments")..at("Globex Logistics")];
+    for heading in ["Skills", "Professional Summary", "Projects", "Education"] {
+        assert!(
+            !between.contains(heading),
+            "{heading} was dealt between the two employers:\n{document}"
+        );
+    }
+    // The model asked for Experience first, then Summary; Skills was not named
+    // and keeps its planned slot.
+    assert!(at("Acme Payments") < at("Skills"));
+    assert!(at("Skills") < at("Professional Summary"));
+    assert!(at("Professional Summary") < at("Projects"));
+    assert!(at("Acme Payments") < at("Globex Logistics"));
+}
+
+/// A `section_order` cannot be turned into a reordering weapon by REPEATING a
+/// name or by INVENTING one: both collapse to the plain order below.
+///
+/// **Both are inert BY CONSTRUCTION, not by a guard** — established by running
+/// the mutations rather than by reading the code. A repeat is inert because the
+/// rank is `position` (first mention wins), so an explicit dedupe changed
+/// nothing and was deleted; an invented name is inert because `kind_of` never
+/// yields `SectionKind::Other`, so no block can match one and the `Other` filter
+/// only buys the early return. That makes this a pin on a property of the
+/// ALGORITHM, which a plausible rewrite (a rank map, a `rposition`, a fallback
+/// kind for an unknown name) would silently break.
+///
+/// Mutation check: swap `position` for `rposition` in `order` and the repeated
+/// order stops matching the plain one.
+#[test]
+fn a_repeated_or_invented_section_name_changes_nothing() {
+    let sections = six_section_plan();
+    let plain = assemble(
+        &sections,
+        &[
+            "Work Experience".to_string(),
+            "Professional Summary".to_string(),
+        ],
+    );
+    assert_eq!(
+        assemble(
+            &sections,
+            &[
+                "Work Experience".to_string(),
+                "WORK EXPERIENCE".to_string(),
+                "Professional Summary".to_string(),
+                "Work Experience".to_string(),
+            ]
+        ),
+        plain,
+        "a repeated kind is its FIRST mention"
+    );
+    assert_eq!(
+        assemble(
+            &sections,
+            &[
+                "Referenzen".to_string(),
+                "Work Experience".to_string(),
+                "Hobbies & Interests".to_string(),
+                "Professional Summary".to_string(),
+            ]
+        ),
+        plain,
+        "a name this grammar has no kind for reorders nothing"
+    );
+    // …and an order made ONLY of unrecognised names is the planned document.
+    assert_eq!(
+        assemble(&sections, &["Referenzen".to_string()]),
+        assemble(&sections, &[]),
+    );
+}
+
 /// Three employment entries assembled from `plans`, with the sections at
 /// `dropped` never generated — the shape a run leaves behind when one section
 /// call failed, came back empty, or was refused by the day's ceiling.

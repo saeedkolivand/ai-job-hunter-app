@@ -235,48 +235,89 @@ fn render_project(project: &ProjectOut) -> String {
 /// asked to put together: `["skills", "summary"]` then rendered Skills,
 /// Experience, Projects, Education, Summary.
 ///
-/// So this is not a sort. It is a PERMUTATION OF THE NAMED SECTIONS' OWN SLOTS:
+/// So this is not a sort. It is a PERMUTATION OF THE NAMED KINDS' OWN SLOTS:
 /// the positions the named sections already occupy are the only positions a
-/// reorder may write to, and the named sections are dealt back into them in the
-/// model's order. A section the order does not name therefore keeps its planned
-/// index literally — it cannot move, because nothing writes to its slot.
+/// reorder may write to, and they are dealt back into them in the model's
+/// order. A section the order does not name therefore keeps its planned
+/// position literally — it cannot move, because nothing writes to its slot.
 ///
 /// `["skills", "summary"]` over the planned `[Summary, Skills, Experience…]`
 /// then swaps exactly those two and leaves the rest alone, which is what the
 /// model asked for; `["experience"]` over the same plan is a no-op, which is
 /// the honest reading of an opinion about one section and nothing else.
 ///
-/// The tie-break inside a rank is the PLANNED index, so two employment entries
-/// (same kind, same rank) keep the roster's order — the one ordering the model
-/// may not touch — without relying on the sort being stable.
+/// **The unit is a KIND BLOCK, not a section — and getting that wrong was a
+/// silent document corruption.** Employment entries are several `SectionResult`s
+/// that SHARE one heading, and [`assemble`] emits that heading only when it
+/// changes. Permuting them individually dealt the group into non-adjacent slots:
+/// `["Work Experience", "Professional Summary"]` over
+/// `[Summary, Skills, Exp0, Exp1, Projects, Education]` produced
+/// `[Exp0, Skills, Exp1, Summary, …]` — TWO "Work Experience" headings with an
+/// employer stranded under the second one. Nothing downstream flags a duplicate
+/// heading, and `sections::find` takes the FIRST match, so a later whole-section
+/// repair would rewrite only the first block and `entry_range` would stop
+/// resolving the entries past the split. So each kind's contiguous run moves as
+/// ONE unit, and adjacency — which is what makes the shared heading correct — is
+/// preserved by construction.
+///
+/// The tie-break inside a rank is the planned BLOCK index, and entries inside a
+/// block never move relative to each other: the roster's order is the one
+/// ordering the model may not touch.
+///
+/// A `section_order` that REPEATS a kind, or INVENTS a name, reorders nothing
+/// extra — and both fall out of the algorithm rather than out of a guard, which
+/// is worth knowing before rewriting either. A repeat is inert because the rank
+/// is `position` (the FIRST mention wins), and an invented name is inert
+/// because [`kind_of`] never yields [`SectionKind::Other`], so no block can
+/// match one. The `Other` filter below is only what lets an order made
+/// exclusively of invented names take the cheap early return.
 fn order<'a>(sections: &'a [SectionResult], section_order: &[String]) -> Vec<&'a SectionResult> {
     let wanted: Vec<SectionKind> = section_order
         .iter()
         .map(|name| classify_section(name))
         .filter(|kind| !matches!(kind, SectionKind::Other))
         .collect();
-    let mut ordered: Vec<&SectionResult> = sections.iter().collect();
     if wanted.is_empty() {
-        return ordered;
+        return sections.iter().collect();
     }
-    let mut named: Vec<(usize, usize)> = sections
+
+    // The plan as contiguous same-kind BLOCKS: `[Summary][Skills][Exp0 Exp1]
+    // [Projects][Education]`. Maximal runs, so a kind that somehow appeared
+    // twice in the plan keeps two blocks rather than being teleported together.
+    let mut blocks: Vec<Vec<&SectionResult>> = Vec::new();
+    for section in sections {
+        match blocks.last_mut() {
+            Some(block)
+                if block
+                    .last()
+                    .is_some_and(|last| kind_of(last.key) == kind_of(section.key)) =>
+            {
+                block.push(section);
+            }
+            _ => blocks.push(vec![section]),
+        }
+    }
+
+    let mut named: Vec<(usize, usize)> = blocks
         .iter()
         .enumerate()
-        .filter_map(|(index, section)| {
+        .filter_map(|(index, block)| {
+            let kind = kind_of(block.first()?.key);
             wanted
                 .iter()
-                .position(|candidate| *candidate == kind_of(section.key))
+                .position(|candidate| *candidate == kind)
                 .map(|rank| (rank, index))
         })
         .collect();
     // Ascending by construction (`enumerate`), which is what makes "deal the
-    // named sections back into their own slots" well defined.
+    // named blocks back into their own slots" well defined.
     let slots: Vec<usize> = named.iter().map(|(_, index)| *index).collect();
     named.sort_by_key(|(rank, index)| (*rank, *index));
+    let mut ordered = blocks.clone();
     for (slot, (_, from)) in slots.into_iter().zip(named) {
-        ordered[slot] = &sections[from];
+        ordered[slot].clone_from(&blocks[from]);
     }
-    ordered
+    ordered.concat()
 }
 
 fn kind_of(key: SectionKey) -> SectionKind {
