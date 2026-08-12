@@ -9,9 +9,10 @@
 //! transport with no callback in between.
 //!
 //! `tauri-plugin-sentry` 0.6 walks through exactly that door. When a renderer
-//! envelope fails to parse — which happens routinely, because
-//! `@sentry/vite-plugin`'s debug-ID injection writes a `debug_meta` sourcemap
-//! image sentry-rust cannot deserialize (getsentry/sentry-rust#1267) — the
+//! envelope fails to parse — routinely in apps that use `@sentry/vite-plugin`,
+//! whose debug-ID injection writes a `debug_meta` sourcemap image sentry-rust
+//! cannot deserialize (getsentry/sentry-rust#1267); this app ships no
+//! `@sentry/*` package, so the drop path is expected to stay cold here — the
 //! plugin rebuilds it with `Envelope::from_bytes_raw` and calls `send_envelope`
 //! (`commands.rs:30-35`). Such an envelope keeps the original bytes in a
 //! private `Items::Raw`, and `to_writer` copies them to the socket **verbatim**

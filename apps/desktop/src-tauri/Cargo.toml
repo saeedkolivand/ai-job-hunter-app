@@ -111,6 +111,12 @@ tauri-plugin-log = "2"
 # Both `tauri-plugin-sentry` and `sentry-rust-minidump` declare sentry with
 # `default-features = false`, so this declaration alone decides which transport
 # the whole tree gets.
+#
+# BUMP CHECKLIST addition (0.49): `crash_reporting/transport.rs::is_opaque`
+# keys off a private-repr behavior — `Items::Raw` yields an empty `items()`
+# iterator and `add_item` early-returns on raw envelopes. Version-coupled; on
+# any sentry/sentry-types bump, re-read `protocol/envelope.rs` for both facts
+# (the `is_opaque_separates_raw_from_parsed` test fails loudly if they move).
 sentry = { version = "0.49", default-features = false, features = [
   "backtrace",
   "contexts",
