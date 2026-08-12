@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIPELINE_STAGES } from '@ajh/shared';
+import { isPipelineStage, PIPELINE_STAGES, PIPELINE_STAGES_FREE } from '@ajh/shared';
 
 import {
-  FREE_PIPELINE_STAGES,
   OVERRIDABLE_PIPELINE_STAGES,
   providerNeedsModel,
   resolveStageRouting,
@@ -14,7 +13,7 @@ const allConfigured = () => true;
 describe('OVERRIDABLE_PIPELINE_STAGES', () => {
   it('is the generated vocabulary minus the stages that make no provider call', () => {
     expect(OVERRIDABLE_PIPELINE_STAGES).toEqual(
-      PIPELINE_STAGES.filter((s) => !(FREE_PIPELINE_STAGES as readonly string[]).includes(s))
+      PIPELINE_STAGES.filter((s) => !(PIPELINE_STAGES_FREE as readonly string[]).includes(s))
     );
     // The two the backend refuses an override for.
     expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('assemble');
@@ -33,9 +32,9 @@ describe('OVERRIDABLE_PIPELINE_STAGES', () => {
     ]);
   });
 
-  it('names only real stages as free (guards a rename upstream)', () => {
-    for (const stage of FREE_PIPELINE_STAGES) {
-      expect(PIPELINE_STAGES).toContain(stage);
+  it('offers only names the closed vocabulary actually contains', () => {
+    for (const stage of OVERRIDABLE_PIPELINE_STAGES) {
+      expect(isPipelineStage(stage)).toBe(true);
     }
   });
 });

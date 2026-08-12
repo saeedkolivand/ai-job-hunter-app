@@ -11,6 +11,12 @@
  *
  * Kept separate from the hook so the "what survives a save" rule is unit-
  * testable without React Query.
+ *
+ * If the command ever gains non-destructive absence (`field?: T | null`, where
+ * absent = keep stored and `null` = clear), this function BODY is the only
+ * thing that changes: callers already express intent as "what I am changing",
+ * `null` already means "clear", and the hook would then send just those fields.
+ * The `stored`/`localWindows` inputs become unnecessary, not wrong.
  */
 
 import type { AiProviderRouting } from '@ajh/shared';

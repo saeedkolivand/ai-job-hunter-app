@@ -6,29 +6,28 @@
  * overridden" and "this override cannot run" — are unit-testable.
  */
 
-import { type AiStageOverride, PIPELINE_STAGES, type PipelineStage } from '@ajh/shared';
+import {
+  type AiStageOverride,
+  PIPELINE_STAGES,
+  PIPELINE_STAGES_FREE,
+  type PipelineStage,
+} from '@ajh/shared';
 
 import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 
 /**
- * Stages that make NO provider call: `assemble` is a pure renderer and
- * `validate` is deterministic. The backend rejects an override for them, and
- * offering a control that is refused on save is worse than offering none — so
- * the vocabulary is filtered here rather than in each consumer.
+ * The stages a model override can actually change: the generated vocabulary
+ * minus the ones that make no provider call.
  *
- * Derived from {@link PIPELINE_STAGES} (never a second hand-written list), so
- * a stage added upstream shows up here automatically instead of silently
- * missing from Settings.
+ * BOTH lists come from `@ajh/shared` — the stage names are codegen'd into Rust
+ * and the free set is pinned against `Pipeline::free_stage_names()` of both
+ * depths, so neither is hand-copied here. The backend REFUSES an override on a
+ * free stage, and offering a control that is rejected on save is worse than
+ * offering none.
  */
-export const FREE_PIPELINE_STAGES = [
-  'assemble',
-  'validate',
-] as const satisfies readonly PipelineStage[];
-
-/** The stages a model override can actually change. */
 export const OVERRIDABLE_PIPELINE_STAGES: readonly PipelineStage[] = PIPELINE_STAGES.filter(
-  (stage) => !(FREE_PIPELINE_STAGES as readonly string[]).includes(stage)
+  (stage) => !(PIPELINE_STAGES_FREE as readonly string[]).includes(stage)
 );
 
 /**
