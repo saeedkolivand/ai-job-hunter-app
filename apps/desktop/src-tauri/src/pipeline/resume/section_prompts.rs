@@ -158,6 +158,7 @@ pub fn section_user(
     analysis: &JobAnalysis,
     strategy: &ResumeStrategy,
     evidence: &EvidenceMap,
+    note: Option<&str>,
 ) -> String {
     let mut out = format!(
         "{}\n\n{}\n\n{}\n\n{}",
@@ -170,8 +171,21 @@ pub fn section_user(
         out.push_str("\n\n");
         out.push_str(&fenced_artifact("project_seed", &project_seed_block(seeds)));
     }
+    // The user's own steer on a per-section regenerate. Still UNTRUSTED input
+    // to a prompt (ADR-010) — it is typed into a renderer field and could as
+    // easily be pasted out of a job ad — so it takes the same fence and the
+    // same cap as the repair path's note.
+    if let Some(note) = note.map(str::trim).filter(|note| !note.is_empty()) {
+        out.push_str("\n\n");
+        out.push_str(&fenced("section_note", note, NOTE_CAP));
+    }
     out
 }
+
+/// Char cap on the free-text steer a user may attach to a section regenerate.
+/// Mirrors the wire schema's `.max(500)` and `prompts`' own copy, for the same
+/// reason: serde enforces nothing on this transport.
+const NOTE_CAP: usize = 500;
 
 /// The slice of the strategy ONE section is written against.
 ///

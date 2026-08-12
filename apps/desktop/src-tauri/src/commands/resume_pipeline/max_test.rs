@@ -5,6 +5,9 @@
 //! file: everything here is about one decision, and every guard was
 //! mutation-checked by applying the change its doc names.
 
+use serde_json::json;
+
+use super::hooks::{with_detail, DETAIL_KEY};
 use super::max::{budget_for, deadline_for, is_staged, pipeline_for};
 use crate::pipeline::budget::Budget;
 use crate::pipeline::resume::types::GenerationDepth;
@@ -92,4 +95,42 @@ fn the_max_deadline_is_longer_than_the_quality_one_and_scales_with_effort() {
         deadline_for(GenerationDepth::Max, None),
         Budget::RESUME_MAX.run_timeout
     );
+}
+
+// ── The persisted artifact detail ────────────────────────────────────────────
+
+/// The DB row carries BOTH halves: the counts the runs panel and the event
+/// trail already read, and — at max depth only — the full artifact a later
+/// per-entry regenerate needs. Nesting rather than replacing is what keeps a
+/// reader that knows nothing about the detail seeing exactly what it saw before.
+///
+/// Mutation check: return the detail alone from `with_detail` and the counts
+/// assertion fails; return the artifact alone and the detail one does.
+#[test]
+fn the_full_artifact_rides_inside_the_counts_not_instead_of_them() {
+    let counts = json!({ "cached": false, "companies": 3 });
+    let detail = json!({ "perCompany": [{ "company": "Acme Payments" }] });
+
+    let row = with_detail(Some(counts.clone()), Some(detail.clone())).expect("a row artifact");
+    assert_eq!(row.get("companies"), counts.get("companies"));
+    assert_eq!(row.get(DETAIL_KEY), Some(&detail));
+}
+
+/// A stage with NO detail — every stage at quality depth, and most of them at
+/// max — produces the row it always produced. The detail is additive or it is
+/// a behaviour change to a shipped trail.
+///
+/// Mutation check: make `with_detail` return `Some(artifact)` unconditionally
+/// (dropping the `detail?`) and the `None` case gains an empty object where
+/// the row previously had one shape.
+#[test]
+fn a_stage_without_a_detail_writes_exactly_the_artifact_it_always_did() {
+    let counts = json!({ "issues": 2, "criticals": 0 });
+    assert_eq!(with_detail(Some(counts.clone()), None), None);
+    assert_eq!(with_detail(None, None), None);
+    // …and with a detail but no counts, the row still carries the detail rather
+    // than dropping it on the floor.
+    let detail = json!({ "items": [] });
+    let row = with_detail(None, Some(detail.clone())).expect("a row artifact");
+    assert_eq!(row.get(DETAIL_KEY), Some(&detail));
 }

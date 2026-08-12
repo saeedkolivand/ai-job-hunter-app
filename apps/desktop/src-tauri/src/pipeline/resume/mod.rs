@@ -107,6 +107,7 @@ pub struct RunLedger {
 #[derive(Debug, Default)]
 struct LedgerState {
     artifacts: HashMap<&'static str, Value>,
+    details: HashMap<&'static str, Value>,
     stopped: Option<StoppedReason>,
     calls: u32,
     cached: u32,
@@ -129,6 +130,33 @@ impl RunLedger {
     /// The summary for `stage`, if it left one.
     pub fn artifact(&self, stage: &str) -> Option<Value> {
         self.state.lock().artifacts.get(stage).cloned()
+    }
+
+    /// Record one stage's FULL artifact, for the DB event row only.
+    ///
+    /// **The log boundary and the DB boundary are not the same boundary.**
+    /// ADR-027 governs the LOG: a log line carries codes, ids, hashes, counts
+    /// and durations, never résumé text — and [`record`](Self::record) is what
+    /// feeds it, so those lines stay counts-only at every depth. The database
+    /// already stores far more than this (`ai_generations.resume_text`, the
+    /// quality report's evidence spans), and a max run needs its `strategy` and
+    /// `match_evidence` artifacts back HOURS later, when the user clicks
+    /// "regenerate this role" — the KvCache cannot answer that (its key chain
+    /// is not reconstructible outside a run) and re-deriving them would mean
+    /// two fresh provider calls per click.
+    ///
+    /// So the detail rides in the persisted row beside the counts, and nowhere
+    /// else: it is not emitted on `pipeline:stage` and never reaches a `Span`.
+    /// It is also CLAMPED by the store like every other artifact — an oversized
+    /// one becomes unparseable by design, which the regenerate path treats as a
+    /// soft miss.
+    pub fn record_detail(&self, stage: &'static str, detail: Value) {
+        self.state.lock().details.insert(stage, detail);
+    }
+
+    /// The full artifact for `stage`, if it left one.
+    pub fn detail(&self, stage: &str) -> Option<Value> {
+        self.state.lock().details.get(stage).cloned()
     }
 
     /// Count one provider round-trip, and whether it was served from the stage

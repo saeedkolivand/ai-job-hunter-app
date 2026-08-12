@@ -85,6 +85,47 @@ pub fn find(sections: &[RawSection], key: SectionKey) -> Option<&RawSection> {
     sections.iter().find(|section| section.kind == wanted)
 }
 
+/// The line range of ONE employment ENTRY inside the experience section.
+///
+/// What [`find`] cannot give: `Experience(n)` resolves to the whole experience
+/// section there, because at quality depth an entry is not independently
+/// regenerable. At MAX depth it is — the document was assembled one entry at a
+/// time from a seeded roster — so a per-entry regenerate can replace exactly
+/// the entry the user clicked instead of re-rolling the other eight.
+///
+/// An entry begins at a `LineKind::JobEntry` line and runs to the next one, or
+/// to the end of the section. `None` when the document has no experience
+/// section, or fewer entries than `index` — the caller then falls back to the
+/// whole-section path, which is what a document that no longer matches its
+/// run's roster deserves.
+///
+/// The returned range never includes the section HEADING (it starts at the
+/// entry line), so splicing it in cannot duplicate or delete one.
+pub fn entry_range(document: &str, index: u8) -> Option<RawSection> {
+    let split = split(document);
+    let section = find(&split, SectionKey::Experience(index))?;
+    let parsed = parse_resume(document);
+    let starts: Vec<usize> = (section.start..section.end)
+        .filter(|line| {
+            parsed
+                .lines
+                .get(*line)
+                .is_some_and(|line| matches!(line.kind, LineKind::JobEntry))
+        })
+        .collect();
+    let start = *starts.get(index as usize)?;
+    let end = starts
+        .get(index as usize + 1)
+        .copied()
+        .unwrap_or(section.end);
+    Some(RawSection {
+        heading: None,
+        kind: SectionKind::Experience,
+        start,
+        end,
+    })
+}
+
 /// The [`SectionKey`] for a section KIND, or `None` for a kind this grammar has
 /// no key for (the leading band, an unrecognised heading).
 pub fn key_of(kind: SectionKind) -> Option<SectionKey> {

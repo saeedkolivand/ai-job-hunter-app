@@ -725,10 +725,11 @@ async fn ask_section(
     analysis: &JobAnalysis,
     strategy: &ResumeStrategy,
     evidence: &EvidenceMap,
+    note: Option<&str>,
 ) -> AppResult<SectionAnswer> {
     let guard = || guard_deadline(ledger, deadline);
     let system = section_system(&slot.seed, lang);
-    let user = section_user(slot, source_slice, analysis, strategy, evidence);
+    let user = section_user(slot, source_slice, analysis, strategy, evidence, note);
     let hint = example_for(&slot.seed);
     let schema = schema_for(&slot.seed);
     let schema = Some(&schema);
@@ -759,6 +760,37 @@ async fn ask_section(
                 .await?,
         ),
     })
+}
+
+/// Generate ONE section, end to end: slice the source, scope the evidence, ask,
+/// and fold the answer back onto the seed.
+///
+/// The stage's fan-out calls this per slot, and so does the max-depth
+/// per-section REGENERATE — which is the point of it existing as a function.
+/// A regenerated entry that went through a different prompt, a different
+/// evidence scope or a different filter than the run that produced its
+/// neighbours would be a second generator, and the document would show it.
+#[allow(clippy::too_many_arguments)]
+pub async fn generate_one(
+    completer: &Completer,
+    ledger: &RunLedger,
+    deadline: RunDeadline,
+    slot: &SectionSlot,
+    lang: &str,
+    source_resume: &str,
+    roles: &[EvidenceRole],
+    analysis: &JobAnalysis,
+    strategy: &ResumeStrategy,
+    evidence: &EvidenceMap,
+    note: Option<&str>,
+) -> AppResult<SectionResult> {
+    let slice = source_slice(slot, source_resume, roles);
+    let scoped = scoped_evidence(slot, evidence);
+    let answer = ask_section(
+        completer, ledger, deadline, slot, lang, &slice, analysis, strategy, &scoped, note,
+    )
+    .await?;
+    Ok(merge(slot, answer, source_resume, evidence))
 }
 
 #[async_trait]
@@ -817,6 +849,9 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
                     analysis,
                     strategy,
                     &scoped,
+                    // No steer on the run path: a note is something a user
+                    // types on a per-section REGENERATE.
+                    None,
                 )
                 .await?;
                 store_answer(cache_handle, &slot, &key, &answer);

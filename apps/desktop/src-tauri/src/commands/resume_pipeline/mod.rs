@@ -744,19 +744,28 @@ pub async fn resume_pipeline_regenerate_section(
     );
     let completer = Completer::from_active(&app)?;
     let source = source_resume_for(&app, &row, &record);
-    let spliced = match regenerate_one_section(
-        &completer,
-        &source,
-        &record.target_language,
-        &record.resume_text,
-        key,
-        // No validator issues on this path: the user, not a report, asked for
-        // the change. The note carries the "why", fenced.
-        &[],
-        req.note.as_deref(),
-    )
-    .await?
-    {
+    let outcome =
+        match regenerate_max_entry(&store, &row, &record, &completer, &source, key, &req).await {
+            Some(outcome) => outcome?,
+            // Not a max run, not an employment entry, or the run's artifacts are
+            // gone/unparseable — the whole-section rewrite that has always been
+            // here. A degraded click is a worse click; a failed one is a bug.
+            None => {
+                regenerate_one_section(
+                    &completer,
+                    &source,
+                    &record.target_language,
+                    &record.resume_text,
+                    key,
+                    // No validator issues on this path: the user, not a report,
+                    // asked for the change. The note carries the "why", fenced.
+                    &[],
+                    req.note.as_deref(),
+                )
+                .await?
+            }
+        };
+    let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {
             span.end(false);
@@ -824,6 +833,69 @@ pub async fn resume_pipeline_regenerate_section(
         return Ok(detail(&app, &row));
     }
     Ok(detail(&app, &row))
+}
+
+/// The MAX-depth per-entry regenerate, when this click qualifies for it.
+///
+/// `None` means "not this path" — and every one of the four reasons is a normal
+/// state, not a failure:
+///
+/// * the run was quality depth (its document was drafted whole, so an entry is
+///   not independently regenerable — that is exactly what `sections::find`'s
+///   Experience-collapse says);
+/// * the key is not an employment entry (every other section IS its own
+///   section, and the whole-section rewrite addresses it correctly);
+/// * the run's persisted artifacts are missing or unparseable — a run older
+///   than the detail, or one whose artifact the store's clamp truncated;
+/// * the document no longer has that entry.
+///
+/// The caller degrades to the whole-section path in all four cases, which is
+/// why this returns `Option<AppResult<_>>` rather than folding the miss into an
+/// error: a click must not fail because an optimization was unavailable.
+#[allow(clippy::too_many_arguments)]
+async fn regenerate_max_entry(
+    store: &PipelineRunStore,
+    row: &RunRow,
+    record: &AiGenerationRecord,
+    completer: &Completer,
+    source: &str,
+    key: SectionKey,
+    req: &ResumePipelineRegenerateSectionRequest,
+) -> Option<AppResult<SectionOutcome>> {
+    if row.depth != GenerationDepth::Max.as_str() {
+        return None;
+    }
+    let SectionKey::Experience(index) = key else {
+        return None;
+    };
+    let artifacts = max::artifacts_for(store, &row.id)?;
+    let outcome = max::regenerate_entry(
+        completer,
+        &artifacts,
+        source,
+        // The aggregate's own copy of the posting, which is often EMPTY on this
+        // path: the pipeline's save deliberately writes no `job_ad` (the
+        // postings cache is keyed by the live job id, which a finished run no
+        // longer holds), so this is only populated when a fast-path generation
+        // stored one first. Empty is a degradation, not a failure — the posting
+        // reaches the prompt through the persisted `job_analysis` and
+        // `evidence_map` either way, and the FACTS the entry is rebuilt from
+        // are the source résumé's, which is always present. The one thing it
+        // costs is `extract_evidence`'s keyword scoring, which orders bullets
+        // it does not select.
+        &record.job_ad,
+        &record.target_language,
+        &record.resume_text,
+        index,
+        req.note.as_deref(),
+    )
+    .await;
+    match outcome {
+        // The entry is not in the document (or not in the roster): fall back
+        // rather than telling the user their résumé has no such section.
+        Ok(SectionOutcome::Missing) => None,
+        other => Some(other),
+    }
 }
 
 /// The status a run row should move to after its persisted wrapper changed —

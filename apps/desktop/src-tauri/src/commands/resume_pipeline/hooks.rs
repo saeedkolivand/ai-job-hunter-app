@@ -175,6 +175,34 @@ pub(crate) fn terminal_state(
     (status, reason.map(stopped_wire))
 }
 
+/// The key a stage's FULL artifact rides under, inside the counts-only one.
+///
+/// Nested rather than replacing it, so the persisted row keeps the summary the
+/// runs panel reads AND the payload a max-depth regenerate needs — and so a
+/// reader that does not know about the detail sees exactly what it saw before.
+pub(crate) const DETAIL_KEY: &str = "full";
+
+/// Fold a stage's full artifact into its counts-only one, for the DB row.
+///
+/// The EVENT payload is built from the counts-only value upstream of this
+/// (`issue_count`/`critical_count`), so the detail never reaches the wire — and
+/// a stage with no detail (every stage at quality depth) produces a row
+/// byte-identical to the one it produced before this existed.
+pub(crate) fn with_detail(artifact: Option<Value>, detail: Option<Value>) -> Option<Value> {
+    let detail = detail?;
+    let mut artifact = artifact.unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    match artifact.as_object_mut() {
+        Some(object) => {
+            object.insert(DETAIL_KEY.to_string(), detail);
+            Some(artifact)
+        }
+        // A non-object artifact has nowhere to nest into. Keeping the counts is
+        // the safer half: the detail is an optimization, the summary is the
+        // trail. Unreachable today — every `record` call passes an object.
+        None => Some(artifact),
+    }
+}
+
 /// One [`StoppedReason`]'s wire token — the `snake_case` serde rename the
 /// renderer's suffix map keys on.
 fn stopped_wire(reason: StoppedReason) -> String {
@@ -451,7 +479,10 @@ impl StageHooks for RunHooks {
             stage,
             phase,
             Some(outcome.ms),
-            self.ledger.artifact(stage.stage),
+            with_detail(
+                self.ledger.artifact(stage.stage),
+                self.ledger.detail(stage.stage),
+            ),
         );
     }
 }
