@@ -273,9 +273,12 @@ fn import_drops_invalid_override_rows_and_keeps_the_good_one() {
 /// write side wide open. (Found exactly that way — the first version of this
 /// test survived deleting both the filter and the `take`.)
 ///
-/// Mutation check (executed): remove `.filter(is_pipeline_stage)` and the
+/// Mutation checks (both executed): remove the vocabulary filter and the
 /// `validate_stage_override` call from `apply_stage_overrides_conn`, and 509
-/// rows land in the table.
+/// rows land in the table. Separately, revert the filter alone to
+/// `is_pipeline_stage` — free-stage rows then eat cap slots ahead of the real
+/// stages they sort before, and this test fails while the free-stage test above
+/// still passes. This is THE pin for the filter.
 #[test]
 fn import_never_persists_more_rows_than_the_vocabulary_has_stages() {
     let (_dir, store) = new_store();
@@ -378,11 +381,66 @@ fn a_stage_that_makes_no_ai_call_cannot_be_overridden() {
     assert!(store.stage_overrides().is_empty());
 }
 
+/// The READ side refuses a free stage too — the third belt, and the one that
+/// covers a row already sitting in the table from an older release whose
+/// vocabulary still paid for that stage.
+///
+/// Written through the raw table rather than through `set_stage_override`,
+/// which would refuse it: the point is a row that is already there.
+///
+/// Mutation check (executed): neuter the `is_overridable_stage` filter in
+/// `stage_overrides_conn` (the row-level `out.insert` guard) and the inert row
+/// is handed to the resolver through BOTH readers.
+///
+/// Precisely what this does NOT pin: the early return in `stage_override`.
+/// Deleting it leaves this test green — and that is correct, because it is a
+/// redundant fast path, not a belt: `stage_override` reads through
+/// `stage_overrides_conn`, which filters the row out anyway. No test can
+/// distinguish its presence, so none claims to.
+#[test]
+fn a_free_stage_row_already_in_the_table_is_not_read_back() {
+    let (_dir, store) = new_store();
+    store
+        .conn
+        .lock()
+        .execute(
+            "INSERT INTO ai_stage_overrides
+                 (stage, provider, model, base_url, context_window, updated_at)
+             VALUES ('validate', 'ollama', 'inert', NULL, NULL, 0)",
+            [],
+        )
+        .unwrap();
+
+    // Present in the table…
+    let raw: i64 = store
+        .conn
+        .lock()
+        .query_row(
+            "SELECT COUNT(*) FROM ai_stage_overrides WHERE stage = 'validate'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(raw, 1, "the fixture must actually be in the table");
+
+    // …and invisible to both readers, so nothing can resolve it.
+    assert!(store.stage_override("validate").is_none());
+    assert!(!store.stage_overrides().contains_key("validate"));
+}
+
 /// The same refusal on the import path, where the row arrives from an untrusted
 /// bundle rather than from the Settings writer.
 ///
-/// Mutation check (executed): change the `is_overridable_stage` filter in
-/// `apply_stage_overrides_conn` back to `is_pipeline_stage` and the row lands.
+/// This pins the OUTCOME (no free-stage row is ever persisted), which two
+/// independent layers guarantee: the `is_overridable_stage` filter, and
+/// `validate_stage_override`'s own arm via the `else { continue }`. So it does
+/// NOT pin the filter by itself — reverting the filter to `is_pipeline_stage`
+/// leaves this test green, because the validate arm still drops the row.
+/// (An earlier version of this comment claimed otherwise; the mutation was run
+/// and did not reproduce.) What pins the filter specifically is
+/// `import_never_persists_more_rows_than_the_vocabulary_has_stages`: the filter
+/// runs BEFORE `.take(MAX_STAGE_OVERRIDES)`, so it is what stops a free-stage
+/// row from consuming a cap slot that a real stage needed.
 #[test]
 fn import_drops_an_override_on_a_free_stage() {
     let (_dir, store) = new_store();
