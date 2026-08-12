@@ -21,7 +21,7 @@ use super::types::{
     CompanyPlan, EvidenceItem, EvidenceMap, EvidenceStatus, GenerationDepth, JobAnalysis,
     ResumeStrategy, SectionKey, SkillGroup,
 };
-use super::{RunLedger, QUALITY_STAGES};
+use super::{RunLedger, MAX_STAGES, QUALITY_STAGES};
 use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::validate::content::{validate_content, ContentInput, DocKind};
 
@@ -639,6 +639,46 @@ fn quality_stage_names_are_pinned_and_match_the_pipeline() {
             "repair"
         ]
     );
+}
+
+/// The generated stage vocabulary and the two depth lists must describe the
+/// SAME set of stages — checked in BOTH directions, because each direction
+/// fails differently.
+///
+/// * A depth stage MISSING from `PIPELINE_STAGES` is a stage the user can never
+///   override (and a `pipeline:stage` name the renderer's closed vocabulary
+///   would reject).
+/// * A generated name belonging to NO depth is worse than useless: the Settings
+///   UI would offer an override for a stage that never runs, the write would be
+///   accepted, and nothing would ever apply it — a setting with no effect and no
+///   error.
+///
+/// Ordering is deliberately NOT asserted between the two sides: `PIPELINE_STAGES`
+/// is a union of two differently-ordered lists, and pinning a union's order
+/// would only pin the literal. Each depth's own order is pinned against the
+/// pipeline that runs (`each_depth_runs_its_own_pinned_stage_list`).
+///
+/// Mutation check (executed): renaming `"llm_judge"` to `"judge"` in
+/// `MAX_STAGES` fails the first assertion; adding `"rewrite"` to the TS
+/// `PIPELINE_STAGES` and regenerating fails the second.
+#[test]
+fn the_generated_stage_vocabulary_covers_exactly_the_two_depth_lists() {
+    use crate::ipc_contracts::events::PIPELINE_STAGES;
+
+    for stage in QUALITY_STAGES.iter().chain(MAX_STAGES) {
+        assert!(
+            PIPELINE_STAGES.contains(stage),
+            "{stage} runs but is missing from the generated PIPELINE_STAGES — \
+             add it to packages/shared/src/events/pipeline.ts and run `pnpm gen:ipc`",
+        );
+    }
+    for stage in PIPELINE_STAGES {
+        assert!(
+            QUALITY_STAGES.contains(stage) || MAX_STAGES.contains(stage),
+            "{stage} is in the generated PIPELINE_STAGES but belongs to no pipeline — \
+             an override on it would be a setting with no effect",
+        );
+    }
 }
 
 // ── Prompt composition (ADR-010) ────────────────────────────────────────────

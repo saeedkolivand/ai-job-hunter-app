@@ -18,6 +18,47 @@ export const PIPELINE_STAGE_PHASES = ['start', 'finish', 'error'] as const;
 export type PipelineStagePhase = (typeof PIPELINE_STAGE_PHASES)[number];
 
 /**
+ * Every stage name the staged résumé pipeline can run, in pipeline order.
+ *
+ * The ORDER-PRESERVED UNION of the two Rust depth lists (`QUALITY_STAGES` and
+ * `MAX_STAGES` in `pipeline/resume/mod.rs`), not a third hand-written list: a
+ * Rust test pins both directions — every depth's stages must appear here, and
+ * every name here must belong to at least one depth — so this cannot drift from
+ * the pipelines it names.
+ *
+ * Emitted into Rust by `pnpm gen:ipc` (`ipc_contracts::events::PIPELINE_STAGES`)
+ * for the same reason {@link PIPELINE_STAGE_PHASES} is: it is a CLOSED
+ * vocabulary that both sides key on. Two consumers today —
+ *
+ * - a `pipeline:stage` event's `stage` field (the renderer's timeline, which
+ *   ignores a name it does not know, so a rename is otherwise silent);
+ * - the per-stage model overrides (`ai_stage_overrides`), whose primary key is
+ *   one of these names — a row for anything else is rejected at write AND at
+ *   import, so a tampered backup cannot introduce a stage that never runs.
+ */
+export const PIPELINE_STAGES = [
+  'analyze_job',
+  'match_evidence',
+  'strategy',
+  'draft',
+  'sections',
+  'assemble',
+  'validate',
+  'repair',
+  'llm_judge',
+] as const;
+
+/** The closed stage vocabulary — see {@link PIPELINE_STAGES}. */
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+/** Runtime guard for {@link PipelineStage} — the checkable form of the closed
+ *  set above, so a renderer that reads a stage name off the wire (or off a
+ *  stored override row) can reject an unknown one instead of rendering it. */
+export function isPipelineStage(value: unknown): value is PipelineStage {
+  return typeof value === 'string' && (PIPELINE_STAGES as readonly string[]).includes(value);
+}
+
+/**
  * Longest a `sectionKey` may be ON THE WIRE, in UTF-16 code units.
  *
  * NORMATIVE for the Phase-3 Rust emitter: it must reject (not truncate) anything
