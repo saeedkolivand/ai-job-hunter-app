@@ -325,6 +325,40 @@ async fn execute(
 
     let outcome = max::pipeline_for(depth).run_hooked(&mut ctx, &hooks).await;
 
+    // ── THE DELETE WINS ──────────────────────────────────────────────────────
+    //
+    // This run wrote its own `running` row before the first stage. If that row
+    // is GONE now, something deleted this posting's data while the run was in
+    // flight — `applications_delete`, `ai_generations_remove`, a factory reset,
+    // or a backup restore — and every one of those is the user saying "remove
+    // this". Writing the terminal state anyway does not merely miss the delete:
+    // `upsert_run` is INSERT OR REPLACE, so it RESURRECTS the run row, and
+    // `persist_document`'s merge-upsert re-creates the `ai_generations`
+    // aggregate the delete removed. The posting comes back — in the runs panel,
+    // in the Documents list, and in the next backup — with a permanently
+    // PARTIAL trail, because the events from before the purge are already gone.
+    // Executed, not reasoned: see
+    // `a_run_whose_posting_was_deleted_mid_flight_does_not_resurrect_it`.
+    //
+    // So the run abandons its own output. No persist, no row, and a sweep of
+    // whatever it appended into the gap between the purge and here.
+    //
+    // A terminal check rather than cancel-and-await: nothing maps a `job_url`
+    // to an in-flight run's cancel token (`RunRow` has no job id, and
+    // `CancelRegistry` is keyed by a per-run uuid), so cancelling at the delete
+    // site needs a new index — and even with one, the in-flight window between
+    // the cancel and the run noticing still lands here. This closes both delete
+    // doors at the single place both must pass through.
+    if store.run(run_id).is_none() {
+        let swept = store.delete_events_for_run(run_id);
+        span.end_with(
+            &format!("status=cancelled stopped=deleted swept={swept}"),
+            false,
+        );
+        crate::commands::jobs::job_cancel(app, job_id);
+        return Ok(());
+    }
+
     // Persist whatever the run produced BEFORE deciding how it ended: a run
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal

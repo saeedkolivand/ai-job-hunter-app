@@ -1853,3 +1853,36 @@ fn job_urls_for_reads_the_postings_a_delete_must_cascade_into() {
     // …and the read does not itself delete anything.
     assert_eq!(store.list().len(), 3);
 }
+
+/// The other half of the mid-run resurrection: `save_application` is a
+/// merge-UPSERT, so a run that finishes after its posting was deleted
+/// re-creates the aggregate row rather than failing or no-opping.
+///
+/// Pinned here because it is the reason the guard in
+/// `commands::resume_pipeline::execute` has to skip `persist_document` too —
+/// suppressing only the run row would still put the résumé back in the
+/// Documents list.
+///
+/// Mutation check: none needed on this file — it documents existing store
+/// behaviour that the CALLER must now avoid; the caller's guard is pinned by
+/// `a_run_whose_posting_was_deleted_mid_flight_does_not_resurrect_it`.
+#[test]
+fn saving_a_generation_for_a_deleted_posting_re_creates_the_aggregate() {
+    let dir = TempDir::new().unwrap();
+    let store = AiGenerationStore::open(&dir.path().to_path_buf()).unwrap();
+    let url = "https://acme.test/job/1";
+
+    store.insert(&record("g1", url)).unwrap();
+    assert!(store.find_for_job(url).is_some());
+
+    // The user deletes it mid-run.
+    store.remove("g1").unwrap();
+    assert!(store.find_for_job(url).is_none(), "the premise: it is gone");
+
+    // The run finishes and persists what it produced.
+    store.save_application(record("g2", url)).unwrap();
+    assert!(
+        store.find_for_job(url).is_some(),
+        "a merge-upsert INSERTS when nothing is there — the deleted document comes back"
+    );
+}

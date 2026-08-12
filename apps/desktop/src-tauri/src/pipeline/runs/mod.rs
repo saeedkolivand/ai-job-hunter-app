@@ -773,6 +773,28 @@ impl PipelineRunStore {
         }
     }
 
+    /// Delete one run's events, leaving no row behind. Returns how many went.
+    ///
+    /// For the ONE case where a run has no row to hang them off: its posting was
+    /// deleted while it was still in flight, so `delete_for_job` took the row
+    /// and every event that existed at that moment — and the run then kept
+    /// emitting into a `run_id` nothing points at. `prune`'s orphan sweep would
+    /// collect them eventually, but "eventually, when some other posting's run
+    /// finishes" is not a schedule a purge the user just asked for may run on.
+    pub fn delete_events_for_run(&self, run_id: &str) -> usize {
+        let conn = self.conn.lock();
+        match conn.execute(
+            "DELETE FROM pipeline_run_events WHERE run_id = ?1",
+            params![run_id],
+        ) {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!("[pipeline] could not sweep an abandoned run's events: {e}");
+                0
+            }
+        }
+    }
+
     /// Every run, oldest first — a deterministic order for export.
     fn all_runs(&self) -> Vec<RunRow> {
         let conn = self.conn.lock();
