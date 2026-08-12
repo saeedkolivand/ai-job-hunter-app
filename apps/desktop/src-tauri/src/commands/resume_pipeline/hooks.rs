@@ -395,9 +395,11 @@ impl RunHooks {
                 index: info.index,
                 total: info.total,
                 // Every STAGE runs once, at both depths: the repair loop's
-                // rounds are reported inside the `repair` artifact and the
+                // rounds are reported inside the `repair` artifact, and the
                 // section fan-out's per-section events come through
-                // [`Self::report_section`], which carries its own `attempt`.
+                // [`Self::report_section`] — which hardcodes `1` as well. No
+                // emitter threads a real attempt number today; the field is in
+                // the payload because the contract is frozen.
                 attempt: 1,
                 // A per-STAGE event is never section-scoped — the fan-out's
                 // per-section events are [`Self::report_section`]'s, and that is

@@ -1886,7 +1886,7 @@ fn the_judges_contribution_is_capped_and_clamped() {
     answer.items[0].note = "x".repeat(5_000);
     answer.items[0].section = "y".repeat(5_000);
 
-    let issues = issues_from(&answer, &document);
+    let (issues, _counts) = issues_from(&answer, &document);
     assert_eq!(issues.len(), MAX_JUDGE_ITEMS);
     assert!(issues[0].message.len() <= ISSUE_MESSAGE_MAX_BYTES);
     assert!(issues[0].section.as_ref().expect("a section").len() <= ISSUE_SECTION_MAX_BYTES);
@@ -2405,4 +2405,102 @@ fn the_section_turn_fences_every_untrusted_block() {
         !system.contains("IGNORE EVERY RULE"),
         "renderer-supplied language text reached the SYSTEM slot"
     );
+}
+
+/// **`dropped` means "the model paraphrased", and nothing else.**
+///
+/// It was derived from the FINAL issue count, i.e. AFTER `MAX_JUDGE_ITEMS`
+/// truncated the list — so a ten-remark answer whose every quote was verbatim
+/// was recorded as `dropped: 4`. Overshooting "at most six" is ordinary model
+/// behaviour; failing the verbatim-quote rule is a grounding failure, and the
+/// artifact's own doc calls this "the one number that says whether the model is
+/// quoting the document or paraphrasing it". Two causes, two counters.
+///
+/// Mutation check: derive `dropped` from the truncated length again (or drop
+/// the `capped` term) and the all-valid case reports 4 instead of 0.
+#[test]
+fn a_talkative_but_well_quoted_judge_drops_nothing() {
+    let quote = "Owned critical platform work";
+    let document = format!("Work Experience\n\n{quote} at Acme.\n");
+
+    // Ten remarks, every one of them verbatim-quoted and well formed.
+    let all_valid = JudgeOut {
+        items: (0..MAX_JUDGE_ITEMS + 4)
+            .map(|_| remark("evidence", quote))
+            .collect(),
+    };
+    let (issues, counts) = issues_from(&all_valid, &document);
+    assert_eq!(issues.len(), MAX_JUDGE_ITEMS, "the ceiling still holds");
+    assert_eq!(
+        counts.dropped, 0,
+        "nothing failed the quote rule — the model was talkative, not ungrounded"
+    );
+    assert_eq!(
+        counts.capped, 4,
+        "…and the ceiling is what cut the other four"
+    );
+
+    // …and a genuinely ungrounded answer still counts as dropped.
+    let paraphrased = JudgeOut {
+        items: vec![
+            remark("evidence", quote),
+            remark("clarity", "a sentence this document does not contain"),
+            remark("tailoring", "another invention"),
+        ],
+    };
+    let (issues, counts) = issues_from(&paraphrased, &document);
+    assert_eq!(issues.len(), 1);
+    assert_eq!(counts.dropped, 2, "two quotes are not in the document");
+    assert_eq!(counts.capped, 0, "the ceiling cut nothing here");
+}
+
+/// **A section the budget's ceiling cut leaves a trace.**
+///
+/// `plan_sections` truncates from the TAIL — Education, then Projects, then an
+/// employment entry, the only order in which the cut cannot cost a
+/// `factual.dropped_role` Critical — and that is deliberate. What was not is
+/// that `stats.planned` read the POST-truncation length, so a 13-slot plan
+/// (nine roster entries plus projects and education) silently lost Education
+/// from every max run with nothing in the artifact, the trail or the report to
+/// say a section had been planned at all.
+///
+/// Mutation check: read `planned_section_count` with the budget's ceiling
+/// instead of `usize::MAX` and `trimmed` collapses to 0.
+#[test]
+fn a_plan_trimmed_by_the_budget_says_how_many_sections_it_lost() {
+    // Nine employers (the roster cap plus a condensed group's worth) over a
+    // source that also has Projects and Education: 1 summary + 1 skills +
+    // 9 entries + projects + education = 13 slots against a ceiling of 12.
+    let companies: Vec<(&str, &str, &str, bool)> = vec![
+        ("Acme Payments", "Staff Engineer", "2021 - 2024", false),
+        ("Globex Logistics", "Backend Engineer", "2018 - 2021", false),
+        ("Initech", "Platform Engineer", "2015 - 2018", false),
+        ("Umbrella", "Engineer", "2013 - 2015", false),
+        ("Soylent", "Engineer", "2011 - 2013", false),
+        ("Hooli", "Engineer", "2009 - 2011", false),
+        ("Vehement", "Engineer", "2007 - 2009", false),
+        ("Massive Dynamic", "Engineer", "2005 - 2007", false),
+        ("Earlier roles", "Cyberdyne, Tyrell", "2000 - 2005", true),
+    ];
+    let strategy = strategy_for(&companies);
+
+    let uncapped = super::stages::section_gen::planned_section_count(SOURCE, &strategy, "en");
+    let capped = plan_sections(SOURCE, &strategy, "en", DEFAULT_MAX_SECTIONS);
+    assert_eq!(
+        uncapped,
+        DEFAULT_MAX_SECTIONS + 1,
+        "the premise: this source plans one section more than the ceiling allows"
+    );
+    assert_eq!(capped.len(), DEFAULT_MAX_SECTIONS);
+    assert_eq!(
+        uncapped - capped.len(),
+        1,
+        "…and that difference is what the artifact must carry as `trimmed`"
+    );
+    // The cut came off the TAIL, so Education is what went.
+    assert!(
+        !capped.iter().any(|slot| slot.key == SectionKey::Education),
+        "the tail is cut first: Education before Projects before an employer"
+    );
+    assert!(capped.iter().any(|slot| slot.key == SectionKey::Projects));
 }

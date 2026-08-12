@@ -120,6 +120,11 @@ pub struct SectionsStats {
     pub budgeted: bool,
     /// The run's wall clock ran out mid-fan-out.
     pub timed_out: bool,
+    /// Sections the budget's `max_sections` ceiling cut from the TAIL of the
+    /// plan before the fan-out began. Zero for every ordinary résumé; non-zero
+    /// means the document is missing a section the source could have supported,
+    /// which is otherwise invisible.
+    pub trimmed: usize,
     pub dropped_citations: u32,
     pub dropped_content: u32,
 }
@@ -200,6 +205,21 @@ pub fn plan_sections(
 
     slots.truncate(max_sections);
     slots
+}
+
+/// How many slots [`plan_sections`] would have produced without the budget's
+/// ceiling — what the run has to report so the cut is not invisible.
+///
+/// The cut itself is deliberate and pinned (`the_section_plan_is_bounded_by_the
+/// _budget_and_cuts_from_the_tail`): the tail is Education, then Projects, then
+/// an employment entry, which is the only order in which trimming cannot cost a
+/// `factual.dropped_role` Critical. What was wrong is that `stats.planned` read
+/// the POST-truncation length, so a 13-slot plan (nine roster entries plus
+/// projects and education) silently dropped Education from every run — nothing
+/// in the artifact, the event trail or the report said a section had been
+/// planned and cut.
+pub fn planned_section_count(source_resume: &str, strategy: &ResumeStrategy, lang: &str) -> usize {
+    plan_sections(source_resume, strategy, lang, usize::MAX).len()
 }
 
 /// The strategy's skills groups, with every skill the SOURCE does not state
@@ -663,10 +683,16 @@ where
 }
 
 /// `KvCache` namespace for ONE section, under the pipeline's own
-/// `resume_stage:` prefix: `section:summary`, `section:experience:3`. Per
-/// SECTION rather than per stage, because the whole point of the max fan-out is
-/// that the sections are independent — a re-run that changed one company's
-/// angle must miss that entry's cache and hit the other eleven.
+/// `resume_stage:` prefix: `section:summary`, `section:experience:3`.
+///
+/// Per SECTION to keep twelve answers from COLLIDING in one namespace — not to
+/// make them independently invalidatable, which they are not. Each key extends
+/// the run's rolling chain, and the strategy artifact is folded into that chain
+/// as a whole, so a plan that changed one company's angle changes the base and
+/// misses ALL twelve entries. What this buys is that the twelve are separate
+/// rows under one upstream identity (ADR-017): a re-run with an unchanged plan
+/// hits every one of them, and a section added to the plan does not overwrite
+/// another section's answer.
 fn cache_stage(slot: &SectionSlot) -> String {
     format!("section:{}", slot.key.to_wire())
 }
@@ -806,6 +832,15 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
             ctx.input.target_language,
             ctx.budget.max_sections,
         );
+        // What the ceiling cut, before the fan-out can hide it: `stats.planned`
+        // is the post-truncation length, so without this a section the source
+        // could have supported disappears with no trace anywhere.
+        let trimmed = planned_section_count(
+            ctx.input.source_resume,
+            &ctx.strategy,
+            ctx.input.target_language,
+        )
+        .saturating_sub(slots.len());
         // The same reader `stages::strategy` seeded the roster with, so "which
         // lines belong to role 3" has one answer in this run.
         let roles = extract_evidence(ctx.input.source_resume, ctx.input.job_ad).roles;
@@ -824,7 +859,7 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
         let evidence = &ctx.evidence;
         let roles = &roles;
 
-        let (sections, stats) = generate_sections(&slots, deadline, progress, |_, slot| {
+        let (sections, mut stats) = generate_sections(&slots, deadline, progress, |_, slot| {
             let ledger = Arc::clone(&ledger);
             let mut key = base_key.clone();
             async move {
@@ -860,6 +895,7 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
         })
         .await;
 
+        stats.trimmed = trimmed;
         if stats.timed_out {
             ctx.ledger.stop(StoppedReason::RunTimeout);
         }
@@ -878,6 +914,7 @@ impl<'a> Stage<QualityCtx<'a>> for Sections {
             NAME,
             json!({
                 "planned": stats.planned,
+                "trimmed": stats.trimmed,
                 "kept": stats.kept,
                 "cached": stats.cached,
                 "failed": stats.failed,

@@ -149,7 +149,7 @@ export function useResumePipelineSession(
    * `pipeline_runs` row inside the spawned task — AFTER admission and after it
    * resolves the depth, the provider, the résumé and the cached posting. Each of
    * those five can fail (a full queue, no configured provider, a deleted résumé,
-   * a posting that is not in the live cache, `depth: "max"`) and lands on
+   * a posting that is not in the live cache, an unknown depth string) and lands on
    * `job_fail` with NO row ever written; `get(runId)` then answers `null` — a
    * real answer, so the poll correctly stops — and `detail.status`, the only
    * completion signal this hook has, never exists. The same hole exists at the

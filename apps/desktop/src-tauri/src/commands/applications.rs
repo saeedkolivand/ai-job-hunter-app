@@ -348,43 +348,47 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
                 log::warn!("[applications] failed to delete child generations (non-fatal): {e}");
             }
         }
-        // …and the PIPELINE RUN TRAIL for the same posting. A max-depth run
-        // persists its full re-seeded strategy (the whole employment history)
-        // and its full evidence map (verbatim résumé quotes) in
-        // `pipeline_run_events.artifact_json`, deliberately — it is the only
-        // copy a per-entry regenerate can read hours later. Nothing else ever
-        // removes it: retention only evicts the FOURTH run of a posting still
-        // being run, and `DataStore::export` ships every event row into the
-        // user's backups. "Delete this application and its documents" otherwise
-        // left both on disk indefinitely.
-        //
-        // Read BEFORE `s.delete` (the row is gone after it) and only on this
-        // arm: with `keep_documents` the trail is no more sensitive than the
-        // `ai_generations` row that is being kept on purpose, and it is what
-        // makes the kept document's own runs panel readable.
-        // Read BEFORE `s.delete` below, and the child deletes all run before
-        // the parent row goes: every one of them needs the parent to answer
-        // "which posting was this", and a failure in any of them is logged
-        // rather than fatal, so the parent delete the user asked for still
-        // happens. The cost of that order is a crash mid-sequence leaving
-        // orphaned children rather than an orphaned parent — the recoverable
-        // direction, since the run store's own prune and the next delete of the
-        // same posting both still reach them by url.
-        let job_url = s.get(&id).map(|application| application.job_url);
-        if let (Some(job_url), Some(runs)) = (
-            job_url,
-            app.try_state::<crate::pipeline::runs::PipelineRunStore>(),
-        ) {
-            runs.delete_for_job(&job_url);
-        }
     } else if let Some(gens) = app.try_state::<crate::ai_generations::AiGenerationStore>() {
         // Keep documents: detach them so they survive as orphaned generations.
         if let Err(e) = gens.detach_application(&id) {
             log::warn!("[applications] failed to detach child generations (non-fatal): {e}");
         }
     }
+
+    // The posting url of the PIPELINE RUN TRAIL to purge, read BEFORE the
+    // delete because the row is the only thing that can answer it — and used
+    // only if the delete SUCCEEDS (see the `Ok` arm).
+    //
+    // Why the trail is in scope at all: a max-depth run persists its full
+    // re-seeded strategy (the whole employment history) and its full evidence
+    // map (verbatim résumé quotes) in `pipeline_run_events.artifact_json`,
+    // deliberately — it is the only copy a per-entry regenerate can read hours
+    // later. Nothing else ever removes it (retention only evicts the FOURTH run
+    // of a posting still being run) and `DataStore::export` ships every event
+    // row into the user's backups.
+    //
+    // Only on the delete-everything arm: with `keep_documents` the trail is no
+    // more sensitive than the `ai_generations` row being kept on purpose, and it
+    // is what makes the kept document's own runs panel readable.
+    let job_url = (!keep_documents)
+        .then(|| s.get(&id).map(|application| application.job_url))
+        .flatten();
+
     match s.delete(&id, keep_documents) {
         Ok(()) => {
+            // AFTER the parent delete committed, never before. The trail is the
+            // one child here that cannot be reconstructed, and a `SQLITE_BUSY`
+            // or IO failure on `s.delete` would otherwise leave the application
+            // alive with its history already irreversibly gone — the user sees
+            // an error, retries, and the run trail they never asked to lose is
+            // simply absent. `ai_generations_remove`'s cascade refuses the same
+            // ordering for the same reason.
+            if let (Some(job_url), Some(runs)) = (
+                job_url,
+                app.try_state::<crate::pipeline::runs::PipelineRunStore>(),
+            ) {
+                runs.delete_for_job(&job_url);
+            }
             span.end(true);
             json!({ "success": true })
         }

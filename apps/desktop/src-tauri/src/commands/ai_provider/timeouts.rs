@@ -17,8 +17,8 @@
 use std::time::Duration;
 
 use crate::ipc_contracts::ai_timeouts::{
-    EFFORT_TIMEOUT_MULTIPLIER, QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES,
-    STREAM_BASELINE_SECS,
+    EFFORT_TIMEOUT_MULTIPLIER, MAX_RUN_FIXED_SECS, MAX_RUN_GENERATION_PASSES,
+    QUALITY_RUN_FIXED_SECS, QUALITY_RUN_GENERATION_PASSES, STREAM_BASELINE_SECS,
 };
 
 // ── Chat generation ─────────────────────────────────────────────────────────────
@@ -214,25 +214,32 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
     Duration::from_secs_f64(QUALITY_RUN_FIXED_SECS as f64 + generation.round())
 }
 
-/// The EFFORT-INVARIANT half of one MAX-depth run's deadline: every call it
-/// plans to make, once, at the flat [`OLLAMA_COMPLETION`] bound.
+/// The max-depth deadline's two terms come from `packages/shared` through
+/// `pnpm gen:ipc`, exactly like their quality siblings:
+/// [`MAX_RUN_FIXED_SECS`] and [`MAX_RUN_GENERATION_PASSES`].
 ///
-/// 24 calls — 4 single-call stages (analyze, evidence, strategy, **and the
-/// judge**) + `max_sections` (12) section calls + `max_repair_attempts` (2) ×
-/// `MAX_SECTIONS_PER_ROUND` (4) repair rewrites — at 300 s each. Max depth
-/// streams nothing, so unlike [`QUALITY_RUN_FIXED_SECS`] this covers the WHOLE
-/// run rather than its effort-invariant part.
+/// **They were two hand-typed literals in two files, and the doc on the TS side
+/// claimed they could not drift.** Nothing enforced it: the generator emitted
+/// only the quality pair, and each side's per-tier table pinned its own
+/// literals — so changing one constant left the other's table green and the two
+/// deadlines silently disagreeing, which is the failure the renderer's client
+/// bound exists to prevent (the backend must give up FIRST, because it is the
+/// side that knows WHY).
 ///
-/// **The judge was missed once, and the arithmetic hid it.** At 23 calls this
-/// constant was 6 900 s, and the effort-scaled term (300 s at the bottom tier)
-/// brought `max_run_deadline(None)` to exactly 7 200 s = the 24 calls a max run
-/// really plans — so the "the deadline clears the inner bounds" pin passed with
-/// ZERO slack, on an equality it was never meant to sit on, and any tightening
-/// anywhere would have made a planned run unable to finish inside its own
-/// backstop. The pin now derives its call count from `max_pipeline()` itself
-/// (one call per stage that is not free and not a fan-out, plus each fan-out's
-/// own ceiling), so the next stage that makes a call fails it instead of
-/// silently eating the slack.
+/// The fixed term is 24 calls at the flat [`OLLAMA_COMPLETION`] bound: 4
+/// single-call stages (analyze, evidence, strategy, **and the judge**) +
+/// `max_sections` (12) section calls + `max_repair_attempts` (2) ×
+/// `MAX_SECTIONS_PER_ROUND` (4) repair rewrites. Max depth streams nothing, so
+/// unlike [`QUALITY_RUN_FIXED_SECS`] it covers the WHOLE run rather than its
+/// effort-invariant part.
+///
+/// **The judge was missed once, and the arithmetic hid it.** At 23 calls the
+/// fixed term was 6 900 s, and the effort-scaled term (300 s at the bottom
+/// tier) brought `max_run_deadline(None)` to exactly 7 200 s = the 24 calls a
+/// max run really plans — so the "the deadline clears the inner bounds" pin
+/// passed with ZERO slack, on an equality it was never meant to sit on. That
+/// pin now derives its call count from `max_pipeline()` itself, so the next
+/// stage that makes a call fails it instead of silently eating the slack.
 ///
 /// **The one allowed re-ask per JSON call is not counted**, which is the one
 /// place this departs from the quality derivation. See
@@ -241,20 +248,6 @@ pub fn quality_run_deadline(effort: Option<&str>) -> Duration {
 /// clock, and a max run stopped mid-fan-out keeps the sections it already
 /// assembled — so buying the worst case here would only make the deadline
 /// unreachable.
-///
-/// Not generated from `packages/shared` (unlike its quality sibling) because
-/// the renderer has no max-depth deadline yet; when it gains one it must EXCEED
-/// [`max_run_deadline`] at every tier, which is the invariant
-/// `renderer > backend` the quality pair already holds.
-const MAX_RUN_FIXED_SECS: u64 = 7_200;
-
-/// Effort-SCALED whole-document passes one max run may make. One: the fan-out
-/// writes the document once, and although each section call is bounded by the
-/// FLAT `OLLAMA_COMPLETION`, the run's real duration still scales with the
-/// reasoning budget — this term is what keeps a high-effort run from being
-/// stopped by a deadline sized for a fast one.
-const MAX_RUN_GENERATION_PASSES: u64 = 1;
-
 /// Deadline for ONE WHOLE max-depth résumé run — the max-depth twin of
 /// [`quality_run_deadline`], and what makes `StoppedReason::RunTimeout`
 /// reachable at this depth.

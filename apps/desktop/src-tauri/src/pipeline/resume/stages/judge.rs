@@ -117,14 +117,41 @@ fn clamp(text: String, max: usize) -> String {
     crate::applications::clamp_to_bytes(text, max)
 }
 
-/// Every usable remark from one answer, capped.
-pub fn issues_from(answer: &JudgeOut, document: &str) -> Vec<ContentIssue> {
-    answer
+/// Every usable remark from one answer, capped — and the two numbers that say
+/// WHY the rest are not here.
+///
+/// `dropped` counts remarks that failed the verbatim-quote rule (or carried no
+/// note); `capped` counts VALID remarks cut by [`MAX_JUDGE_ITEMS`]. They are
+/// separate because they mean opposite things about the model: dropped says it
+/// is paraphrasing a document it was shown, capped says it was merely
+/// enthusiastic. Folding the second into the first — which is what deriving
+/// `dropped` from the FINAL length did — reported a ten-item, entirely
+/// well-quoted answer as `dropped: 4`, and overshooting "at most six" is
+/// ordinary model behaviour rather than a grounding failure. The artifact's own
+/// doc calls `dropped` "the one number that says whether the model is quoting
+/// or paraphrasing", so it has to mean only that.
+pub fn issues_from(answer: &JudgeOut, document: &str) -> (Vec<ContentIssue>, JudgeCounts) {
+    let usable: Vec<ContentIssue> = answer
         .items
         .iter()
         .filter_map(|item| issue_from(item, document))
-        .take(MAX_JUDGE_ITEMS)
-        .collect()
+        .collect();
+    let counts = JudgeCounts {
+        dropped: answer.items.len().saturating_sub(usable.len()),
+        capped: usable.len().saturating_sub(MAX_JUDGE_ITEMS),
+    };
+    let mut issues = usable;
+    issues.truncate(MAX_JUDGE_ITEMS);
+    (issues, counts)
+}
+
+/// Why one judge answer contributed fewer issues than it had remarks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct JudgeCounts {
+    /// Remarks the verbatim-quote rule (or the empty-note rule) refused.
+    pub dropped: usize,
+    /// VALID remarks past [`MAX_JUDGE_ITEMS`].
+    pub capped: usize,
 }
 
 /// `code -> count` for the judge's own contribution, for the stage artifact.
@@ -191,21 +218,23 @@ impl<'a> Stage<QualityCtx<'a>> for Judge {
         // spend.
         ctx.ledger.count_call(false);
 
-        let issues = issues_from(&answer, &ctx.draft);
+        let (issues, counts) = issues_from(&answer, &ctx.draft);
         if issues.is_empty() {
             skip(ctx, SKIP_NO_USABLE_ITEMS);
             return Ok(());
         }
 
-        // Counts and codes only (ADR-027): `dropped` is how many remarks failed
-        // the verbatim-quote rule, which is the one number that says whether the
-        // model is quoting the document or paraphrasing it.
+        // Counts and codes only (ADR-027). `dropped` is how many remarks failed
+        // the verbatim-quote rule — the one number that says whether the model
+        // is quoting the document or paraphrasing it — and `capped` is how many
+        // VALID ones the ceiling cut, which says only that it was talkative.
         ctx.ledger.record(
             NAME,
             json!({
                 "skipped": false,
                 "items": issues.len(),
-                "dropped": answer.items.len().saturating_sub(issues.len()),
+                "dropped": counts.dropped,
+                "capped": counts.capped,
                 "codes": histogram(&issues),
             }),
         );
