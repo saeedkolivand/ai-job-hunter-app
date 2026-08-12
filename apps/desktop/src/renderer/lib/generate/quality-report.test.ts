@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ContentReportPayload } from '@ajh/shared/ipc';
+import type { ContentReportPayload, PipelineQualityReport } from '@ajh/shared/ipc';
 
 import { _registerClient } from '../app-client';
 import { createMockClient } from '../mock-client';
@@ -9,6 +9,7 @@ import {
   hashText,
   mergeRecheckedReport,
   parseQualityReport,
+  serializeQualityReport,
 } from './quality-report';
 
 const OK_REPORT: ContentReportPayload = {
@@ -43,6 +44,36 @@ const CRITICAL_REPORT: ContentReportPayload = {
     rolesSource: 3,
     rolesOutput: 2,
   },
+};
+
+/**
+ * What the staged Rust pipeline persists into the SAME `ai_generations` row the
+ * fast path reads and rewrites: depth `'quality'`, plus a slot carrying the
+ * per-bullet fabrication review — one bullet the user already ruled on, one
+ * still awaiting a verdict (which is what holds the run at `needsReview`).
+ */
+const QUALITY_WRAPPER: PipelineQualityReport = {
+  schemaVersion: 2,
+  pipeline: 'quality',
+  generatedAt: 1700,
+  resume: {
+    report: CRITICAL_REPORT,
+    sourceTextHash: hashText('generated resume'),
+    fabrications: [
+      {
+        issueKey: 'factual.unsupported_metric#0',
+        code: 'factual.unsupported_metric',
+        evidence: 'Cut p99 latency by 60%',
+        decision: 'keep',
+      },
+      {
+        issueKey: 'factual.unsupported_metric#1',
+        code: 'factual.unsupported_metric',
+        evidence: 'Led a team of 12',
+      },
+    ],
+  },
+  coverLetter: { report: OK_REPORT, sourceTextHash: hashText('generated cover') },
 };
 
 function register(validateContent: ReturnType<typeof vi.fn>) {
@@ -256,6 +287,29 @@ describe('mergeRecheckedReport', () => {
       sourceTextHash: hashText('cover text'),
     });
     expect(merged.resume).toBeUndefined();
+    // No prior wrapper: this re-check IS the fast deterministic pass.
+    expect(merged.pipeline).toBe('fast');
+  });
+
+  // A re-check produces a verdict and a hash — nothing else. Everything else in
+  // the slot is review state the user (and the Rust pipeline) own: rebuilding
+  // the slot here erases it from the persisted record, after which
+  // `resolveFabrication` no-ops and the run is stuck `needsReview` forever.
+  it('replaces only the verdict+hash of the rechecked slot, keeping its fabrications and verdicts', () => {
+    const merged = mergeRecheckedReport(QUALITY_WRAPPER, 'resume', OK_REPORT, 'new resume');
+
+    expect(merged.resume).toEqual({
+      ...QUALITY_WRAPPER.resume,
+      report: OK_REPORT,
+      sourceTextHash: hashText('new resume'),
+    });
+    expect(merged.coverLetter).toEqual(QUALITY_WRAPPER.coverLetter);
+  });
+
+  it('keeps the wrapper depth — a re-check never relabels a quality run as fast', () => {
+    expect(mergeRecheckedReport(QUALITY_WRAPPER, 'resume', OK_REPORT, 'new resume').pipeline).toBe(
+      'quality'
+    );
   });
 });
 
@@ -440,5 +494,78 @@ describe('parseQualityReport', () => {
       expect(result?.resume).toEqual({ report: OK_REPORT, sourceTextHash: 5 });
       expect(result?.coverLetter).toBeUndefined();
     });
+  });
+});
+
+/**
+ * Both surfaces share ONE `ai_generations` row per job url, and "Re-check" is a
+ * full round-trip over it: parse → merge → serialize → save (a merge-upsert
+ * that overlays per top-level key). So anything this parser fails to carry is
+ * not merely invisible — it is DELETED from the record on the next re-check.
+ */
+describe('parse → serialize round-trip of a staged-pipeline wrapper', () => {
+  const raw = JSON.stringify(QUALITY_WRAPPER);
+
+  it('preserves the depth — a quality run must never re-read as fast', () => {
+    expect(parseQualityReport(raw)?.pipeline).toBe('quality');
+  });
+
+  it('preserves fabrications and their mixed resolved/unresolved verdicts, byte for byte', () => {
+    const round = String(serializeQualityReport(parseQualityReport(raw)));
+
+    // Byte-level: the fabrication list is re-serialized exactly as it arrived,
+    // including the resolved entry's `decision` and the unresolved entry's
+    // ABSENT one (an invented `decision` would silently resolve a finding).
+    expect(round).toContain(JSON.stringify(QUALITY_WRAPPER.resume?.fabrications));
+    // …and the wrapper as a whole survives unchanged.
+    expect(JSON.parse(round)).toEqual(QUALITY_WRAPPER);
+  });
+
+  it('overlays the VALIDATED report onto the source slot — the passthrough never resurrects a raw one', () => {
+    const withBadIssue = JSON.stringify({
+      schemaVersion: 2,
+      pipeline: 'quality',
+      generatedAt: 1,
+      resume: {
+        sourceTextHash: 7,
+        fabrications: QUALITY_WRAPPER.resume?.fabrications,
+        report: {
+          ok: true,
+          issues: [
+            {
+              severity: 'critical',
+              code: 'factual.dropped_role',
+              section: null,
+              message: 'ok entry',
+              evidence: null,
+            },
+            { severity: 'nonsense', code: 123 },
+          ],
+          metrics: OK_REPORT.metrics,
+        },
+      },
+    });
+
+    const parsed = parseQualityReport(withBadIssue);
+
+    // Carrying unknown keys must not carry the UNVALIDATED report with them:
+    // the malformed issue is still dropped (M-1), the fabrications still ride.
+    expect(parsed?.resume?.report.issues).toHaveLength(1);
+    expect(String(serializeQualityReport(parsed))).not.toContain('nonsense');
+    expect(String(serializeQualityReport(parsed))).toContain('Led a team of 12');
+  });
+
+  it('reads a v2 wrapper written before the pipeline existed (no depth field) as fast', () => {
+    const noPipeline = JSON.stringify({
+      schemaVersion: 2,
+      generatedAt: 1,
+      resume: { report: OK_REPORT, sourceTextHash: 3 },
+    });
+    expect(parseQualityReport(noPipeline)?.pipeline).toBe('fast');
+  });
+
+  it('degrades an unrecognised depth to fast rather than carrying a value nothing can render', () => {
+    const bogus = JSON.stringify({ ...QUALITY_WRAPPER, pipeline: 'turbo' });
+    expect(parseQualityReport(bogus)?.pipeline).toBe('fast');
   });
 });

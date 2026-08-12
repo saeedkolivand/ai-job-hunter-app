@@ -643,6 +643,48 @@ impl AiGenerationStore {
         Ok(id)
     }
 
+    /// The aggregate row for one posting, matched the way
+    /// [`save_application`](Self::save_application) matches it: on the
+    /// NORMALIZED url first, falling back to the raw one for a row written
+    /// before normalization. Two lookups, one rule — a reader that matched only
+    /// the raw url would miss the row every writer since normalization has been
+    /// updating, which on a query-id board (Indeed) is most of them.
+    ///
+    /// The staged pipeline's read path: a run's document and its quality report
+    /// live HERE, not in the run store, so `resumePipeline.get` joins the two.
+    pub fn find_for_job(&self, job_url: &str) -> Option<AiGenerationRecord> {
+        let normalized = crate::applications::normalize_job_url(job_url);
+        self.find_by_job_url(&normalized).or_else(|| {
+            (normalized != job_url)
+                .then(|| self.find_by_job_url(job_url))
+                .flatten()
+        })
+    }
+
+    /// Overwrite ONE row's `quality_report`, selected by `id`.
+    ///
+    /// The report-only sibling of [`update_texts`](Self::update_texts), and
+    /// deliberately a direct overwrite rather than a merge: the caller has just
+    /// read this exact blob, edited one decision inside it, and is writing it
+    /// back. Routing it through `save_application`'s
+    /// per-top-level-key merge would re-union it with itself, and a caller that
+    /// wanted to CLEAR a slot could never do so.
+    ///
+    /// Clamped like every other write path into this column, so a hand-built
+    /// blob cannot exceed [`QUALITY_REPORT_MAX_BYTES`] here either.
+    pub fn update_quality_report(&self, id: &str, quality_report: String) -> AppResult<()> {
+        let report = sanitize_quality_report(quality_report, "update_quality_report");
+        let conn = self.conn.lock();
+        let changed = conn.execute(
+            "UPDATE ai_generations SET quality_report = ?2 WHERE id = ?1",
+            params![id, report],
+        )?;
+        if changed == 0 {
+            return Err(format!("generation not found: {id}").into());
+        }
+        Ok(())
+    }
+
     /// Distinct non-empty `job_url`s that have at least one saved generation —
     /// the set used to derive a found job's `applied` flag.
     pub fn applied_job_urls(&self) -> std::collections::HashSet<String> {
@@ -736,6 +778,42 @@ impl AiGenerationStore {
         if changed == 0 {
             return Err(format!("generation not found: {id}").into());
         }
+        Ok(())
+    }
+
+    /// Replace a row's résumé text AND its quality report in ONE transaction.
+    ///
+    /// Not a convenience wrapper over [`update_texts`](Self::update_texts) +
+    /// [`update_quality_report`](Self::update_quality_report): the pipeline's
+    /// merge rule is that **any save writing `resume_text` carries a fresh
+    /// `quality_report`**, and two statements have a window between them where
+    /// the row holds the NEW document beside the OLD document's report — a
+    /// report the panel would render as this text's verdict. A crash, a lock
+    /// error, or a clamp rejection on the second statement makes that window
+    /// permanent. One transaction is the only way the rule is a guarantee
+    /// rather than an ordering convention.
+    ///
+    /// `quality_report` is clamped exactly as `update_quality_report` clamps it
+    /// — same write path, same guard.
+    pub fn update_text_and_report(
+        &self,
+        id: &str,
+        resume_text: String,
+        quality_report: String,
+    ) -> AppResult<()> {
+        let report = sanitize_quality_report(quality_report, "update_text_and_report");
+        // `Connection::transaction` needs `&mut Connection`, so take the lock
+        // mutably and call on the guard (same shape as `import`).
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        let changed = tx.execute(
+            "UPDATE ai_generations SET resume_text = ?2, quality_report = ?3 WHERE id = ?1",
+            params![id, resume_text, report],
+        )?;
+        if changed == 0 {
+            return Err(format!("generation not found: {id}").into());
+        }
+        tx.commit()?;
         Ok(())
     }
 }

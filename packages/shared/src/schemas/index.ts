@@ -328,6 +328,90 @@ export const AgentConfirmRequestSchema = z.object({
   editedArgs: z.unknown().optional(),
 });
 
+/**
+ * How much work one résumé generation is allowed to do. `fast` is today's
+ * single-shot TS path (byte-identical, untouched); `quality` and `max` are the
+ * staged Rust pipeline. Ascending, and the order is load-bearing — the Rust
+ * `GenerationDepth::parse` reads this same vocabulary through `pnpm gen:ipc`.
+ */
+export const GENERATION_DEPTHS = ['fast', 'quality', 'max'] as const;
+export type GenerationDepth = (typeof GENERATION_DEPTHS)[number];
+
+/**
+ * Request for `resumePipeline.run` — one staged, budgeted résumé generation.
+ *
+ * **Identity + inputs only.** Routing (provider/model/baseUrl) is backend-owned
+ * (`Completer::from_active`), and so is the BUDGET: `maxSteps`/`maxTokens`/
+ * `runTimeout` are compile-time `Budget::RESUME_QUALITY` constants, never
+ * renderer-supplied, because they bound spend on a paid API (see
+ * `pipeline::budget`'s module doc and its lock test). The two id fields are
+ * resolved SERVER-side — `resumeId` through the `DocumentStore`, `jobId`
+ * through the postings cache — so the model never sees a renderer-supplied
+ * résumé or posting body.
+ *
+ * `effort` is the ordinary cross-provider reasoning-effort token, exactly as
+ * `AiGenerateRequest.effort`: it scales sampling AND the run deadline
+ * (`qualityRunDeadlineSecs`), bounded by the same ≤3× multiplier table every
+ * other deadline uses, and an unrecognized value falls back to 1.0.
+ */
+export const ResumePipelineRunSchema = z.object({
+  resumeId: z.string().min(1),
+  jobId: z.string().min(1),
+  /** The posting URL this run belongs to — the run store's retention key and
+   *  the `ai_generations` aggregate key. Empty for an unlinked generation. */
+  jobUrl: z.string().max(2_048).default(''),
+  depth: z.enum(GENERATION_DEPTHS).default('quality'),
+  targetLanguage: z.string().max(32).default('en'),
+  effort: z.string().max(32).optional(),
+  /** The posting's top requirements, as the JD-analysis step extracted them —
+   *  the same list `resume:validateContent` takes. */
+  topRequirements: z.array(z.string().max(300)).max(50).default([]),
+  /** An already-generated cover letter to validate alongside the résumé.
+   *  Empty = no letter in scope (no letter checks run). */
+  coverLetterText: z.string().max(200_000).default(''),
+});
+export type ResumePipelineRunRequest = z.infer<typeof ResumePipelineRunSchema>;
+
+/**
+ * Request for `resumePipeline.regenerateSection` — re-run ONE section of a
+ * finished run through the repair splice primitive.
+ *
+ * `sectionKey` is the closed `PipelineSectionKey` grammar
+ * (`summary` | `skills` | `experience:<u8>` | `projects` | `education`).
+ * **`"header"` is not in it and is rejected at the boundary**: the contact
+ * header is owned by the editor at export time (ADR-0021), so a model may never
+ * rewrite it. `note` is an optional free-text steer and is FENCED as untrusted
+ * data in the user turn (ADR-010) — never appended to a system prompt.
+ */
+export const ResumePipelineRegenerateSectionSchema = z.object({
+  runId: z.string().min(1).max(128),
+  sectionKey: z.string().min(1).max(24),
+  note: z.string().max(500).optional(),
+});
+export type ResumePipelineRegenerateSectionRequest = z.infer<
+  typeof ResumePipelineRegenerateSectionSchema
+>;
+
+/**
+ * Request for `resumePipeline.resolveFabrication` — the user's per-bullet
+ * verdict on ONE surviving fabrication finding in a run's quality report.
+ *
+ * Nothing is ever removed silently: a run stays `needs_review` until every
+ * flagged bullet carries a decision, and the decision is recorded IN the
+ * persisted report (inside the document's own slot, so a later re-validation of
+ * the other document cannot orphan it).
+ */
+export const ResumePipelineResolveFabricationSchema = z.object({
+  runId: z.string().min(1).max(128),
+  /** Stable identity of the finding within the report: `<code>#<index>` as the
+   *  report lists them. */
+  issueKey: z.string().min(1).max(128),
+  decision: z.enum(['remove', 'keep']),
+});
+export type ResumePipelineResolveFabricationRequest = z.infer<
+  typeof ResumePipelineResolveFabricationSchema
+>;
+
 export const JobIdSchema = z.object({ jobId: z.string().min(1) });
 
 export const CredentialSetSchema = z.object({

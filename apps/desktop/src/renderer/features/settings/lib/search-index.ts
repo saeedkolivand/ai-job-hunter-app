@@ -162,6 +162,23 @@ export const SEARCH_INDEX: SearchEntry[] = [
     anchor: 'ai-provider',
   },
   {
+    id: 'ai-depth',
+    section: 'ai',
+    titleKey: 'settings.generationDepth.title',
+    keywords: [
+      'depth',
+      'quality',
+      'fast',
+      'max',
+      'pipeline',
+      'staged',
+      'repair',
+      'integrity',
+      'thorough',
+    ],
+    anchor: 'ai-depth',
+  },
+  {
     id: 'ai-tone',
     section: 'ai',
     titleKey: 'settings.outputTone.title',

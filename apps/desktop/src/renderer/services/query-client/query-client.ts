@@ -121,4 +121,13 @@ export const keys = {
     search: (query: string) => ['discovery', 'search', query] as const,
     watched: ['discovery', 'watched'] as const,
   },
+  // Staged résumé pipeline. `runsForJob` is the per-posting history (≤3, the
+  // backend's own retention) and `run` one run's detail — separate keys because
+  // a `resolveFabrication` invalidates ONE run's detail while the list's
+  // summaries are unchanged.
+  pipeline: {
+    all: ['pipeline'] as const,
+    run: (runId: string) => ['pipeline', 'run', runId] as const,
+    runsForJob: (jobUrl: string) => ['pipeline', 'runsForJob', jobUrl] as const,
+  },
 } as const;

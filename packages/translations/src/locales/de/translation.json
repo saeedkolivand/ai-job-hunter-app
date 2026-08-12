@@ -426,7 +426,8 @@
       "scrapeUrl": "URL-Scraping",
       "persistJob": "Interaktion gespeichert",
       "matchResume": "Lebenslauf-Match",
-      "autopilotRun": "Autopilot-Lauf"
+      "autopilotRun": "Autopilot-Lauf",
+      "resumePipelineRun": "Qualitätslauf Lebenslauf"
     },
     "activity": {
       "queued": "in Warteschlange",
@@ -961,6 +962,10 @@
         "title": "KI-Ausgaben"
       }
     },
+    "generationDepth": {
+      "title": "Gründlichkeit",
+      "description": "Wie viel Arbeit eine Lebenslauf-Erstellung standardmäßig leistet. Jede Erstellungs- und Anpassungsseite zeigt dieselbe Auswahl und kann sie für einen einzelnen Durchgang übersteuern."
+    },
     "outputTone": {
       "title": "KI-Ausgabestil",
       "description": "Wählen Sie, wie KI-Antworten klingen sollen, um Ihren Kommunikationsstil anzupassen.",
@@ -1193,6 +1198,7 @@
     "subtitle": "Laden Sie Ihren Lebenslauf und die Stellenanzeige hoch, um maßgeschneiderte, ATS-optimierte Dokumente zu erstellen.",
     "thinking": "Denkt nach…",
     "reasoningComplete": "Schlussfolgerung abgeschlossen",
+    "depthUnavailable": "Gründlich braucht einen gespeicherten Lebenslauf und eine Stelle aus deiner Jobliste. Diese Seite arbeitet mit eingefügtem Text und läuft deshalb schnell — deine Auswahl bleibt für die Oberflächen gemerkt, die sie nutzen können.",
     "research": {
       "label": "Unternehmen recherchieren",
       "hint": "Fügt dem Anschreiben eine kurze Web-Zusammenfassung hinzu — über die eigene Websuche Ihres KI-Anbieters. Nach bestem Bemühen.",
@@ -1463,6 +1469,105 @@
     "letterLayoutNavy": "Navy",
     "letterLayoutNavyDesc": "Zentrierter Briefkopf über einer Linie. Passt zu Cologne Navy."
   },
+  "generationDepth": {
+    "label": "Gründlichkeit",
+    "option": {
+      "fast": {
+        "label": "Schnell",
+        "tooltip": "Ein Modellaufruf. Lebenslauf und Stellenanzeige gehen einmal ans Modell.",
+        "summary": "Ein Durchgang, danach die übliche Integritätsprüfung."
+      },
+      "quality": {
+        "label": "Gründlich",
+        "tooltip": "Sechs Schritte: analysieren, Belege zuordnen, planen, schreiben, prüfen, automatisch nachbessern.",
+        "summary": "Langsamer und teurer, dafür an deinem Lebenslauf belegt und vorab geprüft."
+      },
+      "max": {
+        "label": "Maximal",
+        "summary": "Abschnitt für Abschnitt. In dieser Version noch nicht verfügbar.",
+        "unavailable": "Noch nicht verfügbar — kommt mit der abschnittsweisen Erstellung."
+      }
+    },
+    "info": {
+      "open": "Was bedeuten diese Stufen?",
+      "title": "Gründlichkeit",
+      "notYet": "(noch nicht verfügbar)",
+      "fast": {
+        "what": "Ein Durchgang: Lebenslauf und Stellenanzeige gehen einmal ans Modell, die Antwort ist das Dokument.",
+        "cost": "1 Modellaufruf. Sekunden bis eine Minute."
+      },
+      "quality": {
+        "what": "In Schritten: die Anzeige wird analysiert, deine Belege werden wörtlich aus dem Lebenslauf zugeordnet, eine Strategie entsteht, der Lebenslauf wird geschrieben und anschließend geprüft — kritische Funde werden automatisch neu geschrieben, bis zu 2 Runden.",
+        "cost": "4 Modellaufrufe plus bis zu 2 Nachbesserungsrunden. In der Cloud rund +30–90 Sekunden; lokal mehrere Minuten, bei hohem Reasoning-Aufwand bis zu ca. 10 Minuten."
+      },
+      "max": {
+        "what": "Abschnitt für Abschnitt, jeder mit eigenen Belegen, dazu ein zusätzlicher Prüfdurchgang.",
+        "cost": "7 Aufrufe plus bis zu 9 aufeinanderfolgende Abschnittsaufrufe. Lokal bei hohem Reasoning-Aufwand bis zu ca. 10 Minuten."
+      },
+      "report": "Jede Stufe endet mit demselben deterministischen Integritätsbericht — feste Regeln, keine KI-Bewertung. Gründlich ergänzt die automatische Nachbesserung und eine Einzelprüfung aller Aussagen, die sich nicht im Lebenslauf belegen ließen."
+    },
+    "smallModelWarning": "Gründlich verlangt an drei Stellen strukturiertes JSON, und kleine lokale Modelle treffen dieses Format oft nicht. Der Lauf fragt einmal nach, läuft dann zu Ende und markiert, was er nicht prüfen konnte — es funktioniert, aber es bleibt mehr zu sichten."
+  },
+  "pipeline": {
+    "stage": {
+      "analyze_job": "Stellenanzeige wird gelesen",
+      "match_evidence": "Belege werden zugeordnet",
+      "strategy": "Lebenslauf wird geplant",
+      "draft": "Lebenslauf wird geschrieben",
+      "validate": "Ergebnis wird geprüft",
+      "repair": "Gefundene Probleme werden behoben"
+    },
+    "phase": {
+      "start": "gestartet",
+      "finish": "abgeschlossen",
+      "error": "fehlgeschlagen"
+    },
+    "stageCounter": "Schritt {{current}} von {{total}}",
+    "state": {
+      "queued": "Wartet auf einen freien Platz…",
+      "preparing": "Vorbereitung",
+      "drafting": "Wird geschrieben",
+      "validating": "Wird geprüft",
+      "repairing": "Wird nachgebessert"
+    },
+    "status": {
+      "running": "Läuft",
+      "completed": "Abgeschlossen",
+      "needsReview": "Prüfung nötig",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen"
+    },
+    "stopped": {
+      "done": "Fertig",
+      "maxSteps": "Beim Schrittlimit gestoppt",
+      "maxTokens": "Beim Token-Limit gestoppt",
+      "cancelled": "Abgebrochen",
+      "truncated": "Gestoppt — die Antwort wurde abgeschnitten",
+      "budgeted": "Gestoppt — das Tageslimit des Anbieters ist erreicht",
+      "runTimeout": "Gestoppt — die Zeit für den Lauf war um",
+      "maxToolCalls": "Beim Limit für Werkzeugaufrufe gestoppt",
+      "maxRepairs": "Gestoppt — das Budget für Nachbesserungen war aufgebraucht",
+      "stopped": "Gestoppt"
+    },
+    "runs": {
+      "title": "Gründliche Läufe für diese Stelle",
+      "empty": "Für diese Anzeige gibt es noch keine gestuften Läufe.",
+      "retentionNote": "Die drei neuesten Läufe bleiben erhalten.",
+      "open": "Bericht öffnen",
+      "openTimeline": "Ablauf anzeigen",
+      "closeTimeline": "Ablauf ausblenden",
+      "metrics": "{{calls}} Aufrufe · {{repairs}} Nachbesserungsrunden",
+      "reverted": "letzte Nachbesserung zurückgenommen",
+      "documentNote": "Gespeichert ist nur das Dokument des neuesten Laufs — ältere Läufe behalten ihren eigenen Status und Ablauf."
+    },
+    "timeline": {
+      "empty": "Für diesen Lauf sind keine Schritte aufgezeichnet.",
+      "liveOnly": "Nur der laufende Fortschritt — der Ablauf dieses Laufs wird noch nicht gespeichert."
+    },
+    "error": {
+      "notLatestRun": "Nur der neueste Lauf zu dieser Stelle lässt sich ändern. Erzeuge neu, um am aktuellen Dokument zu arbeiten."
+    }
+  },
   "quality": {
     "badge": {
       "clean": "Geprüft — keine Probleme",
@@ -1483,6 +1588,41 @@
       "staleNotice": "Dieses Dokument wurde bearbeitet, seit dieser Bericht erstellt wurde — die unten aufgeführten Probleme spiegeln möglicherweise nicht mehr den aktuellen Text wider.",
       "recheck": "Erneut prüfen",
       "rechecking": "Wird geprüft…",
+      "sections": {
+        "title": "Bewertung je Abschnitt",
+        "clean": "Keine Änderungen nötig",
+        "issues_one": "{{count}} Problem",
+        "issues_other": "{{count}} Probleme",
+        "criticals": "{{count}} kritisch",
+        "criticals_one": "{{count}} kritisch",
+        "criticals_other": "{{count}} kritisch",
+        "fix": "Abschnitt neu schreiben",
+        "fixing": "Wird neu geschrieben…",
+        "fixConfirm": "Abschnitt neu erzeugen",
+        "noteLabel": "Was soll sich ändern? (optional)",
+        "notePlaceholder": "z. B. mit der Plattform-Migration beginnen",
+        "notAddressable": "Diesen Abschnitt kann diese Version nicht einzeln neu schreiben.",
+        "repaired_one": "{{count}} Nachbesserungsrunde lief automatisch, bevor du das hier gesehen hast.",
+        "repaired_other": "{{count}} Nachbesserungsrunden liefen automatisch, bevor du das hier gesehen hast.",
+        "reverted": "Die letzte Nachbesserung hat es verschlechtert und wurde zurückgenommen.",
+        "perSectionNote": "Nachbesserungen werden für den gesamten Lauf gezählt — welcher Abschnitt betroffen war, hält die Prüfung nicht fest."
+      },
+      "review": {
+        "title": "Aussagen zum Prüfen",
+        "description": "Diese Zeilen ließen sich nicht auf deinen Lebenslauf zurückführen. Nichts wird automatisch entfernt — entscheide jede einzeln, deine Wahl wird im Bericht festgehalten.",
+        "pending_one": "{{count}} Aussage braucht noch eine Entscheidung",
+        "pending_other": "{{count}} Aussagen brauchen noch eine Entscheidung",
+        "allResolved": "Für jede markierte Aussage liegt eine Entscheidung vor.",
+        "remove": "Entfernen",
+        "keep": "Behalten",
+        "removed": "Zum Entfernen markiert",
+        "kept": "Als zutreffend behalten",
+        "orphaned": "Steht nicht mehr im Dokument",
+        "orphanedHint": "Du hast diese Zeile entfernt, oder sie hat sich seit der Prüfung geändert. Entscheide sie trotzdem, um die Prüfung abzuschließen.",
+        "removalPending": "Zum Entfernen markiert — steht noch im Dokument",
+        "removalPendingHint": "Deine Entscheidung ist festgehalten, die Zeile ließ sich von hier aus aber nicht löschen. Öffne den bei der Bewerbung zu dieser Stelle gespeicherten Lebenslauf und entferne die Zeile dort, um es abzuschließen.",
+        "failed": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
+      },
       "metrics": {
         "title": "Kennzahlen",
         "keywordCoverage": "Schlüsselwort-Abdeckung",
@@ -1582,6 +1722,7 @@
       "infoLabel": "Board-Ergebnisse"
     },
     "apply": {
+      "depthUnavailable": "Gründlich braucht einen gespeicherten Lebenslauf und eine Anzeige aus deiner Jobliste. Dieser Ablauf arbeitet mit dem Text im Assistenten, deshalb läuft dieser Durchgang schnell — deine Auswahl bleibt gemerkt.",
       "back": "Zurück zum Autopilot",
       "match": "Übereinstimmung",
       "jobDescription": "Stellenbeschreibung",
@@ -1923,6 +2064,46 @@
     "tailorHint": "Lebenslauf & Anschreiben für diesen Job anpassen",
     "tailorError": "Anpassung konnte nicht gestartet werden. Bitte erneut versuchen.",
     "saveError": "Speichern in der Verfolgung fehlgeschlagen. Bitte erneut versuchen.",
+    "tailored": {
+      "trigger": "Angepasster Lebenslauf (Qualität)",
+      "triggerHint": "Wähle, wie viel Arbeit die Generierung leistet. Qualität analysiert die Anzeige, belegt Aussagen aus deinem gespeicherten Lebenslauf, schreibt, prüft und bessert automatisch nach.",
+      "modalTitle": "Angepasster Lebenslauf",
+      "close": "Schließen",
+      "fastRoutes": "„Schnell“ öffnet den bekannten Ein-Schritt-Ablauf — „Starten“ führt dorthin, statt hier etwas auszuführen.",
+      "usesResume": "Nutzt deinen gespeicherten Standard-Lebenslauf „{{name}}“. Einen anderen Standard wählst du unter Dokumente.",
+      "unnamedResume": "deinen gespeicherten Standard-Lebenslauf",
+      "savesTo": "Der fertige Lebenslauf wird bei der Bewerbung zu dieser Stelle gespeichert — dort kannst du ihn bearbeiten und exportieren.",
+      "needsResume": "Speichere zuerst einen Lebenslauf — die Qualitätstiefe liest ihn aus deinen Dokumenten, nicht von diesem Bildschirm.",
+      "needsProvider": "Wähle einen KI-Anbieter in Einstellungen → KI.",
+      "start": "Starten",
+      "runAgain": "Erneut ausführen",
+      "cancel": "Lauf stoppen",
+      "cancelHint": "Fordert den Abbruch an — Stufen stoppen an der nächsten Grenze, Geschriebenes bleibt erhalten.",
+      "cancelling": "Wird gestoppt…",
+      "draftNote": "Live-Entwurf — nur zur Anzeige. Prüfung und bis zu zwei Nachbesserungsrunden folgen noch; das ist nicht der fertige Lebenslauf.",
+      "document": "Fertiger Lebenslauf",
+      "openReport": "Integritätsbericht öffnen",
+      "state": {
+        "done": "Abgeschlossen",
+        "needsReview": "Deine Prüfung nötig",
+        "cancelled": "Gestoppt",
+        "error": "Fehlgeschlagen"
+      },
+      "needsReviewTitle_one": "Nicht fertig — {{count}} Aussage braucht dein Urteil",
+      "needsReviewTitle_other": "Nicht fertig — {{count}} Aussagen brauchen dein Urteil",
+      "needsReviewHint": "Der Lebenslauf existiert, aber die Prüfungen konnten diese Zeilen nicht auf deinen gespeicherten Lebenslauf zurückführen. Öffne den Bericht und behalte oder entferne jede einzeln.",
+      "completedHint": "Alle möglichen Prüfungen sind gelaufen. Im Bericht findest du die Abschnittsurteile und Details.",
+      "cancelledHint": "Was der Lauf bereits geschrieben hatte, wurde gespeichert.",
+      "failedTitle": "Der Lauf ist fehlgeschlagen",
+      "failedHint": "Es wird nichts automatisch wiederholt. Ein Lauf wird außerdem abgelehnt statt eingereiht, wenn bereits zu viele laufen — versuche es gleich noch einmal.",
+      "fixFailed": "Abschnitt konnte nicht neu erzeugt werden. {{detail}}",
+      "resolveFailed": "Entscheidung konnte nicht gespeichert werden. {{detail}}",
+      "report": {
+        "source": "Erzeugt aus deinem gespeicherten Lebenslauf „{{name}}“.",
+        "removeHint": "„Entfernen“ hält hier dein Urteil fest; die Zeile selbst löschst du im Lebenslauf-Editor der Bewerbung.",
+        "olderRun": "Das ist nicht der neueste Lauf zu dieser Stelle. Alle Läufe einer Stelle teilen sich einen gespeicherten Lebenslauf, deshalb lässt sich hier nichts ändern."
+      }
+    },
     "prep": {
       "trigger": "Bewerbung vorbereiten",
       "triggerHint": "Unternehmen recherchieren, Lebenslauf-Match bewerten und maßgeschneidertes Anschreiben + Lebenslauf + Interviewfragen entwerfen",

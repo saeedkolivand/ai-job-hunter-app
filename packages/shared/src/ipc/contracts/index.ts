@@ -43,6 +43,7 @@ import { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notificati
 import { PRIVACY_CHANNELS, type PrivacyContract } from './privacy.js';
 import { REFERRALS_CHANNELS, type ReferralsContract } from './referrals.js';
 import { RESUME_CHANNELS, type ResumeContract } from './resume.js';
+import { RESUME_PIPELINE_CHANNELS, type ResumePipelineContract } from './resumePipeline.js';
 import { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 import { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 import { SYSTEM_CHANNELS, type SystemContract } from './system.js';
@@ -73,6 +74,7 @@ export interface IpcContract {
   privacy: PrivacyContract;
   referrals: ReferralsContract;
   resume: ResumeContract;
+  resumePipeline: ResumePipelineContract;
   support: SupportContract;
   autopilot: AutopilotContract;
   menu: MenuContract;
@@ -109,6 +111,7 @@ export const IPC_CHANNELS = {
   privacy: PRIVACY_CHANNELS,
   referrals: REFERRALS_CHANNELS,
   resume: RESUME_CHANNELS,
+  resumePipeline: RESUME_PIPELINE_CHANNELS,
   support: SUPPORT_CHANNELS,
   autopilot: AUTOPILOT_CHANNELS,
   notifications: NOTIFICATIONS_CHANNELS,
@@ -267,6 +270,19 @@ export {
   type ReferralUpsertRequest,
 } from './referrals.js';
 export { type ContentReportPayload, RESUME_CHANNELS, type ResumeContract } from './resume.js';
+export {
+  type PipelineFabrication,
+  type PipelineQualityReport,
+  type PipelineQualityReportSlot,
+  type PipelineRunDetail,
+  type PipelineRunEvent,
+  type PipelineRunMetrics,
+  type PipelineRunStarted,
+  type PipelineRunStatus,
+  type PipelineRunSummary,
+  RESUME_PIPELINE_CHANNELS,
+  type ResumePipelineContract,
+} from './resumePipeline.js';
 export { SCRAPE_CHANNELS, type ScrapeContract } from './scrape.js';
 export { SUPPORT_CHANNELS, type SupportContract } from './support.js';
 export { SYSTEM_CHANNELS, type SystemContract } from './system.js';

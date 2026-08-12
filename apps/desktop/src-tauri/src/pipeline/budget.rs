@@ -33,6 +33,35 @@ pub struct Budget {
     /// Tool invocations per run. Distinct from [`Self::max_steps`]: one turn can
     /// request several tool calls, and a loop that keeps calling tools without
     /// converging burns real money per call even while the step count crawls.
+    ///
+    /// **NOT ENFORCED ANYWHERE TODAY — the same honest note
+    /// [`Self::step_timeout`] carries, and a bigger gap.**
+    /// [`crate::agent::controller`] counts steps and tokens and stops on both;
+    /// it never counts calls, so [`StoppedReason::MaxToolCalls`] has no
+    /// producer in the crate and this value only feeds the compile-time
+    /// relations below. Verified by grep, not assumed; pinned from the
+    /// behavioural side by
+    /// `agent::controller::test::always_calling_a_tool_terminates_at_max_steps`,
+    /// whose comment names this gap.
+    ///
+    /// It is left unenforced on purpose rather than closed with a counter,
+    /// because a counter alone would make the WRONG stop the binding one:
+    /// [`Self::AGENT_PREP`] rations 12 calls under 14 steps precisely so a run
+    /// that runs out of calls "still has turns left to write its summary", and
+    /// a hard stop at the 12th call spends none of them — it also makes
+    /// [`StoppedReason::MaxSteps`] unreachable for every flow the relation
+    /// below holds for, trading one dead reason for another. The honest fix is
+    /// to stop OFFERING tools once the count is spent (an empty
+    /// [`crate::commands::ai_provider::ToolSpec`] list for the remaining
+    /// turns), which the loop cannot do today: the spec list is built once in
+    /// `LiveAgentEnv` and `AgentEnv::turn` takes only messages. That is a
+    /// signature change across the trait and both fakes, i.e. its own round.
+    ///
+    /// What DOES bound spend meanwhile: `max_steps`, `max_tokens` (which
+    /// counts the whole tool-schema payload every turn), the per-call
+    /// [`Self::step_timeout`] race, and
+    /// [`crate::limits::Limiter::charge_provider_daily`] on every provider
+    /// round-trip a tool makes.
     pub max_tool_calls: usize,
     /// Accumulated token estimate (~chars/4) across prompts + completions.
     pub max_tokens: usize,
@@ -47,6 +76,19 @@ pub struct Budget {
     /// cannot satisfy the check in two corrections will not satisfy it in ten.
     pub max_repair_attempts: usize,
     /// Wall clock for ONE provider turn or ONE tool call.
+    ///
+    /// **Enforced only by [`crate::agent::controller`]**, which races each turn
+    /// and each tool call against it in a `select!`. [`crate::pipeline::Pipeline::run_hooked`]
+    /// does NOT — a staged run's per-call bounds are the HTTP timeouts of the
+    /// calls a stage makes (`timeouts::stream_deadline` /
+    /// `timeouts::OLLAMA_COMPLETION`), and its whole-run bound is
+    /// [`Self::run_timeout`], checked at every stage boundary AND inside the one
+    /// stage that fans out (`stages::repair`). Documented rather than fixed:
+    /// wrapping every stage in `tokio::time::timeout` would add a second
+    /// timing mechanism above bounds that already fire with a specific,
+    /// actionable error, and a stage that legitimately makes several calls (the
+    /// repair loop) has no single "step" for this to bound. Do not read a value
+    /// here as a guarantee a pipeline stage will be interrupted.
     pub step_timeout: Duration,
     /// Wall clock for the WHOLE run — the backstop for a run that never trips a
     /// per-step timeout but crawls forever (many slow-but-answering steps).
@@ -64,10 +106,12 @@ impl Budget {
     /// turns (`research_company`, `match_resume`, `draft_cover_letter`,
     /// `draft_resume`, `validate_resume`, `suggest_interview_questions`,
     /// `save_cover_letter`, `save_resume`) plus a planning turn and a
-    /// closing-summary turn — a 10-turn floor. The whitelist carries 11 tools,
+    /// closing-summary turn — a 10-turn floor. The whitelist carries 13 tools,
     /// so the three remaining résumé-quality Read tools
-    /// ([`crate::agent::tools_quality::quality_tools`]) are reachable too; the
-    /// prompt NAMES and RATIONS them at one optional call plus one
+    /// ([`crate::agent::tools_quality::quality_tools`]) and the two cheap
+    /// pipeline tools ([`crate::agent::tools_pipeline`] — `analyze_job`,
+    /// `get_quality_report`) are reachable too; the prompt NAMES and RATIONS
+    /// them at one optional call plus one
     /// `validate_resume` re-check after a fix, so the worst case is 10 + 2 = 12
     /// turns and 14 leaves two turns of slack for a model that splits a step or
     /// retries a declined confirm. The prompt-side half of that arithmetic is
@@ -75,10 +119,25 @@ impl Budget {
     /// so a new numbered step fails a test instead of stranding a real run at
     /// [`StoppedReason::MaxSteps`] between the drafting spend and the saves.
     ///
+    /// **Phase 3 added tools and this budget did NOT move — the arithmetic
+    /// says so, rather than the omission being an oversight.** The plan's
+    /// "re-sized for the larger toolset" note was paid in Phase 1, when the
+    /// four quality tools took `max_steps` to 14 and `max_tool_calls` to 12.
+    /// Phase 3's two additions ride the SAME single optional ration the prompt
+    /// already grants — the ration is per RUN, not per tool — so the worst case
+    /// is still 12 turns and 10 calls no matter how many optional entries the
+    /// list grows. Only the per-turn TOKEN cost scales with the tool count
+    /// (every turn re-sends the whole schema payload), and two more
+    /// no-argument schemas are ~300 chars ≈ 75 tokens × ≤14 turns ≈ 1k against
+    /// `max_tokens` = 120 000. Widening the ration is what would need a
+    /// re-size, and the compile-time relations below would fail first.
+    ///
     /// **`max_tool_calls` = 12.** The same arithmetic counted in CALLS rather
     /// than turns: 8 fixed + 1 rationed optional + 1 re-check = 10, plus 2 of
-    /// slack. Deliberately below `max_steps` — a run that has spent 12 tool
-    /// calls still has turns left to write its summary.
+    /// slack. Deliberately below `max_steps` so a run that spends its calls
+    /// would still have turns left to write a summary — **an intent the loop
+    /// does not implement; read the field doc on
+    /// [`Budget::max_tool_calls`] before relying on this number.**
     ///
     /// **`max_tokens` = 120_000.** The drafted résumé is echoed through the
     /// accumulator TWICE — once as the `draft_resume` tool result, once as the
@@ -138,11 +197,40 @@ impl Budget {
     /// [`DEFAULT_MAX_REPAIR_ATTEMPTS`] times, so the worst case is roughly 3×
     /// that ≈ 180k. 200k covers it without licensing an unbounded loop.
     ///
-    /// **`step_timeout`** matches [`Self::AGENT_PREP`] for the same reason (it
-    /// is a backstop above the longest HTTP timeout, not a per-call target),
-    /// while `run_timeout` is 30 min: a per-section call is far smaller than a
-    /// whole-résumé call, so 20 slow steps should not add up to three quarters
-    /// of an hour.
+    /// *Re-derived for QUALITY depth (Phase 3), which is not section-wise:* 3
+    /// JSON stages (~3k + ~6k + ~5k tokens, each doubled by the one allowed
+    /// re-ask ⇒ ~28k) + the draft (~7.5k) + ≤2 repair rounds × ≤4 sections ×
+    /// ~6k (~37k) ≈ **73k**. The 200k ceiling over-provisions quality depth by
+    /// ~2.7× and is sized for the max-depth fan-out it was written for, so it
+    /// is left as is — but it is NOT the live bound at quality depth: the
+    /// per-provider daily ceiling and the run deadline are, and this figure has
+    /// no enforcement point in the Phase-3 stages
+    /// ([`StoppedReason::MaxTokens`] stays unreachable here).
+    ///
+    /// **`step_timeout`** matches [`Self::AGENT_PREP`]'s value, but read its
+    /// field doc first: it is INERT for this flow — `Pipeline::run_hooked` does
+    /// not enforce it.
+    ///
+    /// **`run_timeout` = 75 min**, raised from an unvalidated 30 (via a wrong
+    /// 45) and now DERIVED from the fan-out that actually runs: it is the
+    /// effort-blind FLOOR that must agree with
+    /// `timeouts::quality_run_deadline(None)`, which is
+    /// `fixed + baseline × passes × 1.0` = 4200 s + 300 s = 4500 s. The fixed
+    /// term is every call whose per-call bound is FLAT — 3 JSON stages × 2
+    /// round-trips (1800 s) plus the repair fan-out, `max_repair_attempts` (2)
+    /// rounds × `MAX_SECTIONS_PER_ROUND` (4) sections (2400 s), all at the
+    /// 300 s `OLLAMA_COMPLETION` bound — and the scaled term is the draft, the
+    /// run's only streamed call. The 45-minute version counted the repair half
+    /// as ONE effort-scaled draft-equivalent per round (600 s instead of
+    /// 2400 s), so the advertised deadline was ~1800 s short of the calls it
+    /// wraps while the renderer's own client timeout would have fired first —
+    /// inverting the invariant that the backend gives up first because it is
+    /// the side that knows WHY. Pinned by
+    /// `quality_run_deadline_agrees_with_the_budget_floor_at_the_bottom_tier`
+    /// and by `quality_run_deadline_clears_the_inner_per_call_bounds`, which
+    /// computes those inner bounds from the fan-out constants themselves; the
+    /// effort-scaled deadline above this floor is picked by
+    /// `pipeline::resume::run_deadline`.
     ///
     /// **`confirm_timeout`** carries the app-wide value even though the pipeline
     /// suspends on nothing today — so a future confirm inherits the same wait as
@@ -154,7 +242,7 @@ impl Budget {
         max_sections: DEFAULT_MAX_SECTIONS,
         max_repair_attempts: DEFAULT_MAX_REPAIR_ATTEMPTS,
         step_timeout: Duration::from_secs(360),
-        run_timeout: Duration::from_secs(30 * 60),
+        run_timeout: Duration::from_secs(75 * 60),
         confirm_timeout: Duration::from_secs(300),
     };
 }
@@ -186,6 +274,11 @@ const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls >= PREP_WORST_CASE_TOOL_CALLS,
     "AGENT_PREP.max_tool_calls must admit the 10-call prep worst case"
 );
+// A RELATION between the two ceilings, not a claim about the loop: the summary
+// turns it reserves are only actually reachable once the tool count is enforced
+// by suppressing tools rather than by stopping (see [`Budget::max_tool_calls`]).
+// Kept because the relation is the precondition for that fix, and inverting it
+// would silently rule the fix out.
 const _: () = assert!(
     Budget::AGENT_PREP.max_tool_calls < Budget::AGENT_PREP.max_steps,
     "a run that exhausts its tool calls must still have turns left to summarize"

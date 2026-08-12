@@ -249,6 +249,12 @@ export function GenerationOutput({
               currentText={output}
               onRecheck={onRecheck}
               rechecking={rechecking}
+              // The editor's own change handler, so a "Remove" from the review
+              // is an ordinary edit and follows the same commit/save path.
+              // Withheld while the document is locked (`editable === false`) —
+              // the review then shows "marked for removal" rather than
+              // pretending the line is gone.
+              onDocumentTextChange={editable ? handleEdit : undefined}
               className="mr-1"
             />
           )}

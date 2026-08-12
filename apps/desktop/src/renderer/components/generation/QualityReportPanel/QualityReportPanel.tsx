@@ -1,11 +1,61 @@
 import { AlertOctagon, AlertTriangle, CheckCircle2, History, RefreshCw, X } from 'lucide-react';
 import { useMemo } from 'react';
 
+import type { PipelineSectionKey } from '@ajh/shared';
 import type { ContentReportPayload } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { Button, EmptyState, ModalShell } from '@ajh/ui';
 
+import type { Fabrication, SectionVerdict } from '@/lib/generate';
+
+import { FabricationReview } from './FabricationReview';
+import { SectionVerdicts } from './SectionVerdicts';
+
 type ContentIssue = ContentReportPayload['issues'][number];
+
+/**
+ * Everything a STAGED (quality-depth) run adds to this panel, bundled so the
+ * fast path's call sites keep their four props.
+ *
+ * Absent for a fast-path report, and that is the whole difference: a one-shot
+ * generation has no run to regenerate a section of and no per-bullet review to
+ * resolve, so the panel renders exactly as it did before.
+ */
+export interface QualityPipelineReview {
+  /** The document as it stands NOW — locates fabrication evidence and decides
+   *  which sections can honestly be called clean. */
+  documentText: string;
+  sections: SectionVerdict[];
+  fabrications: Fabrication[];
+  onFixSection?: (sectionKey: PipelineSectionKey, note: string) => void;
+  fixingSection?: string | null;
+  fixError?: string | null;
+  onResolveFabrication?: (issueKey: string, decision: 'remove' | 'keep') => void;
+  /**
+   * Apply a Remove verdict to the document — see
+   * {@link FabricationReview}'s `onRemoveEvidence`. Supplied automatically by
+   * `QualityBadge` when the host gives it an `onDocumentTextChange` writer;
+   * omit on a surface whose document cannot be edited.
+   *
+   * Takes the whole ENTRY, not its `evidence`: the deletion is anchored on the
+   * entry's recorded `line`, and a bare span is not enough to find a line with.
+   */
+  onRemoveEvidence?: (entry: Fabrication) => void | Promise<void>;
+  resolvingIssueKey?: string | null;
+  resolveError?: string | null;
+  repairRounds?: number;
+  repairReverted?: boolean;
+  /**
+   * Provenance / limitation line for the staged block: which résumé the run
+   * started from, where a Remove has to be applied, or the fact that an OLDER
+   * run's document is no longer the stored one so nothing here can be changed.
+   *
+   * Plain text, deliberately NOT `role="alert"` — it describes the report the
+   * user just opened, it is not an event. Refusals that DID happen still go to
+   * `fixError`/`resolveError`, which are alerts.
+   */
+  note?: string;
+}
 
 export interface QualityReportPanelProps {
   open: boolean;
@@ -23,6 +73,8 @@ export interface QualityReportPanelProps {
    *  Omit to hide the action. */
   onRecheck?: () => void;
   rechecking?: boolean;
+  /** Staged-run extras — see {@link QualityPipelineReview}. */
+  pipeline?: QualityPipelineReview;
 }
 
 /** Sentinel grouping key for document-wide findings (`issue.section === null`) —
@@ -91,6 +143,7 @@ export function QualityReportPanel({
   stale,
   onRecheck,
   rechecking,
+  pipeline,
 }: QualityReportPanelProps) {
   const { t, i18n } = useTranslation();
   const titleId = 'quality-report-title';
@@ -153,7 +206,10 @@ export function QualityReportPanel({
             )}
           </div>
         )}
-        {groups.length === 0 ? (
+        {/* "Passed every check" is a claim, so it is withheld while a staged run
+            still has flagged claims awaiting a verdict — `needsReview` is not a
+            clean run, and the review list below is exactly what is unfinished. */}
+        {groups.length === 0 && !pipeline?.fabrications.length ? (
           <EmptyState
             icon={CheckCircle2}
             title={t('quality.panel.emptyTitle')}
@@ -193,6 +249,32 @@ export function QualityReportPanel({
               </ul>
             </div>
           ))
+        )}
+
+        {pipeline && (
+          <>
+            {pipeline.note && (
+              <p className="border-t border-white/[0.06] pt-4 text-[10px] leading-relaxed text-foreground/45">
+                {pipeline.note}
+              </p>
+            )}
+            <SectionVerdicts
+              sections={pipeline.sections}
+              onFixSection={pipeline.onFixSection}
+              fixingSection={pipeline.fixingSection}
+              fixError={pipeline.fixError}
+              repairRounds={pipeline.repairRounds}
+              repairReverted={pipeline.repairReverted}
+            />
+            <FabricationReview
+              entries={pipeline.fabrications}
+              documentText={pipeline.documentText}
+              onResolve={pipeline.onResolveFabrication}
+              onRemoveEvidence={pipeline.onRemoveEvidence}
+              resolvingIssueKey={pipeline.resolvingIssueKey}
+              resolveError={pipeline.resolveError}
+            />
+          </>
         )}
 
         {metrics && (

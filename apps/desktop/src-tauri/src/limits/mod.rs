@@ -78,6 +78,16 @@ pub const SCRAPE_CONCURRENCY_MAX: usize = 2;
 pub const AGENT_RUN_RATE_MAX: usize = 10;
 /// `agent_run`: at most this many in-flight at once.
 pub const AGENT_RUN_CONCURRENCY_MAX: usize = 2;
+/// `agent_run`: at most this many callers PARKED waiting for a slot.
+///
+/// Smaller than [`AI_GENERATE_QUEUE_MAX`] on purpose. Both buckets serve
+/// deliberate human actions, so both PARK rather than reject (a user working
+/// through imported applications should not lose the click they just made) —
+/// but a run in this bucket is a multi-stage pipeline that can occupy its slot
+/// for tens of minutes, so a deep queue would park work behind a wait nobody
+/// would sit through. Six is "a batch, not a backlog"; past it the caller is
+/// rejected immediately with a retriable error rather than parked indefinitely.
+pub const AGENT_RUN_QUEUE_MAX: usize = 6;
 
 /// Rolling rate-limit window (all commands share the window length; only the
 /// per-command count differs).

@@ -38,6 +38,7 @@ describe('IPC_CHANNELS', () => {
         'privacy',
         'referrals',
         'resume',
+        'resumePipeline',
         'scrape',
         'support',
         'system',

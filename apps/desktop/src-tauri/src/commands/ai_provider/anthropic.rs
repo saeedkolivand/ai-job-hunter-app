@@ -819,14 +819,16 @@ impl AnthropicClient {
 
         let body = build_complete_body(model, system, user, temperature);
 
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::COMPLETION)
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", VERSION)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(&endpoint)
+                    .header("x-api-key", &api_key)
+                    .header("anthropic-version", VERSION)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,
@@ -1131,7 +1133,6 @@ impl AiProvider for AnthropicClient {
             || {
                 crate::net::http::shared()
                     .post(&endpoint)
-                    .timeout(timeouts::stream_deadline(req.effort.as_deref()))
                     .header("x-api-key", &api_key)
                     .header("anthropic-version", VERSION)
                     .json(&body)
@@ -1341,14 +1342,16 @@ impl AiProvider for AnthropicClient {
 
         let body = build_tools_body(model, &system, wire_messages, tool_specs, temperature);
 
-        let resp = send_with_retry(|| {
-            crate::net::http::shared()
-                .post(&endpoint)
-                .timeout(timeouts::COMPLETION)
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", VERSION)
-                .json(&body)
-        })
+        let resp = send_with_retry(
+            || {
+                crate::net::http::shared()
+                    .post(&endpoint)
+                    .header("x-api-key", &api_key)
+                    .header("anthropic-version", VERSION)
+                    .json(&body)
+            },
+            timeouts::COMPLETION,
+        )
         .await;
         let resp = match resp {
             Ok(r) => r,
