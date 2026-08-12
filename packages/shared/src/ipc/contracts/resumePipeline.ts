@@ -8,7 +8,7 @@ import type {
 import type { ContentReportPayload } from './resume.js';
 
 /**
- * The staged résumé pipeline — `quality` depth today, `max` in Phase 4.
+ * The staged résumé pipeline — the `quality` and `max` depths.
  *
  * `run` starts the background run and returns its ids immediately; stage
  * progress streams as `pipeline:stage` events (subscribe via {@link

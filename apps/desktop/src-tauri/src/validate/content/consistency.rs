@@ -466,10 +466,23 @@ enum ProjectTier {
     Compact,
 }
 
+/// Whether one line OPENS a project entry: it names a project, either as a bold
+/// run (`**Name**`) or as a bullet.
+///
+/// `pub` and re-exported from [`super`] for the reason [`project_entries`]
+/// already gives, one layer further out: the max-depth pipeline groups the
+/// SOURCE's project entries to seed their names, links and stack lines, and a
+/// second answer to "where does an entry begin" there would shift every
+/// subsequent line by one — turning a stack line into a description and a
+/// truthful document into a `consistency.project_structure` warning.
+pub fn project_entry_starts(line: &ParsedLine) -> bool {
+    matches!(line.kind, LineKind::Bullet) || line.segments.iter().any(|s| s.bold)
+}
+
 /// Group a projects section's non-blank lines into entries.
 ///
-/// An entry begins at a line that names a project: a bold run (`**Name**`) or a
-/// bullet. Everything up to the next such line belongs to it.
+/// An entry begins at a line that names a project ([`project_entry_starts`]).
+/// Everything up to the next such line belongs to it.
 ///
 /// `pub(super)` because `factual::project_links` needs the same grouping to know
 /// which line is the stack line — two graders disagreeing about where an entry
@@ -481,8 +494,7 @@ pub(super) fn project_entries(section: &Section) -> Vec<Vec<&ParsedLine>> {
         .iter()
         .filter(|l| !matches!(l.kind, LineKind::Blank) && !l.text.trim().is_empty())
     {
-        let starts_entry =
-            matches!(line.kind, LineKind::Bullet) || line.segments.iter().any(|s| s.bold);
+        let starts_entry = project_entry_starts(line);
         if starts_entry || entries.is_empty() {
             entries.push(vec![line]);
         } else if let Some(last) = entries.last_mut() {

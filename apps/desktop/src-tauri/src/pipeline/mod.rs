@@ -684,6 +684,26 @@ fn reask_prompt(error: &json::JsonParseError) -> String {
 pub trait Stage<C>: Send + Sync {
     fn name(&self) -> &'static str;
     async fn run(&self, ctx: &mut C) -> AppResult<()>;
+
+    /// Whether entering this stage can cost a PROVIDER call.
+    ///
+    /// **Default `true`, because the safe direction to be wrong in is refusing
+    /// to run.** A boundary deadline check exists to stop a run before it pays
+    /// for the next call — not to throw away what it has already paid for, and
+    /// the two are only the same thing while every stage costs money. A
+    /// section-wise run breaks that: `sections` can stop mid-fan-out with
+    /// eleven paid answers in hand, and the stages that turn them into a saved,
+    /// checked document (`assemble` renders, `validate` compares) make no call
+    /// at all. Aborting at THAT boundary discarded the whole run.
+    ///
+    /// Surfaced to the hook through [`StageInfo::costs_a_call`]; the stop
+    /// decision itself is
+    /// `commands::resume_pipeline::hooks::apply_stop`. Cancellation is
+    /// unaffected — a user who pressed Cancel wants the run to stop, free stage
+    /// or not.
+    fn costs_a_provider_call(&self) -> bool {
+        true
+    }
 }
 
 /// An ordered sequence of [`Stage`]s sharing a context. Runs each stage in order,
@@ -708,6 +728,30 @@ impl<C> Pipeline<C> {
     pub fn add<S: Stage<C> + 'static>(mut self, stage: S) -> Self {
         self.stages.push(Box::new(stage));
         self
+    }
+
+    /// The stage names, in order.
+    ///
+    /// Exists for the depth-vocabulary pins (`QUALITY_STAGES`/`MAX_STAGES`):
+    /// those constants are what the renderer's timeline keys on, and a pin that
+    /// only compares a constant against a literal proves the literal, not the
+    /// pipeline. With this, renaming or reordering a stage fails the pin.
+    pub fn stage_names(&self) -> Vec<&'static str> {
+        self.stages.iter().map(|stage| stage.name()).collect()
+    }
+
+    /// The stages that make no provider call, in order — the ones a boundary
+    /// deadline check may let through.
+    ///
+    /// Read off the pipeline that actually runs, for the same reason
+    /// [`stage_names`](Self::stage_names) is: a guard comparing one list of
+    /// names against another list of names proves nothing about the stages.
+    pub fn free_stage_names(&self) -> Vec<&'static str> {
+        self.stages
+            .iter()
+            .filter(|stage| !stage.costs_a_provider_call())
+            .map(|stage| stage.name())
+            .collect()
     }
 
     pub async fn run(&self, ctx: &mut C) -> AppResult<()> {
@@ -744,6 +788,7 @@ impl<C> Pipeline<C> {
                 stage: stage.name(),
                 index,
                 total,
+                costs_a_call: stage.costs_a_provider_call(),
             };
             hooks.before(&info).await?;
             let started = std::time::Instant::now();
@@ -775,6 +820,10 @@ pub struct StageInfo {
     pub index: usize,
     /// How many stages the pipeline has in total.
     pub total: usize,
+    /// [`Stage::costs_a_provider_call`] for this stage — what lets a hook's
+    /// deadline check tell "do not pay for the next call" apart from "do not
+    /// render what has already been paid for".
+    pub costs_a_call: bool,
 }
 
 /// How a stage finished.

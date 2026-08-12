@@ -12,15 +12,22 @@ import { GENERATION_DEPTHS, type GenerationDepth } from '@ajh/shared/schemas';
 /**
  * Depths this build can actually RUN, in ascending order.
  *
- * `max` is deliberately absent, and this is checked against the backend rather
- * than assumed: `resume_pipeline_run` rejects `depth: "max"` with a validation
- * error ("the staged pipeline runs at quality depth"), because accepting it and
- * running the quality stages would be a lie about what ran. The option is still
- * SHOWN (disabled, with a reason) rather than hidden — a missing third tier
- * reads as "there are two depths", which is a different and less honest claim
- * than "there are three, one isn't ready".
+ * All three run as of Phase 4: `resume_pipeline_run` no longer rejects
+ * `depth: "max"` — it routes to the section-wise pipeline
+ * (`MAX_STAGES = analyze_job, match_evidence, strategy, sections, assemble,
+ * validate, repair, llm_judge`), so offering it is now a true claim about what
+ * would run. `fast` is the only depth that never reaches the staged pipeline at
+ * all; it stays here because it is a depth this build runs, just through the
+ * one-shot path.
+ *
+ * The list stays a subset check rather than "everything in `GENERATION_DEPTHS`"
+ * because the vocabulary is shared with Rust and codegen'd: a tier added to the
+ * wire enum before this build can run it must be SHOWN (disabled, with a
+ * reason) rather than silently offered — a missing tier reads as "there are
+ * only N depths", which is a different and less honest claim than "there are
+ * N+1, one isn't ready".
  */
-export const RUNNABLE_GENERATION_DEPTHS: readonly GenerationDepth[] = ['fast', 'quality'];
+export const RUNNABLE_GENERATION_DEPTHS: readonly GenerationDepth[] = ['fast', 'quality', 'max'];
 
 export function isDepthRunnable(depth: GenerationDepth): boolean {
   return RUNNABLE_GENERATION_DEPTHS.includes(depth);
@@ -30,11 +37,14 @@ export function isDepthRunnable(depth: GenerationDepth): boolean {
  * Coerce a stored/derived depth to one this build can run.
  *
  * Falls back to `'fast'` — the cheapest depth and the app's default — never to
- * `'quality'`: silently upgrading someone into four provider calls plus two
- * repair rounds because their stored value named a tier that doesn't exist yet
- * is the one wrong answer here. Unreachable through the UI (the control refuses
- * to select an unrunnable option); this covers a hand-edited or
- * forward-migrated persisted value.
+ * a staged one: silently upgrading someone into a multi-call staged run
+ * (quality) or a per-section fan-out that may take the better part of an hour
+ * (max) because their stored value named a tier this build doesn't have is the
+ * one wrong answer here. Every current tier IS runnable, so the coercion is
+ * unreachable today from both the UI and a well-formed persisted value; it
+ * still covers a hand-edited or FORWARD-migrated one (a newer build's depth
+ * read back by an older one), which is exactly when guessing upward would cost
+ * the most.
  */
 export function resolveRunnableDepth(depth: GenerationDepth | undefined | null): GenerationDepth {
   return depth && isDepthRunnable(depth) ? depth : 'fast';

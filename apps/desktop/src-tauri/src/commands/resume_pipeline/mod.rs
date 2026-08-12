@@ -55,9 +55,12 @@
 //!   `a_save_replaces_a_slot_whole_so_the_writer_owns_the_review_list`.
 
 pub mod hooks;
+pub mod max;
 pub mod notify;
 pub mod report;
 
+#[cfg(test)]
+mod max_test;
 #[cfg(test)]
 mod test;
 
@@ -77,13 +80,10 @@ use crate::ipc_contracts::resume_pipeline::{
     ResumePipelineRunRequest,
 };
 use crate::jobs::cancel::CancelRegistry;
-use crate::pipeline::budget::Budget;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::resume::stages::{regenerate_one_section, SectionOutcome};
 use crate::pipeline::resume::types::{GenerationDepth, SectionKey};
-use crate::pipeline::resume::{
-    quality_pipeline, run_deadline, QualityCtx, QualityInput, RunDeadline, RunLedger,
-};
+use crate::pipeline::resume::{QualityCtx, QualityInput, RunDeadline, RunLedger};
 use crate::pipeline::runs::{PipelineRunStore, RunRow};
 use crate::pipeline::Completer;
 
@@ -231,17 +231,11 @@ async fn execute(
 ) -> AppResult<()> {
     let depth = GenerationDepth::from_wire(&req.depth)
         .ok_or_else(|| AppError::Validation(format!("unknown generation depth: {}", req.depth)))?;
-    match depth {
-        GenerationDepth::Quality => {}
-        // `fast` is the untouched single-shot TS path — routing it here would
-        // silently change what the user asked for. `max` is Phase 4; accepting
-        // it and running the quality stages would be a lie about what ran.
-        GenerationDepth::Fast | GenerationDepth::Max => {
-            return Err(AppError::Validation(format!(
-                "the staged pipeline runs at quality depth; {} is not handled here",
-                depth.as_str()
-            )))
-        }
+    if !max::is_staged(depth) {
+        return Err(AppError::Validation(format!(
+            "the staged pipeline runs at quality or max depth; {} is not handled here",
+            depth.as_str()
+        )));
     }
 
     let clamped = clamp_request(req);
@@ -291,13 +285,11 @@ async fn execute(
     store.upsert_run(&row)?;
 
     let ledger = Arc::new(RunLedger::new());
-    // ONE clock for the whole run: the hook checks it at every stage boundary
-    // and the `repair` stage checks it between its own provider calls (it is
-    // the last stage, so there is no boundary after it — see `RunDeadline`).
-    let deadline = RunDeadline::starting_now(run_deadline(
-        Budget::RESUME_QUALITY,
-        timeouts::quality_run_deadline(req.effort.as_deref()),
-    ));
+    // ONE clock for the whole run: the hook checks it at every stage boundary,
+    // the `sections` stage checks it between its per-section calls, and the
+    // `repair` stage checks it between its own (it is the last stage, so there
+    // is no boundary after it — see `RunDeadline`).
+    let deadline = RunDeadline::starting_now(max::deadline_for(depth, req.effort.as_deref()));
     let hooks = RunHooks::new(
         app.clone(),
         run_id.to_string(),
@@ -323,14 +315,63 @@ async fn execute(
         deadline,
         Arc::clone(&ledger),
     );
+    if depth == GenerationDepth::Max {
+        // The hook is ALSO the section-wise observer: per-section events and
+        // the progressive document stream are emits, so they belong to the one
+        // layer allowed to emit. `RunHooks` outlives the context, and both
+        // borrows are shared.
+        ctx = ctx.for_max(Some(&hooks));
+    }
 
-    let outcome = quality_pipeline().run_hooked(&mut ctx, &hooks).await;
+    let outcome = max::pipeline_for(depth).run_hooked(&mut ctx, &hooks).await;
+
+    // ── THE DELETE WINS ──────────────────────────────────────────────────────
+    //
+    // This run wrote its own `running` row before the first stage. If that row
+    // is GONE now, something deleted this posting's data while the run was in
+    // flight — `applications_delete`, `ai_generations_remove`, a factory reset,
+    // or a backup restore — and every one of those is the user saying "remove
+    // this". Writing the terminal state anyway does not merely miss the delete:
+    // `upsert_run` is INSERT OR REPLACE, so it RESURRECTS the run row, and
+    // `persist_document`'s merge-upsert re-creates the `ai_generations`
+    // aggregate the delete removed. The posting comes back — in the runs panel,
+    // in the Documents list, and in the next backup — with a permanently
+    // PARTIAL trail, because the events from before the purge are already gone.
+    // Executed, not reasoned: see
+    // `a_run_whose_posting_was_deleted_mid_flight_does_not_resurrect_it`.
+    //
+    // So the run abandons its own output. No persist, no row, and a sweep of
+    // whatever it appended into the gap between the purge and here.
+    //
+    // A terminal check rather than cancel-and-await: nothing maps a `job_url`
+    // to an in-flight run's cancel token (`RunRow` has no job id, and
+    // `CancelRegistry` is keyed by a per-run uuid), so cancelling at the delete
+    // site needs a new index — and even with one, the in-flight window between
+    // the cancel and the run noticing still lands here. This closes both delete
+    // doors at the single place both must pass through.
+    if store.run(run_id).is_none() {
+        let swept = store.delete_events_for_run(run_id);
+        span.end_with(
+            &format!("status=cancelled stopped=deleted swept={swept}"),
+            false,
+        );
+        crate::commands::jobs::job_cancel(app, job_id);
+        return Ok(());
+    }
 
     // Persist whatever the run produced BEFORE deciding how it ended: a run
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
     let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
+    // A REFUSED save is not a successful run. `is_persistable` rejects a
+    // document that lost the source's whole work history, and `terminal_state`
+    // would otherwise read `outcome == Ok` and report `completed` — a run the
+    // user is told succeeded, over a document that never changed, with nothing
+    // anywhere saying why. Only `Refused` counts: `Nothing` is the unlinked /
+    // empty-draft case, which is benign and already reported by its own path.
+    let refused =
+        save_verdict(ctx.input.source_resume, &ctx.draft, &job_url) == SaveVerdict::Refused;
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -344,7 +385,7 @@ async fn execute(
     // `persist_document` has saved its document.
     let (status, stopped_reason) = hooks::terminal_state(
         &ledger,
-        outcome.is_ok(),
+        outcome.is_ok() && !refused,
         cancel.is_cancelled(),
         needs_review,
         quality_report.is_some(),
@@ -400,6 +441,15 @@ async fn execute(
     );
 
     match outcome {
+        // The pipeline finished, and the document it produced was refused. The
+        // row already says `failed`; the JOB has to agree, and the user needs
+        // the reason — the alternative is a green run over an unchanged
+        // document. `execute`'s caller turns this into `job_fail`.
+        Ok(()) if refused => Err(AppError::Message(
+            "The generated résumé came back without any of your work history, so your saved \
+             document was left unchanged. Try again, or use quality depth."
+                .to_string(),
+        )),
         Ok(()) => {
             crate::commands::jobs::job_complete(
                 app,
@@ -448,6 +498,28 @@ async fn execute(
 /// `(job_url, kind)` — a permanent, invisible row holding a full résumé. The
 /// plan calls an unlinked generation session-only, and the run row + the stream
 /// the user watched are that session.
+///
+/// ## A STOPPED run overwrites the saved document, and what that trades
+///
+/// This save is an overwrite: there is one `ai_generations` row per posting and
+/// no versioning, so whatever a run persists REPLACES what the user had. Since
+/// a deadline-stopped fan-out now keeps its sections (`hooks::apply_stop` lets
+/// `assemble` and `validate` run past the clock), that includes PARTIAL
+/// documents — which is deliberate, and worth stating rather than discovering:
+///
+/// * **The kept trade.** A run stopped near the end loses tail sections
+///   (Education before Projects before an employment entry — `plan_sections`
+///   truncates from the tail for exactly this reason). A missing employer is a
+///   visible `factual.dropped_role` Critical, the run lands `needsReview`, and
+///   the user is looking at a document they can see is short. That beats
+///   throwing away eleven paid sections, which is the whole argument that sized
+///   `Budget::RESUME_MAX`'s deadline at the reachable number.
+/// * **The refused trade** ([`is_persistable`]). A document that lost ALL of a
+///   work history the SOURCE has is not a short résumé, it is not a résumé —
+///   and overwriting a good previous document with it is a loss the review
+///   panel cannot describe and the user cannot undo. Nothing is saved, and the
+///   previous document survives. Source-RELATIVE on purpose: a candidate whose
+///   own résumé has no employment section is a real input, not a failure.
 fn persist_document(
     app: &AppHandle,
     job_url: &str,
@@ -457,7 +529,7 @@ fn persist_document(
     depth: &str,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
-    if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
+    if save_verdict(ctx.input.source_resume, &ctx.draft, job_url) != SaveVerdict::Save {
         return None;
     }
     let wrapper = report::build(
@@ -494,6 +566,96 @@ fn persist_document(
             None
         }
     }
+}
+
+/// What [`persist_document`] will do with this run's document, decided from the
+/// two documents and the posting url alone.
+///
+/// Three outcomes rather than a bool, because two of them mean opposite things
+/// to the RUN: `Nothing` is benign (an unlinked run is session-only by design,
+/// an empty draft is a run that failed before it wrote anything and is already
+/// reported as such), while `Refused` means the run produced a document and it
+/// was rejected — which must not come out as a successful completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SaveVerdict {
+    Save,
+    /// There was nothing to save, or nowhere to save it.
+    Nothing,
+    /// There WAS a document, and [`is_persistable`] rejected it.
+    Refused,
+}
+
+/// One definition of "will this save", shared by `persist_document` (which
+/// acts on it) and `execute` (which has to report it).
+pub(crate) fn save_verdict(source_resume: &str, draft: &str, job_url: &str) -> SaveVerdict {
+    if draft.trim().is_empty() || job_url.trim().is_empty() {
+        return SaveVerdict::Nothing;
+    }
+    if is_persistable(source_resume, draft) {
+        SaveVerdict::Save
+    } else {
+        SaveVerdict::Refused
+    }
+}
+
+/// Whether a run's document may OVERWRITE the posting's saved one.
+///
+/// One rule, and it is RELATIVE TO THE SOURCE: **refuse when the candidate's
+/// own résumé has an employment section and the generated document does not.**
+/// Everything else about completeness is a judgement the report already makes
+/// visible (a missing employer is a `factual.dropped_role` Critical and
+/// `needsReview`), but a document that lost ALL of a real work history is not a
+/// shorter résumé — it is not one — and this save has no versioning to undo it
+/// with.
+///
+/// **Why the source and not the run's outcome.** Two earlier versions of this
+/// gate read the run instead of the documents, and each was wrong in its own
+/// direction:
+///
+/// * keying on the recorded stop REASON refused a perfectly good run whose
+///   source simply has no employment section (a new graduate, an academic CV)
+///   the moment its repair round hit the daily cap — `stages::repair` records
+///   `Budgeted`/`RunTimeout` for a stop it RECOVERED from and then returns
+///   `Ok(())`. Status `completed`, document unchanged, no explanation anywhere;
+/// * keying on the run's OUTCOME missed the case the gate exists for. The
+///   sections fan-out treats a daily-cap refusal as `StoppedReason::Budgeted`,
+///   breaks, and returns `Ok(())` — and nothing downstream converts that into
+///   an `Err` (`apply_stop` errors only on the clock or a cancel, `assemble`
+///   and `validate` are free, `repair` returns `Ok` on `RateLimited`, the judge
+///   is skippable, and `run_hooked` never consults the ledger). So a max run
+///   that hit the cap right after Summary produced a summary-only document with
+///   `outcome == Ok`, and it overwrote the saved résumé.
+///
+/// Comparing the two DOCUMENTS answers both at once and needs no run state:
+/// a source with no work history can never trip it, and a truncated fan-out
+/// over a real one always does — however the run happened to end.
+///
+/// Both sides go through the SAME [`sections::find`] seam, so the
+/// undated-entry caveat (`assemble::DATE_COLUMN_GAP`: an entry with no date
+/// column is not a `LineKind::JobEntry`) applies equally to each and cannot
+/// create a false asymmetry.
+pub(crate) fn is_persistable(source_resume: &str, draft: &str) -> bool {
+    has_work_history(draft) || !has_work_history(source_resume)
+}
+
+/// Whether `text` has an employment section with anything under it.
+///
+/// The SECTION with a body, not [`sections::entry_range`]: that one tests for
+/// `LineKind::JobEntry`, which an entry with no date column legitimately fails,
+/// and a résumé whose dates the source never carried is a real document rather
+/// than an empty one.
+fn has_work_history(text: &str) -> bool {
+    let split = crate::pipeline::resume::stages::sections::split(text);
+    let lines: Vec<&str> = text.lines().collect();
+    crate::pipeline::resume::stages::sections::find(&split, SectionKey::Experience(0)).is_some_and(
+        |section| {
+            section
+                .text(&lines)
+                .lines()
+                .skip(1)
+                .any(|line| !line.trim().is_empty())
+        },
+    )
 }
 
 /// The all-empty record the pipeline's own save fills three fields of.
@@ -587,6 +749,36 @@ fn summary(row: &RunRow) -> Value {
     })
 }
 
+/// ONE persisted stage artifact, as the WIRE carries it: the counts, never the
+/// detail.
+///
+/// The server keeps the full `strategy`/`match_evidence` artifacts a max-depth
+/// per-entry regenerate needs (`RunLedger::record_detail`), and it keeps them
+/// SERVER-SIDE. `record_detail`'s doc says "nowhere else"; without this it was
+/// wrong — the trail is handed to the renderer verbatim, so every `get` of a max
+/// run shipped up to 2 × 16 KiB of employment history and verbatim résumé quotes
+/// over IPC to a reader that has never had a consumer for it (the contract types
+/// `artifact` as `unknown`; the only renderer reference is a `{}` test fixture).
+///
+/// **An unparseable artifact becomes a content-free MARKER, not the raw
+/// string.** Returning the raw bytes was the right answer while artifacts were
+/// counts-only — a reader must not see a silent `{}` claiming the stage
+/// reported nothing. But the only artifact large enough for the store's clamp
+/// to truncate is a detail-bearing one, so the raw-string arm WAS the leak,
+/// with the truncation marker on the end. The marker keeps the one thing the
+/// reader needed (this artifact did not survive intact) and carries nothing
+/// else.
+fn wire_artifact(artifact_json: &str) -> Value {
+    match serde_json::from_str::<Value>(artifact_json) {
+        Ok(Value::Object(mut object)) => {
+            object.remove(hooks::DETAIL_KEY);
+            Value::Object(object)
+        }
+        Ok(other) => other,
+        Err(_) => json!({ "truncated": true }),
+    }
+}
+
 /// The full run: its summary, its stage trail, and the posting's CURRENT
 /// document + report (joined from `ai_generations` — see the module doc; the
 /// join is by `job_url`, so what comes back is the aggregate's state now, not a
@@ -602,12 +794,7 @@ fn detail(app: &AppHandle, row: &RunRow) -> Value {
                 "ts": event.ts,
                 "stage": event.stage,
                 "phase": event.phase,
-                // A CLAMPED artifact is not parseable JSON by design (the
-                // truncation marker is not), so a reader must see the raw
-                // string rather than a silent `{}` that claims the stage
-                // reported nothing.
-                "artifact": serde_json::from_str::<Value>(&event.artifact_json)
-                    .unwrap_or_else(|_| Value::String(event.artifact_json.clone())),
+                "artifact": wire_artifact(&event.artifact_json),
             })
         })
         .collect();
@@ -745,19 +932,28 @@ pub async fn resume_pipeline_regenerate_section(
     );
     let completer = Completer::from_active(&app)?;
     let source = source_resume_for(&app, &row, &record);
-    let spliced = match regenerate_one_section(
-        &completer,
-        &source,
-        &record.target_language,
-        &record.resume_text,
-        key,
-        // No validator issues on this path: the user, not a report, asked for
-        // the change. The note carries the "why", fenced.
-        &[],
-        req.note.as_deref(),
-    )
-    .await?
-    {
+    let outcome =
+        match regenerate_max_entry(&store, &row, &record, &completer, &source, key, &req).await {
+            Some(outcome) => outcome?,
+            // Not a max run, not an employment entry, or the run's artifacts are
+            // gone/unparseable — the whole-section rewrite that has always been
+            // here. A degraded click is a worse click; a failed one is a bug.
+            None => {
+                regenerate_one_section(
+                    &completer,
+                    &source,
+                    &record.target_language,
+                    &record.resume_text,
+                    key,
+                    // No validator issues on this path: the user, not a report,
+                    // asked for the change. The note carries the "why", fenced.
+                    &[],
+                    req.note.as_deref(),
+                )
+                .await?
+            }
+        };
+    let spliced = match outcome {
         SectionOutcome::Replaced(spliced) => spliced,
         SectionOutcome::Unusable => {
             span.end(false);
@@ -825,6 +1021,69 @@ pub async fn resume_pipeline_regenerate_section(
         return Ok(detail(&app, &row));
     }
     Ok(detail(&app, &row))
+}
+
+/// The MAX-depth per-entry regenerate, when this click qualifies for it.
+///
+/// `None` means "not this path" — and every one of the four reasons is a normal
+/// state, not a failure:
+///
+/// * the run was quality depth (its document was drafted whole, so an entry is
+///   not independently regenerable — that is exactly what `sections::find`'s
+///   Experience-collapse says);
+/// * the key is not an employment entry (every other section IS its own
+///   section, and the whole-section rewrite addresses it correctly);
+/// * the run's persisted artifacts are missing or unparseable — a run older
+///   than the detail, or one whose artifact the store's clamp truncated;
+/// * the document no longer has that entry.
+///
+/// The caller degrades to the whole-section path in all four cases, which is
+/// why this returns `Option<AppResult<_>>` rather than folding the miss into an
+/// error: a click must not fail because an optimization was unavailable.
+#[allow(clippy::too_many_arguments)]
+async fn regenerate_max_entry(
+    store: &PipelineRunStore,
+    row: &RunRow,
+    record: &AiGenerationRecord,
+    completer: &Completer,
+    source: &str,
+    key: SectionKey,
+    req: &ResumePipelineRegenerateSectionRequest,
+) -> Option<AppResult<SectionOutcome>> {
+    if row.depth != GenerationDepth::Max.as_str() {
+        return None;
+    }
+    let SectionKey::Experience(index) = key else {
+        return None;
+    };
+    let artifacts = max::artifacts_for(store, &row.id)?;
+    let outcome = max::regenerate_entry(
+        completer,
+        &artifacts,
+        source,
+        // The aggregate's own copy of the posting, which is often EMPTY on this
+        // path: the pipeline's save deliberately writes no `job_ad` (the
+        // postings cache is keyed by the live job id, which a finished run no
+        // longer holds), so this is only populated when a fast-path generation
+        // stored one first. Empty is a degradation, not a failure — the posting
+        // reaches the prompt through the persisted `job_analysis` and
+        // `evidence_map` either way, and the FACTS the entry is rebuilt from
+        // are the source résumé's, which is always present. The one thing it
+        // costs is `extract_evidence`'s keyword scoring, which orders bullets
+        // it does not select.
+        &record.job_ad,
+        &record.target_language,
+        &record.resume_text,
+        index,
+        req.note.as_deref(),
+    )
+    .await;
+    match outcome {
+        // The entry is not in the document (or not in the roster): fall back
+        // rather than telling the user their résumé has no such section.
+        Ok(SectionOutcome::Missing) => None,
+        other => Some(other),
+    }
 }
 
 /// The status a run row should move to after its persisted wrapper changed —

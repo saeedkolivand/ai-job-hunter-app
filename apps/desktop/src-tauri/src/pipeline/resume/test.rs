@@ -1030,6 +1030,45 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
     );
 }
 
+/// A report of `n` ordinary (non-absence) Criticals, for the COUNT half of the
+/// revert rule. `factual.unsourced_metric` because its evidence is a figure
+/// that really is in the document, which is what makes it not an absence.
+fn criticals(count: usize) -> crate::validate::content::ContentReport {
+    crate::validate::content::ContentReport {
+        ok: count == 0,
+        issues: (0..count)
+            .map(|n| crate::validate::content::ContentIssue {
+                severity: crate::validate::Severity::Critical,
+                code: crate::validate::content::FACTUAL_UNSOURCED_METRIC,
+                section: None,
+                message: "an invented figure".to_string(),
+                evidence: Some(format!("{n}0%")),
+            })
+            .collect(),
+        metrics: crate::validate::content::ContentMetrics::default(),
+    }
+}
+
+/// The same, plus one ABSENCE-shaped Critical naming `company`.
+fn criticals_missing(count: usize, company: &str) -> crate::validate::content::ContentReport {
+    let mut report = criticals(count);
+    report.issues.push(crate::validate::content::ContentIssue {
+        severity: crate::validate::Severity::Critical,
+        code: crate::validate::content::FACTUAL_DROPPED_ROLE,
+        section: None,
+        message: "an employer the source has and the output does not".to_string(),
+        evidence: Some(company.to_string()),
+    });
+    report.ok = false;
+    report
+}
+
+/// The document text these synthetic reports describe. Content-free on purpose:
+/// the only presence question the rule asks is about
+/// `factual.altered_project_link`'s evidence, which the
+/// `..._project_link_...` test below supplies explicitly.
+const ANY_TEXT: &str = "Work Experience\n\nSenior Engineer, Acme  2021 - Present\n";
+
 /// **Revert on strictly-worse, and only on strictly-worse.**
 ///
 /// A round that trades one Critical for another has not lost ground, and
@@ -1037,20 +1076,204 @@ fn repair_groups_only_criticals_and_only_ones_it_can_regenerate() {
 /// that ADDS a Critical has, and shipping it would leave the user with a
 /// document measurably worse than the one the repair replaced.
 ///
+/// This is the COUNT half of the rule; the absence half is
+/// `a_repair_round_that_introduces_an_absence_is_worse_whatever_the_count_says`.
+///
 /// Mutation check: change the comparison to `>=` and the "equal is not worse"
 /// case fails; change it to `after > before + 1` and the "one more is worse"
 /// case does. The loop AROUND this decision is exercised end to end by
 /// `the_repair_loop_*` below, through the injected-provider seam.
 #[test]
 fn a_repair_round_is_reverted_only_when_it_is_strictly_worse() {
-    assert!(round_is_worse(3, 4), "one more Critical is worse");
-    assert!(round_is_worse(0, 1), "a clean draft made dirty is worse");
+    let worse = |before: usize, after: usize| {
+        round_is_worse(&criticals(before), ANY_TEXT, &criticals(after), ANY_TEXT)
+    };
+    assert!(worse(3, 4), "one more Critical is worse");
+    assert!(worse(0, 1), "a clean draft made dirty is worse");
     assert!(
-        !round_is_worse(3, 3),
+        !worse(3, 3),
         "equal is NOT worse — the swap keeps its budget"
     );
-    assert!(!round_is_worse(3, 2), "fewer is better");
-    assert!(!round_is_worse(3, 0), "clean is better");
+    assert!(!worse(3, 2), "fewer is better");
+    assert!(!worse(3, 0), "clean is better");
+}
+
+/// **A round that INTRODUCES an absence is worse whatever the count says.**
+///
+/// The hole this closes, executed: a document with two fabricated metrics,
+/// "repaired" by a rewrite that removed them and dropped an employer, came back
+/// with ONE Critical against TWO — an improvement by the only measure the loop
+/// had, so it was kept and the employer was gone from the saved résumé. An
+/// absence has no span, so the review panel deliberately does not list it: the
+/// user was told the run needed review and shown nothing to act on.
+///
+/// The comparison is by `(code, evidence)` PAIR rather than by code, which is
+/// what keeps the rule from freezing an already-degraded document — see the
+/// third and fourth cases.
+///
+/// Mutation check: drop the absence term (pure count) and the first case fails;
+/// compare by CODE only and the swapped-employer case fails (the
+/// already-missing case passes either way — code-only still sees the pair as
+/// carried — which is why the swap case is here).
+#[test]
+fn a_repair_round_that_introduces_an_absence_is_worse_whatever_the_count_says() {
+    // Two fabrications traded for one lost employer: fewer criticals, WORSE
+    // document.
+    assert!(
+        round_is_worse(
+            &criticals(2),
+            ANY_TEXT,
+            &criticals_missing(0, "Globex Logistics"),
+            ANY_TEXT
+        ),
+        "losing an employer is not paid for by removing two invented figures"
+    );
+
+    // …and the count term still stands on its own for a round that adds one.
+    assert!(round_is_worse(
+        &criticals(1),
+        ANY_TEXT,
+        &criticals(2),
+        ANY_TEXT
+    ));
+
+    // A document that ALREADY lost that employer stays repairable: the pair is
+    // carried, not introduced, so an otherwise-improving round is accepted.
+    assert!(
+        !round_is_worse(
+            &criticals_missing(3, "Globex Logistics"),
+            ANY_TEXT,
+            &criticals_missing(1, "Globex Logistics"),
+            ANY_TEXT
+        ),
+        "a pre-existing absence must not permanently block repair"
+    );
+
+    // But SWAPPING which employer is missing is a fresh loss, even though the
+    // code and the totals are unchanged.
+    assert!(
+        round_is_worse(
+            &criticals_missing(1, "Globex Logistics"),
+            ANY_TEXT,
+            &criticals_missing(1, "Initech"),
+            ANY_TEXT
+        ),
+        "a different employer going missing is a NEW absence"
+    );
+}
+
+/// **An absence-shaped Critical with NO evidence is skipped, deliberately.**
+///
+/// `absences` keys on the `(code, evidence)` PAIR, so an issue without evidence
+/// has no pair and is dropped. That is what keeps a pre-existing absence
+/// carryable instead of a permanent block — but nothing exercised the branch,
+/// so turning the `?` into a default pair (making every evidence-less
+/// `factual.dropped_role` block repair forever) would have kept this file
+/// green. Both real emitters always carry evidence, which
+/// `a_repair_rewrite_that_drops_a_seeded_employer_raises_a_dropped_role_critical`
+/// pins against the actual validator; this pins what happens if one ever stops.
+///
+/// Mutation check: default the missing evidence to `""` instead of skipping and
+/// the improving round below is refused.
+#[test]
+fn an_absence_with_no_evidence_cannot_block_a_repair_round() {
+    let evidenceless = |severity| crate::validate::content::ContentIssue {
+        severity,
+        code: crate::validate::content::FACTUAL_DROPPED_ROLE,
+        section: None,
+        message: "an employer went missing".to_string(),
+        evidence: None,
+    };
+
+    let mut before = criticals(3);
+    before
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+    let mut after = criticals(1);
+    after
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+
+    assert!(
+        !round_is_worse(&before, ANY_TEXT, &after, ANY_TEXT),
+        "an issue with no evidence has no pair to compare, so it cannot be a NEW absence"
+    );
+    // …and it does not become one by appearing for the first time either.
+    let mut appeared = criticals(1);
+    appeared
+        .issues
+        .push(evidenceless(crate::validate::Severity::Critical));
+    assert!(!round_is_worse(
+        &criticals(3),
+        ANY_TEXT,
+        &appeared,
+        ANY_TEXT
+    ));
+    // The count term still governs it: three criticals becoming five is worse.
+    assert!(round_is_worse(
+        &criticals(3),
+        ANY_TEXT,
+        &criticals(5),
+        ANY_TEXT
+    ));
+}
+
+/// `factual.altered_project_link` is emitted from TWO arms and only one of them
+/// is an absence — the same split `commands::resume_pipeline::report` makes to
+/// decide whether the finding is reviewable at all.
+///
+/// A link the model INVENTED is IN the generated text: a fabrication, caught by
+/// the count like any other, and a round that produces one while removing two
+/// others is a legitimate improvement. A SOURCE link that the output no longer
+/// carries is a LOSS, and the discriminator is whether the evidence is present
+/// in the document.
+///
+/// Mutation check: treat every `altered_project_link` as an absence (drop the
+/// `!text.contains` test) and the invented-link case starts reverting; treat
+/// none of them as one and the lost-link case stops.
+#[test]
+fn only_the_absence_arm_of_an_altered_project_link_makes_a_round_worse() {
+    let link_issue = |url: &str| crate::validate::content::ContentIssue {
+        severity: crate::validate::Severity::Critical,
+        code: crate::validate::content::FACTUAL_ALTERED_PROJECT_LINK,
+        section: None,
+        message: "a project link does not match the source".to_string(),
+        evidence: Some(url.to_string()),
+    };
+    let with = |count: usize, url: &str| {
+        let mut report = criticals(count);
+        report.issues.push(link_issue(url));
+        report.ok = false;
+        report
+    };
+
+    const SOURCE_LINK: &str = "https://github.com/janedoe/ledger";
+    const INVENTED: &str = "https://github.com/acme/ledger";
+    let document_with = |url: &str| format!("Projects\n\n**Ledger CLI** · {url}\n");
+
+    // The source link is GONE from the candidate: its evidence is not in the
+    // text, so this is a loss — reverted even though criticals went 2 → 1.
+    assert!(
+        round_is_worse(
+            &criticals(2),
+            &document_with(SOURCE_LINK),
+            &with(0, SOURCE_LINK),
+            "Projects\n\n**Ledger CLI**\n"
+        ),
+        "a source project link the output no longer carries is an absence"
+    );
+
+    // The model INVENTED a link: the evidence is right there in the candidate,
+    // so it is an ordinary fabrication and the count decides — 2 → 1 stands.
+    assert!(
+        !round_is_worse(
+            &criticals(2),
+            &document_with(SOURCE_LINK),
+            &with(0, INVENTED),
+            &document_with(INVENTED)
+        ),
+        "an invented link is IN the document, so it is a fabrication, not a loss"
+    );
 }
 
 /// Stage artifacts are content-free (ADR-027): the hook copies them straight

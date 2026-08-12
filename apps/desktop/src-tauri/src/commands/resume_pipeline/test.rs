@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::hooks::apply_stop;
+use super::hooks::{apply_stop, with_detail};
 use super::notify::run_notification;
 use super::report;
 use crate::ai_generations::{AiGenerationRecord, AiGenerationStore};
@@ -18,9 +18,24 @@ use crate::pipeline::budget::{Budget, StoppedReason};
 use crate::pipeline::resume::types::SectionKey;
 use crate::pipeline::resume::{RunLedger, QUALITY_STAGES};
 use crate::pipeline::runs::{PipelineRunStore, RunEventRow, RunRow};
+use crate::pipeline::StageInfo;
 use crate::validate::content::{
     validate_content, ContentInput, ContentIssue, ContentMetrics, ContentReport, DocKind,
 };
+
+/// A [`StageInfo`] whose only interesting field is whether the stage costs a
+/// provider call — the shape `Pipeline::run_hooked` builds and hands to
+/// `before`. Written as a helper rather than a bare bool at each call site
+/// because `apply_stop` deliberately takes the whole struct (see its doc).
+fn stage_info(costs_a_call: bool) -> StageInfo {
+    StageInfo {
+        pipeline: "resume_max",
+        stage: if costs_a_call { "repair" } else { "validate" },
+        index: 0,
+        total: 1,
+        costs_a_call,
+    }
+}
 
 // ── Wire-contract locks ─────────────────────────────────────────────────────
 
@@ -673,8 +688,23 @@ fn a_cancelled_run_stops_at_the_next_stage_boundary() {
         true,
         Duration::from_secs(1),
         Duration::from_secs(600),
+        &stage_info(true),
     );
     assert!(outcome.is_err(), "a cancelled run must not enter the stage");
+    assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
+
+    // A cancel stops a FREE stage too: the deadline's exemption is about not
+    // throwing away paid work, and a user who pressed Cancel asked for the run
+    // to stop rendering as well as to stop spending.
+    let ledger = RunLedger::new();
+    assert!(apply_stop(
+        &ledger,
+        true,
+        Duration::from_secs(1),
+        Duration::from_secs(600),
+        &stage_info(false)
+    )
+    .is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
@@ -689,6 +719,7 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         false,
         Duration::from_secs(2_701),
         Duration::from_secs(2_700),
+        &stage_info(true),
     );
     assert!(outcome.is_err());
     assert_eq!(ledger.stopped(), Some(StoppedReason::RunTimeout));
@@ -699,10 +730,49 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
         &ok,
         false,
         Duration::from_secs(1),
-        Duration::from_secs(2_700)
+        Duration::from_secs(2_700),
+        &stage_info(true)
     )
     .is_ok());
     assert_eq!(ok.stopped(), None);
+}
+
+/// **An expired deadline stops the next PAID stage, not the next stage.**
+///
+/// The boundary check's whole justification is that a stage boundary is where
+/// stopping is free — nothing is in flight, and the next provider call has not
+/// been paid for. Applied to a stage that makes NO call, that reasoning inverts
+/// into its opposite: a max run whose clock ran out mid-fan-out had `assemble`
+/// (pure) and `validate` (deterministic) refused, so eleven paid section
+/// answers became an empty draft, no report, nothing persisted and
+/// `status=failed`.
+///
+/// The run is still STOPPED — the reason is recorded on this path too, which is
+/// what makes `terminal_state` resolve it to `needsReview`/`completed` +
+/// `run_timeout` rather than to a clean finish.
+///
+/// Mutation check: return the error unconditionally (drop the `costs_a_call`
+/// guard) and the free-stage assertion fails; skip `ledger.stop` on the free
+/// path and the reason assertion does.
+#[test]
+fn a_zero_call_stage_still_runs_after_the_deadline_and_the_run_still_says_so() {
+    let ledger = RunLedger::new();
+    let outcome = apply_stop(
+        &ledger,
+        false,
+        Duration::from_secs(2_701),
+        Duration::from_secs(2_700),
+        &stage_info(false),
+    );
+    assert!(
+        outcome.is_ok(),
+        "a stage that costs nothing must be allowed to turn paid work into a document"
+    );
+    assert_eq!(
+        ledger.stopped(),
+        Some(StoppedReason::RunTimeout),
+        "the run is still deadline-stopped — running the free stages does not hide that"
+    );
 }
 
 /// Cancellation wins over the deadline when both hold: the user asked for a
@@ -711,7 +781,13 @@ fn a_run_past_its_deadline_stops_with_run_timeout() {
 #[test]
 fn cancellation_outranks_the_deadline() {
     let ledger = RunLedger::new();
-    let _ = apply_stop(&ledger, true, Duration::from_secs(9_999), Duration::ZERO);
+    let _ = apply_stop(
+        &ledger,
+        true,
+        Duration::from_secs(9_999),
+        Duration::ZERO,
+        &stage_info(true),
+    );
     assert_eq!(ledger.stopped(), Some(StoppedReason::Cancelled));
 }
 
@@ -1027,9 +1103,15 @@ fn oversized_run_request_free_text_is_clamped_server_side() {
 /// with nothing but a `warn!` to show for it. It also pins that the emitter's
 /// `kind` is what `listForJob` filters on.
 ///
+/// The artifact goes through `with_detail`, which is what `RunHooks::after`
+/// does — so BOTH halves of that wrapper are pinned here at the row level: a
+/// detail-less stage's counts reach the row (`validate`'s `criticals`), and a
+/// stage that left a detail carries it nested beside them (`strategy`).
+///
 /// Mutation check: emit a phase outside the CHECK's vocabulary and the event
 /// count drops to zero; change `RUN_KIND` on one side only and the filtered
-/// list is empty.
+/// list is empty; make `with_detail` drop the artifact when there is no detail
+/// and the `criticals` assertion fails.
 #[test]
 fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -1037,6 +1119,8 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
 
     let ledger = RunLedger::new();
     ledger.record("analyze_job", json!({ "cached": false, "mustHave": 4 }));
+    ledger.record("strategy", json!({ "cached": false, "companies": 3 }));
+    ledger.record_detail("strategy", json!({ "perCompany": [{ "company": "Acme" }] }));
     ledger.record("validate", json!({ "issues": 3, "criticals": 1 }));
     ledger.count_call(false);
     ledger.count_call(true);
@@ -1067,8 +1151,11 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
                     ts: 1_700_000_000_000 + u64::from(seq),
                     stage: (*stage).to_string(),
                     phase: phase.to_string(),
-                    artifact_json: ledger
-                        .artifact(stage)
+                    // Through `with_detail`, exactly as `RunHooks::after`
+                    // builds it — not `ledger.artifact` directly, which is what
+                    // let the wrapper delete every detail-less stage's counts
+                    // while this end-to-end test still read them.
+                    artifact_json: with_detail(ledger.artifact(stage), ledger.detail(stage))
                         .map(|value| value.to_string())
                         .unwrap_or_else(|| "{}".to_string()),
                 })
@@ -1110,6 +1197,20 @@ fn a_run_round_trips_through_the_store_with_real_stage_events() {
     let artifact: serde_json::Value =
         serde_json::from_str(&validate.artifact_json).expect("the artifact is JSON");
     assert_eq!(artifact["criticals"], json!(1));
+
+    // The other half of the wrapper: a stage that left a FULL artifact carries
+    // it nested under the counts, not instead of them.
+    let strategy = events
+        .iter()
+        .find(|event| event.stage == "strategy" && event.phase == "finish")
+        .expect("the strategy stage's finish event");
+    let artifact: serde_json::Value =
+        serde_json::from_str(&strategy.artifact_json).expect("the artifact is JSON");
+    assert_eq!(artifact["companies"], json!(3));
+    assert_eq!(
+        artifact[super::hooks::DETAIL_KEY]["perCompany"][0]["company"],
+        json!("Acme")
+    );
 
     // `listForJob` filters on this flow's kind; a run of another kind against
     // the same posting must not appear in the résumé runs list.

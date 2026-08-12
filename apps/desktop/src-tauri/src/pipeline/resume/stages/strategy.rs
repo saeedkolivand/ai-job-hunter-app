@@ -16,7 +16,9 @@ use serde_json::json;
 use crate::documents::evidence::extract_evidence;
 use crate::error::AppResult;
 use crate::pipeline::resume::prompts::{company_roster_block, strategy_system, strategy_user};
-use crate::pipeline::resume::types::{CompanyPlan, EvidenceMap, EvidenceStatus, ResumeStrategy};
+use crate::pipeline::resume::types::{
+    CompanyPlan, EvidenceMap, EvidenceStatus, GenerationDepth, ResumeStrategy,
+};
 use crate::pipeline::resume::{cache, QualityCtx};
 use crate::pipeline::Stage;
 
@@ -271,6 +273,16 @@ impl<'a> Stage<QualityCtx<'a>> for Strategy {
                 "emphasisDropped": emphasis_dropped,
             }),
         );
+        // At MAX depth the whole re-seeded plan is persisted alongside those
+        // counts, in the DB event row only — see `RunLedger::record_detail`. A
+        // per-entry regenerate rebuilds ONE role from its `CompanyPlan`, and
+        // that plan exists nowhere else once the run has ended.
+        if ctx.depth == GenerationDepth::Max {
+            ctx.ledger.record_detail(
+                "strategy",
+                serde_json::to_value(&strategy).unwrap_or_default(),
+            );
+        }
         ctx.strategy = strategy;
         Ok(())
     }

@@ -200,14 +200,21 @@ export const usePipelineStageEvents = (onStage?: (event: PipelineStageEvent) => 
 };
 
 /**
- * Subscribe to the draft stage's deltas for ONE run, for DISPLAY ONLY.
+ * Subscribe to a run's document deltas, for DISPLAY ONLY.
+ *
+ * Both depths use this one channel and it is deliberately NOT keyed on depth or
+ * on a stage: at quality depth the deltas are the draft stage's tokens, and at
+ * max depth they are the progressive assembly — each finished section's text,
+ * appended as `assemble` renders it. Same `ai:stream` under the run's umbrella
+ * `jobId`, same display-only status, so the pane builds up section by section
+ * with no second channel and no branch here.
  *
  * Deliberately not `awaitAiStream`: that helper resolves on the stream's `done`
  * frame, which for a staged run lands while `validate` and up to two repair
  * rounds are still ahead. Here there is no promise to resolve, so there is
  * nothing for a caller to mistake for completion — only text to render.
  *
- * `onDelta` is called with each answer token; reasoning/thinking frames and
+ * `onDelta` is called with each answer chunk; reasoning/thinking frames and
  * frames belonging to other jobs are dropped.
  */
 export const usePipelineDraftStream = (
