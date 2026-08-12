@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPipelineStage, PIPELINE_STAGES, PIPELINE_STAGES_FREE } from '@ajh/shared';
+import { isPayingPipelineStage, isPipelineStage, PIPELINE_STAGES } from '@ajh/shared';
 
 import {
   OVERRIDABLE_PIPELINE_STAGES,
@@ -13,9 +13,7 @@ const allConfigured = () => true;
 
 describe('OVERRIDABLE_PIPELINE_STAGES', () => {
   it('is the generated vocabulary minus the stages that make no provider call', () => {
-    expect(OVERRIDABLE_PIPELINE_STAGES).toEqual(
-      PIPELINE_STAGES.filter((s) => !(PIPELINE_STAGES_FREE as readonly string[]).includes(s))
-    );
+    expect(OVERRIDABLE_PIPELINE_STAGES).toEqual(PIPELINE_STAGES.filter(isPayingPipelineStage));
     // The two the backend refuses an override for.
     expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('assemble');
     expect(OVERRIDABLE_PIPELINE_STAGES).not.toContain('validate');

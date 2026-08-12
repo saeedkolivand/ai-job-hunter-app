@@ -8,8 +8,8 @@
 
 import {
   type AiStageOverride,
+  isPayingPipelineStage,
   PIPELINE_STAGES,
-  PIPELINE_STAGES_FREE,
   type PipelineStage,
 } from '@ajh/shared';
 
@@ -17,18 +17,17 @@ import { PROVIDERS } from '@/lib/ai-providers/provider-meta';
 import type { AiProvider } from '@/store/preferences-schema';
 
 /**
- * The stages a model override can actually change: the generated vocabulary
- * minus the ones that make no provider call.
+ * The stages a model override can actually change: the generated vocabulary,
+ * filtered by the shared "does this stage ever spend a provider call" guard.
  *
- * BOTH lists come from `@ajh/shared` — the stage names are codegen'd into Rust
- * and the free set is pinned against `Pipeline::free_stage_names()` of both
- * depths, so neither is hand-copied here. The backend REFUSES an override on a
- * free stage, and offering a control that is rejected on save is worse than
- * offering none.
+ * Both halves come from `@ajh/shared` — the names are codegen'd into Rust and
+ * `isPayingPipelineStage` is pinned against `Pipeline::free_stage_names()` of
+ * both depths — so nothing here is hand-copied. The backend REFUSES an override
+ * on a free stage, and offering a control that is rejected on save is worse
+ * than offering none.
  */
-export const OVERRIDABLE_PIPELINE_STAGES: readonly PipelineStage[] = PIPELINE_STAGES.filter(
-  (stage) => !(PIPELINE_STAGES_FREE as readonly string[]).includes(stage)
-);
+export const OVERRIDABLE_PIPELINE_STAGES: readonly PipelineStage[] =
+  PIPELINE_STAGES.filter(isPayingPipelineStage);
 
 /**
  * Why a stage cannot run as configured. Surfaced BEFORE a run because the
