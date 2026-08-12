@@ -396,6 +396,11 @@ const R3_ALLOW: &[&str] = &[
     "job_preferences/mod.rs",
     "contact_profile/mod.rs",
     "ai_config/mod.rs",
+    // Same store, split out to keep the per-stage override table's SQL,
+    // validation and vocabulary check in one focused module instead of growing
+    // `ai_config/mod.rs`. Persistence still lives entirely inside the
+    // `ai_config` domain store, on the SAME connection.
+    "ai_config/stage_overrides.rs",
     "referrals/mod.rs",
     "dedup/mod.rs",
     "discovered/mod.rs",
@@ -529,6 +534,14 @@ const R7_ALLOW: &[(&str, &str)] = &[
     // exactly like documents::embed — same W-1 exception until ai_provider is
     // relocated out of commands/.
     ("ai_config", "commands"),
+    // …and the GENERATED stage vocabulary (`ipc_contracts::events::PIPELINE_STAGES`),
+    // which is what makes an `ai_stage_overrides` row's `stage` a closed set at
+    // WRITE and IMPORT time rather than only at the command boundary. A pure
+    // compile-time `&[&str]` emitted by `pnpm gen:ipc` — identical to the
+    // `scraping -> ipc_contracts` and `pipeline -> ipc_contracts` edges below/above,
+    // and carrying the same TODO(arch): host the cross-language consts in an L0
+    // module and all three clear.
+    ("ai_config", "ipc_contracts"),
     ("postings", "commands"),
     ("autopilot_scheduler", "commands"),
     // Centralized event emit: autopilot_helpers (L2) streams scrape progress via

@@ -641,19 +641,27 @@ pub fn ai_set_active_provider(app: AppHandle, provider: String) -> Value {
     }
 }
 
-/// Edit a provider's model/base_url (the "edit" half — never flips the active
-/// provider). Server-side validation: known id, cross-family model check, and
-/// base_url provenance (scheme + cloud-metadata block; loopback/LAN gateways stay
-/// allowed). Returns the fresh active config, or `{ error }`.
+/// Edit a provider's model/base_url/context_window (the "edit" half — never
+/// flips the active provider). Server-side validation: known id, cross-family
+/// model check, base_url provenance (scheme + cloud-metadata block;
+/// loopback/LAN gateways stay allowed), and the context-window range. Returns
+/// the fresh active config, or `{ error }`.
+///
+/// REPLACE semantics on all three fields — see
+/// [`AiConfigStore::set_provider_settings`](crate::ai_config::AiConfigStore::set_provider_settings).
+/// `contextWindow` is the window for the MODEL being saved (the renderer's own
+/// `modelLimits[model].contextWindow`); omitting it stores none, which leaves
+/// the provider on its own default.
 #[tauri::command]
 pub fn ai_set_provider_settings(
     app: AppHandle,
     provider: String,
     model: Option<String>,
     base_url: Option<String>,
+    context_window: Option<u32>,
 ) -> Value {
     let store = app.state::<crate::ai_config::AiConfigStore>();
-    match store.set_provider_settings(&provider, model, base_url) {
+    match store.set_provider_settings(&provider, model, base_url, context_window) {
         Ok(()) => serde_json::to_value(store.active_config()).unwrap_or_else(|_| json!({})),
         Err(e) => json!({ "error": e.to_string() }),
     }

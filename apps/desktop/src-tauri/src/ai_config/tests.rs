@@ -16,6 +16,7 @@ fn provider_cfg(model: Option<&str>, base_url: Option<&str>) -> ProviderConfig {
     ProviderConfig {
         model: model.map(str::to_string),
         base_url: base_url.map(str::to_string),
+        context_window: None,
     }
 }
 
@@ -43,6 +44,7 @@ fn set_provider_settings_and_active_roundtrips() {
             "openai-compatible",
             Some("some-model".to_string()),
             Some("http://localhost:1234/v1".to_string()),
+            None,
         )
         .expect("edit settings");
     store
@@ -70,7 +72,7 @@ fn editing_settings_does_not_flip_the_active_provider() {
     let (_dir, store) = new_store();
     store.set_active_provider("ollama").unwrap();
     store
-        .set_provider_settings("openai", Some("gpt-4o".to_string()), None)
+        .set_provider_settings("openai", Some("gpt-4o".to_string()), None, None)
         .unwrap();
     assert_eq!(
         store.active_provider().as_deref(),
@@ -86,7 +88,7 @@ fn writer_rejects_unknown_provider() {
     let (_dir, store) = new_store();
     assert!(store.set_active_provider("totally-made-up").is_err());
     assert!(store
-        .set_provider_settings("totally-made-up", None, None)
+        .set_provider_settings("totally-made-up", None, None, None)
         .is_err());
 }
 
@@ -95,7 +97,7 @@ fn writer_rejects_cross_family_model() {
     let (_dir, store) = new_store();
     // A Claude model on the OpenAI provider is an unambiguous cross-family mistake.
     assert!(store
-        .set_provider_settings("openai", Some("claude-3-5-sonnet".to_string()), None)
+        .set_provider_settings("openai", Some("claude-3-5-sonnet".to_string()), None, None)
         .is_err());
 }
 
@@ -107,6 +109,7 @@ fn writer_rejects_non_http_base_url_scheme() {
             "openai-compatible",
             None,
             Some("ftp://evil.test/v1".to_string()),
+            None,
         )
         .unwrap_err();
     assert!(
@@ -125,6 +128,7 @@ fn writer_rejects_cloud_metadata_base_url() {
             "openai-compatible",
             None,
             Some("http://169.254.169.254/latest/meta-data/".to_string()),
+            None,
         )
         .is_err());
 }
@@ -141,6 +145,7 @@ fn writer_drops_base_url_to_null_for_a_native_provider() {
             "openai",
             Some("gpt-4o".to_string()),
             Some("https://sneaky.example/v1".to_string()),
+            None,
         )
         .expect("edit settings");
     assert_eq!(
@@ -159,6 +164,7 @@ fn writer_drops_base_url_to_null_for_a_native_provider() {
             "openai-compatible",
             None,
             Some("http://localhost:1234/v1".to_string()),
+            None,
         )
         .expect("edit settings");
     assert_eq!(
@@ -185,7 +191,7 @@ fn writer_accepts_localhost_lan_and_public_base_urls() {
     ] {
         assert!(
             store
-                .set_provider_settings("openai-compatible", None, Some(url.to_string()))
+                .set_provider_settings("openai-compatible", None, Some(url.to_string()), None)
                 .is_ok(),
             "{url} must be accepted",
         );
@@ -202,6 +208,7 @@ fn seed_applies_once_then_never_clobbers_a_later_set() {
     let snapshot = AiConfigSnapshot {
         active_provider: Some("openai".to_string()),
         providers,
+        stage_overrides: Default::default(),
     };
 
     assert!(
@@ -236,6 +243,7 @@ fn seed_scrubs_a_malicious_base_url() {
     let snapshot = AiConfigSnapshot {
         active_provider: Some("openai-compatible".to_string()),
         providers,
+        stage_overrides: Default::default(),
     };
     assert!(store.seed_if_empty(&snapshot).unwrap());
     assert_eq!(
@@ -267,6 +275,7 @@ fn seed_and_import_drop_base_url_for_a_native_provider() {
     let snapshot = AiConfigSnapshot {
         active_provider: Some("openai".to_string()),
         providers,
+        stage_overrides: Default::default(),
     };
 
     assert!(store.seed_if_empty(&snapshot).unwrap());
@@ -321,7 +330,7 @@ fn seed_and_import_drop_base_url_for_a_native_provider() {
 fn clear_wipes_active_and_provider_settings() {
     let (_dir, store) = new_store();
     store
-        .set_provider_settings("openai", Some("gpt-4o".to_string()), None)
+        .set_provider_settings("openai", Some("gpt-4o".to_string()), None, None)
         .unwrap();
     store.set_active_provider("openai").unwrap();
     assert!(store.is_seeded());
@@ -342,6 +351,7 @@ fn export_import_roundtrips_the_snapshot() {
             "openai-compatible",
             Some("mixtral".to_string()),
             Some("http://localhost:1234/v1".to_string()),
+            None,
         )
         .unwrap();
     store.set_active_provider("openai-compatible").unwrap();

@@ -30,6 +30,10 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+pub mod stage_overrides;
+
+pub use self::stage_overrides::StageOverride;
+
 use crate::commands::ai_provider::ProviderId;
 use crate::data_store::DataStore;
 use crate::db::{now_ms, open, run_migrations, ts_to_db, Migration};
@@ -47,6 +51,17 @@ pub struct ProviderConfig {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    /// The context window (`num_ctx`) to run **`model`** with, when the user
+    /// configured one. Belongs to the model in THIS row, not to the provider:
+    /// the renderer's own limits map is keyed by model, so the two move
+    /// together — `set_provider_settings` replaces both or neither, and a row
+    /// whose model changed without a new window is a row with no window.
+    ///
+    /// Only Ollama reads it (`options.num_ctx`); every other adapter ignores
+    /// it, which is why it is stored rather than gated per provider — a user
+    /// who switches provider and back keeps the value they set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
 }
 
 /// The persisted snapshot — the export/import/seed shape (`{ activeProvider,
@@ -58,6 +73,12 @@ pub struct AiConfigSnapshot {
     pub active_provider: Option<String>,
     #[serde(default)]
     pub providers: BTreeMap<String, ProviderConfig>,
+    /// Per-stage model overrides, keyed by the generated stage vocabulary. A
+    /// defaulted field so a bundle (or a first-run renderer seed) written
+    /// before overrides existed still deserializes, and an empty map is
+    /// omitted from the export entirely.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub stage_overrides: BTreeMap<String, StageOverride>,
 }
 
 /// The read model returned to the renderer: the active provider's own resolved
@@ -73,6 +94,11 @@ pub struct ActiveAiConfig {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+    /// The active provider row's [`ProviderConfig::context_window`] — the
+    /// window `model` is configured to run with, or absent when the user never
+    /// set one (in which case the provider keeps its own default).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
     pub providers: BTreeMap<String, ProviderConfig>,
 }
 
@@ -87,11 +113,15 @@ pub struct AiConfigStore {
 }
 
 impl AiConfigStore {
-    const MIGRATIONS: &'static [Migration] = &[Migration {
-        name: "create_ai_provider_config",
-        up: |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS active_provider (
+    /// APPEND-ONLY: `run_migrations` is position-indexed off `PRAGMA
+    /// user_version`, so an existing element must never be edited or reordered
+    /// — a store already at version N would skip the change entirely.
+    const MIGRATIONS: &'static [Migration] = &[
+        Migration {
+            name: "create_ai_provider_config",
+            up: |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS active_provider (
                     id       INTEGER PRIMARY KEY CHECK (id = 1),
                     provider TEXT
                 );
@@ -102,9 +132,41 @@ impl AiConfigStore {
                     base_url   TEXT,
                     updated_at INTEGER NOT NULL
                 );",
-            )
+                )
+            },
         },
-    }];
+        Migration {
+            name: "create_ai_stage_overrides",
+            up: |conn| {
+                // `stage` is the PRIMARY KEY, so one stage can have at most one
+                // override and the table can never hold more rows than the
+                // vocabulary has names. The vocabulary itself is checked in
+                // CODE, not in a SQL `CHECK`: the list is generated
+                // (`ipc_contracts::events::PIPELINE_STAGES`) and a CHECK
+                // constraint would freeze a copy of it into every existing
+                // user's database file, where adding a stage later cannot
+                // reach it. Same precedent as the run-event `phase` column.
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS ai_stage_overrides (
+                        stage          TEXT PRIMARY KEY,
+                        provider       TEXT NOT NULL,
+                        model          TEXT NOT NULL,
+                        base_url       TEXT,
+                        context_window INTEGER,
+                        updated_at     INTEGER NOT NULL
+                    );",
+                )
+            },
+        },
+        Migration {
+            name: "add_ai_provider_config_context_window",
+            up: |conn| {
+                conn.execute_batch(
+                    "ALTER TABLE ai_provider_config ADD COLUMN context_window INTEGER;",
+                )
+            },
+        },
+    ];
 
     pub fn open(data_dir: &PathBuf) -> AppResult<Self> {
         std::fs::create_dir_all(data_dir)?;
@@ -132,14 +194,17 @@ impl AiConfigStore {
         let conn = self.conn.lock();
         let active_provider = Self::active_provider_conn(&conn);
         let providers = Self::providers_conn(&conn);
-        let (model, base_url) = active_provider
+        let (model, base_url, context_window) = active_provider
             .as_deref()
             .and_then(|p| providers.get(p))
-            .map_or((None, None), |c| (c.model.clone(), c.base_url.clone()));
+            .map_or((None, None, None), |c| {
+                (c.model.clone(), c.base_url.clone(), c.context_window)
+            });
         ActiveAiConfig {
             active_provider,
             model,
             base_url,
+            context_window,
             providers,
         }
     }
@@ -150,6 +215,7 @@ impl AiConfigStore {
         AiConfigSnapshot {
             active_provider: Self::active_provider_conn(&conn),
             providers: Self::providers_conn(&conn),
+            stage_overrides: Self::stage_overrides_conn(&conn),
         }
     }
 
@@ -173,20 +239,29 @@ impl AiConfigStore {
     /// Edit a provider's model/base_url (the "edit" half — never flips the active
     /// provider). Server-side validation: known id, cross-family model check, and
     /// base_url provenance (scheme + cloud-metadata block).
+    ///
+    /// REPLACE semantics on every field, `context_window` included: this is the
+    /// "save this provider's settings" writer, not a patch. A caller that omits
+    /// `context_window` is saying the model has none — which is exactly right
+    /// when the model itself just changed, and a footgun otherwise, so the
+    /// renderer sends the value it holds for the model it is saving.
     pub fn set_provider_settings(
         &self,
         provider: &str,
         model: Option<String>,
         base_url: Option<String>,
+        context_window: Option<u32>,
     ) -> AppResult<()> {
         let provider_id = ProviderId::parse(provider)?;
-        let (model, base_url) = Self::validate_settings(provider_id, model, base_url)?;
+        let (model, base_url, context_window) =
+            Self::validate_settings(provider_id, model, base_url, context_window)?;
         let conn = self.conn.lock();
         Self::upsert_provider_conn(
             &conn,
             provider_id.as_str(),
             model.as_deref(),
             base_url.as_deref(),
+            context_window,
         )
     }
 
@@ -225,7 +300,8 @@ impl AiConfigStore {
 
     fn providers_conn(conn: &Connection) -> BTreeMap<String, ProviderConfig> {
         let mut out = BTreeMap::new();
-        let Ok(mut stmt) = conn.prepare("SELECT provider, model, base_url FROM ai_provider_config")
+        let Ok(mut stmt) = conn
+            .prepare("SELECT provider, model, base_url, context_window FROM ai_provider_config")
         else {
             return out;
         };
@@ -235,6 +311,7 @@ impl AiConfigStore {
                 ProviderConfig {
                     model: row.get::<_, Option<String>>(1)?,
                     base_url: row.get::<_, Option<String>>(2)?,
+                    context_window: row.get::<_, Option<u32>>(3)?,
                 },
             ))
         });
@@ -248,13 +325,17 @@ impl AiConfigStore {
 
     fn is_seeded_conn(conn: &Connection) -> bool {
         let active = Self::active_provider_conn(conn).is_some();
-        let has_cfg = conn
-            .query_row("SELECT COUNT(*) FROM ai_provider_config", [], |r| {
+        // Any row in EITHER table counts: a stage override is something the
+        // user set, so a first-run seed arriving afterwards must not clobber
+        // it any more than it may clobber a provider row.
+        let rows = |table: &str| {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| {
                 r.get::<_, i64>(0)
             })
             .map(|c| c > 0)
-            .unwrap_or(false);
-        active || has_cfg
+            .unwrap_or(false)
+        };
+        active || rows("ai_provider_config") || rows("ai_stage_overrides")
     }
 
     fn set_active_conn(conn: &Connection, provider: &str) -> AppResult<()> {
@@ -270,20 +351,32 @@ impl AiConfigStore {
         provider: &str,
         model: Option<&str>,
         base_url: Option<&str>,
+        context_window: Option<u32>,
     ) -> AppResult<()> {
         conn.execute(
-            "INSERT INTO ai_provider_config (provider, model, base_url, updated_at)
-             VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO ai_provider_config (provider, model, base_url, context_window, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(provider) DO UPDATE SET
                 model = excluded.model, base_url = excluded.base_url,
+                context_window = excluded.context_window,
                 updated_at = excluded.updated_at",
-            params![provider, model, base_url, ts_to_db(now_ms())],
+            params![
+                provider,
+                model,
+                base_url,
+                context_window,
+                ts_to_db(now_ms())
+            ],
         )?;
         Ok(())
     }
 
     fn clear_conn(conn: &Connection) -> AppResult<()> {
         conn.execute("DELETE FROM ai_provider_config", [])?;
+        // The per-stage overrides live in this store, so a factory reset /
+        // import-replace has to sweep them too — otherwise a "cleared" config
+        // still routes half the pipeline at the model the old config named.
+        conn.execute("DELETE FROM ai_stage_overrides", [])?;
         conn.execute(
             "UPDATE active_provider SET provider = NULL WHERE id = 1",
             [],
@@ -302,16 +395,22 @@ impl AiConfigStore {
             let Ok(provider_id) = ProviderId::parse(provider) else {
                 continue;
             };
-            let (model, base_url) =
-                Self::scrub_settings(provider_id, cfg.model.clone(), cfg.base_url.clone());
+            let (model, base_url, context_window) = Self::scrub_settings(
+                provider_id,
+                cfg.model.clone(),
+                cfg.base_url.clone(),
+                cfg.context_window,
+            );
             Self::upsert_provider_conn(
                 conn,
                 provider_id.as_str(),
                 model.as_deref(),
                 base_url.as_deref(),
+                context_window,
             )?;
             written += 1;
         }
+        written += Self::apply_stage_overrides_conn(conn, &snapshot.stage_overrides)?;
         if let Some(ap) = snapshot.active_provider.as_deref() {
             if let Ok(id) = ProviderId::parse(ap) {
                 Self::set_active_conn(conn, id.as_str())?;
@@ -330,13 +429,15 @@ impl AiConfigStore {
         provider_id: ProviderId,
         model: Option<String>,
         base_url: Option<String>,
-    ) -> AppResult<(Option<String>, Option<String>)> {
+        context_window: Option<u32>,
+    ) -> AppResult<(Option<String>, Option<String>, Option<u32>)> {
         let model = model
             .map(|m| m.trim().to_string())
             .filter(|m| !m.is_empty());
         if let Some(ref m) = model {
             provider_id.validate_model(m)?;
         }
+        let context_window = validate_context_window(context_window)?;
         // `base_url` is only meaningful for `OpenAiCompatible` — `resolve()`
         // ignores it for every other provider. It's inert for egress there, but
         // a stored value still reaches `record_usage`'s free/paid cost gate, so
@@ -352,7 +453,7 @@ impl AiConfigStore {
         if let Some(ref u) = base_url {
             crate::net::ssrf::validate_provider_base_url(u)?;
         }
-        Ok((model, base_url))
+        Ok((model, base_url, context_window))
     }
 
     /// Lenient sibling of [`Self::validate_settings`] for seed/import: drop a
@@ -362,7 +463,8 @@ impl AiConfigStore {
         provider_id: ProviderId,
         model: Option<String>,
         base_url: Option<String>,
-    ) -> (Option<String>, Option<String>) {
+        context_window: Option<u32>,
+    ) -> (Option<String>, Option<String>, Option<u32>) {
         let model = model
             .map(|m| m.trim().to_string())
             .filter(|m| !m.is_empty())
@@ -379,7 +481,39 @@ impl AiConfigStore {
         } else {
             None
         };
-        (model, base_url)
+        // Out-of-range → dropped, never clamped: a clamp would silently invent
+        // a window the user never chose, and the provider's own default is the
+        // honest answer to "we don't know".
+        let context_window = context_window.filter(|c| validate_context_window(Some(*c)).is_ok());
+        (model, base_url, context_window)
+    }
+}
+
+// ── Context window ────────────────────────────────────────────────────────────
+
+/// Narrowest context window a stored setting may name. Below this a run has no
+/// room for the prompt at all (`prompts::ARTIFACT_CAP` alone is 16 000 chars).
+/// Mirrors `LocalModelLimitsSchema` in the renderer's preferences schema — the
+/// SAME bounds the Settings slider already enforces, re-checked here because
+/// this value now arrives from IPC and from restored backups too.
+pub const MIN_CONTEXT_WINDOW: u32 = 512;
+
+/// Widest context window a stored setting may name.
+pub const MAX_CONTEXT_WINDOW: u32 = 131_072;
+
+/// A stored context window, or a hard error naming the bound it broke.
+///
+/// The value reaches an Ollama request as `options.num_ctx`, where an absurd
+/// number is not merely wrong — it is an out-of-memory kill of the user's
+/// machine on the next generation.
+pub fn validate_context_window(context_window: Option<u32>) -> AppResult<Option<u32>> {
+    match context_window {
+        Some(c) if !(MIN_CONTEXT_WINDOW..=MAX_CONTEXT_WINDOW).contains(&c) => Err(format!(
+            "A context window of {c} is outside the supported range \
+             {MIN_CONTEXT_WINDOW}–{MAX_CONTEXT_WINDOW} tokens."
+        )
+        .into()),
+        other => Ok(other),
     }
 }
 

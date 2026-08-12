@@ -568,6 +568,7 @@ fn active_cfg(
         active_provider: provider.map(str::to_string),
         model: model.map(str::to_string),
         base_url: base_url.map(str::to_string),
+        context_window: None,
         providers: Default::default(),
     }
 }
