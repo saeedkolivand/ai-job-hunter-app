@@ -1158,11 +1158,15 @@ pub(crate) fn cap_issues(issues: &mut Vec<ContentIssue>) {
         if candidate.code != REPORT_TRUNCATED {
             return true;
         }
+        // `unwrap_or(1)`, not `0`: a marker whose count cannot be read still
+        // means "issues were dropped", and defaulting to zero would ABSORB the
+        // marker and then decline to re-emit it — turning an unreadable count
+        // into a report that silently claims nothing was truncated.
         dropped += candidate
             .evidence
             .as_deref()
             .and_then(|count| count.parse::<usize>().ok())
-            .unwrap_or_default();
+            .unwrap_or(1);
         false
     });
     if issues.len() > MAX_CONTENT_ISSUES {

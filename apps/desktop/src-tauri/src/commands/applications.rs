@@ -362,6 +362,14 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
         // arm: with `keep_documents` the trail is no more sensitive than the
         // `ai_generations` row that is being kept on purpose, and it is what
         // makes the kept document's own runs panel readable.
+        // Read BEFORE `s.delete` below, and the child deletes all run before
+        // the parent row goes: every one of them needs the parent to answer
+        // "which posting was this", and a failure in any of them is logged
+        // rather than fatal, so the parent delete the user asked for still
+        // happens. The cost of that order is a crash mid-sequence leaving
+        // orphaned children rather than an orphaned parent — the recoverable
+        // direction, since the run store's own prune and the next delete of the
+        // same posting both still reach them by url.
         let job_url = s.get(&id).map(|application| application.job_url);
         if let (Some(job_url), Some(runs)) = (
             job_url,

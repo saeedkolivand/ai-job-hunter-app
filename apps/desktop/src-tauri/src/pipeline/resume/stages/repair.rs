@@ -213,6 +213,26 @@ pub(crate) fn round_is_worse(
 /// evidence is a NORMALIZED token ("kubernetes" for a document that says
 /// "Kubernetes"), so a blanket presence test would call ordinary fabrications
 /// absences and freeze the repair loop.
+///
+/// **An issue with NO evidence is skipped**, because the pair is what makes a
+/// pre-existing absence carryable rather than a permanent block. Both codes
+/// always carry one — `factual.dropped_role`'s is the employer name it could
+/// not find (`factual::dropped_roles` passes `Some(company)` unconditionally),
+/// and the link check's is the URL — which is pinned by
+/// `a_repair_rewrite_that_drops_a_seeded_employer_raises_a_dropped_role_critical`
+/// rather than assumed here.
+///
+/// **Accepted blind spot, stated rather than hidden:** `validate_content` caps
+/// a report at `MAX_CONTENT_ISSUES` (200) criticals-first, so a report holding
+/// more than 200 Criticals could in principle have an absence truncated out of
+/// it and this would not see it. Reaching that needs BOTH reports pinned at the
+/// cap (the count term reverts anything that grows past it), i.e. a document
+/// with 200+ deterministic Criticals — one already so broken that "which
+/// finding got cut" is not the user's problem. The alternatives are a
+/// pre-cap count field on `ContentReport` (a wire + persisted contract change)
+/// or exempting absences from truncation (a second ordering rule inside the one
+/// capper); neither is worth buying at that reachability, and this comment is
+/// the deliberate choice rather than an oversight.
 fn absences<'a>(report: &'a ContentReport, text: &str) -> BTreeSet<(&'a str, &'a str)> {
     report
         .issues

@@ -146,10 +146,23 @@ impl RunLedger {
     /// two fresh provider calls per click.
     ///
     /// So the detail rides in the persisted row beside the counts, and nowhere
-    /// else: it is not emitted on `pipeline:stage` and never reaches a `Span`.
-    /// It is also CLAMPED by the store like every other artifact — an oversized
-    /// one becomes unparseable by design, which the regenerate path treats as a
-    /// soft miss.
+    /// else: it is not emitted on `pipeline:stage`, never reaches a `Span`, and
+    /// is stripped from the run-detail IPC response
+    /// (`commands::resume_pipeline::wire_artifact`). It is also CLAMPED by the
+    /// store like every other artifact — an oversized one becomes unparseable
+    /// by design, which the regenerate path treats as a soft miss.
+    ///
+    /// **It DOES ride into a backup, and that is accepted.**
+    /// `DataStore::export` ships every `pipeline_run_events` row, so a bundle
+    /// contains the strategy and evidence detail. Accepted because the bundle
+    /// already contains strictly more of the same material — `ai_generations`
+    /// holds the generated résumé itself and the quality report's evidence
+    /// spans — so excluding this one column would shrink nothing a user could
+    /// measure while making a restored backup unable to regenerate an entry.
+    /// What makes it bounded is that the rows now have an OWNER: deleting the
+    /// application (`applications_delete`) or the generated résumé
+    /// (`ai_generations_remove`) deletes them, so a bundle taken afterwards
+    /// does not carry them.
     pub fn record_detail(&self, stage: &'static str, detail: Value) {
         self.state.lock().details.insert(stage, detail);
     }

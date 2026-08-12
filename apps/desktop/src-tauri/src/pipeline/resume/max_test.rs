@@ -1985,6 +1985,24 @@ fn a_judge_merge_leaves_the_report_inside_the_cap_its_byte_budget_assumes() {
         Some("56"),
         "50 dropped by validate plus the 6 the judge pushed out"
     );
+
+    // A marker whose COUNT cannot be read is still a marker: absorbing it and
+    // then declining to re-emit would turn "some issues were dropped" into a
+    // report that silently claims nothing was.
+    let mut unreadable = vec![crate::validate::content::ContentIssue {
+        severity: Severity::Warning,
+        code: REPORT_TRUNCATED,
+        section: None,
+        message: "more issues were found".to_string(),
+        evidence: None,
+    }];
+    crate::validate::content::cap_issues(&mut unreadable);
+    assert_eq!(
+        unreadable.len(),
+        1,
+        "the marker survives a count it cannot parse"
+    );
+    assert_eq!(unreadable[0].code, REPORT_TRUNCATED);
 }
 
 // ── The repair loop over an ASSEMBLED document ───────────────────────────────
@@ -2065,13 +2083,28 @@ fn a_repair_rewrite_that_drops_a_seeded_employer_raises_a_dropped_role_critical(
     let split = sections::split(&document);
     let section = sections::find(&split, SectionKey::Experience(0)).expect("the section");
     let after = report_over(&sections::splice(&document, section, &lossy_rewrite()));
+    let dropped: Vec<_> = after
+        .issues
+        .iter()
+        .filter(|issue| issue.code == FACTUAL_DROPPED_ROLE)
+        .collect();
     assert!(
-        after
-            .issues
-            .iter()
-            .any(|issue| issue.code == FACTUAL_DROPPED_ROLE),
+        !dropped.is_empty(),
         "a lost employer must be a Critical against the SOURCE"
     );
+    // …and it CARRIES its evidence. `repair::absences` keys an absence on the
+    // `(code, evidence)` pair and skips an issue that has none, so a
+    // `dropped_role` without one would be silently invisible to the revert
+    // rule — the round would be accepted and the employer would stay gone.
+    for issue in dropped {
+        assert!(
+            issue
+                .evidence
+                .as_deref()
+                .is_some_and(|evidence| !evidence.trim().is_empty()),
+            "factual.dropped_role must name the employer it could not find: {issue:?}"
+        );
+    }
 }
 
 /// …and a faithful correction is ACCEPTED, with every seeded identity line

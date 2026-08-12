@@ -237,8 +237,18 @@ pub(super) async fn regenerate_entry(
 ///
 /// The CONDENSED group is exempt and cannot be checked: it stands for every
 /// role past the per-company cap, its slice is deliberately `roles[index..]`,
-/// and its `company` is the `"Earlier roles"` label rather than an employer. A
-/// shifted source costs it source lines, never another employer's identity.
+/// and its `company` is the `"Earlier roles"` label rather than an employer.
+///
+/// What that exemption actually costs, said plainly: `source_slice` will hand
+/// the group `roles[index..]` of whatever the source résumé says NOW, so on a
+/// source that changed between the run and the click the group can be rebuilt
+/// from bullets belonging to employers its own label does not name. That is
+/// bounded in a way the per-employer case is not — the group's rendered
+/// identity is a LIST plus a date span, so no single employer's name is
+/// attached to someone else's work, and the entry is explicitly a summary of
+/// "everything earlier" — but it is a real difference from the exactness the
+/// other entries get, and it is the price of the group having no single
+/// identity to join on.
 ///
 /// An empty company is a miss for the same reason it is one in
 /// [`sections::named_entry_range`]: an unattributed roster entry has nothing to
