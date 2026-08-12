@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786542672724,
+  "lastUpdate": 1786555932798,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
@@ -6839,6 +6839,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 289610,
             "range": "± 6544",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a928665eb280da6650ab27b316232bea38020c36",
+          "message": "chore: bump tauri-winrt-notification in /apps/desktop/src-tauri (#975)\n\nBumps [tauri-winrt-notification](https://github.com/tauri-apps/winrt-notification) from 0.7.2 to 0.8.1.\n- [Release notes](https://github.com/tauri-apps/winrt-notification/releases)\n- [Changelog](https://github.com/tauri-apps/winrt-notification/blob/dev/CHANGELOG.md)\n- [Commits](https://github.com/tauri-apps/winrt-notification/compare/tauri-winrt-notification-v0.7.2...tauri-winrt-notification-v0.8.1)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-winrt-notification\n  dependency-version: 0.8.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-08-12T18:56:33+02:00",
+          "tree_id": "d90f3a0a1abca830dbe5dddc25e2c15d377cc695",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/a928665eb280da6650ab27b316232bea38020c36"
+        },
+        "date": 1786555930066,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1689754,
+            "range": "± 71317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2044701,
+            "range": "± 22227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 195875,
+            "range": "± 13466",
             "unit": "ns/iter"
           }
         ]
