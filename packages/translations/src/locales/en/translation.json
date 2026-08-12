@@ -933,6 +933,50 @@
       "empty": "No custom agencies yet."
     },
     "ai": {
+      "stages": {
+        "title": "Per-stage models",
+        "description": "A thorough run works in stages. Each one can use a different model — a small local model is enough for the extraction steps, while writing benefits from your best one. A stage you leave alone runs on the active model.",
+        "defaultModel": "Default — {{model}}",
+        "defaultNoModel": "Default — no model selected",
+        "cliDefaultModel": "CLI default",
+        "change": "Change",
+        "reset": "Use default",
+        "noProvider": "No provider",
+        "warnUnconfigured": "{{provider}} isn't set up, so this stage will fail — set it up above, or switch the stage back to the default.",
+        "warnNoModel": "{{provider}} has no model selected, so this stage will fail.",
+        "saveFailed": "Couldn't save this stage: {{reason}}",
+        "clearFailed": "Couldn't reset this stage: {{reason}}",
+        "names": {
+          "analyze_job": "Analyze job",
+          "match_evidence": "Match evidence",
+          "strategy": "Strategy",
+          "draft": "Draft",
+          "sections": "Sections",
+          "repair": "Repair",
+          "llm_judge": "Review"
+        },
+        "descriptions": {
+          "analyze_job": "Reads the posting and extracts what it asks for.",
+          "match_evidence": "Finds what your résumé actually backs up.",
+          "strategy": "Decides how that evidence is presented.",
+          "draft": "Writes the whole résumé in one streamed pass.",
+          "sections": "Writes the résumé one section at a time.",
+          "repair": "Rewrites sections that failed validation.",
+          "llm_judge": "Scores the finished document."
+        },
+        "editor": {
+          "provider": "Provider",
+          "model": "Model",
+          "modelPlaceholder": "Select a model…",
+          "modelCliDefault": "The CLI's own default",
+          "providerUnconfigured": "{{provider}} isn't set up yet — set it up above before pinning a stage to it.",
+          "setWindow": "Set a context window",
+          "contextWindow": "Context window (tokens)",
+          "windowDefault": "Uses the provider's own default window.",
+          "save": "Save",
+          "cancel": "Cancel"
+        }
+      },
       "localLimits": {
         "title": "Generation limits",
         "analyze": "Analyze model",

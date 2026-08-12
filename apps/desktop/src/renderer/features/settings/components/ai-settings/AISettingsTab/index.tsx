@@ -3,7 +3,8 @@ import { motion } from 'motion/react';
 import { useTranslation } from '@ajh/translations';
 import { GlassCard, transition } from '@ajh/ui';
 
-import { PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import { isProviderConfigured, PROVIDER_ORDER, PROVIDERS } from '@/lib/ai-providers/provider-meta';
+import type { AiProvider } from '@/store/preferences-schema';
 import { useDebugMode } from '@/store/preferences-store';
 
 import { ActiveProviderSwitcher } from '../ActiveProviderSwitcher';
@@ -12,6 +13,7 @@ import { EmbeddingsSettings } from '../EmbeddingsSettings';
 import { ProviderDebugBadge } from '../ProviderDebugBadge';
 import { ProviderRow } from '../ProviderRow';
 import { SpendSettings } from '../SpendSettings';
+import { StageOverridesSettings } from '../StageOverridesSettings';
 import { LocalModelLimits } from './LocalModelLimits';
 import { OllamaResourcesPanel } from './OllamaResourcesPanel';
 import { useProviderKeys } from './useProviderKeys';
@@ -130,6 +132,21 @@ export function AISettingsTab() {
           })}
         </div>
       </GlassCard>
+
+      {/* Per-stage models — which model runs each step of a staged run. Fed the
+          SAME key/health status the provider rows above use, so "is this
+          provider configured" can't disagree between the two surfaces. */}
+      <div data-settings-anchor="ai-stages">
+        <StageOverridesSettings
+          activeProvider={activeProvider}
+          activeModel={providerConfig?.providers?.[activeProvider]?.model}
+          ollamaModels={ollamaModels}
+          isConfigured={(p) =>
+            isProviderConfigured(p as AiProvider, keyStatus[p] ?? false, configuredBaseUrl)
+          }
+          configuredBaseUrl={configuredBaseUrl}
+        />
+      </div>
 
       {/* Embeddings — provider/model for matching & search, with re-indexing */}
       <div data-settings-anchor="ai-embeddings">

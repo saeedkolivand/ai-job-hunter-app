@@ -933,6 +933,50 @@
       "empty": "Noch keine eigenen Vermittler."
     },
     "ai": {
+      "stages": {
+        "title": "Modelle pro Schritt",
+        "description": "Ein gründlicher Durchlauf besteht aus mehreren Schritten. Jeder kann ein anderes Modell nutzen — für die auswertenden Schritte genügt ein kleines lokales Modell, das Schreiben profitiert vom besten. Ein Schritt ohne eigene Einstellung läuft auf dem aktiven Modell.",
+        "defaultModel": "Standard — {{model}}",
+        "defaultNoModel": "Standard — kein Modell ausgewählt",
+        "cliDefaultModel": "CLI-Standard",
+        "change": "Ändern",
+        "reset": "Standard verwenden",
+        "noProvider": "Kein Anbieter",
+        "warnUnconfigured": "{{provider}} ist nicht eingerichtet — dieser Schritt schlägt fehl. Richte den Anbieter oben ein oder setze den Schritt auf den Standard zurück.",
+        "warnNoModel": "Für {{provider}} ist kein Modell ausgewählt — dieser Schritt schlägt fehl.",
+        "saveFailed": "Schritt konnte nicht gespeichert werden: {{reason}}",
+        "clearFailed": "Schritt konnte nicht zurückgesetzt werden: {{reason}}",
+        "names": {
+          "analyze_job": "Stelle analysieren",
+          "match_evidence": "Belege abgleichen",
+          "strategy": "Strategie",
+          "draft": "Entwurf",
+          "sections": "Abschnitte",
+          "repair": "Korrektur",
+          "llm_judge": "Bewertung"
+        },
+        "descriptions": {
+          "analyze_job": "Liest die Anzeige und erfasst, was gefordert wird.",
+          "match_evidence": "Findet, was dein Lebenslauf tatsächlich belegt.",
+          "strategy": "Legt fest, wie diese Belege dargestellt werden.",
+          "draft": "Schreibt den gesamten Lebenslauf in einem Durchgang.",
+          "sections": "Schreibt den Lebenslauf Abschnitt für Abschnitt.",
+          "repair": "Schreibt Abschnitte neu, die die Prüfung nicht bestanden haben.",
+          "llm_judge": "Bewertet das fertige Dokument."
+        },
+        "editor": {
+          "provider": "Anbieter",
+          "model": "Modell",
+          "modelPlaceholder": "Modell auswählen…",
+          "modelCliDefault": "Standard der CLI",
+          "providerUnconfigured": "{{provider}} ist noch nicht eingerichtet — richte den Anbieter oben ein, bevor du einen Schritt darauf festlegst.",
+          "setWindow": "Kontextfenster festlegen",
+          "contextWindow": "Kontextfenster (Tokens)",
+          "windowDefault": "Nutzt das Standard-Kontextfenster des Anbieters.",
+          "save": "Speichern",
+          "cancel": "Abbrechen"
+        }
+      },
       "localLimits": {
         "title": "Generierungslimits",
         "analyze": "Modell analysieren",

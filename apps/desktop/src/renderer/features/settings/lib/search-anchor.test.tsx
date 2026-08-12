@@ -12,12 +12,12 @@
  *
  * Coverage:
  *  - All 11 SectionIds have ≥1 SEARCH_INDEX entry.
- *  - All 30 anchors are reachable in the rendered DOM.
+ *  - Every anchor in the manifest is reachable in the rendered DOM.
  *  - Multi-component sections are fully covered:
  *      general   → GeneralSection (6 anchors inside the component)
  *      appearance → AppearanceCard (5 anchors inside the component)
  *      contact   → ContactProfileTab (2 anchors inside the component)
- *      ai        → SettingsContent wrapper (2) + AISettingsTab interior (3)
+ *      ai        → SettingsContent wrapper (2) + AISettingsTab interior (4)
  *      job       → SettingsContent wrappers (3)
  *      resume    → SettingsContent wrapper (1)
  *      accounts  → AccountsSettingsTab (3 anchors inside)
@@ -249,6 +249,9 @@ vi.mock('@/features/settings/components/ai-settings/CompanyResearchSettings', ()
 vi.mock('@/features/settings/components/ai-settings/SpendSettings', () => ({
   SpendSettings: () => null,
 }));
+vi.mock('@/features/settings/components/ai-settings/StageOverridesSettings', () => ({
+  StageOverridesSettings: () => null,
+}));
 
 // AccountsSettingsTab children
 vi.mock('@/features/settings/components/accounts/BoardSessionRow', () => ({
@@ -341,8 +344,8 @@ function assertAnchor(container: HTMLElement, anchor: string) {
 // ── manifest integrity ────────────────────────────────────────────────────────
 
 describe('SEARCH_INDEX — manifest integrity', () => {
-  it('has exactly 32 entries', () => {
-    expect(SEARCH_INDEX).toHaveLength(32);
+  it('has exactly 33 entries', () => {
+    expect(SEARCH_INDEX).toHaveLength(33);
   });
 
   it('every SectionId has at least one entry', () => {
