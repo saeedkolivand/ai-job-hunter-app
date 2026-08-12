@@ -392,26 +392,45 @@ fn a_stopped_run_may_only_overwrite_the_saved_resume_with_a_document_that_has_wo
     // A run that REACHED THE END is never refused: a source résumé with no
     // employment section is a real input, and the report is where that is said.
     for stopped in [None, Some(StoppedReason::Done)] {
-        assert!(super::is_persistable(NO_WORK, stopped));
-        assert!(super::is_persistable(WITH_WORK, stopped));
+        assert!(super::is_persistable(NO_WORK, stopped, true));
+        assert!(super::is_persistable(WITH_WORK, stopped, true));
     }
 
-    // A run stopped EARLY keeps the trade only when it has work history.
+    // **A recorded stop reason does NOT mean the run was cut short.**
+    // `stages::repair` writes `RunTimeout` for an in-loop timeout and
+    // `Budgeted` for a daily-cap refusal and then returns `Ok(())` — and repair
+    // is quality depth's LAST stage. Reading the reason alone silently refused
+    // to save a completed run over a source with no employment section (a new
+    // graduate, an academic CV) the moment its repair round hit the daily cap:
+    // `completed` status, unchanged document, no explanation anywhere.
+    for stopped in [
+        StoppedReason::RunTimeout,
+        StoppedReason::Budgeted,
+        StoppedReason::MaxRepairs,
+    ] {
+        assert!(
+            super::is_persistable(NO_WORK, Some(stopped), true),
+            "{stopped:?}: the pipeline finished Ok — a recovered stop is not a cut-short run"
+        );
+    }
+
+    // A run that was genuinely CUT SHORT keeps the trade only when it has work
+    // history.
     for stopped in [
         StoppedReason::RunTimeout,
         StoppedReason::Budgeted,
         StoppedReason::Cancelled,
     ] {
         assert!(
-            super::is_persistable(WITH_WORK, Some(stopped)),
+            super::is_persistable(WITH_WORK, Some(stopped), false),
             "{stopped:?}: a short résumé beats discarding what the run paid for"
         );
         assert!(
-            !super::is_persistable(NO_WORK, Some(stopped)),
+            !super::is_persistable(NO_WORK, Some(stopped), false),
             "{stopped:?}: a résumé with no work history must not replace a good one"
         );
         assert!(
-            !super::is_persistable(EMPTY_SECTION, Some(stopped)),
+            !super::is_persistable(EMPTY_SECTION, Some(stopped), false),
             "{stopped:?}: a heading with nothing under it is not work history"
         );
     }

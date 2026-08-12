@@ -329,7 +329,15 @@ async fn execute(
     // stopped at the repair stage still wrote a real document, and discarding
     // it because the report is not clean is the opposite of what the terminal
     // review is for.
-    let quality_report = persist_document(app, &job_url, &meta, &clamped, &ctx, depth.as_str());
+    let quality_report = persist_document(
+        app,
+        &job_url,
+        &meta,
+        &clamped,
+        &ctx,
+        depth.as_str(),
+        outcome.is_ok(),
+    );
     // The same texts `persist_document` built the wrapper over — fresh entries
     // carry no decisions yet, so the document-agreement half of the rule is
     // vacuous here, but the signature keeps ONE definition of "unresolved".
@@ -475,12 +483,13 @@ fn persist_document(
     clamped: &ClampedRequest,
     ctx: &QualityCtx<'_>,
     depth: &str,
+    run_ok: bool,
 ) -> Option<String> {
     let report = ctx.report.as_ref()?;
     if ctx.draft.trim().is_empty() || job_url.trim().is_empty() {
         return None;
     }
-    if !is_persistable(&ctx.draft, ctx.ledger.stopped()) {
+    if !is_persistable(&ctx.draft, ctx.ledger.stopped(), run_ok) {
         return None;
     }
     let wrapper = report::build(
@@ -521,16 +530,28 @@ fn persist_document(
 
 /// Whether a run's document may OVERWRITE the posting's saved one.
 ///
-/// One rule, and it only bites a run that stopped early: **a stopped run must
-/// still have produced an employment section.** Everything else about
-/// completeness is a judgement the report already makes visible (a missing
-/// employer is a `factual.dropped_role` Critical and `needsReview`), but a
-/// document with no work history at all is not a shorter résumé — it is not one
-/// — and this save has no versioning to undo it with.
+/// One rule, and it only bites a run that DID NOT FINISH: **a run that was cut
+/// short must still have produced an employment section.** Everything else
+/// about completeness is a judgement the report already makes visible (a
+/// missing employer is a `factual.dropped_role` Critical and `needsReview`),
+/// but a document with no work history at all is not a shorter résumé — it is
+/// not one — and this save has no versioning to undo it with.
 ///
-/// A run that reached the end is never refused, whatever it produced: a source
-/// résumé with no employment section is a real (if unusual) input, and the
-/// deterministic report is the honest place to say so.
+/// **"Cut short" is the OUTCOME plus the reason, never the reason alone.**
+/// `RunLedger::stop` is also how a stage records something it RECOVERED from:
+/// `stages::repair` writes `RunTimeout` for an in-loop timeout and `Budgeted`
+/// for a daily-cap refusal and then returns `Ok(())`, and repair is quality
+/// depth's LAST stage — so a run that completed normally can carry either
+/// reason. Reading the reason on its own therefore refused to save a perfectly
+/// good run whose source résumé simply has no employment section (a new
+/// graduate, an academic CV) the moment its repair round hit the daily cap:
+/// `terminal_state` said `completed`, and `persist_document` silently wrote
+/// nothing. A successful-looking run, an unchanged document, and no
+/// explanation anywhere is a worse outcome than the one this guard exists to
+/// prevent.
+///
+/// So a run that reached the end is never refused, whatever it produced — and
+/// that sentence is now true of the code as well as of the intent.
 ///
 /// Reads the DRAFT rather than `ctx.sections`, so it says the same thing at both
 /// depths — a quality run whose stream was cut off mid-document is the same
@@ -538,13 +559,15 @@ fn persist_document(
 pub(crate) fn is_persistable(
     draft: &str,
     stopped: Option<crate::pipeline::budget::StoppedReason>,
+    run_ok: bool,
 ) -> bool {
     use crate::pipeline::budget::StoppedReason;
-    let stopped_early = matches!(
-        stopped,
-        Some(StoppedReason::RunTimeout | StoppedReason::Budgeted | StoppedReason::Cancelled)
-    );
-    if !stopped_early {
+    let cut_short = !run_ok
+        && matches!(
+            stopped,
+            Some(StoppedReason::RunTimeout | StoppedReason::Budgeted | StoppedReason::Cancelled)
+        );
+    if !cut_short {
         return true;
     }
     // The section, with something under it — not `entry_range`, whose

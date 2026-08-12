@@ -7,6 +7,7 @@ use tempfile::TempDir;
 
 use crate::data_store::DataStore;
 use crate::ipc_contracts::events::PIPELINE_STAGE_PHASES;
+use serde_json::json;
 
 use super::{
     check_bundle_size, clamp_artifact, clamp_metrics, PipelineRunStore, RunEventRow, RunRow,
@@ -456,7 +457,43 @@ fn deleting_a_job_removes_its_runs_and_their_artifacts() {
     store.upsert_run(&run("unlinked", "", 4_000)).unwrap();
     assert_eq!(store.delete_for_job(""), 0);
     assert_eq!(store.delete_for_job("   "), 0);
-    assert_eq!(store.runs_for_job("").len(), 1);
+    assert!(store.run("unlinked").is_some(), "…and it survives");
+}
+
+/// The same empty-key guard on the READ side.
+///
+/// `normalized_job_url` maps anything it cannot read as an http(s) url to `""`
+/// — a `javascript:` scheme, a control-character paste, whitespace — and `""`
+/// is also what every UNLINKED run is stored under. `resume_pipeline_list_for_job`
+/// takes its url from the renderer, so without the guard a junk url would list
+/// every unlinked run in the store: other postings' history, under a url that
+/// names none of them.
+///
+/// Mutation check: drop the `wanted.is_empty()` early return in `runs_for_job`
+/// and every case below returns the unlinked runs.
+#[test]
+fn a_junk_url_lists_no_runs_rather_than_every_unlinked_one() {
+    let (_dir, store) = store();
+    store.upsert_run(&run("unlinked-1", "", 1_000)).unwrap();
+    store.upsert_run(&run("unlinked-2", "", 2_000)).unwrap();
+    store
+        .upsert_run(&run("linked", "https://boards.example/jobs/1", 3_000))
+        .unwrap();
+
+    for junk in [
+        "",
+        "   ",
+        "javascript:alert(1)",
+        "data:text/html,x",
+        "\u{1}\u{2}",
+    ] {
+        assert!(
+            store.runs_for_job(junk).is_empty(),
+            "runs_for_job({junk:?}) must not answer with someone else's history"
+        );
+    }
+    // …and a real url still resolves, so the guard is about the empty key.
+    assert_eq!(store.runs_for_job("https://boards.example/jobs/1").len(), 1);
 }
 
 /// **What the list shows and what the delete removes are the SAME set.**
@@ -505,6 +542,75 @@ fn every_spelling_of_a_posting_resolves_to_the_same_runs() {
     assert_eq!(store.delete_for_job(RAW), 1);
     assert!(store.runs_for_job(NORMALIZED).is_empty());
     assert!(store.events_for_run("run-1").is_empty());
+}
+
+/// **A RESTORED bundle is a write, and it goes through the same seam.**
+///
+/// `import` is the restore path, and it bound `run.job_url` raw while
+/// `upsert_run` normalized — so restoring any backup taken before the
+/// normalization landed (they all carry the postings cache's raw urls:
+/// `utm_*`, fragments, `www.`, uppercase host) wrote rows in a spelling no
+/// reader and no delete could reach. `data_import` runs against the LIVE
+/// managed store with no re-open, so `normalize_existing_job_urls` does not get
+/// a chance to repair them either.
+///
+/// What that cost, end to end: the runs panel came back empty for those
+/// postings, `delete_for_job` matched zero rows and still reported SUCCESS, so
+/// both delete cascades silently no-opped — and the next restart's sweep then
+/// normalized rows whose owner the user had already deleted, leaving the full
+/// strategy and evidence map (employment history, verbatim résumé quotes) on
+/// disk permanently and riding into every later backup.
+///
+/// The two round-trip guards above could not catch it: their fixtures are
+/// pre-normalized on both sides, so a raw-binding import looks identical.
+///
+/// Mutation check: bind `run.job_url` raw in `import` and both assertions fail.
+#[test]
+fn an_imported_run_is_normalized_like_any_other_write() {
+    let (_dir, store) = store();
+    const RAW: &str = "https://www.Boards.example/jobs/7?utm_campaign=x";
+    const NORMALIZED: &str = "https://boards.example/jobs/7";
+
+    let bundle = json!({
+        "runs": [{
+            "id": "restored",
+            "jobUrl": RAW,
+            "kind": "resume",
+            "depth": "max",
+            "status": "completed",
+            "startedAt": 1_700_000_000_000i64,
+            "finishedAt": 1_700_000_100_000i64,
+            "stoppedReason": "done",
+            "metricsJson": "{}",
+        }],
+        "events": [{
+            "runId": "restored",
+            "seq": 0,
+            "ts": 1_700_000_000_000i64,
+            "stage": "strategy",
+            "phase": "finish",
+            "artifactJson": r#"{"full":{"perCompany":[{"company":"Acme"}]}}"#,
+        }],
+    });
+    assert_eq!(store.import(&bundle).expect("the bundle restores"), 1);
+
+    assert_eq!(
+        store.run("restored").expect("the run").job_url,
+        NORMALIZED,
+        "a restore is a write, and the write site is the seam"
+    );
+    assert_eq!(
+        store.runs_for_job(NORMALIZED).len(),
+        1,
+        "a restored run must be listable"
+    );
+    assert_eq!(
+        store.delete_for_job(NORMALIZED),
+        1,
+        "…and deletable — a delete that matches nothing still reports success, \
+         so an unreachable row is PII with no owner and no eviction"
+    );
+    assert!(store.events_for_run("restored").is_empty());
 }
 
 /// A row written by a BUILD THAT PREDATES the normalization is repaired once, at

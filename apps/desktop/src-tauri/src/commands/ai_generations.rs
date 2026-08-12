@@ -143,6 +143,17 @@ pub async fn ai_generations_update(app: AppHandle, req: AiGenerationUpdateReques
 /// question) and only AFTER it succeeded (a failed delete must not take the
 /// trail with it). Best-effort and non-fatal, like every other cascade here:
 /// the store logs its own failures, and the user's delete already happened.
+///
+/// **The crash window between the two is accepted.** A process death after the
+/// `ai_generations` row is gone and before this runs leaves an orphaned trail —
+/// the same shape as every other non-fatal cascade in this file and in
+/// `applications_delete`, and the same order they all use (the parent delete is
+/// the thing the user asked for and must not be held hostage to a child).
+/// A boot-time orphan sweep was considered and rejected: it is real machinery
+/// (a second definition of "orphaned", a scan on every start) for a window
+/// measured in microseconds, and the driver that actually produced orphans at
+/// scale — a restore binding raw job urls, which made EVERY cascade a silent
+/// no-op — is fixed at its own write site in `PipelineRunStore::import`.
 fn purge_run_trails(app: &AppHandle, job_urls: &[String]) {
     if job_urls.is_empty() {
         return;

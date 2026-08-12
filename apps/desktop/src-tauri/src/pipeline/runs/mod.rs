@@ -387,8 +387,16 @@ fn normalized_job_url(job_url: &str) -> String {
 /// `(job_url, kind)`), so the scan is small; the UPDATE only touches rows that
 /// actually differ, so a normalized store does no writes at all.
 ///
-/// Best-effort: a failure here leaves the legacy rows readable exactly as they
-/// were, which is the same state the app shipped with.
+/// **LOAD-BEARING, not cosmetic — and best-effort is a real cost here.** Once
+/// [`delete_for_job`] became an indexed exact match, an un-normalized row stopped
+/// being merely hard to list: it cannot be DELETED either, and the delete still
+/// reports success, so its strategy/evidence detail outlives the owner that was
+/// supposed to remove it. A failure here therefore leaves those rows readable
+/// exactly as they were AND undeleteable until the next successful open — which
+/// is the state the app shipped with, but it is not harmless, and it is why the
+/// write sites (`upsert_run` and `import`) both normalize rather than leaning on
+/// this. With `import` fixed, the only rows this can still find are genuinely
+/// LEGACY ones written by an older build.
 fn normalize_existing_job_urls(conn: &Connection) {
     let Ok(mut stmt) = conn.prepare("SELECT id, job_url FROM pipeline_runs") else {
         return;
@@ -513,14 +521,26 @@ impl PipelineRunStore {
     /// cache's raw link and a caller holding the application's normalized key
     /// resolve to the same rows — and to the same rows
     /// [`delete_for_job`](Self::delete_for_job) would remove.
+    ///
+    /// An empty result for an empty key, mirroring that function's own guard.
+    /// `normalized_job_url` maps anything it cannot read as an http(s) url to
+    /// `""` (a `javascript:` scheme, a control-character paste, whitespace), and
+    /// `""` is also what every UNLINKED run is stored under — so without this a
+    /// renderer-supplied junk url arriving through
+    /// `resume_pipeline_list_for_job` would list every unlinked run in the
+    /// store, i.e. other postings' history under a url that names none of them.
     pub fn runs_for_job(&self, job_url: &str) -> Vec<RunRow> {
+        let wanted = normalized_job_url(job_url);
+        if wanted.is_empty() {
+            return Vec::new();
+        }
         let conn = self.conn.lock();
         query_runs(
             &conn,
             "SELECT id, job_url, kind, depth, status, started_at, finished_at,
                     stopped_reason, metrics_json
              FROM pipeline_runs WHERE job_url = ?1 ORDER BY started_at DESC, id DESC",
-            params![normalized_job_url(job_url)],
+            params![wanted],
         )
     }
 
@@ -665,22 +685,39 @@ impl PipelineRunStore {
     /// [`export`](Self::export) ships every event row into the user's backups.
     ///
     /// An INDEXED delete over the normalized key, because
-    /// [`normalized_job_url`] runs at the write site: both sides of the
+    /// [`normalized_job_url`] runs at every write site: both sides of the
     /// comparison are already in the same spelling, so this is
     /// `idx_pipeline_runs_job` rather than the full-scan-and-normalize-in-Rust
     /// it had to be while writers stored the raw url.
     ///
-    /// Best-effort and transactional, like [`prune`](Self::prune): the first
-    /// failure returns without committing, so the trail is never half-deleted.
+    /// Best-effort and transactional, like [`prune`](Self::prune): a failure
+    /// returns without committing, so the trail is never half-deleted.
     pub fn delete_for_job(&self, job_url: &str) -> usize {
-        let wanted = normalized_job_url(job_url);
+        self.delete_for_jobs(std::slice::from_ref(&job_url.to_string()))
+    }
+
+    /// [`delete_for_job`](Self::delete_for_job) for several postings, in ONE
+    /// transaction. Returns how many RUNS went.
+    ///
+    /// One transaction, not one per posting: the bulk cascade behind
+    /// `ai_generations_remove_bulk` is a single user action, and N independent
+    /// transactions leave it half-applied when the third of five fails —
+    /// exactly the state the single-posting path already refuses to produce.
+    /// The single case delegates here, so there is one delete rather than two
+    /// that can drift.
+    pub fn delete_for_jobs(&self, job_urls: &[String]) -> usize {
+        // An unlinked run (a manual entry with no posting url) has no trail to
+        // find, and `""` is what every one of them is stored under — matching
+        // it would delete other postings' history.
+        let wanted: Vec<String> = job_urls
+            .iter()
+            .map(|url| normalized_job_url(url))
+            .filter(|url| !url.is_empty())
+            .collect();
         if wanted.is_empty() {
-            // An unlinked run (a manual entry with no posting url) has no trail
-            // to find, and matching every empty-url run to it would delete
-            // other postings' history.
             return 0;
         }
-        let span = crate::observability::Span::begin("pipeline:runs", "op=delete_for_job");
+        let span = crate::observability::Span::begin("pipeline:runs", "op=delete_for_jobs");
         let mut guard = self.conn.lock();
         let tx = match guard.transaction() {
             Ok(tx) => tx,
@@ -690,21 +727,24 @@ impl PipelineRunStore {
                 return 0;
             }
         };
-        // Events first: an interrupted delete that took the run row and left its
-        // events would leave rows the orphan sweep only reaches on the next
-        // `prune`.
+        let placeholders = wanted.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        // Events first: an interrupted delete that took the run rows and left
+        // their events would leave rows the orphan sweep only reaches on the
+        // next `prune`.
         if let Err(e) = tx.execute(
-            "DELETE FROM pipeline_run_events WHERE run_id IN
-                 (SELECT id FROM pipeline_runs WHERE job_url = ?1)",
-            params![wanted],
+            &format!(
+                "DELETE FROM pipeline_run_events WHERE run_id IN
+                     (SELECT id FROM pipeline_runs WHERE job_url IN ({placeholders}))"
+            ),
+            rusqlite::params_from_iter(wanted.iter()),
         ) {
             log::warn!("[pipeline] could not delete a job's run events: {e}");
             span.end(false);
             return 0; // dropping `tx` rolls the whole thing back
         }
         let removed = match tx.execute(
-            "DELETE FROM pipeline_runs WHERE job_url = ?1",
-            params![wanted],
+            &format!("DELETE FROM pipeline_runs WHERE job_url IN ({placeholders})"),
+            rusqlite::params_from_iter(wanted.iter()),
         ) {
             Ok(rows) => rows,
             Err(e) => {
@@ -715,7 +755,7 @@ impl PipelineRunStore {
         };
         match tx.commit() {
             Ok(()) => {
-                span.end_with(&format!("runs={removed}"), true);
+                span.end_with(&format!("jobs={} runs={removed}", wanted.len()), true);
                 removed
             }
             Err(e) => {
@@ -724,17 +764,6 @@ impl PipelineRunStore {
                 0
             }
         }
-    }
-
-    /// [`delete_for_job`](Self::delete_for_job) for several postings. Returns
-    /// how many RUNS went in total.
-    ///
-    /// Exists so the two callers that delete a BATCH — `ai_generations_remove_bulk`
-    /// and the Documents page behind it — express the cascade once instead of
-    /// each writing the loop, and so the batch case is a test rather than a
-    /// claim about a loop.
-    pub fn delete_for_jobs(&self, job_urls: &[String]) -> usize {
-        job_urls.iter().map(|url| self.delete_for_job(url)).sum()
     }
 
     /// Every run, oldest first — a deterministic order for export.
@@ -817,7 +846,19 @@ impl DataStore for PipelineRunStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     run.id,
-                    run.job_url,
+                    // Re-NORMALIZE on import, for the same reason the two
+                    // clamps below re-apply their write-site rules: a restore
+                    // must not be able to produce a row the live write path
+                    // could not. Binding this raw made every backup taken
+                    // before the normalization landed restore rows in a
+                    // spelling no reader and no delete could reach — the runs
+                    // panel came back empty, `delete_for_job` matched nothing
+                    // and still reported success, and the strategy/evidence
+                    // detail those rows carry outlived the owner that was
+                    // supposed to delete it. `data_import` runs against the
+                    // LIVE store with no re-open, so
+                    // `normalize_existing_job_urls` never gets to repair them.
+                    normalized_job_url(&run.job_url),
                     run.kind,
                     run.depth,
                     run.status,

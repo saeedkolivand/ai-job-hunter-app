@@ -213,7 +213,23 @@ struct EntryIdentity {
 ///
 /// Round-trip-safe by construction: this compares what `identity_line` WROTE
 /// against what `split_entry` READS, and those two are each other's inverse by
-/// design (see `identity_line`'s doc).
+/// design (see `identity_line`'s doc) — with two residuals, both accepted and
+/// both in the safe direction:
+///
+/// * **A comma-carrying employer does not round-trip.** `identity_line` renders
+///   `Title, Acme Payments, Inc.  2021 – Present`, and
+///   `split_two_space_label` splits at the LAST comma, so the company reads back
+///   as `Inc.`. The triple then never matches and every per-entry regenerate for
+///   that roster slot degrades to the whole-section rewrite. Pre-existing (the
+///   same split has always been how `validate::content` decides whether an
+///   employer survived) and lossless — a degraded click is a worse click, not a
+///   damaged document — so it is recorded rather than papered over with a
+///   second parser.
+/// * **Two byte-identical entries are indistinguishable, and harmlessly so.**
+///   If a roster somehow held two slots with the same `(company, title, dates)`,
+///   this join cannot say which is which. Nothing is lost either way: the splice
+///   replaces an identity line with a character-for-character identical one, so
+///   the only thing at stake is which twin receives which rebuilt bullets.
 ///
 /// **The condensed group is matched on its rendered LINE instead**, because it
 /// is the one plan whose "company" is a label rather than an employer. Its title
