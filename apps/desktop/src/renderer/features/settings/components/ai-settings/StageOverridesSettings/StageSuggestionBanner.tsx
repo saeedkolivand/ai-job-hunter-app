@@ -1,10 +1,11 @@
 import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
 
-import type { AiStageOverride } from '@ajh/shared';
+import type { AiStageOverride, PipelineStage } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
 import { Button, useNotification } from '@ajh/ui';
 
-import { useSetStageOverride } from '@/services';
+import { useModelInspections, useSetStageOverride } from '@/services';
 
 import { suggestExtractionModel } from './suggest-stage-models';
 
@@ -13,6 +14,9 @@ interface Props {
   activeModel?: string;
   installedModels: string[];
   overrides: Record<string, AiStageOverride>;
+  /** Called with the stages that were pinned, so the host can take focus off
+   *  the button that is about to unmount with this banner. */
+  onApplied?: (stages: PipelineStage[]) => void;
 }
 
 /**
@@ -21,33 +25,45 @@ interface Props {
  * `LocalModelLimits`' "Use suggested"). Renders nothing when there is nothing
  * honest to suggest.
  *
- * The copy names what will change and why, because accepting writes three real
- * override rows: silent magic here would be indistinguishable from the app
- * quietly downgrading the user's model.
+ * Sizes come from `/api/show` (the same query the advisor uses, so it is one
+ * cached fetch, not two) rather than from the model name — a name-parsed size
+ * once made this recommend a 70B model as the smaller option.
+ *
+ * "Not now" dismisses it for the session-and-installed-set: re-offering the
+ * same advice on every visit is nagging, but a NEW model on disk is new
+ * information and re-arms it.
  */
 export function StageSuggestionBanner({
   activeProvider,
   activeModel,
   installedModels,
   overrides,
+  onApplied,
 }: Props) {
   const { t } = useTranslation();
   const notify = useNotification();
   const setStageOverride = useSetStageOverride();
+  const inspections = useModelInspections(installedModels);
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
 
   const suggestion = suggestExtractionModel({
     activeProvider,
     activeModel,
     installedModels,
+    inspections: inspections.byModel,
     overrides,
   });
-  if (!suggestion) return null;
+
+  // Keyed on the installed set: installing something new re-arms the offer.
+  const installedKey = [...installedModels].sort().join('|');
+  if (!suggestion || dismissedFor === installedKey) return null;
 
   const stageNames = suggestion.stages
     .map((stage) => t(`settings.ai.stages.names.${stage}`))
     .join(', ');
 
   const apply = async () => {
+    let done = 0;
     try {
       // Sequential: each write returns the fresh map, and a rejection must stop
       // the rest rather than leave a half-applied suggestion behind quietly.
@@ -57,19 +73,25 @@ export function StageSuggestionBanner({
           provider: 'ollama',
           model: suggestion.model,
         });
+        done += 1;
       }
       notify.success({
         message: t('settings.ai.stages.suggest.applied', {
-          count: suggestion.stages.length,
+          count: done,
           model: suggestion.model,
         }),
       });
+      onApplied?.(suggestion.stages);
     } catch (err) {
+      // Say how far it got: "failed" would hide that some stages ARE pinned now.
       notify.error({
-        message: t('settings.ai.stages.saveFailed', {
+        message: t('settings.ai.stages.suggest.partial', {
+          done,
+          total: suggestion.stages.length,
           reason: err instanceof Error ? err.message : String(err),
         }),
       });
+      if (done > 0) onApplied?.(suggestion.stages.slice(0, done));
     }
   };
 
@@ -81,24 +103,31 @@ export function StageSuggestionBanner({
           <div className="text-xs font-medium text-foreground/80">
             {t('settings.ai.stages.suggest.title')}
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-foreground/55">
+          <p className="mt-1 text-xs leading-relaxed text-foreground/60">
             {t('settings.ai.stages.suggest.body', {
               model: suggestion.model,
+              candidateB: suggestion.candidateB,
               active: activeModel,
+              activeB: suggestion.activeB,
             })}
           </p>
-          <p className="mt-1 text-[11px] text-foreground/40">
+          <p className="mt-1 text-[11px] text-foreground/60">
             {t('settings.ai.stages.suggest.appliesTo', { stages: stageNames })}
           </p>
         </div>
-        <Button
-          variant="glass"
-          className="shrink-0"
-          disabled={setStageOverride.isPending}
-          onClick={() => void apply()}
-        >
-          {t('settings.ai.stages.suggest.apply')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            variant="glass"
+            loading={setStageOverride.isPending}
+            disabled={setStageOverride.isPending}
+            onClick={() => void apply()}
+          >
+            {t('settings.ai.stages.suggest.apply')}
+          </Button>
+          <Button variant="ghost" onClick={() => setDismissedFor(installedKey)}>
+            {t('settings.ai.stages.suggest.dismiss')}
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { isPipelineStage, PIPELINE_STAGES, PIPELINE_STAGES_FREE } from '@ajh/sha
 import {
   OVERRIDABLE_PIPELINE_STAGES,
   providerNeedsModel,
+  resolveActiveProblem,
   resolveStageRouting,
 } from './stage-routing';
 
@@ -78,15 +79,28 @@ describe('resolveStageRouting', () => {
     expect(row?.problem).toBe('unconfigured');
   });
 
-  it('flags a configured provider with no model', () => {
+  it('flags an override on a configured provider with no model', () => {
     const [row] = resolveStageRouting({
-      overrides: {},
-      active: { provider: 'openai' },
+      overrides: { strategy: { provider: 'openai', model: '' } },
+      active: { provider: 'ollama', model: 'qwen3:8b' },
       isConfigured: allConfigured,
       stages: ['strategy'],
     });
 
     expect(row?.problem).toBe('no-model');
+  });
+
+  it('does NOT repeat the ACTIVE provider’s problem on every row', () => {
+    const rows = resolveStageRouting({
+      overrides: {},
+      active: { provider: 'openai' },
+      isConfigured: allConfigured,
+    });
+
+    // One global problem is reported once, by `resolveActiveProblem` — not as
+    // seven identical warnings offering advice ("put this step back on the
+    // default") that a row already on the default cannot follow.
+    expect(rows.every((r) => r.problem === undefined)).toBe(true);
   });
 
   it('accepts a CLI agent with no model — it runs its own default', () => {
@@ -102,7 +116,7 @@ describe('resolveStageRouting', () => {
     expect(providerNeedsModel('openai')).toBe(true);
   });
 
-  it('flags every stage when nothing is configured at all', () => {
+  it('returns one row per overridable stage', () => {
     const rows = resolveStageRouting({
       overrides: {},
       active: {},
@@ -110,6 +124,35 @@ describe('resolveStageRouting', () => {
     });
 
     expect(rows).toHaveLength(OVERRIDABLE_PIPELINE_STAGES.length);
-    expect(rows.every((r) => r.problem === 'unconfigured')).toBe(true);
+  });
+});
+
+describe('resolveActiveProblem', () => {
+  it('reports an unconfigured active provider once', () => {
+    expect(
+      resolveActiveProblem({
+        active: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+        isConfigured: () => false,
+      })
+    ).toBe('unconfigured');
+  });
+
+  it('reports a configured active provider with no model', () => {
+    expect(
+      resolveActiveProblem({ active: { provider: 'openai' }, isConfigured: allConfigured })
+    ).toBe('no-model');
+  });
+
+  it('reports nothing when the active provider can actually run', () => {
+    expect(
+      resolveActiveProblem({
+        active: { provider: 'ollama', model: 'qwen3:8b' },
+        isConfigured: allConfigured,
+      })
+    ).toBeUndefined();
+  });
+
+  it('treats a missing provider as unconfigured', () => {
+    expect(resolveActiveProblem({ active: {}, isConfigured: allConfigured })).toBe('unconfigured');
   });
 });

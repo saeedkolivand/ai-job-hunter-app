@@ -49,6 +49,15 @@ export interface StageRouting {
   provider?: string;
   /** Empty/absent is legitimate for a CLI agent — it runs its own default. */
   model?: string;
+  /**
+   * A problem with THIS ROW'S OWN override — never one inherited from the
+   * active provider.
+   *
+   * A broken active provider is one problem, not seven: repeating it per row
+   * both buries the rows that really are misconfigured and offers advice ("put
+   * this stage back on the default") that is meaningless on a row already on
+   * the default. See {@link resolveActiveProblem} for that half.
+   */
   problem?: StageRoutingProblem;
 }
 
@@ -69,6 +78,29 @@ export function providerNeedsModel(provider: string): boolean {
   return PROVIDERS[provider as AiProvider]?.kind !== 'cli-agent';
 }
 
+/** Shared predicate: what is wrong with running on this provider + model. */
+function routingProblem(
+  provider: string | undefined,
+  model: string | undefined,
+  isConfigured: (provider: string) => boolean
+): StageRoutingProblem | undefined {
+  if (!provider || !isConfigured(provider)) return 'unconfigured';
+  if (providerNeedsModel(provider) && !model) return 'no-model';
+  return undefined;
+}
+
+/**
+ * The problem with the ACTIVE provider, if any — the one every un-overridden
+ * stage inherits. Reported ONCE, at card level, because the fix is one action
+ * ("configure the provider"), not one per stage.
+ */
+export function resolveActiveProblem(input: {
+  active: { provider?: string; model?: string };
+  isConfigured: (provider: string) => boolean;
+}): StageRoutingProblem | undefined {
+  return routingProblem(input.active.provider, input.active.model, input.isConfigured);
+}
+
 /** One row per overridable stage, in pipeline order. */
 export function resolveStageRouting(input: StageRoutingInput): StageRouting[] {
   const { overrides, active, isConfigured, stages = OVERRIDABLE_PIPELINE_STAGES } = input;
@@ -78,14 +110,16 @@ export function resolveStageRouting(input: StageRoutingInput): StageRouting[] {
     const provider = override?.provider ?? active.provider;
     const model = override?.model ?? active.model;
 
-    const problem: StageRoutingProblem | undefined = !provider
-      ? 'unconfigured'
-      : !isConfigured(provider)
-        ? 'unconfigured'
-        : providerNeedsModel(provider) && !model
-          ? 'no-model'
-          : undefined;
-
-    return { stage, override, provider, model, problem };
+    return {
+      stage,
+      override,
+      provider,
+      model,
+      // Only an override can make THIS ROW wrong; the active provider's own
+      // problem belongs to `resolveActiveProblem`.
+      problem: override
+        ? routingProblem(override.provider, override.model, isConfigured)
+        : undefined,
+    };
   });
 }

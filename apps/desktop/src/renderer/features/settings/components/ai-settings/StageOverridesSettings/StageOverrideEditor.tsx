@@ -17,6 +17,8 @@ const CTX_MAX = 131_072;
 const CTX_DEFAULT = 8192;
 
 interface Props {
+  /** Wired to the row button's `aria-controls`. */
+  id: string;
   stage: PipelineStage;
   /** The override being edited, when the stage already has one. */
   override?: AiStageOverride;
@@ -38,6 +40,7 @@ interface Props {
  * expanded row.
  */
 export function StageOverrideEditor({
+  id,
   stage,
   override,
   fallbackProvider,
@@ -104,12 +107,15 @@ export function StageOverrideEditor({
     );
 
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] p-3">
+    <div
+      id={id}
+      className="mt-3 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] p-3"
+    >
       <div className="grid gap-3 @sm:grid-cols-2">
         <div className="space-y-1.5">
           <label
             htmlFor={`stage-provider-${stage}`}
-            className="text-[11px] font-semibold uppercase tracking-widest text-foreground/55"
+            className="text-[11px] font-semibold uppercase tracking-widest text-foreground/60"
           >
             {t('settings.ai.stages.editor.provider')}
           </label>
@@ -130,7 +136,7 @@ export function StageOverrideEditor({
         <div className="space-y-1.5">
           <label
             htmlFor={`stage-model-${stage}`}
-            className="text-[11px] font-semibold uppercase tracking-widest text-foreground/55"
+            className="text-[11px] font-semibold uppercase tracking-widest text-foreground/60"
           >
             {t('settings.ai.stages.editor.model')}
           </label>
@@ -151,7 +157,7 @@ export function StageOverrideEditor({
       </div>
 
       {!configured && (
-        <p className="text-xs text-amber-400/80">
+        <p className="text-xs text-amber-400">
           {t('settings.ai.stages.editor.providerUnconfigured', {
             provider: PROVIDERS[provider as AiProvider]?.label ?? provider,
           })}
@@ -177,7 +183,7 @@ export function StageOverrideEditor({
             />
           </div>
         ) : (
-          <p className="mt-1.5 text-xs text-foreground/40">
+          <p className="mt-1.5 text-xs text-foreground/60">
             {t('settings.ai.stages.editor.windowDefault')}
           </p>
         )}

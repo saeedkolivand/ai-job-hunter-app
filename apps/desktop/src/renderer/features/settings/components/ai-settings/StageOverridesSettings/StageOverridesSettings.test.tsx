@@ -44,8 +44,11 @@ const overridesState: { data: Record<string, unknown> } = { data: {} };
 vi.mock('@/services', () => ({
   useStageOverrides: () => overridesState,
   useClearStageOverride: () => ({ mutate: clearMutate, isPending: false }),
-  useSetStageOverride: () => ({ mutate: setMutate, isPending: false }),
+  useSetStageOverride: () => ({ mutate: setMutate, mutateAsync: vi.fn(), isPending: false }),
   useListProviderModels: () => ({ data: { models: [], cached: false } }),
+  // No measured sizes here, so the suggestion banner stays silent and these
+  // cases exercise the rows themselves.
+  useModelInspections: () => ({ byModel: {}, isPending: false }),
 }));
 
 // The advisor has its own suite (and its own service surface); here only the
@@ -106,6 +109,23 @@ describe('StageOverridesSettings — advisor entry point', () => {
 
     expect(screen.getByText('advisor-open')).toBeVisible();
   });
+
+  it('offers the rows without the advisor on a cloud-only setup', () => {
+    overridesState.data = {};
+    render(
+      <StageOverridesSettings
+        {...baseProps}
+        activeProvider="openai"
+        activeModel="gpt-5.1"
+        ollamaModels={[]}
+      />
+    );
+
+    // Every advisor step answers a local-model question, so its entry point is
+    // gated — the per-stage rows are what a cloud user gets here.
+    expect(rowFor('draft').getByText('settings.ai.stages.defaultModel gpt-5.1')).toBeVisible();
+    expect(screen.queryByText('settings.ai.advisor.open')).toBeNull();
+  });
 });
 
 describe('StageOverridesSettings — an overridden stage', () => {
@@ -140,12 +160,55 @@ describe('StageOverridesSettings — an override the backend will refuse', () =>
     ).toBeVisible();
   });
 
-  it('warns when the resolved provider has no model at all', () => {
+  it('warns on the row when the override names a model-less provider', () => {
+    overridesState.data = { llm_judge: { provider: 'openai', model: '' } };
+    render(<StageOverridesSettings {...baseProps} />);
+
+    expect(rowFor('llm_judge').getByText(/settings\.ai\.stages\.warnNoModel OpenAI/)).toBeVisible();
+  });
+});
+
+/**
+ * One broken ACTIVE provider is one problem. It used to render as an identical
+ * warning on all seven rows, each advising the user to "put this step back on
+ * the default" — which is not something you can do to a step already on the
+ * default.
+ */
+describe('StageOverridesSettings — a broken active provider', () => {
+  it('states it ONCE, at card level, in its own words', () => {
     overridesState.data = {};
     render(
       <StageOverridesSettings {...baseProps} activeProvider="openai" activeModel={undefined} />
     );
 
-    expect(rowFor('draft').getByText(/settings\.ai\.stages\.warnNoModel OpenAI/)).toBeVisible();
+    expect(screen.getAllByText(/settings\.ai\.stages\.warnActiveNoModel OpenAI/)).toHaveLength(1);
+  });
+
+  it('leaves the rows themselves free of per-row warnings', () => {
+    overridesState.data = {};
+    render(
+      <StageOverridesSettings {...baseProps} activeProvider="openai" activeModel={undefined} />
+    );
+
+    // Each row still states its own positive affordance: the default routing.
+    expect(rowFor('draft').getByText('settings.ai.stages.defaultNoModel')).toBeVisible();
+    expect(screen.queryAllByText(/settings\.ai\.stages\.warnNoModel/)).toHaveLength(0);
+  });
+
+  it('still warns per-row for the ONE stage whose own override is broken', () => {
+    overridesState.data = { llm_judge: { provider: 'anthropic', model: 'claude-sonnet-4-6' } };
+    render(
+      <StageOverridesSettings
+        {...baseProps}
+        activeProvider="openai"
+        activeModel={undefined}
+        isConfigured={(p) => p === 'openai'}
+      />
+    );
+
+    expect(screen.getAllByText(/settings\.ai\.stages\.warnActiveNoModel/)).toHaveLength(1);
+    expect(
+      rowFor('llm_judge').getByText(/settings\.ai\.stages\.warnUnconfigured Anthropic/)
+    ).toBeVisible();
   });
 });

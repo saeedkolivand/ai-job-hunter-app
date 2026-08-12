@@ -3,9 +3,10 @@
  *
  * The load-bearing behaviour is the ORDER of events: rendering the banner must
  * write nothing, and only the click writes — one override row per stage, all
- * pointing at the suggested model.
+ * pointing at the suggested model. A partial failure has to say how far it got,
+ * because some stages really are pinned by then.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -33,9 +34,17 @@ vi.mock('@ajh/ui', async (importOriginal) => {
 });
 
 const setStageOverrideAsync = vi.fn().mockResolvedValue({});
+const inspectionState: { byModel: Record<string, unknown>; isPending: boolean } = {
+  byModel: {
+    'qwen3:32b': { parameterSize: '32.8B', family: 'qwen3' },
+    'llama3.2:1b': { parameterSize: '1.2B', family: 'llama' },
+  },
+  isPending: false,
+};
 
 vi.mock('@/services', () => ({
   useSetStageOverride: () => ({ mutateAsync: setStageOverrideAsync, isPending: false }),
+  useModelInspections: () => inspectionState,
 }));
 
 import { StageSuggestionBanner } from './StageSuggestionBanner';
@@ -48,6 +57,12 @@ const props = {
 };
 
 describe('StageSuggestionBanner', () => {
+  beforeEach(() => {
+    // Call history only — `clearAllMocks` keeps the resolved-value
+    // implementations these cases rely on.
+    vi.clearAllMocks();
+  });
+
   it('renders the offer without writing anything', () => {
     render(<StageSuggestionBanner {...props} />);
 
@@ -57,10 +72,17 @@ describe('StageSuggestionBanner', () => {
     expect(setStageOverrideAsync).not.toHaveBeenCalled();
   });
 
-  it('names the model, the model it replaces, and the steps it touches', () => {
+  it('quotes the MEASURED sizes of both models', () => {
     render(<StageSuggestionBanner {...props} />);
 
-    expect(screen.getByText(/llama3\.2:1b/)).toBeVisible();
+    // 1.2B replacing 32.8B — the numbers make the claim checkable instead of
+    // asking the user to trust a name-parsed guess.
+    expect(screen.getByText(/llama3\.2:1b 1\.2 qwen3:32b 32\.8/)).toBeVisible();
+  });
+
+  it('names the steps it touches', () => {
+    render(<StageSuggestionBanner {...props} />);
+
     expect(
       screen.getByText(
         'settings.ai.stages.suggest.appliesTo settings.ai.stages.names.analyze_job, settings.ai.stages.names.match_evidence, settings.ai.stages.names.strategy'
@@ -70,7 +92,8 @@ describe('StageSuggestionBanner', () => {
 
   it('pins every offered stage to the suggested model on accept', async () => {
     const user = userEvent.setup();
-    render(<StageSuggestionBanner {...props} />);
+    const onApplied = vi.fn();
+    render(<StageSuggestionBanner {...props} onApplied={onApplied} />);
 
     await user.click(screen.getByText('settings.ai.stages.suggest.apply'));
 
@@ -83,9 +106,40 @@ describe('StageSuggestionBanner', () => {
       });
     }
     expect(mockNotify.success).toHaveBeenCalled();
+    // The accepted banner unmounts; focus has to go somewhere deliberate.
+    expect(onApplied).toHaveBeenCalledWith(['analyze_job', 'match_evidence', 'strategy']);
   });
 
-  it('renders nothing when nothing smaller is installed', () => {
+  it('reports how far it got when a write fails mid-way', async () => {
+    setStageOverrideAsync.mockReset();
+    setStageOverrideAsync
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('daily cap reached'));
+    const user = userEvent.setup();
+    const onApplied = vi.fn();
+    render(<StageSuggestionBanner {...props} onApplied={onApplied} />);
+
+    await user.click(screen.getByText('settings.ai.stages.suggest.apply'));
+
+    // "Failed" alone would hide that one stage IS pinned now.
+    expect(mockNotify.error).toHaveBeenCalledWith({
+      message: 'settings.ai.stages.suggest.partial 1 3 daily cap reached',
+    });
+    expect(onApplied).toHaveBeenCalledWith(['analyze_job']);
+    setStageOverrideAsync.mockResolvedValue({});
+  });
+
+  it('can be declined, and stays declined for the same installed set', async () => {
+    const user = userEvent.setup();
+    render(<StageSuggestionBanner {...props} />);
+
+    await user.click(screen.getByText('settings.ai.stages.suggest.dismiss'));
+
+    expect(screen.queryByText('settings.ai.stages.suggest.apply')).toBeNull();
+    expect(setStageOverrideAsync).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing when no measured size makes a smaller model provable', () => {
     const { container } = render(
       <StageSuggestionBanner {...props} installedModels={['qwen3:32b']} />
     );

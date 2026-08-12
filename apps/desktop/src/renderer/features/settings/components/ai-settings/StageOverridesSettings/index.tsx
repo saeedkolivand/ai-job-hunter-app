@@ -1,5 +1,5 @@
 import { AlertTriangle, Layers } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { PipelineStage } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -11,7 +11,7 @@ import type { AiProvider } from '@/store/preferences-schema';
 import type { Model } from '@/types';
 
 import { ModelAdvisor } from '../ModelAdvisor';
-import { resolveStageRouting, type StageRouting } from './stage-routing';
+import { resolveActiveProblem, resolveStageRouting, type StageRouting } from './stage-routing';
 import { StageOverrideEditor } from './StageOverrideEditor';
 import { StageSuggestionBanner } from './StageSuggestionBanner';
 
@@ -51,12 +51,32 @@ export function StageOverridesSettings({
   const clearStageOverride = useClearStageOverride();
   const [editing, setEditing] = useState<PipelineStage | null>(null);
   const [advisorOpen, setAdvisorOpen] = useState(false);
+  // Per-row "Change" buttons, so focus can come back to the control that opened
+  // the editor once it unmounts (WCAG 2.4.3 — otherwise focus drops to <body>).
+  const changeButtons = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const rows = resolveStageRouting({
     overrides,
     active: { provider: activeProvider, model: activeModel },
     isConfigured,
   });
+  const activeProblem = resolveActiveProblem({
+    active: { provider: activeProvider, model: activeModel },
+    isConfigured,
+  });
+
+  /** The advisor only has local-model answers to give. */
+  const advisorApplies = activeProvider === 'ollama' || ollamaModels.length > 0;
+
+  /** After the suggestion is accepted its button disappears with it, so send
+   *  focus to the first stage it pinned. */
+  const focusFirstAppliedRow = (stages: PipelineStage[]) =>
+    changeButtons.current[stages[0] ?? '']?.focus();
+
+  const closeEditor = (stage: PipelineStage) => {
+    setEditing(null);
+    changeButtons.current[stage]?.focus();
+  };
 
   const clear = (stage: PipelineStage) =>
     clearStageOverride.mutate(stage, {
@@ -77,18 +97,25 @@ export function StageOverridesSettings({
         <p className="text-xs leading-relaxed text-foreground/50">
           {t('settings.ai.stages.description')}
         </p>
-        <Button variant="ghost" className="shrink-0" onClick={() => setAdvisorOpen(true)}>
-          {t('settings.ai.advisor.open')}
-        </Button>
+        {/* Ollama-only by construction: every question the advisor answers is
+            about a local model file (window size, VRAM fit, thinking ratio).
+            A cloud-only setup would open four steps of empty states. */}
+        {advisorApplies && (
+          <Button variant="ghost" className="shrink-0" onClick={() => setAdvisorOpen(true)}>
+            {t('settings.ai.advisor.open')}
+          </Button>
+        )}
       </div>
 
-      <ModelAdvisor
-        open={advisorOpen}
-        onClose={() => setAdvisorOpen(false)}
-        activeProvider={activeProvider}
-        activeModel={activeModel}
-        installedModels={ollamaModels.map((m) => m.name)}
-      />
+      {advisorApplies && (
+        <ModelAdvisor
+          open={advisorOpen}
+          onClose={() => setAdvisorOpen(false)}
+          activeProvider={activeProvider}
+          activeModel={activeModel}
+          installedModels={ollamaModels.map((m) => m.name)}
+        />
+      )}
 
       {/* Suggestion only — accepting it is a click, never a silent switch. */}
       <StageSuggestionBanner
@@ -96,7 +123,26 @@ export function StageOverridesSettings({
         activeModel={activeModel}
         installedModels={ollamaModels.map((m) => m.name)}
         overrides={overrides}
+        onApplied={focusFirstAppliedRow}
       />
+
+      {/* ONE line for the active provider, not the same sentence on every row:
+          the fix is a single action, and "put this stage back on the default"
+          is not advice you can follow on a row already on the default. */}
+      {activeProblem && (
+        <p className="mb-3 flex items-start gap-1.5 text-xs text-amber-400">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            {activeProblem === 'unconfigured'
+              ? t('settings.ai.stages.warnActiveUnconfigured', {
+                  provider: providerLabel(activeProvider) || t('settings.ai.stages.noProvider'),
+                })
+              : t('settings.ai.stages.warnActiveNoModel', {
+                  provider: providerLabel(activeProvider),
+                })}
+          </span>
+        </p>
+      )}
 
       <div className="space-y-2">
         {rows.map((row) => (
@@ -109,24 +155,32 @@ export function StageOverridesSettings({
                 <div className="text-sm font-medium text-foreground/80">
                   {t(`settings.ai.stages.names.${row.stage}`)}
                 </div>
-                <div className="mt-0.5 text-[11px] text-foreground/40">
+                <div className="mt-0.5 text-[11px] text-foreground/60">
                   {t(`settings.ai.stages.descriptions.${row.stage}`)}
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span
                   className={
-                    row.override ? 'text-[11px] text-brand-soft' : 'text-[11px] text-foreground/45'
+                    row.override ? 'text-[11px] text-brand-soft' : 'text-[11px] text-foreground/60'
                   }
                 >
                   {effectiveLabel(row)}
                 </span>
                 <Button
+                  ref={(el) => {
+                    changeButtons.current[row.stage] = el;
+                  }}
                   variant="ghost"
-                  onClick={() => setEditing(editing === row.stage ? null : row.stage)}
+                  onClick={() =>
+                    editing === row.stage ? closeEditor(row.stage) : setEditing(row.stage)
+                  }
                   aria-expanded={editing === row.stage}
+                  aria-controls={`stage-editor-${row.stage}`}
                 >
-                  {t('settings.ai.stages.change')}
+                  {editing === row.stage
+                    ? t('settings.ai.stages.changeClose')
+                    : t('settings.ai.stages.change')}
                 </Button>
                 {row.override && (
                   <Button
@@ -143,7 +197,7 @@ export function StageOverridesSettings({
             {/* An override the backend will REFUSE at run time (it never falls
                 back to the active provider) — said here, before the run. */}
             {row.problem && (
-              <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-400/80">
+              <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-400">
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span>
                   {row.problem === 'unconfigured'
@@ -159,13 +213,14 @@ export function StageOverridesSettings({
 
             {editing === row.stage && (
               <StageOverrideEditor
+                id={`stage-editor-${row.stage}`}
                 stage={row.stage}
                 override={row.override}
                 fallbackProvider={row.provider}
                 ollamaModels={ollamaModels}
                 isConfigured={isConfigured}
                 configuredBaseUrl={configuredBaseUrl}
-                onDone={() => setEditing(null)}
+                onDone={() => closeEditor(row.stage)}
               />
             )}
           </div>
