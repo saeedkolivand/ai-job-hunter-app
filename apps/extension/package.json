@@ -16,14 +16,14 @@
   },
   "dependencies": {
     "@ajh/shared": "workspace:*",
-    "@wxt-dev/browser": "^0.2.2"
+    "@wxt-dev/browser": "^0.2.5"
   },
   "devDependencies": {
-    "@types/chrome": "^0.2.2",
+    "@types/chrome": "^0.2.5",
     "cross-env": "^10.1.0",
-    "jsdom": "^30.0.0",
+    "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }
 }
