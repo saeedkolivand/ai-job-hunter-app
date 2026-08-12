@@ -254,24 +254,16 @@ Embedding vectors live in the `vectors` table of `documents.db` and cosine simil
 runs in-process in Rust — **no LanceDB, no `vectors/` directory**. To reset dev state,
 delete the `*.db` files in that directory and restart the app.
 
-To compare résumé-pipeline depths (`fast` / `quality` / `max`) over runs you have already
-made, dump `pipeline_runs.db`'s per-run `metrics_json` as a per-depth table:
+Two offline evaluation entry points, one per half of "is a deeper pipeline worth it":
 
 ```bash
-node scripts/dump-run-metrics.mjs --help   # options + the default path for your OS
-node scripts/dump-run-metrics.mjs          # the app-data DB, aggregated per depth
+node scripts/dump-run-metrics.mjs --help   # depth A/B over your own recorded runs
+cargo test --test eval -- --nocapture      # validator precision/recall on fixtures
 ```
 
-Content-free — counts, codes and durations, never document text or a posting URL
-(ADR-027) — and it never writes to the database's CONTENT, though opening a WAL database
-for reading does materialize the usual `-shm`/`-wal` sidecars next to it. It needs Node
-≥ 22.13 for the built-in `node:sqlite`.
-
-The deterministic half of the same question, validator precision/recall on labelled
-defect fixtures, is `cargo test --test eval -- --nocapture` in `apps/desktop/src-tauri`.
-Read its warning-findings line together with the `Caveat:` line printed directly under
-it — some of the truthful fixtures are already pinned to an empty report by the unit
-suite, and the caveat says how many, so the headline is weaker than it looks.
+Both print their own contract — requirements, defaults, caveats and privacy posture live
+in the file headers (`scripts/dump-run-metrics.mjs`, `apps/desktop/src-tauri/tests/eval.rs`)
+and in `--help`, which is where they stay current.
 
 ### Migrations and stale dev DBs
 

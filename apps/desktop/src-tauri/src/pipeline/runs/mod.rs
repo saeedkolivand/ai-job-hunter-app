@@ -16,7 +16,7 @@
 //!   import (see [`ARTIFACT_CAP_BYTES`]/[`METRICS_CAP_BYTES`]) — a truncated
 //!   summary still tells the truth about a run;
 //! * `phase` is a closed vocabulary enforced by a schema CHECK (see
-//!   [`CREATE_PIPELINE_RUNS_SQL`]), which holds on both paths;
+//!   `CREATE_PIPELINE_RUNS_SQL`), which holds on both paths;
 //! * every identity/text column (id, job_url, kind, depth, status,
 //!   stopped_reason, stage) is REJECTED past its byte cap on import — see
 //!   [`check_run`] — because truncating an identity does not shorten it, it
@@ -48,7 +48,7 @@
 //! `artifact_json` carries the strategy/evidence detail).
 //!
 //! That mirror is MACHINE-CHECKED, not a hand copy: `dump-run-metrics.test.mjs`
-//! reads [`CREATE_PIPELINE_RUNS_SQL`] out of THIS FILE to build its fixture, and
+//! reads `CREATE_PIPELINE_RUNS_SQL` out of THIS FILE to build its fixture, and
 //! extracts the `metrics_json` keys out of `RunLedger::metrics` and
 //! `commands::resume_pipeline::execute` to check that every key the dump reads is
 //! still written. So renaming a column, that const, or a metrics key fails the JS
