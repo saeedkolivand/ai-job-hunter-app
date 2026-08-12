@@ -405,8 +405,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            usage.input_tokens,
-            usage.output_tokens,
+            usage,
             self.base_url.as_deref(),
         );
         Ok(text)
@@ -525,8 +524,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            turn.usage.input_tokens,
-            turn.usage.output_tokens,
+            turn.usage,
             self.base_url.as_deref(),
         );
         Ok(turn)
@@ -645,8 +643,7 @@ impl Completer {
             &self.app,
             self.provider.id().as_str(),
             &self.model,
-            usage.input_tokens,
-            usage.output_tokens,
+            usage,
             self.base_url.as_deref(),
         );
     }

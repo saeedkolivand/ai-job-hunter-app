@@ -126,6 +126,7 @@ export function createMockClient(overrides: DeepPartial<AppClient> = {}): AppCli
       spendSummary: async () => ({
         today: { inputTokens: 0, outputTokens: 0, estCostUsd: 0 },
         perProvider: [],
+        thinkingByModel: [],
       }),
     },
 

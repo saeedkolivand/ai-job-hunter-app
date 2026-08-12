@@ -321,6 +321,7 @@ fn usage(n: u32) -> Usage {
     Usage {
         input_tokens: n * 10,
         output_tokens: n,
+        thinking_tokens: None,
     }
 }
 

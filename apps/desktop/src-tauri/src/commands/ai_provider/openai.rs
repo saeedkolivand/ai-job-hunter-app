@@ -281,6 +281,15 @@ fn parse_openai_usage(data: &Value) -> Option<Usage> {
             .get("completion_tokens")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
+        // `usage.completion_tokens_details.reasoning_tokens` — reported by the
+        // reasoning models and simply absent for the rest, which is why this
+        // reads defensively and yields `None` rather than 0. It is a SUBSET of
+        // `completion_tokens`, so it must not be added to anything.
+        thinking_tokens: usage
+            .get("completion_tokens_details")
+            .and_then(|d| d.get("reasoning_tokens"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
     })
 }
 
@@ -298,6 +307,8 @@ fn parse_openai_embed_usage(data: &Value) -> Usage {
     Usage {
         input_tokens,
         output_tokens: 0,
+        // An embedding call does no reasoning; "not reported" is the truth.
+        thinking_tokens: None,
     }
 }
 

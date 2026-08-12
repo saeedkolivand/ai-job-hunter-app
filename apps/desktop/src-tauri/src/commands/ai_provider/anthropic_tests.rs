@@ -744,7 +744,8 @@ fn parse_frames_combines_message_start_input_and_message_delta_output_tokens() {
         pieces,
         vec![StreamPiece::usage(Usage {
             input_tokens: 25,
-            output_tokens: 0
+            output_tokens: 0,
+            thinking_tokens: None,
         })]
     );
 
@@ -757,7 +758,8 @@ fn parse_frames_combines_message_start_input_and_message_delta_output_tokens() {
         pieces,
         vec![StreamPiece::usage(Usage {
             input_tokens: 25,
-            output_tokens: 91
+            output_tokens: 91,
+            thinking_tokens: None,
         })]
     );
 }

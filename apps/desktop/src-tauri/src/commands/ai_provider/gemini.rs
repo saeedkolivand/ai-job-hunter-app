@@ -195,6 +195,13 @@ fn parse_gemini_usage(data: &Value) -> Option<Usage> {
             .get("candidatesTokenCount")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
+        // `usageMetadata.thoughtsTokenCount` — the count that accompanies the
+        // `thinkingConfig.includeThoughts` this adapter already requests (see
+        // `gemini_body`). Absent for non-thinking models, hence `None`, not 0.
+        thinking_tokens: um
+            .get("thoughtsTokenCount")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32),
     })
 }
 
@@ -214,6 +221,7 @@ fn parse_gemini_embed_usage(data: &Value) -> Usage {
     Usage {
         input_tokens,
         output_tokens: 0,
+        thinking_tokens: None,
     }
 }
 

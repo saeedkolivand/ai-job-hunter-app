@@ -339,10 +339,37 @@ export interface AiSpendProviderTotals {
   estCostUsd: number;
 }
 
-/** Today's real AI-spend totals, overall and per provider. */
+/**
+ * One model's OBSERVED reasoning overhead, over ALL history (not just today —
+ * "how much does this model think" does not reset at midnight).
+ *
+ * Only calls whose provider reported a DISTINCT reasoning-token count take
+ * part, so `outputTokens` is the denominator over exactly those calls and
+ * `thinkingTokens / outputTokens` is a like-for-like ratio. `calls` is the
+ * sample size: treat a ratio from one or two calls as noise.
+ *
+ * A model that never appears is not a model that does no reasoning — it is one
+ * whose provider does not report the split. Anthropic counts thinking inside
+ * its output tokens and Ollama's `eval_count` includes the thinking channel, so
+ * neither ever appears here; OpenAI's reasoning models and Gemini's thinking
+ * models do. Render absence as "not measured", never as zero.
+ */
+export interface AiSpendModelThinking {
+  provider: string;
+  model: string;
+  calls: number;
+  thinkingTokens: number;
+  outputTokens: number;
+}
+
+/** Today's real AI-spend totals, overall and per provider, plus the all-history
+ *  per-model reasoning overhead where it was actually measured. */
 export interface AiSpendSummary {
   today: { inputTokens: number; outputTokens: number; estCostUsd: number };
   perProvider: AiSpendProviderTotals[];
+  /** Empty until a provider that reports the split has been used — see
+   *  {@link AiSpendModelThinking}. */
+  thinkingByModel: AiSpendModelThinking[];
 }
 
 export const AI_CHANNELS = {

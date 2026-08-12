@@ -531,6 +531,28 @@ impl ChatMsg {
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Reasoning/"thinking" tokens, **only when the provider reports them as a
+    /// distinct number**. `None` is not zero: it means this provider does not
+    /// separate them, and recording a zero would read as "this model did no
+    /// reasoning" — the opposite of the truth for a reasoning model.
+    ///
+    /// Who reports what, as of the adapters in this module:
+    ///
+    /// * OpenAI — `usage.completion_tokens_details.reasoning_tokens`, present
+    ///   for the o-series/reasoning models and absent otherwise.
+    /// * Gemini — `usageMetadata.thoughtsTokenCount`, which this app already
+    ///   opts into by sending `thinkingConfig.includeThoughts`.
+    /// * Anthropic — NOT reported separately; thinking tokens are counted
+    ///   inside `output_tokens`.
+    /// * Ollama — NOT reported separately; `eval_count` includes the thinking
+    ///   channel. (The renderer measures the thinking/answer split in CHARS off
+    ///   the live stream — see `GeneratingPanel` — which is a different unit
+    ///   and is deliberately not written here as if it were tokens.)
+    /// * CLI agents — report no usage at all.
+    ///
+    /// Where reported, it is a SUBSET of `output_tokens`, not an addition to
+    /// it, so cost estimation is unaffected.
+    pub thinking_tokens: Option<u32>,
 }
 
 /// Record one AI call's REAL token usage against today's spend via the
@@ -553,20 +575,25 @@ pub struct Usage {
 /// `crate::spend::SpendStore` stays Tauri-free; this is the AppHandle→
 /// `try_state`→`record` hop every call site (streaming, `Completer`, CLI
 /// agents, `embed_text`) goes through.
+///
+/// Takes the whole [`Usage`] rather than loose token counts so a field the
+/// providers report (today `thinking_tokens`) cannot be parsed at the adapter
+/// and then dropped on the way to the store — which is exactly what a widening
+/// parameter list invites.
 pub(crate) fn record_usage(
     app: &AppHandle,
     provider: &str,
     model: &str,
-    input_tokens: u32,
-    output_tokens: u32,
+    usage: Usage,
     base_url: Option<&str>,
 ) {
     if let Some(store) = app.try_state::<crate::spend::SpendStore>() {
         store.record(crate::spend::SpendRecord {
             provider: provider.to_string(),
             model: model.to_string(),
-            input_tokens,
-            output_tokens,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            thinking_tokens: usage.thinking_tokens,
             run_id: None,
             base_url: base_url.map(str::to_string),
         });
@@ -1176,14 +1203,7 @@ pub async fn embed_text(
     // drops already-spent tokens from the ledger.
     let mut usage = Usage::default();
     let result = embed_adaptive(&attempt, text, initial_cap, &mut usage).await;
-    record_usage(
-        app,
-        provider.as_str(),
-        &model,
-        usage.input_tokens,
-        usage.output_tokens,
-        base_url.as_deref(),
-    );
+    record_usage(app, provider.as_str(), &model, usage, base_url.as_deref());
     let values = result?;
     if values.is_empty() {
         return Err(AppError::Provider(format!(

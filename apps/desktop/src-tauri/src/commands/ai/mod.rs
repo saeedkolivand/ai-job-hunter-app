@@ -739,6 +739,7 @@ pub fn ai_spend_summary(app: AppHandle) -> Value {
         return json!({
             "today": { "inputTokens": 0, "outputTokens": 0, "estCostUsd": 0.0 },
             "perProvider": [],
+            "thinkingByModel": [],
         });
     };
     let today = store.today_totals();
@@ -754,6 +755,25 @@ pub fn ai_spend_summary(app: AppHandle) -> Value {
             })
         })
         .collect();
+    // Observed reasoning overhead per model, over all history — the honest
+    // input to "which model should run which stage". EMPTY until a provider
+    // that reports a distinct thinking count has actually been used (OpenAI's
+    // reasoning models, Gemini's thinking models); Anthropic and Ollama fold
+    // thinking into their output count and so contribute nothing here rather
+    // than a zero that would read as "this model does not reason".
+    let thinking_by_model: Vec<Value> = store
+        .thinking_by_model()
+        .into_iter()
+        .map(|m| {
+            json!({
+                "provider": m.provider,
+                "model": m.model,
+                "calls": m.calls,
+                "thinkingTokens": m.thinking_tokens,
+                "outputTokens": m.output_tokens,
+            })
+        })
+        .collect();
     json!({
         "today": {
             "inputTokens": today.input_tokens,
@@ -761,6 +781,7 @@ pub fn ai_spend_summary(app: AppHandle) -> Value {
             "estCostUsd": today.est_cost_usd,
         },
         "perProvider": per_provider,
+        "thinkingByModel": thinking_by_model,
     })
 }
 
