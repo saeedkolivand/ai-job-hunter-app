@@ -80,6 +80,30 @@ describe('resolveProviderSettingsWrite', () => {
     ).toEqual({ provider: 'openai-compatible', baseUrl: null });
   });
 
+  it('never CLEARS the window against a row it has not read yet', () => {
+    // `stored: undefined` is both "no row" and "the activeConfig query has not
+    // resolved". Clearing on that guess wiped real windows.
+    const write = resolveProviderSettingsWrite({
+      provider: 'ollama',
+      model: 'qwen3:8b',
+      localWindows: {},
+    });
+
+    expect('contextWindow' in write).toBe(false);
+  });
+
+  it('still sends a window the renderer holds for the model, unread row or not', () => {
+    // Onboarding / the model picker: nothing is stored yet, but the user has a
+    // window for the model they just chose. Sending it destroys nothing.
+    const write = resolveProviderSettingsWrite({
+      provider: 'ollama',
+      model: 'qwen3:8b',
+      localWindows: { 'qwen3:8b': { contextWindow: 12_288 } },
+    });
+
+    expect(write.contextWindow).toBe(12_288);
+  });
+
   it('sends nothing but the provider when nothing is being changed', () => {
     expect(resolveProviderSettingsWrite({ provider: 'anthropic' })).toEqual({
       provider: 'anthropic',

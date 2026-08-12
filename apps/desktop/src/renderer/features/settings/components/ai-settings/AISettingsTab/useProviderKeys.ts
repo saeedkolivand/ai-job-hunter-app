@@ -33,9 +33,8 @@ export function useProviderKeys() {
   // via the switch/edit setters.
   const { data: providerConfig } = useActiveConfig();
   const setActiveProviderMut = useSetActiveProvider();
-  // REPLACE-safe writer: picking a model must not blank the provider's base URL
-  // or the window stored for that model (`ai_set_provider_settings` writes every
-  // field it is handed, NULL included).
+  // Patch writer: picking a model sends the model — and re-points the context
+  // window, which belongs to the model rather than to the provider row.
   const { save: saveProviderSettings } = useSaveProviderSettings();
   const setActiveProvider = (provider: AiProvider) => setActiveProviderMut.mutate(provider);
   const setProviderSettings = (provider: AiProvider, model: string) =>

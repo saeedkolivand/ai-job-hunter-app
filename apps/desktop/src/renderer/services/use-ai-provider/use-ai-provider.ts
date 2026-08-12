@@ -17,7 +17,12 @@ import type { AiProvider } from '@/store/preferences-schema';
 import { useAiProviderConfig } from '@/store/preferences-store';
 
 import { keys, QUERY_TIMES } from '../query-client';
+import { createConcurrencyLimit } from './limit-concurrency';
 import { type ProviderSettingsWriteInput, resolveProviderSettingsWrite } from './provider-settings';
+
+/** How many `/api/show` probes may be in flight at once — see
+ *  {@link useModelInspections}. */
+const inspectLimit = createConcurrencyLimit(4);
 
 /** A cloud provider's model catalogue, plus whether it was served from the
  *  last-good local cache (a live fetch failed) rather than a fresh fetch. */
@@ -226,7 +231,12 @@ export const useModelInspections = (
   return useQueries({
     queries: safeModels.map((model) => ({
       queryKey: [...keys.ai.models, 'inspect', model],
-      queryFn: () => api.ai.inspectModel({ model }),
+      // Capped fan-out: `useQueries` starts every query at once, and `/api/show`
+      // loads model metadata on the same local server that is serving the user's
+      // generation. Twenty installed models must not mean twenty simultaneous
+      // probes — the cap lives in the query FUNCTION because React Query has no
+      // concurrency option of its own.
+      queryFn: () => inspectLimit(() => api.ai.inspectModel({ model })),
       staleTime: QUERY_TIMES.VERY_LONG,
       // An unreachable Ollama fails the same way for every model in the list;
       // retrying each one just multiplies the same timeout.
@@ -405,7 +415,7 @@ export const useConfigureActiveProvider = () => {
       model?: string;
       baseUrl?: string;
     }) => {
-      // Same REPLACE rule as `useSaveProviderSettings`: this flow names the
+      // Same patch rule as `useSaveProviderSettings`: this flow names the
       // model, so the window it saves is the one held FOR THAT MODEL — never
       // the previous model's, and never silently NULL when one exists.
       const settingsResult = await api.ai.setProviderSettings(

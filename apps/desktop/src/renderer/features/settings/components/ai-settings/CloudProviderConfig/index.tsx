@@ -260,9 +260,9 @@ export function CloudProviderConfig({
               variant="ghost"
               className="shrink-0"
               onClick={() =>
-                // `null` = clear on purpose (an emptied input); the stored model
-                // and its window ride along untouched — the command REPLACES
-                // every field it is handed.
+                // `null` = clear on purpose (an emptied input). Everything else
+                // is omitted, which patch semantics read as "leave it alone" —
+                // the stored model and its window are never touched here.
                 saveProviderSettings(
                   {
                     provider: 'openai-compatible',

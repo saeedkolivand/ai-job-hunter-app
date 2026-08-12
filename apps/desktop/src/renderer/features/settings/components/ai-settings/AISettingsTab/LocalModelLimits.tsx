@@ -1,5 +1,7 @@
+import { useRef } from 'react';
+
 import { useTranslation } from '@ajh/translations';
-import { Button, Switch } from '@ajh/ui';
+import { Button, Switch, useNotification } from '@ajh/ui';
 
 import { useInspectModel, useSaveProviderSettings, useSystemResources } from '@/services';
 import { usePreferencesStore } from '@/store/preferences-store';
@@ -50,10 +52,13 @@ const TEMP_STEPS = [
  */
 export function LocalModelLimits({ selectedModel }: Props) {
   const { t } = useTranslation();
+  const notify = useNotification();
   const inspect = useInspectModel();
   const { resources } = useSystemResources(selectedModel);
   const setLocalModelLimits = usePreferencesStore((s) => s.setLocalModelLimits);
   const { save: saveProviderSettings } = useSaveProviderSettings();
+  /** Last value actually sent, so a release that moved nothing writes nothing. */
+  const committedWindow = useRef<number | undefined>(undefined);
   const limits = usePreferencesStore((s) =>
     selectedModel ? s.aiProviderConfig?.providers?.ollama?.modelLimits?.[selectedModel] : undefined
   );
@@ -90,9 +95,25 @@ export function LocalModelLimits({ selectedModel }: Props) {
    * (`context_window: None` at all three request sites). Committed on release
    * rather than on every `onChange` tick, so a drag is one write, not eighty;
    * `onKeyUp` covers the arrow-key path so keyboard users commit too.
+   *
+   * A rejected write is surfaced: the slider would otherwise keep showing a
+   * value the backend never accepted, which is the same silent divergence this
+   * whole commit path exists to remove.
    */
-  const commitWindow = (value: number) =>
-    saveProviderSettings({ provider: 'ollama', model: selectedModel, contextWindow: value });
+  const commitWindow = (value: number) => {
+    // Key-up and pointer-up both fire on a press that moved nothing.
+    if (value === committedWindow.current) return;
+    committedWindow.current = value;
+    saveProviderSettings(
+      { provider: 'ollama', model: selectedModel, contextWindow: value },
+      {
+        onError: (err) =>
+          notify.error({
+            message: t('settings.ai.localLimits.windowSaveFailed', { reason: err.message }),
+          }),
+      }
+    );
+  };
 
   return (
     <div className="mt-2 space-y-3 rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-3">

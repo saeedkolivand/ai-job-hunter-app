@@ -61,9 +61,19 @@ export function resolveProviderSettingsWrite(
   if (input.contextWindow !== undefined) {
     write.contextWindow = input.contextWindow;
   } else if (input.model !== undefined && input.model !== stored?.model) {
-    // The model is changing, so the stored window no longer describes it:
-    // replace it with the new model's own, or clear it outright.
-    write.contextWindow = localWindows?.[input.model]?.contextWindow ?? null;
+    // The model is changing, so the stored window no longer describes it.
+    const ownWindow = localWindows?.[input.model]?.contextWindow;
+    if (ownWindow !== undefined) {
+      // The new model has a window of its own — send it either way.
+      write.contextWindow = ownWindow;
+    } else if (stored !== undefined) {
+      // Clear it — but ONLY against a row we have actually read. An unresolved
+      // `activeConfig` query also reads as "no stored row", and treating that
+      // as "the model changed" sent `contextWindow: null` on an unchanged model
+      // and wiped a real window. Unknown means send nothing, which patch
+      // semantics read as "keep".
+      write.contextWindow = null;
+    }
   }
 
   return write;
