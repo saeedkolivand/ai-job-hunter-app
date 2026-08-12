@@ -13,7 +13,7 @@
     "gen:fonts": "node scripts/selfhost-fonts.mjs"
   },
   "dependencies": {
-    "next": "16.2.12",
+    "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -21,14 +21,14 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "26.1.1",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
-    "jsdom": "^30.0.0",
-    "playwright": "^1.62.0",
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^30.0.1",
+    "playwright": "^1.62.1",
     "typescript": "6.0.3",
-    "vite": "^8.1.5",
+    "vite": "^8.2.1",
     "vitest": "^4.1.10"
   }
 }
