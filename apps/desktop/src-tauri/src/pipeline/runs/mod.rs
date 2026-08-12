@@ -571,6 +571,101 @@ impl PipelineRunStore {
         }
     }
 
+    /// Delete every run of ONE posting, and its events with it. Returns how
+    /// many RUNS went.
+    ///
+    /// **Deleting an application has to reach this table.** A max-depth run
+    /// persists its FULL `strategy` (the whole employment history) and its full
+    /// `match_evidence` map (verbatim quotes out of the candidate's résumé) into
+    /// `pipeline_run_events.artifact_json` — that is a deliberate DB decision
+    /// (see `RunLedger::record_detail`: ADR-027 governs the LOG), and it is the
+    /// only copy a per-entry regenerate can read hours later. But nothing else
+    /// ever removes those rows for a posting the user deleted:
+    /// [`prune`](Self::prune) partitions by `(job_url, kind)` and only evicts
+    /// the FOURTH run of a posting that is still being run, and
+    /// [`clear_all`](Self::clear_all) is the factory reset. So "delete this
+    /// application and its documents" left employment history and résumé quotes
+    /// on disk indefinitely — and [`export`](Self::export) ships every event row
+    /// into the user's backups.
+    ///
+    /// **Matched on the NORMALIZED url, on both sides.** An `Application` is
+    /// keyed by `normalize_job_url` while a run row stores the postings cache's
+    /// raw url, so a plain `WHERE job_url = ?` would quietly match nothing for
+    /// any posting whose link carried a `utm_*` param or a fragment — the silent
+    /// half of exactly the bug this exists to fix. The scan is over a table
+    /// bounded at [`RETENTION_RUNS_PER_JOB`] rows per posting, and a deletion is
+    /// rare.
+    ///
+    /// Best-effort and transactional, like [`prune`](Self::prune): the first
+    /// failure returns without committing, so the trail is never half-deleted.
+    pub fn delete_for_job(&self, job_url: &str) -> usize {
+        let wanted = crate::applications::normalize_job_url(job_url);
+        if wanted.is_empty() {
+            // An unlinked application (a manual entry with no posting url) has
+            // no run trail to find, and matching every empty-url run to it would
+            // delete other postings' history.
+            return 0;
+        }
+        let span = crate::observability::Span::begin("pipeline:runs", "op=delete_for_job");
+        let mut guard = self.conn.lock();
+        let doomed: Vec<String> = query_runs(
+            &guard,
+            "SELECT id, job_url, kind, depth, status, started_at, finished_at,
+                    stopped_reason, metrics_json
+             FROM pipeline_runs",
+            params![],
+        )
+        .into_iter()
+        .filter(|row| crate::applications::normalize_job_url(&row.job_url) == wanted)
+        .map(|row| row.id)
+        .collect();
+        if doomed.is_empty() {
+            span.end_with("runs=0", true);
+            return 0;
+        }
+        let tx = match guard.transaction() {
+            Ok(tx) => tx,
+            Err(e) => {
+                log::warn!("[pipeline] could not open a transaction to delete a job's runs: {e}");
+                span.end(false);
+                return 0;
+            }
+        };
+        let mut removed = 0usize;
+        for id in &doomed {
+            // Events first: an interrupted delete that took the run row and left
+            // its events would leave rows the orphan sweep only reaches on the
+            // next `prune`.
+            if let Err(e) = tx.execute(
+                "DELETE FROM pipeline_run_events WHERE run_id = ?1",
+                params![id],
+            ) {
+                log::warn!("[pipeline] could not delete a run's events: {e}");
+                span.end(false);
+                return 0; // dropping `tx` rolls the whole thing back
+            }
+            match tx.execute("DELETE FROM pipeline_runs WHERE id = ?1", params![id]) {
+                Ok(n) => removed += n,
+                Err(e) => {
+                    log::warn!("[pipeline] could not delete a run row: {e}");
+                    span.end(false);
+                    return 0;
+                }
+            }
+        }
+        match tx.commit() {
+            Ok(()) => {
+                span.end_with(&format!("runs={removed}"), true);
+                removed
+            }
+            Err(e) => {
+                log::warn!("[pipeline] could not commit a job's run deletion: {e}");
+                span.end(false);
+                0
+            }
+        }
+    }
+
     /// Every run, oldest first — a deterministic order for export.
     fn all_runs(&self) -> Vec<RunRow> {
         let conn = self.conn.lock();

@@ -391,6 +391,74 @@ fn prune_keeps_the_newest_runs_per_job_and_drops_their_events() {
     assert_eq!(store.events_for_run("run-4").len(), 1);
 }
 
+/// **Deleting an application takes its run trail with it.**
+///
+/// The trail is not a cache: at max depth a run persists the FULL re-seeded
+/// strategy (the whole employment history) and the full evidence map (verbatim
+/// quotes out of the résumé) in `artifact_json`, and nothing else ever removes
+/// them for a posting the user deleted — `prune` only evicts the fourth run of
+/// a posting still being run, and `export` ships every event row into the
+/// user's backups.
+///
+/// The match is on the NORMALIZED url on BOTH sides, because an `Application`
+/// is keyed by `normalize_job_url` while a run row carries the postings cache's
+/// raw url. A `WHERE job_url = ?` would look right and delete nothing for every
+/// posting whose link carries a tracking param.
+///
+/// Mutation check: compare the raw `job_url` strings instead of the normalized
+/// ones and the `utm_source` run survives; drop the events DELETE and the
+/// orphan assertion fails.
+#[test]
+fn deleting_a_job_removes_its_runs_and_their_artifacts() {
+    let (_dir, store) = store();
+    // Two runs of the SAME posting, written with the raw urls the postings
+    // cache hands the pipeline — one of them carrying tracking noise.
+    store
+        .upsert_run(&run("run-a", "https://boards.example/jobs/42", 1_000))
+        .unwrap();
+    store
+        .upsert_run(&run(
+            "run-b",
+            "https://www.Boards.example/jobs/42?utm_source=newsletter#apply",
+            2_000,
+        ))
+        .unwrap();
+    store
+        .append_event(&event("run-a", 0, r#"{"full":{"perCompany":[]}}"#))
+        .unwrap();
+    store
+        .append_event(&event("run-b", 0, r#"{"full":{"items":[]}}"#))
+        .unwrap();
+    // …and one run of a DIFFERENT posting, which must survive untouched.
+    store
+        .upsert_run(&run("other", "https://boards.example/jobs/99", 3_000))
+        .unwrap();
+    store.append_event(&event("other", 0, "{}")).unwrap();
+
+    let removed = store.delete_for_job("https://boards.example/jobs/42");
+
+    assert_eq!(removed, 2, "both spellings of the same posting go");
+    assert!(store
+        .runs_for_job("https://boards.example/jobs/42")
+        .is_empty());
+    assert!(
+        store.events_for_run("run-a").is_empty() && store.events_for_run("run-b").is_empty(),
+        "the artifacts are the point — a deleted run whose events survive keeps the résumé quotes"
+    );
+    assert_eq!(
+        store.runs_for_job("https://boards.example/jobs/99").len(),
+        1
+    );
+    assert_eq!(store.events_for_run("other").len(), 1);
+
+    // An unlinked application has no posting url; matching it against every
+    // empty-url run would delete other people's history rather than nothing.
+    store.upsert_run(&run("unlinked", "", 4_000)).unwrap();
+    assert_eq!(store.delete_for_job(""), 0);
+    assert_eq!(store.delete_for_job("   "), 0);
+    assert_eq!(store.runs_for_job("").len(), 1);
+}
+
 /// Retention is PER JOB: hammering one posting must not evict another's history.
 #[test]
 fn prune_is_scoped_per_job_url() {

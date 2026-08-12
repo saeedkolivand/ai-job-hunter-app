@@ -348,6 +348,27 @@ pub async fn applications_delete(app: AppHandle, id: String, keep_documents: boo
                 log::warn!("[applications] failed to delete child generations (non-fatal): {e}");
             }
         }
+        // …and the PIPELINE RUN TRAIL for the same posting. A max-depth run
+        // persists its full re-seeded strategy (the whole employment history)
+        // and its full evidence map (verbatim résumé quotes) in
+        // `pipeline_run_events.artifact_json`, deliberately — it is the only
+        // copy a per-entry regenerate can read hours later. Nothing else ever
+        // removes it: retention only evicts the FOURTH run of a posting still
+        // being run, and `DataStore::export` ships every event row into the
+        // user's backups. "Delete this application and its documents" otherwise
+        // left both on disk indefinitely.
+        //
+        // Read BEFORE `s.delete` (the row is gone after it) and only on this
+        // arm: with `keep_documents` the trail is no more sensitive than the
+        // `ai_generations` row that is being kept on purpose, and it is what
+        // makes the kept document's own runs panel readable.
+        let job_url = s.get(&id).map(|application| application.job_url);
+        if let (Some(job_url), Some(runs)) = (
+            job_url,
+            app.try_state::<crate::pipeline::runs::PipelineRunStore>(),
+        ) {
+            runs.delete_for_job(&job_url);
+        }
     } else if let Some(gens) = app.try_state::<crate::ai_generations::AiGenerationStore>() {
         // Keep documents: detach them so they survive as orphaned generations.
         if let Err(e) = gens.detach_application(&id) {
